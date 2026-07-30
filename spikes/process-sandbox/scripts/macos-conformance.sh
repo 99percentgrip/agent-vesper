@@ -1,6 +1,12 @@
 #!/bin/sh
 set -eu
 
+# Resolve the spike root so the script works regardless of the caller's
+# working directory (platform-foundation.yml invokes it from the workspace
+# root; foundation-spikes.yml uses working-directory).
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR/.."
+
 test "$(uname -s)" = "Darwin"
 test -x /usr/bin/sandbox-exec
 /usr/bin/sandbox-exec -p '(version 1) (deny default) (allow process*) (allow file-read*)' /usr/bin/true

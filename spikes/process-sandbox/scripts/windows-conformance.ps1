@@ -1,6 +1,12 @@
 $ErrorActionPreference = "Stop"
 if (-not $IsWindows) { throw "Windows host required" }
 
+# Resolve the spike root so the script works regardless of the caller's
+# working directory (platform-foundation.yml invokes it from the workspace
+# root; foundation-spikes.yml uses working-directory).
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
+Set-Location (Join-Path $ScriptDir "..")
+
 # Compile the cross-platform portion, but use the native probe below for the
 # Windows ownership primitive instead of treating Unix process groups as Jobs.
 cargo test --locked --lib
