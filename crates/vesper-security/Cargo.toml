@@ -11,6 +11,7 @@ publish = false
 [dependencies]
 serde.workspace = true
 thiserror.workspace = true
+tokio.workspace = true
 url.workspace = true
 zeroize.workspace = true
 

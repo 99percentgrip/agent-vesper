@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, fmt};
 
-use vesper_security::SecretValue;
+use vesper_security::{SecretScope, SecretValue};
 
 use crate::error::authentication_error;
 
@@ -11,15 +11,17 @@ pub trait GlmCredentialSource: Send + Sync {
 }
 
 /// Production process-environment source.
+///
+/// Delegates to [`SecretScope::current`] so credential resolution is
+/// scope-aware: when a task-local [`SecretScope`] is installed (multi-profile
+/// multiplexing), credentials come from the active scope; in single-profile
+/// mode it transparently falls back to `std::env`.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct EnvironmentCredentialSource;
 
 impl GlmCredentialSource for EnvironmentCredentialSource {
     fn credential(&self, name: &str) -> Option<SecretValue> {
-        std::env::var(name)
-            .ok()
-            .filter(|value| !value.trim().is_empty())
-            .map(SecretValue::new)
+        SecretScope::current(name).ok()
     }
 }
 

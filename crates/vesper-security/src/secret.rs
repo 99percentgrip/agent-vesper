@@ -5,6 +5,7 @@ use thiserror::Error;
 use zeroize::Zeroizing;
 
 /// Raw secret bytes with explicit exposure and zeroizing drop behavior.
+#[derive(Clone)]
 pub struct SecretValue(Zeroizing<String>);
 
 impl SecretValue {
