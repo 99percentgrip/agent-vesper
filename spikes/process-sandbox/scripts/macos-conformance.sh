@@ -15,6 +15,11 @@ cargo test --locked --test process_conformance
 
 tmp_root="$(mktemp -d)"
 trap 'rm -rf "$tmp_root"' EXIT
+# Resolve symlinks: macOS places $TMPDIR under /var/folders which symlinks to
+# /private/var/folders. sandbox-exec evaluates paths against their physical
+# location, so the profile must contain the resolved path or all writes are
+# denied even inside the workspace subpath.
+tmp_root="$(cd "$tmp_root" && pwd -P)"
 mkdir "$tmp_root/workspace" "$tmp_root/outside"
 profile="$tmp_root/profile.sb"
 sed "s|__WORKSPACE__|$tmp_root/workspace|g" scripts/macos-workspace.sb > "$profile"
