@@ -16,6 +16,11 @@ starting production Agent Vesper implementation.
 - Pin exact dependency versions and commit `Cargo.lock`.
 - Use fixture-driven/local-only behavior and never live providers.
 - Platform claims are limited to hosts/CI jobs actually executed.
+- Each spike declares an empty `[workspace]` table so it is a standalone
+  workspace root. This enforces its independence from the production
+  workspace (`exclude = ["spikes/*"]`) and prevents cargo from erroring on
+  the exclusion when a spike is invoked via `--manifest-path` (e.g. the
+  platform-foundation CI matrix).
 
 ## Work Guidance
 

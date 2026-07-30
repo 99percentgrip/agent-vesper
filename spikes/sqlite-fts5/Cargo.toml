@@ -5,6 +5,12 @@ edition = "2024"
 rust-version = "1.88"
 publish = false
 
+# Standalone workspace root: this disposable spike is excluded from the
+# production workspace (root Cargo.toml `exclude = ["spikes/*"]`). Declaring
+# an empty workspace here prevents cargo from walking up and erroring on the
+# exclusion when invoked via `--manifest-path`.
+[workspace]
+
 [features]
 default = ["bundled-sqlite"]
 bundled-sqlite = ["rusqlite/bundled"]
