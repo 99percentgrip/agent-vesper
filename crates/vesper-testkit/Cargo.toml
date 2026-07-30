@@ -1,0 +1,25 @@
+[package]
+name = "vesper-testkit"
+description = "Language-neutral fixture and conformance helpers for Agent Vesper"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+futures-core.workspace = true
+jsonschema.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+vesper-config = { path = "../vesper-config", version = "=0.1.0" }
+vesper-domain = { path = "../vesper-domain", version = "=0.1.0" }
+vesper-policy = { path = "../vesper-policy", version = "=0.1.0" }
+vesper-provider = { path = "../vesper-provider", version = "=0.1.0" }
+vesper-security = { path = "../vesper-security", version = "=0.1.0" }
+
+[lints]
+workspace = true

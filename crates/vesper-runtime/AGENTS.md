@@ -1,0 +1,43 @@
+# Minimal provider runtime
+
+## Purpose
+
+Own provider-neutral process supervision, session actors, command routing,
+bounded event delivery, hierarchical cancellation, one-request no-tools
+provider turns, and acceptance of pure converted session state.
+
+## Local Contracts
+
+- May depend on `vesper-sessions` read-only repository, converted-state, and
+  transactional writer ports, but not implement filesystem access itself.
+- Do not depend on ACP, GLM, frontends, persistence I/O, SQLite, or tool
+  execution.
+- Every session owns mutable state in one serialized actor.
+- Runtime, session, turn, and provider tasks are cancellation descendants.
+- Channels are bounded; visible events are never silently dropped.
+- A provider tool call is surfaced and terminates as unsupported without
+  execution or another provider request.
+- No filesystem writes or detached tasks; the optional `save_session` path
+  flows entirely through the injected `RuntimeSessionWrites` port.
+- Freshly created sessions carry a default endpoint identity supplied by the
+  composition boundary through `RuntimeDefaults.endpoint`, so the converted
+  record is always persistable; the runtime is provider-neutral and never
+  hardcodes an endpoint.
+- Configuration-required restored sessions remain inspectable/replayable and
+  reject provider dispatch until configuration is resolved.
+- In-memory actors win ID collisions; persistent reads occur only on actor
+  misses, and missing IDs create ephemeral sessions without storage writes.
+- Close removes only the actor. Fork remains in-memory and never mutates the
+  source record.
+- Persistent adoption is serialized by session ID, rechecks actor ownership
+  after I/O, and never lets stale disk state overwrite a newer actor. Separate
+  IDs remain concurrent.
+
+## Verification
+
+- Run `cargo test -p vesper-runtime --all-features`.
+- Run `cargo xtask runtime verify` and architecture checks.
+
+## Child DOX Index
+
+No children.

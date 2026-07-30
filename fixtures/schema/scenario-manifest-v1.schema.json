@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-vesper.invalid/schema/scenario-manifest-v1.schema.json",
+  "title": "Agent Vesper fixture scenario manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "scenario_id",
+    "schema_version",
+    "category",
+    "comparison_class",
+    "source_commit",
+    "platform_requirements",
+    "input",
+    "environment",
+    "fixture_files",
+    "expected_events",
+    "expected_state",
+    "expected_persistence",
+    "expected_process_observations",
+    "expected_network_observations",
+    "normalization_rules",
+    "security_assertions",
+    "timeout"
+  ],
+  "properties": {
+    "scenario_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "category": {
+      "enum": ["acp", "provider/glm", "sessions/v1", "tools", "policy", "security", "process", "contracts"]
+    },
+    "comparison_class": {
+      "enum": ["exact-output", "semantic-parity", "schema-compatibility", "security-invariant", "performance"]
+    },
+    "source_commit": {
+      "const": "bf4d4287e2e3320aa3f09015f678e6169d520045"
+    },
+    "platform_requirements": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["os", "arch", "capabilities"],
+      "properties": {
+        "os": {
+          "type": "array",
+          "items": {"enum": ["any", "linux", "macos", "windows"]},
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "arch": {
+          "type": "array",
+          "items": {"enum": ["any", "x86_64", "aarch64"]},
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {"type": "string", "maxLength": 128},
+          "uniqueItems": true
+        }
+      }
+    },
+    "input": {"type": "object"},
+    "environment": {
+      "type": "object",
+      "additionalProperties": {"type": ["string", "number", "boolean", "null"]}
+    },
+    "fixture_files": {
+      "type": "array",
+      "items": {"type": "string", "pattern": "^(?!/)(?!.*\\.\\.).+"},
+      "uniqueItems": true
+    },
+    "expected_events": {
+      "type": "array",
+      "items": {"type": "object"}
+    },
+    "expected_state": {"type": "object"},
+    "expected_persistence": {"type": "object"},
+    "expected_process_observations": {"type": "object"},
+    "expected_network_observations": {"type": "object"},
+    "normalization_rules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["target", "rule"],
+        "properties": {
+          "target": {"type": "string", "maxLength": 256},
+          "rule": {
+            "enum": ["uuid-encounter-order", "relative-time", "workspace-root", "temporary-root", "semantic-separator", "pid-encounter-order", "retry-delay-range"]
+          },
+          "parameters": {"type": "object"}
+        }
+      }
+    },
+    "security_assertions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["kind", "expected"],
+        "properties": {
+          "kind": {"type": "string", "maxLength": 128},
+          "expected": {},
+          "details": {"type": "object"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "timeout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["seconds", "category"],
+      "properties": {
+        "seconds": {"type": "number", "exclusiveMinimum": 0, "maximum": 900},
+        "category": {"enum": ["runner", "request", "read", "tool", "process", "suite"]}
+      }
+    }
+  }
+}

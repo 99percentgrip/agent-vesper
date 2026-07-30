@@ -1,0 +1,51 @@
+name: pull-request-validation
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.95.0 --profile minimal --component clippy,rustfmt
+      - name: Verify workspace
+        run: cargo xtask verify
+      - name: Verify documentation structure
+        run: |
+          test -f docs/architecture.md
+          test -f docs/workspace-map.md
+          test -f docs/dependencies.md
+          test -f docs/migration-status.md
+          test -f docs/stage2/contract-completion-report.md
+          test -f docs/stage2/stage3-readiness.md
+          test -f docs/stage3/glm-adapter-report.md
+          test -f docs/stage3/stage4-readiness.md
+          test -f docs/stage4/acp-adapter-report.md
+          test -f docs/stage4/stage5-readiness.md
+          test -f docs/stage5/session-store-report.md
+          test -f docs/stage5/stage6-readiness.md
+          test "$(find docs/adr -maxdepth 1 -name '*.md' | wc -l)" -ge 8
+
+  supply-chain:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.95.0 --profile minimal
+      - name: Install pinned policy tools
+        run: |
+          cargo install cargo-audit --locked --version 0.22.2
+          cargo install cargo-deny --locked --version 0.20.2
+      - name: Audit advisories
+        run: cargo audit
+      - name: Enforce licenses, sources, bans, and advisories
+        run: cargo deny --all-features check

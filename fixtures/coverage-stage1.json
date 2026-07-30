@@ -1,0 +1,804 @@
+{
+  "schema_version": 1,
+  "stage": 1,
+  "source_commit": "bf4d4287e2e3320aa3f09015f678e6169d520045",
+  "generated_by": "cargo xtask fixtures validate",
+  "summary": {
+    "total": 65,
+    "parsed": 65,
+    "schema_validated": 65,
+    "foundational_contract_implemented": 12,
+    "deferred_to_owning_migration_stage": 53,
+    "by_category": {
+      "acp": 12,
+      "policy": 6,
+      "process": 4,
+      "provider/glm": 21,
+      "security": 5,
+      "sessions/v1": 7,
+      "tools": 10
+    }
+  },
+  "scenarios": [
+    {
+      "scenario_id": "acp.cancellation",
+      "category": "acp",
+      "comparison_class": "exact-output",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "ACP transport stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "acp.capability-negotiation",
+      "category": "acp",
+      "comparison_class": "exact-output",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "ACP transport stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "acp.close-session",
+      "category": "acp",
+      "comparison_class": "exact-output",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "ACP transport stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "acp.fork-session",
+      "category": "acp",
+      "comparison_class": "exact-output",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "ACP transport stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "acp.initialization",
+      "category": "acp",
+      "comparison_class": "exact-output",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "ACP transport stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "acp.list-session",
+      "category": "acp",
+      "comparison_class": "exact-output",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "ACP transport stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "acp.load-session",
+      "category": "acp",
+      "comparison_class": "exact-output",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "ACP transport stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "acp.new-session",
+      "category": "acp",
+      "comparison_class": "exact-output",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "ACP transport stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "acp.replay-order",
+      "category": "acp",
+      "comparison_class": "exact-output",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "ACP transport stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "acp.resume-session",
+      "category": "acp",
+      "comparison_class": "exact-output",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "ACP transport stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "acp.slash-command",
+      "category": "acp",
+      "comparison_class": "exact-output",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "ACP transport stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "acp.usage-update-order",
+      "category": "acp",
+      "comparison_class": "exact-output",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "ACP transport stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "glm.blank-comment-lines",
+      "category": "provider/glm",
+      "comparison_class": "exact-output",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "GLM provider stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "glm.cancel-before-connect",
+      "category": "provider/glm",
+      "comparison_class": "exact-output",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "GLM provider stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "glm.cancel-before-headers",
+      "category": "provider/glm",
+      "comparison_class": "semantic-parity",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "GLM provider stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "glm.cancel-mid-stream",
+      "category": "provider/glm",
+      "comparison_class": "semantic-parity",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "GLM provider stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "glm.content-only",
+      "category": "provider/glm",
+      "comparison_class": "exact-output",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "GLM provider stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "glm.continuation-cap",
+      "category": "provider/glm",
+      "comparison_class": "exact-output",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "GLM provider stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "glm.done-marker",
+      "category": "provider/glm",
+      "comparison_class": "exact-output",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "GLM provider stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "glm.fragmented-tool-call",
+      "category": "provider/glm",
+      "comparison_class": "exact-output",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "GLM provider stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "glm.incomplete-eof-no-output",
+      "category": "provider/glm",
+      "comparison_class": "exact-output",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "GLM provider stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "glm.incomplete-eof-visible-output",
+      "category": "provider/glm",
+      "comparison_class": "exact-output",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "GLM provider stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "glm.interleaved-tool-indexes",
+      "category": "provider/glm",
+      "comparison_class": "exact-output",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "GLM provider stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "glm.malformed-sse-line",
+      "category": "provider/glm",
+      "comparison_class": "exact-output",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "GLM provider stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "glm.non-retryable-status",
+      "category": "provider/glm",
+      "comparison_class": "exact-output",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "GLM provider stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "glm.output-length-continuation",
+      "category": "provider/glm",
+      "comparison_class": "exact-output",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "GLM provider stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "glm.reasoning-then-content",
+      "category": "provider/glm",
+      "comparison_class": "exact-output",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "GLM provider stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "glm.request-serialization",
+      "category": "provider/glm",
+      "comparison_class": "exact-output",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "GLM provider stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "glm.retry-after-date",
+      "category": "provider/glm",
+      "comparison_class": "semantic-parity",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "GLM provider stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "glm.retry-after-numeric",
+      "category": "provider/glm",
+      "comparison_class": "semantic-parity",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "GLM provider stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "glm.retryable-status",
+      "category": "provider/glm",
+      "comparison_class": "semantic-parity",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "GLM provider stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "glm.terminal-finish-reason",
+      "category": "provider/glm",
+      "comparison_class": "exact-output",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "GLM provider stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "glm.usage-only-chunk",
+      "category": "provider/glm",
+      "comparison_class": "exact-output",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "GLM provider stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "policy.ask-channel-failure",
+      "category": "policy",
+      "comparison_class": "security-invariant",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "foundational contract implemented"
+      ],
+      "owner": "stage-1-foundation",
+      "note": "Applicable Stage 1 contract is exercised by foundational crate tests."
+    },
+    {
+      "scenario_id": "policy.bypass-deny",
+      "category": "policy",
+      "comparison_class": "security-invariant",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "foundational contract implemented"
+      ],
+      "owner": "stage-1-foundation",
+      "note": "Applicable Stage 1 contract is exercised by foundational crate tests."
+    },
+    {
+      "scenario_id": "policy.matrix",
+      "category": "policy",
+      "comparison_class": "security-invariant",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "foundational contract implemented"
+      ],
+      "owner": "stage-1-foundation",
+      "note": "Applicable Stage 1 contract is exercised by foundational crate tests."
+    },
+    {
+      "scenario_id": "policy.nested-workflow-denial",
+      "category": "policy",
+      "comparison_class": "security-invariant",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "foundational contract implemented"
+      ],
+      "owner": "stage-1-foundation",
+      "note": "Applicable Stage 1 contract is exercised by foundational crate tests."
+    },
+    {
+      "scenario_id": "policy.plan-mcp",
+      "category": "policy",
+      "comparison_class": "exact-output",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "foundational contract implemented"
+      ],
+      "owner": "stage-1-foundation",
+      "note": "Applicable Stage 1 contract is exercised by foundational crate tests."
+    },
+    {
+      "scenario_id": "policy.readonly-destructive",
+      "category": "policy",
+      "comparison_class": "security-invariant",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "foundational contract implemented"
+      ],
+      "owner": "stage-1-foundation",
+      "note": "Applicable Stage 1 contract is exercised by foundational crate tests."
+    },
+    {
+      "scenario_id": "process.direct-child",
+      "category": "process",
+      "comparison_class": "security-invariant",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "tools/process supervision stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "process.grandchild",
+      "category": "process",
+      "comparison_class": "security-invariant",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "tools/process supervision stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "process.huge-output",
+      "category": "process",
+      "comparison_class": "performance",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "tools/process supervision stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "process.pipe-holder",
+      "category": "process",
+      "comparison_class": "security-invariant",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "tools/process supervision stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "security.canary-sinks",
+      "category": "security",
+      "comparison_class": "security-invariant",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "foundational contract implemented"
+      ],
+      "owner": "stage-1-foundation",
+      "note": "Applicable Stage 1 contract is exercised by foundational crate tests."
+    },
+    {
+      "scenario_id": "security.checkpoint-conflict",
+      "category": "security",
+      "comparison_class": "security-invariant",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "owning security subsystem stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "security.plugin-signature",
+      "category": "security",
+      "comparison_class": "security-invariant",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "owning security subsystem stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "security.promptware-wrapping",
+      "category": "security",
+      "comparison_class": "security-invariant",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "foundational contract implemented"
+      ],
+      "owner": "stage-1-foundation",
+      "note": "Applicable Stage 1 contract is exercised by foundational crate tests."
+    },
+    {
+      "scenario_id": "security.secret-redaction",
+      "category": "security",
+      "comparison_class": "security-invariant",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "foundational contract implemented"
+      ],
+      "owner": "stage-1-foundation",
+      "note": "Applicable Stage 1 contract is exercised by foundational crate tests."
+    },
+    {
+      "scenario_id": "session.corrupt-json",
+      "category": "sessions/v1",
+      "comparison_class": "schema-compatibility",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "session persistence stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "session.minimal-legacy",
+      "category": "sessions/v1",
+      "comparison_class": "schema-compatibility",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "session persistence stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "session.reasoning-disabled",
+      "category": "sessions/v1",
+      "comparison_class": "security-invariant",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "foundational contract implemented"
+      ],
+      "owner": "stage-1-foundation",
+      "note": "Applicable Stage 1 contract is exercised by foundational crate tests."
+    },
+    {
+      "scenario_id": "session.reasoning-enabled",
+      "category": "sessions/v1",
+      "comparison_class": "security-invariant",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "foundational contract implemented"
+      ],
+      "owner": "stage-1-foundation",
+      "note": "Applicable Stage 1 contract is exercised by foundational crate tests."
+    },
+    {
+      "scenario_id": "session.replay-and-lineage",
+      "category": "sessions/v1",
+      "comparison_class": "schema-compatibility",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "session persistence stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "session.schema1-complete",
+      "category": "sessions/v1",
+      "comparison_class": "schema-compatibility",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "session persistence stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "session.unknown-fields",
+      "category": "sessions/v1",
+      "comparison_class": "schema-compatibility",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "foundational contract implemented"
+      ],
+      "owner": "stage-1-foundation",
+      "note": "Applicable Stage 1 contract is exercised by foundational crate tests."
+    },
+    {
+      "scenario_id": "tool.canonical-schemas",
+      "category": "tools",
+      "comparison_class": "exact-output",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "tools/process supervision stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "tool.command-cancellation",
+      "category": "tools",
+      "comparison_class": "security-invariant",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "tools/process supervision stage",
+      "note": "Python descendant leak retained as a negative fixture; Rust must not reproduce it."
+    },
+    {
+      "scenario_id": "tool.command-timeout",
+      "category": "tools",
+      "comparison_class": "security-invariant",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "tools/process supervision stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "tool.descendant-cleanup",
+      "category": "tools",
+      "comparison_class": "security-invariant",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "tools/process supervision stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "tool.patch-set-atomic",
+      "category": "tools",
+      "comparison_class": "security-invariant",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "tools/process supervision stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "tool.path-containment",
+      "category": "tools",
+      "comparison_class": "security-invariant",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "tools/process supervision stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "tool.read-write-edit-patch",
+      "category": "tools",
+      "comparison_class": "semantic-parity",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "tools/process supervision stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "tool.search-bounds",
+      "category": "tools",
+      "comparison_class": "semantic-parity",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "tools/process supervision stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "tool.symlink-escape",
+      "category": "tools",
+      "comparison_class": "security-invariant",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "tools/process supervision stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    },
+    {
+      "scenario_id": "tool.utf8-and-binary",
+      "category": "tools",
+      "comparison_class": "semantic-parity",
+      "coverage": [
+        "parsed",
+        "schema validated",
+        "deferred to owning migration stage"
+      ],
+      "owner": "tools/process supervision stage",
+      "note": "Fixture is authoritative but runtime behavior is intentionally not implemented in Stage 1."
+    }
+  ]
+}

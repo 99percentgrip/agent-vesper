@@ -1,0 +1,17 @@
+[package]
+name = "sqlite-fts5-spike"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.88"
+publish = false
+
+[features]
+default = ["bundled-sqlite"]
+bundled-sqlite = ["rusqlite/bundled"]
+system-sqlite = ["rusqlite/libsqlite3-sys"]
+
+[dependencies]
+rusqlite = { version = "=0.40.1", default-features = false }
+
+[dev-dependencies]
+tempfile = "=3.23.0"

@@ -1,0 +1,78 @@
+name: Foundation spike validation
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/foundation-spikes.yml"
+      - "fixtures/**"
+      - "spikes/**"
+
+permissions:
+  contents: read
+
+env:
+  RUSTUP_TOOLCHAIN: 1.88.0
+
+jobs:
+  rust-spikes:
+    name: ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x86_64
+            os: ubuntu-24.04
+          - target: linux-arm64
+            os: ubuntu-24.04-arm
+          - target: macos-intel
+            os: macos-15-intel
+          - target: macos-apple-silicon
+            os: macos-15
+          - target: windows-x86_64
+            os: windows-2025
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install MSRV
+        run: rustup toolchain install 1.88.0 --profile minimal
+      - name: ACP SDK spike
+        working-directory: spikes/acp-rust-protocol-v1
+        run: cargo +1.88.0 test --locked
+      - name: SSE transport spike
+        working-directory: spikes/rust-sse-transport
+        run: cargo +1.88.0 test --locked
+      - name: SQLite bundled FTS5 spike
+        working-directory: spikes/sqlite-fts5
+        run: cargo +1.88.0 test --locked
+      - name: Process conformance (Linux)
+        if: runner.os == 'Linux'
+        working-directory: spikes/process-sandbox
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap
+          cargo +1.88.0 test --locked
+      - name: Process and Seatbelt conformance (macOS)
+        if: runner.os == 'macOS'
+        working-directory: spikes/process-sandbox
+        run: sh scripts/macos-conformance.sh
+      - name: Process and Job Object conformance (Windows)
+        if: runner.os == 'Windows'
+        working-directory: spikes/process-sandbox
+        shell: pwsh
+        run: ./scripts/windows-conformance.ps1
+
+  system-sqlite-linux:
+    name: Linux system SQLite FTS5
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install MSRV
+        run: rustup toolchain install 1.88.0 --profile minimal
+      - name: Install SQLite development package
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
+      - name: System SQLite test
+        working-directory: spikes/sqlite-fts5
+        run: cargo +1.88.0 test --locked --no-default-features --features system-sqlite

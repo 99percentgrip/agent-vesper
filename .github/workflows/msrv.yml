@@ -1,0 +1,32 @@
+name: msrv
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  rust-1-88:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install MSRV
+        run: rustup toolchain install 1.88.0 --profile minimal
+      - name: Test foundational workspace at MSRV
+        run: cargo +1.88.0 test --workspace --all-features
+      - name: Verify Stage 2 contracts at MSRV
+        run: |
+          cargo +1.88.0 xtask fixtures coverage --stage 2
+          cargo +1.88.0 xtask contracts verify
+      - name: Verify Stage 3 GLM adapter at MSRV
+        run: |
+          cargo +1.88.0 xtask fixtures coverage --stage 3
+          cargo +1.88.0 xtask provider glm verify
+      - name: Verify Stage 5 read-only sessions at MSRV
+        run: |
+          cargo +1.88.0 xtask fixtures coverage --stage 5
+          cargo +1.88.0 xtask sessions verify

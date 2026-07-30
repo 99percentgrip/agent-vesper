@@ -1,0 +1,17 @@
+[package]
+name = "vesper-domain"
+description = "Provider-neutral domain contracts for Agent Vesper"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

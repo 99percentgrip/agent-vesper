@@ -1,0 +1,26 @@
+[package]
+name = "vesper-runtime"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+futures-util.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+vesper-domain = { path = "../vesper-domain", version = "=0.1.0" }
+vesper-provider = { path = "../vesper-provider", version = "=0.1.0" }
+vesper-sessions = { path = "../vesper-sessions", version = "=0.1.0" }
+
+[dev-dependencies]
+serde_json.workspace = true
+vesper-testkit = { path = "../vesper-testkit", version = "=0.1.0" }
+
+[lints]
+workspace = true

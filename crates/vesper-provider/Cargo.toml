@@ -1,0 +1,19 @@
+[package]
+name = "vesper-provider"
+description = "Provider capability and transport ports for Agent Vesper"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+futures-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+vesper-domain = { path = "../vesper-domain", version = "=0.1.0" }
+
+[lints]
+workspace = true

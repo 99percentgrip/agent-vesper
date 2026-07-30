@@ -1,0 +1,80 @@
+name: five-target-foundation
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  foundation:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x86_64
+            runner: ubuntu-24.04
+            platform_spike: linux
+          - target: linux-arm64
+            runner: ubuntu-24.04-arm
+            platform_spike: linux
+          - target: macos-intel
+            runner: macos-15-intel
+            platform_spike: macos
+          - target: macos-apple-silicon
+            runner: macos-15
+            platform_spike: macos
+          - target: windows-x86_64
+            runner: windows-2025
+            platform_spike: windows
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install pinned Rust toolchain
+        shell: bash
+        run: rustup toolchain install 1.95.0 --profile minimal
+      - name: Run eligible foundational tests
+        shell: bash
+        run: cargo test --workspace --all-features
+      - name: Validate fixtures and architecture
+        shell: bash
+        run: |
+          cargo xtask fixtures validate
+          cargo xtask fixtures verify-index
+          cargo xtask fixtures coverage --stage 2
+          cargo xtask fixtures coverage --stage 3
+          cargo xtask fixtures coverage --stage 4
+          cargo xtask fixtures coverage --stage 5
+          cargo xtask contracts verify
+          cargo xtask provider glm verify
+          cargo xtask runtime verify
+          cargo xtask acp verify
+          cargo xtask sessions verify
+          cargo xtask architecture
+      - name: Run Stage 4.1 process transcript blockers
+        shell: bash
+        timeout-minutes: 12
+        run: cargo test -p agent-vesper-acp --all-features --test process_blockers -- --test-threads=1
+      - name: Run process conformance tests
+        shell: bash
+        run: cargo test --manifest-path spikes/process-sandbox/Cargo.toml --test process_conformance
+      - name: Run Linux sandbox conformance
+        if: matrix.platform_spike == 'linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap
+          cargo test --manifest-path spikes/process-sandbox/Cargo.toml --test linux_bwrap
+      - name: Run macOS prepared conformance
+        if: matrix.platform_spike == 'macos'
+        shell: bash
+        run: bash spikes/process-sandbox/scripts/macos-conformance.sh
+      - name: Run Windows prepared conformance
+        if: matrix.platform_spike == 'windows'
+        shell: pwsh
+        run: ./spikes/process-sandbox/scripts/windows-conformance.ps1

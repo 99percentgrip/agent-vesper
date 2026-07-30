@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-vesper.invalid/schema/result-v1.schema.json",
+  "title": "Agent Vesper fixture result envelope v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "scenario_id",
+    "runner",
+    "runner_version",
+    "platform",
+    "events",
+    "final_state",
+    "persisted_files",
+    "file_hashes",
+    "file_modes_or_acl_status",
+    "process_observations",
+    "network_observations",
+    "logs",
+    "redaction_assertions",
+    "duration_metadata",
+    "result"
+  ],
+  "properties": {
+    "scenario_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$"},
+    "runner": {"enum": ["python-oracle", "rust-fixture-consumer", "rust-spike", "contract-generator"]},
+    "runner_version": {"type": "string", "minLength": 1, "maxLength": 64},
+    "platform": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["os", "arch", "runtime"],
+      "properties": {
+        "os": {"type": "string"},
+        "arch": {"type": "string"},
+        "runtime": {"type": "string"}
+      }
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["seq", "type", "data"],
+        "properties": {
+          "seq": {"type": "integer", "minimum": 0},
+          "type": {"type": "string", "minLength": 1},
+          "data": {"type": "object"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "final_state": {"type": "object"},
+    "persisted_files": {
+      "type": "array",
+      "items": {"type": "string"},
+      "uniqueItems": true
+    },
+    "file_hashes": {
+      "type": "object",
+      "additionalProperties": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+    },
+    "file_modes_or_acl_status": {
+      "type": "object",
+      "additionalProperties": {"type": "string"}
+    },
+    "process_observations": {"type": "object"},
+    "network_observations": {"type": "object"},
+    "logs": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "redaction_assertions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["canary", "absent"],
+        "properties": {
+          "canary": {"type": "string"},
+          "absent": {"type": "boolean"},
+          "locations_checked": {"type": "array", "items": {"type": "string"}}
+        },
+        "additionalProperties": false
+      }
+    },
+    "duration_metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["class", "milliseconds"],
+      "properties": {
+        "class": {"enum": ["instant", "bounded", "timeout", "cancelled"]},
+        "milliseconds": {"type": "number", "minimum": 0},
+        "range": {
+          "type": "array",
+          "prefixItems": [{"type": "number"}, {"type": "number"}],
+          "items": false
+        }
+      }
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "classification"],
+      "properties": {
+        "status": {"enum": ["pass", "fail", "timeout", "leak", "schema-error", "unsupported"]},
+        "classification": {"enum": ["confirmed", "reproduced", "locally-validated", "ci-validation-pending", "product-decision-pending", "unresolved"]},
+        "message": {"type": "string"}
+      }
+    }
+  }
+}

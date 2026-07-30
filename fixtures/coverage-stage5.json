@@ -1,0 +1,1691 @@
+{
+  "fixture_index_sha256": "d09edfe2169df49e0cfef9a66083a7df046651f441deb0e78bc0c855dec6db7a",
+  "fixture_provenance": {
+    "source_captured": 65,
+    "synthetic_contract": 11
+  },
+  "generated_by": "cargo xtask fixtures coverage --stage 5",
+  "scenarios": [
+    {
+      "category": "acp",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: ACP transport stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "ACP transport stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "acp.cancellation",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "acp",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: ACP transport stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "ACP transport stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "acp.capability-negotiation",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "acp",
+      "deferred_behavior": [],
+      "disk_invariance_proven": true,
+      "future_owner": null,
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": true,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "acp.close-session",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": true,
+      "test_references": [
+        "vesper-runtime persistent lifecycle tests",
+        "vesper-acp lifecycle mapping tests",
+        "agent-vesper-acp persistence process vectors"
+      ]
+    },
+    {
+      "category": "acp",
+      "deferred_behavior": [],
+      "disk_invariance_proven": true,
+      "future_owner": null,
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": true,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "acp.fork-session",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": true,
+      "test_references": [
+        "vesper-runtime persistent lifecycle tests",
+        "vesper-acp lifecycle mapping tests",
+        "agent-vesper-acp persistence process vectors"
+      ]
+    },
+    {
+      "category": "acp",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: ACP transport stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "ACP transport stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "acp.initialization",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "acp",
+      "deferred_behavior": [],
+      "disk_invariance_proven": true,
+      "future_owner": null,
+      "metadata_listing_implemented": true,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": true,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "acp.list-session",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": true,
+      "test_references": [
+        "vesper-runtime persistent lifecycle tests",
+        "vesper-acp lifecycle mapping tests",
+        "agent-vesper-acp persistence process vectors"
+      ]
+    },
+    {
+      "category": "acp",
+      "deferred_behavior": [],
+      "disk_invariance_proven": true,
+      "future_owner": null,
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": true,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": true,
+      "safe_replay_implemented": false,
+      "scenario_id": "acp.load-session",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": true,
+      "test_references": [
+        "vesper-runtime persistent lifecycle tests",
+        "vesper-acp lifecycle mapping tests",
+        "agent-vesper-acp persistence process vectors"
+      ]
+    },
+    {
+      "category": "acp",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: ACP transport stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "ACP transport stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "acp.new-session",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "acp",
+      "deferred_behavior": [],
+      "disk_invariance_proven": true,
+      "future_owner": null,
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": true,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": true,
+      "scenario_id": "acp.replay-order",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": true,
+      "test_references": [
+        "vesper-runtime persistent lifecycle tests",
+        "vesper-acp lifecycle mapping tests",
+        "agent-vesper-acp persistence process vectors"
+      ]
+    },
+    {
+      "category": "acp",
+      "deferred_behavior": [],
+      "disk_invariance_proven": true,
+      "future_owner": null,
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": true,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": true,
+      "safe_replay_implemented": false,
+      "scenario_id": "acp.resume-session",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": true,
+      "test_references": [
+        "vesper-runtime persistent lifecycle tests",
+        "vesper-acp lifecycle mapping tests",
+        "agent-vesper-acp persistence process vectors"
+      ]
+    },
+    {
+      "category": "acp",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: ACP transport stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "ACP transport stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "acp.slash-command",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "acp",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: ACP transport stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "ACP transport stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "acp.usage-update-order",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "contracts",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: stage-2-contracts"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "stage-2-contracts",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "contract.acp-message-id-linkage",
+      "schema_validated": true,
+      "source_or_synthetic": "synthetic-contract",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "contracts",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: stage-2-contracts"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "stage-2-contracts",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "contract.command-event-correlation",
+      "schema_validated": true,
+      "source_or_synthetic": "synthetic-contract",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "contracts",
+      "deferred_behavior": [],
+      "disk_invariance_proven": false,
+      "future_owner": null,
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": true,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "contract.error-redaction",
+      "schema_validated": true,
+      "source_or_synthetic": "synthetic-contract",
+      "stage5_contract_represented": true,
+      "test_references": [
+        "vesper-sessions adversarial tests",
+        "vesper-testkit session-store tests"
+      ]
+    },
+    {
+      "category": "contracts",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: stage-2-contracts"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "stage-2-contracts",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "contract.fallback-observable",
+      "schema_validated": true,
+      "source_or_synthetic": "synthetic-contract",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "contracts",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: stage-2-contracts"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "stage-2-contracts",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "contract.fragmented-parallel-tool-identity",
+      "schema_validated": true,
+      "source_or_synthetic": "synthetic-contract",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "contracts",
+      "deferred_behavior": [],
+      "disk_invariance_proven": false,
+      "future_owner": null,
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": true,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "contract.invalid-session-bound",
+      "schema_validated": true,
+      "source_or_synthetic": "synthetic-contract",
+      "stage5_contract_represented": true,
+      "test_references": [
+        "vesper-sessions adversarial tests",
+        "vesper-testkit session-store tests"
+      ]
+    },
+    {
+      "category": "contracts",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: stage-2-contracts"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "stage-2-contracts",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "contract.opaque-reasoning-continuation",
+      "schema_validated": true,
+      "source_or_synthetic": "synthetic-contract",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "contracts",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: stage-2-contracts"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "stage-2-contracts",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "contract.terminal-uniqueness",
+      "schema_validated": true,
+      "source_or_synthetic": "synthetic-contract",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "contracts",
+      "deferred_behavior": [],
+      "disk_invariance_proven": false,
+      "future_owner": null,
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": true,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "contract.unknown-extension-roundtrip",
+      "schema_validated": true,
+      "source_or_synthetic": "synthetic-contract",
+      "stage5_contract_represented": true,
+      "test_references": [
+        "vesper-sessions adversarial tests",
+        "vesper-testkit session-store tests"
+      ]
+    },
+    {
+      "category": "contracts",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: stage-2-contracts"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "stage-2-contracts",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "contract.unknown-finish-reason",
+      "schema_validated": true,
+      "source_or_synthetic": "synthetic-contract",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "contracts",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: stage-2-contracts"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "stage-2-contracts",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "contract.usage-provenance-modes",
+      "schema_validated": true,
+      "source_or_synthetic": "synthetic-contract",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "provider/glm",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: GLM provider stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "GLM provider stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "glm.blank-comment-lines",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "provider/glm",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: GLM provider stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "GLM provider stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "glm.cancel-before-connect",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "provider/glm",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: GLM provider stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "GLM provider stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "glm.cancel-before-headers",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "provider/glm",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: GLM provider stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "GLM provider stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "glm.cancel-mid-stream",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "provider/glm",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: GLM provider stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "GLM provider stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "glm.content-only",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "provider/glm",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: GLM provider stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "GLM provider stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "glm.continuation-cap",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "provider/glm",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: GLM provider stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "GLM provider stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "glm.done-marker",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "provider/glm",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: GLM provider stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "GLM provider stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "glm.fragmented-tool-call",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "provider/glm",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: GLM provider stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "GLM provider stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "glm.incomplete-eof-no-output",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "provider/glm",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: GLM provider stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "GLM provider stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "glm.incomplete-eof-visible-output",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "provider/glm",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: GLM provider stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "GLM provider stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "glm.interleaved-tool-indexes",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "provider/glm",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: GLM provider stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "GLM provider stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "glm.malformed-sse-line",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "provider/glm",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: GLM provider stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "GLM provider stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "glm.non-retryable-status",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "provider/glm",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: GLM provider stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "GLM provider stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "glm.output-length-continuation",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "provider/glm",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: GLM provider stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "GLM provider stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "glm.reasoning-then-content",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "provider/glm",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: GLM provider stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "GLM provider stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "glm.request-serialization",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "provider/glm",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: GLM provider stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "GLM provider stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "glm.retry-after-date",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "provider/glm",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: GLM provider stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "GLM provider stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "glm.retry-after-numeric",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "provider/glm",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: GLM provider stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "GLM provider stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "glm.retryable-status",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "provider/glm",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: GLM provider stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "GLM provider stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "glm.terminal-finish-reason",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "provider/glm",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: GLM provider stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "GLM provider stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "glm.usage-only-chunk",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "policy",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: policy integration stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "policy integration stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "policy.ask-channel-failure",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "policy",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: policy integration stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "policy integration stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "policy.bypass-deny",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "policy",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: policy integration stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "policy integration stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "policy.matrix",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "policy",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: policy integration stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "policy integration stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "policy.nested-workflow-denial",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "policy",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: policy integration stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "policy integration stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "policy.plan-mcp",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "policy",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: policy integration stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "policy integration stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "policy.readonly-destructive",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "process",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: tools/process supervision stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "tools/process supervision stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "process.direct-child",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "process",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: tools/process supervision stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "tools/process supervision stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "process.grandchild",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "process",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: tools/process supervision stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "tools/process supervision stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "process.huge-output",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "process",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: tools/process supervision stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "tools/process supervision stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "process.pipe-holder",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "security",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: owning security subsystem stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "owning security subsystem stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "security.canary-sinks",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "security",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: owning security subsystem stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "owning security subsystem stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "security.checkpoint-conflict",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "security",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: owning security subsystem stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "owning security subsystem stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "security.plugin-signature",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "security",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: owning security subsystem stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "owning security subsystem stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "security.promptware-wrapping",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "security",
+      "deferred_behavior": [],
+      "disk_invariance_proven": true,
+      "future_owner": null,
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": true,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "security.secret-redaction",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": true,
+      "test_references": [
+        "vesper-sessions adversarial tests",
+        "vesper-testkit session-store tests"
+      ]
+    },
+    {
+      "category": "sessions/v1",
+      "deferred_behavior": [],
+      "disk_invariance_proven": true,
+      "future_owner": null,
+      "metadata_listing_implemented": true,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": true,
+      "read_only_decode_implemented": true,
+      "runtime_load_resume_implemented": true,
+      "safe_replay_implemented": true,
+      "scenario_id": "session.corrupt-json",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": true,
+      "test_references": [
+        "vesper-sessions compatibility/metadata/conversion/replay tests",
+        "agent-vesper-acp persistence process vectors"
+      ]
+    },
+    {
+      "category": "sessions/v1",
+      "deferred_behavior": [],
+      "disk_invariance_proven": true,
+      "future_owner": null,
+      "metadata_listing_implemented": true,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": true,
+      "read_only_decode_implemented": true,
+      "runtime_load_resume_implemented": true,
+      "safe_replay_implemented": true,
+      "scenario_id": "session.minimal-legacy",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": true,
+      "test_references": [
+        "vesper-sessions compatibility/metadata/conversion/replay tests",
+        "agent-vesper-acp persistence process vectors"
+      ]
+    },
+    {
+      "category": "sessions/v1",
+      "deferred_behavior": [],
+      "disk_invariance_proven": true,
+      "future_owner": null,
+      "metadata_listing_implemented": true,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": true,
+      "read_only_decode_implemented": true,
+      "runtime_load_resume_implemented": true,
+      "safe_replay_implemented": true,
+      "scenario_id": "session.reasoning-disabled",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": true,
+      "test_references": [
+        "vesper-sessions compatibility/metadata/conversion/replay tests",
+        "agent-vesper-acp persistence process vectors"
+      ]
+    },
+    {
+      "category": "sessions/v1",
+      "deferred_behavior": [],
+      "disk_invariance_proven": true,
+      "future_owner": null,
+      "metadata_listing_implemented": true,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": true,
+      "read_only_decode_implemented": true,
+      "runtime_load_resume_implemented": true,
+      "safe_replay_implemented": true,
+      "scenario_id": "session.reasoning-enabled",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": true,
+      "test_references": [
+        "vesper-sessions compatibility/metadata/conversion/replay tests",
+        "agent-vesper-acp persistence process vectors"
+      ]
+    },
+    {
+      "category": "sessions/v1",
+      "deferred_behavior": [],
+      "disk_invariance_proven": true,
+      "future_owner": null,
+      "metadata_listing_implemented": true,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": true,
+      "read_only_decode_implemented": true,
+      "runtime_load_resume_implemented": true,
+      "safe_replay_implemented": true,
+      "scenario_id": "session.replay-and-lineage",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": true,
+      "test_references": [
+        "vesper-sessions compatibility/metadata/conversion/replay tests",
+        "agent-vesper-acp persistence process vectors"
+      ]
+    },
+    {
+      "category": "sessions/v1",
+      "deferred_behavior": [],
+      "disk_invariance_proven": true,
+      "future_owner": null,
+      "metadata_listing_implemented": true,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": true,
+      "read_only_decode_implemented": true,
+      "runtime_load_resume_implemented": true,
+      "safe_replay_implemented": true,
+      "scenario_id": "session.schema1-complete",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": true,
+      "test_references": [
+        "vesper-sessions compatibility/metadata/conversion/replay tests",
+        "agent-vesper-acp persistence process vectors"
+      ]
+    },
+    {
+      "category": "sessions/v1",
+      "deferred_behavior": [],
+      "disk_invariance_proven": true,
+      "future_owner": null,
+      "metadata_listing_implemented": true,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": true,
+      "read_only_decode_implemented": true,
+      "runtime_load_resume_implemented": true,
+      "safe_replay_implemented": true,
+      "scenario_id": "session.unknown-fields",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": true,
+      "test_references": [
+        "vesper-sessions compatibility/metadata/conversion/replay tests",
+        "agent-vesper-acp persistence process vectors"
+      ]
+    },
+    {
+      "category": "tools",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: tools/process supervision stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "tools/process supervision stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "tool.canonical-schemas",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "tools",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: tools/process supervision stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "tools/process supervision stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "tool.command-cancellation",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "tools",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: tools/process supervision stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "tools/process supervision stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "tool.command-timeout",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "tools",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: tools/process supervision stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "tools/process supervision stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "tool.descendant-cleanup",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "tools",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: tools/process supervision stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "tools/process supervision stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "tool.patch-set-atomic",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "tools",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: tools/process supervision stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "tools/process supervision stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "tool.path-containment",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "tools",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: tools/process supervision stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "tools/process supervision stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "tool.read-write-edit-patch",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "tools",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: tools/process supervision stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "tools/process supervision stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "tool.search-bounds",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "tools",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: tools/process supervision stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "tools/process supervision stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "tool.symlink-escape",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    },
+    {
+      "category": "tools",
+      "deferred_behavior": [
+        "not owned by Stage 5 read-only persistence: tools/process supervision stage"
+      ],
+      "disk_invariance_proven": false,
+      "future_owner": "tools/process supervision stage",
+      "metadata_listing_implemented": false,
+      "parsed": true,
+      "persistent_write_implemented": false,
+      "process_transcript_tested": false,
+      "read_only_decode_implemented": false,
+      "runtime_load_resume_implemented": false,
+      "safe_replay_implemented": false,
+      "scenario_id": "tool.utf8-and-binary",
+      "schema_validated": true,
+      "source_or_synthetic": "source-captured",
+      "stage5_contract_represented": false,
+      "test_references": [
+        "deferred to named future owner"
+      ]
+    }
+  ],
+  "schema_version": 1,
+  "source_commit": "bf4d4287e2e3320aa3f09015f678e6169d520045",
+  "stage": 5,
+  "summary": {
+    "by_category": {
+      "acp": 12,
+      "contracts": 11,
+      "policy": 6,
+      "process": 4,
+      "provider/glm": 21,
+      "security": 5,
+      "sessions/v1": 7,
+      "tools": 10
+    },
+    "persistent_writes": 0,
+    "process_transcript_scenarios": 14,
+    "session_source_scenarios": 7,
+    "stage5_contract_represented": 17,
+    "total": 76
+  }
+}

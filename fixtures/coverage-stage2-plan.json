@@ -1,0 +1,1361 @@
+{
+  "audited_scenarios": 53,
+  "scenarios": [
+    {
+      "category": "acp",
+      "evidence_strength": "source-exact",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-domain::command",
+        "vesper-domain::event",
+        "vesper-testkit::acp_contracts"
+      ],
+      "owning_future_stage": "ACP adapter and session-actor stages",
+      "runtime_surfaces": [
+        "ACP protocol-v1 wire mapping",
+        "ACP SDK dispatch",
+        "session actor state transitions"
+      ],
+      "scenario_id": "acp.cancellation",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "event-sequencing",
+        "harness-command",
+        "harness-event",
+        "typed-identities"
+      ]
+    },
+    {
+      "category": "acp",
+      "evidence_strength": "source-exact",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-domain::command",
+        "vesper-domain::event",
+        "vesper-testkit::acp_contracts"
+      ],
+      "owning_future_stage": "ACP adapter and session-actor stages",
+      "runtime_surfaces": [
+        "ACP protocol-v1 wire mapping",
+        "ACP SDK dispatch",
+        "session actor state transitions"
+      ],
+      "scenario_id": "acp.capability-negotiation",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "event-sequencing",
+        "harness-command",
+        "harness-event",
+        "typed-identities"
+      ]
+    },
+    {
+      "category": "acp",
+      "evidence_strength": "source-exact",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-domain::command",
+        "vesper-domain::event",
+        "vesper-testkit::acp_contracts"
+      ],
+      "owning_future_stage": "ACP adapter and session-actor stages",
+      "runtime_surfaces": [
+        "ACP protocol-v1 wire mapping",
+        "ACP SDK dispatch",
+        "session actor state transitions"
+      ],
+      "scenario_id": "acp.close-session",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "event-sequencing",
+        "harness-command",
+        "harness-event",
+        "typed-identities"
+      ]
+    },
+    {
+      "category": "acp",
+      "evidence_strength": "source-exact",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-domain::command",
+        "vesper-domain::event",
+        "vesper-testkit::acp_contracts"
+      ],
+      "owning_future_stage": "ACP adapter and session-actor stages",
+      "runtime_surfaces": [
+        "ACP protocol-v1 wire mapping",
+        "ACP SDK dispatch",
+        "session actor state transitions"
+      ],
+      "scenario_id": "acp.fork-session",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "event-sequencing",
+        "harness-command",
+        "harness-event",
+        "typed-identities"
+      ]
+    },
+    {
+      "category": "acp",
+      "evidence_strength": "source-exact",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-domain::command",
+        "vesper-domain::event",
+        "vesper-testkit::acp_contracts"
+      ],
+      "owning_future_stage": "ACP adapter and session-actor stages",
+      "runtime_surfaces": [
+        "ACP protocol-v1 wire mapping",
+        "ACP SDK dispatch",
+        "session actor state transitions"
+      ],
+      "scenario_id": "acp.initialization",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "event-sequencing",
+        "harness-command",
+        "harness-event",
+        "typed-identities"
+      ]
+    },
+    {
+      "category": "acp",
+      "evidence_strength": "source-exact",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-domain::command",
+        "vesper-domain::event",
+        "vesper-testkit::acp_contracts"
+      ],
+      "owning_future_stage": "ACP adapter and session-actor stages",
+      "runtime_surfaces": [
+        "ACP protocol-v1 wire mapping",
+        "ACP SDK dispatch",
+        "session actor state transitions"
+      ],
+      "scenario_id": "acp.list-session",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "event-sequencing",
+        "harness-command",
+        "harness-event",
+        "typed-identities"
+      ]
+    },
+    {
+      "category": "acp",
+      "evidence_strength": "source-exact",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-domain::command",
+        "vesper-domain::event",
+        "vesper-testkit::acp_contracts"
+      ],
+      "owning_future_stage": "ACP adapter and session-actor stages",
+      "runtime_surfaces": [
+        "ACP protocol-v1 wire mapping",
+        "ACP SDK dispatch",
+        "session actor state transitions"
+      ],
+      "scenario_id": "acp.load-session",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "event-sequencing",
+        "harness-command",
+        "harness-event",
+        "typed-identities"
+      ]
+    },
+    {
+      "category": "acp",
+      "evidence_strength": "source-exact",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-domain::command",
+        "vesper-domain::event",
+        "vesper-testkit::acp_contracts"
+      ],
+      "owning_future_stage": "ACP adapter and session-actor stages",
+      "runtime_surfaces": [
+        "ACP protocol-v1 wire mapping",
+        "ACP SDK dispatch",
+        "session actor state transitions"
+      ],
+      "scenario_id": "acp.new-session",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "event-sequencing",
+        "harness-command",
+        "harness-event",
+        "typed-identities"
+      ]
+    },
+    {
+      "category": "acp",
+      "evidence_strength": "source-exact",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-domain::command",
+        "vesper-domain::event",
+        "vesper-testkit::acp_contracts"
+      ],
+      "owning_future_stage": "ACP adapter and session-actor stages",
+      "runtime_surfaces": [
+        "ACP protocol-v1 wire mapping",
+        "ACP SDK dispatch",
+        "session actor state transitions"
+      ],
+      "scenario_id": "acp.replay-order",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "event-sequencing",
+        "harness-command",
+        "harness-event",
+        "typed-identities"
+      ]
+    },
+    {
+      "category": "acp",
+      "evidence_strength": "source-exact",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-domain::command",
+        "vesper-domain::event",
+        "vesper-testkit::acp_contracts"
+      ],
+      "owning_future_stage": "ACP adapter and session-actor stages",
+      "runtime_surfaces": [
+        "ACP protocol-v1 wire mapping",
+        "ACP SDK dispatch",
+        "session actor state transitions"
+      ],
+      "scenario_id": "acp.resume-session",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "event-sequencing",
+        "harness-command",
+        "harness-event",
+        "typed-identities"
+      ]
+    },
+    {
+      "category": "acp",
+      "evidence_strength": "source-exact",
+      "fixture_change_reason": "command/event correlation and legacy userMessageId placement are not explicit in the current result",
+      "fixture_change_required": true,
+      "implementation_tests_required": [
+        "vesper-domain::command",
+        "vesper-domain::event",
+        "vesper-testkit::acp_contracts"
+      ],
+      "owning_future_stage": "ACP adapter and session-actor stages",
+      "runtime_surfaces": [
+        "ACP protocol-v1 wire mapping",
+        "ACP SDK dispatch",
+        "session actor state transitions"
+      ],
+      "scenario_id": "acp.slash-command",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "event-sequencing",
+        "harness-command",
+        "harness-event",
+        "message-identity",
+        "runtime-command-correlation",
+        "typed-identities"
+      ]
+    },
+    {
+      "category": "acp",
+      "evidence_strength": "source-exact",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-domain::command",
+        "vesper-domain::event",
+        "vesper-testkit::acp_contracts"
+      ],
+      "owning_future_stage": "ACP adapter and session-actor stages",
+      "runtime_surfaces": [
+        "ACP protocol-v1 wire mapping",
+        "ACP SDK dispatch",
+        "session actor state transitions"
+      ],
+      "scenario_id": "acp.usage-update-order",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "event-sequencing",
+        "harness-command",
+        "harness-event",
+        "typed-identities"
+      ]
+    },
+    {
+      "category": "provider/glm",
+      "evidence_strength": "source-exact",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-provider::contract",
+        "vesper-testkit::provider_fixtures"
+      ],
+      "owning_future_stage": "Stage 3 GLM provider adapter",
+      "runtime_surfaces": [
+        "GLM request serialization",
+        "HTTP/SSE parsing",
+        "retry/Retry-After",
+        "network cancellation",
+        "GLM continuation wording"
+      ],
+      "scenario_id": "glm.blank-comment-lines",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "capability-and-fallback",
+        "finish-and-error",
+        "provider-request",
+        "provider-stream-event",
+        "visible-output"
+      ]
+    },
+    {
+      "category": "provider/glm",
+      "evidence_strength": "source-exact",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-provider::contract",
+        "vesper-testkit::provider_fixtures"
+      ],
+      "owning_future_stage": "Stage 3 GLM provider adapter",
+      "runtime_surfaces": [
+        "GLM request serialization",
+        "HTTP/SSE parsing",
+        "retry/Retry-After",
+        "network cancellation",
+        "GLM continuation wording"
+      ],
+      "scenario_id": "glm.cancel-before-connect",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "capability-and-fallback",
+        "finish-and-error",
+        "provider-request",
+        "provider-stream-event",
+        "visible-output"
+      ]
+    },
+    {
+      "category": "provider/glm",
+      "evidence_strength": "source-semantic",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-provider::contract",
+        "vesper-testkit::provider_fixtures"
+      ],
+      "owning_future_stage": "Stage 3 GLM provider adapter",
+      "runtime_surfaces": [
+        "GLM request serialization",
+        "HTTP/SSE parsing",
+        "retry/Retry-After",
+        "network cancellation",
+        "GLM continuation wording"
+      ],
+      "scenario_id": "glm.cancel-before-headers",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "capability-and-fallback",
+        "finish-and-error",
+        "provider-request",
+        "provider-stream-event",
+        "visible-output"
+      ]
+    },
+    {
+      "category": "provider/glm",
+      "evidence_strength": "source-semantic",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-provider::contract",
+        "vesper-testkit::provider_fixtures"
+      ],
+      "owning_future_stage": "Stage 3 GLM provider adapter",
+      "runtime_surfaces": [
+        "GLM request serialization",
+        "HTTP/SSE parsing",
+        "retry/Retry-After",
+        "network cancellation",
+        "GLM continuation wording"
+      ],
+      "scenario_id": "glm.cancel-mid-stream",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "capability-and-fallback",
+        "finish-and-error",
+        "provider-request",
+        "provider-stream-event",
+        "visible-output"
+      ]
+    },
+    {
+      "category": "provider/glm",
+      "evidence_strength": "source-exact",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-provider::contract",
+        "vesper-testkit::provider_fixtures"
+      ],
+      "owning_future_stage": "Stage 3 GLM provider adapter",
+      "runtime_surfaces": [
+        "GLM request serialization",
+        "HTTP/SSE parsing",
+        "retry/Retry-After",
+        "network cancellation",
+        "GLM continuation wording"
+      ],
+      "scenario_id": "glm.content-only",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "capability-and-fallback",
+        "finish-and-error",
+        "provider-request",
+        "provider-stream-event",
+        "visible-output"
+      ]
+    },
+    {
+      "category": "provider/glm",
+      "evidence_strength": "source-exact",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-provider::contract",
+        "vesper-testkit::provider_fixtures"
+      ],
+      "owning_future_stage": "Stage 3 GLM provider adapter",
+      "runtime_surfaces": [
+        "GLM request serialization",
+        "HTTP/SSE parsing",
+        "retry/Retry-After",
+        "network cancellation",
+        "GLM continuation wording"
+      ],
+      "scenario_id": "glm.continuation-cap",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "capability-and-fallback",
+        "finish-and-error",
+        "provider-request",
+        "provider-stream-event",
+        "visible-output"
+      ]
+    },
+    {
+      "category": "provider/glm",
+      "evidence_strength": "source-exact",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-provider::contract",
+        "vesper-testkit::provider_fixtures"
+      ],
+      "owning_future_stage": "Stage 3 GLM provider adapter",
+      "runtime_surfaces": [
+        "GLM request serialization",
+        "HTTP/SSE parsing",
+        "retry/Retry-After",
+        "network cancellation",
+        "GLM continuation wording"
+      ],
+      "scenario_id": "glm.done-marker",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "capability-and-fallback",
+        "finish-and-error",
+        "provider-request",
+        "provider-stream-event",
+        "visible-output"
+      ]
+    },
+    {
+      "category": "provider/glm",
+      "evidence_strength": "source-exact",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-provider::contract",
+        "vesper-testkit::provider_fixtures"
+      ],
+      "owning_future_stage": "Stage 3 GLM provider adapter",
+      "runtime_surfaces": [
+        "GLM request serialization",
+        "HTTP/SSE parsing",
+        "retry/Retry-After",
+        "network cancellation",
+        "GLM continuation wording"
+      ],
+      "scenario_id": "glm.fragmented-tool-call",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "capability-and-fallback",
+        "finish-and-error",
+        "provider-request",
+        "provider-stream-event",
+        "visible-output"
+      ]
+    },
+    {
+      "category": "provider/glm",
+      "evidence_strength": "source-exact",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-provider::contract",
+        "vesper-testkit::provider_fixtures"
+      ],
+      "owning_future_stage": "Stage 3 GLM provider adapter",
+      "runtime_surfaces": [
+        "GLM request serialization",
+        "HTTP/SSE parsing",
+        "retry/Retry-After",
+        "network cancellation",
+        "GLM continuation wording"
+      ],
+      "scenario_id": "glm.incomplete-eof-no-output",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "capability-and-fallback",
+        "finish-and-error",
+        "provider-request",
+        "provider-stream-event",
+        "visible-output"
+      ]
+    },
+    {
+      "category": "provider/glm",
+      "evidence_strength": "source-exact",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-provider::contract",
+        "vesper-testkit::provider_fixtures"
+      ],
+      "owning_future_stage": "Stage 3 GLM provider adapter",
+      "runtime_surfaces": [
+        "GLM request serialization",
+        "HTTP/SSE parsing",
+        "retry/Retry-After",
+        "network cancellation",
+        "GLM continuation wording"
+      ],
+      "scenario_id": "glm.incomplete-eof-visible-output",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "capability-and-fallback",
+        "finish-and-error",
+        "provider-request",
+        "provider-stream-event",
+        "visible-output"
+      ]
+    },
+    {
+      "category": "provider/glm",
+      "evidence_strength": "source-exact",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-provider::contract",
+        "vesper-testkit::provider_fixtures"
+      ],
+      "owning_future_stage": "Stage 3 GLM provider adapter",
+      "runtime_surfaces": [
+        "GLM request serialization",
+        "HTTP/SSE parsing",
+        "retry/Retry-After",
+        "network cancellation",
+        "GLM continuation wording"
+      ],
+      "scenario_id": "glm.interleaved-tool-indexes",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "capability-and-fallback",
+        "finish-and-error",
+        "provider-request",
+        "provider-stream-event",
+        "visible-output"
+      ]
+    },
+    {
+      "category": "provider/glm",
+      "evidence_strength": "source-exact",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-provider::contract",
+        "vesper-testkit::provider_fixtures"
+      ],
+      "owning_future_stage": "Stage 3 GLM provider adapter",
+      "runtime_surfaces": [
+        "GLM request serialization",
+        "HTTP/SSE parsing",
+        "retry/Retry-After",
+        "network cancellation",
+        "GLM continuation wording"
+      ],
+      "scenario_id": "glm.malformed-sse-line",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "capability-and-fallback",
+        "finish-and-error",
+        "provider-request",
+        "provider-stream-event",
+        "visible-output"
+      ]
+    },
+    {
+      "category": "provider/glm",
+      "evidence_strength": "source-exact",
+      "fixture_change_reason": "safe provider error serialization/redaction is not fully observable in the source fixture",
+      "fixture_change_required": true,
+      "implementation_tests_required": [
+        "vesper-provider::contract",
+        "vesper-testkit::provider_fixtures"
+      ],
+      "owning_future_stage": "Stage 3 GLM provider adapter",
+      "runtime_surfaces": [
+        "GLM request serialization",
+        "HTTP/SSE parsing",
+        "retry/Retry-After",
+        "network cancellation",
+        "GLM continuation wording"
+      ],
+      "scenario_id": "glm.non-retryable-status",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "capability-and-fallback",
+        "finish-and-error",
+        "provider-error-redaction",
+        "provider-request",
+        "provider-stream-event",
+        "visible-output"
+      ]
+    },
+    {
+      "category": "provider/glm",
+      "evidence_strength": "source-exact",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-provider::contract",
+        "vesper-testkit::provider_fixtures"
+      ],
+      "owning_future_stage": "Stage 3 GLM provider adapter",
+      "runtime_surfaces": [
+        "GLM request serialization",
+        "HTTP/SSE parsing",
+        "retry/Retry-After",
+        "network cancellation",
+        "GLM continuation wording"
+      ],
+      "scenario_id": "glm.output-length-continuation",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "capability-and-fallback",
+        "finish-and-error",
+        "provider-request",
+        "provider-stream-event",
+        "visible-output"
+      ]
+    },
+    {
+      "category": "provider/glm",
+      "evidence_strength": "source-exact",
+      "fixture_change_reason": "the source fixture covers visible reasoning but not opaque continuation records",
+      "fixture_change_required": true,
+      "implementation_tests_required": [
+        "vesper-provider::contract",
+        "vesper-testkit::provider_fixtures"
+      ],
+      "owning_future_stage": "Stage 3 GLM provider adapter",
+      "runtime_surfaces": [
+        "GLM request serialization",
+        "HTTP/SSE parsing",
+        "retry/Retry-After",
+        "network cancellation",
+        "GLM continuation wording"
+      ],
+      "scenario_id": "glm.reasoning-then-content",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "capability-and-fallback",
+        "finish-and-error",
+        "opaque-continuation",
+        "provider-request",
+        "provider-stream-event",
+        "reasoning-kinds",
+        "visible-output"
+      ]
+    },
+    {
+      "category": "provider/glm",
+      "evidence_strength": "source-exact",
+      "fixture_change_reason": "provider-neutral fallback decisions and request correlation are not source wire fields",
+      "fixture_change_required": true,
+      "implementation_tests_required": [
+        "vesper-provider::contract",
+        "vesper-testkit::provider_fixtures"
+      ],
+      "owning_future_stage": "Stage 3 GLM provider adapter",
+      "runtime_surfaces": [
+        "GLM request serialization",
+        "HTTP/SSE parsing",
+        "retry/Retry-After",
+        "network cancellation",
+        "GLM continuation wording"
+      ],
+      "scenario_id": "glm.request-serialization",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "capability-and-fallback",
+        "fallback-observation",
+        "finish-and-error",
+        "provider-request",
+        "provider-request-intents",
+        "provider-stream-event",
+        "request-correlation",
+        "visible-output"
+      ]
+    },
+    {
+      "category": "provider/glm",
+      "evidence_strength": "source-semantic",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-provider::contract",
+        "vesper-testkit::provider_fixtures"
+      ],
+      "owning_future_stage": "Stage 3 GLM provider adapter",
+      "runtime_surfaces": [
+        "GLM request serialization",
+        "HTTP/SSE parsing",
+        "retry/Retry-After",
+        "network cancellation",
+        "GLM continuation wording"
+      ],
+      "scenario_id": "glm.retry-after-date",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "capability-and-fallback",
+        "finish-and-error",
+        "provider-request",
+        "provider-stream-event",
+        "visible-output"
+      ]
+    },
+    {
+      "category": "provider/glm",
+      "evidence_strength": "source-semantic",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-provider::contract",
+        "vesper-testkit::provider_fixtures"
+      ],
+      "owning_future_stage": "Stage 3 GLM provider adapter",
+      "runtime_surfaces": [
+        "GLM request serialization",
+        "HTTP/SSE parsing",
+        "retry/Retry-After",
+        "network cancellation",
+        "GLM continuation wording"
+      ],
+      "scenario_id": "glm.retry-after-numeric",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "capability-and-fallback",
+        "finish-and-error",
+        "provider-request",
+        "provider-stream-event",
+        "visible-output"
+      ]
+    },
+    {
+      "category": "provider/glm",
+      "evidence_strength": "source-semantic",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-provider::contract",
+        "vesper-testkit::provider_fixtures"
+      ],
+      "owning_future_stage": "Stage 3 GLM provider adapter",
+      "runtime_surfaces": [
+        "GLM request serialization",
+        "HTTP/SSE parsing",
+        "retry/Retry-After",
+        "network cancellation",
+        "GLM continuation wording"
+      ],
+      "scenario_id": "glm.retryable-status",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "capability-and-fallback",
+        "finish-and-error",
+        "provider-request",
+        "provider-stream-event",
+        "visible-output"
+      ]
+    },
+    {
+      "category": "provider/glm",
+      "evidence_strength": "source-exact",
+      "fixture_change_reason": "the source fixture covers a known finish value but not unknown raw-value preservation",
+      "fixture_change_required": true,
+      "implementation_tests_required": [
+        "vesper-provider::contract",
+        "vesper-testkit::provider_fixtures"
+      ],
+      "owning_future_stage": "Stage 3 GLM provider adapter",
+      "runtime_surfaces": [
+        "GLM request serialization",
+        "HTTP/SSE parsing",
+        "retry/Retry-After",
+        "network cancellation",
+        "GLM continuation wording"
+      ],
+      "scenario_id": "glm.terminal-finish-reason",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "capability-and-fallback",
+        "finish-and-error",
+        "finish-preservation",
+        "provider-request",
+        "provider-stream-event",
+        "visible-output"
+      ]
+    },
+    {
+      "category": "provider/glm",
+      "evidence_strength": "source-exact",
+      "fixture_change_reason": "the source fixture does not distinguish normalized delta from cumulative accounting provenance",
+      "fixture_change_required": true,
+      "implementation_tests_required": [
+        "vesper-provider::contract",
+        "vesper-testkit::provider_fixtures"
+      ],
+      "owning_future_stage": "Stage 3 GLM provider adapter",
+      "runtime_surfaces": [
+        "GLM request serialization",
+        "HTTP/SSE parsing",
+        "retry/Retry-After",
+        "network cancellation",
+        "GLM continuation wording"
+      ],
+      "scenario_id": "glm.usage-only-chunk",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "capability-and-fallback",
+        "finish-and-error",
+        "provider-request",
+        "provider-stream-event",
+        "usage-kind",
+        "usage-provenance",
+        "visible-output"
+      ]
+    },
+    {
+      "category": "process",
+      "evidence_strength": "source-semantic",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-domain::tool",
+        "vesper-testkit::process_contracts"
+      ],
+      "owning_future_stage": "process-supervision and sandbox stages",
+      "runtime_surfaces": [
+        "process spawn/group ownership",
+        "timeout/cancellation cleanup",
+        "pipe draining",
+        "platform sandbox"
+      ],
+      "scenario_id": "process.direct-child",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "bounded-display",
+        "cancellation-terminal-classification",
+        "tool-result-status"
+      ]
+    },
+    {
+      "category": "process",
+      "evidence_strength": "source-semantic",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-domain::tool",
+        "vesper-testkit::process_contracts"
+      ],
+      "owning_future_stage": "process-supervision and sandbox stages",
+      "runtime_surfaces": [
+        "process spawn/group ownership",
+        "timeout/cancellation cleanup",
+        "pipe draining",
+        "platform sandbox"
+      ],
+      "scenario_id": "process.grandchild",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "bounded-display",
+        "cancellation-terminal-classification",
+        "tool-result-status"
+      ]
+    },
+    {
+      "category": "process",
+      "evidence_strength": "source-semantic",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-domain::tool",
+        "vesper-testkit::process_contracts"
+      ],
+      "owning_future_stage": "process-supervision and sandbox stages",
+      "runtime_surfaces": [
+        "process spawn/group ownership",
+        "timeout/cancellation cleanup",
+        "pipe draining",
+        "platform sandbox"
+      ],
+      "scenario_id": "process.huge-output",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "bounded-display",
+        "cancellation-terminal-classification",
+        "tool-result-status"
+      ]
+    },
+    {
+      "category": "process",
+      "evidence_strength": "source-semantic",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-domain::tool",
+        "vesper-testkit::process_contracts"
+      ],
+      "owning_future_stage": "process-supervision and sandbox stages",
+      "runtime_surfaces": [
+        "process spawn/group ownership",
+        "timeout/cancellation cleanup",
+        "pipe draining",
+        "platform sandbox"
+      ],
+      "scenario_id": "process.pipe-holder",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "bounded-display",
+        "cancellation-terminal-classification",
+        "tool-result-status"
+      ]
+    },
+    {
+      "category": "security",
+      "evidence_strength": "focused-canary",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-domain::compatibility",
+        "vesper-security contract tests"
+      ],
+      "owning_future_stage": "checkpoint stage",
+      "runtime_surfaces": [
+        "checkpoint conflict rollback"
+      ],
+      "scenario_id": "security.checkpoint-conflict",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "checkpoint-reference",
+        "extension-redaction-boundary",
+        "security-error"
+      ]
+    },
+    {
+      "category": "security",
+      "evidence_strength": "focused-canary",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-domain::compatibility",
+        "vesper-security contract tests"
+      ],
+      "owning_future_stage": "plugin stage",
+      "runtime_surfaces": [
+        "plugin signature and trust validation"
+      ],
+      "scenario_id": "security.plugin-signature",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "checkpoint-reference",
+        "extension-redaction-boundary",
+        "security-error"
+      ]
+    },
+    {
+      "category": "sessions/v1",
+      "evidence_strength": "source-exact",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-domain::compatibility",
+        "vesper-testkit::session_v1"
+      ],
+      "owning_future_stage": "session actor and persistence stages",
+      "runtime_surfaces": [
+        "session file discovery/read/write",
+        "session actor replay",
+        "persistent migration"
+      ],
+      "scenario_id": "session.corrupt-json",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "compatibility-defaults",
+        "legacy-session-v1-codec",
+        "session-lineage",
+        "unknown-field-preservation"
+      ]
+    },
+    {
+      "category": "sessions/v1",
+      "evidence_strength": "source-exact",
+      "fixture_change_reason": "the corpus covers omitted defaults but not invalid bounded identity behavior",
+      "fixture_change_required": true,
+      "implementation_tests_required": [
+        "vesper-domain::compatibility",
+        "vesper-testkit::session_v1"
+      ],
+      "owning_future_stage": "session actor and persistence stages",
+      "runtime_surfaces": [
+        "session file discovery/read/write",
+        "session actor replay",
+        "persistent migration"
+      ],
+      "scenario_id": "session.minimal-legacy",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "compatibility-bounds",
+        "compatibility-defaults",
+        "legacy-session-v1-codec",
+        "session-lineage",
+        "unknown-field-preservation"
+      ]
+    },
+    {
+      "category": "sessions/v1",
+      "evidence_strength": "source-exact",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-domain::compatibility",
+        "vesper-testkit::session_v1"
+      ],
+      "owning_future_stage": "session actor and persistence stages",
+      "runtime_surfaces": [
+        "session file discovery/read/write",
+        "session actor replay",
+        "persistent migration"
+      ],
+      "scenario_id": "session.replay-and-lineage",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "compatibility-defaults",
+        "legacy-session-v1-codec",
+        "session-lineage",
+        "unknown-field-preservation"
+      ]
+    },
+    {
+      "category": "sessions/v1",
+      "evidence_strength": "source-exact",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-domain::compatibility",
+        "vesper-testkit::session_v1"
+      ],
+      "owning_future_stage": "session actor and persistence stages",
+      "runtime_surfaces": [
+        "session file discovery/read/write",
+        "session actor replay",
+        "persistent migration"
+      ],
+      "scenario_id": "session.schema1-complete",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "compatibility-defaults",
+        "legacy-session-v1-codec",
+        "session-lineage",
+        "unknown-field-preservation"
+      ]
+    },
+    {
+      "category": "tools",
+      "evidence_strength": "source-exact",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-domain::tool",
+        "vesper-testkit::tool_contracts"
+      ],
+      "owning_future_stage": "tool catalog, filesystem, and process-supervision stages",
+      "runtime_surfaces": [
+        "tool registry/executor",
+        "filesystem/process behavior",
+        "permission integration"
+      ],
+      "scenario_id": "tool.canonical-schemas",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "execution-classification",
+        "tool-call-result-linkage",
+        "tool-definition",
+        "tool-result-status"
+      ]
+    },
+    {
+      "category": "tools",
+      "evidence_strength": "source-semantic",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-domain::tool",
+        "vesper-testkit::tool_contracts"
+      ],
+      "owning_future_stage": "tool catalog, filesystem, and process-supervision stages",
+      "runtime_surfaces": [
+        "tool registry/executor",
+        "filesystem/process behavior",
+        "permission integration"
+      ],
+      "scenario_id": "tool.command-cancellation",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "execution-classification",
+        "tool-call-result-linkage",
+        "tool-definition",
+        "tool-result-status"
+      ]
+    },
+    {
+      "category": "tools",
+      "evidence_strength": "focused-canary",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-domain::tool",
+        "vesper-testkit::tool_contracts"
+      ],
+      "owning_future_stage": "tool catalog, filesystem, and process-supervision stages",
+      "runtime_surfaces": [
+        "tool registry/executor",
+        "filesystem/process behavior",
+        "permission integration"
+      ],
+      "scenario_id": "tool.command-timeout",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "execution-classification",
+        "tool-call-result-linkage",
+        "tool-definition",
+        "tool-result-status"
+      ]
+    },
+    {
+      "category": "tools",
+      "evidence_strength": "source-semantic",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-domain::tool",
+        "vesper-testkit::tool_contracts"
+      ],
+      "owning_future_stage": "tool catalog, filesystem, and process-supervision stages",
+      "runtime_surfaces": [
+        "tool registry/executor",
+        "filesystem/process behavior",
+        "permission integration"
+      ],
+      "scenario_id": "tool.descendant-cleanup",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "execution-classification",
+        "tool-call-result-linkage",
+        "tool-definition",
+        "tool-result-status"
+      ]
+    },
+    {
+      "category": "tools",
+      "evidence_strength": "focused-canary",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-domain::tool",
+        "vesper-testkit::tool_contracts"
+      ],
+      "owning_future_stage": "tool catalog, filesystem, and process-supervision stages",
+      "runtime_surfaces": [
+        "tool registry/executor",
+        "filesystem/process behavior",
+        "permission integration"
+      ],
+      "scenario_id": "tool.patch-set-atomic",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "execution-classification",
+        "tool-call-result-linkage",
+        "tool-definition",
+        "tool-result-status"
+      ]
+    },
+    {
+      "category": "tools",
+      "evidence_strength": "source-semantic",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-domain::tool",
+        "vesper-testkit::tool_contracts"
+      ],
+      "owning_future_stage": "tool catalog, filesystem, and process-supervision stages",
+      "runtime_surfaces": [
+        "tool registry/executor",
+        "filesystem/process behavior",
+        "permission integration"
+      ],
+      "scenario_id": "tool.path-containment",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "execution-classification",
+        "tool-call-result-linkage",
+        "tool-definition",
+        "tool-result-status"
+      ]
+    },
+    {
+      "category": "tools",
+      "evidence_strength": "focused-canary",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-domain::tool",
+        "vesper-testkit::tool_contracts"
+      ],
+      "owning_future_stage": "tool catalog, filesystem, and process-supervision stages",
+      "runtime_surfaces": [
+        "tool registry/executor",
+        "filesystem/process behavior",
+        "permission integration"
+      ],
+      "scenario_id": "tool.read-write-edit-patch",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "execution-classification",
+        "tool-call-result-linkage",
+        "tool-definition",
+        "tool-result-status"
+      ]
+    },
+    {
+      "category": "tools",
+      "evidence_strength": "focused-canary",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-domain::tool",
+        "vesper-testkit::tool_contracts"
+      ],
+      "owning_future_stage": "tool catalog, filesystem, and process-supervision stages",
+      "runtime_surfaces": [
+        "tool registry/executor",
+        "filesystem/process behavior",
+        "permission integration"
+      ],
+      "scenario_id": "tool.search-bounds",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "execution-classification",
+        "tool-call-result-linkage",
+        "tool-definition",
+        "tool-result-status"
+      ]
+    },
+    {
+      "category": "tools",
+      "evidence_strength": "source-semantic",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-domain::tool",
+        "vesper-testkit::tool_contracts"
+      ],
+      "owning_future_stage": "tool catalog, filesystem, and process-supervision stages",
+      "runtime_surfaces": [
+        "tool registry/executor",
+        "filesystem/process behavior",
+        "permission integration"
+      ],
+      "scenario_id": "tool.symlink-escape",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "execution-classification",
+        "tool-call-result-linkage",
+        "tool-definition",
+        "tool-result-status"
+      ]
+    },
+    {
+      "category": "tools",
+      "evidence_strength": "focused-canary",
+      "fixture_change_reason": "existing source fixture plus contract/property tests is sufficient; runtime proof remains deferred",
+      "fixture_change_required": false,
+      "implementation_tests_required": [
+        "vesper-domain::tool",
+        "vesper-testkit::tool_contracts"
+      ],
+      "owning_future_stage": "tool catalog, filesystem, and process-supervision stages",
+      "runtime_surfaces": [
+        "tool registry/executor",
+        "filesystem/process behavior",
+        "permission integration"
+      ],
+      "scenario_id": "tool.utf8-and-binary",
+      "stage1_status": "deferred to owning migration stage",
+      "stage2_contract_surfaces": [
+        "execution-classification",
+        "tool-call-result-linkage",
+        "tool-definition",
+        "tool-result-status"
+      ]
+    }
+  ],
+  "schema_version": 1,
+  "source_commit": "bf4d4287e2e3320aa3f09015f678e6169d520045",
+  "stage": 2
+}

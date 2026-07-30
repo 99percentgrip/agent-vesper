@@ -1,0 +1,40 @@
+[package]
+name = "agent-vesper-acp"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[features]
+integration-test-harness = []
+
+[dependencies]
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+serde_json.workspace = true
+vesper-acp = { path = "../../crates/vesper-acp", version = "=0.1.0" }
+vesper-config = { path = "../../crates/vesper-config", version = "=0.1.0" }
+vesper-domain = { path = "../../crates/vesper-domain", version = "=0.1.0" }
+vesper-provider = { path = "../../crates/vesper-provider", version = "=0.1.0" }
+vesper-provider-glm = { path = "../../crates/vesper-provider-glm", version = "=0.1.0" }
+vesper-provider-synthetic = { path = "../../crates/vesper-provider-synthetic", version = "=0.1.0" }
+vesper-runtime = { path = "../../crates/vesper-runtime", version = "=0.1.0" }
+vesper-sessions = { path = "../../crates/vesper-sessions", version = "=0.1.0" }
+
+[dev-dependencies]
+sha2.workspace = true
+
+[[bin]]
+name = "agent-vesper-acp"
+path = "src/main.rs"
+
+[[bin]]
+name = "agent-vesper-acp-test-driver"
+path = "src/bin/agent-vesper-acp-test-driver.rs"
+required-features = ["integration-test-harness"]
+
+[lints]
+workspace = true

@@ -1,0 +1,1341 @@
+{
+  "fixture_index_sha256": "d09edfe2169df49e0cfef9a66083a7df046651f441deb0e78bc0c855dec6db7a",
+  "generated_by": "cargo xtask fixtures coverage --stage 3",
+  "scenarios": [
+    {
+      "cancellation_tested": false,
+      "category": "acp",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "ACP transport stage",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "acp.cancellation",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "acp",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "ACP transport stage",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "acp.capability-negotiation",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "acp",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "ACP transport stage",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "acp.close-session",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "acp",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "ACP transport stage",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "acp.fork-session",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "acp",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "ACP transport stage",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "acp.initialization",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "acp",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "ACP transport stage",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "acp.list-session",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "acp",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "ACP transport stage",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "acp.load-session",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "acp",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "ACP transport stage",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "acp.new-session",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "acp",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "ACP transport stage",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "acp.replay-order",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "acp",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "ACP transport stage",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "acp.resume-session",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "acp",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "ACP transport stage",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "acp.slash-command",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "acp",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "ACP transport stage",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "acp.usage-update-order",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "contracts",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "stage-2-contracts",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "contract.acp-message-id-linkage",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "contracts",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "stage-2-contracts",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "contract.command-event-correlation",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "contracts",
+      "contract_represented": true,
+      "error_behavior_tested": true,
+      "future_owner": null,
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": false,
+      "scenario_id": "contract.error-redaction",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "vesper-provider-glm unit tests",
+        "vesper-testkit conformance tests"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "contracts",
+      "contract_represented": true,
+      "error_behavior_tested": false,
+      "future_owner": null,
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": false,
+      "scenario_id": "contract.fallback-observable",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "vesper-provider-glm unit tests",
+        "vesper-testkit conformance tests"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "contracts",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "stage-2-contracts",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "contract.fragmented-parallel-tool-identity",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "contracts",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "stage-2-contracts",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "contract.invalid-session-bound",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "contracts",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "stage-2-contracts",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "contract.opaque-reasoning-continuation",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "contracts",
+      "contract_represented": true,
+      "error_behavior_tested": false,
+      "future_owner": null,
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": false,
+      "scenario_id": "contract.terminal-uniqueness",
+      "schema_validated": true,
+      "stream_behavior_tested": true,
+      "test_references": [
+        "vesper-provider-glm unit tests",
+        "vesper-testkit conformance tests"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "contracts",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "stage-2-contracts",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "contract.unknown-extension-roundtrip",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "contracts",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "stage-2-contracts",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "contract.unknown-finish-reason",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "contracts",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "stage-2-contracts",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "contract.usage-provenance-modes",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "provider/glm",
+      "contract_represented": true,
+      "error_behavior_tested": true,
+      "future_owner": null,
+      "glm_adapter_implemented": true,
+      "parsed": true,
+      "runtime_behavior_deferred": false,
+      "scenario_id": "glm.blank-comment-lines",
+      "schema_validated": true,
+      "stream_behavior_tested": true,
+      "test_references": [
+        "vesper-provider-glm::integration_tests",
+        "vesper-provider-glm unit tests"
+      ],
+      "wire_serialization_tested": true
+    },
+    {
+      "cancellation_tested": true,
+      "category": "provider/glm",
+      "contract_represented": true,
+      "error_behavior_tested": true,
+      "future_owner": null,
+      "glm_adapter_implemented": true,
+      "parsed": true,
+      "runtime_behavior_deferred": false,
+      "scenario_id": "glm.cancel-before-connect",
+      "schema_validated": true,
+      "stream_behavior_tested": true,
+      "test_references": [
+        "vesper-provider-glm::integration_tests",
+        "vesper-provider-glm unit tests"
+      ],
+      "wire_serialization_tested": true
+    },
+    {
+      "cancellation_tested": true,
+      "category": "provider/glm",
+      "contract_represented": true,
+      "error_behavior_tested": true,
+      "future_owner": null,
+      "glm_adapter_implemented": true,
+      "parsed": true,
+      "runtime_behavior_deferred": false,
+      "scenario_id": "glm.cancel-before-headers",
+      "schema_validated": true,
+      "stream_behavior_tested": true,
+      "test_references": [
+        "vesper-provider-glm::integration_tests",
+        "vesper-provider-glm unit tests"
+      ],
+      "wire_serialization_tested": true
+    },
+    {
+      "cancellation_tested": true,
+      "category": "provider/glm",
+      "contract_represented": true,
+      "error_behavior_tested": true,
+      "future_owner": null,
+      "glm_adapter_implemented": true,
+      "parsed": true,
+      "runtime_behavior_deferred": false,
+      "scenario_id": "glm.cancel-mid-stream",
+      "schema_validated": true,
+      "stream_behavior_tested": true,
+      "test_references": [
+        "vesper-provider-glm::integration_tests",
+        "vesper-provider-glm unit tests"
+      ],
+      "wire_serialization_tested": true
+    },
+    {
+      "cancellation_tested": false,
+      "category": "provider/glm",
+      "contract_represented": true,
+      "error_behavior_tested": true,
+      "future_owner": null,
+      "glm_adapter_implemented": true,
+      "parsed": true,
+      "runtime_behavior_deferred": false,
+      "scenario_id": "glm.content-only",
+      "schema_validated": true,
+      "stream_behavior_tested": true,
+      "test_references": [
+        "vesper-provider-glm::integration_tests",
+        "vesper-provider-glm unit tests"
+      ],
+      "wire_serialization_tested": true
+    },
+    {
+      "cancellation_tested": false,
+      "category": "provider/glm",
+      "contract_represented": true,
+      "error_behavior_tested": true,
+      "future_owner": null,
+      "glm_adapter_implemented": true,
+      "parsed": true,
+      "runtime_behavior_deferred": false,
+      "scenario_id": "glm.continuation-cap",
+      "schema_validated": true,
+      "stream_behavior_tested": true,
+      "test_references": [
+        "vesper-provider-glm::integration_tests",
+        "vesper-provider-glm unit tests"
+      ],
+      "wire_serialization_tested": true
+    },
+    {
+      "cancellation_tested": false,
+      "category": "provider/glm",
+      "contract_represented": true,
+      "error_behavior_tested": true,
+      "future_owner": null,
+      "glm_adapter_implemented": true,
+      "parsed": true,
+      "runtime_behavior_deferred": false,
+      "scenario_id": "glm.done-marker",
+      "schema_validated": true,
+      "stream_behavior_tested": true,
+      "test_references": [
+        "vesper-provider-glm::integration_tests",
+        "vesper-provider-glm unit tests"
+      ],
+      "wire_serialization_tested": true
+    },
+    {
+      "cancellation_tested": false,
+      "category": "provider/glm",
+      "contract_represented": true,
+      "error_behavior_tested": true,
+      "future_owner": null,
+      "glm_adapter_implemented": true,
+      "parsed": true,
+      "runtime_behavior_deferred": false,
+      "scenario_id": "glm.fragmented-tool-call",
+      "schema_validated": true,
+      "stream_behavior_tested": true,
+      "test_references": [
+        "vesper-provider-glm::integration_tests",
+        "vesper-provider-glm unit tests"
+      ],
+      "wire_serialization_tested": true
+    },
+    {
+      "cancellation_tested": false,
+      "category": "provider/glm",
+      "contract_represented": true,
+      "error_behavior_tested": true,
+      "future_owner": null,
+      "glm_adapter_implemented": true,
+      "parsed": true,
+      "runtime_behavior_deferred": false,
+      "scenario_id": "glm.incomplete-eof-no-output",
+      "schema_validated": true,
+      "stream_behavior_tested": true,
+      "test_references": [
+        "vesper-provider-glm::integration_tests",
+        "vesper-provider-glm unit tests"
+      ],
+      "wire_serialization_tested": true
+    },
+    {
+      "cancellation_tested": false,
+      "category": "provider/glm",
+      "contract_represented": true,
+      "error_behavior_tested": true,
+      "future_owner": null,
+      "glm_adapter_implemented": true,
+      "parsed": true,
+      "runtime_behavior_deferred": false,
+      "scenario_id": "glm.incomplete-eof-visible-output",
+      "schema_validated": true,
+      "stream_behavior_tested": true,
+      "test_references": [
+        "vesper-provider-glm::integration_tests",
+        "vesper-provider-glm unit tests"
+      ],
+      "wire_serialization_tested": true
+    },
+    {
+      "cancellation_tested": false,
+      "category": "provider/glm",
+      "contract_represented": true,
+      "error_behavior_tested": true,
+      "future_owner": null,
+      "glm_adapter_implemented": true,
+      "parsed": true,
+      "runtime_behavior_deferred": false,
+      "scenario_id": "glm.interleaved-tool-indexes",
+      "schema_validated": true,
+      "stream_behavior_tested": true,
+      "test_references": [
+        "vesper-provider-glm::integration_tests",
+        "vesper-provider-glm unit tests"
+      ],
+      "wire_serialization_tested": true
+    },
+    {
+      "cancellation_tested": false,
+      "category": "provider/glm",
+      "contract_represented": true,
+      "error_behavior_tested": true,
+      "future_owner": null,
+      "glm_adapter_implemented": true,
+      "parsed": true,
+      "runtime_behavior_deferred": false,
+      "scenario_id": "glm.malformed-sse-line",
+      "schema_validated": true,
+      "stream_behavior_tested": true,
+      "test_references": [
+        "vesper-provider-glm::integration_tests",
+        "vesper-provider-glm unit tests"
+      ],
+      "wire_serialization_tested": true
+    },
+    {
+      "cancellation_tested": false,
+      "category": "provider/glm",
+      "contract_represented": true,
+      "error_behavior_tested": true,
+      "future_owner": null,
+      "glm_adapter_implemented": true,
+      "parsed": true,
+      "runtime_behavior_deferred": false,
+      "scenario_id": "glm.non-retryable-status",
+      "schema_validated": true,
+      "stream_behavior_tested": true,
+      "test_references": [
+        "vesper-provider-glm::integration_tests",
+        "vesper-provider-glm unit tests"
+      ],
+      "wire_serialization_tested": true
+    },
+    {
+      "cancellation_tested": false,
+      "category": "provider/glm",
+      "contract_represented": true,
+      "error_behavior_tested": true,
+      "future_owner": null,
+      "glm_adapter_implemented": true,
+      "parsed": true,
+      "runtime_behavior_deferred": false,
+      "scenario_id": "glm.output-length-continuation",
+      "schema_validated": true,
+      "stream_behavior_tested": true,
+      "test_references": [
+        "vesper-provider-glm::integration_tests",
+        "vesper-provider-glm unit tests"
+      ],
+      "wire_serialization_tested": true
+    },
+    {
+      "cancellation_tested": false,
+      "category": "provider/glm",
+      "contract_represented": true,
+      "error_behavior_tested": true,
+      "future_owner": null,
+      "glm_adapter_implemented": true,
+      "parsed": true,
+      "runtime_behavior_deferred": false,
+      "scenario_id": "glm.reasoning-then-content",
+      "schema_validated": true,
+      "stream_behavior_tested": true,
+      "test_references": [
+        "vesper-provider-glm::integration_tests",
+        "vesper-provider-glm unit tests"
+      ],
+      "wire_serialization_tested": true
+    },
+    {
+      "cancellation_tested": false,
+      "category": "provider/glm",
+      "contract_represented": true,
+      "error_behavior_tested": true,
+      "future_owner": null,
+      "glm_adapter_implemented": true,
+      "parsed": true,
+      "runtime_behavior_deferred": false,
+      "scenario_id": "glm.request-serialization",
+      "schema_validated": true,
+      "stream_behavior_tested": true,
+      "test_references": [
+        "vesper-provider-glm::integration_tests",
+        "vesper-provider-glm unit tests"
+      ],
+      "wire_serialization_tested": true
+    },
+    {
+      "cancellation_tested": false,
+      "category": "provider/glm",
+      "contract_represented": true,
+      "error_behavior_tested": true,
+      "future_owner": null,
+      "glm_adapter_implemented": true,
+      "parsed": true,
+      "runtime_behavior_deferred": false,
+      "scenario_id": "glm.retry-after-date",
+      "schema_validated": true,
+      "stream_behavior_tested": true,
+      "test_references": [
+        "vesper-provider-glm::integration_tests",
+        "vesper-provider-glm unit tests"
+      ],
+      "wire_serialization_tested": true
+    },
+    {
+      "cancellation_tested": false,
+      "category": "provider/glm",
+      "contract_represented": true,
+      "error_behavior_tested": true,
+      "future_owner": null,
+      "glm_adapter_implemented": true,
+      "parsed": true,
+      "runtime_behavior_deferred": false,
+      "scenario_id": "glm.retry-after-numeric",
+      "schema_validated": true,
+      "stream_behavior_tested": true,
+      "test_references": [
+        "vesper-provider-glm::integration_tests",
+        "vesper-provider-glm unit tests"
+      ],
+      "wire_serialization_tested": true
+    },
+    {
+      "cancellation_tested": false,
+      "category": "provider/glm",
+      "contract_represented": true,
+      "error_behavior_tested": true,
+      "future_owner": null,
+      "glm_adapter_implemented": true,
+      "parsed": true,
+      "runtime_behavior_deferred": false,
+      "scenario_id": "glm.retryable-status",
+      "schema_validated": true,
+      "stream_behavior_tested": true,
+      "test_references": [
+        "vesper-provider-glm::integration_tests",
+        "vesper-provider-glm unit tests"
+      ],
+      "wire_serialization_tested": true
+    },
+    {
+      "cancellation_tested": false,
+      "category": "provider/glm",
+      "contract_represented": true,
+      "error_behavior_tested": true,
+      "future_owner": null,
+      "glm_adapter_implemented": true,
+      "parsed": true,
+      "runtime_behavior_deferred": false,
+      "scenario_id": "glm.terminal-finish-reason",
+      "schema_validated": true,
+      "stream_behavior_tested": true,
+      "test_references": [
+        "vesper-provider-glm::integration_tests",
+        "vesper-provider-glm unit tests"
+      ],
+      "wire_serialization_tested": true
+    },
+    {
+      "cancellation_tested": false,
+      "category": "provider/glm",
+      "contract_represented": true,
+      "error_behavior_tested": true,
+      "future_owner": null,
+      "glm_adapter_implemented": true,
+      "parsed": true,
+      "runtime_behavior_deferred": false,
+      "scenario_id": "glm.usage-only-chunk",
+      "schema_validated": true,
+      "stream_behavior_tested": true,
+      "test_references": [
+        "vesper-provider-glm::integration_tests",
+        "vesper-provider-glm unit tests"
+      ],
+      "wire_serialization_tested": true
+    },
+    {
+      "cancellation_tested": false,
+      "category": "policy",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "policy integration stage",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "policy.ask-channel-failure",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "policy",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "policy integration stage",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "policy.bypass-deny",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "policy",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "policy integration stage",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "policy.matrix",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "policy",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "policy integration stage",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "policy.nested-workflow-denial",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "policy",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "policy integration stage",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "policy.plan-mcp",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "policy",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "policy integration stage",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "policy.readonly-destructive",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "process",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "tools/process supervision stage",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "process.direct-child",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "process",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "tools/process supervision stage",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "process.grandchild",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "process",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "tools/process supervision stage",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "process.huge-output",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "process",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "tools/process supervision stage",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "process.pipe-holder",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "security",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "owning security subsystem stage",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "security.canary-sinks",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "security",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "owning security subsystem stage",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "security.checkpoint-conflict",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "security",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "owning security subsystem stage",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "security.plugin-signature",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "security",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "owning security subsystem stage",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "security.promptware-wrapping",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "security",
+      "contract_represented": true,
+      "error_behavior_tested": true,
+      "future_owner": null,
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": false,
+      "scenario_id": "security.secret-redaction",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "vesper-provider-glm unit tests",
+        "vesper-testkit conformance tests"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "sessions/v1",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "session persistence stage",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "session.corrupt-json",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "sessions/v1",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "session persistence stage",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "session.minimal-legacy",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "sessions/v1",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "session persistence stage",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "session.reasoning-disabled",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "sessions/v1",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "session persistence stage",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "session.reasoning-enabled",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "sessions/v1",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "session persistence stage",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "session.replay-and-lineage",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "sessions/v1",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "session persistence stage",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "session.schema1-complete",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "sessions/v1",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "session persistence stage",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "session.unknown-fields",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "tools",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "tools/process supervision stage",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "tool.canonical-schemas",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "tools",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "tools/process supervision stage",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "tool.command-cancellation",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "tools",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "tools/process supervision stage",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "tool.command-timeout",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "tools",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "tools/process supervision stage",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "tool.descendant-cleanup",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "tools",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "tools/process supervision stage",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "tool.patch-set-atomic",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "tools",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "tools/process supervision stage",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "tool.path-containment",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "tools",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "tools/process supervision stage",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "tool.read-write-edit-patch",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "tools",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "tools/process supervision stage",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "tool.search-bounds",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "tools",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "tools/process supervision stage",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "tool.symlink-escape",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    },
+    {
+      "cancellation_tested": false,
+      "category": "tools",
+      "contract_represented": false,
+      "error_behavior_tested": false,
+      "future_owner": "tools/process supervision stage",
+      "glm_adapter_implemented": false,
+      "parsed": true,
+      "runtime_behavior_deferred": true,
+      "scenario_id": "tool.utf8-and-binary",
+      "schema_validated": true,
+      "stream_behavior_tested": false,
+      "test_references": [
+        "deferred to named future owner"
+      ],
+      "wire_serialization_tested": false
+    }
+  ],
+  "schema_version": 1,
+  "source_commit": "bf4d4287e2e3320aa3f09015f678e6169d520045",
+  "stage": 3,
+  "summary": {
+    "by_category": {
+      "acp": 12,
+      "contracts": 11,
+      "policy": 6,
+      "process": 4,
+      "provider/glm": 21,
+      "security": 5,
+      "sessions/v1": 7,
+      "tools": 10
+    },
+    "glm_source_scenarios_implemented": 21,
+    "other_scenarios_deferred": 51,
+    "total": 76
+  }
+}
