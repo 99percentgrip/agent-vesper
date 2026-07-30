@@ -8,6 +8,22 @@ fn child() -> String {
     env!("CARGO_BIN_EXE_fixture-child").to_owned()
 }
 
+/// Cross-platform open-file-descriptor count for leak detection.
+///
+/// Returns `Some(count)` on Linux via `/proc/self/fd` and `None` on other Unix
+/// targets (macOS, FreeBSD, etc.) where `/proc` is unavailable. Callers must
+/// treat `None` as "assertion not applicable on this platform" rather than a
+/// failure, preserving the process-group-membership check for all Unix targets.
+#[cfg(target_os = "linux")]
+fn fd_count() -> Option<usize> {
+    std::fs::read_dir("/proc/self/fd").ok().map(|entries| entries.count())
+}
+
+#[cfg(not(target_os = "linux"))]
+fn fd_count() -> Option<usize> {
+    None
+}
+
 async fn wait_group_gone(group: i32) -> bool {
     for _ in 0..100 {
         if !process_group_exists(group) {
@@ -126,7 +142,7 @@ async fn silent_and_detached_looking_descendants_are_owned() {
 
 #[tokio::test]
 async fn process_group_membership_and_fd_count_are_stable() {
-    let before = std::fs::read_dir("/proc/self/fd").unwrap().count();
+    let before = fd_count();
     for _ in 0..4 {
         let run = spawn_supervised(child(), "silent", Duration::from_millis(75))
             .await
@@ -136,9 +152,14 @@ async fn process_group_membership_and_fd_count_are_stable() {
         let result = run.wait().await.unwrap();
         assert!(!result.group_survived);
     }
-    let after = std::fs::read_dir("/proc/self/fd").unwrap().count();
-    assert!(
-        after <= before + 1,
-        "file descriptor count grew from {before} to {after}"
-    );
+    let after = fd_count();
+    // The fd-leak assertion is Linux-only: /proc/self/fd does not exist on
+    // macOS or other Unix targets. The process-group-membership check above
+    // runs on all Unix platforms via libc::getpgid.
+    if let (Some(before), Some(after)) = (before, after) {
+        assert!(
+            after <= before + 1,
+            "file descriptor count grew from {before} to {after}"
+        );
+    }
 }
