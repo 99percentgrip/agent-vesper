@@ -9,6 +9,15 @@ on:
 permissions:
   contents: read
 
+# Use sccache globally for the entire workflow so every `rustc` invocation
+# (build, test, clippy, doc) hits the shared GitHub Actions cache backend.
+# `SCCACHE_GHA_ENABLED=true` makes sccache persist to the GHA cache, which
+# is content-addressed and far more effective than caching the entire
+# `target/` directory as a tarball (the old `swatinem/rust-cache` model).
+env:
+  RUSTC_WRAPPER: sccache
+  SCCACHE_GHA_ENABLED: "true"
+
 jobs:
   foundation:
     name: ${{ matrix.target }}
@@ -38,10 +47,8 @@ jobs:
       - name: Install pinned Rust toolchain
         shell: bash
         run: rustup toolchain install 1.95.0 --profile minimal
-      - name: Cache Cargo build artifacts
-        uses: swatinem/rust-cache@v2
-        with:
-          workspaces: ". -> target"
+      - name: Configure sccache
+        uses: mozilla-actions/sccache-action@v0.0.7
       - name: Run eligible foundational tests
         shell: bash
         run: cargo test --workspace --all-features

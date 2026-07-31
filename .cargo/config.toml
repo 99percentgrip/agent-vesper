@@ -1,5 +1,14 @@
-[alias]
-xtask = "run --package xtask --"
+# Repository-local Cargo configuration.
+#
+# Owned by `.cargo/AGENTS.md`. Currently this file only declares the
+# Windows (x86_64-pc-windows-msvc) linker override so the CI five-target
+# matrix links with the much faster self-contained `rust-lld` instead of
+# the default MSVC `link.exe`. The setting is target-scoped, so it is only
+# applied when building for that triple and never affects Linux/macOS.
+#
+# `rust-lld` ships with the Rust toolchain (self-contained) and the
+# `linker-flavor = "lld-link"` hint selects the MSVC LLD backend.
 
-[resolver]
-incompatible-rust-versions = "fallback"
+[target.x86_64-pc-windows-msvc]
+linker = "rust-lld"
+linker-flavor = "lld-link"
