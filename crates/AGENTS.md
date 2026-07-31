@@ -58,7 +58,7 @@ test-only conformance support.
 - `vesper-sessions/AGENTS.md` — read-only session ports, bounded compatibility
   decoding, conversion, identity, replay plans, layouts, metadata, and the
   Stage 6 transactional writer.
-- `vesper-agent/AGENTS.md` — **proposed (ADR 0010, Tier C).** The multi-turn
-  tool-executing agent loop, tool registry + executors, and permission
-  gating that compose `vesper-runtime`. Owns no provider-wire, ACP mapping,
-  or persistence internals.
+- `vesper-agent/AGENTS.md` — Tier C (ADR 0010). The multi-turn
+  tool-executing agent loop, tool registry + executors, and permission gating
+  that compose `vesper-runtime`. Owns no provider-wire, ACP mapping, or
+  persistence internals.

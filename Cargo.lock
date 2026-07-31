@@ -2972,6 +2972,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "vesper-agent"
+version = "0.1.0"
+dependencies = [
+ "futures-util",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "vesper-domain",
+ "vesper-provider",
+ "vesper-runtime",
+ "vesper-testkit",
+]
+
+[[package]]
 name = "vesper-config"
 version = "0.1.0"
 dependencies = [

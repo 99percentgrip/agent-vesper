@@ -4,6 +4,7 @@ members = [
     "apps/agent-vesper-tui",
     "crates/vesper-config",
     "crates/vesper-acp",
+    "crates/vesper-agent",
     "crates/vesper-domain",
     "crates/vesper-policy",
     "crates/vesper-provider",

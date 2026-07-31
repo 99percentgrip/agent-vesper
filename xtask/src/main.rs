@@ -1194,6 +1194,19 @@ fn allowed_dependencies() -> BTreeMap<&'static str, BTreeSet<&'static str>> {
             BTreeSet::from(["vesper-domain", "vesper-runtime"]),
         ),
         (
+            // ADR 0010 (Tier C): the agent loop composes the runtime's
+            // single-turn provider dispatch. Phase 1/2 stubs need domain +
+            // provider types and the runtime registry; Phase 4 adds policy +
+            // security when real executors arrive.
+            "vesper-agent",
+            BTreeSet::from([
+                "vesper-domain",
+                "vesper-provider",
+                "vesper-runtime",
+                "vesper-testkit",
+            ]),
+        ),
+        (
             "agent-vesper-acp",
             BTreeSet::from([
                 "vesper-acp",

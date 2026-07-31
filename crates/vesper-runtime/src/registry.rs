@@ -115,7 +115,13 @@ impl ProviderRegistry {
         Ok(())
     }
 
-    pub(crate) async fn create_session(
+    /// Creates a scoped provider session for direct turn dispatch.
+    ///
+    /// Public as the Tier C composition seam (ADR 0010): the `vesper-agent`
+    /// crate composes the runtime's provider dispatch into its multi-turn
+    /// tool-executing loop. The runtime itself stays single-turn — repeated
+    /// dispatch and tool-result feedback live in `vesper-agent`, not here.
+    pub async fn create_session(
         &self,
         provider_id: &ProviderId,
         configuration: &ProviderConfiguration,
