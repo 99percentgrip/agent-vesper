@@ -6,6 +6,13 @@ use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    // Meta flags (`--version`/`--help`) are handled BEFORE the ACP server
+    // boots so the installer's `agent-vesper-acp --version` check works and
+    // never tries to start the stdio protocol. Mirrors the original Python
+    // `native-glm-acp --version` UX.
+    if let Some(code) = handle_meta_flags() {
+        return code;
+    }
     configure_stderr_tracing();
     let outcome = match provider_from_argv() {
         Some(provider) => agent_vesper_acp::boot(&provider).await,
@@ -18,6 +25,51 @@ async fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// Handles `--version` / `-V` and `--help` / `-h`. Returns `Some(exit_code)`
+/// when a meta flag was handled (the program should exit with that code); the
+/// ACP server must not start in that case.
+///
+/// `--version` is required by the installers in `scripts/`. The output is a
+/// single stable line; stdout purity is unaffected because no ACP session is
+/// running when these flags are used.
+fn handle_meta_flags() -> Option<ExitCode> {
+    for arg in std::env::args().skip(1) {
+        match arg.as_str() {
+            "--version" | "-V" => {
+                // Stdout is reserved for ACP JSON-RPC (composition contract);
+                // route meta output to stderr so the server's stdout stays pure.
+                eprintln!("agent-vesper-acp {}", env!("CARGO_PKG_VERSION"));
+                return Some(ExitCode::SUCCESS);
+            }
+            "--help" | "-h" => {
+                print_help();
+                return Some(ExitCode::SUCCESS);
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn print_help() {
+    eprintln!("agent-vesper-acp {}", env!("CARGO_PKG_VERSION"));
+    eprintln!("ACP-protocol-v1 stdio server for Z.ai GLM models.");
+    eprintln!();
+    eprintln!("USAGE:");
+    eprintln!("    agent-vesper-acp [OPTIONS]");
+    eprintln!();
+    eprintln!("OPTIONS:");
+    eprintln!("        --provider <glm|synthetic>    Select the provider factory");
+    eprintln!("                                     (default: AGENT_VESPER_PROVIDER or glm)");
+    eprintln!("    -V, --version                    Print version and exit");
+    eprintln!("    -h, --help                       Print this help and exit");
+    eprintln!();
+    eprintln!("ENVIRONMENT:");
+    eprintln!("    ZAI_API_KEY                      Z.ai API key (required for the GLM provider)");
+    eprintln!("    AGENT_VESPER_PROVIDER            Default provider (glm|synthetic)");
+    eprintln!("    AGENT_VESPER_LOG                 Tracing filter (default: warn, stderr only)");
 }
 
 /// Parses a `--provider <value>` or `--provider=<value>` CLI flag.

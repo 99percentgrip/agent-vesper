@@ -193,6 +193,14 @@ fn apply_outcome(
             *status = Some(format!("{count} active superpower override(s)."));
         }
         CommandOutcome::Help(text) => transcript.push(text),
+        CommandOutcome::Version => {
+            transcript.push(format!("agent-vesper {}", env!("CARGO_PKG_VERSION")));
+            *status = Some(format!("v{}", env!("CARGO_PKG_VERSION")));
+        }
+        CommandOutcome::ClearView => {
+            transcript.clear();
+            *status = Some("Transcript cleared.".into());
+        }
         CommandOutcome::Quit => {}
     }
 }
@@ -544,6 +552,48 @@ mod integration_tests {
                 .status
                 .as_ref()
                 .is_some_and(|status| !status.is_empty())
+        );
+    }
+
+    #[test]
+    fn version_command_surfaces_the_workspace_version() {
+        let registry = registry();
+        let surface = surface();
+        let mut state = SessionState::new();
+
+        step(&mut state, &registry, &surface, "/version");
+        assert!(
+            state
+                .transcript
+                .iter()
+                .any(|line| line.contains("agent-vesper")),
+            "version must surface the agent identity"
+        );
+        assert!(
+            state
+                .status
+                .as_ref()
+                .is_some_and(|status| status.contains(&env!("CARGO_PKG_VERSION").to_string()))
+        );
+    }
+
+    #[test]
+    fn clear_view_command_empties_the_transcript() {
+        let registry = registry();
+        let surface = surface();
+        let mut state = SessionState::new();
+
+        // Seed some transcript + a status.
+        step(&mut state, &registry, &surface, "hello");
+        assert!(!state.transcript.is_empty());
+
+        step(&mut state, &registry, &surface, "/clear-view");
+        assert!(state.transcript.is_empty(), "transcript must be cleared");
+        assert!(
+            state
+                .status
+                .as_ref()
+                .is_some_and(|status| status.contains("cleared"))
         );
     }
 }

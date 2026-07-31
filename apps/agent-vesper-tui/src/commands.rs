@@ -83,6 +83,10 @@ pub enum CommandOutcome {
     },
     /// Help/usage text to display.
     Help(String),
+    /// `/version` — surface the agent binary's version.
+    Version,
+    /// `/clear-view` — clear only the visible transcript (not Plan Mode state).
+    ClearView,
     /// Quit/exit requested.
     Quit,
     /// Unknown command or invalid argument; the message is shown to the user.
@@ -116,8 +120,19 @@ impl CommandRegistry {
     pub fn stage_11b() -> Self {
         // ADR 0009: `/effort` is retired — the GLM reasoning dial collapsed to
         // the single `/thinking` control. `low`/`medium` are no longer valid.
+        // `version` and `clear-view` mirror the Python oracle's commands that
+        // need no Tier-C tool execution.
         let names = [
-            "plan", "review", "approve", "cancel", "thinking", "model", "help", "quit",
+            "plan",
+            "review",
+            "approve",
+            "cancel",
+            "thinking",
+            "model",
+            "version",
+            "clear-view",
+            "help",
+            "quit",
         ]
         .into_iter()
         .map(str::to_string)
@@ -187,6 +202,8 @@ impl CommandRegistry {
                     self.resolve_superpower(name, argument, active_provider, superpowers)
                 }
                 "help" => CommandOutcome::Help(self.help_text()),
+                "version" => CommandOutcome::Version,
+                "clear-view" => CommandOutcome::ClearView,
                 "quit" | "exit" => CommandOutcome::Quit,
                 other => CommandOutcome::Error(format!("Unknown command: /{other}")),
             },
@@ -264,6 +281,8 @@ impl CommandRegistry {
         buffer.push_str("  /cancel          — abort the in-flight plan\n");
         buffer.push_str("  /thinking <lvl>  — session reasoning (disabled/enabled/high/max)\n");
         buffer.push_str("  /model <name>    — switch the active model\n");
+        buffer.push_str("  /version         — print the agent version\n");
+        buffer.push_str("  /clear-view      — clear the visible transcript\n");
         buffer.push_str("  /help            — show this help\n");
         buffer.push_str("  /quit            — exit the TUI\n");
         buffer
@@ -593,6 +612,8 @@ mod tests {
         assert!(registry.contains("plan"));
         assert!(registry.contains("approve"));
         assert!(registry.contains("thinking"));
+        assert!(registry.contains("version"));
+        assert!(registry.contains("clear-view"));
         assert!(!registry.contains("effort"), "ADR 0009 retires /effort");
         assert!(!registry.contains("frobnicate"));
         assert_eq!(
@@ -604,6 +625,8 @@ mod tests {
                 "cancel".into(),
                 "thinking".into(),
                 "model".into(),
+                "version".into(),
+                "clear-view".into(),
                 "help".into(),
                 "quit".into(),
             ]

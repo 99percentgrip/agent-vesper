@@ -108,6 +108,8 @@ When the user requests a durable behavior change, record it here or in the relev
 - `.cargo/AGENTS.md` — repository-local Cargo command and resolver policy.
 - `crates/AGENTS.md` — production foundational crate boundaries and dependency direction.
 - `apps/AGENTS.md` — thin production composition binaries.
+- `registry/AGENTS.md` — ACP registry manifest for Zed discovery/install.
+- `scripts/AGENTS.md` — cross-platform installers for the `agent-vesper-acp` binary.
 - `spikes/AGENTS.md` — disposable Rust compatibility and platform experiments.
 - `tools/AGENTS.md` — non-production migration tooling and oracle ownership.
 - `xtask/AGENTS.md` — repository verification, fixture, architecture, and MSRV commands.
