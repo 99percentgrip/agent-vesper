@@ -55,6 +55,7 @@ fn saveable_snapshot(id: &str) -> SessionSnapshot {
         closed: false,
         replay: None,
         compatibility: None,
+        reasoning: None,
     }
 }
 

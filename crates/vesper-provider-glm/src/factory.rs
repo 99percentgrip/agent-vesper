@@ -165,41 +165,33 @@ fn glm_superpowers() -> Vec<vesper_provider::SuperpowerDescriptor> {
 
     let provider_id = provider_id();
 
-    // Order: effort dial, interleaved-thinking toggle, model selector.
+    // ADR 0009: a single session-scoped reasoning dial matching the Python
+    // oracle's `thought_level` scale `{disabled, enabled, high, max}`. The
+    // former separate `zai:effort` (request-scoped) and
+    // `zai:interleaved-thinking` (toggle) controls are collapsed into this one
+    // dial; `low`/`medium` are intentionally absent — the oracle never emits
+    // them as `reasoning_effort` (only `high`/`max`).
     vec![
-        // Per-request effort dial exposed by the GLM coding endpoint.
         SuperpowerDescriptor {
-            id: BoundedString::new("zai:effort").expect("bounded superpower id"),
+            id: BoundedString::new("zai:reasoning").expect("bounded superpower id"),
             provider_id: provider_id.clone(),
-            display_name: BoundedString::new("Effort").expect("bounded display"),
+            display_name: BoundedString::new("Thinking").expect("bounded display"),
             kind: SuperpowerKind::Choice,
-            scope: SuperpowerScope::Request,
+            scope: SuperpowerScope::Session,
             default_value: SuperpowerValue::Choice {
-                value: BoundedString::new("high").expect("bounded value"),
+                value: BoundedString::new("enabled").expect("bounded value"),
             },
-            allowed_values: ["low", "medium", "high", "max"]
+            allowed_values: ["disabled", "enabled", "high", "max"]
                 .into_iter()
                 .map(|raw| SuperpowerValue::Choice {
                     value: BoundedString::new(raw).expect("bounded value"),
                 })
                 .collect(),
-            command_alias: Some(BoundedString::new("effort").expect("bounded alias")),
+            command_alias: Some(BoundedString::new("thinking").expect("bounded alias")),
             help: Some(
-                BoundedString::new("Set per-request Z.ai effort (low/medium/high/max).")
+                BoundedString::new("Session reasoning depth (disabled/enabled/high/max).")
                     .expect("bounded help"),
             ),
-        },
-        // Interleaved thinking toggle (deep reasoning interleaved with tool calls).
-        SuperpowerDescriptor {
-            id: BoundedString::new("zai:interleaved-thinking").expect("bounded superpower id"),
-            provider_id: provider_id.clone(),
-            display_name: BoundedString::new("Interleaved Thinking").expect("bounded display"),
-            kind: SuperpowerKind::Toggle,
-            scope: SuperpowerScope::Both,
-            default_value: SuperpowerValue::Flag { value: true },
-            allowed_values: Vec::new(),
-            command_alias: Some(BoundedString::new("thinking").expect("bounded alias")),
-            help: Some(BoundedString::new("Toggle interleaved thinking.").expect("bounded help")),
         },
         // Model selector: applies to the whole session.
         SuperpowerDescriptor {
@@ -223,8 +215,108 @@ fn glm_superpowers() -> Vec<vesper_provider::SuperpowerDescriptor> {
     ]
 }
 
+/// The canonical reasoning-mode labels accepted by the reconciled
+/// `zai:reasoning` dial (ADR 0009). Mirrors the Python oracle's
+/// `THOUGHT_LEVELS` scale.
+pub const GLM_REASONING_MODES: [&str; 4] = ["disabled", "enabled", "high", "max"];
+
+/// Maps a `SuperpowerValue` resolved against the `zai:reasoning` descriptor into
+/// the opaque reasoning-mode label carried by `UpdateSessionReasoning` and
+/// ultimately by `ProviderRequest.reasoning.mode`.
+///
+/// Composition boundaries (e.g. the TUI) call this to translate a parsed
+/// `/thinking <level>` into the runtime command's mode field. Only the four
+/// oracle-faithful labels are accepted; `low`/`medium` are rejected.
+pub fn reasoning_mode_for_superpower(
+    value: &vesper_provider::SuperpowerValue,
+) -> Result<BoundedString<128>, crate::error::GlmAdapterError> {
+    let vesper_provider::SuperpowerValue::Choice { value } = value else {
+        return Err(crate::error::GlmAdapterError::Configuration(
+            "reasoning superpower expects a choice value",
+        ));
+    };
+    if !GLM_REASONING_MODES.contains(&value.as_str()) {
+        return Err(crate::error::GlmAdapterError::Configuration(
+            "reasoning mode must be one of disabled/enabled/high/max",
+        ));
+    }
+    Ok(value.clone())
+}
+
 impl vesper_provider::ProviderSuperpowers for GlmFactory {
     fn superpowers(&self) -> Vec<vesper_provider::SuperpowerDescriptor> {
         glm_superpowers()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! ADR 0009: the reconciled reasoning dial and its `SuperpowerValue →
+    //! mode` mapper. Asserts the oracle-faithful `{disabled, enabled, high,
+    //! max}` scale and that `low`/`medium` are rejected.
+
+    use super::*;
+    use vesper_domain::BoundedString;
+    use vesper_provider::{SuperpowerKind, SuperpowerScope, SuperpowerValue};
+
+    #[test]
+    fn reasoning_dial_is_single_session_scoped_with_oracle_scale() {
+        let descriptors = glm_superpowers();
+        let reasoning = descriptors
+            .iter()
+            .find(|descriptor| descriptor.id.as_str() == "zai:reasoning")
+            .expect("reconciled reasoning dial must be advertised");
+        assert_eq!(reasoning.kind, SuperpowerKind::Choice);
+        assert_eq!(reasoning.scope, SuperpowerScope::Session);
+        assert_eq!(
+            reasoning.command_alias.as_ref().map(|alias| alias.as_str()),
+            Some("thinking")
+        );
+        let allowed: Vec<&str> = reasoning
+            .allowed_values
+            .iter()
+            .filter_map(|value| match value {
+                SuperpowerValue::Choice { value } => Some(value.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(allowed, ["disabled", "enabled", "high", "max"]);
+    }
+
+    #[test]
+    fn former_effort_and_thinking_descriptors_are_gone() {
+        let descriptors = glm_superpowers();
+        assert!(
+            descriptors
+                .iter()
+                .all(|descriptor| descriptor.id.as_str() != "zai:effort"
+                    && descriptor.id.as_str() != "zai:interleaved-thinking"),
+            "the split effort/thinking controls must be collapsed (ADR 0009)"
+        );
+    }
+
+    #[test]
+    fn mapper_accepts_each_oracle_mode() {
+        for raw in GLM_REASONING_MODES {
+            let value = SuperpowerValue::Choice {
+                value: BoundedString::new(raw).unwrap(),
+            };
+            let mode = reasoning_mode_for_superpower(&value).unwrap();
+            assert_eq!(mode.as_str(), raw);
+        }
+    }
+
+    #[test]
+    fn mapper_rejects_invalid_modes_and_non_choice_values() {
+        // `low`/`medium` are invented values, not in the oracle.
+        for raw in ["low", "medium", "turbo"] {
+            let value = SuperpowerValue::Choice {
+                value: BoundedString::new(raw).unwrap(),
+            };
+            assert!(reasoning_mode_for_superpower(&value).is_err());
+        }
+        // A toggle/flag is the wrong value shape.
+        let flag = SuperpowerValue::Flag { value: true };
+        assert!(reasoning_mode_for_superpower(&flag).is_err());
     }
 }

@@ -612,3 +612,196 @@ async fn duplicate_and_unknown_providers_are_rejected() {
             .await
     );
 }
+
+#[tokio::test]
+async fn session_reasoning_override_threads_into_the_provider_request() {
+    // ADR 0009 / Tier A: a session-scoped reasoning override set via the
+    // UpdateSessionReasoning command must reach the provider request that the
+    // next turn dispatches. This test holds the FakeProviderSession handle so
+    // it can inspect the captured request directly.
+    let provider_id = ProviderId::new("test.fake").unwrap();
+    let events = vec![
+        Ok(ProviderStreamEvent::ResponseStarted {
+            response_id: None,
+            metadata: ExtensionMap::default(),
+        }),
+        Ok(ProviderStreamEvent::ContentDelta {
+            stream_id: BoundedString::new("content").unwrap(),
+            part: ContentPart::Text(ContentText::new("ok").unwrap()),
+        }),
+        Ok(ProviderStreamEvent::Completed {
+            finish: FinishOutcome::Stop,
+            metadata: ExtensionMap::default(),
+        }),
+    ];
+    let fake = FakeProviderSession::with_scripts([Ok(events)]);
+    let providers = Arc::new(ProviderRegistry::new());
+    providers
+        .register(FakeFactory {
+            id: provider_id.clone(),
+            session: fake.clone(),
+        })
+        .await
+        .unwrap();
+    // No default reasoning: proves the override — not a default — drives the
+    // request.
+    let runtime = Arc::new(RuntimeSupervisor::new(
+        providers,
+        RuntimeDefaults {
+            provider_configuration: configuration(&provider_id),
+            model: QualifiedModelId {
+                provider_id,
+                model_id: ModelId::new("fixture-model").unwrap(),
+            },
+            endpoint: EndpointId::new("test-endpoint").unwrap(),
+            system_instructions: Vec::new(),
+            reasoning: None,
+            sampling: None,
+            maximum_output_tokens: None,
+        },
+    ));
+
+    let RuntimeResponse::Session(session) = runtime.execute(create(1)).await.unwrap() else {
+        panic!("expected session");
+    };
+
+    // Apply the session-scoped reasoning override (the `/thinking max` path).
+    runtime
+        .execute(command(
+            HarnessCommandPayload::UpdateSessionReasoning {
+                session_id: session.session_id.clone(),
+                mode: Some(BoundedString::new("max").unwrap()),
+            },
+            2,
+        ))
+        .await
+        .unwrap();
+
+    // Submit one prompt and let the turn finish so the request is captured.
+    let response = runtime
+        .execute(command(
+            HarnessCommandPayload::SubmitPrompt {
+                session_id: session.session_id.clone(),
+                prompt: PromptSubmission {
+                    message_id: MessageId::new("client-message").unwrap(),
+                    content: vec![ContentPart::Text(ContentText::new("hello").unwrap())],
+                    extensions: ExtensionMap::default(),
+                },
+            },
+            3,
+        ))
+        .await
+        .unwrap();
+    response.wait_prompt().await.unwrap();
+
+    let captured = fake.requests();
+    assert_eq!(captured.len(), 1, "exactly one provider turn should run");
+    let reasoning = captured[0]
+        .reasoning
+        .as_ref()
+        .expect("request must carry the session reasoning override");
+    assert_eq!(
+        reasoning.mode.as_ref().map(|mode| mode.as_str()),
+        Some("max"),
+        "the session override must thread into ProviderRequest.reasoning.mode"
+    );
+}
+
+#[tokio::test]
+async fn clearing_the_session_reasoning_falls_back_to_the_runtime_default() {
+    // With no session override, the runtime default reasoning (here `high`)
+    // must be the value carried into the request. Then clearing an explicit
+    // override must restore that fallback.
+    let provider_id = ProviderId::new("test.fake").unwrap();
+    let events = || {
+        vec![Ok(ProviderStreamEvent::Completed {
+            finish: FinishOutcome::Stop,
+            metadata: ExtensionMap::default(),
+        })]
+    };
+    let fake = FakeProviderSession::with_scripts([Ok(events()), Ok(events())]);
+    let providers = Arc::new(ProviderRegistry::new());
+    providers
+        .register(FakeFactory {
+            id: provider_id.clone(),
+            session: fake.clone(),
+        })
+        .await
+        .unwrap();
+    let runtime = Arc::new(RuntimeSupervisor::new(
+        providers,
+        RuntimeDefaults {
+            provider_configuration: configuration(&provider_id),
+            model: QualifiedModelId {
+                provider_id,
+                model_id: ModelId::new("fixture-model").unwrap(),
+            },
+            endpoint: EndpointId::new("test-endpoint").unwrap(),
+            system_instructions: Vec::new(),
+            reasoning: Some(vesper_provider::ReasoningIntent {
+                mode: Some(BoundedString::new("high").unwrap()),
+                stream_visible: true,
+                retention: vesper_domain::ReasoningRetention::SessionOnly,
+            }),
+            sampling: None,
+            maximum_output_tokens: None,
+        },
+    ));
+
+    let RuntimeResponse::Session(session) = runtime.execute(create(1)).await.unwrap() else {
+        panic!("expected session");
+    };
+
+    let prompt = |number: u64| {
+        command(
+            HarnessCommandPayload::SubmitPrompt {
+                session_id: session.session_id.clone(),
+                prompt: PromptSubmission {
+                    message_id: MessageId::new(format!("m-{number}")).unwrap(),
+                    content: vec![ContentPart::Text(ContentText::new("hi").unwrap())],
+                    extensions: ExtensionMap::default(),
+                },
+            },
+            number,
+        )
+    };
+
+    // First turn: no session override → default `high` applies.
+    runtime.execute(prompt(2)).await.unwrap().wait_prompt().await.unwrap();
+    // Set an override.
+    runtime
+        .execute(command(
+            HarnessCommandPayload::UpdateSessionReasoning {
+                session_id: session.session_id.clone(),
+                mode: Some(BoundedString::new("max").unwrap()),
+            },
+            3,
+        ))
+        .await
+        .unwrap();
+    // Clear the override.
+    runtime
+        .execute(command(
+            HarnessCommandPayload::UpdateSessionReasoning {
+                session_id: session.session_id.clone(),
+                mode: None,
+            },
+            4,
+        ))
+        .await
+        .unwrap();
+    // Second turn: cleared → falls back to default `high`.
+    runtime.execute(prompt(5)).await.unwrap().wait_prompt().await.unwrap();
+
+    let captured = fake.requests();
+    assert_eq!(captured.len(), 2);
+    assert_eq!(
+        captured[1]
+            .reasoning
+            .as_ref()
+            .and_then(|intent| intent.mode.as_ref())
+            .map(|mode| mode.as_str()),
+        Some("high"),
+        "clearing the override must restore the runtime default reasoning"
+    );
+}

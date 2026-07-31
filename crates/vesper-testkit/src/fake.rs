@@ -291,4 +291,88 @@ mod tests {
         let stream = FakeProviderStream::new([], CancellationProbe::default());
         assert_stream(&stream);
     }
+
+    #[test]
+    fn fresh_fake_provider_session_starts_with_no_captured_requests() {
+        // No mock residue: every newly constructed FakeProviderSession must
+        // begin with an empty request log so a test never inherits leaked
+        // "mocked shit" from a prior run or a sibling instance.
+        let default = FakeProviderSession::default();
+        assert!(
+            default.requests().is_empty(),
+            "default() must start with zero captured requests"
+        );
+
+        let scripted = FakeProviderSession::with_scripts(Vec::new());
+        assert!(
+            scripted.requests().is_empty(),
+            "with_scripts must start with zero captured requests"
+        );
+    }
+
+    #[test]
+    fn fake_provider_sessions_do_not_share_captured_requests() {
+        // Per-instance isolation proven by dispatch: pushing a request through
+        // one fake must never appear in another. The captured-request buffer
+        // is a fresh allocation per instance, never a shared global, so one
+        // test's mock state cannot bleed into another.
+        use vesper_domain::{
+            ModelId, ProviderRequestId, QualifiedModelId, ToolChoiceIntent,
+        };
+        use vesper_provider::ProviderSession;
+
+        let alpha = FakeProviderSession::with_scripts([Err(Box::new(fake_error(
+            ErrorCategory::InvalidRequest,
+            "script exhausted",
+        )))]);
+        let beta = FakeProviderSession::with_scripts([Err(Box::new(fake_error(
+            ErrorCategory::InvalidRequest,
+            "script exhausted",
+        )))]);
+
+        let request = ProviderRequest {
+            request_id: ProviderRequestId::new("isolation").unwrap(),
+            provider_id: ProviderId::new("test").unwrap(),
+            model: QualifiedModelId {
+                provider_id: ProviderId::new("test").unwrap(),
+                model_id: ModelId::new("m").unwrap(),
+            },
+            endpoint_id: None,
+            system_instructions: Vec::new(),
+            messages: Vec::new(),
+            tools: Vec::new(),
+            tool_choice: ToolChoiceIntent::None,
+            capabilities: Vec::new(),
+            reasoning: None,
+            structured_output: vesper_provider::StructuredOutputIntent::None,
+            sampling: None,
+            maximum_output_tokens: None,
+            continuation: None,
+            fallback_policy: vesper_provider::FallbackPolicy::Strict,
+            provider_extensions: None,
+        };
+        let cancellation: Arc<dyn CancellationSignal> = Arc::new(CancellationProbe::default());
+
+        // Drive one request through alpha only. `start` records the request
+        // synchronously (before the returned future is even built), so dropping
+        // the unawaited future is sufficient to capture it.
+        drop(alpha.start(request, cancellation));
+
+        assert_eq!(alpha.requests().len(), 1, "alpha captured its request");
+        assert!(
+            beta.requests().is_empty(),
+            "beta must remain clean — no shared mock state"
+        );
+    }
+
+    #[test]
+    fn requests_returns_a_snapshot_without_draining() {
+        // `requests()` is a non-destructive read so a test can assert on the
+        // captured calls repeatedly without losing them.
+        let fake = FakeProviderSession::with_scripts(Vec::new());
+        let first = fake.requests();
+        let second = fake.requests();
+        assert_eq!(first, second);
+        assert!(first.is_empty());
+    }
 }

@@ -3,7 +3,7 @@ use vesper_domain::{
     Revision, SessionId, SessionLineage, SessionOperatingMode, SessionPermissionMode, TurnId,
     UsageMode, WorkspaceRoot,
 };
-use vesper_provider::ProviderConfiguration;
+use vesper_provider::{ProviderConfiguration, ReasoningIntent};
 use vesper_sessions::{
     PersistedSessionState, ReplayPlan, SessionCompatibilityData, SessionConfigurationStatus,
     SessionSource,
@@ -48,6 +48,11 @@ pub struct SessionSnapshot {
     pub replay: Option<ReplayPlan>,
     /// Frozen record retained for a future explicit compatibility writer.
     pub compatibility: Option<SessionCompatibilityData>,
+    /// Session-scoped provider reasoning override (e.g. the GLM
+    /// `thought_level` dial). When `None`, turns fall back to the runtime
+    /// default reasoning. Set by the `UpdateSessionReasoning` command and
+    /// applied to every subsequent turn's `ProviderRequest.reasoning`.
+    pub reasoning: Option<ReasoningIntent>,
 }
 
 impl SessionSnapshot {
@@ -76,6 +81,10 @@ impl SessionSnapshot {
             closed: false,
             replay: Some(value.replay),
             compatibility: Some(value.compatibility),
+            // Persisted state does not yet carry a reasoning-mode seed
+            // (ADR 0009); turns fall back to the runtime default until the
+            // persistence layer gains the field.
+            reasoning: None,
         }
     }
 
@@ -103,6 +112,7 @@ impl SessionSnapshot {
             closed: false,
             replay: self.replay.clone(),
             compatibility: self.compatibility.clone(),
+            reasoning: self.reasoning.clone(),
         }
     }
 
@@ -113,6 +123,7 @@ impl SessionSnapshot {
         model: QualifiedModelId,
         provider_configuration: ProviderConfiguration,
         endpoint: EndpointId,
+        reasoning: Option<ReasoningIntent>,
     ) -> Self {
         Self {
             lineage: SessionLineage {
@@ -136,6 +147,7 @@ impl SessionSnapshot {
             closed: false,
             replay: None,
             compatibility: None,
+            reasoning,
         }
     }
 }

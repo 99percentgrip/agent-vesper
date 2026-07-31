@@ -66,6 +66,12 @@ pub enum CommandOutcome {
     Plan { prd: String },
     /// Plan Mode gesture that did not require text (`approve`, `cancel`).
     PlanGesture(PlanGesture),
+    /// `/review <body>` — the model produced a plan body; advance PLANNING to
+    /// REVIEW so the driver can interrogate or `/approve` it.
+    FinalizePlan {
+        /// Bounded plan body to surface for human approval.
+        body: String,
+    },
     /// A superpower command targeted one descriptor.
     Superpower {
         /// Provider that owns the resolved descriptor.
@@ -108,8 +114,10 @@ impl CommandRegistry {
     /// Creates a registry populated with the canonical Stage 11b command set.
     #[must_use]
     pub fn stage_11b() -> Self {
+        // ADR 0009: `/effort` is retired — the GLM reasoning dial collapsed to
+        // the single `/thinking` control. `low`/`medium` are no longer valid.
         let names = [
-            "plan", "approve", "cancel", "effort", "thinking", "model", "help", "quit",
+            "plan", "review", "approve", "cancel", "thinking", "model", "help", "quit",
         ]
         .into_iter()
         .map(str::to_string)
@@ -154,6 +162,17 @@ impl CommandRegistry {
                         }
                     }
                 }
+                "review" => {
+                    if argument.is_empty() {
+                        CommandOutcome::Error(
+                            "Usage: /review <plan body to surface for approval>".into(),
+                        )
+                    } else {
+                        CommandOutcome::FinalizePlan {
+                            body: argument.clone(),
+                        }
+                    }
+                }
                 "approve" => {
                     if plan_state.phase() != crate::plan_mode::PlanPhase::Review {
                         CommandOutcome::Error(
@@ -164,7 +183,7 @@ impl CommandRegistry {
                     }
                 }
                 "cancel" => CommandOutcome::PlanGesture(PlanGesture::Cancel),
-                "effort" | "thinking" | "model" => {
+                "thinking" | "model" => {
                     self.resolve_superpower(name, argument, active_provider, superpowers)
                 }
                 "help" => CommandOutcome::Help(self.help_text()),
@@ -238,10 +257,12 @@ impl CommandRegistry {
         let mut buffer = String::new();
         buffer.push_str("Vesper TUI commands\n");
         buffer.push_str("  /plan <PRD>      — enter Plan Mode and interrogate the requirements\n");
+        buffer.push_str(
+            "  /review <body>   — surface the generated plan body and wait for /approve\n",
+        );
         buffer.push_str("  /approve         — finalize the reviewed plan and start execution\n");
         buffer.push_str("  /cancel          — abort the in-flight plan\n");
-        buffer.push_str("  /effort <value>  — provider-native effort dial\n");
-        buffer.push_str("  /thinking <bool> — toggle interleaved thinking\n");
+        buffer.push_str("  /thinking <lvl>  — session reasoning (disabled/enabled/high/max)\n");
         buffer.push_str("  /model <name>    — switch the active model\n");
         buffer.push_str("  /help            — show this help\n");
         buffer.push_str("  /quit            — exit the TUI\n");
@@ -360,9 +381,9 @@ mod tests {
             }
         );
         assert_eq!(
-            CommandIntent::parse("  /EFFORT  MAX  "),
+            CommandIntent::parse("  /THINKING  MAX  "),
             CommandIntent::Slash {
-                name: "effort".into(),
+                name: "thinking".into(),
                 argument: "MAX".into()
             }
         );
@@ -439,11 +460,11 @@ mod tests {
         let other = ProviderId::new("other").unwrap();
 
         // Descriptor belongs to a different provider; command must error.
-        let mut foreign = choice_descriptor("effort", &["low", "high"]);
+        let mut foreign = choice_descriptor("thinking", &["disabled", "high"]);
         foreign.provider_id = other;
         let outcome = registry.resolve(
             &CommandIntent::Slash {
-                name: "effort".into(),
+                name: "thinking".into(),
                 argument: "high".into(),
             },
             &plan_state,
@@ -453,10 +474,10 @@ mod tests {
         assert!(matches!(outcome, CommandOutcome::Error(_)));
 
         // Descriptor belongs to the active provider; resolves to a value.
-        let descriptor = choice_descriptor("effort", &["low", "high"]);
+        let descriptor = choice_descriptor("thinking", &["disabled", "high"]);
         let outcome = registry.resolve(
             &CommandIntent::Slash {
-                name: "effort".into(),
+                name: "thinking".into(),
                 argument: "high".into(),
             },
             &plan_state,
@@ -482,10 +503,10 @@ mod tests {
         let registry = CommandRegistry::stage_11b();
         let plan_state = PlanState::default();
         let provider = provider();
-        let descriptor = choice_descriptor("effort", &["low", "high"]);
+        let descriptor = choice_descriptor("thinking", &["disabled", "high"]);
         let outcome = registry.resolve(
             &CommandIntent::Slash {
-                name: "effort".into(),
+                name: "thinking".into(),
                 argument: "ludicrous".into(),
             },
             &plan_state,
@@ -571,20 +592,54 @@ mod tests {
         let registry = CommandRegistry::stage_11b();
         assert!(registry.contains("plan"));
         assert!(registry.contains("approve"));
-        assert!(registry.contains("effort"));
+        assert!(registry.contains("thinking"));
+        assert!(!registry.contains("effort"), "ADR 0009 retires /effort");
         assert!(!registry.contains("frobnicate"));
         assert_eq!(
             registry.names(),
             &[
                 "plan".to_string(),
+                "review".into(),
                 "approve".into(),
                 "cancel".into(),
-                "effort".into(),
                 "thinking".into(),
                 "model".into(),
                 "help".into(),
                 "quit".into(),
             ]
+        );
+    }
+
+    #[test]
+    fn resolve_review_requires_a_body() {
+        let registry = CommandRegistry::stage_11b();
+        let plan_state = PlanState::default();
+        let provider = provider();
+        let empty = registry.resolve(
+            &CommandIntent::Slash {
+                name: "review".into(),
+                argument: "".into(),
+            },
+            &plan_state,
+            &provider,
+            &[],
+        );
+        assert!(matches!(empty, CommandOutcome::Error(_)));
+
+        let with_body = registry.resolve(
+            &CommandIntent::Slash {
+                name: "review".into(),
+                argument: "1. do thing\n2. ship".into(),
+            },
+            &plan_state,
+            &provider,
+            &[],
+        );
+        assert_eq!(
+            with_body,
+            CommandOutcome::FinalizePlan {
+                body: "1. do thing\n2. ship".into()
+            }
         );
     }
 

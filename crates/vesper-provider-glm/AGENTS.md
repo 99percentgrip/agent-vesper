@@ -28,6 +28,13 @@ quota normalization, and legacy GLM compatibility translation.
 
 - Keep exact GLM wire compatibility inside this crate.
 - Use loopback ephemeral servers and synthetic credential sources in tests.
+- ADR 0009: advertise **one** session-scoped reasoning dial (`zai:reasoning`,
+  alias `thinking`, scale `{disabled, enabled, high, max}`). The former
+  separate `zai:effort` and `zai:interleaved-thinking` controls are retired;
+  `low`/`medium` are invalid. `reasoning_mode_for_superpower` maps a resolved
+  `SuperpowerValue` into the runtime reasoning-mode label; `serialize_request`
+  already turns `request.reasoning.mode` into the wire `reasoning_effort` /
+  `thinking` pair.
 
 ## Verification
 

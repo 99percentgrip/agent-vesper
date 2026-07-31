@@ -17,6 +17,11 @@ business logic.
   `PLAN_MODE_PROMPT`.
 - `src/commands.rs` — slash-command parsing, registry, and resolution
   against the active provider's superpowers.
+- `src/dispatch.rs` — pure, terminal-free event-loop dispatch: the bridge
+  between the command registry, the Plan Mode state machine, and the
+  `SuperpowerOverrides` store. Owns `SessionState`, `DispatchOutcome`, and
+  `dispatch()`. The full Plan Mode lifecycle is unit-tested here under a
+  `StubRenderer`; the binary owns only the crossterm input buffer.
 - `src/superpowers.rs` — `ProviderSuperpowerSurface` and
   `SuperpowerOverrides`, the pure projection the TUI keeps of the active
   provider's advertised descriptors.
@@ -25,7 +30,10 @@ business logic.
 - `src/lib.rs` — public re-exports and `query_startup_view`, the single
   integration point between the TUI and the runtime registry.
 - `src/main.rs` — binary entry point; crossterm raw-mode + alternate-screen
-  lifecycle and the interactive event loop.
+  lifecycle and the interactive event loop. Delegates every transition to
+  `dispatch::dispatch` so it owns no Plan Mode discipline itself. Owns the
+  credential-free `RuntimeSupervisor` and drains `SessionState.pending_reasoning`
+  into the runtime `UpdateSessionReasoning` command after each dispatch (ADR 0009).
 
 ## Local Contracts
 
@@ -42,7 +50,13 @@ business logic.
   TUI owns the transition discipline, not the reasoning.
 - The crate stays `#![forbid(unsafe_code)]` and respects workspace MSRV
   1.88, workspace lints, and `-D warnings` Clippy.
-- Superpower commands (`/effort`, `/thinking`, `/model`) are resolved
+- ADR 0009: the GLM reasoning surface is the single `/thinking` dial
+  (`{disabled, enabled, high, max}`); `/effort` is retired. `dispatch` stays
+  pure and produces `SessionState.pending_reasoning` for any resolved
+  `zai:reasoning` superpower; the binary's async loop applies it to the
+  runtime. The GLM `reasoning_mode_for_superpower` mapper lives in
+  `vesper-provider-glm`.
+- Superpower commands (`/thinking`, `/model`) are resolved
   dynamically against the active provider's advertised descriptors at
   dispatch time, so the same command surface works for any registered
   provider.
@@ -51,9 +65,18 @@ business logic.
 
 ## Work Guidance
 
-- Keep the Plan Mode, command registry, superpower adapter, and renderer
-  trait unit-testable without touching a real terminal — the production
-  binary is the only module that may invoke crossterm directly.
+- Keep the Plan Mode, command registry, superpower adapter, dispatch surface,
+  and renderer trait unit-testable without touching a real terminal — the
+  production binary is the only module that may invoke crossterm directly.
+- All event-loop transition logic lives in `dispatch::dispatch`. When a new
+  command or transition is added, extend `CommandOutcome` in `commands.rs`,
+  add a `match` arm in `dispatch::apply_outcome`, and cover the lifecycle in
+  `dispatch::integration_tests`. The binary's event loop must never grow its
+  own transition discipline.
+- `/review <body>` drives `PLANNING → REVIEW` as the user-facing placeholder
+  for the model-driven `finalize` hook. When the runtime gains a
+  plan-generation port, route the model's plan body through `dispatch` to
+  call `PlanState::finalize` and retire the manual `/review` shortcut.
 - When adding a new slash command, register it in
   `CommandRegistry::stage_11b`, document its surface in
   `CommandRegistry::help_text`, and add a test that proves it resolves

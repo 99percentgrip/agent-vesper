@@ -613,6 +613,26 @@ mod tests {
     }
 
     #[test]
+    fn max_reasoning_request_emits_max_reasoning_effort() {
+        // ADR 0009 / Tier A end-to-end (serializer half): a request carrying
+        // the session-scoped override `reasoning.mode = "max"` must serialize
+        // to the GLM wire `reasoning_effort: "max"`. The runtime half
+        // (`session_reasoning_override_threads_into_the_provider_request`) plus
+        // the TUI half (`thinking_command_sets_a_pending_reasoning_update`)
+        // complete the `/thinking max` → wire chain.
+        let mut request = base_request();
+        request.reasoning.as_mut().expect("base has reasoning").mode =
+            Some(vesper_domain::BoundedString::new("max").unwrap());
+        let serialized = serialize_request(&request, &GlmConfig::default()).unwrap();
+        assert_eq!(serialized.body["reasoning_effort"], json!("max"));
+        assert_eq!(
+            serialized.body["thinking"]["type"],
+            json!("enabled"),
+            "max reasoning keeps thinking enabled"
+        );
+    }
+
+    #[test]
     fn auxiliary_is_bounded_and_disables_thinking_and_streaming() {
         let body = serialize_auxiliary_request(&base_request(), &GlmConfig::default()).unwrap();
         assert_eq!(body["stream"], false);

@@ -13,6 +13,9 @@
 //!   → REVIEW → EXECUTING) mirroring the Python oracle's `PLAN_MODE_PROMPT`.
 //! - [`commands`] — slash-command parsing, registry, and resolution.
 //! - [`superpowers`] — provider-native superpower surface + override store.
+//! - [`dispatch`] — pure event-loop dispatch: the bridge between the command
+//!   registry, the Plan Mode state machine, and the override store. Terminal-
+//!   free so the full lifecycle is unit-testable.
 //! - [`ui`] — `TerminalRenderer` trait + `ratatui`/`crossterm` backend.
 //!
 //! ## DOX
@@ -21,11 +24,13 @@
 //! and verification.
 
 pub mod commands;
+pub mod dispatch;
 pub mod plan_mode;
 pub mod superpowers;
 pub mod ui;
 
 pub use commands::{CommandIntent, CommandOutcome, CommandRegistry, PlanGesture};
+pub use dispatch::{DispatchOutcome, SessionState, dispatch};
 pub use plan_mode::{PendingQuestion, PlanModeError, PlanPhase, PlanState, PlanTransition};
 pub use superpowers::{ProviderSuperpowerSurface, SuperpowerOverrides};
 pub use ui::{StubRenderer, TerminalRenderer, ViewModel, render_to_frame};
@@ -73,5 +78,10 @@ mod tests {
         assert!(!registry.names().is_empty());
         let state = PlanState::default();
         assert_eq!(state.phase(), PlanPhase::Normal);
+        // The dispatch surface re-exports a default SessionState that begins
+        // in NORMAL with no overrides.
+        let session = SessionState::new();
+        assert_eq!(session.phase(), PlanPhase::Normal);
+        assert!(session.overrides.is_empty());
     }
 }

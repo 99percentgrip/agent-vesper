@@ -37,6 +37,11 @@ provider turns, and acceptance of pure converted session state.
   `superpowers(provider_id)` and `all_superpowers()` let a frontend discover
   the active provider's native controls at startup without taking a
   dependency on any concrete adapter crate.
+- Sessions carry a **session-scoped reasoning override** (`SessionSnapshot.reasoning`,
+  seeded from `RuntimeDefaults.reasoning`) mutated by the `UpdateSessionReasoning`
+  command (ADR 0009). `drive_prompt` sources each turn's `ProviderRequest.reasoning`
+  from the snapshot override, falling back to the runtime default when none is
+  set. The mode label is opaque/provider-neutral at the command boundary.
 
 ## Verification
 

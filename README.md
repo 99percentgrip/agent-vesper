@@ -20,6 +20,15 @@ is reachable. Transactional writes, repair, migration, and search remain
 unimplemented.
 Non-Linux-x86-64 host validation is still pending in CI.
 
+Stage 11b adds the `agent-vesper-tui` interactive frontend: a pure 4-phase
+Plan Mode state machine (NORMAL → PLANNING → REVIEW → EXECUTING), a
+provider-superpowers discovery layer, and a `ratatui`/`crossterm` event loop.
+ADR 0009 reconciles the GLM reasoning surface with the Python oracle into a
+single session-scoped `/thinking` dial (`{disabled, enabled, high, max}`) and
+threads a session reasoning override through the runtime into the GLM wire
+`reasoning_effort`. `/effort` is retired; model-driven plan generation
+remains deferred to a future tool-executing agent-loop stage.
+
 ## Local verification
 
 The pinned development toolchain is installed automatically by Rustup.

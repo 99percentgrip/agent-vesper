@@ -188,6 +188,17 @@ pub enum HarnessCommandPayload {
         /// Optional permission-mode update.
         permission_mode: Option<SessionPermissionMode>,
     },
+    /// Update the session-scoped provider reasoning mode (e.g. the GLM
+    /// `thought_level` dial). `None` resets to the runtime default. The mode
+    /// is an opaque, provider-defined label kept provider-neutral here so the
+    /// domain never depends on a concrete adapter.
+    UpdateSessionReasoning {
+        /// Session identity.
+        session_id: SessionId,
+        /// Provider-defined reasoning-mode label (`disabled`/`enabled`/`high`/
+        /// `max` for GLM). `None` clears any session override.
+        mode: Option<BoundedString<128>>,
+    },
     /// Apply provider-owned validated configuration.
     UpdateProviderConfiguration {
         /// Session identity where configuration is session-scoped.

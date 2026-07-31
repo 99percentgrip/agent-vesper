@@ -15,8 +15,8 @@ use vesper_domain::{
     BoundedString, ContentPart, CorrelationId, EndpointId, EventId, EventSchemaVersion,
     EventSequence, ExtensionMap, FinishOutcome, HarnessCommand, HarnessCommandPayload,
     HarnessEvent, HarnessEventPayload, MessageId, MessageRole, ProviderRequestId, QualifiedModelId,
-    Revision, RuntimeAuthenticationMethod, RuntimeCapability, SafeMessage, SessionId,
-    SessionListFilter, SessionOperatingMode, SessionPermissionMode, SessionSummary,
+    ReasoningRetention, Revision, RuntimeAuthenticationMethod, RuntimeCapability, SafeMessage,
+    SessionId, SessionListFilter, SessionOperatingMode, SessionPermissionMode, SessionSummary,
     SystemInstruction, ToolChoiceIntent, TurnId, WorkspaceRoot,
 };
 use vesper_provider::{
@@ -320,6 +320,11 @@ impl RuntimeSupervisor {
                 .await?;
                 Ok(RuntimeResponse::Accepted)
             }
+            HarnessCommandPayload::UpdateSessionReasoning { session_id, mode } => {
+                self.update_reasoning(&session_id, mode, command.expected_revision)
+                    .await?;
+                Ok(RuntimeResponse::Accepted)
+            }
             HarnessCommandPayload::RequestRuntimeShutdown => {
                 self.shutdown(command.correlation_id).await?;
                 Ok(RuntimeResponse::Shutdown)
@@ -346,6 +351,7 @@ impl RuntimeSupervisor {
             self.defaults.model.clone(),
             self.defaults.provider_configuration.clone(),
             self.defaults.endpoint.clone(),
+            self.defaults.reasoning.clone(),
         );
         self.insert_actor(snapshot.clone()).await?;
         self.emit_session(
@@ -419,6 +425,7 @@ impl RuntimeSupervisor {
                 self.defaults.model.clone(),
                 self.defaults.provider_configuration.clone(),
                 self.defaults.endpoint.clone(),
+                self.defaults.reasoning.clone(),
             ),
         };
         if !requested_roots.is_empty() && snapshot.source != SessionSource::InMemory {
@@ -726,6 +733,27 @@ impl RuntimeSupervisor {
         receiver.await.map_err(|_| RuntimeError::ChannelClosed)?
     }
 
+    /// Updates the session-scoped reasoning override. `mode = None` clears any
+    /// override so subsequent turns fall back to the runtime default.
+    async fn update_reasoning(
+        &self,
+        session_id: &SessionId,
+        mode: Option<BoundedString<128>>,
+        expected_revision: Option<Revision>,
+    ) -> Result<(), RuntimeError> {
+        let handle = self.handle(session_id).await?;
+        let (sender, receiver) = oneshot::channel();
+        handle
+            .request(SessionCommand::UpdateReasoning {
+                mode,
+                expected_revision,
+                response: sender,
+            })
+            .await
+            .map_err(|_| RuntimeError::SessionClosed(session_id.clone()))?;
+        receiver.await.map_err(|_| RuntimeError::ChannelClosed)?
+    }
+
     async fn update_roots(
         &self,
         session_id: &SessionId,
@@ -898,6 +926,14 @@ enum SessionCommand {
         expected_revision: Option<Revision>,
         response: oneshot::Sender<Result<(), RuntimeError>>,
     },
+    /// Update the session-scoped reasoning override. `None` clears it so turns
+    /// fall back to the runtime default.
+    UpdateReasoning {
+        /// New reasoning-mode label, or `None` to reset.
+        mode: Option<BoundedString<128>>,
+        expected_revision: Option<Revision>,
+        response: oneshot::Sender<Result<(), RuntimeError>>,
+    },
     AddRoots {
         roots: Vec<WorkspaceRoot>,
         response: oneshot::Sender<Result<(), RuntimeError>>,
@@ -989,6 +1025,28 @@ impl SessionActor {
                     if let Some(value) = permission {
                         self.state.permission_mode = value;
                     }
+                    self.increment_revision();
+                    Ok(())
+                };
+                let _ = response.send(result);
+            }
+            SessionCommand::UpdateReasoning {
+                mode,
+                expected_revision,
+                response,
+            } => {
+                let result = if expected_revision.is_some_and(|value| value != self.state.revision)
+                {
+                    Err(RuntimeError::RevisionConflict {
+                        expected: expected_revision.expect("checked"),
+                        actual: self.state.revision,
+                    })
+                } else {
+                    self.state.reasoning = build_reasoning_override(
+                        mode,
+                        self.state.reasoning.clone(),
+                        self.defaults.reasoning.clone(),
+                    );
                     self.increment_revision();
                     Ok(())
                 };
@@ -1151,7 +1209,11 @@ async fn run_turn(input: TurnInput) -> Result<SessionTurnResult, RuntimeError> {
         tools: Vec::new(),
         tool_choice: ToolChoiceIntent::None,
         capabilities: Vec::new(),
-        reasoning: input.defaults.reasoning,
+        reasoning: input
+            .snapshot
+            .reasoning
+            .clone()
+            .or_else(|| input.defaults.reasoning.clone()),
         structured_output: StructuredOutputIntent::None,
         sampling: input.defaults.sampling,
         maximum_output_tokens: input.defaults.maximum_output_tokens,
@@ -1347,6 +1409,32 @@ async fn run_turn(input: TurnInput) -> Result<SessionTurnResult, RuntimeError> {
         visible_output_emitted: visible,
         assistant_content: assistant,
         usage,
+    })
+}
+
+/// Builds the session-scoped reasoning override from a provider-defined mode
+/// label.
+///
+/// The mode string is opaque and provider-neutral here (ADR 0009). We preserve
+/// the `stream_visible`/`retention` already in effect — from the existing
+/// session override, else the runtime default — so a `/thinking max` command
+/// changes only the effort, not unrelated reasoning policy. `None` clears the
+/// override so subsequent turns fall back to the runtime default.
+fn build_reasoning_override(
+    mode: Option<BoundedString<128>>,
+    current: Option<ReasoningIntent>,
+    default: Option<ReasoningIntent>,
+) -> Option<ReasoningIntent> {
+    let label = mode?;
+    // Inherit display/retention policy from whichever intent is currently
+    // effective; otherwise choose conservative provider-neutral defaults.
+    let base = current.or(default);
+    Some(ReasoningIntent {
+        mode: Some(label),
+        stream_visible: base.as_ref().is_none_or(|intent| intent.stream_visible),
+        retention: base
+            .as_ref()
+            .map_or(ReasoningRetention::SessionOnly, |intent| intent.retention),
     })
 }
 

@@ -16,7 +16,7 @@ use ratatui::{
 };
 
 use crate::plan_mode::{PlanPhase, PlanState};
-use crate::superpowers::ProviderSuperpowerSurface;
+use crate::superpowers::{ProviderSuperpowerSurface, SuperpowerOverrides};
 
 /// Pure view model the renderer consumes every frame.
 #[derive(Debug, Clone, Default)]
@@ -25,6 +25,9 @@ pub struct ViewModel {
     pub plan: PlanState,
     /// Active provider superpower surface.
     pub superpowers: Option<ProviderSuperpowerSurface>,
+    /// Per-turn superpower overrides applied via `/effort`, `/thinking`,
+    /// `/model`. Surfaced so the driver sees the active layer at a glance.
+    pub overrides: SuperpowerOverrides,
     /// Transcript lines shown in the main panel (most recent at the bottom).
     pub transcript: Vec<String>,
     /// Current input buffer (for echo).
@@ -57,17 +60,23 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
         ])
         .split(area);
 
-    // Phase / status banner.
+    // Phase / status banner — phase label + one-line status so the driver can
+    // tell at a glance whether the agent is thinking, waiting for input, or
+    // executing.
     let phase = model.plan.phase();
-    let banner_text = format!(" Vesper TUI — phase: {} ", phase.label());
+    let banner_text = match (phase, model.status.as_deref()) {
+        (phase, Some(status)) => format!(" Vesper TUI — {} — {status} ", phase.label()),
+        (phase, None) => format!(" Vesper TUI — phase: {} ", phase.label()),
+    };
     let banner_style = banner_style_for_phase(phase);
     frame.render_widget(Paragraph::new(banner_text).style(banner_style), chunks[0]);
 
-    // Transcript.
-    let transcript_items: Vec<ListItem> = model
-        .transcript
-        .iter()
-        .map(|line| ListItem::new(line.clone()))
+    // Transcript — prepended with Plan Mode context (pending questions while
+    // PLANNING, the plan body while REVIEW) so every phase has something
+    // actionable for the driver to look at.
+    let transcript_items: Vec<ListItem> = transcript_lines_for(model)
+        .into_iter()
+        .map(ListItem::new)
         .collect();
     frame.render_widget(
         List::new(transcript_items)
@@ -75,7 +84,7 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
         chunks[1],
     );
 
-    // Superpowers panel.
+    // Superpowers panel — each advertised descriptor with its active override.
     let superpower_lines = superpower_lines_for(model);
     frame.render_widget(
         Paragraph::new(superpower_lines).block(
@@ -96,10 +105,28 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
         ),
         chunks[3],
     );
+}
 
-    if let Some(status) = model.status.as_ref() {
-        let _ = status; // status is already on the phase banner; future polish.
+/// Builds the transcript lines for the main panel: Plan Mode context first
+/// (pending questions during PLANNING, the plan body during REVIEW), then the
+/// accumulated transcript.
+fn transcript_lines_for(model: &ViewModel) -> Vec<String> {
+    let mut lines = Vec::new();
+    match model.plan.phase() {
+        PlanPhase::Planning => {
+            for (index, question) in model.plan.pending_questions().iter().enumerate() {
+                lines.push(format!("❓ Q{}: {}", index + 1, question.text.as_str()));
+            }
+        }
+        PlanPhase::Review => {
+            if let Some(body) = model.plan.plan() {
+                lines.push(format!("📋 Plan under review:\n{}", body.as_str()));
+            }
+        }
+        PlanPhase::Normal | PlanPhase::Executing => {}
     }
+    lines.extend(model.transcript.iter().cloned());
+    lines
 }
 
 fn banner_style_for_phase(phase: PlanPhase) -> Style {
@@ -127,7 +154,25 @@ fn superpower_lines_for(model: &ViewModel) -> Vec<Line<'_>> {
             .map(|value| value.as_str())
             .unwrap_or("<no-alias>");
         let display = descriptor.display_name.as_str();
-        lines.push(Line::from(format!("/{alias} — {display}")));
+        // Annotate with the active override (or the advertised default) so
+        // the driver sees the live superpower layer, not just the menu.
+        let active = model
+            .overrides
+            .get(descriptor.id.as_str(), Some(&descriptor.default_value));
+        let suffix = match active {
+            Some(value) => format!(" = {}", format_superpower_value(&value)),
+            None => String::new(),
+        };
+        let style = if model.overrides.get(descriptor.id.as_str(), None).is_some() {
+            // Override is live — emphasize it.
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+        };
+        lines.push(Line::from(Span::styled(
+            format!("/{alias} — {display}{suffix}"),
+            style,
+        )));
     }
     if lines.is_empty() {
         lines.push(Line::from(Span::styled(
@@ -136,6 +181,16 @@ fn superpower_lines_for(model: &ViewModel) -> Vec<Line<'_>> {
         )));
     }
     lines
+}
+
+/// Renders a superpower value as a short, terminal-safe string.
+fn format_superpower_value(value: &vesper_provider::SuperpowerValue) -> String {
+    use vesper_provider::SuperpowerValue;
+    match value {
+        SuperpowerValue::Choice { value } => value.as_str().to_string(),
+        SuperpowerValue::Flag { value } => value.to_string(),
+        SuperpowerValue::Number { value } => value.to_string(),
+    }
 }
 
 /// In-memory renderer that records the most recent view model. Used by unit
@@ -178,6 +233,7 @@ mod tests {
         let model = ViewModel {
             plan: PlanState::default(),
             superpowers: None,
+            overrides: SuperpowerOverrides::default(),
             transcript: vec!["hello".into()],
             input: "/plan ship it".into(),
             status: Some("ok".into()),
@@ -214,6 +270,7 @@ mod tests {
         let model = ViewModel {
             plan: PlanState::default(),
             superpowers: None,
+            overrides: SuperpowerOverrides::default(),
             transcript: Vec::new(),
             input: String::new(),
             status: None,
@@ -236,6 +293,7 @@ mod tests {
                 ProviderId::new("x").unwrap(),
                 Vec::<SuperpowerDescriptor>::new(),
             )),
+            overrides: SuperpowerOverrides::default(),
             transcript: Vec::new(),
             input: String::new(),
             status: None,
