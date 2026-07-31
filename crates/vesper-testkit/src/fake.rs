@@ -316,9 +316,7 @@ mod tests {
         // one fake must never appear in another. The captured-request buffer
         // is a fresh allocation per instance, never a shared global, so one
         // test's mock state cannot bleed into another.
-        use vesper_domain::{
-            ModelId, ProviderRequestId, QualifiedModelId, ToolChoiceIntent,
-        };
+        use vesper_domain::{ModelId, ProviderRequestId, QualifiedModelId, ToolChoiceIntent};
         use vesper_provider::ProviderSession;
 
         let alpha = FakeProviderSession::with_scripts([Err(Box::new(fake_error(

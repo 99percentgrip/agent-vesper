@@ -102,7 +102,11 @@ pub fn dispatch(
 /// Pure: no I/O, no async, no terminal. The Plan Mode transitions, override
 /// store, transcript, and status line are all updated here so the loop body in
 /// the binary stays a thin key→intent→dispatch shim.
-fn apply_outcome(outcome: CommandOutcome, surface: &ProviderSuperpowerSurface, state: &mut SessionState) {
+fn apply_outcome(
+    outcome: CommandOutcome,
+    surface: &ProviderSuperpowerSurface,
+    state: &mut SessionState,
+) {
     let SessionState {
         plan,
         overrides,
@@ -138,8 +142,7 @@ fn apply_outcome(outcome: CommandOutcome, surface: &ProviderSuperpowerSurface, s
         CommandOutcome::FinalizePlan { body } => match plan.finalize(&body) {
             Ok(_) => {
                 transcript.push(format!("plan: REVIEW ({} bytes)", body.len()));
-                *status =
-                    Some("Plan under review — /approve to execute, /cancel to abort.".into());
+                *status = Some("Plan under review — /approve to execute, /cancel to abort.".into());
             }
             Err(error) => *status = Some(error.to_string()),
         },
@@ -277,7 +280,12 @@ mod integration_tests {
         assert_eq!(outcome, DispatchOutcome::Continue);
         assert_eq!(state.phase(), PlanPhase::Planning);
         assert!(state.plan.prd().is_some());
-        assert!(state.transcript.iter().any(|line| line.contains("PLANNING")));
+        assert!(
+            state
+                .transcript
+                .iter()
+                .any(|line| line.contains("PLANNING"))
+        );
     }
 
     #[test]
@@ -288,7 +296,12 @@ mod integration_tests {
         let surface = surface();
         let mut state = SessionState::new();
 
-        step(&mut state, &registry, &surface, "/plan build a REST gateway");
+        step(
+            &mut state,
+            &registry,
+            &surface,
+            "/plan build a REST gateway",
+        );
         assert_eq!(state.phase(), PlanPhase::Planning);
 
         let outcome = step(
@@ -300,10 +313,12 @@ mod integration_tests {
         assert_eq!(outcome, DispatchOutcome::Continue);
         assert_eq!(state.phase(), PlanPhase::Review);
         // REVIEW must surface a confirmation prompt in the status line.
-        assert!(state
-            .status
-            .as_ref()
-            .is_some_and(|status| status.contains("/approve")));
+        assert!(
+            state
+                .status
+                .as_ref()
+                .is_some_and(|status| status.contains("/approve"))
+        );
         // The plan body must be retained so the driver can review it.
         assert!(state.plan.plan().is_some());
     }
@@ -323,7 +338,10 @@ mod integration_tests {
         // EXECUTING → NORMAL via complete() (in a real run the runtime drives
         // this; here we exercise the state machine directly to close the loop).
         let transition = state.plan.complete().unwrap();
-        assert_eq!(transition, crate::plan_mode::PlanTransition::Entered(PlanPhase::Normal));
+        assert_eq!(
+            transition,
+            crate::plan_mode::PlanTransition::Entered(PlanPhase::Normal)
+        );
         assert_eq!(state.phase(), PlanPhase::Normal);
     }
 
@@ -360,13 +378,15 @@ mod integration_tests {
 
         // Local override persisted for the renderer.
         assert_eq!(state.overrides.len(), 1);
-        assert!(state
-            .overrides
-            .get("zai:reasoning", None)
-            .is_some_and(|value| matches!(
-                value,
-                SuperpowerValue::Choice { ref value } if value.as_str() == "max"
-            )));
+        assert!(
+            state
+                .overrides
+                .get("zai:reasoning", None)
+                .is_some_and(|value| matches!(
+                    value,
+                    SuperpowerValue::Choice { ref value } if value.as_str() == "max"
+                ))
+        );
         // Pending runtime update carries the oracle-faithful mode label.
         assert_eq!(
             state.pending_reasoning.as_ref().map(|mode| mode.as_str()),
@@ -386,9 +406,15 @@ mod integration_tests {
         let mut state = SessionState::new();
 
         step(&mut state, &registry, &surface, "/thinking medium");
-        assert!(state.pending_reasoning.is_none(), "no runtime update for invented modes");
         assert!(
-            state.status.as_ref().is_some_and(|status| !status.is_empty()),
+            state.pending_reasoning.is_none(),
+            "no runtime update for invented modes"
+        );
+        assert!(
+            state
+                .status
+                .as_ref()
+                .is_some_and(|status| !status.is_empty()),
             "an invented mode must surface an error status"
         );
 
@@ -415,10 +441,12 @@ mod integration_tests {
         // The driver answers inline with free text.
         step(&mut state, &registry, &surface, "axum");
         assert!(state.plan.pending_questions().is_empty());
-        assert!(state
-            .status
-            .as_ref()
-            .is_some_and(|status| status.contains("Answer recorded")));
+        assert!(
+            state
+                .status
+                .as_ref()
+                .is_some_and(|status| status.contains("Answer recorded"))
+        );
     }
 
     #[test]
@@ -511,6 +539,11 @@ mod integration_tests {
         let mut state = SessionState::new();
 
         step(&mut state, &registry, &surface, "   ");
-        assert!(state.status.as_ref().is_some_and(|status| !status.is_empty()));
+        assert!(
+            state
+                .status
+                .as_ref()
+                .is_some_and(|status| !status.is_empty())
+        );
     }
 }

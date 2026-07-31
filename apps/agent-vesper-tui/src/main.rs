@@ -273,7 +273,13 @@ async fn drive_loop(
                 // Single integration point with the pure dispatch surface:
                 // resolve the intent and mutate session state in place. The
                 // Quit decision short-circuits the loop.
-                let outcome = dispatch(&intent, registry_commands, surface, provider_id, &mut session.state);
+                let outcome = dispatch(
+                    &intent,
+                    registry_commands,
+                    surface,
+                    provider_id,
+                    &mut session.state,
+                );
                 if outcome == DispatchOutcome::Quit {
                     session.state.transcript.push("bye.".into());
                     break;
@@ -287,13 +293,18 @@ async fn drive_loop(
                         session_id: runtime_session_id.clone(),
                         mode: Some(mode.clone()),
                     };
-                    match supervisor.execute(runtime_command(reasoning_seq(), payload)).await {
-                        Ok(_) => session.state.transcript.push(format!(
-                            "runtime: session reasoning → {mode}"
-                        )),
+                    match supervisor
+                        .execute(runtime_command(reasoning_seq(), payload))
+                        .await
+                    {
+                        Ok(_) => session
+                            .state
+                            .transcript
+                            .push(format!("runtime: session reasoning → {mode}")),
                         Err(error) => {
                             warn!("reasoning override rejected by runtime: {error:?}");
-                            session.state.status = Some(format!("reasoning update failed: {error:?}"));
+                            session.state.status =
+                                Some(format!("reasoning update failed: {error:?}"));
                         }
                     }
                 }

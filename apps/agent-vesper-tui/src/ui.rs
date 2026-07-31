@@ -165,7 +165,9 @@ fn superpower_lines_for(model: &ViewModel) -> Vec<Line<'_>> {
         };
         let style = if model.overrides.get(descriptor.id.as_str(), None).is_some() {
             // Override is live — emphasize it.
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default()
         };

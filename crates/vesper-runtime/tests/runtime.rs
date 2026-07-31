@@ -767,7 +767,13 @@ async fn clearing_the_session_reasoning_falls_back_to_the_runtime_default() {
     };
 
     // First turn: no session override → default `high` applies.
-    runtime.execute(prompt(2)).await.unwrap().wait_prompt().await.unwrap();
+    runtime
+        .execute(prompt(2))
+        .await
+        .unwrap()
+        .wait_prompt()
+        .await
+        .unwrap();
     // Set an override.
     runtime
         .execute(command(
@@ -791,7 +797,13 @@ async fn clearing_the_session_reasoning_falls_back_to_the_runtime_default() {
         .await
         .unwrap();
     // Second turn: cleared → falls back to default `high`.
-    runtime.execute(prompt(5)).await.unwrap().wait_prompt().await.unwrap();
+    runtime
+        .execute(prompt(5))
+        .await
+        .unwrap()
+        .wait_prompt()
+        .await
+        .unwrap();
 
     let captured = fake.requests();
     assert_eq!(captured.len(), 2);
