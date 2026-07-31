@@ -29,6 +29,8 @@ captured results.
 
 - Every scenario cites source commit and comparison class.
 - Fixtures contain no credentials, private user state, or live-provider text.
+- Tracked JSON fixtures use LF line endings so byte-level hashes remain stable
+  across checkout platforms.
 - Normalize only declared volatility; never normalize order, linkage, policy
   outcome, finish reason, hashes, redaction, or containment results.
 - Generated results must validate against `schema/result-v1.schema.json`.
