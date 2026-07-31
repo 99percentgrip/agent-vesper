@@ -124,7 +124,10 @@ fn decoder() -> VesperSessionDecoder {
 
 #[test]
 fn writer_advertises_supported_write_capability() {
-    let capabilities = writer(PathBuf::from("/tmp/vesper-cap")).capabilities();
+    // Use the platform temp dir so the root is absolute on every OS:
+    // `/tmp/vesper-cap` is not absolute on Windows (no drive letter) and
+    // would surface as RootNotAbsolute from VesperSessionWriter::new.
+    let capabilities = writer(std::env::temp_dir().join("vesper-cap")).capabilities();
     assert_eq!(capabilities.write, SessionCapability::Supported);
     assert_eq!(capabilities.list, SessionCapability::Supported);
     assert_eq!(capabilities.delete, SessionCapability::Unsupported);
