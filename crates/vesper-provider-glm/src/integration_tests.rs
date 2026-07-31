@@ -490,13 +490,13 @@ fn plans(scenario: &str) -> Vec<Plan> {
             success("ok"),
         ],
         "glm.cancel-before-headers" => vec![Plan {
-            header_delay: Duration::from_millis(100),
+            header_delay: Duration::from_millis(500),
             ..success("late")
         }],
         "glm.cancel-mid-stream" => vec![Plan {
             parts: vec![
                 part(sse(chunk(Some("first"), None, None, None))),
-                delayed(100, sse(chunk(Some("late"), None, None, Some("stop")))),
+                delayed(500, sse(chunk(Some("late"), None, None, Some("stop")))),
             ],
             ..Plan::default()
         }],
@@ -572,7 +572,14 @@ async fn run_all_twenty_one_authoritative_glm_scenarios_execute_against_loopback
         ) {
             let control = cancellation.clone();
             tokio::spawn(async move {
-                tokio::time::sleep(Duration::from_millis(25)).await;
+                // 150ms gives the visible "first" chunk ample time to be read on
+                // every platform before cancellation fires: the Windows
+                // loopback+reqwest round-trip is markedly slower than Linux, and
+                // at 25ms the cancel won here before "first" was processed,
+                // yielding empty content. The matching mock delays (header_delay
+                // / "late" chunk) are pushed to 500ms so the later output still
+                // arrives strictly after cancel with a wide safety margin.
+                tokio::time::sleep(Duration::from_millis(150)).await;
                 control.cancel();
             });
         }
