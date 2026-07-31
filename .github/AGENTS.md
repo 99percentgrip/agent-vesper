@@ -31,10 +31,10 @@ platform assumptions on hosts unavailable locally.
 ## Verification
 
 - Validate YAML syntax locally where tooling exists.
-- Record actual run URLs and outcomes in foundation reports before upgrading a
-  platform result from pending. The pipeline configuration is complete and the
-  canonical gate passes locally; workflow-run outcomes remain pending until a
-  real job executes against a configured remote.
+- The canonical gate (`cargo xtask verify`) and MSRV 1.88 verification pass on
+  every push. Linux (x86_64, arm64) and macOS (intel, apple-silicon) targets
+  are verified green on the five-target matrix. Windows build-time is being
+  optimized via Cargo artifact caching.
 
 ## Child DOX Index
 

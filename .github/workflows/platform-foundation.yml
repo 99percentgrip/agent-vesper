@@ -13,7 +13,7 @@ jobs:
   foundation:
     name: ${{ matrix.target }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 50
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -38,6 +38,10 @@ jobs:
       - name: Install pinned Rust toolchain
         shell: bash
         run: rustup toolchain install 1.95.0 --profile minimal
+      - name: Cache Cargo build artifacts
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
       - name: Run eligible foundational tests
         shell: bash
         run: cargo test --workspace --all-features
