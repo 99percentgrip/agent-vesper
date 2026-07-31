@@ -259,13 +259,16 @@ async fn atomic_replacement_during_read_is_consistent_and_typed() {
             }
             outcome
         };
-        assert!(matches!(
-            outcome,
-            LegacyLoadOutcome::Loaded(_)
-                | LegacyLoadOutcome::Corrupt(_)
-                | LegacyLoadOutcome::Missing
-                | LegacyLoadOutcome::PermissionDenied
-        ));
+        assert!(
+            matches!(
+                outcome,
+                LegacyLoadOutcome::Loaded(_)
+                    | LegacyLoadOutcome::Corrupt(_)
+                    | LegacyLoadOutcome::Missing
+                    | LegacyLoadOutcome::PermissionDenied
+            ),
+            "unexpected outcome during concurrent replacement: {outcome:?}"
+        );
     }
     writer.join().unwrap();
 }
