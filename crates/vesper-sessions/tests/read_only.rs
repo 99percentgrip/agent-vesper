@@ -237,21 +237,28 @@ async fn atomic_replacement_during_read_is_consistent_and_typed() {
     let id = SessionId::new("replace").unwrap();
     for _ in 0..100 {
         // On Windows a concurrent rename can momentarily make the destination
-        // unreadable: ERROR_SHARING_VIOLATION surfaces as io::ErrorKind::
-        // PermissionDenied through the read-only store. That is a well-typed,
-        // consistent "file mid-replacement" state -- never torn bytes and
-        // never an untyped/unsupported outcome. We retry briefly (with a small
-        // sleep so the retries span across the writer's rename windows) so the
-        // majority of reads still exercise the decode path. Under sustained
-        // contention a residual PermissionDenied is a legitimate concurrent-
-        // access outcome on Windows and is accepted as such; the guarantee the
-        // test upholds -- every observed record is consistent and typed -- is
-        // unchanged. (On Linux rename is atomic, so the retry/sleep never
-        // triggers and PermissionDenied never arises.)
+        // unreadable in two ways, both transient "couldn't read cleanly during
+        // concurrent rename" states -- never torn bytes, never an
+        // untyped/unsupported outcome, and never a genuine path escape (the
+        // path is always under root):
+        //   * ERROR_SHARING_VIOLATION -> io::ErrorKind::PermissionDenied
+        //   * a TOCTOU in the confined read (canonicalize + starts_with(root))
+        //     during the rename -> PathEscapesRoot -> LegacyLoadOutcome::UnsafePath
+        // We retry briefly (with a small sleep so retries span across the
+        // writer's rename windows) so the majority of reads still exercise the
+        // decode path. Under sustained contention a residual PermissionDenied
+        // or UnsafePath is a legitimate concurrent-access outcome on Windows
+        // and is accepted as such; the guarantee the test upholds -- every
+        // observed record is consistent and typed -- is unchanged. (On Linux
+        // rename is atomic, so the retry/sleep never triggers and neither
+        // transient outcome ever arises.)
         let outcome = {
             let mut outcome = decoder.load(&repository, &id).await;
             for _ in 0..8 {
-                if !matches!(outcome, LegacyLoadOutcome::PermissionDenied) {
+                if !matches!(
+                    outcome,
+                    LegacyLoadOutcome::PermissionDenied | LegacyLoadOutcome::UnsafePath
+                ) {
                     break;
                 }
                 tokio::time::sleep(Duration::from_millis(2)).await;
@@ -266,6 +273,7 @@ async fn atomic_replacement_during_read_is_consistent_and_typed() {
                     | LegacyLoadOutcome::Corrupt(_)
                     | LegacyLoadOutcome::Missing
                     | LegacyLoadOutcome::PermissionDenied
+                    | LegacyLoadOutcome::UnsafePath
             ),
             "unexpected outcome during concurrent replacement: {outcome:?}"
         );
