@@ -4,6 +4,7 @@ use tokio::sync::RwLock;
 use vesper_domain::ProviderId;
 use vesper_provider::{
     CancellationSignal, ProviderConfiguration, ProviderFactory, ProviderFuture, ProviderSession,
+    ProviderSuperpowers, SuperpowerDescriptor,
 };
 
 use crate::RuntimeError;
@@ -37,10 +38,16 @@ where
     }
 }
 
+/// One registered provider: its factory plus optional superpowers surface.
+struct RegistryEntry {
+    factory: Arc<dyn ErasedProviderFactory>,
+    superpowers: Option<Arc<dyn ProviderSuperpowers>>,
+}
+
 /// Heterogeneous provider-factory registry with no concrete provider enum.
 #[derive(Default)]
 pub struct ProviderRegistry {
-    factories: RwLock<BTreeMap<ProviderId, Arc<dyn ErasedProviderFactory>>>,
+    factories: RwLock<BTreeMap<ProviderId, RegistryEntry>>,
 }
 
 impl std::fmt::Debug for ProviderRegistry {
@@ -64,12 +71,47 @@ impl ProviderRegistry {
         F: ProviderFactory + 'static,
         F::Session: 'static,
     {
+        self.register_inner(factory, None).await
+    }
+
+    /// Registers one provider factory together with its [`ProviderSuperpowers`]
+    /// surface so the runtime can advertise provider-native controls to the
+    /// composition boundary.
+    pub async fn register_with_superpowers<F, S>(
+        &self,
+        factory: F,
+        superpowers: S,
+    ) -> Result<(), RuntimeError>
+    where
+        F: ProviderFactory + 'static,
+        F::Session: 'static,
+        S: ProviderSuperpowers + 'static,
+    {
+        self.register_inner(factory, Some(Arc::new(superpowers)))
+            .await
+    }
+
+    async fn register_inner<F>(
+        &self,
+        factory: F,
+        superpowers: Option<Arc<dyn ProviderSuperpowers>>,
+    ) -> Result<(), RuntimeError>
+    where
+        F: ProviderFactory + 'static,
+        F::Session: 'static,
+    {
         let id = factory.provider_id().clone();
         let mut factories = self.factories.write().await;
         if factories.contains_key(&id) {
             return Err(RuntimeError::DuplicateProvider);
         }
-        factories.insert(id, Arc::new(FactoryAdapter(factory)));
+        factories.insert(
+            id,
+            RegistryEntry {
+                factory: Arc::new(FactoryAdapter(factory)),
+                superpowers,
+            },
+        );
         Ok(())
     }
 
@@ -84,7 +126,7 @@ impl ProviderRegistry {
             .read()
             .await
             .get(provider_id)
-            .cloned()
+            .map(|entry| entry.factory.clone())
             .ok_or(RuntimeError::UnknownProvider)?;
         factory
             .create(configuration, cancellation)
@@ -95,6 +137,39 @@ impl ProviderRegistry {
     /// Returns whether a provider is registered.
     pub async fn contains(&self, provider_id: &ProviderId) -> bool {
         self.factories.read().await.contains_key(provider_id)
+    }
+
+    /// Lists every registered provider identity in stable order.
+    pub async fn provider_ids(&self) -> Vec<ProviderId> {
+        self.factories.read().await.keys().cloned().collect()
+    }
+
+    /// Returns the superpower descriptors advertised by `provider_id`, or an
+    /// empty vector when the provider registered none (or is unknown).
+    pub async fn superpowers(&self, provider_id: &ProviderId) -> Vec<SuperpowerDescriptor> {
+        self.factories
+            .read()
+            .await
+            .get(provider_id)
+            .and_then(|entry| entry.superpowers.as_ref())
+            .map(|surface| surface.superpowers())
+            .unwrap_or_default()
+    }
+
+    /// Returns the superpower descriptors for every registered provider, in
+    /// stable order. Providers without superpowers are omitted.
+    pub async fn all_superpowers(&self) -> Vec<(ProviderId, Vec<SuperpowerDescriptor>)> {
+        self.factories
+            .read()
+            .await
+            .iter()
+            .filter_map(|(id, entry)| {
+                entry
+                    .superpowers
+                    .as_ref()
+                    .map(|surface| (id.clone(), surface.superpowers()))
+            })
+            .collect()
     }
 }
 
@@ -290,5 +365,103 @@ mod tests {
             matches!(missing, Err(RuntimeError::UnknownProvider)),
             "unknown provider must surface a classified error"
         );
+    }
+
+    /// Recording factory that also advertises one Choice superpower so the
+    /// registry's superpowers surface can be exercised without taking a
+    /// dependency on a concrete adapter.
+    struct SuperpoweredFactory {
+        id: ProviderId,
+        descriptor: vesper_provider::SuperpowerDescriptor,
+    }
+
+    impl ProviderFactory for SuperpoweredFactory {
+        type Session = TrivialSession;
+
+        fn provider_id(&self) -> &ProviderId {
+            &self.id
+        }
+
+        fn create_session<'a>(
+            &'a self,
+            _: &'a ProviderConfiguration,
+            _: Arc<dyn CancellationSignal>,
+        ) -> ProviderFuture<'a, Result<Self::Session, ProviderError>> {
+            Box::pin(async { Ok(TrivialSession) })
+        }
+    }
+
+    impl vesper_provider::ProviderSuperpowers for SuperpoweredFactory {
+        fn superpowers(&self) -> Vec<vesper_provider::SuperpowerDescriptor> {
+            vec![self.descriptor.clone()]
+        }
+    }
+
+    fn sample_descriptor(provider_id: &ProviderId) -> vesper_provider::SuperpowerDescriptor {
+        use vesper_domain::BoundedString;
+        use vesper_provider::{SuperpowerKind, SuperpowerScope, SuperpowerValue};
+        vesper_provider::SuperpowerDescriptor {
+            id: BoundedString::new("test:effort").unwrap(),
+            provider_id: provider_id.clone(),
+            display_name: BoundedString::new("Effort").unwrap(),
+            kind: SuperpowerKind::Choice,
+            scope: SuperpowerScope::Request,
+            default_value: SuperpowerValue::Choice {
+                value: BoundedString::new("high").unwrap(),
+            },
+            allowed_values: Vec::new(),
+            command_alias: Some(BoundedString::new("effort").unwrap()),
+            help: Some(BoundedString::new("Per-request effort.").unwrap()),
+        }
+    }
+
+    #[tokio::test]
+    async fn superpowers_surface_is_queryable_per_provider() {
+        let registry = ProviderRegistry::new();
+        let powered_id = ProviderId::new("powered").unwrap();
+        let plain_id = ProviderId::new("plain").unwrap();
+
+        registry
+            .register_with_superpowers(
+                SuperpoweredFactory {
+                    id: powered_id.clone(),
+                    descriptor: sample_descriptor(&powered_id),
+                },
+                SuperpoweredFactory {
+                    id: powered_id.clone(),
+                    descriptor: sample_descriptor(&powered_id),
+                },
+            )
+            .await
+            .unwrap();
+        registry
+            .register(RecordingFactory {
+                id: plain_id.clone(),
+                calls: Arc::new(Mutex::new(Vec::new())),
+            })
+            .await
+            .unwrap();
+
+        // The powered provider exposes exactly its descriptor.
+        let powered = registry.superpowers(&powered_id).await;
+        assert_eq!(powered.len(), 1);
+        assert_eq!(powered[0].id, sample_descriptor(&powered_id).id);
+
+        // The plain provider exposes none.
+        assert!(registry.superpowers(&plain_id).await.is_empty());
+
+        // Unknown providers expose none as well.
+        let unknown = ProviderId::new("missing").unwrap();
+        assert!(registry.superpowers(&unknown).await.is_empty());
+
+        // `all_superpowers` reports only providers with descriptors, in order.
+        let all = registry.all_superpowers().await;
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].0, powered_id);
+        assert_eq!(all[0].1.len(), 1);
+
+        // `provider_ids` returns every registered identity in stable order.
+        let ids = registry.provider_ids().await;
+        assert_eq!(ids, vec![plain_id, powered_id]);
     }
 }

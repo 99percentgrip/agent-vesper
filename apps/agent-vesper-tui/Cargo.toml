@@ -1,0 +1,32 @@
+[package]
+name = "agent-vesper-tui"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+crossterm.workspace = true
+ratatui.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+vesper-domain = { path = "../../crates/vesper-domain", version = "=0.1.0" }
+vesper-provider = { path = "../../crates/vesper-provider", version = "=0.1.0" }
+vesper-provider-glm = { path = "../../crates/vesper-provider-glm", version = "=0.1.0" }
+vesper-provider-synthetic = { path = "../../crates/vesper-provider-synthetic", version = "=0.1.0" }
+vesper-runtime = { path = "../../crates/vesper-runtime", version = "=0.1.0" }
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "agent-vesper-tui"
+path = "src/main.rs"

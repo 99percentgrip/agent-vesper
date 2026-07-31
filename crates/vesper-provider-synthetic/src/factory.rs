@@ -83,6 +83,42 @@ impl ProviderFactory for SyntheticFactory {
     }
 }
 
+/// Static synthetic superpower descriptors. The synthetic adapter advertises a
+/// tiny control surface so the multi-provider TUI can exercise the same
+/// command plumbing against a non-GLM provider end to end.
+fn synthetic_superpowers() -> Vec<vesper_provider::SuperpowerDescriptor> {
+    use vesper_domain::BoundedString;
+    use vesper_provider::{SuperpowerDescriptor, SuperpowerKind, SuperpowerScope, SuperpowerValue};
+
+    let provider_id = provider_id();
+    vec![SuperpowerDescriptor {
+        id: BoundedString::new("synthetic:reply").expect("bounded superpower id"),
+        provider_id,
+        display_name: BoundedString::new("Default Reply").expect("bounded display"),
+        kind: SuperpowerKind::Choice,
+        scope: SuperpowerScope::Session,
+        default_value: SuperpowerValue::Choice {
+            value: BoundedString::new(DEFAULT_REPLY).expect("bounded value"),
+        },
+        allowed_values: [DEFAULT_REPLY, "synthetic-echo", "synthetic-quiet"]
+            .into_iter()
+            .map(|raw| SuperpowerValue::Choice {
+                value: BoundedString::new(raw).expect("bounded value"),
+            })
+            .collect(),
+        command_alias: Some(BoundedString::new("reply").expect("bounded alias")),
+        help: Some(
+            BoundedString::new("Pick the deterministic reply style.").expect("bounded help"),
+        ),
+    }]
+}
+
+impl vesper_provider::ProviderSuperpowers for SyntheticFactory {
+    fn superpowers(&self) -> Vec<vesper_provider::SuperpowerDescriptor> {
+        synthetic_superpowers()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

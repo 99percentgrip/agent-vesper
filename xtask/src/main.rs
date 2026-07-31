@@ -1206,6 +1206,16 @@ fn allowed_dependencies() -> BTreeMap<&'static str, BTreeSet<&'static str>> {
                 "vesper-sessions",
             ]),
         ),
+        (
+            "agent-vesper-tui",
+            BTreeSet::from([
+                "vesper-domain",
+                "vesper-provider",
+                "vesper-provider-glm",
+                "vesper-provider-synthetic",
+                "vesper-runtime",
+            ]),
+        ),
         ("xtask", BTreeSet::from(["vesper-testkit"])),
     ])
 }

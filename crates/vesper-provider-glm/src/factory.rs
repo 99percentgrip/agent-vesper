@@ -155,3 +155,76 @@ impl ModelCatalog for GlmFactory {
         <GlmCatalog as ModelCatalog>::models(&GlmCatalog, cancellation)
     }
 }
+
+/// Static GLM-specific superpower descriptors advertised to the composition
+/// boundary. Kept in a free function so a `GlmFactory` and any test stand-in
+/// share one source of truth.
+fn glm_superpowers() -> Vec<vesper_provider::SuperpowerDescriptor> {
+    use vesper_domain::BoundedString;
+    use vesper_provider::{SuperpowerDescriptor, SuperpowerKind, SuperpowerScope, SuperpowerValue};
+
+    let provider_id = provider_id();
+
+    // Order: effort dial, interleaved-thinking toggle, model selector.
+    vec![
+        // Per-request effort dial exposed by the GLM coding endpoint.
+        SuperpowerDescriptor {
+            id: BoundedString::new("zai:effort").expect("bounded superpower id"),
+            provider_id: provider_id.clone(),
+            display_name: BoundedString::new("Effort").expect("bounded display"),
+            kind: SuperpowerKind::Choice,
+            scope: SuperpowerScope::Request,
+            default_value: SuperpowerValue::Choice {
+                value: BoundedString::new("high").expect("bounded value"),
+            },
+            allowed_values: ["low", "medium", "high", "max"]
+                .into_iter()
+                .map(|raw| SuperpowerValue::Choice {
+                    value: BoundedString::new(raw).expect("bounded value"),
+                })
+                .collect(),
+            command_alias: Some(BoundedString::new("effort").expect("bounded alias")),
+            help: Some(
+                BoundedString::new("Set per-request Z.ai effort (low/medium/high/max).")
+                    .expect("bounded help"),
+            ),
+        },
+        // Interleaved thinking toggle (deep reasoning interleaved with tool calls).
+        SuperpowerDescriptor {
+            id: BoundedString::new("zai:interleaved-thinking").expect("bounded superpower id"),
+            provider_id: provider_id.clone(),
+            display_name: BoundedString::new("Interleaved Thinking").expect("bounded display"),
+            kind: SuperpowerKind::Toggle,
+            scope: SuperpowerScope::Both,
+            default_value: SuperpowerValue::Flag { value: true },
+            allowed_values: Vec::new(),
+            command_alias: Some(BoundedString::new("thinking").expect("bounded alias")),
+            help: Some(BoundedString::new("Toggle interleaved thinking.").expect("bounded help")),
+        },
+        // Model selector: applies to the whole session.
+        SuperpowerDescriptor {
+            id: BoundedString::new("zai:model").expect("bounded superpower id"),
+            provider_id,
+            display_name: BoundedString::new("Model").expect("bounded display"),
+            kind: SuperpowerKind::Choice,
+            scope: SuperpowerScope::Session,
+            default_value: SuperpowerValue::Choice {
+                value: BoundedString::new("glm-5.2").expect("bounded value"),
+            },
+            allowed_values: ["glm-5.2", "glm-5.2-air", "glm-5.2-flash"]
+                .into_iter()
+                .map(|raw| SuperpowerValue::Choice {
+                    value: BoundedString::new(raw).expect("bounded value"),
+                })
+                .collect(),
+            command_alias: Some(BoundedString::new("model").expect("bounded alias")),
+            help: Some(BoundedString::new("Switch the active Z.ai model.").expect("bounded help")),
+        },
+    ]
+}
+
+impl vesper_provider::ProviderSuperpowers for GlmFactory {
+    fn superpowers(&self) -> Vec<vesper_provider::SuperpowerDescriptor> {
+        glm_superpowers()
+    }
+}

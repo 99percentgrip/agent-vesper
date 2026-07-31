@@ -6,6 +6,7 @@ mod error;
 mod ports;
 mod request;
 mod stream;
+mod superpowers;
 
 pub use capability::{
     AuthenticationCapability, CapabilityResolution, ContinuationCapability,
@@ -29,4 +30,7 @@ pub use request::{
 pub use stream::{
     ProviderStreamContract, ProviderStreamContractError, ProviderStreamEvent, QuotaUpdate,
     RateLimitUpdate,
+};
+pub use superpowers::{
+    ProviderSuperpowers, SuperpowerDescriptor, SuperpowerKind, SuperpowerScope, SuperpowerValue,
 };

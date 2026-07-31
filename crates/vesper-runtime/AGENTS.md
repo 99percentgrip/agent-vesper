@@ -32,6 +32,11 @@ provider turns, and acceptance of pure converted session state.
 - Persistent adoption is serialized by session ID, rechecks actor ownership
   after I/O, and never lets stale disk state overwrite a newer actor. Separate
   IDs remain concurrent.
+- `ProviderRegistry::register_with_superpowers` lets the composition boundary
+  register a factory together with its [`ProviderSuperpowers`] surface;
+  `superpowers(provider_id)` and `all_superpowers()` let a frontend discover
+  the active provider's native controls at startup without taking a
+  dependency on any concrete adapter crate.
 
 ## Verification
 
