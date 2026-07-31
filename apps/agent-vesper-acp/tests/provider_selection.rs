@@ -8,6 +8,12 @@
 //! with the synthetic reply is impossible through the GLM adapter (no endpoint
 //! is configured), so it also proves the selected provider was actually wired.
 
+// Integration tests pull the shared process harness module, whose helpers are
+// consumed by different test binaries; only `critical_environment_keys` is
+// needed here, so the rest of `support` is permitted to be dead code in this
+// test binary.
+#![allow(dead_code)]
+
 use std::{
     io::{BufRead, BufReader, Write},
     process::{Command, Stdio},
@@ -17,6 +23,10 @@ use std::{
 };
 
 use serde_json::{Value, json};
+
+mod support;
+
+use support::critical_environment_keys;
 
 const TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -31,7 +41,8 @@ fn synthetic_provider_serves_an_acp_prompt_lifecycle_without_network_io() {
 
     // No ZAI_API_KEY and no AGENT_VESPER_GLM_BASE_URL: synthetic mode must not
     // require GLM credentials or any network endpoint.
-    let mut child = Command::new(env!("CARGO_BIN_EXE_agent-vesper-acp"))
+    let mut command = Command::new(env!("CARGO_BIN_EXE_agent-vesper-acp"));
+    command
         .env_clear()
         .env("HOME", &temp)
         .env("XDG_CONFIG_HOME", temp.join("config"))
@@ -41,9 +52,13 @@ fn synthetic_provider_serves_an_acp_prompt_lifecycle_without_network_io() {
         .env("AGENT_VESPER_PROVIDER", "synthetic")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
+        .stderr(Stdio::piped());
+    for key in critical_environment_keys() {
+        if let Ok(value) = std::env::var(key) {
+            command.env(key, value);
+        }
+    }
+    let mut child = command.spawn().unwrap();
     let mut stdin = child.stdin.take().unwrap();
     let stdout = child.stdout.take().unwrap();
     let (line_sender, line_receiver) = mpsc::channel();

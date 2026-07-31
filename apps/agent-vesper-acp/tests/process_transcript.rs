@@ -1,3 +1,9 @@
+// Integration tests pull the shared process harness module, whose helpers are
+// consumed by different test binaries; only `critical_environment_keys` is
+// needed here, so the rest of `support` is permitted to be dead code in this
+// test binary.
+#![allow(dead_code)]
+
 use std::{
     io::{BufRead, BufReader, Read, Write},
     net::TcpListener,
@@ -8,6 +14,10 @@ use std::{
 };
 
 use serde_json::{Value, json};
+
+mod support;
+
+use support::critical_environment_keys;
 
 const CANARY: &str = "vesper-stage4-secret-canary";
 
@@ -57,7 +67,8 @@ fn stdio_transcript_reaches_real_glm_adapter_with_protocol_pure_stdout() {
 
     let temp = std::env::temp_dir().join(format!("agent-vesper-stage4-{}", std::process::id()));
     std::fs::create_dir_all(&temp).unwrap();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_agent-vesper-acp"))
+    let mut command = Command::new(env!("CARGO_BIN_EXE_agent-vesper-acp"));
+    command
         .env_clear()
         .env("HOME", &temp)
         .env("XDG_CONFIG_HOME", temp.join("config"))
@@ -69,9 +80,16 @@ fn stdio_transcript_reaches_real_glm_adapter_with_protocol_pure_stdout() {
         .env("AGENT_VESPER_ALLOW_INSECURE_LOOPBACK", "1")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
+        .stderr(Stdio::piped());
+    // Inherit platform-critical env vars (Windows Winsock/DLL search paths,
+    // macOS temp/subprocess resolution, Linux PATH). ZAI_API_KEY and
+    // AGENT_VESPER_* are set explicitly above, so secret isolation is intact.
+    for key in critical_environment_keys() {
+        if let Ok(value) = std::env::var(key) {
+            command.env(key, value);
+        }
+    }
+    let mut child = command.spawn().unwrap();
     let mut stdin = child.stdin.take().unwrap();
     let stdout = child.stdout.take().unwrap();
     let (line_sender, line_receiver) = mpsc::channel();
@@ -253,16 +271,21 @@ fn empty_prompt_and_unsupported_slash_command_never_dispatch_provider() {
         std::process::id()
     ));
     std::fs::create_dir_all(&temp).unwrap();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_agent-vesper-acp"))
+    let mut command = Command::new(env!("CARGO_BIN_EXE_agent-vesper-acp"));
+    command
         .env_clear()
         .env("HOME", &temp)
         .env("XDG_CONFIG_HOME", temp.join("config"))
         .env("XDG_CACHE_HOME", temp.join("cache"))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
+        .stderr(Stdio::piped());
+    for key in critical_environment_keys() {
+        if let Ok(value) = std::env::var(key) {
+            command.env(key, value);
+        }
+    }
+    let mut child = command.spawn().unwrap();
     let mut stdin = child.stdin.take().unwrap();
     let stdout = child.stdout.take().unwrap();
     let (line_sender, line_receiver) = mpsc::channel();
@@ -326,13 +349,18 @@ fn empty_prompt_and_unsupported_slash_command_never_dispatch_provider() {
 
 #[test]
 fn malformed_input_exits_without_stdout_contamination() {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_agent-vesper-acp"))
+    let mut command = Command::new(env!("CARGO_BIN_EXE_agent-vesper-acp"));
+    command
         .env_clear()
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
+        .stderr(Stdio::piped());
+    for key in critical_environment_keys() {
+        if let Ok(value) = std::env::var(key) {
+            command.env(key, value);
+        }
+    }
+    let mut child = command.spawn().unwrap();
     child
         .stdin
         .take()
@@ -373,7 +401,8 @@ fn cancellation_after_reasoning_emits_no_post_cancel_content() {
     let temp =
         std::env::temp_dir().join(format!("agent-vesper-stage4-cancel-{}", std::process::id()));
     std::fs::create_dir_all(&temp).unwrap();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_agent-vesper-acp"))
+    let mut command = Command::new(env!("CARGO_BIN_EXE_agent-vesper-acp"));
+    command
         .env_clear()
         .env("HOME", &temp)
         .env("ZAI_API_KEY", CANARY)
@@ -381,9 +410,13 @@ fn cancellation_after_reasoning_emits_no_post_cancel_content() {
         .env("AGENT_VESPER_ALLOW_INSECURE_LOOPBACK", "1")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
+        .stderr(Stdio::piped());
+    for key in critical_environment_keys() {
+        if let Ok(value) = std::env::var(key) {
+            command.env(key, value);
+        }
+    }
+    let mut child = command.spawn().unwrap();
     let mut stdin = child.stdin.take().unwrap();
     let stdout = child.stdout.take().unwrap();
     let (line_sender, line_receiver) = mpsc::channel();

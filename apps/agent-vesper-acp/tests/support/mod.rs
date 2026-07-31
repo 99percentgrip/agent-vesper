@@ -365,7 +365,7 @@ fn unique_suffix() -> u128 {
 /// paths; macOS temp/subprocess resolution; Linux defensive PATH). Tests
 /// still set `HOME`, `XDG_*`, `ZAI_API_KEY`, and `AGENT_VESPER_*` explicitly
 /// above, so secret isolation is not weakened by inheriting these keys.
-fn critical_environment_keys() -> &'static [&'static str] {
+pub fn critical_environment_keys() -> &'static [&'static str] {
     if cfg!(target_os = "windows") {
         &[
             "SystemRoot",
