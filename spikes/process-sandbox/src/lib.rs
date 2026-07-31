@@ -37,19 +37,45 @@ struct Drain {
     total: usize,
 }
 
-async fn drain<R: AsyncRead + Unpin>(mut reader: R, count: Arc<AtomicUsize>) -> io::Result<Drain> {
+async fn drain<R: AsyncRead + Unpin>(
+    mut reader: R,
+    count: Arc<AtomicUsize>,
+    cancel: CancellationToken,
+) -> io::Result<Drain> {
     let mut kept = Vec::with_capacity(CAPTURE_LIMIT);
     let mut total = 0usize;
+    let mut counting = true;
     let mut buf = [0u8; 8192];
     loop {
-        let n = reader.read(&mut buf).await?;
+        // While still counting, race each read against cancellation. The
+        // instant the token fires (biased so cancellation wins a tie) we
+        // freeze the captured byte count: a child can keep writing into the
+        // OS pipe buffer between the cancel signal and the SIGKILL that reaps
+        // its process group, and those post-cancellation bytes must NOT
+        // inflate `post_termination_output_bytes`. We keep reading to EOF
+        // afterwards — discarding bytes — so the pipe still drains and the
+        // child can be reaped instead of stalling on a full buffer.
+        let n = if counting {
+            tokio::select! {
+                biased;
+                _ = cancel.cancelled() => {
+                    counting = false;
+                    continue;
+                }
+                read = reader.read(&mut buf) => read?,
+            }
+        } else {
+            reader.read(&mut buf).await?
+        };
         if n == 0 {
             break;
         }
-        total += n;
-        count.store(total, Ordering::SeqCst);
-        let room = CAPTURE_LIMIT.saturating_sub(kept.len());
-        kept.extend_from_slice(&buf[..n.min(room)]);
+        if counting {
+            total += n;
+            count.store(total, Ordering::SeqCst);
+            let room = CAPTURE_LIMIT.saturating_sub(kept.len());
+            kept.extend_from_slice(&buf[..n.min(room)]);
+        }
     }
     Ok(Drain { bytes: kept, total })
 }
@@ -111,10 +137,12 @@ async fn execute(
     let stdout_task = tokio::spawn(drain(
         child.stdout.take().unwrap(),
         Arc::clone(&stdout_count),
+        cancel.clone(),
     ));
     let stderr_task = tokio::spawn(drain(
         child.stderr.take().unwrap(),
         Arc::clone(&stderr_count),
+        cancel.clone(),
     ));
 
     let deadline = tokio::time::sleep(timeout);
