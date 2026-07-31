@@ -9,13 +9,19 @@ on:
 permissions:
   contents: read
 
-# Use sccache globally for the entire workflow so every `rustc` invocation
-# (build, test, clippy, doc) hits the shared GitHub Actions cache backend.
+# Use sccache for the entire workflow so every `rustc` invocation (build,
+# test, clippy, doc, xtask) hits the shared GitHub Actions cache backend.
 # `SCCACHE_GHA_ENABLED=true` makes sccache persist to the GHA cache, which
 # is content-addressed and far more effective than caching the entire
 # `target/` directory as a tarball (the old `swatinem/rust-cache` model).
+#
+# `RUSTC_WRAPPER` is intentionally NOT set at the workflow level. sccache
+# hard-depends on the GHA cache backend, which can suffer transient
+# outages ("Our services aren't available right now"). Each cargo step
+# reads `steps.sccache_check.outputs.sccache_ready` and only sets
+# `RUSTC_WRAPPER=sccache` when the daemon verified healthy, so an outage
+# degrades gracefully to direct compilation instead of failing every job.
 env:
-  RUSTC_WRAPPER: sccache
   SCCACHE_GHA_ENABLED: "true"
 
 jobs:
@@ -49,11 +55,35 @@ jobs:
         run: rustup toolchain install 1.95.0 --profile minimal
       - name: Configure sccache
         uses: mozilla-actions/sccache-action@v0.0.7
+      - name: Verify sccache health
+        id: sccache_check
+        shell: bash
+        run: |
+          set +e
+          # Force the sccache daemon to start by asking it to wrap rustc on a
+          # trivially valid empty library crate. If the GHA cache backend is
+          # down, sccache refuses to start at all and we fall back to direct
+          # compilation for the rest of the job.
+          printf '' > sccache_probe.rs
+          sccache rustc --crate-type lib --edition 2024 --emit metadata sccache_probe.rs >/dev/null 2>&1
+          status=$?
+          rm -f sccache_probe.rs
+          if [ ${status} -eq 0 ]; then
+            echo "sccache_ready=true" >> "$GITHUB_OUTPUT"
+            echo "sccache is healthy; cached compilation enabled."
+          else
+            echo "sccache_ready=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::sccache unavailable (status ${status}); falling back to direct compilation."
+          fi
       - name: Run eligible foundational tests
         shell: bash
+        env:
+          RUSTC_WRAPPER: ${{ steps.sccache_check.outputs.sccache_ready == 'true' && 'sccache' || '' }}
         run: cargo test --workspace --all-features
       - name: Validate fixtures and architecture
         shell: bash
+        env:
+          RUSTC_WRAPPER: ${{ steps.sccache_check.outputs.sccache_ready == 'true' && 'sccache' || '' }}
         run: |
           cargo xtask fixtures validate
           cargo xtask fixtures verify-index
@@ -70,13 +100,19 @@ jobs:
       - name: Run Stage 4.1 process transcript blockers
         shell: bash
         timeout-minutes: 12
+        env:
+          RUSTC_WRAPPER: ${{ steps.sccache_check.outputs.sccache_ready == 'true' && 'sccache' || '' }}
         run: cargo test -p agent-vesper-acp --all-features --test process_blockers -- --test-threads=1
       - name: Run process conformance tests
         shell: bash
+        env:
+          RUSTC_WRAPPER: ${{ steps.sccache_check.outputs.sccache_ready == 'true' && 'sccache' || '' }}
         run: cargo test --manifest-path spikes/process-sandbox/Cargo.toml --test process_conformance
       - name: Run Linux sandbox conformance
         if: matrix.platform_spike == 'linux'
         shell: bash
+        env:
+          RUSTC_WRAPPER: ${{ steps.sccache_check.outputs.sccache_ready == 'true' && 'sccache' || '' }}
         run: |
           sudo apt-get update
           sudo apt-get install -y bubblewrap
