@@ -101,6 +101,25 @@ impl ProcessHarness {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        // `env_clear()` nukes the parent environment for isolation, but the
+        // spawned `agent-vesper-acp` binary still needs a small set of
+        // platform-critical env vars to function. Without them:
+        //   * Windows: Winsock (`WSAStartup`) and DLL loading require
+        //     `SystemRoot` / `SystemDrive` / `windir`; stripping them makes
+        //     the binary hang forever on its first TCP operation, which
+        //     reproduces as the integration-test hang seen on windows-2025.
+        //   * macOS: PATH and TMPDIR are needed for any subprocess the
+        //     runtime spawns and for sane temp-dir resolution.
+        //   * Linux: PATH is needed if the runtime shells out for anything
+        //     during the test (defensive; Linux currently passes either way).
+        // None of these expose the user's real `ZAI_API_KEY` or any
+        // `AGENT_VESPER_*` configuration; isolation of those secrets is
+        // preserved because they are set explicitly above after env_clear.
+        for key in critical_environment_keys() {
+            if let Ok(value) = std::env::var(key) {
+                command.env(key, value);
+            }
+        }
         for (key, value) in extra {
             command.env(key, value);
         }
@@ -338,4 +357,37 @@ fn unique_suffix() -> u128 {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_nanos()
+}
+
+/// Returns the platform-specific minimum env-var keys the spawned
+/// `agent-vesper-acp` process must inherit even after `env_clear()`, so the
+/// binary can initialize its platform runtime (Windows Winsock, DLL search
+/// paths; macOS temp/subprocess resolution; Linux defensive PATH). Tests
+/// still set `HOME`, `XDG_*`, `ZAI_API_KEY`, and `AGENT_VESPER_*` explicitly
+/// above, so secret isolation is not weakened by inheriting these keys.
+fn critical_environment_keys() -> &'static [&'static str] {
+    if cfg!(target_os = "windows") {
+        &[
+            "SystemRoot",
+            "SystemDrive",
+            "windir",
+            "TEMP",
+            "TMP",
+            "PATHEXT",
+            "PATH",
+            "USERPROFILE",
+            "APPDATA",
+            "LOCALAPPDATA",
+            "PROGRAMDATA",
+            "COMSPEC",
+        ]
+    } else if cfg!(target_os = "macos") {
+        &[
+            "PATH", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE", "USER", "LOGNAME", "SHELL", "TZ",
+        ]
+    } else {
+        &[
+            "PATH", "LANG", "LC_ALL", "LC_CTYPE", "USER", "LOGNAME", "SHELL", "TZ", "TMPDIR",
+        ]
+    }
 }
