@@ -235,8 +235,25 @@ async fn atomic_replacement_during_read_is_consistent_and_typed() {
     let decoder = LegacySessionDecoder::default();
     let id = SessionId::new("replace").unwrap();
     for _ in 0..100 {
+        // On Windows a concurrent rename can momentarily make the destination
+        // unreadable (ERROR_SHARING_VIOLATION surfaces as io::ErrorKind::
+        // PermissionDenied through the read-only store). That is a transient
+        // "file mid-replacement" state, not a torn or untyped record, so retry
+        // briefly until the read resolves to a definitive outcome. The final
+        // assertion is unchanged: every observed record is Loaded / Corrupt /
+        // Missing, never torn or untyped.
+        let outcome = {
+            let mut outcome = decoder.load(&repository, &id).await;
+            for _ in 0..16 {
+                if !matches!(outcome, LegacyLoadOutcome::PermissionDenied) {
+                    break;
+                }
+                outcome = decoder.load(&repository, &id).await;
+            }
+            outcome
+        };
         assert!(matches!(
-            decoder.load(&repository, &id).await,
+            outcome,
             LegacyLoadOutcome::Loaded(_)
                 | LegacyLoadOutcome::Corrupt(_)
                 | LegacyLoadOutcome::Missing
