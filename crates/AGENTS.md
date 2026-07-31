@@ -52,8 +52,13 @@ test-only conformance support.
 - `vesper-provider-synthetic/AGENTS.md` — deterministic in-process reference
   provider proving multi-provider contract neutrality.
 - `vesper-runtime/AGENTS.md` — provider-neutral session actors and converted
-  state acceptance.
+  state acceptance. (Single-turn engine; composed — not modified — by
+  `vesper-agent` under ADR 0010.)
 - `vesper-acp/AGENTS.md` — official-SDK ACP protocol-v1 adapter.
 - `vesper-sessions/AGENTS.md` — read-only session ports, bounded compatibility
   decoding, conversion, identity, replay plans, layouts, metadata, and the
   Stage 6 transactional writer.
+- `vesper-agent/AGENTS.md` — **proposed (ADR 0010, Tier C).** The multi-turn
+  tool-executing agent loop, tool registry + executors, and permission
+  gating that compose `vesper-runtime`. Owns no provider-wire, ACP mapping,
+  or persistence internals.

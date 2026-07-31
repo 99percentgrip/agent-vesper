@@ -16,7 +16,11 @@ provider turns, and acceptance of pure converted session state.
 - Runtime, session, turn, and provider tasks are cancellation descendants.
 - Channels are bounded; visible events are never silently dropped.
 - A provider tool call is surfaced and terminates as unsupported without
-  execution or another provider request.
+  execution or another provider request. **This contract is preserved under
+  ADR 0010 (Tier C):** the runtime remains the pure, provider-neutral
+  single-turn engine. Tool execution and the multi-turn agent loop live in a
+  separate `vesper-agent` crate that *composes* this runtime — they do not
+  enter the runtime itself.
 - No filesystem writes or detached tasks; the optional `save_session` path
   flows entirely through the injected `RuntimeSessionWrites` port.
 - Freshly created sessions carry a default endpoint identity supplied by the

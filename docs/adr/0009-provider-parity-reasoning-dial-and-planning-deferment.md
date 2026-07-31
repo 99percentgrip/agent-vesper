@@ -1,6 +1,17 @@
 # ADR 0009: Provider Parity — Reasoning Dial Reconciliation and Planning Deferment
 
-Status: ACCEPTED
+Status: ACCEPTED — **Decision 1 stands; Decision 2 SUPERSEDED by ADR 0010 (Tier C authorization)**
+
+> **Reassessment (Tier C authorization).** Decision 2 deferred model-driven
+> plan generation and the agentic tool-execution loop to a future stage.
+> That deferment is **overturned by the lead architect** — see
+> [ADR 0010](0010-tier-c-agent-loop-and-tool-execution.md). The single-turn,
+> tool-free restriction is lifted **at the workspace level**: a new
+> `vesper-agent` crate composes `vesper-runtime` into a multi-turn,
+> tool-executing agent loop. `vesper-runtime` itself remains the pure,
+> provider-neutral single-turn engine (its contract is preserved, not
+> violated). The TUI's `/review <body>` placeholder is retired once the
+> `update_plan` tool flows through the agent loop into the REVIEW phase.
 
 ## Context
 
@@ -51,11 +62,14 @@ session-scoped** reasoning dial matching the oracle's
   and a smaller change than a per-request override envelope.
 - The `zai:model` selector (session-scoped) is retained unchanged.
 
-### Decision 2 — Defer model-driven plan generation to a future "Agent Loop" stage
+### Decision 2 — ~~Defer model-driven plan generation to a future "Agent Loop" stage~~ SUPERSEDED
 
-Model-driven plan generation **cannot** be added to `vesper-runtime` without
-violating its DOX contract. It is explicitly deferred to a future stage that
-owns:
+> **Overturned by [ADR 0010](0010-tier-c-agent-loop-and-tool-execution.md).**
+> The original text below is retained for the record.
+
+~~Model-driven plan generation **cannot** be added to `vesper-runtime` without
+violating its DOX contract.~~ ~~It is explicitly deferred to a future stage that
+owns:~~
 
 - An agentic tool-execution loop (read tools, `update_plan`, continuation).
 - A tool registry with mode-aware permission gating.
