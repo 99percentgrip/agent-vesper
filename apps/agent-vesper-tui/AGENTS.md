@@ -73,6 +73,15 @@ business logic.
 - Run `cargo build -p agent-vesper-tui --bins` to confirm the binary
   links under the workspace toolchain.
 
+## Supply-chain note
+
+The crate pins `ratatui = "=0.30.2"` specifically because ratatui 0.29.0
+pulled in `paste 1.0.15` (RUSTSEC-2024-0436 — unmaintained) and `lru
+0.12.5` (RUSTSEC-2026-0002 — unsound `IterMut`). ratatui 0.30.2 dropped
+the `paste` dependency entirely and moved to `lru 0.18.1`, so both
+advisories are eliminated without ignoring them. Do not downgrade
+ratatui without re-checking `cargo deny check` and `cargo audit`.
+
 ## Child DOX Index
 
 No children.
