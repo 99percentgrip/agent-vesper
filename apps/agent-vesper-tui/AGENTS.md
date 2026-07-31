@@ -75,12 +75,24 @@ business logic.
 
 ## Supply-chain note
 
-The crate pins `ratatui = "=0.30.2"` specifically because ratatui 0.29.0
-pulled in `paste 1.0.15` (RUSTSEC-2024-0436 — unmaintained) and `lru
-0.12.5` (RUSTSEC-2026-0002 — unsound `IterMut`). ratatui 0.30.2 dropped
-the `paste` dependency entirely and moved to `lru 0.18.1`, so both
-advisories are eliminated without ignoring them. Do not downgrade
-ratatui without re-checking `cargo deny check` and `cargo audit`.
+The crate pins `ratatui = "=0.30.2"` and `crossterm = "=0.29.0"` together:
+- ratatui 0.29.0 pulled in `paste 1.0.15` (RUSTSEC-2024-0436 — unmaintained)
+  and `lru 0.12.5` (RUSTSEC-2026-0002 — unsound `IterMut`). ratatui 0.30.2
+  dropped `paste` entirely and moved to `lru 0.18.1`, eliminating both
+  advisories without ignoring them.
+- crossterm must be `=0.29.0` (not `=0.28.1`) so the workspace, the TUI,
+  and `ratatui-crossterm 0.1.2` all share one crossterm version. The
+  workspace pin keeps `default-features = false` for the minimal surface
+  but explicitly enables the `windows` feature, because crossterm gates
+  the `winapi`/`crossterm_winapi` backend deps behind that feature —
+  without it the crate fails to compile on `x86_64-pc-windows-msvc` with
+  E0432/E0433 (`unresolved import crossterm_winapi`, `cannot find module
+  winapi`). The Windows-only deps are target-gated so enabling `windows`
+  on Linux/macOS pulls in nothing.
+
+Do not downgrade ratatui or crossterm, and do not drop the `windows`
+feature, without re-running `cargo deny check`, `cargo audit`, and the
+five-target CI matrix.
 
 ## Child DOX Index
 
