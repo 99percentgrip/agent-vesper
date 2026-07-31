@@ -525,6 +525,19 @@ fn plans(scenario: &str) -> Vec<Plan> {
 
 #[tokio::test]
 async fn all_twenty_one_authoritative_glm_scenarios_execute_against_loopback() {
+    // Bounded budget: a deadlock (e.g. a mock loopback server left on
+    // `accept()` for a connection a cancelled client never makes) must fail
+    // the test fast instead of hanging the whole binary and masking other
+    // failures. 21 scenarios legitimately need headroom on slow CI.
+    tokio::time::timeout(
+        Duration::from_secs(30),
+        run_all_twenty_one_authoritative_glm_scenarios_execute_against_loopback(),
+    )
+    .await
+    .expect("all_twenty_one exceeded 30s budget — likely a deadlock");
+}
+
+async fn run_all_twenty_one_authoritative_glm_scenarios_execute_against_loopback() {
     let fixture_root =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/provider/glm");
     let mut scenarios = fs::read_dir(&fixture_root)
@@ -568,7 +581,7 @@ async fn all_twenty_one_authoritative_glm_scenarios_execute_against_loopback() {
             "glm.fragmented-tool-call" | "glm.interleaved-tool-indexes"
         );
         let events = collect(&session, request(with_tools), cancellation).await;
-        server_task.await.unwrap();
+        server_task.abort();
         let captured = records.lock().unwrap().clone();
         assert_eq!(
             captured.len(),
@@ -698,6 +711,15 @@ async fn all_twenty_one_authoritative_glm_scenarios_execute_against_loopback() {
 
 #[tokio::test]
 async fn byte_fragmentation_and_argument_bound_are_enforced() {
+    tokio::time::timeout(
+        Duration::from_secs(15),
+        run_byte_fragmentation_and_argument_bound_are_enforced(),
+    )
+    .await
+    .expect("byte_fragmentation exceeded 15s budget — likely a deadlock");
+}
+
+async fn run_byte_fragmentation_and_argument_bound_are_enforced() {
     let payload = sse(chunk(Some("思考"), None, None, Some("stop")));
     let plans = vec![Plan {
         parts: payload.into_iter().map(|byte| part(vec![byte])).collect(),
@@ -710,7 +732,7 @@ async fn byte_fragmentation_and_argument_bound_are_enforced() {
         Cancellation::new(),
     )
     .await;
-    server_task.await.unwrap();
+    server_task.abort();
     assert_eq!(content(&events), "思考");
 
     let too_large = "x".repeat(MAX_TOOL_ARGUMENT_BYTES + 1);
@@ -732,12 +754,21 @@ async fn byte_fragmentation_and_argument_bound_are_enforced() {
         Cancellation::new(),
     )
     .await;
-    server_task.await.unwrap();
+    server_task.abort();
     assert_eq!(events.iter().filter(|event| event.is_err()).count(), 1);
 }
 
 #[tokio::test]
 async fn auxiliary_and_quota_paths_are_bounded_and_independent() {
+    tokio::time::timeout(
+        Duration::from_secs(15),
+        run_auxiliary_and_quota_paths_are_bounded_and_independent(),
+    )
+    .await
+    .expect("auxiliary_and_quota exceeded 15s budget — likely a deadlock");
+}
+
+async fn run_auxiliary_and_quota_paths_are_bounded_and_independent() {
     let auxiliary = Plan {
         parts: vec![part(
             br#"{"choices":[{"message":{"content":" bounded answer "}}],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}"#
@@ -773,7 +804,7 @@ async fn auxiliary_and_quota_paths_are_bounded_and_independent() {
         .await
         .unwrap();
     assert_eq!(usage.quotas[0].remaining, Some(75));
-    server_task.await.unwrap();
+    server_task.abort();
 
     let captured = records.lock().unwrap();
     assert_eq!(captured[0].path, "/chat/completions");
@@ -787,6 +818,15 @@ async fn auxiliary_and_quota_paths_are_bounded_and_independent() {
 
 #[tokio::test]
 async fn continuation_usage_is_checked_and_cumulative() {
+    tokio::time::timeout(
+        Duration::from_secs(15),
+        run_continuation_usage_is_checked_and_cumulative(),
+    )
+    .await
+    .expect("continuation_usage exceeded 15s budget — likely a deadlock");
+}
+
+async fn run_continuation_usage_is_checked_and_cumulative() {
     let first = Plan {
         parts: vec![
             part(sse(
@@ -814,7 +854,7 @@ async fn continuation_usage_is_checked_and_cumulative() {
         Cancellation::new(),
     )
     .await;
-    server_task.await.unwrap();
+    server_task.abort();
     let usages = events
         .iter()
         .filter_map(|event| match event.as_ref().ok()? {
@@ -831,6 +871,20 @@ async fn continuation_usage_is_checked_and_cumulative() {
 
 #[tokio::test]
 async fn cancellation_wins_during_backoff_continuation_and_tool_assembly() {
+    // This is the historical deadlock source: when the client cancels mid-way
+    // through a multi-request continuation/retry, the mock loopback server is
+    // left blocked on `accept()` for a connection that never arrives. The
+    // server task is now aborted after `collect()` returns, and this budget
+    // guarantees the test fails fast instead of hanging the binary.
+    tokio::time::timeout(
+        Duration::from_secs(15),
+        run_cancellation_wins_during_backoff_continuation_and_tool_assembly(),
+    )
+    .await
+    .expect("cancellation_wins exceeded 15s budget — likely a deadlock");
+}
+
+async fn run_cancellation_wins_during_backoff_continuation_and_tool_assembly() {
     let cases = [
         vec![Plan {
             status: 503,
@@ -891,7 +945,7 @@ async fn cancellation_wins_during_backoff_continuation_and_tool_assembly() {
             session.retry.maximum_delay = Duration::from_secs(2);
         }
         let events = collect(&session, request(index == 2), cancellation).await;
-        server_task.await.unwrap();
+        server_task.abort();
         assert_eq!(
             terminal(&events),
             Some(&FinishOutcome::Cancelled),
