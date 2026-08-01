@@ -436,7 +436,6 @@ impl CommandRegistry {
         ORACLE_COMMAND_SURFACE
             .iter()
             .filter(|entry| query.is_empty() || entry.name.starts_with(query))
-            .take(50)
             .map(|entry| (format!("/{}", entry.name), entry.description.to_string()))
             .collect()
     }
@@ -1209,10 +1208,6 @@ struct OracleCommandEntry {
 /// [`CommandOutcome::Deferred`] notice naming the owning subsystem).
 #[rustfmt::skip]
 const ORACLE_COMMAND_SURFACE: &[OracleCommandEntry] = &[
-    // === Vesper-native (not in oracle LOCAL_COMMANDS; handled via keybindings there) ===
-    OracleCommandEntry { name: "approve",           description: "Finalize the reviewed plan and start execution (Vesper-native)" },
-    OracleCommandEntry { name: "cancel",            description: "Abort the in-flight plan (Vesper-native)" },
-    OracleCommandEntry { name: "quit",              description: "Exit the TUI (Vesper-native; oracle uses Ctrl+X)" },
     // === Python oracle LOCAL_COMMANDS (glm_acp/tui.py:86) — in declaration order ===
     OracleCommandEntry { name: "plan",              description: "Switch between Coding Plan, Standard API, and BigModel (CN)" },
     OracleCommandEntry { name: "thinking",          description: "Change provider thinking: Off, Standard, Deep High, or Deep Max" },
@@ -1294,6 +1289,12 @@ const ORACLE_COMMAND_SURFACE: &[OracleCommandEntry] = &[
     OracleCommandEntry { name: "export last",       description: "Export the last response to a Markdown file" },
     OracleCommandEntry { name: "image",             description: "Queue an image for the next prompt" },
     OracleCommandEntry { name: "exit",              description: "Close the terminal agent" },
+    // === Vesper-native additions (the oracle handles these via keybindings) ===
+    // Keep these after the oracle surface so opening `/` starts with the same
+    // command order as the Python composer.
+    OracleCommandEntry { name: "approve",           description: "Finalize the reviewed plan and start execution (Vesper-native)" },
+    OracleCommandEntry { name: "cancel",            description: "Abort the in-flight plan (Vesper-native)" },
+    OracleCommandEntry { name: "quit",              description: "Exit the TUI (Vesper-native; oracle uses Ctrl+X)" },
 ];
 
 /// Coerces a free-form argument into the value shape a descriptor expects.
@@ -1420,7 +1421,7 @@ mod tests {
         let registry = CommandRegistry::stage_11b();
 
         let root = registry.completion_candidates("/");
-        assert!(!root.is_empty());
+        assert_eq!(root.len(), registry.names().len());
         assert!(root.iter().all(|(name, _)| name.starts_with('/')));
 
         let help = registry.completion_candidates("/hel");

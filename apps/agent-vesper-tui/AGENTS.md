@@ -131,7 +131,11 @@ business logic.
 - The composer must expose the registered oracle commands while the input
   begins with `/`: the binary owns palette selection/completion key handling,
   while `CommandRegistry::completion_candidates` remains pure and derives its
-  labels/descriptions from `ORACLE_COMMAND_SURFACE`.
+  labels/descriptions from `ORACLE_COMMAND_SURFACE`. The palette must make the
+  complete registry reachable through a scrolling viewport; Enter submits the
+  highlighted command, while configurable commands first expand into values
+  advertised by the active provider and free-form commands leave the cursor at
+  their argument position. Tab completes without submitting.
 - All event-loop transition logic lives in `dispatch::dispatch`. When a new
   command or transition is added, extend `CommandOutcome` in `commands.rs`,
   add a `match` arm in `dispatch::apply_outcome`, and cover the lifecycle in

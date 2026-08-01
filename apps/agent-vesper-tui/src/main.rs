@@ -50,7 +50,7 @@ use vesper_domain::{
     HarnessCommandPayload, MessageId, MessageRole, ModelId, ProviderId, QualifiedModelId, Revision,
     SessionId, SessionOperatingMode, SessionPermissionMode, SystemInstruction, WorkspaceRoot,
 };
-use vesper_provider::ProviderConfiguration;
+use vesper_provider::{ProviderConfiguration, SuperpowerValue};
 
 /// Default provider identity when `AGENT_VESPER_PROVIDER` is unset.
 const DEFAULT_PROVIDER: &str = "zai";
@@ -351,7 +351,7 @@ async fn drive_loop(
         // fall through and render the in-flight banner.
         drain_agent_event(session);
         drain_permission_request(session);
-        refresh_command_menu(session, registry_commands);
+        refresh_command_menu(session, registry_commands, surface);
 
         let model = ViewModel {
             plan: session.state.plan.clone(),
@@ -418,13 +418,22 @@ async fn drive_loop(
                     session.input.clear();
                     continue;
                 }
-                // A bare slash opens the oracle-style command palette. It is
-                // not itself a command and must never fall through to the
-                // resolver as an empty command name.
-                if session.input.trim() == "/" && !session.command_matches.is_empty() {
-                    session.state.status =
-                        Some("Type a command name, or press Tab to complete.".into());
-                    continue;
+                if let Some(selected) = selected_command_completion(session) {
+                    let typed = session.input.trim_end();
+                    if typed != selected || command_expands_to_argument(&selected, surface) {
+                        session.input = selected;
+                    }
+                    if command_expands_to_argument(&session.input, surface) {
+                        session.input.push(' ');
+                        session.command_selected = 0;
+                        refresh_command_menu(session, registry_commands, surface);
+                        session.state.status = Some(if session.command_matches.is_empty() {
+                            "Type the command argument, then press Enter.".into()
+                        } else {
+                            "Select a value with ↑/↓, then press Enter.".into()
+                        });
+                        continue;
+                    }
                 }
                 let intent = CommandIntent::parse(&session.input);
                 // Capture whether this was a free-text prompt BEFORE dispatch
@@ -525,17 +534,16 @@ async fn drive_loop(
             }
             KeyCode::Backspace => {
                 session.input.pop();
-                refresh_command_menu(session, registry_commands);
+                refresh_command_menu(session, registry_commands, surface);
             }
             KeyCode::Tab if !session.command_matches.is_empty() => {
-                let selected = session
-                    .command_matches
-                    .get(session.command_selected)
-                    .map(|(command, _)| command.clone());
-                if let Some(command) = selected {
+                if let Some(command) = selected_command_completion(session) {
                     session.input = command;
+                    if command_expands_to_argument(&session.input, surface) {
+                        session.input.push(' ');
+                    }
                     session.command_selected = 0;
-                    refresh_command_menu(session, registry_commands);
+                    refresh_command_menu(session, registry_commands, surface);
                 }
             }
             KeyCode::Up if !session.command_matches.is_empty() => {
@@ -551,7 +559,7 @@ async fn drive_loop(
             }
             KeyCode::Char(ch) => {
                 session.input.push(ch);
-                refresh_command_menu(session, registry_commands);
+                refresh_command_menu(session, registry_commands, surface);
             }
             KeyCode::Esc if session.state.phase() != PlanPhase::Normal => {
                 // Esc cancels any in-flight plan directly through the state
@@ -575,14 +583,18 @@ fn enter_raw_mode() -> io::Result<()> {
 /// composer value. This is deliberately kept at the terminal boundary: the
 /// registry remains pure and the palette disappears while an agent turn is in
 /// flight, matching the Python composer behavior.
-fn refresh_command_menu(session: &mut TuiSession, registry: &CommandRegistry) {
+fn refresh_command_menu(
+    session: &mut TuiSession,
+    registry: &CommandRegistry,
+    surface: &ProviderSuperpowerSurface,
+) {
     if session.agent_running || !session.input.trim_start().starts_with('/') {
         session.command_matches.clear();
         session.command_selected = 0;
         return;
     }
 
-    session.command_matches = registry.completion_candidates(&session.input);
+    session.command_matches = command_palette_candidates(&session.input, registry, surface);
     if session.command_matches.is_empty() {
         session.command_selected = 0;
     } else {
@@ -590,6 +602,86 @@ fn refresh_command_menu(session: &mut TuiSession, registry: &CommandRegistry) {
             .command_selected
             .min(session.command_matches.len().saturating_sub(1));
     }
+}
+
+/// Produces either root slash-command matches or provider-advertised values
+/// for a configurable command. This mirrors the oracle composer's two-level
+/// palette while keeping values derived from the active provider rather than
+/// hard-coding GLM model/reasoning choices in the terminal loop.
+fn command_palette_candidates(
+    input: &str,
+    registry: &CommandRegistry,
+    surface: &ProviderSuperpowerSurface,
+) -> Vec<(String, String)> {
+    let trimmed = input.trim_start();
+    let Some((command, argument)) = trimmed.split_once(' ') else {
+        return registry.completion_candidates(trimmed);
+    };
+    let alias = match command {
+        "/reasoning" => "thinking",
+        value => value.trim_start_matches('/'),
+    };
+    let Some(descriptor) = surface.by_alias(alias) else {
+        return Vec::new();
+    };
+    let query = argument.trim().to_ascii_lowercase();
+    descriptor
+        .allowed_values
+        .iter()
+        .map(superpower_value_text)
+        .filter(|value| query.is_empty() || value.to_ascii_lowercase().starts_with(&query))
+        .map(|value| {
+            (
+                format!("{command} {value}"),
+                descriptor.display_name.as_str().to_string(),
+            )
+        })
+        .collect()
+}
+
+fn superpower_value_text(value: &SuperpowerValue) -> String {
+    match value {
+        SuperpowerValue::Choice { value } => value.as_str().to_string(),
+        SuperpowerValue::Flag { value } => value.to_string(),
+        SuperpowerValue::Number { value } => value.to_string(),
+    }
+}
+
+fn selected_command_completion(session: &TuiSession) -> Option<String> {
+    session
+        .command_matches
+        .get(session.command_selected)
+        .map(|(command, _)| command.clone())
+}
+
+/// Commands which must not be submitted immediately after root-palette
+/// selection. Provider configuration commands expand into a second value
+/// palette; free-form commands leave the cursor after a trailing space.
+fn command_expands_to_argument(command: &str, surface: &ProviderSuperpowerSurface) -> bool {
+    let command = command.trim_end();
+    if command.contains(' ') {
+        return false;
+    }
+    let name = command.trim_start_matches('/');
+    let alias = if name == "reasoning" {
+        "thinking"
+    } else {
+        name
+    };
+    surface.by_alias(alias).is_some()
+        || matches!(
+            name,
+            "plan"
+                | "planmode"
+                | "api-plan"
+                | "endpoint"
+                | "goal"
+                | "subgoal"
+                | "rename"
+                | "rollback"
+                | "rewind"
+                | "loop"
+        )
 }
 
 fn leave_raw_mode() -> io::Result<()> {
@@ -4020,6 +4112,88 @@ mod tests {
     //! touch crossterm or a real terminal.
 
     use super::*;
+
+    fn palette_surface() -> ProviderSuperpowerSurface {
+        use vesper_provider::{SuperpowerDescriptor, SuperpowerKind, SuperpowerScope};
+
+        let provider_id = ProviderId::new("zai").unwrap();
+        let descriptor = |id: &str, alias: &str, values: &[&str]| SuperpowerDescriptor {
+            id: BoundedString::new(id).unwrap(),
+            provider_id: provider_id.clone(),
+            display_name: BoundedString::new(alias).unwrap(),
+            kind: SuperpowerKind::Choice,
+            scope: SuperpowerScope::Session,
+            default_value: SuperpowerValue::Choice {
+                value: BoundedString::new(values[0]).unwrap(),
+            },
+            allowed_values: values
+                .iter()
+                .map(|value| SuperpowerValue::Choice {
+                    value: BoundedString::new(*value).unwrap(),
+                })
+                .collect(),
+            command_alias: Some(BoundedString::new(alias).unwrap()),
+            help: None,
+        };
+        ProviderSuperpowerSurface::new(
+            provider_id.clone(),
+            vec![
+                descriptor(
+                    "zai:reasoning",
+                    "thinking",
+                    &["disabled", "enabled", "high", "max"],
+                ),
+                descriptor(
+                    "zai:model",
+                    "model",
+                    &["glm-5.2", "glm-5.2-air", "glm-5.2-flash"],
+                ),
+            ],
+        )
+    }
+
+    #[test]
+    fn palette_starts_in_oracle_order_and_exposes_every_command() {
+        let registry = CommandRegistry::stage_11b();
+        let choices = command_palette_candidates("/", &registry, &palette_surface());
+        assert_eq!(choices.len(), registry.names().len());
+        assert_eq!(choices[0].0, "/plan");
+        assert_eq!(
+            choices.last().map(|choice| choice.0.as_str()),
+            Some("/quit")
+        );
+    }
+
+    #[test]
+    fn palette_expands_provider_commands_into_live_values() {
+        let registry = CommandRegistry::stage_11b();
+        let surface = palette_surface();
+        let thinking = command_palette_candidates("/thinking ", &registry, &surface);
+        assert_eq!(thinking.len(), 4);
+        assert_eq!(thinking[0].0, "/thinking disabled");
+        assert_eq!(
+            command_palette_candidates("/thinking h", &registry, &surface)[0].0,
+            "/thinking high"
+        );
+        assert_eq!(
+            command_palette_candidates("/reasoning m", &registry, &surface)[0].0,
+            "/reasoning max"
+        );
+        assert_eq!(
+            command_palette_candidates("/model glm-5.2-f", &registry, &surface)[0].0,
+            "/model glm-5.2-flash"
+        );
+    }
+
+    #[test]
+    fn palette_only_pauses_submission_for_commands_needing_arguments() {
+        let surface = palette_surface();
+        assert!(command_expands_to_argument("/thinking", &surface));
+        assert!(command_expands_to_argument("/model", &surface));
+        assert!(command_expands_to_argument("/goal", &surface));
+        assert!(!command_expands_to_argument("/thinking enabled", &surface));
+        assert!(!command_expands_to_argument("/help", &surface));
+    }
 
     #[test]
     fn provider_configuration_resolves_for_glm_and_synthetic() {

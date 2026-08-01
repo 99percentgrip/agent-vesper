@@ -18,6 +18,8 @@ use ratatui::{
 use crate::plan_mode::{PlanPhase, PlanState};
 use crate::superpowers::{ProviderSuperpowerSurface, SuperpowerOverrides};
 
+const COMMAND_MENU_ROWS: usize = 10;
+
 /// Pure view model the renderer consumes every frame.
 #[derive(Debug, Clone, Default)]
 pub struct ViewModel {
@@ -136,39 +138,56 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
     render_sidebar(frame, body[1], model);
 
     if !model.command_menu.is_empty() {
+        let selected = model
+            .command_menu_selected
+            .min(model.command_menu.len().saturating_sub(1));
+        let viewport_start = selected.saturating_sub(COMMAND_MENU_ROWS.saturating_sub(1));
         let menu_items = model
             .command_menu
             .iter()
-            .take(10)
             .enumerate()
+            .skip(viewport_start)
+            .take(COMMAND_MENU_ROWS)
             .map(|(index, (command, description))| {
-                let selected = index == model.command_menu_selected.min(9);
-                let row_style = if selected {
+                let is_selected = index == selected;
+                let row_style = if is_selected {
                     Style::default().bg(Color::Rgb(17, 49, 75))
                 } else {
                     Style::default()
                 };
                 ListItem::new(Line::from(vec![
                     Span::styled(
-                        if selected {
+                        if is_selected {
                             format!("▸ {command}")
                         } else {
                             format!("  {command}")
                         },
                         row_style
-                            .fg(if selected { Color::White } else { Color::Cyan })
+                            .fg(if is_selected {
+                                Color::White
+                            } else {
+                                Color::Cyan
+                            })
                             .add_modifier(Modifier::BOLD),
                     ),
                     Span::styled(
                         format!("  {description}"),
-                        row_style.fg(if selected { Color::White } else { Color::Gray }),
+                        row_style.fg(if is_selected {
+                            Color::White
+                        } else {
+                            Color::Gray
+                        }),
                     ),
                 ]))
                 .style(row_style)
             })
             .collect::<Vec<_>>();
         frame.render_widget(
-            List::new(menu_items).block(Block::default().borders(Borders::ALL).title(" Commands ")),
+            List::new(menu_items).block(Block::default().borders(Borders::ALL).title(format!(
+                " Commands {}/{} ",
+                selected + 1,
+                model.command_menu.len()
+            ))),
             chunks[2],
         );
     }
