@@ -140,46 +140,37 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
             .command_menu
             .iter()
             .take(10)
-            .map(|(command, description)| {
+            .enumerate()
+            .map(|(index, (command, description))| {
+                let selected = index == model.command_menu_selected.min(9);
+                let row_style = if selected {
+                    Style::default().bg(Color::Rgb(17, 49, 75))
+                } else {
+                    Style::default()
+                };
                 ListItem::new(Line::from(vec![
                     Span::styled(
-                        command.clone(),
-                        Style::default()
-                            .fg(Color::Cyan)
+                        if selected {
+                            format!("▸ {command}")
+                        } else {
+                            format!("  {command}")
+                        },
+                        row_style
+                            .fg(if selected { Color::White } else { Color::Cyan })
                             .add_modifier(Modifier::BOLD),
                     ),
-                    Span::raw("  "),
-                    Span::styled(description.clone(), Style::default().fg(Color::DarkGray)),
+                    Span::styled(
+                        format!("  {description}"),
+                        row_style.fg(if selected { Color::White } else { Color::Gray }),
+                    ),
                 ]))
+                .style(row_style)
             })
             .collect::<Vec<_>>();
         frame.render_widget(
-            List::new(menu_items)
-                .block(Block::default().borders(Borders::ALL).title(" Commands "))
-                .highlight_style(Style::default().bg(Color::Rgb(17, 49, 75)).fg(Color::White))
-                .highlight_symbol("▸ "),
+            List::new(menu_items).block(Block::default().borders(Borders::ALL).title(" Commands ")),
             chunks[2],
         );
-        // ratatui's stateless List does not own a selected index. Emphasize
-        // the selected row explicitly so Tab/↑/↓ remains visible.
-        let selected = model.command_menu_selected.min(9);
-        let selected_y = chunks[2].y.saturating_add(1 + selected as u16);
-        if selected_y < chunks[2].bottom().saturating_sub(1) {
-            frame.render_widget(
-                Paragraph::new(Line::from(Span::styled(
-                    format!("▸ {}", model.command_menu[selected].0),
-                    Style::default()
-                        .fg(Color::White)
-                        .add_modifier(Modifier::BOLD),
-                ))),
-                ratatui::layout::Rect {
-                    x: chunks[2].x.saturating_add(1),
-                    y: selected_y,
-                    width: chunks[2].width.saturating_sub(2),
-                    height: 1,
-                },
-            );
-        }
     }
 
     let hint = if model.command_menu.is_empty() {

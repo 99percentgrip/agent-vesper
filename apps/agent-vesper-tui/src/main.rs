@@ -418,6 +418,14 @@ async fn drive_loop(
                     session.input.clear();
                     continue;
                 }
+                // A bare slash opens the oracle-style command palette. It is
+                // not itself a command and must never fall through to the
+                // resolver as an empty command name.
+                if session.input.trim() == "/" && !session.command_matches.is_empty() {
+                    session.state.status =
+                        Some("Type a command name, or press Tab to complete.".into());
+                    continue;
+                }
                 let intent = CommandIntent::parse(&session.input);
                 // Capture whether this was a free-text prompt BEFORE dispatch
                 // clears the input buffer; Phase 6 needs the text to drive
