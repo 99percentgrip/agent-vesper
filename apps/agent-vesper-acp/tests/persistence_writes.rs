@@ -11,18 +11,13 @@
 // consumed by different test binaries; only `ProcessHarness` is needed here.
 #![allow(dead_code)]
 
-use std::{
-    fs,
-    io::{Read, Write},
-    net::TcpListener,
-    thread,
-};
+use std::{fs, net::TcpListener, thread};
 
 use serde_json::{Value, json};
 
 mod support;
 
-use support::ProcessHarness;
+use support::{ProcessHarness, read_http_request, write_sse};
 
 const CANARY: &str = "vesper-stage7-secret-canary";
 const READ_ENABLE: &str = "AGENT_VESPER_ENABLE_SESSION_READS";
@@ -59,16 +54,8 @@ fn unique_root(label: &str) -> std::path::PathBuf {
 fn serve_one_prompt_completion(listener: TcpListener) -> thread::JoinHandle<()> {
     thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
-        let mut sink = [0u8; 4096];
-        let _ = stream.read(&mut sink);
-        write!(
-            stream,
-            "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
-            PROMPT_SSE_BODY.len(),
-            PROMPT_SSE_BODY
-        )
-        .unwrap();
-        stream.flush().unwrap();
+        let _ = read_http_request(&mut stream);
+        write_sse(&mut stream, PROMPT_SSE_BODY);
     })
 }
 
