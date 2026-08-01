@@ -82,6 +82,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "vesper-agent",
  "vesper-domain",
  "vesper-provider",
  "vesper-provider-glm",

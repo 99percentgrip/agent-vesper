@@ -34,15 +34,21 @@ business logic.
   `dispatch::dispatch` so it owns no Plan Mode discipline itself. Owns the
   credential-free `RuntimeSupervisor` and drains `SessionState.pending_reasoning`
   into the runtime `UpdateSessionReasoning` command after each dispatch (ADR 0009).
+  Phase 6 (ADR 0010): also owns the multi-turn `vesper_agent::AgentLoop` bridge —
+  `build_agent_loop`, `spawn_agent_turn` (background `tokio::spawn`), and the
+  non-blocking `drain_agent_event` / `apply_agent_event` result handlers.
+  Free-text prompts in NORMAL phase spawn the loop; a model-authored plan
+  drives `PLANNING → REVIEW` via `dispatch::apply_model_plan`.
 
 ## Local Contracts
 
 - Stdout carries only terminal escapes via crossterm; no ACP/JSON-RPC may
   appear there. Tracing goes to stderr only.
 - The crate depends on `vesper-domain`, `vesper-provider`,
-  `vesper-provider-glm`, `vesper-provider-synthetic`, and `vesper-runtime`;
-  it must not depend on `vesper-acp`, `vesper-sessions`, SQLite, MCP, or
-  any disposable spike.
+  `vesper-provider-glm`, `vesper-provider-synthetic`, `vesper-runtime`, and
+  `vesper-agent` (Phase 6 / ADR 0010: the binary composes the multi-turn
+  agent loop); it must not depend on `vesper-acp`, `vesper-sessions`,
+  SQLite, MCP, or any disposable spike.
 - The Plan Mode state machine is **pure**: no I/O, no async, no global
   state. Every transition returns a `PlanTransition`; the event loop applies
   it.
@@ -78,6 +84,16 @@ business logic.
   surfaces the plan (`AgentTurnOutcome::plan`) and the binary calls
   `dispatch::apply_model_plan(body)` to finalize it. The human no longer
   authors the plan body.
+- ADR 0010 (Tier C Phase 6): the binary owns the multi-turn agent-loop
+  bridge. Free-text prompts in NORMAL phase spawn `AgentLoop::run_prompt` in
+  a background `tokio::spawn`; the event loop `try_recv`s the result each
+  iteration so the UI stays responsive (a "WORKING..." banner is shown
+  in-flight). A `Completed { plan: Some(body), .. }` outcome routes through
+  `dispatch::apply_model_plan`. PLANNING-phase free text stays inline
+  (driver answers the pending question); the loop is never spawned there.
+  Construction (`build_agent_loop` / `build_agent_config`) is credential-free
+  and provider-aware (GLM `zai` / `synthetic`); dispatch fails fast on
+  missing credentials or unknown providers.
 - When adding a new slash command, register it in
   `CommandRegistry::stage_11b`, document its surface in
   `CommandRegistry::help_text`, and add a test that proves it resolves
@@ -90,10 +106,13 @@ business logic.
 ## Verification
 
 - Run `cargo test -p agent-vesper-tui --lib`.
+- Run `cargo test -p agent-vesper-tui --bins` (Phase 6 wiring:
+  provider-aware config, `build_agent_loop`/`build_agent_config`, the
+  `AgentEvent → SessionState` mapper, and the spawn/drain plumbing).
 - Run `cargo clippy -p agent-vesper-tui --all-targets --all-features -- -D warnings`.
 - Run `cargo run --package xtask --quiet -- architecture` (the TUI must
   appear in the validated package count and pass the dependency-direction
-  gate).
+  gate, including the new `agent-vesper-tui → vesper-agent` edge).
 - Run `cargo build -p agent-vesper-tui --bins` to confirm the binary
   links under the workspace toolchain.
 

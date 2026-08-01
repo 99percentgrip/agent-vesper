@@ -1220,8 +1220,13 @@ fn allowed_dependencies() -> BTreeMap<&'static str, BTreeSet<&'static str>> {
             ]),
         ),
         (
+            // ADR 0010 (Tier C Phase 6): the TUI binary now composes the
+            // multi-turn agent loop on top of the same shared registry that
+            // powers the reasoning-override supervisor. The library stays
+            // pure; the binary owns the spawn/drain plumbing.
             "agent-vesper-tui",
             BTreeSet::from([
+                "vesper-agent",
                 "vesper-domain",
                 "vesper-provider",
                 "vesper-provider-glm",

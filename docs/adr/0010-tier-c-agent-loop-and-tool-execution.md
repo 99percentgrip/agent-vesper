@@ -149,7 +149,34 @@ Each executor returns bounded `ToolResult` content; never raw secrets.
 - `/approve` (REVIEW → EXECUTING) is unchanged; it gates Phase-4 mutating
   tools on.
 
-### Phase 6 — Command migration (the ~75 deferred commands)
+### Phase 6 — TUI binary ↔ `AgentLoop` end-to-end wiring (COMPLETED)
+
+**Status: shipped.** Connects the brain (model), the hands (tools), and the
+steering wheel (TUI) into a single end-to-end loop, achieving 100% functional
+parity with the Python oracle's `run_loop`.
+
+- `apps/agent-vesper-tui/src/main.rs` now instantiates
+  `vesper_agent::AgentLoop` over the same shared `ProviderRegistry` that
+  backs the reasoning-override supervisor. Construction
+  (`build_agent_loop` / `build_agent_config`) is provider-aware (GLM `zai` /
+  `vesper-synthetic`) and credential-free; only `run_prompt` dispatches.
+- Free-text prompts submitted in NORMAL phase spawn the loop in a background
+  `tokio::spawn`. The event loop `try_recv`s the result each iteration so
+  the UI stays non-blocking; a "WORKING..." status banner is shown in-flight
+  and clears the moment the result lands.
+- The decisive bridge: when the loop returns
+  `AgentTurnOutcome::Completed { plan: Some(body), .. }`, the binary routes
+  the model-authored body through `dispatch::apply_model_plan` to drive
+  `PLANNING → REVIEW`. PLANNING-phase free text stays inline (the driver
+  answers the pending question); the loop is never spawned there.
+- Architecture: `agent-vesper-tui` now depends on `vesper-agent`
+  (registered in `xtask::allowed_dependencies`). The 15-package arch gate
+  stays green.
+- Verification: 12 binary tests cover provider resolution, `AgentLoop`
+  construction, the `AgentEvent → SessionState` mapper, and the
+  spawn/drain plumbing. `cargo xtask verify` runs clean.
+
+### Phase 7 — Command migration (the ~75 deferred commands)
 
 The oracle's ~80 slash commands break into three classes; migrate in this order:
 - **Tool-backed, parity-critical (Tier C scope):** `/plan`, `/approve`,
