@@ -171,15 +171,21 @@ mod tests {
     fn accepts_relative_paths_inside_the_root() {
         let root = tempdir().unwrap();
         fs::write(root.path().join("inside.txt"), "hi").unwrap();
+        // Compare against the CANONICALIZED root: on macOS temp dirs live
+        // behind `/var` -> `/private/var`, and on Windows canonicalize() adds
+        // a `\\?\` prefix, so `resolved` (canonicalized inside `confine`) is
+        // never a prefix of the non-canonical `root.path()`.
+        let canonical_root = root.path().canonicalize().unwrap();
         let resolved = confine(root.path(), "inside.txt").unwrap();
-        assert!(resolved.starts_with(root.path()));
+        assert!(resolved.starts_with(&canonical_root));
     }
 
     #[test]
     fn accepts_not_yet_existing_write_targets() {
         let root = tempdir().unwrap();
+        let canonical_root = root.path().canonicalize().unwrap();
         let resolved = confine(root.path(), "new/nested/file.txt").unwrap();
-        assert!(resolved.starts_with(root.path()));
+        assert!(resolved.starts_with(&canonical_root));
         assert!(resolved.ends_with("file.txt"));
     }
 

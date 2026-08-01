@@ -183,16 +183,26 @@ async fn run_command_executes_in_the_confined_workspace() {
 async fn run_command_enforces_its_timeout() {
     let root = tempfile::tempdir().unwrap();
     let context = root_context(root.path());
+    // `sleep` is a Unix builtin; Windows cmd has no `sleep`, so use `ping`
+    // (which waits ~1s per count). Either way the command runs well past the
+    // 1s timeout and must be killed.
+    #[cfg(unix)]
+    let long_command = "sleep 5";
+    #[cfg(windows)]
+    let long_command = "ping -n 6 127.0.0.1";
     let result = RunCommand
         .execute(
-            &call("run_command", json!({"command": "sleep 5", "timeout": 1})),
+            &call(
+                "run_command",
+                json!({"command": long_command, "timeout": 1}),
+            ),
             &context,
         )
         .await
         .unwrap();
     assert!(
         result.text.as_str().contains("timed out"),
-        "a 1s timeout must kill `sleep 5`: {}",
+        "a 1s timeout must kill the long-running command: {}",
         result.text.as_str()
     );
 }
