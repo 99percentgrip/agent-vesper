@@ -122,7 +122,7 @@ Final release payloads installed for the current user:
 | Binary | Installed path | SHA-256 |
 | --- | --- | --- |
 | ACP | `/home/alex/.local/share/agent-vesper/agent-vesper-acp` | `cbe02788b645d7df62189b47a2f62a867ce79703d6da02d2308b76c4e78d6deb` |
-| TUI | `/home/alex/.local/share/agent-vesper/agent-vesper-tui` | `3324af05651ab282a745ba51ba9a598135883902f2530260139c2924070db469` |
+| TUI | `/home/alex/.local/share/agent-vesper/agent-vesper-tui` | `c40530b3fcacdc0b113c587cdca477ce94bae95e6a33fe3809c908706433a048` |
 
 Launchers are installed at `/home/alex/.local/bin/agent-vesper-acp` and
 `/home/alex/.local/bin/agent-vesper-tui`; both report version `0.1.0`.
