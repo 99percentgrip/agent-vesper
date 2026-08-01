@@ -5,6 +5,7 @@ members = [
     "crates/vesper-config",
     "crates/vesper-acp",
     "crates/vesper-agent",
+    "crates/vesper-checkpoints",
     "crates/vesper-domain",
     "crates/vesper-memory",
     "crates/vesper-policy",

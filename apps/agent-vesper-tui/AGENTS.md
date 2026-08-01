@@ -47,6 +47,14 @@ business logic.
   (`MemoryStore` + `SkillStore` + `UserProfile` + `AwarenessLedger`) and the
   `drain_memory_op` executor that turns `SessionState.pending_memory_op`
   into durable reads/writes after each dispatch.
+  Phase 9 (ADR 0012): also owns the `CheckpointStores` bundle
+  (`CheckpointsLedger` + `SessionLineage` + `CronRegistry` +
+  `SessionExporter` + `ClipboardPort`; `CiStatusReader` is process-scoped)
+  and the `drain_checkpoint_op` executor that turns
+  `SessionState.pending_checkpoint_op` into durable snapshots / restores /
+  lineage / cron / export / clipboard / CI-status operations after each
+  dispatch. The Errno-24-prevention discipline lives entirely in
+  `vesper-checkpoints` (RAII file-handle scoping; no SQLite, no git refs).
 
 ## Local Contracts
 
@@ -55,8 +63,10 @@ business logic.
 - The crate depends on `vesper-domain`, `vesper-provider`,
   `vesper-provider-glm`, `vesper-provider-synthetic`, `vesper-runtime`,
   `vesper-agent` (Phase 6 / ADR 0010: the binary composes the multi-turn
-  agent loop), and `vesper-memory` (Phase 8 / ADR 0011: the binary owns the
-  durable memory store bundle); it must not depend on `vesper-acp`,
+  agent loop), `vesper-memory` (Phase 8 / ADR 0011: the binary owns the
+  durable memory store bundle), and `vesper-checkpoints` (Phase 9 / ADR
+  0012: the binary owns the durable checkpoint/session-lineage/cron/
+  export/clipboard/CI bundle); it must not depend on `vesper-acp`,
   `vesper-sessions`, SQLite, MCP, or any disposable spike.
 - The Plan Mode state machine is **pure**: no I/O, no async, no global
   state. Every transition returns a `PlanTransition`; the event loop applies
@@ -121,6 +131,20 @@ business logic.
   under `AGENT_VESPER_MEMORY_ROOT` or `.agent-vesper/memory/`) and drains
   the op synchronously after dispatch (these are local filesystem
   reads/writes — fast enough not to block the UI).
+- ADR 0012 (Tier C Phase 9): the 13 checkpoint/session/loop/export/copy/ci
+  commands (`/sessions-new`, `/sessions`, `/lineage`, `/branch`,
+  `/rename`, `/checkpoint`, `/rollback`, `/rewind`, `/undo`, `/loop`,
+  `/export`, `/copy`, `/ci`) are no longer deferred. They resolve to
+  `CommandOutcome::Checkpoint(CheckpointOp)`; `dispatch` records
+  `SessionState.pending_checkpoint_op`; the binary owns a
+  `CheckpointStores` bundle (`CheckpointsLedger` + `SessionLineage` +
+  `CronRegistry` + `SessionExporter` + `ClipboardPort` +
+  `CiStatusReader` under `AGENT_VESPER_CHECKPOINT_ROOT` or
+  `.agent-vesper/checkpoints/`) and drains the op synchronously after
+  dispatch. **Errno 24 prevention:** the `vesper-checkpoints` crate uses
+  strict RAII (`Drop`) file-handle discipline — no `File` is ever stored
+  in a long-lived struct, no SQLite, no git refs, no auto-snapshotting.
+  Checkpoints are explicit-only by structural design.
 - When adding a new slash command, register it in
   `CommandRegistry::stage_11b`, document its surface in
   `CommandRegistry::help_text`, and add a test that proves it resolves

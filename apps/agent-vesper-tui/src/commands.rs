@@ -134,6 +134,19 @@ pub enum CommandOutcome {
     /// `pending_prompt`).
     Memory(MemoryOp),
 
+    // === Tier C Phase 9 (ADR 0012) — checkpoints subsystem commands ===
+    /// A checkpoint command resolved to a structured [`CheckpointOp`] that
+    /// the binary will execute against the durable
+    /// [`vesper_checkpoints::CheckpointsLedger`] /
+    /// [`vesper_checkpoints::SessionLineage`] /
+    /// [`vesper_checkpoints::CronRegistry`] /
+    /// [`vesper_checkpoints::SessionExporter`] /
+    /// [`vesper_checkpoints::ClipboardPort`] /
+    /// [`vesper_checkpoints::CiStatusReader`]. `dispatch` records this on
+    /// `SessionState.pending_checkpoint_op`; the binary drains it after
+    /// dispatch (same pattern as `pending_memory_op`).
+    Checkpoint(CheckpointOp),
+
     /// Quit/exit requested.
     Quit,
     /// Unknown command or invalid argument; the message is shown to the user.
@@ -227,6 +240,76 @@ impl MemoryOp {
             Self::ObservabilityList => "observability",
             Self::Curate => "curator",
             Self::Journey => "journey",
+        }
+    }
+}
+
+/// Phase 9 (ADR 0012): one structured operation against the workspace
+/// snapshot / rollback / session-lineage / cron / export / clipboard / CI
+/// surface backed by [`vesper_checkpoints`].
+///
+/// The resolver returns this from a slash command; `dispatch` records it
+/// on [`crate::dispatch::SessionState::pending_checkpoint_op`]; the binary
+/// owns the real [`vesper_checkpoints`] stores and drains the op after
+/// dispatch (mirroring the `pending_memory_op` drain pattern).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CheckpointOp {
+    /// `/sessions-new [name]` — create a new session in the lineage.
+    SessionCreate { name: Option<String> },
+    /// `/sessions` — list every known session.
+    SessionList,
+    /// `/lineage` — show the parent→child chain for the active session.
+    LineageShow,
+    /// `/branch [name]` — fork the active session to try a different
+    /// direction (parent stays Active).
+    SessionBranch { name: Option<String> },
+    /// `/rename <name>` — rename the active session.
+    SessionRename { new_name: String },
+    /// `/checkpoint [label]` — explicitly snapshot the workspace file
+    /// state NOW. Auto-snapshotting is never performed.
+    CheckpointCreate { label: Option<String> },
+    /// `/rollback <id>` — restore the workspace from a prior checkpoint.
+    CheckpointRollback { id: String },
+    /// `/rewind <id>` — alias for `/rollback <id>`.
+    CheckpointRewind { id: String },
+    /// `/undo [N]` — roll back to the N-th most recent checkpoint
+    /// (default N=1). The architect's "take back the last N mutations".
+    CheckpointUndo { count: usize },
+    /// `/loop <prompt>` — register a cron entry (the TUI is not a daemon,
+    /// so no actual scheduling happens here; the entry is recorded for a
+    /// future long-running process).
+    CronRegister { prompt: String, schedule: String },
+    /// `/export` — write transcript + lineage to a bounded markdown file
+    /// under `<root>/exports/`.
+    SessionExport,
+    /// `/copy [target]` — copy the last response / a target to the
+    /// clipboard (with persistence fallback when no clipboard is
+    /// reachable).
+    ClipboardCopy { target: String },
+    /// `/ci` — show CI status for the current branch via `gh` (with a
+    /// clear "unavailable" notice when `gh` is not on PATH).
+    CiStatus,
+}
+
+impl CheckpointOp {
+    /// Returns the slash-command name that produced this op (used by
+    /// `dispatch` to format the in-flight status notice).
+    #[must_use]
+    pub fn command_name(&self) -> &'static str {
+        match self {
+            Self::SessionCreate { .. } => "sessions-new",
+            Self::SessionList => "sessions",
+            Self::LineageShow => "lineage",
+            Self::SessionBranch { .. } => "branch",
+            Self::SessionRename { .. } => "rename",
+            Self::CheckpointCreate { .. } => "checkpoint",
+            Self::CheckpointRollback { .. } => "rollback",
+            Self::CheckpointRewind { .. } => "rewind",
+            Self::CheckpointUndo { .. } => "undo",
+            Self::CronRegister { .. } => "loop",
+            Self::SessionExport => "export",
+            Self::ClipboardCopy { .. } => "copy",
+            Self::CiStatus => "ci",
         }
     }
 }
@@ -450,6 +533,113 @@ impl CommandRegistry {
             "observability" => CommandOutcome::Memory(MemoryOp::ObservabilityList),
             "curator" => CommandOutcome::Memory(MemoryOp::Curate),
             "journey" => CommandOutcome::Memory(MemoryOp::Journey),
+
+            // === Phase 9 (ADR 0012) — checkpoints subsystem commands ===
+            // Each command resolves to a structured CheckpointOp that the
+            // binary drains after dispatch and executes against the durable
+            // vesper_checkpoints stores. These are no longer deferred — they
+            // have a real, persistent backing subsystem with strict RAII
+            // file-descriptor discipline (no SQLite, no git refs).
+            "sessions-new" => {
+                let trimmed = argument.trim();
+                let name = if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed.to_string())
+                };
+                CommandOutcome::Checkpoint(CheckpointOp::SessionCreate { name })
+            }
+            "sessions" => CommandOutcome::Checkpoint(CheckpointOp::SessionList),
+            "lineage" => CommandOutcome::Checkpoint(CheckpointOp::LineageShow),
+            "branch" => {
+                let trimmed = argument.trim();
+                let name = if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed.to_string())
+                };
+                CommandOutcome::Checkpoint(CheckpointOp::SessionBranch { name })
+            }
+            "rename" => {
+                if argument.trim().is_empty() {
+                    CommandOutcome::Error("Usage: /rename <new-session-name>".into())
+                } else {
+                    CommandOutcome::Checkpoint(CheckpointOp::SessionRename {
+                        new_name: argument.trim().to_string(),
+                    })
+                }
+            }
+            "checkpoint" => {
+                let trimmed = argument.trim();
+                let label = if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed.to_string())
+                };
+                CommandOutcome::Checkpoint(CheckpointOp::CheckpointCreate { label })
+            }
+            "rollback" => {
+                if argument.trim().is_empty() {
+                    CommandOutcome::Error("Usage: /rollback <checkpoint-id>".into())
+                } else {
+                    CommandOutcome::Checkpoint(CheckpointOp::CheckpointRollback {
+                        id: argument.trim().to_string(),
+                    })
+                }
+            }
+            "rewind" => {
+                if argument.trim().is_empty() {
+                    CommandOutcome::Error("Usage: /rewind <checkpoint-id>".into())
+                } else {
+                    CommandOutcome::Checkpoint(CheckpointOp::CheckpointRewind {
+                        id: argument.trim().to_string(),
+                    })
+                }
+            }
+            "undo" => {
+                let count = if argument.trim().is_empty() {
+                    1
+                } else {
+                    argument.trim().parse::<usize>().unwrap_or(1).max(1)
+                };
+                CommandOutcome::Checkpoint(CheckpointOp::CheckpointUndo { count })
+            }
+            "loop" => {
+                // /loop <schedule> <prompt> — the oracle's cron surface.
+                // Parse: optional schedule (default "every 30m"), then the
+                // prompt. Bare `/loop` is an error.
+                let trimmed = argument.trim();
+                if trimmed.is_empty() {
+                    CommandOutcome::Error(
+                        "Usage: /loop <prompt>  (or /loop every 1h <prompt>)".into(),
+                    )
+                } else {
+                    let (schedule, prompt) = match trimmed.split_once(char::is_whitespace) {
+                        Some((first, rest))
+                            if first.starts_with("every") || first.starts_with("daily") =>
+                        {
+                            (first.to_string(), rest.trim().to_string())
+                        }
+                        _ => ("every 30m".to_string(), trimmed.to_string()),
+                    };
+                    if prompt.is_empty() {
+                        return CommandOutcome::Error(
+                            "Usage: /loop <prompt>  (or /loop every 1h <prompt>)".into(),
+                        );
+                    }
+                    CommandOutcome::Checkpoint(CheckpointOp::CronRegister { prompt, schedule })
+                }
+            }
+            "export" => CommandOutcome::Checkpoint(CheckpointOp::SessionExport),
+            "copy" => {
+                let target = if argument.trim().is_empty() {
+                    "last-response".to_string()
+                } else {
+                    argument.trim().to_string()
+                };
+                CommandOutcome::Checkpoint(CheckpointOp::ClipboardCopy { target })
+            }
+            "ci" => CommandOutcome::Checkpoint(CheckpointOp::CiStatus),
 
             // === Phase 7 — deferred subsystem commands ===
             // Each deferred command resolves to a clear, actionable notice
@@ -690,17 +880,20 @@ fn deferred_reason(command: &str) -> Option<String> {
         "plugins" => "plugin publisher / install subsystem (Stage 14+, deferred)",
 
         // Worktree session subsystem
-        "sessions-new" | "sessions" | "lineage" | "branch" | "rename" => {
-            "worktree session subsystem (Stage 12+, deferred)"
-        }
+        //
+        // NOTE: The 9 worktree/checkpoint commands below moved to the
+        // durable `vesper-checkpoints` subsystem in Phase 9 (ADR 0012).
+        // They are no longer deferred — see the explicit
+        // `Checkpoint(CheckpointOp)` arms in `resolve_known`.
 
         // Cron / loop scheduler
-        "loop" => "cron / loop scheduler subsystem (Stage 15+, deferred)",
+        //
+        // NOTE: `/loop` also moved to `vesper-checkpoints` (CronRegistry).
 
         // Checkpoint / rollback subsystem
-        "checkpoint" | "rollback" | "rewind" | "undo" => {
-            "conversation checkpoint subsystem (Stage 12+, deferred)"
-        }
+        //
+        // NOTE: `/checkpoint` `/rollback` `/rewind` `/undo` also moved to
+        // `vesper-checkpoints` (CheckpointsLedger).
 
         // Awareness / memory / skills views (the data lives in the harness;
         // surfacing it in the TUI is a later stage)
@@ -713,11 +906,14 @@ fn deferred_reason(command: &str) -> Option<String> {
         // `profile`/`curator`/`journey` all resolve to real ops now.
 
         // CI integration
-        "ci" => "CI-status integration (Stage 17+, deferred)",
+        //
+        // NOTE: `/ci` moved to `vesper-checkpoints` (CiStatusReader).
+        // `ci` => "CI-status integration (Stage 17+, deferred)",
 
         // Export / clipboard
-        "export" => "session-export subsystem (Stage 12+, deferred)",
-        "copy" => "clipboard subsystem (Stage 12+, deferred)",
+        //
+        // NOTE: `/export` and `/copy` moved to `vesper-checkpoints`
+        // (SessionExporter + ClipboardPort).
 
         // Composer features
         "history" => "session-history browser (Stage 12+, deferred)",
@@ -1529,33 +1725,16 @@ mod tests {
         // This is the heart of the parity contract: no oracle command is
         // silently dropped.
         //
-        // Phase 8 (ADR 0011): the 13 memory/awareness commands
-        // (goal, subgoal, awareness, metacognition, deliberation, repository,
-        // meta-learning, observability, memory, skills, profile, curator,
-        // journey) moved out of this list because they now resolve to real
-        // `Memory(MemoryOp)` ops backed by `vesper-memory`. The remaining
-        // list covers only the still-deferred commands.
+        // Phase 8 (ADR 0011): the 13 memory/awareness commands moved out.
+        // Phase 9 (ADR 0012): the 13 checkpoint/session/loop/export/copy/ci
+        // commands moved out. The remaining list covers only the
+        // still-deferred commands (composer, ratatui UI rebuilds,
+        // live-session settings, image, audio, mobile).
         let deferred_commands = [
             "mobile",
             "sound",
             "mcp",
             "plugins",
-            "sessions-new",
-            "sessions",
-            "lineage",
-            "branch",
-            "rename",
-            "loop",
-            "checkpoint",
-            "rollback",
-            "rewind",
-            "undo",
-            "ci",
-            "export",
-            "copy",
-            "history",
-            "search",
-            "prompt",
             "btw",
             "blocks",
             "annotate",
@@ -1577,6 +1756,11 @@ mod tests {
             "attach",
             "image-render",
             "screenshot",
+            // Composer features still need a TUI rebuild (history/search/
+            // prompt are doable; btw/blocks/annotate need a composer).
+            "history",
+            "search",
+            "prompt",
         ];
         for name in deferred_commands {
             match resolve_bare(name) {
@@ -1702,6 +1886,92 @@ mod tests {
         assert_eq!(
             matched, 13,
             "exactly 13 memory commands must resolve to Memory(_)"
+        );
+    }
+
+    #[test]
+    fn phase9_checkpoint_commands_resolve_to_checkpoint_ops() {
+        // Phase 9 (ADR 0012): the 13 checkpoint/session/loop/export/copy/ci
+        // commands must resolve to a real `Checkpoint(CheckpointOp)` outcome
+        // — never Deferred, never Error (except for argument-required ones).
+        let bare_cases: &[(&str, &str)] = &[
+            ("/sessions", "sessions"),
+            ("/lineage", "lineage"),
+            ("/checkpoint", "checkpoint"),
+            ("/export", "export"),
+            ("/copy", "copy"),
+            ("/ci", "ci"),
+        ];
+        for (input, expected_command) in bare_cases {
+            let intent = CommandIntent::parse(input);
+            let outcome = resolve_bare_intent(&intent);
+            match outcome {
+                CommandOutcome::Checkpoint(op) => {
+                    assert_eq!(
+                        op.command_name(),
+                        *expected_command,
+                        "/{expected_command} resolved with the wrong command_name"
+                    );
+                }
+                other => panic!("{input} should resolve to Checkpoint(_), got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn phase9_argument_required_checkpoint_commands_error_clearly() {
+        // /rollback, /rewind, /rename, /loop without an argument must Error
+        // with a clear usage hint — they are not silently no-ops and not
+        // Deferred.
+        for command in ["rollback", "rewind", "rename", "loop"] {
+            assert!(
+                matches!(resolve_bare(command), CommandOutcome::Error(_)),
+                "/{command} with no argument must Error"
+            );
+        }
+    }
+
+    #[test]
+    fn phase9_checkpoint_command_count_matches_directive() {
+        // Sanity guard: exactly 13 checkpoint/session/loop/export/copy/ci
+        // commands resolve to a Checkpoint(CheckpointOp) outcome. If the
+        // directive's "Stage 14: 13 commands" contract drifts, this test
+        // surfaces it immediately.
+        let bare = [
+            "sessions",
+            "lineage",
+            "checkpoint",
+            "export",
+            "copy",
+            "ci",
+            "sessions-new",
+            "branch",
+            "undo",
+        ];
+        let arg_commands = [
+            ("rollback", "ckpt-1"),
+            ("rewind", "ckpt-1"),
+            ("rename", "new-name"),
+            ("loop", "every 1h run tests"),
+        ];
+        let mut matched = 0;
+        for name in bare {
+            if matches!(resolve_bare(name), CommandOutcome::Checkpoint(_)) {
+                matched += 1;
+            }
+        }
+        for (name, arg) in arg_commands {
+            let intent = CommandIntent::Slash {
+                name: name.into(),
+                argument: arg.into(),
+            };
+            if matches!(resolve_bare_intent(&intent), CommandOutcome::Checkpoint(_)) {
+                matched += 1;
+            }
+        }
+        assert_eq!(
+            matched, 13,
+            "exactly 13 checkpoint commands must resolve to Checkpoint(_)"
         );
     }
 

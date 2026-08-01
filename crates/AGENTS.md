@@ -14,6 +14,11 @@ test-only conformance support.
 - `vesper-memory` depends only on `vesper-domain` and `vesper-security`; it
   owns the durable memory graph, learned skills, user profile, and bounded
   awareness ledger (ADR 0011 — Stage 12).
+- `vesper-checkpoints` depends only on `vesper-domain` and
+  `vesper-security`; it owns the workspace snapshot/rollback, session
+  lineage, and bounded cron/export/clipboard/CI surface (ADR 0012 —
+  Stage 14). Strict RAII (`Drop`) file-handle discipline — no SQLite, no
+  git refs, no auto-snapshotting.
 - `vesper-config` depends only on `vesper-domain` and `vesper-security`.
 - `vesper-policy` depends only on `vesper-domain` and `vesper-security`.
 - `vesper-testkit` may depend on all foundational crates and owns synthetic
@@ -63,6 +68,8 @@ test-only conformance support.
   Stage 6 transactional writer.
 - `vesper-memory/AGENTS.md` — ADR 0011 (Stage 12) persistent memory graph,
   learned skills, user profile, and bounded epistemic ledger.
+- `vesper-checkpoints/AGENTS.md` — ADR 0012 (Stage 14) workspace snapshots,
+  rollback, session lineage, and bounded cron/export/clipboard/CI surface.
 - `vesper-agent/AGENTS.md` — Tier C (ADR 0010). The multi-turn
   tool-executing agent loop, tool registry + executors, and permission gating
   that compose `vesper-runtime`. Owns no provider-wire, ACP mapping, or

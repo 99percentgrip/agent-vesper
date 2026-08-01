@@ -113,6 +113,11 @@ async fn run() -> Result<(), String> {
     // root cannot be opened we keep going so the rest of the TUI works —
     // memory commands will surface a clear error in the transcript.
     let memory_stores = MemoryStores::open_default();
+    // Phase 9 (ADR 0012): open the durable checkpoints subsystem rooted at
+    // `AGENT_VESPER_CHECKPOINT_ROOT` (falling back to
+    // `.agent-vesper/checkpoints/`). Same confinement + atomic-write
+    // discipline as the memory subsystem; the binary owns the root path.
+    let mut checkpoint_stores = CheckpointStores::open_default();
 
     let mut session = TuiSession {
         // Pure dispatch state lives in the library so the full Plan Mode
@@ -134,6 +139,7 @@ async fn run() -> Result<(), String> {
         &runtime_session_id,
         &agent,
         &memory_stores,
+        &mut checkpoint_stores,
     )
     .await;
     let _ = leave_raw_mode();
@@ -286,6 +292,7 @@ async fn drive_loop(
     runtime_session_id: &SessionId,
     agent: &Arc<AgentLoop>,
     memory_stores: &MemoryStores,
+    checkpoint_stores: &mut CheckpointStores,
 ) -> Result<(), String> {
     let mut terminal = Terminal::new(Backend::new(stdout()))
         .map_err(|error| format!("terminal init failed: {error}"))?;
@@ -412,6 +419,12 @@ async fn drive_loop(
                 // filesystem reads/writes — fast enough not to block the UI).
                 if let Some(op) = session.state.pending_memory_op.take() {
                     drain_memory_op(op, memory_stores, &mut session.state);
+                }
+                // Phase 9 (ADR 0012): drain any pending checkpoint op against
+                // the durable vesper_checkpoints stores. Same synchronous
+                // execution pattern (local filesystem + scoped /ci subprocess).
+                if let Some(op) = session.state.pending_checkpoint_op.take() {
+                    drain_checkpoint_op(op, checkpoint_stores, &mut session.state);
                 }
             }
             KeyCode::Backspace => {
@@ -987,6 +1000,415 @@ fn list_awareness(
         }
     }
     state.status = None;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 9 (ADR 0012): the durable checkpoints subsystem bridge.
+//
+// `CheckpointStores` owns one `CheckpointsLedger`, `SessionLineage`,
+// `CronRegistry`, `SessionExporter`, and `ClipboardPort` rooted at the same
+// directory, plus the `CiStatusReader` (which is process-scoped). The binary
+// owns one bundle; the event loop borrows it for the duration of `drive_loop`.
+// `drain_checkpoint_op` is the synchronous executor the event loop calls
+// after dispatch; it formats the result into one or more transcript lines so
+// the driver sees the outcome immediately.
+// ---------------------------------------------------------------------------
+
+/// Bundle of the durable checkpoint subsystem stores.
+struct CheckpointStores {
+    ledger: Option<vesper_checkpoints::CheckpointsLedger>,
+    sessions: Option<vesper_checkpoints::SessionLineage>,
+    cron: Option<vesper_checkpoints::CronRegistry>,
+    exporter: Option<vesper_checkpoints::SessionExporter>,
+    clipboard: Option<vesper_checkpoints::ClipboardPort>,
+    /// Workspace root snapshots and restores are confined to.
+    workspace_root: std::path::PathBuf,
+    /// Human-readable root path used in error notices.
+    root_display: String,
+    /// Active session id (used by /lineage, /branch, /rename). Defaults to
+    /// `sess-1` so the very first session works without an explicit
+    /// `/sessions-new`.
+    active_session_id: String,
+}
+
+impl CheckpointStores {
+    /// Opens the bundle at `AGENT_VESPER_CHECKPOINT_ROOT` (falling back to
+    /// `.agent-vesper/checkpoints/`).
+    fn open_default() -> Self {
+        let root = match std::env::var("AGENT_VESPER_CHECKPOINT_ROOT") {
+            Ok(value) => std::path::PathBuf::from(value),
+            Err(_) => std::env::current_dir()
+                .unwrap_or_else(|_| std::path::PathBuf::from("."))
+                .join(".agent-vesper")
+                .join("checkpoints"),
+        };
+        let _ = std::fs::create_dir_all(&root);
+        let workspace_root = std::env::current_dir()
+            .unwrap_or_else(|_| std::path::PathBuf::from("."))
+            .canonicalize()
+            .unwrap_or_else(|_| std::env::current_dir().unwrap_or_default());
+        let root_display = root.display().to_string();
+        let ledger = vesper_checkpoints::CheckpointsLedger::open(&root).ok();
+        let sessions = vesper_checkpoints::SessionLineage::open(&root).ok();
+        let cron = vesper_checkpoints::CronRegistry::open(&root).ok();
+        let exporter = vesper_checkpoints::SessionExporter::open(&root).ok();
+        let clipboard = vesper_checkpoints::ClipboardPort::open(&root).ok();
+        Self {
+            ledger,
+            sessions,
+            cron,
+            exporter,
+            clipboard,
+            workspace_root,
+            root_display,
+            active_session_id: "sess-1".to_string(),
+        }
+    }
+}
+
+/// Drains one [`CheckpointOp`] against the durable stores, pushing the
+/// result into the transcript. Pure-with-side-effects: no async, no
+/// terminal I/O, only local filesystem reads/writes via
+/// `vesper_checkpoints` (and a scoped `gh` subprocess for `/ci`).
+fn drain_checkpoint_op(
+    op: agent_vesper_tui::commands::CheckpointOp,
+    stores: &mut CheckpointStores,
+    state: &mut SessionState,
+) {
+    use agent_vesper_tui::commands::CheckpointOp;
+    use vesper_checkpoints::CheckpointKind;
+
+    match op {
+        CheckpointOp::SessionCreate { name } => {
+            let Some(sessions) = stores.sessions.as_ref() else {
+                state.transcript.push(format!(
+                    "sessions-new: lineage store unavailable (root {})",
+                    stores.root_display
+                ));
+                return;
+            };
+            match sessions.create(None, name.as_deref(), &stores.workspace_root) {
+                Ok(record) => {
+                    stores.active_session_id = record.id.clone();
+                    state.transcript.push(format!(
+                        "sessions-new: created `{}` ({})",
+                        record.name, record.id
+                    ));
+                    state.status = Some(format!("Active session: {} ({})", record.name, record.id));
+                }
+                Err(error) => {
+                    state
+                        .transcript
+                        .push(format!("sessions-new: failed — {error}"));
+                    state.status = Some(format!("sessions-new failed: {error}"));
+                }
+            }
+        }
+        CheckpointOp::SessionList => {
+            let Some(sessions) = stores.sessions.as_ref() else {
+                state.transcript.push(format!(
+                    "sessions: lineage store unavailable (root {})",
+                    stores.root_display
+                ));
+                return;
+            };
+            let records = sessions.list();
+            if records.is_empty() {
+                state
+                    .transcript
+                    .push("sessions: (no sessions recorded)".into());
+            } else {
+                state
+                    .transcript
+                    .push(format!("sessions: {} session(s)", records.len()));
+                for record in records.iter().take(50) {
+                    state.transcript.push(format!(
+                        "  {} `{}` ({:?}) parent={:?}",
+                        record.id, record.name, record.status, record.parent_id
+                    ));
+                }
+            }
+            state.status = None;
+        }
+        CheckpointOp::LineageShow => {
+            let Some(sessions) = stores.sessions.as_ref() else {
+                state.transcript.push(format!(
+                    "lineage: lineage store unavailable (root {})",
+                    stores.root_display
+                ));
+                return;
+            };
+            let chain = sessions.lineage(&stores.active_session_id);
+            if chain.is_empty() {
+                state.transcript.push(format!(
+                    "lineage: (no chain for {})",
+                    stores.active_session_id
+                ));
+            } else {
+                state
+                    .transcript
+                    .push(format!("lineage: {} hop(s)", chain.len()));
+                for record in &chain {
+                    state.transcript.push(format!(
+                        "  {} `{}` ({:?})",
+                        record.id, record.name, record.status
+                    ));
+                }
+            }
+            state.status = None;
+        }
+        CheckpointOp::SessionBranch { name } => {
+            let Some(sessions) = stores.sessions.as_ref() else {
+                state.transcript.push(format!(
+                    "branch: lineage store unavailable (root {})",
+                    stores.root_display
+                ));
+                return;
+            };
+            match sessions.branch(
+                &stores.active_session_id,
+                name.as_deref(),
+                &stores.workspace_root,
+            ) {
+                Ok(record) => {
+                    state.transcript.push(format!(
+                        "branch: forked `{}` ({}) from {}",
+                        record.name, record.id, stores.active_session_id
+                    ));
+                    stores.active_session_id = record.id.clone();
+                    state.status = Some(format!("Branched to {} ({})", record.name, record.id));
+                }
+                Err(error) => {
+                    state.transcript.push(format!("branch: failed — {error}"));
+                    state.status = Some(format!("branch failed: {error}"));
+                }
+            }
+        }
+        CheckpointOp::SessionRename { new_name } => {
+            let Some(sessions) = stores.sessions.as_ref() else {
+                state.transcript.push(format!(
+                    "rename: lineage store unavailable (root {})",
+                    stores.root_display
+                ));
+                return;
+            };
+            match sessions.rename(&stores.active_session_id, &new_name) {
+                Ok(record) => {
+                    state
+                        .transcript
+                        .push(format!("rename: `{}` is now `{}`", record.id, record.name));
+                    state.status = Some(format!("Renamed to `{}`", record.name));
+                }
+                Err(error) => {
+                    state.transcript.push(format!("rename: failed — {error}"));
+                    state.status = Some(format!("rename failed: {error}"));
+                }
+            }
+        }
+        CheckpointOp::CheckpointCreate { label } => {
+            let Some(ledger) = stores.ledger.as_ref() else {
+                state.transcript.push(format!(
+                    "checkpoint: ledger unavailable (root {})",
+                    stores.root_display
+                ));
+                return;
+            };
+            // Find the most recent checkpoint id in this session to chain
+            // from (lineage: parent_id).
+            let parent_id = ledger
+                .list()
+                .iter()
+                .rev()
+                .find(|record| record.session_id == stores.active_session_id)
+                .map(|record| record.id.clone());
+            match ledger.create(
+                &stores.active_session_id,
+                parent_id.as_deref(),
+                CheckpointKind::Manual,
+                label.as_deref(),
+                &stores.workspace_root,
+            ) {
+                Ok(record) => {
+                    state.transcript.push(format!(
+                        "checkpoint: {} captured {} file(s), {} byte(s){}",
+                        record.id,
+                        record.files.len(),
+                        record.total_bytes,
+                        record
+                            .label
+                            .as_ref()
+                            .map(|label| format!(" — `{label}`"))
+                            .unwrap_or_default()
+                    ));
+                    state.status = Some(format!("Snapshot {} saved.", record.id));
+                }
+                Err(error) => {
+                    state
+                        .transcript
+                        .push(format!("checkpoint: failed — {error}"));
+                    state.status = Some(format!("checkpoint failed: {error}"));
+                }
+            }
+        }
+        CheckpointOp::CheckpointRollback { id } | CheckpointOp::CheckpointRewind { id } => {
+            let Some(ledger) = stores.ledger.as_ref() else {
+                state.transcript.push(format!(
+                    "rollback: ledger unavailable (root {})",
+                    stores.root_display
+                ));
+                return;
+            };
+            match ledger.restore(&id, &stores.workspace_root) {
+                Ok(restored) => {
+                    state
+                        .transcript
+                        .push(format!("rollback: restored {restored} file(s) from {id}"));
+                    state.status = Some(format!("Restored from {id}."));
+                }
+                Err(error) => {
+                    state.transcript.push(format!("rollback: failed — {error}"));
+                    state.status = Some(format!("rollback failed: {error}"));
+                }
+            }
+        }
+        CheckpointOp::CheckpointUndo { count } => {
+            let Some(ledger) = stores.ledger.as_ref() else {
+                state.transcript.push(format!(
+                    "undo: ledger unavailable (root {})",
+                    stores.root_display
+                ));
+                return;
+            };
+            let recent = ledger.recent(count);
+            // The N-th most recent is the restore target (skip the most
+            // recent, which is the current state).
+            let target = recent.iter().rev().nth(1).or(recent.last());
+            match target {
+                Some(record) => match ledger.restore(&record.id, &stores.workspace_root) {
+                    Ok(restored) => {
+                        state.transcript.push(format!(
+                            "undo: rolled back to {} — restored {restored} file(s)",
+                            record.id
+                        ));
+                        state.status = Some(format!("Undid to {}.", record.id));
+                    }
+                    Err(error) => {
+                        state.transcript.push(format!("undo: failed — {error}"));
+                        state.status = Some(format!("undo failed: {error}"));
+                    }
+                },
+                None => {
+                    state
+                        .transcript
+                        .push("undo: no prior checkpoint to roll back to".into());
+                    state.status = Some("Nothing to undo.".into());
+                }
+            }
+        }
+        CheckpointOp::CronRegister { prompt, schedule } => {
+            let Some(cron) = stores.cron.as_ref() else {
+                state.transcript.push(format!(
+                    "loop: cron registry unavailable (root {})",
+                    stores.root_display
+                ));
+                return;
+            };
+            // The name defaults to a slice of the prompt so the registry
+            // entry is human-identifiable.
+            let name: String = prompt.chars().take(40).collect();
+            match cron.register(&name, &prompt, &schedule) {
+                Ok(entry) => {
+                    state.transcript.push(format!(
+                        "loop: registered `{}` ({}) — `{}`",
+                        entry.id, entry.schedule, entry.name
+                    ));
+                    state.status = Some(format!("Cron entry {} saved.", entry.id));
+                }
+                Err(error) => {
+                    state.transcript.push(format!("loop: failed — {error}"));
+                    state.status = Some(format!("loop failed: {error}"));
+                }
+            }
+        }
+        CheckpointOp::SessionExport => {
+            let Some(exporter) = stores.exporter.as_ref() else {
+                state.transcript.push(format!(
+                    "export: exporter unavailable (root {})",
+                    stores.root_display
+                ));
+                return;
+            };
+            // Build the lineage view (best-effort; absent sessions → empty).
+            let lineage = stores
+                .sessions
+                .as_ref()
+                .map(|sessions| sessions.lineage(&stores.active_session_id))
+                .unwrap_or_default();
+            match exporter.export(&state.transcript, &lineage) {
+                Ok(path) => {
+                    state
+                        .transcript
+                        .push(format!("export: wrote {}", path.display()));
+                    state.status = Some(format!("Exported to {}.", path.display()));
+                }
+                Err(error) => {
+                    state.transcript.push(format!("export: failed — {error}"));
+                    state.status = Some(format!("export failed: {error}"));
+                }
+            }
+        }
+        CheckpointOp::ClipboardCopy { target } => {
+            let Some(clipboard) = stores.clipboard.as_ref() else {
+                state.transcript.push(format!(
+                    "copy: clipboard port unavailable (root {})",
+                    stores.root_display
+                ));
+                return;
+            };
+            // Resolve the value to copy: the literal `target` (which
+            // defaults to "last-response"), or the most recent assistant
+            // transcript line when target == "last-response".
+            let value = if target == "last-response" {
+                state
+                    .transcript
+                    .iter()
+                    .rev()
+                    .find(|line| line.starts_with("assistant:"))
+                    .cloned()
+                    .unwrap_or_else(|| "(no recent assistant response)".to_string())
+            } else {
+                target
+            };
+            match clipboard.copy(&value) {
+                Ok(outcome) => {
+                    let native_label = if outcome.native {
+                        "(native + persisted)"
+                    } else {
+                        "(persisted; no native clipboard available)"
+                    };
+                    state.transcript.push(format!(
+                        "copy: {} {}",
+                        value.chars().take(60).collect::<String>(),
+                        native_label
+                    ));
+                    state.status = Some(format!("Copied {}.", native_label));
+                }
+                Err(error) => {
+                    state.transcript.push(format!("copy: failed — {error}"));
+                    state.status = Some(format!("copy failed: {error}"));
+                }
+            }
+        }
+        CheckpointOp::CiStatus => {
+            let status = vesper_checkpoints::CiStatusReader::status();
+            state.transcript.push(format!("ci: {}", status.output));
+            state.status = if status.available {
+                Some("CI status retrieved.".into())
+            } else {
+                Some("CI status unavailable.".into())
+            };
+        }
+    }
 }
 
 #[cfg(test)]

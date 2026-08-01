@@ -83,6 +83,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "vesper-agent",
+ "vesper-checkpoints",
  "vesper-domain",
  "vesper-memory",
  "vesper-provider",
@@ -3007,6 +3008,19 @@ dependencies = [
  "vesper-provider",
  "vesper-runtime",
  "vesper-testkit",
+]
+
+[[package]]
+name = "vesper-checkpoints"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror",
+ "vesper-domain",
+ "vesper-security",
 ]
 
 [[package]]

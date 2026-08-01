@@ -63,6 +63,15 @@ pub struct SessionState {
     /// `AwarenessLedger` and drains this after dispatch (same pattern as
     /// `pending_prompt`); `None` means no memory op is pending.
     pub pending_memory_op: Option<crate::commands::MemoryOp>,
+    /// Phase 9 (ADR 0012): a checkpoint command (`/sessions`,
+    /// `/checkpoint`, `/rollback`, `/undo`, `/loop`, `/export`, `/copy`,
+    /// `/ci`, etc.) resolved to a structured
+    /// [`crate::commands::CheckpointOp`]. The binary owns the durable
+    /// `vesper_checkpoints::CheckpointsLedger` / `SessionLineage` /
+    /// `CronRegistry` / `SessionExporter` / `ClipboardPort` /
+    /// `CiStatusReader` and drains this after dispatch (same pattern as
+    /// `pending_memory_op`); `None` means no checkpoint op is pending.
+    pub pending_checkpoint_op: Option<crate::commands::CheckpointOp>,
 }
 
 impl SessionState {
@@ -165,6 +174,7 @@ fn apply_outcome(
         pending_reasoning,
         pending_prompt,
         pending_memory_op,
+        pending_checkpoint_op,
     } = state;
     match outcome {
         CommandOutcome::Error(message) => {
@@ -305,6 +315,20 @@ fn apply_outcome(
             ));
             *pending_memory_op = Some(op);
             *status = Some(format!("/{name}: reading/writing the memory store..."));
+        }
+
+        // === Phase 9 (ADR 0012) — checkpoints subsystem commands ===
+        // Same drain pattern as Memory ops. The binary owns the
+        // vesper_checkpoints stores and executes the op synchronously after
+        // dispatch (local filesystem reads/writes, scoped subprocess for
+        // /ci — fast enough not to block the UI).
+        CommandOutcome::Checkpoint(op) => {
+            let name = op.command_name();
+            transcript.push(format!(
+                "checkpoint: /{name} accepted (executing against the durable ledger)"
+            ));
+            *pending_checkpoint_op = Some(op);
+            *status = Some(format!("/{name}: reading/writing the checkpoint ledger..."));
         }
 
         CommandOutcome::Quit => {}
@@ -988,6 +1012,123 @@ mod integration_tests {
             assert!(
                 state.pending_memory_op.is_some(),
                 "{command} must stash a pending_memory_op"
+            );
+        }
+    }
+
+    #[test]
+    fn phase9_checkpoint_command_stashes_a_pending_checkpoint_op() {
+        // Phase 9 (ADR 0012): /checkpoint must resolve to a
+        // Checkpoint(CheckpointOp) outcome that dispatch records on
+        // SessionState.pending_checkpoint_op.
+        let registry = registry();
+        let surface = surface();
+        let mut state = SessionState::new();
+
+        step(&mut state, &registry, &surface, "/checkpoint");
+        let op = state
+            .pending_checkpoint_op
+            .take()
+            .expect("/checkpoint must stash a pending CheckpointOp");
+        assert_eq!(op.command_name(), "checkpoint");
+        // The transcript must show the op was accepted (not a deferred notice).
+        assert!(
+            state
+                .transcript
+                .iter()
+                .any(|line| line.contains("checkpoint:") && line.contains("accepted")),
+            "/checkpoint must push an acceptance notice, got: {:?}",
+            state.transcript
+        );
+        // /checkpoint must NOT trigger an agent turn (no pending_prompt).
+        assert!(
+            state.pending_prompt.is_none(),
+            "/checkpoint must not trigger an agent turn"
+        );
+    }
+
+    #[test]
+    fn phase9_rollback_requires_an_id_and_errors_clearly() {
+        // /rollback with no argument must Error (clear usage hint), NOT
+        // resolve to Deferred or to a silent no-op.
+        let registry = registry();
+        let surface = surface();
+        let mut state = SessionState::new();
+
+        step(&mut state, &registry, &surface, "/rollback");
+        assert!(state.pending_checkpoint_op.is_none());
+        assert!(
+            state
+                .status
+                .as_ref()
+                .is_some_and(|status| status.contains("Usage:")),
+            "/rollback with no arg must show a usage hint"
+        );
+    }
+
+    #[test]
+    fn phase9_undo_with_no_argument_defaults_to_one() {
+        let registry = registry();
+        let surface = surface();
+        let mut state = SessionState::new();
+
+        step(&mut state, &registry, &surface, "/undo");
+        let op = state
+            .pending_checkpoint_op
+            .as_ref()
+            .expect("/undo must stash a pending CheckpointOp");
+        let crate::commands::CheckpointOp::CheckpointUndo { count } = op else {
+            panic!("expected CheckpointUndo, got {op:?}");
+        };
+        assert_eq!(*count, 1);
+    }
+
+    #[test]
+    fn phase9_all_thirteen_checkpoint_commands_record_pending_ops() {
+        // Sanity: every one of the 13 checkpoint commands must produce a
+        // pending_checkpoint_op (or a usage Error for argument-required ones).
+        let registry = registry();
+        let surface = surface();
+
+        let bare = [
+            "/sessions",
+            "/lineage",
+            "/checkpoint",
+            "/export",
+            "/copy",
+            "/ci",
+        ];
+        for command in bare {
+            let mut state = SessionState::new();
+            step(&mut state, &registry, &surface, command);
+            assert!(
+                state.pending_checkpoint_op.is_some(),
+                "{command} must stash a pending_checkpoint_op"
+            );
+        }
+        // Optional-argument commands resolve without an argument too.
+        let optional = ["/sessions-new", "/branch", "/undo"];
+        for command in optional {
+            let mut state = SessionState::new();
+            step(&mut state, &registry, &surface, command);
+            assert!(
+                state.pending_checkpoint_op.is_some(),
+                "{command} must stash a pending_checkpoint_op"
+            );
+        }
+        // Argument-required commands resolve with an argument.
+        let arg_required = [
+            ("/rollback ckpt-1", "rollback"),
+            ("/rewind ckpt-1", "rewind"),
+            ("/rename new-name", "rename"),
+            ("/loop every 1h run tests", "loop"),
+        ];
+        for (command, label) in arg_required {
+            let mut state = SessionState::new();
+            step(&mut state, &registry, &surface, command);
+            assert!(
+                state.pending_checkpoint_op.is_some(),
+                "{command} ({label}) must stash a pending_checkpoint_op"
             );
         }
     }
