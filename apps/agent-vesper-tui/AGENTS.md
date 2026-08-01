@@ -43,16 +43,21 @@ business logic.
   non-blocking `drain_agent_event` / `apply_agent_event` result handlers.
   Free-text prompts in NORMAL phase spawn the loop; a model-authored plan
   drives `PLANNING → REVIEW` via `dispatch::apply_model_plan`.
+  Phase 8 (ADR 0011): also owns the `MemoryStores` bundle
+  (`MemoryStore` + `SkillStore` + `UserProfile` + `AwarenessLedger`) and the
+  `drain_memory_op` executor that turns `SessionState.pending_memory_op`
+  into durable reads/writes after each dispatch.
 
 ## Local Contracts
 
 - Stdout carries only terminal escapes via crossterm; no ACP/JSON-RPC may
   appear there. Tracing goes to stderr only.
 - The crate depends on `vesper-domain`, `vesper-provider`,
-  `vesper-provider-glm`, `vesper-provider-synthetic`, `vesper-runtime`, and
+  `vesper-provider-glm`, `vesper-provider-synthetic`, `vesper-runtime`,
   `vesper-agent` (Phase 6 / ADR 0010: the binary composes the multi-turn
-  agent loop); it must not depend on `vesper-acp`, `vesper-sessions`,
-  SQLite, MCP, or any disposable spike.
+  agent loop), and `vesper-memory` (Phase 8 / ADR 0011: the binary owns the
+  durable memory store bundle); it must not depend on `vesper-acp`,
+  `vesper-sessions`, SQLite, MCP, or any disposable spike.
 - The Plan Mode state machine is **pure**: no I/O, no async, no global
   state. Every transition returns a `PlanTransition`; the event loop applies
   it.
@@ -106,6 +111,16 @@ business logic.
   (`/security-review`, `/smart`, `/release`, `/insights`, `/diff`) build a
   prompt and stash it on `SessionState.pending_prompt`; the binary drains it
   into a background `AgentLoop` turn (same path as free-text prompts).
+- ADR 0011 (Tier C Phase 8): the 13 awareness/memory commands
+  (`/memory`, `/goal`, `/subgoal`, `/skills`, `/profile`, `/awareness`,
+  `/metacognition`, `/deliberation`, `/repository`, `/meta-learning`,
+  `/observability`, `/curator`, `/journey`) are no longer deferred. They
+  resolve to `CommandOutcome::Memory(MemoryOp)`; `dispatch` records
+  `SessionState.pending_memory_op`; the binary owns a `MemoryStores`
+  bundle (`MemoryStore` + `SkillStore` + `UserProfile` + `AwarenessLedger`
+  under `AGENT_VESPER_MEMORY_ROOT` or `.agent-vesper/memory/`) and drains
+  the op synchronously after dispatch (these are local filesystem
+  reads/writes — fast enough not to block the UI).
 - When adding a new slash command, register it in
   `CommandRegistry::stage_11b`, document its surface in
   `CommandRegistry::help_text`, and add a test that proves it resolves

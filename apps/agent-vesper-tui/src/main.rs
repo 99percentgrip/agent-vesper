@@ -106,6 +106,14 @@ async fn run() -> Result<(), String> {
             .map_err(|error| format!("agent loop construction failed: {error}"))?,
     );
 
+    // Phase 8 (ADR 0011): open the durable memory subsystem rooted at
+    // `AGENT_VESPER_MEMORY_ROOT` (falling back to `.agent-vesper/memory/`
+    // under the current directory). The stores handle confinement and
+    // atomic writes themselves; the binary owns only the root path. If the
+    // root cannot be opened we keep going so the rest of the TUI works —
+    // memory commands will surface a clear error in the transcript.
+    let memory_stores = MemoryStores::open_default();
+
     let mut session = TuiSession {
         // Pure dispatch state lives in the library so the full Plan Mode
         // lifecycle is unit-testable; the binary only owns the input buffer
@@ -125,6 +133,7 @@ async fn run() -> Result<(), String> {
         &supervisor,
         &runtime_session_id,
         &agent,
+        &memory_stores,
     )
     .await;
     let _ = leave_raw_mode();
@@ -267,6 +276,7 @@ enum AgentEvent {
     Failed(AgentLoopError),
 }
 
+#[allow(clippy::too_many_arguments)] // single-call composition boundary
 async fn drive_loop(
     provider_id: &ProviderId,
     registry_commands: &CommandRegistry,
@@ -275,6 +285,7 @@ async fn drive_loop(
     supervisor: &vesper_runtime::RuntimeSupervisor,
     runtime_session_id: &SessionId,
     agent: &Arc<AgentLoop>,
+    memory_stores: &MemoryStores,
 ) -> Result<(), String> {
     let mut terminal = Terminal::new(Backend::new(stdout()))
         .map_err(|error| format!("terminal init failed: {error}"))?;
@@ -393,6 +404,14 @@ async fn drive_loop(
                     && session.state.phase() == PlanPhase::Normal
                 {
                     spawn_agent_turn(agent, text, session);
+                }
+                // Phase 8 (ADR 0011): drain any pending memory op against the
+                // durable vesper_memory stores. The op was stashed by
+                // `dispatch` (Memory(MemoryOp)); the binary owns the real
+                // stores and executes the op synchronously (these are local
+                // filesystem reads/writes — fast enough not to block the UI).
+                if let Some(op) = session.state.pending_memory_op.take() {
+                    drain_memory_op(op, memory_stores, &mut session.state);
                 }
             }
             KeyCode::Backspace => {
@@ -641,6 +660,333 @@ fn build_user_message(text: &str) -> ConversationMessage {
         content,
         extensions: ExtensionMap::default(),
     }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 8 (ADR 0011): the durable memory subsystem bridge.
+//
+// `MemoryStores` owns one `MemoryStore`, `SkillStore`, `UserProfile`, and
+// `AwarenessLedger` rooted at the same directory. `drain_memory_op` is the
+// synchronous executor the event loop calls after dispatch; it formats the
+// result into one or more transcript lines so the driver sees the outcome
+// immediately.
+// ---------------------------------------------------------------------------
+
+/// Bundle of the four durable memory stores, all rooted at the same path.
+/// The binary owns one `MemoryStores`; the event loop borrows it for the
+/// duration of `drive_loop`.
+struct MemoryStores {
+    memory: Option<vesper_memory::MemoryStore>,
+    skills: Option<vesper_memory::SkillStore>,
+    profile: Option<vesper_memory::UserProfile>,
+    awareness: Option<vesper_memory::AwarenessLedger>,
+    /// Human-readable root path used in error notices.
+    root_display: String,
+}
+
+impl MemoryStores {
+    /// Opens the bundle at `AGENT_VESPER_MEMORY_ROOT` (falling back to
+    /// `.agent-vesper/memory/` under the current directory). If opening any
+    /// store fails the bundle stays `None` for that store and memory
+    /// commands surface a clear error rather than crashing the TUI.
+    fn open_default() -> Self {
+        let root = match std::env::var("AGENT_VESPER_MEMORY_ROOT") {
+            Ok(value) => std::path::PathBuf::from(value),
+            Err(_) => std::env::current_dir()
+                .unwrap_or_else(|_| std::path::PathBuf::from("."))
+                .join(".agent-vesper")
+                .join("memory"),
+        };
+        // Ensure the root directory exists so the stores can open it.
+        let _ = std::fs::create_dir_all(&root);
+        let root_display = root.display().to_string();
+        let memory = vesper_memory::MemoryStore::open(&root).ok();
+        let skills = vesper_memory::SkillStore::open(&root).ok();
+        let profile = vesper_memory::UserProfile::open(&root).ok();
+        let awareness = vesper_memory::AwarenessLedger::open(&root).ok();
+        Self {
+            memory,
+            skills,
+            profile,
+            awareness,
+            root_display,
+        }
+    }
+}
+
+/// Drains one [`MemoryOp`] against the durable stores, pushing the result
+/// into the transcript. Pure-with-side-effects: no async, no terminal I/O,
+/// only local filesystem reads/writes via `vesper_memory`.
+fn drain_memory_op(
+    op: agent_vesper_tui::commands::MemoryOp,
+    stores: &MemoryStores,
+    state: &mut SessionState,
+) {
+    use agent_vesper_tui::commands::MemoryOp;
+    use std::time::{SystemTime, UNIX_EPOCH};
+    use vesper_memory::{MemoryEntry, MemoryKind};
+
+    let now = SystemTime::now();
+    let fresh_entry = |kind: MemoryKind, summary: String| MemoryEntry {
+        id: String::new(),
+        kind,
+        summary,
+        scopes: Vec::new(),
+        evidence: Vec::new(),
+        created_at: UNIX_EPOCH,
+        updated_at: UNIX_EPOCH,
+    };
+
+    match op {
+        MemoryOp::MemoryList { needle } => {
+            let Some(store) = stores.memory.as_ref() else {
+                state.transcript.push(format!(
+                    "memory: store unavailable (root {})",
+                    stores.root_display
+                ));
+                state.status = Some("memory store could not be opened.".into());
+                return;
+            };
+            let entries = match needle {
+                Some(needle) => store.query(&needle),
+                None => store.list(None),
+            };
+            if entries.is_empty() {
+                state.transcript.push("memory: (no entries)".into());
+            } else {
+                let count = entries.len();
+                state
+                    .transcript
+                    .push(format!("memory: {count} entr{{y|ies}}"));
+                for entry in entries.iter().take(50) {
+                    state.transcript.push(format!(
+                        "  [{}] {}: {}",
+                        entry.kind.as_str(),
+                        entry.id,
+                        entry.summary.chars().take(80).collect::<String>()
+                    ));
+                }
+                if count > 50 {
+                    state
+                        .transcript
+                        .push(format!("  … and {} more", count - 50));
+                }
+            }
+            state.status = None;
+        }
+        MemoryOp::GoalAdd { summary } => {
+            let Some(store) = stores.memory.as_ref() else {
+                state.transcript.push(format!(
+                    "memory: store unavailable (root {})",
+                    stores.root_display
+                ));
+                return;
+            };
+            match store.append(fresh_entry(MemoryKind::Goal, summary.clone())) {
+                Ok(entry) => {
+                    state.transcript.push(format!(
+                        "goal: persisted as {} — \"{}\"",
+                        entry.id,
+                        entry.summary.chars().take(80).collect::<String>()
+                    ));
+                    state.status = Some("Goal recorded to durable memory.".into());
+                }
+                Err(error) => {
+                    state.transcript.push(format!("goal: rejected — {error}"));
+                    state.status = Some(format!("goal failed: {error}"));
+                }
+            }
+        }
+        MemoryOp::SubgoalAdd { summary } => {
+            let Some(store) = stores.memory.as_ref() else {
+                state.transcript.push(format!(
+                    "memory: store unavailable (root {})",
+                    stores.root_display
+                ));
+                return;
+            };
+            match store.append(fresh_entry(MemoryKind::Subgoal, summary.clone())) {
+                Ok(entry) => {
+                    state.transcript.push(format!(
+                        "subgoal: persisted as {} — \"{}\"",
+                        entry.id,
+                        entry.summary.chars().take(80).collect::<String>()
+                    ));
+                    state.status = Some("Subgoal recorded to durable memory.".into());
+                }
+                Err(error) => {
+                    state
+                        .transcript
+                        .push(format!("subgoal: rejected — {error}"));
+                    state.status = Some(format!("subgoal failed: {error}"));
+                }
+            }
+        }
+        MemoryOp::SkillsList => {
+            let Some(store) = stores.skills.as_ref() else {
+                state.transcript.push(format!(
+                    "skills: store unavailable (root {})",
+                    stores.root_display
+                ));
+                return;
+            };
+            let summaries = store.list();
+            if summaries.is_empty() {
+                state.transcript.push("skills: (no learned skills)".into());
+            } else {
+                state
+                    .transcript
+                    .push(format!("skills: {} learned skill(s)", summaries.len()));
+                for summary in summaries.iter().take(50) {
+                    state
+                        .transcript
+                        .push(format!("  - {}: {}", summary.slug, summary.headline));
+                }
+            }
+            state.status = None;
+        }
+        MemoryOp::ProfileShow => {
+            let Some(profile) = stores.profile.as_ref() else {
+                state.transcript.push(format!(
+                    "profile: store unavailable (root {})",
+                    stores.root_display
+                ));
+                return;
+            };
+            let body = profile.read();
+            if body.trim().is_empty() {
+                state
+                    .transcript
+                    .push("profile: (no approved cross-project preferences)".into());
+            } else {
+                let line_count = body.lines().count();
+                state.transcript.push(format!(
+                    "profile: {line_count} line(s) of approved preferences"
+                ));
+                for line in body.lines().take(40) {
+                    state.transcript.push(format!("  {line}"));
+                }
+            }
+            state.status = None;
+        }
+        MemoryOp::AwarenessList { kind } => list_awareness(stores, kind, state, "awareness"),
+        MemoryOp::MetacognitionList => list_awareness(
+            stores,
+            Some(MemoryKind::Metacognition),
+            state,
+            "metacognition",
+        ),
+        MemoryOp::DeliberationList => list_awareness(
+            stores,
+            Some(MemoryKind::Deliberation),
+            state,
+            "deliberation",
+        ),
+        MemoryOp::RepositoryList => {
+            list_awareness(stores, Some(MemoryKind::Repository), state, "repository")
+        }
+        MemoryOp::MetaLearningList => list_awareness(
+            stores,
+            Some(MemoryKind::MetaLearning),
+            state,
+            "meta-learning",
+        ),
+        MemoryOp::ObservabilityList => list_awareness(
+            stores,
+            Some(MemoryKind::Observability),
+            state,
+            "observability",
+        ),
+        MemoryOp::Curate => {
+            let Some(store) = stores.memory.as_ref() else {
+                state.transcript.push(format!(
+                    "curator: memory store unavailable (root {})",
+                    stores.root_display
+                ));
+                return;
+            };
+            match store.curate() {
+                Ok((duplicates_removed, overflow_trimmed)) => {
+                    state.transcript.push(format!(
+                        "curator: removed {duplicates_removed} duplicate(s), trimmed {overflow_trimmed} overflow(s)"
+                    ));
+                    state.status = Some(format!(
+                        "Curated: -{duplicates_removed} dupes, -{overflow_trimmed} overflow"
+                    ));
+                }
+                Err(error) => {
+                    state.transcript.push(format!("curator: failed — {error}"));
+                    state.status = Some(format!("curator failed: {error}"));
+                }
+            }
+        }
+        MemoryOp::Journey => {
+            // Composite view: chronologically interleave memory entries and
+            // learned skills (profile is shown via /profile on its own).
+            let memory_count = stores
+                .memory
+                .as_ref()
+                .map(|store| store.list(None).len())
+                .unwrap_or(0);
+            let skill_count = stores
+                .skills
+                .as_ref()
+                .map(|store| store.list().len())
+                .unwrap_or(0);
+            state.transcript.push(format!(
+                "journey: {memory_count} memory entr{{y|ies}}, {skill_count} learned skill(s)"
+            ));
+            if let Some(store) = stores.memory.as_ref() {
+                let mut entries = store.list(None);
+                entries.sort_by_key(|entry| entry.created_at);
+                for entry in entries.iter().take(20) {
+                    state.transcript.push(format!(
+                        "  [{}] {}: {}",
+                        entry.kind.as_str(),
+                        entry.id,
+                        entry.summary.chars().take(80).collect::<String>()
+                    ));
+                }
+            }
+            state.status = None;
+        }
+    }
+    // Touch `now` so the binding stays used even on early-return branches.
+    let _ = now;
+}
+
+/// Helper for the five `/awareness`-family listing commands.
+fn list_awareness(
+    stores: &MemoryStores,
+    kind: Option<vesper_memory::MemoryKind>,
+    state: &mut SessionState,
+    label: &str,
+) {
+    let Some(ledger) = stores.awareness.as_ref() else {
+        state.transcript.push(format!(
+            "{label}: awareness ledger unavailable (root {})",
+            stores.root_display
+        ));
+        return;
+    };
+    let records = ledger.list(kind);
+    if records.is_empty() {
+        state.transcript.push(format!("{label}: (no records)"));
+    } else {
+        state
+            .transcript
+            .push(format!("{label}: {} record(s)", records.len()));
+        for record in records.iter().take(50) {
+            state.transcript.push(format!(
+                "  [{}] {} ({:?}): {}",
+                record.kind.as_str(),
+                record.id,
+                record.status,
+                record.summary.chars().take(80).collect::<String>()
+            ));
+        }
+    }
+    state.status = None;
 }
 
 #[cfg(test)]

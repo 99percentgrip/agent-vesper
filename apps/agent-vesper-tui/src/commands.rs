@@ -124,6 +124,16 @@ pub enum CommandOutcome {
         reason: String,
     },
 
+    // === Tier C Phase 8 (ADR 0011) — memory subsystem commands ===
+    /// A memory command resolved to a structured [`MemoryOp`] that the
+    /// binary will execute against the durable
+    /// [`vesper_memory::MemoryStore`] / [`vesper_memory::SkillStore`] /
+    /// [`vesper_memory::UserProfile`] / [`vesper_memory::AwarenessLedger`].
+    /// `dispatch` records this on `SessionState.pending_memory_op`; the
+    /// binary drains it after dispatch (same pattern as
+    /// `pending_prompt`).
+    Memory(MemoryOp),
+
     /// Quit/exit requested.
     Quit,
     /// Unknown command or invalid argument; the message is shown to the user.
@@ -154,6 +164,71 @@ pub enum PlanGesture {
     Approve,
     /// `/cancel` — abort any in-flight plan.
     Cancel,
+}
+
+/// Phase 8 (ADR 0011): one structured operation against the durable
+/// memory subsystem ([`vesper_memory::MemoryStore`] /
+/// [`vesper_memory::SkillStore`] / [`vesper_memory::UserProfile`] /
+/// [`vesper_memory::AwarenessLedger`]).
+///
+/// The resolver returns this from a slash command; `dispatch` records it on
+/// [`crate::dispatch::SessionState::pending_memory_op`]; the binary owns the
+/// real stores and drains the op after dispatch (mirroring the
+/// `pending_reasoning` / `pending_prompt` drain pattern).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MemoryOp {
+    /// `/memory [needle]` — list every memory entry, or query by substring.
+    MemoryList { needle: Option<String> },
+    /// `/goal <text>` — append a durable [`vesper_memory::MemoryKind::Goal`].
+    GoalAdd { summary: String },
+    /// `/subgoal <text>` — append a durable
+    /// [`vesper_memory::MemoryKind::Subgoal`].
+    SubgoalAdd { summary: String },
+    /// `/skills` — list every learned-skill markdown file.
+    SkillsList,
+    /// `/profile` — show the cross-project user profile.
+    ProfileShow,
+    /// `/awareness [kind]` — list epistemic records, optionally filtered.
+    AwarenessList {
+        kind: Option<vesper_memory::MemoryKind>,
+    },
+    /// `/metacognition` — list metacognitive assessments.
+    MetacognitionList,
+    /// `/deliberation` — list grounded-deliberation hypotheses.
+    DeliberationList,
+    /// `/repository` — list repository-intelligence observations.
+    RepositoryList,
+    /// `/meta-learning` — list meta-learning candidates.
+    MetaLearningList,
+    /// `/observability` — list local reliability-metric observations.
+    ObservabilityList,
+    /// `/curator` — run the deterministic curation pass (dedupe + trim).
+    Curate,
+    /// `/journey` — chronological timeline of memory + skills + profile.
+    Journey,
+}
+
+impl MemoryOp {
+    /// Returns the slash-command name that produced this op (used by
+    /// `dispatch` to format the in-flight status notice).
+    #[must_use]
+    pub fn command_name(&self) -> &'static str {
+        match self {
+            Self::MemoryList { .. } => "memory",
+            Self::GoalAdd { .. } => "goal",
+            Self::SubgoalAdd { .. } => "subgoal",
+            Self::SkillsList => "skills",
+            Self::ProfileShow => "profile",
+            Self::AwarenessList { .. } => "awareness",
+            Self::MetacognitionList => "metacognition",
+            Self::DeliberationList => "deliberation",
+            Self::RepositoryList => "repository",
+            Self::MetaLearningList => "meta-learning",
+            Self::ObservabilityList => "observability",
+            Self::Curate => "curator",
+            Self::Journey => "journey",
+        }
+    }
 }
 
 /// Static, provider-neutral registry that maps command names to handlers.
@@ -332,6 +407,49 @@ impl CommandRegistry {
                          removed, and a one-paragraph summary of what the changes do."
                     .into(),
             },
+
+            // === Phase 8 (ADR 0011) — memory subsystem commands ===
+            // Each command resolves to a structured MemoryOp that the binary
+            // drains after dispatch and executes against the durable
+            // vesper_memory stores. These are no longer deferred — they have
+            // a real, persistent backing subsystem.
+            "memory" => {
+                let trimmed = argument.trim();
+                let needle = if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed.to_string())
+                };
+                CommandOutcome::Memory(MemoryOp::MemoryList { needle })
+            }
+            "goal" => {
+                if argument.trim().is_empty() {
+                    CommandOutcome::Error("Usage: /goal <one-line persistent goal>".into())
+                } else {
+                    CommandOutcome::Memory(MemoryOp::GoalAdd {
+                        summary: argument.trim().to_string(),
+                    })
+                }
+            }
+            "subgoal" => {
+                if argument.trim().is_empty() {
+                    CommandOutcome::Error("Usage: /subgoal <one-line acceptance criterion>".into())
+                } else {
+                    CommandOutcome::Memory(MemoryOp::SubgoalAdd {
+                        summary: argument.trim().to_string(),
+                    })
+                }
+            }
+            "skills" => CommandOutcome::Memory(MemoryOp::SkillsList),
+            "profile" => CommandOutcome::Memory(MemoryOp::ProfileShow),
+            "awareness" => CommandOutcome::Memory(MemoryOp::AwarenessList { kind: None }),
+            "metacognition" => CommandOutcome::Memory(MemoryOp::MetacognitionList),
+            "deliberation" => CommandOutcome::Memory(MemoryOp::DeliberationList),
+            "repository" => CommandOutcome::Memory(MemoryOp::RepositoryList),
+            "meta-learning" => CommandOutcome::Memory(MemoryOp::MetaLearningList),
+            "observability" => CommandOutcome::Memory(MemoryOp::ObservabilityList),
+            "curator" => CommandOutcome::Memory(MemoryOp::Curate),
+            "journey" => CommandOutcome::Memory(MemoryOp::Journey),
 
             // === Phase 7 — deferred subsystem commands ===
             // Each deferred command resolves to a clear, actionable notice
@@ -586,18 +704,13 @@ fn deferred_reason(command: &str) -> Option<String> {
 
         // Awareness / memory / skills views (the data lives in the harness;
         // surfacing it in the TUI is a later stage)
-        "goal" | "subgoal" => "persistent-goal awareness subsystem (Stage 16+, deferred)",
-        "awareness" => "epistemic-awareness view (Stage 16+, deferred)",
-        "metacognition" => "metacognitive-assessment view (Stage 16+, deferred)",
-        "deliberation" => "grounded-deliberation view (Stage 16+, deferred)",
-        "repository" => "repository-intelligence view (Stage 16+, deferred)",
-        "meta-learning" => "metacognitive-learning view (Stage 16+, deferred)",
-        "observability" => "local reliability-metrics view (Stage 16+, deferred)",
-        "memory" => "project-memory view (Stage 16+, deferred)",
-        "skills" => "learned-skills view (Stage 16+, deferred)",
-        "profile" => "user-profile view (Stage 16+, deferred)",
-        "curator" => "skill-curator subsystem (Stage 16+, deferred)",
-        "journey" => "memory + skills timeline view (Stage 16+, deferred)",
+        //
+        // NOTE: The 13 commands below moved to the durable `vesper-memory`
+        // subsystem in Phase 8 (ADR 0011). They are no longer deferred —
+        // see the explicit `Memory(MemoryOp)` arms in `resolve_known`.
+        // `goal`/`subgoal`/`awareness`/`metacognition`/`deliberation`/
+        // `repository`/`meta-learning`/`observability`/`memory`/`skills`/
+        // `profile`/`curator`/`journey` all resolve to real ops now.
 
         // CI integration
         "ci" => "CI-status integration (Stage 17+, deferred)",
@@ -1183,6 +1296,15 @@ mod tests {
         )
     }
 
+    /// Helper: resolve a parsed [`CommandIntent`] (used by Phase 8 tests so
+    /// the input can include an argument like `/memory needle`).
+    fn resolve_bare_intent(intent: &CommandIntent) -> CommandOutcome {
+        let registry = CommandRegistry::stage_11b();
+        let plan_state = PlanState::default();
+        let provider = provider();
+        registry.resolve(intent, &plan_state, &provider, &[])
+    }
+
     #[test]
     fn phase7_plan_aliases_resolve_to_plan() {
         // /planmode, /api-plan, /endpoint are oracle aliases for /plan.
@@ -1406,6 +1528,13 @@ mod tests {
         // reason naming the owning subsystem — never Error("Unknown command").
         // This is the heart of the parity contract: no oracle command is
         // silently dropped.
+        //
+        // Phase 8 (ADR 0011): the 13 memory/awareness commands
+        // (goal, subgoal, awareness, metacognition, deliberation, repository,
+        // meta-learning, observability, memory, skills, profile, curator,
+        // journey) moved out of this list because they now resolve to real
+        // `Memory(MemoryOp)` ops backed by `vesper-memory`. The remaining
+        // list covers only the still-deferred commands.
         let deferred_commands = [
             "mobile",
             "sound",
@@ -1421,19 +1550,6 @@ mod tests {
             "rollback",
             "rewind",
             "undo",
-            "goal",
-            "subgoal",
-            "awareness",
-            "metacognition",
-            "deliberation",
-            "repository",
-            "meta-learning",
-            "observability",
-            "memory",
-            "skills",
-            "profile",
-            "curator",
-            "journey",
             "ci",
             "export",
             "copy",
@@ -1461,7 +1577,6 @@ mod tests {
             "attach",
             "image-render",
             "screenshot",
-            "usage",
         ];
         for name in deferred_commands {
             match resolve_bare(name) {
@@ -1472,14 +1587,122 @@ mod tests {
                         "/{name} must name an owning subsystem in its reason"
                     );
                 }
-                CommandOutcome::ContextView(ViewKind::Usage) => {
-                    // /usage is a ContextView in our resolver; fine.
-                }
                 other => {
-                    panic!("/{name} should be Deferred (or ContextView for usage), got {other:?}")
+                    panic!("/{name} should be Deferred, got {other:?}")
                 }
             }
         }
+    }
+
+    #[test]
+    fn phase8_memory_commands_resolve_to_memory_ops() {
+        // Phase 8 (ADR 0011): the 13 memory/awareness commands must resolve
+        // to a real `Memory(MemoryOp)` outcome — never Deferred, never Error.
+        // This is the parity guarantee the lead architect demanded: no
+        // command stays stubbed once its owning subsystem ships.
+        let cases: &[(&str, &str, &str)] = &[
+            ("/memory", "", "memory"),
+            ("/memory needle", "needle", "memory"),
+            ("/goal ship stage 12", "ship stage 12", "goal"),
+            ("/subgoal write 27 tests", "write 27 tests", "subgoal"),
+            ("/skills", "", "skills"),
+            ("/profile", "", "profile"),
+            ("/awareness", "", "awareness"),
+            ("/metacognition", "", "metacognition"),
+            ("/deliberation", "", "deliberation"),
+            ("/repository", "", "repository"),
+            ("/meta-learning", "", "meta-learning"),
+            ("/observability", "", "observability"),
+            ("/curator", "", "curator"),
+            ("/journey", "", "journey"),
+        ];
+        for (input, expected_arg, expected_command) in cases {
+            let intent = CommandIntent::parse(input);
+            let outcome = resolve_bare_intent(&intent);
+            match outcome {
+                CommandOutcome::Memory(op) => {
+                    assert_eq!(
+                        op.command_name(),
+                        *expected_command,
+                        "/{expected_command} resolved with the wrong command_name"
+                    );
+                    // Argument presence matches the expected kind.
+                    match (*expected_command, expected_arg) {
+                        ("memory", arg) => {
+                            let MemoryOp::MemoryList { needle } = op else {
+                                panic!("expected MemoryList, got {op:?}");
+                            };
+                            let expected: Option<&str> =
+                                if arg.is_empty() { None } else { Some(arg) };
+                            assert_eq!(needle.as_deref(), expected);
+                        }
+                        ("goal", arg) => {
+                            let MemoryOp::GoalAdd { summary } = op else {
+                                panic!("expected GoalAdd, got {op:?}");
+                            };
+                            assert_eq!(summary, *arg);
+                        }
+                        ("subgoal", arg) => {
+                            let MemoryOp::SubgoalAdd { summary } = op else {
+                                panic!("expected SubgoalAdd, got {op:?}");
+                            };
+                            assert_eq!(summary, *arg);
+                        }
+                        _ => {}
+                    }
+                }
+                other => panic!("{input} should resolve to Memory(_), got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn phase8_goal_and_subgoal_require_a_summary() {
+        // /goal and /subgoal without an argument must Error with a clear
+        // usage hint — they are not silently no-ops and not Deferred.
+        assert!(matches!(resolve_bare("goal"), CommandOutcome::Error(_)));
+        assert!(matches!(resolve_bare("subgoal"), CommandOutcome::Error(_)));
+    }
+
+    #[test]
+    fn phase8_memory_command_count_matches_directive() {
+        // Sanity guard: exactly 13 memory/awareness commands resolve to a
+        // Memory(MemoryOp) outcome. If the directive's "Stage 12: 13
+        // commands" contract drifts, this test surfaces it immediately.
+        // /goal and /subgoal require an argument, so we send them with one.
+        let bare_commands = [
+            "memory",
+            "skills",
+            "profile",
+            "awareness",
+            "metacognition",
+            "deliberation",
+            "repository",
+            "meta-learning",
+            "observability",
+            "curator",
+            "journey",
+        ];
+        let arg_commands = [("goal", "ship stage 12"), ("subgoal", "write tests")];
+        let mut matched = 0;
+        for name in bare_commands {
+            if matches!(resolve_bare(name), CommandOutcome::Memory(_)) {
+                matched += 1;
+            }
+        }
+        for (name, arg) in arg_commands {
+            let intent = CommandIntent::Slash {
+                name: name.into(),
+                argument: arg.into(),
+            };
+            if matches!(resolve_bare_intent(&intent), CommandOutcome::Memory(_)) {
+                matched += 1;
+            }
+        }
+        assert_eq!(
+            matched, 13,
+            "exactly 13 memory commands must resolve to Memory(_)"
+        );
     }
 
     #[test]

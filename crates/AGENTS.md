@@ -11,6 +11,9 @@ test-only conformance support.
 - `vesper-domain` depends on no workspace crate.
 - `vesper-provider` depends only on `vesper-domain`.
 - `vesper-security` depends on no workspace crate.
+- `vesper-memory` depends only on `vesper-domain` and `vesper-security`; it
+  owns the durable memory graph, learned skills, user profile, and bounded
+  awareness ledger (ADR 0011 — Stage 12).
 - `vesper-config` depends only on `vesper-domain` and `vesper-security`.
 - `vesper-policy` depends only on `vesper-domain` and `vesper-security`.
 - `vesper-testkit` may depend on all foundational crates and owns synthetic
@@ -58,6 +61,8 @@ test-only conformance support.
 - `vesper-sessions/AGENTS.md` — read-only session ports, bounded compatibility
   decoding, conversion, identity, replay plans, layouts, metadata, and the
   Stage 6 transactional writer.
+- `vesper-memory/AGENTS.md` — ADR 0011 (Stage 12) persistent memory graph,
+  learned skills, user profile, and bounded epistemic ledger.
 - `vesper-agent/AGENTS.md` — Tier C (ADR 0010). The multi-turn
   tool-executing agent loop, tool registry + executors, and permission gating
   that compose `vesper-runtime`. Owns no provider-wire, ACP mapping, or

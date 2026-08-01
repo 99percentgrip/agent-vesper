@@ -56,6 +56,13 @@ pub struct SessionState {
     /// `dispatch`) preserves the existing `dispatch -> DispatchOutcome`
     /// signature and matches the `pending_reasoning` drain pattern.
     pub pending_prompt: Option<String>,
+    /// Phase 8 (ADR 0011): a memory command (`/memory`, `/goal`, `/skills`,
+    /// `/profile`, `/awareness`, etc.) resolved to a structured
+    /// [`crate::commands::MemoryOp`]. The binary owns the durable
+    /// `vesper_memory::MemoryStore` / `SkillStore` / `UserProfile` /
+    /// `AwarenessLedger` and drains this after dispatch (same pattern as
+    /// `pending_prompt`); `None` means no memory op is pending.
+    pub pending_memory_op: Option<crate::commands::MemoryOp>,
 }
 
 impl SessionState {
@@ -157,6 +164,7 @@ fn apply_outcome(
         status,
         pending_reasoning,
         pending_prompt,
+        pending_memory_op,
     } = state;
     match outcome {
         CommandOutcome::Error(message) => {
@@ -283,6 +291,20 @@ fn apply_outcome(
         CommandOutcome::Deferred { command, reason } => {
             transcript.push(format!("/{command}: deferred — {reason}"));
             *status = Some(format!("/{command} is deferred: {reason}"));
+        }
+
+        // === Phase 8 (ADR 0011) — memory subsystem commands ===
+        // Stash the structured op on the session; the binary owns the durable
+        // vesper_memory stores and drains this after dispatch (mirroring the
+        // pending_prompt pattern). The transcript shows the op was accepted;
+        // the binary will push the actual result line after execution.
+        CommandOutcome::Memory(op) => {
+            let name = op.command_name();
+            transcript.push(format!(
+                "memory: /{name} accepted (executing against the durable store)"
+            ));
+            *pending_memory_op = Some(op);
+            *status = Some(format!("/{name}: reading/writing the memory store..."));
         }
 
         CommandOutcome::Quit => {}
@@ -859,6 +881,115 @@ mod integration_tests {
             prompt.contains("gh pr create"),
             "/smart pr must expand to a gh-pr-create prompt: {prompt}"
         );
+    }
+
+    #[test]
+    fn phase8_memory_command_stashes_a_pending_memory_op() {
+        // Phase 8 (ADR 0011): /memory must resolve to a Memory(MemoryOp)
+        // outcome that dispatch records on SessionState.pending_memory_op.
+        // The binary owns the real store and drains it after dispatch.
+        let registry = registry();
+        let surface = surface();
+        let mut state = SessionState::new();
+
+        step(&mut state, &registry, &surface, "/memory");
+        let op = state
+            .pending_memory_op
+            .take()
+            .expect("/memory must stash a pending MemoryOp");
+        assert_eq!(op.command_name(), "memory");
+        // The transcript must show the op was accepted (not a deferred notice).
+        assert!(
+            state
+                .transcript
+                .iter()
+                .any(|line| line.contains("memory:") && line.contains("accepted")),
+            "/memory must push an acceptance notice, got: {:?}",
+            state.transcript
+        );
+        // /memory must NOT trigger an agent turn (no pending_prompt).
+        assert!(
+            state.pending_prompt.is_none(),
+            "/memory must not trigger an agent turn"
+        );
+    }
+
+    #[test]
+    fn phase8_goal_command_stashes_goaladd_op() {
+        let registry = registry();
+        let surface = surface();
+        let mut state = SessionState::new();
+
+        step(&mut state, &registry, &surface, "/goal ship stage 12");
+        let op = state
+            .pending_memory_op
+            .as_ref()
+            .expect("/goal must stash a pending MemoryOp");
+        match op {
+            crate::commands::MemoryOp::GoalAdd { summary } => {
+                assert_eq!(summary, "ship stage 12");
+            }
+            other => panic!("expected GoalAdd, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn phase8_goal_without_argument_errors_instead_of_deferring() {
+        // /goal with no argument must Error (clear usage hint), NOT resolve
+        // to Deferred or to a silent no-op. This is the parity contract.
+        let registry = registry();
+        let surface = surface();
+        let mut state = SessionState::new();
+
+        step(&mut state, &registry, &surface, "/goal");
+        assert!(state.pending_memory_op.is_none());
+        assert!(
+            state
+                .status
+                .as_ref()
+                .is_some_and(|status| status.contains("Usage:")),
+            "/goal with no arg must show a usage hint"
+        );
+    }
+
+    #[test]
+    fn phase8_all_thirteen_memory_commands_record_pending_ops() {
+        // Sanity: every one of the 13 memory commands must produce a
+        // pending_memory_op (or a usage Error for goal/subgoal without arg).
+        // This is the structural guarantee the lead architect demanded.
+        let registry = registry();
+        let surface = surface();
+
+        let bare = [
+            "/memory",
+            "/skills",
+            "/profile",
+            "/awareness",
+            "/metacognition",
+            "/deliberation",
+            "/repository",
+            "/meta-learning",
+            "/observability",
+            "/curator",
+            "/journey",
+        ];
+        for command in bare {
+            let mut state = SessionState::new();
+            step(&mut state, &registry, &surface, command);
+            assert!(
+                state.pending_memory_op.is_some(),
+                "{command} must stash a pending_memory_op"
+            );
+        }
+        // goal + subgoal need an argument.
+        for command in ["/goal ship", "/subgoal write tests"] {
+            let mut state = SessionState::new();
+            step(&mut state, &registry, &surface, command);
+            assert!(
+                state.pending_memory_op.is_some(),
+                "{command} must stash a pending_memory_op"
+            );
+        }
     }
 
     #[test]
