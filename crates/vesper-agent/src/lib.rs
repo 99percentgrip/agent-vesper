@@ -21,6 +21,7 @@
 //! verification.
 
 pub mod agent_loop;
+pub mod confinement;
 pub mod executor;
 pub mod permission;
 pub mod registry;

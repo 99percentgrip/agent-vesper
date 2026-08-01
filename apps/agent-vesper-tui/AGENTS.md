@@ -73,10 +73,11 @@ business logic.
   add a `match` arm in `dispatch::apply_outcome`, and cover the lifecycle in
   `dispatch::integration_tests`. The binary's event loop must never grow its
   own transition discipline.
-- `/review <body>` drives `PLANNING → REVIEW` as the user-facing placeholder
-  for the model-driven `finalize` hook. When the runtime gains a
-  plan-generation port, route the model's plan body through `dispatch` to
-  call `PlanState::finalize` and retire the manual `/review` shortcut.
+- ADR 0010 (Tier C Phase 5): `/review` is **retired**. The model now drives
+  `PLANNING → REVIEW` by emitting the `update_plan` tool; the agent loop
+  surfaces the plan (`AgentTurnOutcome::plan`) and the binary calls
+  `dispatch::apply_model_plan(body)` to finalize it. The human no longer
+  authors the plan body.
 - When adding a new slash command, register it in
   `CommandRegistry::stage_11b`, document its surface in
   `CommandRegistry::help_text`, and add a test that proves it resolves

@@ -102,6 +102,7 @@ fn config(provider_id: &ProviderId, max_iterations: u32) -> AgentLoopConfig {
             model_id: vesper_domain::ModelId::new("fixture-model").unwrap(),
         },
         system_instructions: Vec::new(),
+        workspace_roots: Vec::new(),
         max_tool_iterations: max_iterations,
     }
 }
@@ -130,11 +131,19 @@ async fn loop_executes_a_tool_call_then_completes_on_the_next_turn() {
         .await
         .unwrap();
 
-    let agent = AgentLoop::new(
-        registry,
-        ToolRegistry::parity_default(),
-        config(&provider_id, 10),
-    );
+    // read_file is a real executor: give the loop a workspace root that
+    // actually contains the path the scripted tool call references.
+    let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(root.path().join("src")).unwrap();
+    std::fs::write(root.path().join("src/lib.rs"), "fn main() {}\n").unwrap();
+    let mut agent_config = config(&provider_id, 10);
+    agent_config.workspace_roots = vec![vesper_domain::WorkspaceRoot {
+        name: vesper_domain::BoundedString::new("workspace").unwrap(),
+        path: vesper_domain::BoundedString::new(root.path().to_string_lossy().to_string()).unwrap(),
+        primary: true,
+    }];
+
+    let agent = AgentLoop::new(registry, ToolRegistry::parity_default(), agent_config);
     let outcome = agent
         .run_prompt(
             user_message("read src/lib.rs"),
@@ -149,6 +158,7 @@ async fn loop_executes_a_tool_call_then_completes_on_the_next_turn() {
             iterations,
             tool_results,
             assistant_content,
+            plan: _,
         } => {
             assert_eq!(
                 iterations, 2,
@@ -156,8 +166,8 @@ async fn loop_executes_a_tool_call_then_completes_on_the_next_turn() {
             );
             assert_eq!(tool_results.len(), 1, "one tool executed");
             assert!(
-                tool_results[0].text.as_str().contains("[stub read_file]"),
-                "the stub executor result must be captured: {}",
+                tool_results[0].text.as_str().contains("fn main()"),
+                "the real read_file result must be captured: {}",
                 tool_results[0].text.as_str()
             );
             let final_text = assistant_content

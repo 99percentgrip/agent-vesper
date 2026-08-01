@@ -30,7 +30,7 @@ pub mod superpowers;
 pub mod ui;
 
 pub use commands::{CommandIntent, CommandOutcome, CommandRegistry, PlanGesture};
-pub use dispatch::{DispatchOutcome, SessionState, dispatch};
+pub use dispatch::{DispatchOutcome, SessionState, apply_model_plan, dispatch};
 pub use plan_mode::{PendingQuestion, PlanModeError, PlanPhase, PlanState, PlanTransition};
 pub use superpowers::{ProviderSuperpowerSurface, SuperpowerOverrides};
 pub use ui::{StubRenderer, TerminalRenderer, ViewModel, render_to_frame};

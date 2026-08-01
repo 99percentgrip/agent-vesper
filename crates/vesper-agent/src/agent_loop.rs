@@ -22,6 +22,7 @@ use vesper_domain::{
     ContentPart, ContentText, ConversationMessage, ExtensionMap, FinishOutcome, MessageId,
     MessageRole, ProviderId, ProviderRequestId, QualifiedModelId, SessionOperatingMode,
     SessionPermissionMode, SystemInstruction, ToolCall, ToolDefinition, ToolResultId,
+    WorkspaceRoot,
 };
 use vesper_provider::{
     CancellationSignal, ProviderError, ProviderRequest, ProviderStreamEvent, StructuredOutputIntent,
@@ -46,6 +47,8 @@ pub struct AgentLoopConfig {
     pub model: QualifiedModelId,
     /// Ordered system instructions prepended to every turn.
     pub system_instructions: Vec<SystemInstruction>,
+    /// Confined workspace roots; the first (primary) roots the tool executors.
+    pub workspace_roots: Vec<WorkspaceRoot>,
     /// Hard safety cap on tool iterations (prevents infinite loops).
     pub max_tool_iterations: u32,
 }
@@ -61,6 +64,9 @@ pub enum AgentTurnOutcome {
         iterations: u32,
         /// Every tool result accumulated across the loop.
         tool_results: Vec<ToolResult>,
+        /// The most recent `update_plan` plan body, when the model emitted one
+        /// (Phase 5: callers drive PLANNING → REVIEW off this).
+        plan: Option<String>,
     },
     /// The safety cap was reached before the model stopped calling tools.
     MaxIterationsReached {
@@ -130,6 +136,7 @@ impl AgentLoop {
         let ids = IdGenerator::default();
         let mut messages: Vec<ConversationMessage> = vec![user_message];
         let mut tool_results: Vec<ToolResult> = Vec::new();
+        let mut plan: Option<String> = None;
         let mut iteration: u32 = 0;
 
         loop {
@@ -158,6 +165,7 @@ impl AgentLoop {
                     assistant_content: assistant_parts,
                     iterations: iteration + 1,
                     tool_results,
+                    plan,
                 });
             }
             // Even if the provider finished with ToolCalls, we only loop when
@@ -165,13 +173,19 @@ impl AgentLoop {
             let _ = finish;
 
             let context = ToolContext {
-                workspace_roots: Vec::new(),
+                workspace_roots: self.config.workspace_roots.clone(),
                 operating_mode: mode,
                 permission_mode: permission,
                 cancellation: Arc::clone(&cancellation),
             };
             for call in tool_calls {
                 let output = self.gate_and_execute(&call, &context).await;
+                // Phase 5: capture the model-generated plan when the model
+                // emits `update_plan`, so callers (the TUI) can drive the
+                // PLANNING → REVIEW transition without a human-authored body.
+                if call.tool_id.as_str() == "update_plan" {
+                    plan = Some(output.clone());
+                }
                 let bounded = ContentText::new(output).unwrap_or_else(|_| {
                     ContentText::new("[tool output too large]").expect("bounded")
                 });

@@ -66,12 +66,6 @@ pub enum CommandOutcome {
     Plan { prd: String },
     /// Plan Mode gesture that did not require text (`approve`, `cancel`).
     PlanGesture(PlanGesture),
-    /// `/review <body>` — the model produced a plan body; advance PLANNING to
-    /// REVIEW so the driver can interrogate or `/approve` it.
-    FinalizePlan {
-        /// Bounded plan body to surface for human approval.
-        body: String,
-    },
     /// A superpower command targeted one descriptor.
     Superpower {
         /// Provider that owns the resolved descriptor.
@@ -120,11 +114,11 @@ impl CommandRegistry {
     pub fn stage_11b() -> Self {
         // ADR 0009: `/effort` is retired — the GLM reasoning dial collapsed to
         // the single `/thinking` control. `low`/`medium` are no longer valid.
-        // `version` and `clear-view` mirror the Python oracle's commands that
-        // need no Tier-C tool execution.
+        // ADR 0010 (Tier C Phase 5): `/review` is retired — the model now
+        // drives PLANNING → REVIEW via the `update_plan` tool (see
+        // `dispatch::apply_model_plan`); the human no longer authors the plan.
         let names = [
             "plan",
-            "review",
             "approve",
             "cancel",
             "thinking",
@@ -174,17 +168,6 @@ impl CommandRegistry {
                     } else {
                         CommandOutcome::Plan {
                             prd: argument.clone(),
-                        }
-                    }
-                }
-                "review" => {
-                    if argument.is_empty() {
-                        CommandOutcome::Error(
-                            "Usage: /review <plan body to surface for approval>".into(),
-                        )
-                    } else {
-                        CommandOutcome::FinalizePlan {
-                            body: argument.clone(),
                         }
                     }
                 }
@@ -274,9 +257,6 @@ impl CommandRegistry {
         let mut buffer = String::new();
         buffer.push_str("Vesper TUI commands\n");
         buffer.push_str("  /plan <PRD>      — enter Plan Mode and interrogate the requirements\n");
-        buffer.push_str(
-            "  /review <body>   — surface the generated plan body and wait for /approve\n",
-        );
         buffer.push_str("  /approve         — finalize the reviewed plan and start execution\n");
         buffer.push_str("  /cancel          — abort the in-flight plan\n");
         buffer.push_str("  /thinking <lvl>  — session reasoning (disabled/enabled/high/max)\n");
@@ -615,12 +595,15 @@ mod tests {
         assert!(registry.contains("version"));
         assert!(registry.contains("clear-view"));
         assert!(!registry.contains("effort"), "ADR 0009 retires /effort");
+        assert!(
+            !registry.contains("review"),
+            "ADR 0010 (Tier C) retires /review — the model drives PLANNING → REVIEW"
+        );
         assert!(!registry.contains("frobnicate"));
         assert_eq!(
             registry.names(),
             &[
                 "plan".to_string(),
-                "review".into(),
                 "approve".into(),
                 "cancel".into(),
                 "thinking".into(),
@@ -630,39 +613,6 @@ mod tests {
                 "help".into(),
                 "quit".into(),
             ]
-        );
-    }
-
-    #[test]
-    fn resolve_review_requires_a_body() {
-        let registry = CommandRegistry::stage_11b();
-        let plan_state = PlanState::default();
-        let provider = provider();
-        let empty = registry.resolve(
-            &CommandIntent::Slash {
-                name: "review".into(),
-                argument: "".into(),
-            },
-            &plan_state,
-            &provider,
-            &[],
-        );
-        assert!(matches!(empty, CommandOutcome::Error(_)));
-
-        let with_body = registry.resolve(
-            &CommandIntent::Slash {
-                name: "review".into(),
-                argument: "1. do thing\n2. ship".into(),
-            },
-            &plan_state,
-            &provider,
-            &[],
-        );
-        assert_eq!(
-            with_body,
-            CommandOutcome::FinalizePlan {
-                body: "1. do thing\n2. ship".into()
-            }
         );
     }
 

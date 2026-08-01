@@ -9,6 +9,8 @@ publish = false
 
 [dependencies]
 futures-util.workspace = true
+glob.workspace = true
+regex.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
@@ -19,6 +21,7 @@ vesper-runtime = { path = "../vesper-runtime", version = "=0.1.0" }
 
 [dev-dependencies]
 serde_json.workspace = true
+tempfile.workspace = true
 vesper-testkit = { path = "../vesper-testkit", version = "=0.1.0" }
 
 [lints]

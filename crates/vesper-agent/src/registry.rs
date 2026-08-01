@@ -166,6 +166,7 @@ mod tests {
     use super::*;
     use crate::executor::{ToolContext, uncancellable_context};
     use serde_json::json;
+    use vesper_domain::{BoundedString, WorkspaceRoot};
     use vesper_domain::{
         SessionOperatingMode, SessionPermissionMode, ToolCall, ToolCallId, ToolExecutionClass,
     };
@@ -229,15 +230,29 @@ mod tests {
 
     #[tokio::test]
     async fn dispatch_routes_to_the_named_executor() {
+        // read_file is a real executor now, so the registry test drives it
+        // against a temp workspace root with a real file.
         let registry = ToolRegistry::parity_default();
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("note.txt"), "registry dispatch").unwrap();
+        let roots = vec![WorkspaceRoot {
+            name: BoundedString::new("workspace").unwrap(),
+            path: BoundedString::new(root.path().to_string_lossy().to_string()).unwrap(),
+            primary: true,
+        }];
         let context: ToolContext = uncancellable_context(
-            Vec::new(),
+            roots,
             SessionOperatingMode::Code,
             SessionPermissionMode::Ask,
         );
-        let call = call_for("read_file");
+        let call = ToolCall {
+            id: ToolCallId::new("call-1").unwrap(),
+            tool_id: vesper_domain::ToolId::new("read_file").unwrap(),
+            arguments: serde_json::json!({"path": "note.txt"}),
+            extensions: vesper_domain::ExtensionMap::default(),
+        };
         let result = registry.execute(&call, &context).await.unwrap();
-        assert!(result.text.as_str().contains("[stub read_file]"));
+        assert_eq!(result.text.as_str(), "registry dispatch");
     }
 
     #[tokio::test]

@@ -12,10 +12,11 @@
 //! ## Driver/Navigator contract
 //!
 //! The Plan Mode state machine is pure: it owns *transition discipline*, not
-//! reasoning. The model produces plan text through the runtime; until that
-//! runtime hook exists, the `/review <body>` command drives the
-//! `PLANNING → REVIEW` transition as a sanctioned, testable placeholder. Free
-//! text typed while a question is pending is routed to
+//! reasoning. Under ADR 0010 (Tier C Phase 5) the model drives the
+//! `PLANNING → REVIEW` transition by emitting the `update_plan` tool; the
+//! agent loop surfaces the rendered plan and [`apply_model_plan`] finalizes
+//! it for review. The human-authored `/review <body>` placeholder is retired.
+//! Free text typed while a question is pending is routed to
 //! [`PlanState::answer`](crate::plan_mode::PlanState::answer) so the driver
 //! can refine the plan inline.
 
@@ -97,6 +98,40 @@ pub fn dispatch(
     }
 }
 
+/// Phase 5 bridge (ADR 0010): drives `PLANNING → REVIEW` from a **model-
+/// generated** plan body.
+///
+/// The agent loop's `update_plan` executor writes `.agent/plan.md` and the loop
+/// surfaces the rendered plan in `AgentTurnOutcome::plan`. The TUI's event loop
+/// calls this with that body so the human reviews the model-authored plan
+/// (retiring the human-authored `/review` placeholder). Returns the Plan Mode
+/// transition so the caller can render it.
+pub fn apply_model_plan(state: &mut SessionState, plan_body: &str) -> crate::PlanTransition {
+    let SessionState {
+        plan,
+        transcript,
+        status,
+        ..
+    } = state;
+    match plan.finalize(plan_body) {
+        Ok(transition) => {
+            transcript.push(format!(
+                "plan: REVIEW (model plan, {} bytes)",
+                plan_body.len()
+            ));
+            *status = Some("Plan under review — /approve to execute, /cancel to abort.".into());
+            transition
+        }
+        Err(error) => {
+            *status = Some(error.to_string());
+            crate::PlanTransition::Notice(
+                vesper_domain::SafeMessage::new("plan could not be finalized")
+                    .expect("static notice is bounded"),
+            )
+        }
+    }
+}
+
 /// Applies a resolved [`CommandOutcome`] to `state`.
 ///
 /// Pure: no I/O, no async, no terminal. The Plan Mode transitions, override
@@ -135,14 +170,7 @@ fn apply_outcome(
         CommandOutcome::Plan { prd } => match plan.start(&prd) {
             Ok(_) => {
                 transcript.push(format!("plan: entered PLANNING ({} bytes)", prd.len()));
-                *status = Some("Plan Mode active — answer questions or /review the plan.".into());
-            }
-            Err(error) => *status = Some(error.to_string()),
-        },
-        CommandOutcome::FinalizePlan { body } => match plan.finalize(&body) {
-            Ok(_) => {
-                transcript.push(format!("plan: REVIEW ({} bytes)", body.len()));
-                *status = Some("Plan under review — /approve to execute, /cancel to abort.".into());
+                *status = Some("Plan Mode active — the model plans via update_plan.".into());
             }
             Err(error) => *status = Some(error.to_string()),
         },
@@ -298,8 +326,8 @@ mod integration_tests {
 
     #[test]
     fn plan_then_review_drives_into_review_and_waits() {
-        // The directive's core verification: /plan … /review … must land in
-        // REVIEW and the next step must be /approve (or /cancel).
+        // ADR 0010 Phase 5: /plan … then a model-generated plan (via
+        // `update_plan`) lands in REVIEW; the next step must be /approve.
         let registry = registry();
         let surface = surface();
         let mut state = SessionState::new();
@@ -312,13 +340,8 @@ mod integration_tests {
         );
         assert_eq!(state.phase(), PlanPhase::Planning);
 
-        let outcome = step(
-            &mut state,
-            &registry,
-            &surface,
-            "/review 1. scaffold\n2. routes\n3. tests",
-        );
-        assert_eq!(outcome, DispatchOutcome::Continue);
+        // The agent loop's update_plan surfaces the plan here (Phase 5 bridge).
+        let _ = apply_model_plan(&mut state, "1. scaffold\n2. routes\n3. tests");
         assert_eq!(state.phase(), PlanPhase::Review);
         // REVIEW must surface a confirmation prompt in the status line.
         assert!(
@@ -339,7 +362,7 @@ mod integration_tests {
 
         step(&mut state, &registry, &surface, "/plan PRD");
         assert_eq!(state.phase(), PlanPhase::Planning);
-        step(&mut state, &registry, &surface, "/review the plan body");
+        let _ = apply_model_plan(&mut state, "the plan body");
         assert_eq!(state.phase(), PlanPhase::Review);
         step(&mut state, &registry, &surface, "/approve");
         assert_eq!(state.phase(), PlanPhase::Executing);
@@ -360,7 +383,7 @@ mod integration_tests {
         let mut state = SessionState::new();
 
         step(&mut state, &registry, &surface, "/plan PRD");
-        step(&mut state, &registry, &surface, "/review body");
+        let _ = apply_model_plan(&mut state, "body");
         assert_eq!(state.phase(), PlanPhase::Review);
 
         step(&mut state, &registry, &surface, "/cancel");
@@ -525,7 +548,7 @@ mod integration_tests {
             PlanPhase::Planning
         );
 
-        step(&mut state, &registry, &surface, "/review body");
+        let _ = apply_model_plan(&mut state, "body");
         render(&state, &mut renderer);
         assert_eq!(
             renderer.last_model.as_ref().unwrap().plan.phase(),
