@@ -296,6 +296,7 @@ fn respond(stream: &mut TcpStream, status: &str, content_type: &str, body: &str)
         body.len()
     );
     let _ = stream.flush();
+    let _ = stream.shutdown(std::net::Shutdown::Write);
 }
 
 const PWA_HTML: &str = r#"<!doctype html><meta name="viewport" content="width=device-width"><title>Agent Vesper Approval</title><style>body{font:18px system-ui;max-width:36rem;margin:3rem auto;padding:1rem;background:#0b1017;color:#d9e7f5}button{font-size:1.2rem;padding:1rem;margin:.5rem}</style><h1>Agent Vesper</h1><p id="state">Waiting for an approval…</p><button id="allow" disabled>Allow once</button><button id="deny" disabled>Deny</button><script>const pair=new URLSearchParams(location.search).get('pair');let current='';async function poll(){const r=await fetch('/pending?pair='+encodeURIComponent(pair));if(r.ok){const j=await r.json();current=j.approval||'';state.textContent=current?'Approval requested':'Waiting for an approval…';allow.disabled=deny.disabled=!current}setTimeout(poll,1000)}async function decide(approved){if(!current)return;await fetch('/approve/'+encodeURIComponent(current),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({approved})});current='';allow.disabled=deny.disabled=true}allow.onclick=()=>decide(true);deny.onclick=()=>decide(false);poll()</script>"#;
