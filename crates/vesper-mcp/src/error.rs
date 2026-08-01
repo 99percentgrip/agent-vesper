@@ -28,6 +28,9 @@ pub enum McpError {
     /// A configured MCP server id was not found in the registry.
     #[error("mcp server not found: {0}")]
     ServerNotFound(String),
+    /// A protected first-party server cannot be replaced or removed.
+    #[error("built-in MCP server is protected: {0}")]
+    BuiltinServerProtected(String),
     /// A filesystem operation failed. The path is not included.
     #[error("filesystem operation failed: {kind}")]
     Io { kind: &'static str },
@@ -38,6 +41,9 @@ pub enum McpError {
     /// parseable JSON-RPC output.
     #[error("mcp subprocess failed: {0}")]
     Subprocess(&'static str),
+    /// An HTTP MCP request failed without exposing the endpoint or body.
+    #[error("mcp http request failed: {0}")]
+    Http(&'static str),
     /// The plugin loader was asked to load an unsigned plugin in a
     /// `--release` build. This is the runtime mirror of the compile-time
     /// `#[cfg(debug_assertions)]` gate: even if a caller somehow reached

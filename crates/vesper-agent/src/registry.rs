@@ -1,7 +1,7 @@
 //! Tool registry (ADR 0010, Tier C Phase 1).
 //!
-//! Maps the nine parity-critical harness tool names to their [`ToolExecutor`]
-//! stubs, advertises mode-filtered [`ToolDefinition`]s to the model (mirroring
+//! Maps the nine parity-critical harness tool names to their real
+//! [`ToolExecutor`] implementations, advertises mode-filtered [`ToolDefinition`]s to the model (mirroring
 //! the Python oracle's `agent.py:2843-2872` eligibility), and dispatches a
 //! normalized [`ToolCall`] to its executor. The registry owns no I/O — it only
 //! routes; the executor owns the side effect.
@@ -11,7 +11,9 @@ use std::sync::Arc;
 
 use vesper_domain::{SessionOperatingMode, ToolCall, ToolDefinition, ToolExecutionClass};
 
-use crate::executor::{ToolError, ToolExecutor, ToolFuture, ToolResult, harness_name};
+use crate::executor::{
+    HostedTool, ToolError, ToolExecutor, ToolFuture, ToolResult, ToolService, harness_name,
+};
 use crate::tools::{
     ApplyPatch, EditFile, Grep, ListDirectory, ReadFile, RunCommand, SearchFiles, UpdatePlan,
     WriteFile,
@@ -29,13 +31,13 @@ pub struct ToolRegistry {
 }
 
 impl ToolRegistry {
-    /// Creates a registry populated with the nine parity-critical stub tools.
+    /// Creates a registry populated with the nine parity-critical core tools.
     ///
     /// Tools are registered in stable harness-name order so `definitions_for`
     /// advertises them deterministically to the model.
     #[must_use]
     pub fn parity_default() -> Self {
-        let stubs: [(&str, ToolExecutionClass, Arc<dyn ToolExecutor>); 9] = [
+        let core_tools: [(&str, ToolExecutionClass, Arc<dyn ToolExecutor>); 9] = [
             (
                 "read_file",
                 ToolExecutionClass::ReadOnly,
@@ -79,7 +81,7 @@ impl ToolRegistry {
             ),
         ];
         let mut entries = BTreeMap::new();
-        for (_name, _expected_class, executor) in stubs {
+        for (_name, _expected_class, executor) in core_tools {
             let definition = executor.definition();
             let key = harness_name(&definition);
             entries.insert(
@@ -91,6 +93,23 @@ impl ToolRegistry {
             );
         }
         Self { entries }
+    }
+
+    /// Adds all definitions contributed by a composition-boundary service.
+    ///
+    /// A duplicate name is rejected by retaining the first registration;
+    /// callers can inspect the final registry and fail startup if a provider
+    /// or plugin attempted to shadow a core capability.
+    #[must_use]
+    pub fn with_service(mut self, service: Arc<dyn ToolService>) -> Self {
+        for definition in service.definitions() {
+            let key = harness_name(&definition);
+            self.entries.entry(key).or_insert_with(|| Entry {
+                definition: definition.clone(),
+                executor: Arc::new(HostedTool::new(definition, Arc::clone(&service))),
+            });
+        }
+        self
     }
 
     /// Number of registered tools.

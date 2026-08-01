@@ -18,7 +18,7 @@ unsigned plugin by any code path.
 - `src/lib.rs` — public re-exports and crate-level docs.
 - `src/error.rs` — `McpError` (sanitized; never leaks paths or payloads).
 - `src/mcp.rs` — `McpRegistry` (config-driven server list, JSONL-backed)
-  and `McpClient` (minimal JSON-RPC 2.0 over stdio).
+  and `McpClient` (bounded JSON-RPC 2.0 over stdio and Streamable HTTP).
 - `src/plugins.rs` — `PluginManifest`, `PluginSignature`,
   `TrustedPublishers`, and the security-critical `PluginLoader` with
   `load` (always verifies) and `load_unsigned_debug` (only compiles under
@@ -46,10 +46,17 @@ unsigned plugin by any code path.
   when `tools()` returns the child has been dropped and the process
   reaped (mirrors the Errno-24-prevention discipline of
   `vesper-checkpoints`).
-- **HTTP MCP transport is reserved but NOT implemented.** The oracle's
-  HTTP path requires live provider credentials (z.ai auth), which
-  foundation verification forbids. The `McpTransport::Http` variant
-  exists for forward compatibility; `McpClient::tools` rejects it.
+- **HTTP MCP transport is bounded and opt-in.** It uses a short timeout,
+  caps response bytes, and reads an optional bearer token from a named
+  environment variable; the secret is never persisted. Foundation tests use
+  no live provider endpoint.
+- Protected first-party presets (`zai_search`, `zai_reader`, `zai_vision`, and
+  `playwright`) are available to the harness without being persisted or
+  replaceable by custom registry entries. Streamable HTTP initialization,
+  session headers, notifications, and event-stream responses are handled
+  within the bounded client. Playwright subprocesses receive a sanitized
+  environment; vision receives `Z_AI_API_KEY` only when its configured auth
+  environment is available.
 - Hard bounds: `MAX_PLUGIN_FILES = 32`, `MAX_PLUGIN_BYTES = 2 MiB`,
   `MAX_SERVERS = 100`, `MAX_RESPONSE_BYTES = 1 MiB`,
   `MAX_SERVER_ID_CHARS = 64`.

@@ -25,6 +25,16 @@ update mapping, and bounded asynchronous dispatch into `vesper-runtime`.
 - Corrupt, unsupported, bounded, denied, unsafe, workspace-mismatch, and
   write-failed records return sanitized request errors without terminating
   dispatch.
+- Session mode/config requests are mapped to runtime mode, reasoning, and
+  permission updates; delete and logout have explicit protocol responses.
+- `AcpPromptEngine` is an optional composition port. When injected, prompt
+  requests route through a host's bounded multi-turn `vesper-agent` loop and
+  are published with ACP backpressure. Cancellation notifications are routed
+  to the injected engine as well. The adapter supplies a bounded
+  `session/request_permission` bridge to injected engines; cancellation
+  resolves any pending approval and the engine must fail closed on rejection
+  or a missing bridge. Without an injected engine, the runtime single-turn
+  path remains available for protocol conformance.
 
 ## Verification
 

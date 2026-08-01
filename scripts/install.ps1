@@ -51,7 +51,8 @@ try {
     Remove-Item -LiteralPath $bundle -Recurse -Force -ErrorAction SilentlyContinue
     Move-Item -LiteralPath $source -Destination $bundle
     $launcher = Join-Path $InstallDir "agent-vesper-acp.cmd"
-    Set-Content -LiteralPath $launcher -Value "@echo off`r`n\"%~dp0agent-vesper-acp.bundle\agent-vesper-acp.exe\" %*" -NoNewline
+    $launcherContent = "@echo off`r`n`"%~dp0agent-vesper-acp.bundle\agent-vesper-acp.exe`" %*"
+    Set-Content -LiteralPath $launcher -Value $launcherContent -NoNewline
 
     $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
     $pathEntries = @($userPath -split ";" | Where-Object { $_ })

@@ -70,7 +70,7 @@ mv "$temporary/agent-vesper-acp" "$bundle_dir"
 printf '#!/bin/sh\nexec "%s/agent-vesper-acp" "$@"\n' "$bundle_dir" > "$install_dir/agent-vesper-acp"
 chmod 0755 "$install_dir/agent-vesper-acp"
 
-installed_version="$($install_dir/agent-vesper-acp --version 2>&1)"
+installed_version="$("$install_dir/agent-vesper-acp" --version 2>&1)"
 printf 'Installed Agent Vesper %s:\n' "$installed_version"
 printf '  %s\n' "$install_dir/agent-vesper-acp"
 

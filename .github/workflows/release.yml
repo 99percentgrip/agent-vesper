@@ -1,0 +1,121 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.label }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: linux-x86_64
+            runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            asset: agent-vesper-acp-linux-x86_64.tar.gz
+            platform: unix
+          - label: linux-aarch64
+            runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            asset: agent-vesper-acp-linux-aarch64.tar.gz
+            platform: unix
+          - label: darwin-x86_64
+            runner: macos-15-intel
+            target: x86_64-apple-darwin
+            asset: agent-vesper-acp-darwin-x86_64.tar.gz
+            platform: unix
+          - label: darwin-aarch64
+            runner: macos-15
+            target: aarch64-apple-darwin
+            asset: agent-vesper-acp-darwin-aarch64.tar.gz
+            platform: unix
+          - label: windows-x86_64
+            runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            asset: agent-vesper-acp-windows-x86_64.zip
+            platform: windows
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install pinned Rust toolchain
+        shell: bash
+        run: rustup toolchain install 1.95.0 --profile minimal --target "${{ matrix.target }}"
+      - name: Validate release metadata
+        shell: bash
+        run: |
+          workspace_version="$(awk -F '\"' '/^version = \"/ { print $2; exit }' Cargo.toml)"
+          registry_version="$(awk -F '\"' '/^[[:space:]]*\"version\":/ { print $4; exit }' registry/agent.json)"
+          test "$GITHUB_REF_NAME" = "v$workspace_version"
+          test "$registry_version" = "$workspace_version"
+      - name: Build ACP binary
+        shell: bash
+        run: cargo build --locked --release --package agent-vesper-acp --target "${{ matrix.target }}"
+      - name: Package Unix archive
+        if: matrix.platform == 'unix'
+        shell: bash
+        run: |
+          staging="$RUNNER_TEMP/agent-vesper-acp"
+          assets="$RUNNER_TEMP/release-assets"
+          mkdir -p "$staging" "$assets"
+          cp "target/${{ matrix.target }}/release/agent-vesper-acp" "$staging/agent-vesper-acp"
+          tar -czf "$assets/${{ matrix.asset }}" -C "$RUNNER_TEMP" agent-vesper-acp
+          (cd "$assets" && sha256sum "${{ matrix.asset }}" > "${{ matrix.asset }}.sha256")
+      - name: Package Windows archive
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $staging = Join-Path $env:RUNNER_TEMP "agent-vesper-acp"
+          $assets = Join-Path $env:RUNNER_TEMP "release-assets"
+          New-Item -ItemType Directory -Path $staging, $assets -Force | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/agent-vesper-acp.exe" (Join-Path $staging "agent-vesper-acp.exe")
+          $archive = Join-Path $assets "${{ matrix.asset }}"
+          Compress-Archive -Path $staging -DestinationPath $archive -Force
+          $hash = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
+          "$hash  ${{ matrix.asset }}" | Set-Content -LiteralPath "$archive.sha256" -NoNewline
+      - name: Upload release assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.label }}
+          path: ${{ runner.temp }}/release-assets
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: Download release assets
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+      - name: Validate release metadata
+        shell: bash
+        run: |
+          workspace_version="$(awk -F '\"' '/^version = \"/ { print $2; exit }' Cargo.toml)"
+          registry_version="$(awk -F '\"' '/^[[:space:]]*\"version\":/ { print $4; exit }' registry/agent.json)"
+          test "$GITHUB_REF_NAME" = "v$workspace_version"
+          test "$registry_version" = "$workspace_version"
+          test "$(find dist -maxdepth 1 -type f -name '*.sha256' | wc -l)" -eq 5
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ! gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "Agent Vesper $GITHUB_REF_NAME" \
+              --generate-notes
+          fi
+          gh release upload "$GITHUB_REF_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber

@@ -28,6 +28,12 @@ pub enum CheckpointError {
     /// A session id was not found in the lineage.
     #[error("session not found: {0}")]
     SessionNotFound(String),
+    /// A cron job id was not found in the scheduler registry.
+    #[error("cron job not found: {0}")]
+    CronJobNotFound(String),
+    /// A scheduler claim token no longer belongs to the caller.
+    #[error("cron claim is no longer valid")]
+    CronClaimLost,
     /// A workspace path escaped the configured workspace root.
     #[error("workspace path escapes the root")]
     PathEscape,

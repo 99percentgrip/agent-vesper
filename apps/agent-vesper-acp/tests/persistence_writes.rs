@@ -131,6 +131,7 @@ fn prompt_persists_transactionally_and_resumes_across_processes() {
             (READ_ROOT, vesper_root.to_string_lossy().into_owned()),
             (WRITE_ENABLE, "1".into()),
             (WRITE_ROOT, vesper_root.to_string_lossy().into_owned()),
+            ("AGENT_VESPER_FULL_HARNESS", "1".into()),
         ],
     );
 
@@ -182,6 +183,7 @@ fn prompt_persists_transactionally_and_resumes_across_processes() {
             (READ_ENABLE, "1".into()),
             (VESPER_READ_ENABLE, "1".into()),
             (READ_ROOT, vesper_root.to_string_lossy().into_owned()),
+            ("AGENT_VESPER_FULL_HARNESS", "1".into()),
         ],
     );
 

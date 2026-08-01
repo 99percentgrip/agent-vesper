@@ -21,6 +21,9 @@ derived `.meta` sidecars.
 - `src/conversion.rs` owns pure compatibility state conversion, history
   filtering, and deterministic identity generation.
 - `src/replay.rs` owns ACP-neutral update ordering and acceptance sinks.
+- `src/search.rs` owns bounded read-only persisted user/assistant history
+  search over repository ports; it uses no writable index and never includes
+  reasoning, tool payloads, or secrets.
 - `src/vesper_format.rs` owns the versioned Agent Vesper format and decoder.
 - `src/writer.rs` owns the transactional Agent Vesper writer: write-to-temp,
   fsync, atomic rename, derived sidecar generation, per-session write
@@ -49,7 +52,9 @@ derived `.meta` sidecars.
 - Conversion and decoding remain pure; runtime injects these read-only ports
   and the writer port without moving filesystem logic into the runtime.
 - Replay plans execute no persisted plan, goal, tool, memory, or checkpoint.
-- SQLite and search remain unavailable.
+- Persistent search is supported as a bounded linear scan over the existing
+  session records. SQLite/FTS indexes remain intentionally absent; the scan
+  is bounded and deterministic so it cannot recreate the oracle's WAL/FD leak.
 - Generated IDs hash only session identity, ordinal, and role; they never
   rewrite legacy records or expose content hashes.
 

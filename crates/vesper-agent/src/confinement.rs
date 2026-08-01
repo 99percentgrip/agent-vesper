@@ -139,7 +139,7 @@ pub(crate) fn optional_u64_arg(arguments: &serde_json::Value, key: &str) -> Opti
 }
 
 /// Picks the primary workspace root from a tool context, or errors.
-pub(crate) fn primary_root(
+pub fn primary_root(
     context: &crate::executor::ToolContext,
 ) -> Result<&Path, crate::executor::ToolError> {
     context

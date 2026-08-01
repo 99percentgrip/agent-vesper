@@ -332,6 +332,29 @@ impl PluginLoader {
         self.load_inner(package_dir, /* unsigned_debug */ false)
     }
 
+    /// Verifies a signed package without appending a loaded-plugin record.
+    /// This is the side-effect-free counterpart used by tool-level `verify`
+    /// commands and keeps verification distinct from installation.
+    pub fn verify(&self, package_dir: &Path) -> Result<PluginManifest, McpError> {
+        let manifest_path = package_dir.join(MANIFEST_FILENAME);
+        let manifest_bytes = std::fs::read(&manifest_path).map_err(|_| McpError::io("read"))?;
+        if manifest_bytes.len() > MAX_PLUGIN_BYTES {
+            return Err(McpError::BoundsViolated("manifest size"));
+        }
+        let manifest: PluginManifest = serde_json::from_slice(&manifest_bytes)?;
+        manifest.validate()?;
+        let signature = PluginSignature::read(&package_dir.join(SIGNATURE_FILENAME))?;
+        let publisher = self
+            .trusted
+            .get(&manifest.publisher)
+            .ok_or_else(|| McpError::PublisherNotTrusted(manifest.publisher.clone()))?;
+        publisher
+            .verifying_key()?
+            .verify(&manifest_bytes, &Signature::from_bytes(&signature.bytes))
+            .map_err(|_| McpError::SignatureVerificationFailed("ed25519 verify"))?;
+        Ok(manifest)
+    }
+
     /// **Dev-mode only.** Loads a plugin package WITHOUT signature
     /// verification. This method exists ONLY under
     /// `#[cfg(debug_assertions)]`; in a `--release` build the method

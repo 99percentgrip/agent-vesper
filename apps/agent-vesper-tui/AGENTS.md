@@ -18,7 +18,8 @@ business logic.
 - `src/commands.rs` — slash-command parsing, registry, and resolution
   against the active provider's superpowers. Tier C Phase 7 (ADR 0010): the
   registry now covers the **entire** Python oracle `LOCAL_COMMANDS` surface
-  (79 distinct oracle command names + 3 Vesper-native = 82 commands). The
+  (80 distinct oracle command names, including `/export last`, + 3
+  Vesper-native = 83 commands). The
   `ORACLE_COMMAND_SURFACE` const table is the single source of truth for the
   migration matrix.
 - `src/dispatch.rs` — pure, terminal-free event-loop dispatch: the bridge
@@ -42,12 +43,21 @@ business logic.
   `build_agent_loop`, `spawn_agent_turn` (background `tokio::spawn`), and the
   non-blocking `drain_agent_event` / `apply_agent_event` result handlers.
   Free-text prompts in NORMAL phase spawn the loop; a model-authored plan
-  drives `PLANNING → REVIEW` via `dispatch::apply_model_plan`.
-  Phase 8 (ADR 0011): also owns the `MemoryStores` bundle
+  drives `PLANNING → REVIEW` via `dispatch::apply_model_plan`. `TuiSession`
+  owns conversation history and receives the updated history from each turn,
+  keeping successive prompts in one provider-visible context. The complete
+  36-name hosted Python tool surface is advertised by the shared `vesper-harness`
+  `ToolService`:
+  memory/skills, cron, session-context search, bounded semantic inspection,
+  transactional patch sets, batch reads, workflows, signed plugins, and
+  provider-backed delegate/worktree workers share the same composition roots.
+  Phase 8 (ADR 0011): the shared harness owns the model-facing `MemoryStores`;
+  the TUI retains its slash-command projection bundle
   (`MemoryStore` + `SkillStore` + `UserProfile` + `AwarenessLedger`) and the
   `drain_memory_op` executor that turns `SessionState.pending_memory_op`
   into durable reads/writes after each dispatch.
-  Phase 9 (ADR 0012): also owns the `CheckpointStores` bundle
+  Phase 9 (ADR 0012): the shared harness owns model-facing cron/session
+  services; the TUI owns the slash-command `CheckpointStores` bundle
   (`CheckpointsLedger` + `SessionLineage` + `CronRegistry` +
   `SessionExporter` + `ClipboardPort`; `CiStatusReader` is process-scoped)
   and the `drain_checkpoint_op` executor that turns
@@ -55,7 +65,8 @@ business logic.
   lineage / cron / export / clipboard / CI-status operations after each
   dispatch. The Errno-24-prevention discipline lives entirely in
   `vesper-checkpoints` (RAII file-handle scoping; no SQLite, no git refs).
-  Phase 10 (ADR 0013): also owns the `McpStores` bundle (`McpRegistry` +
+  Phase 10 (ADR 0013): the shared harness owns model-facing MCP/plugin
+  gateways; the TUI owns the slash-command `McpStores` bundle (`McpRegistry` +
   `PluginLoader` + `TrustedPublishers`) and the `drain_mcp_op` executor
   that turns `SessionState.pending_mcp_op` into MCP server list/add/
   remove/tools and plugin list/publishers/verify/load/trust operations.
@@ -75,8 +86,10 @@ business logic.
   0012: the binary owns the durable checkpoint/session-lineage/cron/
   export/clipboard/CI bundle), and `vesper-mcp` (Phase 10 / ADR 0013:
   the binary owns the durable MCP-registry + Ed25519-signed plugin
-  loader bundle); it must not depend on `vesper-acp`,
-  `vesper-sessions`, SQLite, or any disposable spike.
+  loader bundle), `vesper-sessions` for bounded persisted transcript search,
+  and `vesper-observability` for opt-in telemetry, plus `vesper-harness` for
+  the shared hosted tool implementation; it must not depend on
+  `vesper-acp`, SQLite, or any disposable spike.
 - The Plan Mode state machine is **pure**: no I/O, no async, no global
   state. Every transition returns a `PlanTransition`; the event loop applies
   it.
@@ -94,6 +107,17 @@ business logic.
   dynamically against the active provider's advertised descriptors at
   dispatch time, so the same command surface works for any registered
   provider.
+- Mutating agent tools run under the injected one-time `ApprovalBroker`; the
+  TUI displays one pending request and resolves it only on `/approve` or
+  `/cancel`. A closed channel fails closed. `@file`, `@folder`, `@diff`, and
+  `@symbol` references are expanded under the workspace with untrusted
+  delimiters and bounded sensitive-file filtering.
+- Persisted TUI search uses the bounded `vesper-sessions` linear search port;
+  its projection contains only user/assistant text and is atomically
+  replaced. SQLite/FTS indexes are intentionally absent.
+- `AGENT_VESPER_TELEMETRY` opt-in enables the secret-safe trajectory recorder;
+  prompts, tool payloads, reasoning, paths, commands, and credentials are
+  excluded from JSONL events.
 - Provider selection follows `AGENT_VESPER_PROVIDER` (default `zai`), the
   same composition-boundary convention as `agent-vesper-acp`.
 
@@ -143,7 +167,8 @@ business logic.
 - ADR 0012 (Tier C Phase 9): the 13 checkpoint/session/loop/export/copy/ci
   commands (`/sessions-new`, `/sessions`, `/lineage`, `/branch`,
   `/rename`, `/checkpoint`, `/rollback`, `/rewind`, `/undo`, `/loop`,
-  `/export`, `/copy`, `/ci`) are no longer deferred. They resolve to
+  `/export`, `/export last`, `/copy`, `/ci`) are no longer deferred. They
+  resolve to
   `CommandOutcome::Checkpoint(CheckpointOp)`; `dispatch` records
   `SessionState.pending_checkpoint_op`; the binary owns a
   `CheckpointStores` bundle (`CheckpointsLedger` + `SessionLineage` +

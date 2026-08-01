@@ -10,8 +10,12 @@ transport, stderr-only tracing, and orderly shutdown.
 - Contain no session, provider-wire, or ACP-mapping business logic.
 - Stdout is exclusively newline-delimited ACP JSON-RPC.
 - Tests use loopback endpoints and synthetic credentials only.
-- No child process is created by the application, and the application performs
-  no filesystem I/O itself.
+- No provider child process or raw credential I/O is created by the ACP
+  composition itself. The shared `vesper-harness` service may perform bounded
+  workspace-scoped tool I/O and MCP/plugin subprocess work only after a model
+  tool call passes the agent permission gate. The explicit `--setup`
+  authentication command is the sole credential write and delegates the
+  atomic private-file operation to the GLM provider auth boundary.
 - Session readers are disabled unless explicitly enabled, use bounded
   filesystem stores, reject unsafe roots, and never create missing roots.
 - Session writers are disabled unless explicitly enabled via
@@ -34,6 +38,15 @@ transport, stderr-only tracing, and orderly shutdown.
 - The non-default `integration-test-harness` feature may compose generic
   synchronization wrappers, but the default release binary must not contain a
   dispatch gate or scenario behavior.
+- The default ACP composition injects `AcpHarnessEngine`, which owns bounded
+  per-session conversation history and routes prompts through `AgentLoop`.
+  The adapter injects a live ACP `session/request_permission` port for
+  mutating tools; rejection, cancellation, unavailable clients, and malformed
+  outcomes remain fail-closed. The engine injects the shared hosted
+  Python-oracle tool surface and bounded project instruction context. Set
+  `AGENT_VESPER_FULL_HARNESS=0` only for protocol-conformance fixtures that
+  must exercise the provider-neutral single-turn runtime path; production
+  defaults to the full engine.
 
 ## Verification
 

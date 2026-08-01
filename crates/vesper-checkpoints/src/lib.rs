@@ -61,16 +61,16 @@ pub mod types;
 
 pub use ci::{CiStatus, CiStatusReader};
 pub use clipboard::{ClipboardOutcome, ClipboardPort, MAX_CLIPBOARD_BYTES};
-pub use cron::CronRegistry;
+pub use cron::{CronRegistry, CronRun};
 pub use error::CheckpointError;
 pub use export::{MAX_EXPORT_BYTES, SessionExporter};
 pub use ledger::CheckpointsLedger;
 pub use sessions::SessionLineage;
 pub use snapshot::{SnapshotConfig, SnapshotOutcome};
 pub use types::{
-    CheckpointKind, CheckpointRecord, CronEntry, FileSnapshot, HARD_MAX_CHECKPOINT_SIZE_BYTES,
-    HARD_MAX_FILE_SIZE_BYTES, HARD_MAX_FILES_PER_CHECKPOINT, HARD_MAX_RETENTION_COUNT,
-    MAX_CHECKPOINT_SIZE_BYTES, MAX_CRON_JOBS, MAX_CRON_PROMPT_CHARS, MAX_FILE_SIZE_BYTES,
-    MAX_FILES_PER_CHECKPOINT, MAX_LABEL_CHARS, MAX_LINEAGE_DEPTH, MAX_RETENTION_COUNT,
-    SessionRecord, SessionStatus,
+    CRON_CLAIM_TTL_SECONDS, CheckpointKind, CheckpointRecord, CronClaim, CronEntry, FileSnapshot,
+    HARD_MAX_CHECKPOINT_SIZE_BYTES, HARD_MAX_FILE_SIZE_BYTES, HARD_MAX_FILES_PER_CHECKPOINT,
+    HARD_MAX_RETENTION_COUNT, MAX_CHECKPOINT_SIZE_BYTES, MAX_CRON_JOBS, MAX_CRON_OUTPUT_CHARS,
+    MAX_CRON_PROMPT_CHARS, MAX_FILE_SIZE_BYTES, MAX_FILES_PER_CHECKPOINT, MAX_LABEL_CHARS,
+    MAX_LINEAGE_DEPTH, MAX_RETENTION_COUNT, SessionRecord, SessionStatus,
 };

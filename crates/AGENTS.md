@@ -39,8 +39,9 @@ test-only conformance support.
   SDK types stay in this crate.
 - `vesper-sessions` may depend on domain/config and owns read-only, bounded
   discovery, legacy decoding, safe metadata, pure runtime-state seeds,
-  deterministic identities, ACP-neutral replay plans, and the Stage 6
-  transactional Agent Vesper session writer. It must not depend on runtime,
+  deterministic identities, ACP-neutral replay plans, bounded persisted
+  search, and the Stage 6 transactional Agent Vesper session writer. It must
+  not depend on runtime,
   ACP, GLM, SQLite, or testkit in production.
 - HTTP and concrete GLM behavior are confined to `vesper-provider-glm`; no crate
   may depend on ACP, SQLite, TUI, MCP, or a disposable spike.
@@ -81,3 +82,7 @@ test-only conformance support.
   tool-executing agent loop, tool registry + executors, and permission gating
   that compose `vesper-runtime`. Owns no provider-wire, ACP mapping, or
   persistence internals.
+- `vesper-harness/AGENTS.md` — shared hosted Python-oracle tool services for
+  ACP and TUI compositions.
+- `vesper-observability/AGENTS.md` — opt-in secret-safe trajectory recording
+  and bounded reliability aggregation for composed hosts.

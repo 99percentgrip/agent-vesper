@@ -1219,11 +1219,28 @@ fn allowed_dependencies() -> BTreeMap<&'static str, BTreeSet<&'static str>> {
             ]),
         ),
         (
+            // Shared hosted services keep ACP and TUI on one Python-oracle
+            // tool implementation while leaving protocol/provider concerns
+            // at their composition boundaries.
+            "vesper-harness",
+            BTreeSet::from([
+                "vesper-agent",
+                "vesper-checkpoints",
+                "vesper-domain",
+                "vesper-mcp",
+                "vesper-memory",
+                "vesper-runtime",
+                "vesper-sessions",
+            ]),
+        ),
+        (
             "agent-vesper-acp",
             BTreeSet::from([
                 "vesper-acp",
+                "vesper-agent",
                 "vesper-config",
                 "vesper-domain",
+                "vesper-harness",
                 "vesper-provider",
                 "vesper-provider-glm",
                 "vesper-provider-synthetic",
@@ -1241,12 +1258,15 @@ fn allowed_dependencies() -> BTreeMap<&'static str, BTreeSet<&'static str>> {
                 "vesper-agent",
                 "vesper-checkpoints",
                 "vesper-domain",
+                "vesper-harness",
                 "vesper-mcp",
                 "vesper-memory",
+                "vesper-observability",
                 "vesper-provider",
                 "vesper-provider-glm",
                 "vesper-provider-synthetic",
                 "vesper-runtime",
+                "vesper-sessions",
             ]),
         ),
         ("xtask", BTreeSet::from(["vesper-testkit"])),
@@ -1309,6 +1329,15 @@ fn scan_production_sources(root: &Path) -> Result<(), String> {
                     "agent-client-protocol",
                     "ratatui",
                     "reqwest",
+                    "rusqlite",
+                    "spikes/",
+                    "vesper_provider_glm",
+                ]
+            } else if crate_name == Some("vesper-mcp") {
+                &[
+                    "agent_client_protocol",
+                    "agent-client-protocol",
+                    "ratatui",
                     "rusqlite",
                     "spikes/",
                     "vesper_provider_glm",

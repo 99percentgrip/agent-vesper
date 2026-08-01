@@ -44,7 +44,10 @@ pub mod types;
 pub use awareness::{AwarenessLedger, MAX_RECORDS as MAX_AWARENESS_RECORDS};
 pub use error::MemoryError;
 pub use profile::{MAX_PROFILE_BYTES, MAX_PROFILE_LINE_CHARS, PROFILE_FILENAME, UserProfile};
-pub use skills::{MAX_SKILL_BYTES, MAX_SKILL_FILES, SkillStore, SkillSummary};
+pub use skills::{
+    MAX_BUNDLE_BYTES, MAX_BUNDLE_SKILLS, MAX_SKILL_BYTES, MAX_SKILL_FILES, SkillBundle, SkillStore,
+    SkillSummary,
+};
 pub use store::MemoryStore;
 pub use types::{
     Confidence, EpistemicRecord, EvidenceEvent, EvidenceSource, MAX_ENTRIES, MAX_EVIDENCE,

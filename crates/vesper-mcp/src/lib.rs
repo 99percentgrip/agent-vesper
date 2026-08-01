@@ -34,11 +34,10 @@
 //! ## Architecture
 //!
 //! Depends only on `vesper-domain` and `vesper-security`. No provider,
-//! runtime, ACP, sessions, agent, testkit, SQLite, HTTP, or TUI
-//! dependency. The MCP stdio client spawns bounded subprocesses (scoped
-//! `Child` — RAII reaps the process); HTTP MCP servers are not yet
-//! supported (the oracle's HTTP path requires live provider credentials,
-//! which foundation verification forbids).
+//! runtime, ACP, sessions, agent, testkit, SQLite, or TUI dependency. The
+//! MCP client supports bounded stdio and opt-in HTTP requests; stdio children
+//! are scoped (`Child` — RAII reaps the process), and HTTP bearer tokens are
+//! read only from named environment variables.
 
 pub mod error;
 pub mod mcp;

@@ -11,6 +11,10 @@ architecture, MSRV, and source-oracle checks.
 - Commands must not call providers or mutate source/user state.
 - Verification failures return nonzero and never fabricate success.
 - Platform status distinguishes local execution from CI-pending evidence.
+- The architecture allowlist is explicit: composition applications may depend
+  on `vesper-agent`, the TUI may use bounded session search and observability,
+  and only `vesper-mcp` may use its bounded HTTP client; runtime/domain/provider
+  foundations retain their HTTP and frontend bans.
 
 ## Verification
 

@@ -13,6 +13,9 @@ async fn main() -> ExitCode {
     if let Some(code) = handle_meta_flags() {
         return code;
     }
+    if let Some(code) = handle_auth_flags() {
+        return code;
+    }
     configure_stderr_tracing();
     let outcome = match provider_from_argv() {
         Some(provider) => agent_vesper_acp::boot(&provider).await,
@@ -70,6 +73,52 @@ fn print_help() {
     eprintln!("    ZAI_API_KEY                      Z.ai API key (required for the GLM provider)");
     eprintln!("    AGENT_VESPER_PROVIDER            Default provider (glm|synthetic)");
     eprintln!("    AGENT_VESPER_LOG                 Tracing filter (default: warn, stderr only)");
+    eprintln!("    --setup                           Store a Z.ai API key without printing it");
+    eprintln!("    --check-auth                      Check configured Z.ai credentials");
+}
+
+/// Handles the explicit terminal authentication setup path. Credentials are
+/// accepted from the environment or one stdin line and are written only
+/// through the provider's atomic, user-private credential store.
+fn handle_auth_flags() -> Option<ExitCode> {
+    let args = std::env::args().skip(1).collect::<Vec<_>>();
+    if args.iter().any(|arg| arg == "--check-auth") {
+        let source = vesper_provider_glm::EnvironmentCredentialSource;
+        if vesper_provider_glm::resolve_credential(&source).is_ok() {
+            eprintln!("Z.ai credentials are configured.");
+            Some(ExitCode::SUCCESS)
+        } else {
+            eprintln!("Z.ai credentials are not configured.");
+            Some(ExitCode::from(1))
+        }
+    } else if args.iter().any(|arg| arg == "--setup") {
+        let key = std::env::var("ZAI_API_KEY")
+            .or_else(|_| std::env::var("Z_AI_API_KEY"))
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .or_else(|| {
+                eprintln!("Z.ai API key (input is not echoed by this protocol process):");
+                let mut input = String::new();
+                std::io::stdin().read_line(&mut input).ok()?;
+                Some(input)
+            });
+        let Some(key) = key else {
+            eprintln!("Setup failed: no API key supplied.");
+            return Some(ExitCode::from(1));
+        };
+        match vesper_provider_glm::store_api_key(&key) {
+            Ok(_) => {
+                eprintln!("Credentials saved. The key was not printed.");
+                Some(ExitCode::SUCCESS)
+            }
+            Err(error) => {
+                eprintln!("Setup failed: {error}");
+                Some(ExitCode::from(1))
+            }
+        }
+    } else {
+        None
+    }
 }
 
 /// Parses a `--provider <value>` or `--provider=<value>` CLI flag.

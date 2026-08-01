@@ -10,6 +10,7 @@ publish = false
 [dependencies]
 crossterm.workspace = true
 ratatui.workspace = true
+sha2.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
@@ -18,15 +19,19 @@ tracing-subscriber.workspace = true
 vesper-agent = { path = "../../crates/vesper-agent", version = "=0.1.0" }
 vesper-checkpoints = { path = "../../crates/vesper-checkpoints", version = "=0.1.0" }
 vesper-domain = { path = "../../crates/vesper-domain", version = "=0.1.0" }
+vesper-harness = { path = "../../crates/vesper-harness", version = "=0.1.0" }
 vesper-mcp = { path = "../../crates/vesper-mcp", version = "=0.1.0" }
 vesper-memory = { path = "../../crates/vesper-memory", version = "=0.1.0" }
+vesper-observability = { path = "../../crates/vesper-observability", version = "=0.1.0" }
 vesper-provider = { path = "../../crates/vesper-provider", version = "=0.1.0" }
 vesper-provider-glm = { path = "../../crates/vesper-provider-glm", version = "=0.1.0" }
 vesper-provider-synthetic = { path = "../../crates/vesper-provider-synthetic", version = "=0.1.0" }
 vesper-runtime = { path = "../../crates/vesper-runtime", version = "=0.1.0" }
+vesper-sessions = { path = "../../crates/vesper-sessions", version = "=0.1.0" }
 
 [dev-dependencies]
 serde_json.workspace = true
+tempfile.workspace = true
 
 [lints]
 workspace = true

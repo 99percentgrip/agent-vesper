@@ -396,6 +396,7 @@ pub fn stub_context(
         workspace_roots: roots,
         operating_mode,
         permission_mode,
+        conversation: Vec::new(),
         cancellation: std::sync::Arc::new(NeverCancelled),
     }
 }
@@ -570,7 +571,7 @@ fn render_plan_markdown(args: &serde_json::Value) -> String {
 /// (context + removed) and `after` (context + added) blocks and doing one
 /// exact replace in the original. Errors when the context is absent or
 /// ambiguous so callers can retry with more context.
-fn apply_unified_diff(original: &str, patch: &str) -> Result<String, ToolError> {
+pub fn apply_unified_diff(original: &str, patch: &str) -> Result<String, ToolError> {
     let mut before = String::new();
     let mut after = String::new();
     let mut saw_hunk = false;

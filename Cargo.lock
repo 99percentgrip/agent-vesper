@@ -62,8 +62,10 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "vesper-acp",
+ "vesper-agent",
  "vesper-config",
  "vesper-domain",
+ "vesper-harness",
  "vesper-provider",
  "vesper-provider-glm",
  "vesper-provider-synthetic",
@@ -78,6 +80,8 @@ dependencies = [
  "crossterm",
  "ratatui",
  "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
  "thiserror",
  "tokio",
  "tracing",
@@ -85,12 +89,15 @@ dependencies = [
  "vesper-agent",
  "vesper-checkpoints",
  "vesper-domain",
+ "vesper-harness",
  "vesper-mcp",
  "vesper-memory",
+ "vesper-observability",
  "vesper-provider",
  "vesper-provider-glm",
  "vesper-provider-synthetic",
  "vesper-runtime",
+ "vesper-sessions",
 ]
 
 [[package]]
@@ -2231,7 +2238,9 @@ checksum = "219c5811de6525e5416c7d5d53bb656d3afdbc6c5af816e0802bcfa42dbdc1c3"
 dependencies = [
  "base64",
  "bytes",
+ "futures-channel",
  "futures-core",
+ "futures-util",
  "http",
  "http-body",
  "http-body-util",
@@ -3147,6 +3156,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-util",
+ "tracing",
  "vesper-domain",
  "vesper-runtime",
 ]
@@ -3203,11 +3213,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "vesper-harness"
+version = "0.1.0"
+dependencies = [
+ "regex",
+ "serde_json",
+ "sha2 0.11.0",
+ "tokio",
+ "vesper-agent",
+ "vesper-checkpoints",
+ "vesper-domain",
+ "vesper-mcp",
+ "vesper-memory",
+ "vesper-runtime",
+ "vesper-sessions",
+]
+
+[[package]]
 name = "vesper-mcp"
 version = "0.1.0"
 dependencies = [
  "ed25519-dalek",
  "rand 0.8.7",
+ "reqwest",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -3227,6 +3255,16 @@ dependencies = [
  "thiserror",
  "vesper-domain",
  "vesper-security",
+]
+
+[[package]]
+name = "vesper-observability"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
 ]
 
 [[package]]
@@ -3259,6 +3297,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror",
  "tokio",
  "url",

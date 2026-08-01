@@ -292,6 +292,9 @@ pub enum CheckpointOp {
     /// `/export` — write transcript + lineage to a bounded markdown file
     /// under `<root>/exports/`.
     SessionExport,
+    /// `/export last` — write only the final assistant response to a bounded
+    /// markdown file under `<root>/exports/`.
+    SessionExportLast,
     /// `/copy [target]` — copy the last response / a target to the
     /// clipboard (with persistence fallback when no clipboard is
     /// reachable).
@@ -317,7 +320,7 @@ impl CheckpointOp {
             Self::CheckpointRewind { .. } => "rewind",
             Self::CheckpointUndo { .. } => "undo",
             Self::CronRegister { .. } => "loop",
-            Self::SessionExport => "export",
+            Self::SessionExport | Self::SessionExportLast => "export",
             Self::ClipboardCopy { .. } => "copy",
             Self::CiStatus => "ci",
         }
@@ -689,7 +692,14 @@ impl CommandRegistry {
                     CommandOutcome::Checkpoint(CheckpointOp::CronRegister { prompt, schedule })
                 }
             }
-            "export" => CommandOutcome::Checkpoint(CheckpointOp::SessionExport),
+            "export" => {
+                if argument.trim() == "last" {
+                    CommandOutcome::Checkpoint(CheckpointOp::SessionExportLast)
+                } else {
+                    CommandOutcome::Checkpoint(CheckpointOp::SessionExport)
+                }
+            }
+            "export last" => CommandOutcome::Checkpoint(CheckpointOp::SessionExportLast),
             "copy" => {
                 let target = if argument.trim().is_empty() {
                     "last-response".to_string()
@@ -888,7 +898,11 @@ impl CommandRegistry {
         buffer.push_str("  /clear-plan        clear Plan Mode back to NORMAL\n");
         buffer.push_str("\nSuperpowers (resolved against the active provider):\n");
         buffer.push_str("  /thinking <lvl>    session reasoning (disabled/enabled/high/max)\n");
+        buffer.push_str("  /reasoning <lvl>   alias for /thinking\n");
         buffer.push_str("  /model <name>      switch the active model\n");
+        buffer.push_str("  /planmode <PRD>    alias for /plan\n");
+        buffer.push_str("  /api-plan <PRD>    alias for /plan\n");
+        buffer.push_str("  /endpoint <PRD>    alias for /plan\n");
         buffer.push_str("\nContext:\n");
         buffer.push_str("  /clear-view        clear the visible transcript\n");
         buffer.push_str("  /clear-history     alias for /clear-plan\n");
@@ -900,7 +914,7 @@ impl CommandRegistry {
         buffer.push_str("  /status            session, model, permissions, context summary\n");
         buffer.push_str("  /tasks             session dashboard\n");
         buffer.push_str("  /max-iterations    show the per-turn tool-call iteration cap\n");
-        buffer.push_str("  /usage             live quota / API-plan usage (deferred)\n");
+        buffer.push_str("  /usage             show the current usage summary\n");
         buffer.push_str("\nWorkflows (construct a prompt + trigger a background agent turn):\n");
         buffer.push_str("  /security-review   scan the working-tree diff for vulnerabilities\n");
         buffer.push_str(
@@ -913,16 +927,46 @@ impl CommandRegistry {
         buffer.push_str("  /version           print the agent version\n");
         buffer.push_str("  /help              show this help\n");
         buffer.push_str("  /quit | /exit      exit the TUI\n");
-        buffer.push_str("\nDeferred (subsystem not yet built — see ADR 0010 Phase 7 matrix):\n");
-        buffer.push_str("  mobile, sound, mcp, plugins, sessions-new, sessions, lineage,\n");
-        buffer.push_str("  branch, rename, loop, checkpoint, rollback, rewind, undo,\n");
-        buffer.push_str("  goal, subgoal, awareness, metacognition, deliberation, repository,\n");
-        buffer.push_str("  meta-learning, observability, memory, skills, profile, curator,\n");
-        buffer.push_str("  journey, ci, export, copy, history, search, prompt, btw, blocks,\n");
-        buffer.push_str("  annotate, theme, vim, keybinds, statusline, screen-reader,\n");
-        buffer.push_str("  native-mouse, reasoning-panel, toggle-thinking, settings,\n");
-        buffer.push_str("  permission, mode, generation, auxiliary, mixture, image,\n");
-        buffer.push_str("  image-render, screenshot, attach\n");
+        buffer.push_str("\nMemory & awareness (durable):\n");
+        buffer.push_str("  /memory [query]     list project-local memory entries\n");
+        buffer.push_str("  /goal <summary>     add a persistent goal\n");
+        buffer.push_str("  /subgoal <criterion> add a goal acceptance criterion\n");
+        buffer.push_str("  /skills             list learned skills\n");
+        buffer.push_str("  /profile            show approved profile preferences\n");
+        buffer.push_str("  /awareness          show epistemic state\n");
+        buffer.push_str("  /metacognition      show metacognitive state\n");
+        buffer.push_str("  /deliberation       show grounded-deliberation state\n");
+        buffer.push_str("  /repository         show repository metadata\n");
+        buffer.push_str("  /meta-learning      show learning candidates\n");
+        buffer.push_str("  /observability      show local reliability metrics\n");
+        buffer.push_str("  /curator            run deterministic skill maintenance\n");
+        buffer.push_str("  /journey            show the memory/skill/profile timeline\n");
+        buffer.push_str("\nSessions, checkpoints & export (durable):\n");
+        buffer.push_str("  /sessions-new [name] create a session\n");
+        buffer.push_str("  /sessions           list sessions\n");
+        buffer.push_str("  /lineage            show the active session lineage\n");
+        buffer.push_str("  /branch [name]      branch the active session\n");
+        buffer.push_str("  /rename <name>      rename the active session\n");
+        buffer.push_str("  /checkpoint [label] capture an explicit workspace snapshot\n");
+        buffer.push_str("  /rollback <id>      restore a checkpoint\n");
+        buffer.push_str("  /rewind <id>        alias for /rollback\n");
+        buffer.push_str("  /undo [N]           restore an earlier checkpoint\n");
+        buffer.push_str("  /loop <prompt>      register a bounded cron entry\n");
+        buffer.push_str("  /export             export the full session\n");
+        buffer.push_str("  /export last        export only the final assistant response\n");
+        buffer.push_str("  /copy [target]      copy a response with a safe fallback\n");
+        buffer.push_str("  /ci                 show bounded CI status\n");
+        buffer.push_str("\nMCP & plugins (durable):\n");
+        buffer.push_str("  /mcp [list|add|remove|tools] manage MCP servers\n");
+        buffer.push_str("  /plugins [list|publishers|verify|load|trust] manage plugins\n");
+        buffer.push_str("\nDeferred/Unsupported (26 architectural exclusions):\n");
+        buffer.push_str("  Composer: history, search, prompt, btw, blocks, annotate\n");
+        buffer.push_str("  ratatui UI: theme, vim, keybinds, statusline, screen-reader,\n");
+        buffer.push_str("    native-mouse, reasoning-panel, toggle-thinking\n");
+        buffer.push_str("  Live settings: settings, permission, mode, generation,\n");
+        buffer.push_str("    auxiliary, mixture\n");
+        buffer.push_str("  Images: image, attach, image-render, screenshot\n");
+        buffer.push_str("  Mobile/audio: mobile, sound\n");
         buffer
     }
 }
@@ -1228,6 +1272,7 @@ const ORACLE_COMMAND_SURFACE: &[OracleCommandEntry] = &[
     OracleCommandEntry { name: "journey",           description: "Show the timeline of memories + skills + profile" },
     OracleCommandEntry { name: "native-mouse",      description: "Toggle native terminal mouse mode" },
     OracleCommandEntry { name: "planmode",          description: "Activate Plan Mode with a PRD" },
+    OracleCommandEntry { name: "export last",       description: "Export the last response to a Markdown file" },
     OracleCommandEntry { name: "image",             description: "Queue an image for the next prompt" },
     OracleCommandEntry { name: "exit",              description: "Close the terminal agent" },
 ];
@@ -1533,6 +1578,80 @@ mod tests {
     }
 
     #[test]
+    fn help_marks_shipped_commands_active_and_only_lists_the_26_exclusions() {
+        let registry = CommandRegistry::stage_11b();
+        let help = match registry.resolve(
+            &CommandIntent::Slash {
+                name: "help".into(),
+                argument: String::new(),
+            },
+            &PlanState::default(),
+            &provider(),
+            &[],
+        ) {
+            CommandOutcome::Help(text) => text,
+            other => panic!("expected help text, got {other:?}"),
+        };
+        let (active, deferred) = help
+            .split_once("Deferred/Unsupported (26 architectural exclusions):")
+            .expect("help must have one deferred section");
+
+        for command in [
+            "/memory",
+            "/goal",
+            "/sessions-new",
+            "/checkpoint",
+            "/export",
+            "/export last",
+            "/copy",
+            "/ci",
+            "/mcp",
+            "/plugins",
+        ] {
+            assert!(active.contains(command), "{command} must be active in help");
+            assert!(
+                !deferred.contains(command),
+                "{command} must not be listed as deferred"
+            );
+        }
+
+        let deferred_commands = [
+            "history",
+            "search",
+            "prompt",
+            "btw",
+            "blocks",
+            "annotate",
+            "theme",
+            "vim",
+            "keybinds",
+            "statusline",
+            "screen-reader",
+            "native-mouse",
+            "reasoning-panel",
+            "toggle-thinking",
+            "settings",
+            "permission",
+            "mode",
+            "generation",
+            "auxiliary",
+            "mixture",
+            "image",
+            "attach",
+            "image-render",
+            "screenshot",
+            "mobile",
+            "sound",
+        ];
+        for command in deferred_commands {
+            assert!(
+                deferred.contains(command),
+                "/{command} must remain deferred"
+            );
+        }
+    }
+
+    #[test]
     fn unknown_command_is_an_error() {
         let registry = CommandRegistry::stage_11b();
         let plan_state = PlanState::default();
@@ -1612,13 +1731,14 @@ mod tests {
         );
         // Genuinely unknown commands are still unknown.
         assert!(!registry.contains("frobnicate"));
-        // The full surface count: 79 distinct oracle command names (the
-        // oracle's `/export last` parses as `/export` with arg `last`) + 3
-        // Vesper-native (approve, cancel, quit) = 82 total.
+        // The full surface count: 80 oracle command names (including the
+        // distinct `/export last` route) + 3 Vesper-native (approve, cancel,
+        // quit) = 83 total.
+        assert!(registry.contains("export last"));
         assert_eq!(
             registry.names().len(),
-            82,
-            "Phase 7 parity: 79 oracle commands + 3 Vesper-native = 82 total"
+            83,
+            "Phase 7 parity: 80 oracle commands + 3 Vesper-native = 83 total"
         );
     }
 
@@ -2088,6 +2208,11 @@ mod tests {
                 other => panic!("{input} should resolve to Checkpoint(_), got {other:?}"),
             }
         }
+
+        assert!(matches!(
+            resolve_bare_intent(&CommandIntent::parse("/export last")),
+            CommandOutcome::Checkpoint(CheckpointOp::SessionExportLast)
+        ));
     }
 
     #[test]
