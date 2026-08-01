@@ -422,6 +422,25 @@ impl CommandRegistry {
         &self.names
     }
 
+    /// Returns the oracle command palette entries matching the current
+    /// composer value. The returned names include the leading slash and are
+    /// kept in the oracle's registration order so the terminal UI can offer
+    /// the same discoverable slash surface as the Python composer.
+    #[must_use]
+    pub fn completion_candidates(&self, input: &str) -> Vec<(String, String)> {
+        let trimmed = input.trim_start().to_ascii_lowercase();
+        let Some(query) = trimmed.strip_prefix('/') else {
+            return Vec::new();
+        };
+
+        ORACLE_COMMAND_SURFACE
+            .iter()
+            .filter(|entry| query.is_empty() || entry.name.starts_with(query))
+            .take(50)
+            .map(|entry| (format!("/{}", entry.name), entry.description.to_string()))
+            .collect()
+    }
+
     /// Returns true when `name` matches a registered command.
     #[must_use]
     pub fn contains(&self, name: &str) -> bool {
@@ -1394,6 +1413,26 @@ mod tests {
                 argument: "MAX".into()
             }
         );
+    }
+
+    #[test]
+    fn completion_candidates_match_slash_prefixes_and_export_last() {
+        let registry = CommandRegistry::stage_11b();
+
+        let root = registry.completion_candidates("/");
+        assert!(!root.is_empty());
+        assert!(root.iter().all(|(name, _)| name.starts_with('/')));
+
+        let help = registry.completion_candidates("/hel");
+        assert_eq!(help.first().map(|(name, _)| name.as_str()), Some("/help"));
+
+        let export = registry.completion_candidates("/export l");
+        assert_eq!(
+            export.first().map(|(name, _)| name.as_str()),
+            Some("/export last")
+        );
+
+        assert!(registry.completion_candidates("prompt").is_empty());
     }
 
     #[test]

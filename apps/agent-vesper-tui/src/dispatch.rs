@@ -707,6 +707,7 @@ mod integration_tests {
                 transcript: state.transcript.clone(),
                 input: String::new(),
                 status: state.status.clone(),
+                ..ViewModel::default()
             };
             renderer.render(&model);
         };

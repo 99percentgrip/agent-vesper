@@ -1,8 +1,9 @@
 #![forbid(unsafe_code)]
 //! `agent-vesper-tui` binary entry point.
 //!
-//! Stage 11b shipped a minimal interactive loop. Tier C Phase 6 (ADR 0010)
-//! completes the parity surface: the binary now drives the full multi-turn
+//! Stage 11b owns the ratatui/crossterm terminal composition, including the
+//! conversation/sidebar/composer layout and the oracle-style slash-command
+//! palette. Tier C Phase 6 (ADR 0010) drives the full multi-turn
 //! [`vesper_agent::AgentLoop`] end-to-end.
 //!
 //! 1. Select a provider via `AGENT_VESPER_PROVIDER` (default `zai`).
@@ -147,6 +148,8 @@ async fn run() -> Result<(), String> {
         agent_running: false,
         approval_rx,
         pending_approval: None,
+        command_matches: Vec::new(),
+        command_selected: 0,
         session_id: runtime_session_id.as_str().to_owned(),
         telemetry: Arc::new(trajectory_recorder()),
     };
@@ -301,6 +304,10 @@ struct TuiSession {
     approval_rx: mpsc::UnboundedReceiver<vesper_agent::PermissionRequest>,
     /// The request currently displayed to the driver, if any.
     pending_approval: Option<vesper_agent::PermissionRequest>,
+    /// Current slash-command palette entries for the composer.
+    command_matches: Vec<(String, String)>,
+    /// Highlighted slash-command palette entry.
+    command_selected: usize,
     /// Stable persisted transcript id used by the local search bridge.
     session_id: String,
     /// Opt-in secret-safe trajectory sink.
@@ -344,6 +351,7 @@ async fn drive_loop(
         // fall through and render the in-flight banner.
         drain_agent_event(session);
         drain_permission_request(session);
+        refresh_command_menu(session, registry_commands);
 
         let model = ViewModel {
             plan: session.state.plan.clone(),
@@ -352,6 +360,9 @@ async fn drive_loop(
             transcript: session.state.transcript.clone(),
             input: session.input.clone(),
             status: session.state.status.clone(),
+            command_menu: session.command_matches.clone(),
+            command_menu_selected: session.command_selected,
+            agent_running: session.agent_running,
         };
         if let Err(error) = terminal.draw(|frame| {
             render_to_frame(frame, &model);
@@ -430,6 +441,8 @@ async fn drive_loop(
                     break;
                 }
                 session.input.clear();
+                session.command_matches.clear();
+                session.command_selected = 0;
                 // ADR 0009 / Tier A: drain any pending reasoning update into
                 // the runtime session. `dispatch` stays pure and produces the
                 // command intent here; the binary owns the async runtime call.
@@ -504,9 +517,33 @@ async fn drive_loop(
             }
             KeyCode::Backspace => {
                 session.input.pop();
+                refresh_command_menu(session, registry_commands);
+            }
+            KeyCode::Tab if !session.command_matches.is_empty() => {
+                let selected = session
+                    .command_matches
+                    .get(session.command_selected)
+                    .map(|(command, _)| command.clone());
+                if let Some(command) = selected {
+                    session.input = command;
+                    session.command_selected = 0;
+                    refresh_command_menu(session, registry_commands);
+                }
+            }
+            KeyCode::Up if !session.command_matches.is_empty() => {
+                session.command_selected = session.command_selected.saturating_sub(1);
+            }
+            KeyCode::Down if !session.command_matches.is_empty() => {
+                session.command_selected = (session.command_selected + 1)
+                    .min(session.command_matches.len().saturating_sub(1));
+            }
+            KeyCode::Esc if !session.command_matches.is_empty() => {
+                session.command_matches.clear();
+                session.command_selected = 0;
             }
             KeyCode::Char(ch) => {
                 session.input.push(ch);
+                refresh_command_menu(session, registry_commands);
             }
             KeyCode::Esc if session.state.phase() != PlanPhase::Normal => {
                 // Esc cancels any in-flight plan directly through the state
@@ -524,6 +561,27 @@ fn enter_raw_mode() -> io::Result<()> {
     enable_raw_mode()?;
     execute!(stdout(), EnterAlternateScreen)?;
     Ok(())
+}
+
+/// Refreshes the oracle-style slash-command palette from the current
+/// composer value. This is deliberately kept at the terminal boundary: the
+/// registry remains pure and the palette disappears while an agent turn is in
+/// flight, matching the Python composer behavior.
+fn refresh_command_menu(session: &mut TuiSession, registry: &CommandRegistry) {
+    if session.agent_running || !session.input.trim_start().starts_with('/') {
+        session.command_matches.clear();
+        session.command_selected = 0;
+        return;
+    }
+
+    session.command_matches = registry.completion_candidates(&session.input);
+    if session.command_matches.is_empty() {
+        session.command_selected = 0;
+    } else {
+        session.command_selected = session
+            .command_selected
+            .min(session.command_matches.len().saturating_sub(1));
+    }
 }
 
 fn leave_raw_mode() -> io::Result<()> {
@@ -4147,6 +4205,8 @@ mod tests {
             agent_running: true,
             approval_rx: mpsc::unbounded_channel().1,
             pending_approval: None,
+            command_matches: Vec::new(),
+            command_selected: 0,
             session_id: "test-session".into(),
             telemetry: Arc::new(vesper_observability::TrajectoryRecorder::disabled()),
         };
@@ -4174,6 +4234,8 @@ mod tests {
             agent_running: true,
             approval_rx: mpsc::unbounded_channel().1,
             pending_approval: None,
+            command_matches: Vec::new(),
+            command_selected: 0,
             session_id: "test-session".into(),
             telemetry: Arc::new(vesper_observability::TrajectoryRecorder::disabled()),
         };

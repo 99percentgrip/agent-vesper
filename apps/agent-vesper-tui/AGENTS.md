@@ -31,7 +31,9 @@ business logic.
   `SuperpowerOverrides`, the pure projection the TUI keeps of the active
   provider's advertised descriptors.
 - `src/ui.rs` — `TerminalRenderer` trait, `ViewModel`, `StubRenderer` for
-  tests, and the production `render_to_frame` ratatui/crossterm backend.
+  tests, and the production `render_to_frame` ratatui/crossterm backend. The
+  production view owns the conversation/sidebar/composer composition and the
+  oracle-style slash-command palette projection.
 - `src/lib.rs` — public re-exports and `query_startup_view`, the single
   integration point between the TUI and the runtime registry.
 - `src/main.rs` — binary entry point; crossterm raw-mode + alternate-screen
@@ -126,6 +128,10 @@ business logic.
 - Keep the Plan Mode, command registry, superpower adapter, dispatch surface,
   and renderer trait unit-testable without touching a real terminal — the
   production binary is the only module that may invoke crossterm directly.
+- The composer must expose the registered oracle commands while the input
+  begins with `/`: the binary owns palette selection/completion key handling,
+  while `CommandRegistry::completion_candidates` remains pure and derives its
+  labels/descriptions from `ORACLE_COMMAND_SURFACE`.
 - All event-loop transition logic lives in `dispatch::dispatch`. When a new
   command or transition is added, extend `CommandOutcome` in `commands.rs`,
   add a `match` arm in `dispatch::apply_outcome`, and cover the lifecycle in

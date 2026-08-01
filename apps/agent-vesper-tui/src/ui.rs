@@ -9,7 +9,7 @@
 
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Direction, Layout, Position},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, Paragraph},
@@ -34,6 +34,12 @@ pub struct ViewModel {
     pub input: String,
     /// One-line status / error / notice.
     pub status: Option<String>,
+    /// Slash-command palette entries matching the current input.
+    pub command_menu: Vec<(String, String)>,
+    /// Highlighted command-palette entry.
+    pub command_menu_selected: usize,
+    /// Whether an agent turn is currently running.
+    pub agent_running: bool,
 }
 
 /// Abstraction over a terminal backend.
@@ -50,61 +56,249 @@ pub trait TerminalRenderer {
 /// exercised by [`StubRenderer`] in unit tests.
 pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
     let area = frame.area();
+    let menu_height = if model.command_menu.is_empty() {
+        0
+    } else {
+        (model.command_menu.len() as u16 + 2).min(12)
+    };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3), // status / phase
-            Constraint::Min(5),    // transcript
-            Constraint::Length(8), // superpowers panel
-            Constraint::Length(3), // input
+            Constraint::Length(1), // header
+            Constraint::Min(8),    // conversation + sidebar
+            Constraint::Length(menu_height),
+            Constraint::Length(1), // command hint
+            Constraint::Length(1), // activity
+            Constraint::Length(3), // composer
+            Constraint::Length(1), // footer
         ])
         .split(area);
 
-    // Phase / status banner — phase label + one-line status so the driver can
-    // tell at a glance whether the agent is thinking, waiting for input, or
-    // executing.
+    // Header — a compact, persistent identity/status line like the oracle's
+    // Textual header. The old renderer spent the entire top three rows on a
+    // banner and left no room for the conversation/sidebar composition.
     let phase = model.plan.phase();
-    let banner_text = match (phase, model.status.as_deref()) {
-        (phase, Some(status)) => format!(" Vesper TUI — {} — {status} ", phase.label()),
-        (phase, None) => format!(" Vesper TUI — phase: {} ", phase.label()),
+    let phase_style = banner_style_for_phase(phase);
+    let model_name = superpower_value_for(model, "model").unwrap_or_else(|| "provider".into());
+    let state = if model.agent_running {
+        "RUNNING"
+    } else {
+        "READY"
     };
-    let banner_style = banner_style_for_phase(phase);
-    frame.render_widget(Paragraph::new(banner_text).style(banner_style), chunks[0]);
+    let header = Line::from(vec![
+        Span::styled(
+            " Agent Vesper ",
+            Style::default().add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(format!("• {model_name} "), Style::default().fg(Color::Cyan)),
+        Span::styled(format!("• {} ", phase.label()), phase_style),
+        Span::styled(format!("• {state}"), Style::default().fg(Color::DarkGray)),
+    ]);
+    frame.render_widget(Paragraph::new(header), chunks[0]);
 
-    // Transcript — prepended with Plan Mode context (pending questions while
-    // PLANNING, the plan body while REVIEW) so every phase has something
-    // actionable for the driver to look at.
-    let transcript_items: Vec<ListItem> = transcript_lines_for(model)
-        .into_iter()
-        .map(ListItem::new)
-        .collect();
+    let body = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Min(1), Constraint::Length(34)])
+        .split(chunks[1]);
+
+    // Conversation — prepended with Plan Mode context (pending questions
+    // while PLANNING, the plan body while REVIEW), then the live transcript.
+    let transcript_lines = transcript_lines_for(model);
+    let transcript_items: Vec<ListItem> = if transcript_lines.is_empty() {
+        vec![ListItem::new(Line::from(vec![
+            Span::styled(
+                "Agent Vesper",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" ready. Type a prompt, or type "),
+            Span::styled(
+                "/",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" to browse commands."),
+        ]))]
+    } else {
+        transcript_lines.into_iter().map(ListItem::new).collect()
+    };
     frame.render_widget(
-        List::new(transcript_items)
-            .block(Block::default().borders(Borders::ALL).title(" Transcript ")),
+        List::new(transcript_items).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Conversation "),
+        ),
+        body[0],
+    );
+
+    render_sidebar(frame, body[1], model);
+
+    if !model.command_menu.is_empty() {
+        let menu_items = model
+            .command_menu
+            .iter()
+            .take(10)
+            .map(|(command, description)| {
+                ListItem::new(Line::from(vec![
+                    Span::styled(
+                        command.clone(),
+                        Style::default()
+                            .fg(Color::Cyan)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::raw("  "),
+                    Span::styled(description.clone(), Style::default().fg(Color::DarkGray)),
+                ]))
+            })
+            .collect::<Vec<_>>();
+        frame.render_widget(
+            List::new(menu_items)
+                .block(Block::default().borders(Borders::ALL).title(" Commands "))
+                .highlight_style(Style::default().bg(Color::Rgb(17, 49, 75)).fg(Color::White))
+                .highlight_symbol("▸ "),
+            chunks[2],
+        );
+        // ratatui's stateless List does not own a selected index. Emphasize
+        // the selected row explicitly so Tab/↑/↓ remains visible.
+        let selected = model.command_menu_selected.min(9);
+        let selected_y = chunks[2].y.saturating_add(1 + selected as u16);
+        if selected_y < chunks[2].bottom().saturating_sub(1) {
+            frame.render_widget(
+                Paragraph::new(Line::from(Span::styled(
+                    format!("▸ {}", model.command_menu[selected].0),
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ))),
+                ratatui::layout::Rect {
+                    x: chunks[2].x.saturating_add(1),
+                    y: selected_y,
+                    width: chunks[2].width.saturating_sub(2),
+                    height: 1,
+                },
+            );
+        }
+    }
+
+    let hint = if model.command_menu.is_empty() {
+        "↑↓ history  •  Enter send  •  Ctrl-C quit"
+    } else {
+        "↑↓ navigate  •  Tab complete  •  Enter run  •  Esc close"
+    };
+    frame.render_widget(
+        Paragraph::new(hint).style(Style::default().fg(Color::DarkGray)),
+        chunks[3],
+    );
+
+    let activity = if model.agent_running {
+        "● Working — waiting for the provider/agent loop"
+    } else {
+        model.status.as_deref().unwrap_or("○ Ready")
+    };
+    frame.render_widget(
+        Paragraph::new(activity).style(Style::default().fg(if model.agent_running {
+            Color::Yellow
+        } else {
+            Color::Gray
+        })),
+        chunks[4],
+    );
+
+    // Composer. Keep a visible insertion point: the old renderer hid the
+    // terminal cursor, which made the input look like a static mockup.
+    let input_value = if model.input.is_empty() {
+        "> Type a prompt or / for commands".to_string()
+    } else {
+        format!("> {}", model.input)
+    };
+    frame.render_widget(
+        Paragraph::new(input_value)
+            .block(Block::default().borders(Borders::ALL).title(" Composer ")),
+        chunks[5],
+    );
+    let cursor_x = chunks[5]
+        .x
+        .saturating_add(1 + 2 + model.input.chars().count() as u16)
+        .min(chunks[5].right().saturating_sub(1));
+    frame.set_cursor_position(Position {
+        x: cursor_x,
+        y: chunks[5].y.saturating_add(1),
+    });
+    frame.render_widget(
+        Paragraph::new("Type / for commands  •  Ctrl-C quit")
+            .style(Style::default().fg(Color::DarkGray)),
+        chunks[6],
+    );
+}
+
+fn render_sidebar(frame: &mut Frame<'_>, area: ratatui::layout::Rect, model: &ViewModel) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(7),
+            Constraint::Min(4),
+            Constraint::Length(6),
+        ])
+        .split(area);
+
+    let model_name = superpower_value_for(model, "model").unwrap_or_else(|| "provider".into());
+    let thinking = superpower_value_for(model, "thinking").unwrap_or_else(|| "enabled".into());
+    let session = vec![
+        Line::from(Span::styled(
+            "Session",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(format!("Model       {model_name}")),
+        Line::from(format!("Thinking    {thinking}")),
+        Line::from(format!("Phase       {}", model.plan.phase().label())),
+        Line::from(format!("Transcript  {} lines", model.transcript.len())),
+    ];
+    frame.render_widget(
+        Paragraph::new(session).block(Block::default().borders(Borders::ALL).title(" Session ")),
+        chunks[0],
+    );
+
+    frame.render_widget(
+        Paragraph::new(superpower_lines_for(model))
+            .block(Block::default().borders(Borders::ALL).title(" Controls ")),
         chunks[1],
     );
 
-    // Superpowers panel — each advertised descriptor with its active override.
-    let superpower_lines = superpower_lines_for(model);
-    frame.render_widget(
-        Paragraph::new(superpower_lines).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" Provider Superpowers "),
+    let plan = match model.plan.phase() {
+        PlanPhase::Normal => "No active plan".to_string(),
+        PlanPhase::Planning => format!(
+            "Planning\n{} question(s) pending",
+            model.plan.pending_questions().len()
         ),
+        PlanPhase::Review => "Plan ready\n/approve to execute\n/cancel to abort".into(),
+        PlanPhase::Executing => "Executing approved plan".into(),
+    };
+    frame.render_widget(
+        Paragraph::new(plan).block(Block::default().borders(Borders::ALL).title(" Plan ")),
         chunks[2],
     );
+}
 
-    // Input.
-    let input_value = format!("> {}", model.input);
-    frame.render_widget(
-        Paragraph::new(input_value).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" Input (Ctrl-C to quit) "),
-        ),
-        chunks[3],
-    );
+fn superpower_value_for(model: &ViewModel, alias: &str) -> Option<String> {
+    let descriptor = model
+        .superpowers
+        .as_ref()?
+        .descriptors()
+        .iter()
+        .find(|descriptor| {
+            descriptor
+                .command_alias
+                .as_ref()
+                .is_some_and(|value| value.as_str() == alias)
+        })?;
+    model
+        .overrides
+        .get(descriptor.id.as_str(), Some(&descriptor.default_value))
+        .map(|value| format_superpower_value(&value))
 }
 
 /// Builds the transcript lines for the main panel: Plan Mode context first
@@ -239,6 +433,7 @@ mod tests {
             transcript: vec!["hello".into()],
             input: "/plan ship it".into(),
             status: Some("ok".into()),
+            ..ViewModel::default()
         };
         renderer.render(&model);
         let last = renderer.last_model.expect("model recorded");
@@ -276,6 +471,7 @@ mod tests {
             transcript: Vec::new(),
             input: String::new(),
             status: None,
+            ..ViewModel::default()
         };
         let lines = superpower_lines_for(&model);
         assert_eq!(lines.len(), 1);
@@ -299,6 +495,7 @@ mod tests {
             transcript: Vec::new(),
             input: String::new(),
             status: None,
+            ..ViewModel::default()
         };
         let _: &dyn TerminalRenderer = &renderer;
         let mut dynamic: Box<dyn TerminalRenderer> = Box::new(renderer);
