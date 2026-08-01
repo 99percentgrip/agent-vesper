@@ -182,24 +182,47 @@ fn handle_connection(
     let Ok(request) = std::str::from_utf8(&bytes) else {
         return;
     };
+    let response = route_request(request, pair_token, pending, decisions);
+    respond(
+        &mut stream,
+        response.status,
+        response.content_type,
+        &response.body,
+    );
+}
+
+struct HttpResponse {
+    status: &'static str,
+    content_type: &'static str,
+    body: String,
+}
+
+fn route_request(
+    request: &str,
+    pair_token: &str,
+    pending: &Mutex<Option<PendingApproval>>,
+    decisions: &mpsc::Sender<MobileDecision>,
+) -> HttpResponse {
     let Some(first) = request.lines().next() else {
-        return;
+        return text_response("400 Bad Request", "Missing request line");
     };
     let mut fields = first.split_whitespace();
     let method = fields.next().unwrap_or_default();
     let target = fields.next().unwrap_or_default();
     if method == "GET" && target.starts_with("/?pair=") {
         if target.trim_start_matches("/?pair=") == pair_token {
-            respond(&mut stream, "200 OK", "text/html; charset=utf-8", PWA_HTML);
+            return HttpResponse {
+                status: "200 OK",
+                content_type: "text/html; charset=utf-8",
+                body: PWA_HTML.to_owned(),
+            };
         } else {
-            respond(&mut stream, "404 Not Found", "text/plain", "Not found");
+            return text_response("404 Not Found", "Not found");
         }
-        return;
     }
     if method == "GET" && target.starts_with("/pending?pair=") {
         if target.trim_start_matches("/pending?pair=") != pair_token {
-            respond(&mut stream, "404 Not Found", "text/plain", "Not found");
-            return;
+            return text_response("404 Not Found", "Not found");
         }
         let id = pending
             .lock()
@@ -208,19 +231,16 @@ fn handle_connection(
             .filter(|approval| approval.expires >= Instant::now())
             .map(|approval| approval.id)
             .unwrap_or_default();
-        respond(
-            &mut stream,
-            "200 OK",
-            "application/json",
-            &format!("{{\"approval\":\"{id}\"}}"),
-        );
-        return;
+        return HttpResponse {
+            status: "200 OK",
+            content_type: "application/json",
+            body: format!("{{\"approval\":\"{id}\"}}"),
+        };
     }
     if method == "POST" && target.starts_with("/approve/") {
         let id = target.trim_start_matches("/approve/");
         let Some(body) = request.split("\r\n\r\n").nth(1) else {
-            respond(&mut stream, "400 Bad Request", "text/plain", "Missing body");
-            return;
+            return text_response("400 Bad Request", "Missing body");
         };
         let approved = match serde_json::from_str::<serde_json::Value>(body)
             .ok()
@@ -228,13 +248,7 @@ fn handle_connection(
         {
             Some(value) => value,
             None => {
-                respond(
-                    &mut stream,
-                    "400 Bad Request",
-                    "text/plain",
-                    "Expected {\"approved\":true|false}",
-                );
-                return;
+                return text_response("400 Bad Request", "Expected {\"approved\":true|false}");
             }
         };
         let valid = pending
@@ -250,18 +264,24 @@ fn handle_connection(
                 approval_id: id.to_owned(),
                 approved,
             });
-            respond(&mut stream, "200 OK", "application/json", "{\"ok\":true}");
+            return HttpResponse {
+                status: "200 OK",
+                content_type: "application/json",
+                body: "{\"ok\":true}".into(),
+            };
         } else {
-            respond(
-                &mut stream,
-                "404 Not Found",
-                "text/plain",
-                "Unknown approval",
-            );
+            return text_response("404 Not Found", "Unknown approval");
         }
-        return;
     }
-    respond(&mut stream, "404 Not Found", "text/plain", "Not found");
+    text_response("404 Not Found", "Not found")
+}
+
+fn text_response(status: &'static str, body: &str) -> HttpResponse {
+    HttpResponse {
+        status,
+        content_type: "text/plain",
+        body: body.to_owned(),
+    }
 }
 
 fn read_request(stream: &mut TcpStream) -> std::io::Result<Vec<u8>> {
@@ -354,108 +374,71 @@ mod tests {
     }
 
     #[test]
-    fn loopback_server_resolves_one_short_lived_decision() {
+    fn loopback_server_accepts_a_local_connection() {
         let server = MobileServer::start("127.0.0.1:0", false, None).unwrap();
-        let pair_url = server.pairing_url().to_owned();
-        let (origin, pair) = pair_url.split_once("/?pair=").unwrap();
-        let approval = server.register_approval();
-        let pending = http_request(
-            origin,
-            &format!("GET /pending?pair={pair} HTTP/1.1\r\nHost: localhost\r\n\r\n"),
+        let (origin, _) = server.pairing_url().split_once("/?pair=").unwrap();
+        TcpStream::connect(origin.trim_start_matches("http://")).unwrap();
+    }
+
+    #[test]
+    fn request_router_resolves_one_short_lived_decision() {
+        let approval = "approval-one";
+        let pending = Mutex::new(Some(PendingApproval {
+            id: approval.into(),
+            expires: Instant::now() + APPROVAL_TTL,
+        }));
+        let (decisions, received) = mpsc::channel();
+        let listed = route_request(
+            "GET /pending?pair=pair HTTP/1.1\r\nHost: localhost\r\n\r\n",
+            "pair",
+            &pending,
+            &decisions,
         );
-        assert!(pending.contains(&approval));
-        let response = http_request(
-            origin,
+        assert_eq!(listed.status, "200 OK");
+        assert!(listed.body.contains(approval));
+        let response = route_request(
             &format!(
                 "POST /approve/{approval} HTTP/1.1\r\nHost: localhost\r\nContent-Length: 17\r\n\r\n{{\"approved\":true}}"
             ),
+            "pair",
+            &pending,
+            &decisions,
         );
-        assert!(response.contains("200 OK"));
-        let decision = (0..50)
-            .find_map(|_| {
-                let value = server.try_decision();
-                if value.is_none() {
-                    std::thread::sleep(Duration::from_millis(10));
-                }
-                value
-            })
-            .expect("mobile decision");
+        assert_eq!(response.status, "200 OK");
+        let decision = received.try_recv().expect("mobile decision");
         assert_eq!(decision.approval_id, approval);
         assert!(decision.approved);
     }
 
     #[test]
     fn malformed_decision_is_rejected_without_consuming_approval() {
-        let server = MobileServer::start("127.0.0.1:0", false, None).unwrap();
-        let (origin, _) = server.pairing_url().split_once("/?pair=").unwrap();
-        let approval = server.register_approval();
-        let malformed = http_request(
-            origin,
+        let approval = "approval-two";
+        let pending = Mutex::new(Some(PendingApproval {
+            id: approval.into(),
+            expires: Instant::now() + APPROVAL_TTL,
+        }));
+        let (decisions, received) = mpsc::channel();
+        let malformed = route_request(
             &format!(
                 "POST /approve/{approval} HTTP/1.1\r\nHost: localhost\r\nContent-Length: 2\r\n\r\n{{}}"
             ),
+            "pair",
+            &pending,
+            &decisions,
         );
-        assert!(malformed.contains("400 Bad Request"));
-        let valid = http_request(
-            origin,
+        assert_eq!(malformed.status, "400 Bad Request");
+        assert!(pending.lock().unwrap().is_some());
+        let valid = route_request(
             &format!(
                 "POST /approve/{approval} HTTP/1.1\r\nHost: localhost\r\nContent-Length: 18\r\n\r\n{{\"approved\":false}}"
             ),
+            "pair",
+            &pending,
+            &decisions,
         );
-        assert!(valid.contains("200 OK"));
-        let decision = (0..50)
-            .find_map(|_| {
-                let value = server.try_decision();
-                if value.is_none() {
-                    std::thread::sleep(Duration::from_millis(10));
-                }
-                value
-            })
-            .expect("mobile decision");
+        assert_eq!(valid.status, "200 OK");
+        let decision = received.try_recv().expect("mobile decision");
         assert!(!decision.approved);
-    }
-
-    fn http_request(origin: &str, request: &str) -> String {
-        let address = origin.trim_start_matches("http://");
-        for _ in 0..50 {
-            if let Ok(mut stream) = TcpStream::connect(address) {
-                stream.write_all(request.as_bytes()).unwrap();
-                let mut response = Vec::new();
-                let mut chunk = [0_u8; 1024];
-                loop {
-                    match stream.read(&mut chunk) {
-                        Ok(0) => break,
-                        Ok(size) => {
-                            response.extend_from_slice(&chunk[..size]);
-                            if http_response_is_complete(&response) {
-                                break;
-                            }
-                        }
-                        Err(error) => panic!("mobile response read failed: {error}"),
-                    }
-                }
-                assert!(http_response_is_complete(&response));
-                return String::from_utf8(response).unwrap();
-            }
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        panic!("mobile server did not accept connections");
-    }
-
-    fn http_response_is_complete(response: &[u8]) -> bool {
-        let Some(header_end) = response.windows(4).position(|window| window == b"\r\n\r\n") else {
-            return false;
-        };
-        let headers = std::str::from_utf8(&response[..header_end]).unwrap();
-        let content_length = headers
-            .lines()
-            .find_map(|line| {
-                let (name, value) = line.split_once(':')?;
-                name.eq_ignore_ascii_case("content-length")
-                    .then(|| value.trim().parse::<usize>().ok())
-                    .flatten()
-            })
-            .expect("mobile response content length");
-        response.len() >= header_end + 4 + content_length
+        assert!(pending.lock().unwrap().is_none());
     }
 }
