@@ -72,6 +72,12 @@ pub struct SessionState {
     /// `CiStatusReader` and drains this after dispatch (same pattern as
     /// `pending_memory_op`); `None` means no checkpoint op is pending.
     pub pending_checkpoint_op: Option<crate::commands::CheckpointOp>,
+    /// Phase 10 (ADR 0013): an MCP or plugins command (`/mcp`, `/plugins`)
+    /// resolved to a structured [`crate::commands::McpOp`]. The binary
+    /// owns the durable `vesper_mcp::McpRegistry` / `McpClient` /
+    /// `PluginLoader` / `TrustedPublishers` and drains this after
+    /// dispatch; `None` means no MCP op is pending.
+    pub pending_mcp_op: Option<crate::commands::McpOp>,
 }
 
 impl SessionState {
@@ -175,6 +181,7 @@ fn apply_outcome(
         pending_prompt,
         pending_memory_op,
         pending_checkpoint_op,
+        pending_mcp_op,
     } = state;
     match outcome {
         CommandOutcome::Error(message) => {
@@ -329,6 +336,21 @@ fn apply_outcome(
             ));
             *pending_checkpoint_op = Some(op);
             *status = Some(format!("/{name}: reading/writing the checkpoint ledger..."));
+        }
+
+        // === Phase 10 (ADR 0013) — MCP & plugins subsystem commands ===
+        // Same drain pattern. The binary owns the vesper_mcp stores
+        // (McpRegistry, McpClient, PluginLoader, TrustedPublishers) and
+        // executes the op after dispatch.
+        CommandOutcome::Mcp(op) => {
+            let name = op.command_name();
+            transcript.push(format!(
+                "mcp: /{name} accepted (executing against the MCP/plugins subsystem)"
+            ));
+            *pending_mcp_op = Some(op);
+            *status = Some(format!(
+                "/{name}: reading/writing the MCP/plugins subsystem..."
+            ));
         }
 
         CommandOutcome::Quit => {}

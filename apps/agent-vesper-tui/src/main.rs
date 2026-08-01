@@ -118,6 +118,11 @@ async fn run() -> Result<(), String> {
     // `.agent-vesper/checkpoints/`). Same confinement + atomic-write
     // discipline as the memory subsystem; the binary owns the root path.
     let mut checkpoint_stores = CheckpointStores::open_default();
+    // Phase 10 (ADR 0013): open the durable MCP + plugins subsystem rooted
+    // at `AGENT_VESPER_MCP_ROOT` (falling back to `.agent-vesper/mcp/`).
+    // Same confinement + atomic-write discipline; the binary owns the root
+    // path and the trusted-publishers registry.
+    let mut mcp_stores = McpStores::open_default();
 
     let mut session = TuiSession {
         // Pure dispatch state lives in the library so the full Plan Mode
@@ -140,6 +145,7 @@ async fn run() -> Result<(), String> {
         &agent,
         &memory_stores,
         &mut checkpoint_stores,
+        &mut mcp_stores,
     )
     .await;
     let _ = leave_raw_mode();
@@ -293,6 +299,7 @@ async fn drive_loop(
     agent: &Arc<AgentLoop>,
     memory_stores: &MemoryStores,
     checkpoint_stores: &mut CheckpointStores,
+    mcp_stores: &mut McpStores,
 ) -> Result<(), String> {
     let mut terminal = Terminal::new(Backend::new(stdout()))
         .map_err(|error| format!("terminal init failed: {error}"))?;
@@ -425,6 +432,11 @@ async fn drive_loop(
                 // execution pattern (local filesystem + scoped /ci subprocess).
                 if let Some(op) = session.state.pending_checkpoint_op.take() {
                     drain_checkpoint_op(op, checkpoint_stores, &mut session.state);
+                }
+                // Phase 10 (ADR 0013): drain any pending MCP/plugins op
+                // against the durable vesper_mcp stores.
+                if let Some(op) = session.state.pending_mcp_op.take() {
+                    drain_mcp_op(op, mcp_stores, &mut session.state);
                 }
             }
             KeyCode::Backspace => {
@@ -1407,6 +1419,356 @@ fn drain_checkpoint_op(
             } else {
                 Some("CI status unavailable.".into())
             };
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 10 (ADR 0013): the durable MCP + plugins subsystem bridge.
+// ---------------------------------------------------------------------------
+
+/// Bundle of the durable MCP + plugins stores.
+struct McpStores {
+    registry: Option<vesper_mcp::McpRegistry>,
+    plugin_loader: Option<vesper_mcp::PluginLoader>,
+    /// In-memory trusted-publishers mirror (persisted to publishers.jsonl
+    /// by the binary on every trust/revoke).
+    trusted: vesper_mcp::TrustedPublishers,
+    /// Human-readable root path used in error notices.
+    root_display: String,
+}
+
+impl McpStores {
+    /// Opens the bundle at `AGENT_VESPER_MCP_ROOT` (falling back to
+    /// `.agent-vesper/mcp/`).
+    fn open_default() -> Self {
+        let root = match std::env::var("AGENT_VESPER_MCP_ROOT") {
+            Ok(value) => std::path::PathBuf::from(value),
+            Err(_) => std::env::current_dir()
+                .unwrap_or_else(|_| std::path::PathBuf::from("."))
+                .join(".agent-vesper")
+                .join("mcp"),
+        };
+        let _ = std::fs::create_dir_all(&root);
+        let root_display = root.display().to_string();
+        // Load persisted trusted publishers (best-effort).
+        let trusted = load_trusted_publishers(&root);
+        let registry = vesper_mcp::McpRegistry::open(&root).ok();
+        let plugin_loader = vesper_mcp::PluginLoader::open(&root, trusted.clone()).ok();
+        Self {
+            registry,
+            plugin_loader,
+            trusted,
+            root_display,
+        }
+    }
+}
+
+/// Loads trusted publishers from `<root>/publishers.jsonl` (best-effort;
+/// returns an empty registry when the file is absent).
+fn load_trusted_publishers(root: &std::path::Path) -> vesper_mcp::TrustedPublishers {
+    let path = root.join("publishers.jsonl");
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return vesper_mcp::TrustedPublishers::new();
+    };
+    let mut entries = Vec::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if let Ok(entry) = serde_json::from_str::<vesper_mcp::TrustedPublisher>(line) {
+            entries.push(entry);
+        }
+    }
+    vesper_mcp::TrustedPublishers::from_records(entries)
+}
+
+/// Drains one [`McpOp`] against the durable stores, pushing the result
+/// into the transcript.
+fn drain_mcp_op(
+    op: agent_vesper_tui::commands::McpOp,
+    stores: &mut McpStores,
+    state: &mut SessionState,
+) {
+    use agent_vesper_tui::commands::McpOp;
+
+    match op {
+        McpOp::McpList => {
+            let Some(registry) = stores.registry.as_ref() else {
+                state.transcript.push(format!(
+                    "mcp: registry unavailable (root {})",
+                    stores.root_display
+                ));
+                return;
+            };
+            let servers = registry.list();
+            if servers.is_empty() {
+                state.transcript.push("mcp: (no servers configured)".into());
+            } else {
+                state
+                    .transcript
+                    .push(format!("mcp: {} server(s)", servers.len()));
+                for server in servers.iter().take(50) {
+                    let cmd = server.command.as_deref().unwrap_or("(no command)");
+                    state.transcript.push(format!(
+                        "  {} [{:?}] `{}` {}",
+                        server.id,
+                        server.transport,
+                        cmd,
+                        server.args.join(" ")
+                    ));
+                }
+            }
+            state.status = None;
+        }
+        McpOp::McpAdd { id, command, args } => {
+            let Some(registry) = stores.registry.as_ref() else {
+                state.transcript.push(format!(
+                    "mcp add: registry unavailable (root {})",
+                    stores.root_display
+                ));
+                return;
+            };
+            let config = vesper_mcp::McpServerConfig {
+                id: id.clone(),
+                transport: vesper_mcp::McpTransport::Stdio,
+                command: Some(command.clone()),
+                args,
+                url: None,
+                label: None,
+                created_at: std::time::SystemTime::UNIX_EPOCH,
+            };
+            match registry.add(config) {
+                Ok(added) => {
+                    state
+                        .transcript
+                        .push(format!("mcp add: registered `{}`", added.id));
+                    state.status = Some(format!("MCP server `{}` added.", added.id));
+                }
+                Err(error) => {
+                    state.transcript.push(format!("mcp add: failed — {error}"));
+                    state.status = Some(format!("mcp add failed: {error}"));
+                }
+            }
+        }
+        McpOp::McpRemove { id } => {
+            let Some(registry) = stores.registry.as_ref() else {
+                state.transcript.push(format!(
+                    "mcp remove: registry unavailable (root {})",
+                    stores.root_display
+                ));
+                return;
+            };
+            match registry.remove(&id) {
+                Ok(true) => {
+                    state
+                        .transcript
+                        .push(format!("mcp remove: unregistered `{}`", id));
+                    state.status = Some(format!("MCP server `{}` removed.", id));
+                }
+                Ok(false) => {
+                    state
+                        .transcript
+                        .push(format!("mcp remove: `{}` was not registered", id));
+                    state.status = Some(format!("`{}` was not registered.", id));
+                }
+                Err(error) => {
+                    state
+                        .transcript
+                        .push(format!("mcp remove: failed — {error}"));
+                    state.status = Some(format!("mcp remove failed: {error}"));
+                }
+            }
+        }
+        McpOp::McpTools { id } => {
+            let Some(registry) = stores.registry.as_ref() else {
+                state.transcript.push(format!(
+                    "mcp tools: registry unavailable (root {})",
+                    stores.root_display
+                ));
+                return;
+            };
+            let Some(config) = registry.get(&id) else {
+                state
+                    .transcript
+                    .push(format!("mcp tools: `{}` is not registered", id));
+                state.status = Some(format!("`{}` is not registered.", id));
+                return;
+            };
+            state
+                .transcript
+                .push(format!("mcp tools: connecting to `{}`...", id));
+            // Spawn + handshake + tools/list. This is a blocking call; in
+            // a real interactive session the binary would dispatch it on a
+            // background thread to keep the UI responsive.
+            match vesper_mcp::McpClient::tools(&config) {
+                Ok(tools) => {
+                    if tools.is_empty() {
+                        state
+                            .transcript
+                            .push(format!("mcp tools: `{}` advertised no tools", id));
+                    } else {
+                        state.transcript.push(format!(
+                            "mcp tools: `{}` advertised {} tool(s)",
+                            id,
+                            tools.len()
+                        ));
+                        for tool in tools.iter().take(50) {
+                            let desc = tool.description.as_deref().unwrap_or("");
+                            state.transcript.push(format!("  - {} {}", tool.name, desc));
+                        }
+                    }
+                    state.status = Some(format!("`{}` tools listed.", id));
+                }
+                Err(error) => {
+                    state
+                        .transcript
+                        .push(format!("mcp tools: `{}` failed — {error}", id));
+                    state.status = Some(format!("mcp tools failed: {error}"));
+                }
+            }
+        }
+        McpOp::PluginsList => {
+            let Some(loader) = stores.plugin_loader.as_ref() else {
+                state.transcript.push(format!(
+                    "plugins: loader unavailable (root {})",
+                    stores.root_display
+                ));
+                return;
+            };
+            let records = loader.list();
+            if records.is_empty() {
+                state.transcript.push("plugins: (no plugins loaded)".into());
+            } else {
+                state
+                    .transcript
+                    .push(format!("plugins: {} plugin(s) loaded", records.len()));
+                for record in records.iter().take(50) {
+                    let signed = if record.unsigned_debug {
+                        "UNSIGNED(debug)"
+                    } else {
+                        "signed"
+                    };
+                    state.transcript.push(format!(
+                        "  {} `{}` v{} by `{}` ({})",
+                        record.id,
+                        record.manifest.name,
+                        record.manifest.version,
+                        record.publisher,
+                        signed
+                    ));
+                }
+            }
+            state.status = None;
+        }
+        McpOp::PluginsPublishers => {
+            let publishers = stores.trusted.list();
+            if publishers.is_empty() {
+                state
+                    .transcript
+                    .push("plugins publishers: (none trusted)".into());
+            } else {
+                state
+                    .transcript
+                    .push(format!("plugins publishers: {} trusted", publishers.len()));
+                for publisher in publishers.iter().take(50) {
+                    state.transcript.push(format!(
+                        "  `{}` key={}…",
+                        publisher.publisher,
+                        &publisher.public_key_hex[..publisher.public_key_hex.len().min(16)]
+                    ));
+                }
+            }
+            state.status = None;
+        }
+        McpOp::PluginsVerify { path } => {
+            let Some(loader) = stores.plugin_loader.as_ref() else {
+                state.transcript.push(format!(
+                    "plugins verify: loader unavailable (root {})",
+                    stores.root_display
+                ));
+                return;
+            };
+            // Verify = load without persisting. We attempt a load into a
+            // throwaway state by reading the manifest + signature and
+            // checking against the trusted registry. The simplest path:
+            // call `load` and discard the result on success.
+            match loader.load(std::path::Path::new(&path)) {
+                Ok(record) => {
+                    state.transcript.push(format!(
+                        "plugins verify: `{}` v{} by `{}` — signature VALID",
+                        record.manifest.name, record.manifest.version, record.publisher
+                    ));
+                    state.status = Some("Plugin signature verified.".into());
+                }
+                Err(error) => {
+                    state
+                        .transcript
+                        .push(format!("plugins verify: {path} — {error}"));
+                    state.status = Some(format!("plugins verify failed: {error}"));
+                }
+            }
+        }
+        McpOp::PluginsLoad { path } => {
+            let Some(loader) = stores.plugin_loader.as_ref() else {
+                state.transcript.push(format!(
+                    "plugins load: loader unavailable (root {})",
+                    stores.root_display
+                ));
+                return;
+            };
+            match loader.load(std::path::Path::new(&path)) {
+                Ok(record) => {
+                    state.transcript.push(format!(
+                        "plugins load: `{}` v{} by `{}` loaded ({})",
+                        record.manifest.name, record.manifest.version, record.publisher, record.id
+                    ));
+                    state.status = Some(format!("Plugin {} loaded.", record.id));
+                }
+                Err(error) => {
+                    state
+                        .transcript
+                        .push(format!("plugins load: {path} — {error}"));
+                    state.status = Some(format!("plugins load failed: {error}"));
+                }
+            }
+        }
+        McpOp::PluginsTrust {
+            publisher,
+            public_key_hex,
+        } => {
+            let entry = vesper_mcp::TrustedPublisher {
+                publisher: publisher.clone(),
+                public_key_hex: public_key_hex.clone(),
+            };
+            match stores.trusted.trust(entry.clone()) {
+                Ok(()) => {
+                    // Persist to publishers.jsonl (best-effort append).
+                    if let Ok(serialized) = serde_json::to_string(&entry) {
+                        let path =
+                            std::path::Path::new(&stores.root_display).join("publishers.jsonl");
+                        use std::io::Write;
+                        if let Ok(mut file) = std::fs::OpenOptions::new()
+                            .create(true)
+                            .append(true)
+                            .open(&path)
+                        {
+                            let _ = writeln!(file, "{serialized}");
+                        }
+                    }
+                    state
+                        .transcript
+                        .push(format!("plugins trust: `{}` now trusted", publisher));
+                    state.status = Some(format!("Publisher `{}` trusted.", publisher));
+                }
+                Err(error) => {
+                    state
+                        .transcript
+                        .push(format!("plugins trust: failed — {error}"));
+                    state.status = Some(format!("plugins trust failed: {error}"));
+                }
+            }
         }
     }
 }

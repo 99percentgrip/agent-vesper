@@ -7,6 +7,7 @@ members = [
     "crates/vesper-agent",
     "crates/vesper-checkpoints",
     "crates/vesper-domain",
+    "crates/vesper-mcp",
     "crates/vesper-memory",
     "crates/vesper-policy",
     "crates/vesper-provider",

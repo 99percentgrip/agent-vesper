@@ -1,0 +1,26 @@
+[package]
+name = "vesper-mcp"
+description = "MCP stdio client and Ed25519-signed plugin loader for Agent Vesper (ADR 0013 — Stage 15). Compiler-gated dev mode; release builds hard-reject unsigned plugins."
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+ed25519-dalek = { version = "=2.1.1", default-features = false }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+vesper-domain = { path = "../vesper-domain", version = "=0.1.0" }
+vesper-security = { path = "../vesper-security", version = "=0.1.0" }
+
+[dev-dependencies]
+ed25519-dalek = { version = "=2.1.1", default-features = false, features = ["rand_core"] }
+rand = { version = "0.8", default-features = false, features = ["std", "std_rng"] }
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

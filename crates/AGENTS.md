@@ -19,6 +19,11 @@ test-only conformance support.
   lineage, and bounded cron/export/clipboard/CI surface (ADR 0012 —
   Stage 14). Strict RAII (`Drop`) file-handle discipline — no SQLite, no
   git refs, no auto-snapshotting.
+- `vesper-mcp` depends only on `vesper-domain` and `vesper-security`
+  (plus `ed25519-dalek`); it owns the MCP stdio client and the
+  Ed25519-signed plugin loader (ADR 0013 — Stage 15). The unsigned-plugin
+  loading code path is structurally erased from `--release` builds via
+  `#[cfg(debug_assertions)]`.
 - `vesper-config` depends only on `vesper-domain` and `vesper-security`.
 - `vesper-policy` depends only on `vesper-domain` and `vesper-security`.
 - `vesper-testkit` may depend on all foundational crates and owns synthetic
@@ -70,6 +75,8 @@ test-only conformance support.
   learned skills, user profile, and bounded epistemic ledger.
 - `vesper-checkpoints/AGENTS.md` — ADR 0012 (Stage 14) workspace snapshots,
   rollback, session lineage, and bounded cron/export/clipboard/CI surface.
+- `vesper-mcp/AGENTS.md` — ADR 0013 (Stage 15) MCP stdio client and
+  Ed25519-signed plugin loader with `#[cfg(debug_assertions)]` dev mode.
 - `vesper-agent/AGENTS.md` — Tier C (ADR 0010). The multi-turn
   tool-executing agent loop, tool registry + executors, and permission gating
   that compose `vesper-runtime`. Owns no provider-wire, ACP mapping, or

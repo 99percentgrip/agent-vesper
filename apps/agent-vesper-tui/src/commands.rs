@@ -147,6 +147,16 @@ pub enum CommandOutcome {
     /// dispatch (same pattern as `pending_memory_op`).
     Checkpoint(CheckpointOp),
 
+    // === Tier C Phase 10 (ADR 0013) — MCP & plugins subsystem commands ===
+    /// An MCP or plugins command resolved to a structured [`McpOp`] that
+    /// the binary will execute against the durable
+    /// [`vesper_mcp::McpRegistry`] / [`vesper_mcp::McpClient`] /
+    /// [`vesper_mcp::PluginLoader`] / [`vesper_mcp::TrustedPublishers`].
+    /// `dispatch` records this on `SessionState.pending_mcp_op`; the
+    /// binary drains it after dispatch (same pattern as
+    /// `pending_checkpoint_op`).
+    Mcp(McpOp),
+
     /// Quit/exit requested.
     Quit,
     /// Unknown command or invalid argument; the message is shown to the user.
@@ -310,6 +320,55 @@ impl CheckpointOp {
             Self::SessionExport => "export",
             Self::ClipboardCopy { .. } => "copy",
             Self::CiStatus => "ci",
+        }
+    }
+}
+
+/// Phase 10 (ADR 0013): one structured operation against the MCP /
+/// plugins subsystem backed by [`vesper_mcp`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum McpOp {
+    /// `/mcp` (no arg) — list configured MCP servers.
+    McpList,
+    /// `/mcp add <id> <command> [args...]` — add a stdio server config.
+    McpAdd {
+        id: String,
+        command: String,
+        args: Vec<String>,
+    },
+    /// `/mcp remove <id>` — remove a server config.
+    McpRemove { id: String },
+    /// `/mcp tools <id>` — connect to a server and list its tools.
+    McpTools { id: String },
+    /// `/plugins` (no arg) — list loaded plugins.
+    PluginsList,
+    /// `/plugins publishers` — list trusted publishers.
+    PluginsPublishers,
+    /// `/plugins verify <path>` — verify a plugin package's signature.
+    PluginsVerify { path: String },
+    /// `/plugins load <path>` — load a signed plugin.
+    PluginsLoad { path: String },
+    /// `/plugins trust <publisher> <pubkey-hex>` — add a trusted publisher.
+    PluginsTrust {
+        publisher: String,
+        public_key_hex: String,
+    },
+}
+
+impl McpOp {
+    /// Returns the slash-command name that produced this op.
+    #[must_use]
+    pub fn command_name(&self) -> &'static str {
+        match self {
+            Self::McpList
+            | Self::McpAdd { .. }
+            | Self::McpRemove { .. }
+            | Self::McpTools { .. } => "mcp",
+            Self::PluginsList
+            | Self::PluginsPublishers
+            | Self::PluginsVerify { .. }
+            | Self::PluginsLoad { .. }
+            | Self::PluginsTrust { .. } => "plugins",
         }
     }
 }
@@ -641,6 +700,111 @@ impl CommandRegistry {
             }
             "ci" => CommandOutcome::Checkpoint(CheckpointOp::CiStatus),
 
+            // === Phase 10 (ADR 0013) — MCP & plugins subsystem commands ===
+            // The 2 final commands move from Deferred to real Mcp(McpOp)
+            // outcomes backed by vesper_mcp (McpRegistry + McpClient +
+            // PluginLoader + TrustedPublishers). This completes the
+            // achievable oracle command surface.
+            "mcp" => {
+                let trimmed = argument.trim();
+                if trimmed.is_empty() {
+                    CommandOutcome::Mcp(McpOp::McpList)
+                } else {
+                    // Parse the subcommand: list | add | remove | tools.
+                    let (sub, rest) = trimmed
+                        .split_once(char::is_whitespace)
+                        .unwrap_or((trimmed, ""));
+                    match sub {
+                        "list" => CommandOutcome::Mcp(McpOp::McpList),
+                        "add" => {
+                            let rest = rest.trim();
+                            if rest.is_empty() {
+                                CommandOutcome::Error(
+                                    "Usage: /mcp add <id> <command> [args...]".into(),
+                                )
+                            } else {
+                                let mut parts = rest.split_whitespace();
+                                let id = parts.next().unwrap_or("").to_string();
+                                let command = parts.next().unwrap_or("").to_string();
+                                if id.is_empty() || command.is_empty() {
+                                    return CommandOutcome::Error(
+                                        "Usage: /mcp add <id> <command> [args...]".into(),
+                                    );
+                                }
+                                let args = parts.map(String::from).collect();
+                                CommandOutcome::Mcp(McpOp::McpAdd { id, command, args })
+                            }
+                        }
+                        "remove" => {
+                            let id = rest.trim().to_string();
+                            if id.is_empty() {
+                                CommandOutcome::Error("Usage: /mcp remove <id>".into())
+                            } else {
+                                CommandOutcome::Mcp(McpOp::McpRemove { id })
+                            }
+                        }
+                        "tools" => {
+                            let id = rest.trim().to_string();
+                            if id.is_empty() {
+                                CommandOutcome::Error("Usage: /mcp tools <id>".into())
+                            } else {
+                                CommandOutcome::Mcp(McpOp::McpTools { id })
+                            }
+                        }
+                        _ => CommandOutcome::Error(format!(
+                            "Unknown /mcp subcommand: {sub}. Available: list, add, remove, tools."
+                        )),
+                    }
+                }
+            }
+            "plugins" => {
+                let trimmed = argument.trim();
+                if trimmed.is_empty() {
+                    CommandOutcome::Mcp(McpOp::PluginsList)
+                } else {
+                    let (sub, rest) = trimmed
+                        .split_once(char::is_whitespace)
+                        .unwrap_or((trimmed, ""));
+                    match sub {
+                        "" | "list" => CommandOutcome::Mcp(McpOp::PluginsList),
+                        "publishers" => CommandOutcome::Mcp(McpOp::PluginsPublishers),
+                        "verify" => {
+                            let path = rest.trim().to_string();
+                            if path.is_empty() {
+                                CommandOutcome::Error("Usage: /plugins verify <path>".into())
+                            } else {
+                                CommandOutcome::Mcp(McpOp::PluginsVerify { path })
+                            }
+                        }
+                        "load" => {
+                            let path = rest.trim().to_string();
+                            if path.is_empty() {
+                                CommandOutcome::Error("Usage: /plugins load <path>".into())
+                            } else {
+                                CommandOutcome::Mcp(McpOp::PluginsLoad { path })
+                            }
+                        }
+                        "trust" => {
+                            let mut parts = rest.split_whitespace();
+                            let publisher = parts.next().unwrap_or("").to_string();
+                            let public_key_hex = parts.next().unwrap_or("").to_string();
+                            if publisher.is_empty() || public_key_hex.is_empty() {
+                                return CommandOutcome::Error(
+                                    "Usage: /plugins trust <publisher> <pubkey-hex>".into(),
+                                );
+                            }
+                            CommandOutcome::Mcp(McpOp::PluginsTrust {
+                                publisher,
+                                public_key_hex,
+                            })
+                        }
+                        _ => CommandOutcome::Error(format!(
+                            "Unknown /plugins subcommand: {sub}. Available: list, publishers, verify, load, trust."
+                        )),
+                    }
+                }
+            }
+
             // === Phase 7 — deferred subsystem commands ===
             // Each deferred command resolves to a clear, actionable notice
             // naming the subsystem that owns the future implementation. This
@@ -876,8 +1040,12 @@ fn deferred_reason(command: &str) -> Option<String> {
         "sound" => "notification-sound subsystem (Stage 13+, deferred)",
 
         // MCP / plugins
-        "mcp" => "MCP server-connection subsystem (Stage 14+, deferred)",
-        "plugins" => "plugin publisher / install subsystem (Stage 14+, deferred)",
+        //
+        // NOTE: `/mcp` and `/plugins` moved to `vesper-mcp` (McpRegistry +
+        // McpClient + PluginLoader + TrustedPublishers) in Phase 10
+        // (ADR 0013). They are no longer deferred.
+        // "mcp" => "MCP server-connection subsystem (Stage 14+, deferred)",
+        // "plugins" => "plugin publisher / install subsystem (Stage 14+, deferred)",
 
         // Worktree session subsystem
         //
@@ -1730,11 +1898,15 @@ mod tests {
         // commands moved out. The remaining list covers only the
         // still-deferred commands (composer, ratatui UI rebuilds,
         // live-session settings, image, audio, mobile).
+        //
+        // Phase 10 (ADR 0013): `/mcp` and `/plugins` moved out — this is
+        // the final stage. The list below is now the COMPLETE set of
+        // remaining deferred commands, all of which are explicitly
+        // documented as out-of-scope for the ratatui CLI binary (see ADR
+        // 0013 §"Migration matrix" for the justification of each).
         let deferred_commands = [
             "mobile",
             "sound",
-            "mcp",
-            "plugins",
             "btw",
             "blocks",
             "annotate",
@@ -1972,6 +2144,174 @@ mod tests {
         assert_eq!(
             matched, 13,
             "exactly 13 checkpoint commands must resolve to Checkpoint(_)"
+        );
+    }
+
+    #[test]
+    fn phase10_mcp_and_plugins_resolve_to_mcp_ops() {
+        // Phase 10 (ADR 0013): /mcp and /plugins must resolve to a real
+        // Mcp(McpOp) outcome — never Deferred, never Error (except for
+        // subcommands with missing arguments).
+        let bare = ["/mcp", "/plugins"];
+        for input in bare {
+            let intent = CommandIntent::parse(input);
+            let outcome = resolve_bare_intent(&intent);
+            match outcome {
+                CommandOutcome::Mcp(op) => {
+                    let expected = if input == "/mcp" { "mcp" } else { "plugins" };
+                    assert_eq!(op.command_name(), expected);
+                }
+                other => panic!("{input} should resolve to Mcp(_), got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn phase10_mcp_subcommands_parse_correctly() {
+        let cases: &[(&str, &str)] = &[
+            ("/mcp list", "mcp"),
+            ("/mcp add srv echo hi", "mcp"),
+            ("/mcp remove srv", "mcp"),
+            ("/mcp tools srv", "mcp"),
+        ];
+        for (input, expected) in cases {
+            let intent = CommandIntent::parse(input);
+            let outcome = resolve_bare_intent(&intent);
+            match outcome {
+                CommandOutcome::Mcp(op) => assert_eq!(op.command_name(), *expected),
+                other => panic!("{input} should resolve to Mcp(_), got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn phase10_plugins_subcommands_parse_correctly() {
+        let cases: &[(&str, &str)] = &[
+            ("/plugins", "plugins"),
+            ("/plugins list", "plugins"),
+            ("/plugins publishers", "plugins"),
+            ("/plugins verify /tmp/pkg", "plugins"),
+            ("/plugins load /tmp/pkg", "plugins"),
+            ("/plugins trust vesper abc123", "plugins"),
+        ];
+        for (input, expected) in cases {
+            let intent = CommandIntent::parse(input);
+            let outcome = resolve_bare_intent(&intent);
+            match outcome {
+                CommandOutcome::Mcp(op) => assert_eq!(op.command_name(), *expected),
+                other => panic!("{input} should resolve to Mcp(_), got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn phase10_mcp_and_plugins_argument_required_subcommands_error() {
+        for input in [
+            "/mcp add",        // missing id + command
+            "/mcp remove",     // missing id
+            "/mcp tools",      // missing id
+            "/plugins verify", // missing path
+            "/plugins load",   // missing path
+            "/plugins trust",  // missing publisher + key
+        ] {
+            let intent = CommandIntent::parse(input);
+            let outcome = resolve_bare_intent(&intent);
+            assert!(
+                matches!(outcome, CommandOutcome::Error(_)),
+                "{input} with missing args must Error"
+            );
+        }
+    }
+
+    #[test]
+    fn phase10_zero_deferred_stubs_remain_excluding_documented_exclusions() {
+        // THE final-parity assertion the lead architect demanded: "Verify
+        // that exactly zero Deferred stubs remain in the
+        // ORACLE_COMMAND_SURFACE (excluding the 26 explicitly documented
+        // ratatui/system exclusions)."
+        //
+        // We iterate EVERY registered oracle command and collect the ones
+        // that still resolve to Deferred. The result must equal EXACTLY
+        // the 26 documented exclusions (composer×3 + ratatui-UI×8 +
+        // live-settings×6 + image×4 + audio/mobile×2 + composer-extra×3
+        // = 26).
+        let registry = CommandRegistry::stage_11b();
+        let plan_state = PlanState::default();
+        let provider = provider();
+        let mut deferred: Vec<String> = Vec::new();
+        for name in registry.names() {
+            // Skip commands that take a required argument — those Error
+            // on missing arg, not Deferred. We send a placeholder.
+            let outcome = registry.resolve(
+                &CommandIntent::Slash {
+                    name: name.clone(),
+                    argument: "test-arg".into(),
+                },
+                &plan_state,
+                &provider,
+                &[],
+            );
+            if let CommandOutcome::Deferred { command, .. } = outcome {
+                deferred.push(command);
+            }
+        }
+        // The 26 documented exclusions (see ADR 0013 §"Migration matrix"
+        // for the per-category justification).
+        let expected_exclusions: &[&str] = &[
+            // Mobile/sound (2): network + audio subsystems.
+            "mobile",
+            "sound",
+            // Composer (6): Textual-specific composer features needing a
+            // TUI rebuild. (history/search/prompt are listed but need a
+            // real composer widget; btw/blocks/annotate need richer UI.)
+            "history",
+            "search",
+            "prompt",
+            "btw",
+            "blocks",
+            "annotate",
+            // ratatui UI rebuild (8): theming, vim mode, configurable
+            // keybinds, configurable statusline, screen-reader mode,
+            // native mouse, reasoning panel, thinking toggle. All need
+            // ratatui feature work that does not exist today.
+            "theme",
+            "vim",
+            "keybinds",
+            "statusline",
+            "screen-reader",
+            "native-mouse",
+            "reasoning-panel",
+            "toggle-thinking",
+            // Live session settings (6): provider-quota UIs that require
+            // live API access, which foundation verification forbids.
+            "settings",
+            "permission",
+            "mode",
+            "generation",
+            "auxiliary",
+            "mixture",
+            // Image subsystem (4): terminal image protocols (sixel/kitty/
+            // iTerm) that ratatui does not support.
+            "image",
+            "attach",
+            "image-render",
+            "screenshot",
+        ];
+        assert_eq!(
+            expected_exclusions.len(),
+            26,
+            "the documented exclusion list must contain exactly 26 entries"
+        );
+        // The deferred set must equal the documented exclusions, no more,
+        // no less.
+        let mut expected: Vec<&str> = expected_exclusions.to_vec();
+        expected.sort();
+        deferred.sort();
+        assert_eq!(
+            deferred.iter().map(String::as_str).collect::<Vec<_>>(),
+            expected,
+            "the remaining deferred commands must EXACTLY match the 26 \
+             documented exclusions — no command may be silently dropped"
         );
     }
 

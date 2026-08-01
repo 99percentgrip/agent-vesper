@@ -55,6 +55,13 @@ business logic.
   lineage / cron / export / clipboard / CI-status operations after each
   dispatch. The Errno-24-prevention discipline lives entirely in
   `vesper-checkpoints` (RAII file-handle scoping; no SQLite, no git refs).
+  Phase 10 (ADR 0013): also owns the `McpStores` bundle (`McpRegistry` +
+  `PluginLoader` + `TrustedPublishers`) and the `drain_mcp_op` executor
+  that turns `SessionState.pending_mcp_op` into MCP server list/add/
+  remove/tools and plugin list/publishers/verify/load/trust operations.
+  The No-Leak Guarantee lives entirely in `vesper-mcp`
+  (`#[cfg(debug_assertions)]` gates `load_unsigned_debug`; release builds
+  structurally erase the method).
 
 ## Local Contracts
 
@@ -64,10 +71,12 @@ business logic.
   `vesper-provider-glm`, `vesper-provider-synthetic`, `vesper-runtime`,
   `vesper-agent` (Phase 6 / ADR 0010: the binary composes the multi-turn
   agent loop), `vesper-memory` (Phase 8 / ADR 0011: the binary owns the
-  durable memory store bundle), and `vesper-checkpoints` (Phase 9 / ADR
+  durable memory store bundle), `vesper-checkpoints` (Phase 9 / ADR
   0012: the binary owns the durable checkpoint/session-lineage/cron/
-  export/clipboard/CI bundle); it must not depend on `vesper-acp`,
-  `vesper-sessions`, SQLite, MCP, or any disposable spike.
+  export/clipboard/CI bundle), and `vesper-mcp` (Phase 10 / ADR 0013:
+  the binary owns the durable MCP-registry + Ed25519-signed plugin
+  loader bundle); it must not depend on `vesper-acp`,
+  `vesper-sessions`, SQLite, or any disposable spike.
 - The Plan Mode state machine is **pure**: no I/O, no async, no global
   state. Every transition returns a `PlanTransition`; the event loop applies
   it.
@@ -145,6 +154,22 @@ business logic.
   strict RAII (`Drop`) file-handle discipline — no `File` is ever stored
   in a long-lived struct, no SQLite, no git refs, no auto-snapshotting.
   Checkpoints are explicit-only by structural design.
+- ADR 0013 (Tier C Phase 10): the final 2 commands (`/mcp`, `/plugins`)
+  are no longer deferred. They resolve to `CommandOutcome::Mcp(McpOp)`;
+  `dispatch` records `SessionState.pending_mcp_op`; the binary owns an
+  `McpStores` bundle (`McpRegistry` + `PluginLoader` +
+  `TrustedPublishers` under `AGENT_VESPER_MCP_ROOT` or
+  `.agent-vesper/mcp/`) and drains the op after dispatch. **No-Leak
+  Guarantee:** `vesper-mcp`'s unsigned-plugin loading code path is
+  structurally erased from `--release` builds via
+  `#[cfg(debug_assertions)]`; a release binary cannot load an unsigned
+  plugin by any code path. Plugins are declarative only (the
+  `executable_code` permission is rejected at validation time). With
+  Phase 10 shipped, exactly 26 commands remain deferred — all
+  explicitly documented as justified exclusions (composer / ratatui UI
+  rebuild / live-session-settings / image / audio / mobile). The
+  `phase10_zero_deferred_stubs_remain_excluding_documented_exclusions`
+  test asserts this end-to-end.
 - When adding a new slash command, register it in
   `CommandRegistry::stage_11b`, document its surface in
   `CommandRegistry::help_text`, and add a test that proves it resolves
