@@ -380,7 +380,15 @@ async fn drive_loop(
                 // never spawn the loop there. The loop runs in a background
                 // tokio task; the result is drained at the top of the next
                 // iteration, so the UI keeps redrawing the WORKING banner.
-                if let Some(text) = prompt_text
+                //
+                // Phase 7 (ADR 0010): workflow commands (`/security-review`,
+                // `/smart`, `/release`, `/insights`, `/diff`) build a prompt
+                // in `dispatch` and stash it on `SessionState.pending_prompt`.
+                // Drain it the same way: it takes precedence over a free-text
+                // prompt (only one prompt fires per Enter).
+                let workflow_prompt = session.state.pending_prompt.take();
+                let prompt_to_spawn = workflow_prompt.or(prompt_text);
+                if let Some(text) = prompt_to_spawn
                     && !session.agent_running
                     && session.state.phase() == PlanPhase::Normal
                 {

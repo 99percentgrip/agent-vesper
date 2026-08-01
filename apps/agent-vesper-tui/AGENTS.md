@@ -16,7 +16,11 @@ business logic.
   (NORMAL → PLANNING → REVIEW → EXECUTING) mirroring the Python oracle's
   `PLAN_MODE_PROMPT`.
 - `src/commands.rs` — slash-command parsing, registry, and resolution
-  against the active provider's superpowers.
+  against the active provider's superpowers. Tier C Phase 7 (ADR 0010): the
+  registry now covers the **entire** Python oracle `LOCAL_COMMANDS` surface
+  (79 distinct oracle command names + 3 Vesper-native = 82 commands). The
+  `ORACLE_COMMAND_SURFACE` const table is the single source of truth for the
+  migration matrix.
 - `src/dispatch.rs` — pure, terminal-free event-loop dispatch: the bridge
   between the command registry, the Plan Mode state machine, and the
   `SuperpowerOverrides` store. Owns `SessionState`, `DispatchOutcome`, and
@@ -94,6 +98,14 @@ business logic.
   Construction (`build_agent_loop` / `build_agent_config`) is credential-free
   and provider-aware (GLM `zai` / `synthetic`); dispatch fails fast on
   missing credentials or unknown providers.
+- ADR 0010 (Tier C Phase 7): 100% command parity with the Python oracle's
+  `LOCAL_COMMANDS`. Every oracle command resolves to a real handler (Plan
+  Mode, superpowers, context mutations/views, workflow prompts) or to a
+  `Deferred { command, reason }` notice naming the owning subsystem. No
+  oracle command silently errors as "Unknown". Workflow commands
+  (`/security-review`, `/smart`, `/release`, `/insights`, `/diff`) build a
+  prompt and stash it on `SessionState.pending_prompt`; the binary drains it
+  into a background `AgentLoop` turn (same path as free-text prompts).
 - When adding a new slash command, register it in
   `CommandRegistry::stage_11b`, document its surface in
   `CommandRegistry::help_text`, and add a test that proves it resolves

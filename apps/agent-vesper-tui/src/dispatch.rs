@@ -48,6 +48,14 @@ pub struct SessionState {
     /// `UpdateSessionReasoning` command after each dispatch; `None` means no
     /// update is pending.
     pub pending_reasoning: Option<BoundedString<128>>,
+    /// Phase 7 (ADR 0010): a workflow command (`/security-review`, `/smart`,
+    /// `/release`, `/insights`, `/diff`) built a prompt that should drive the
+    /// next background `AgentLoop` turn. The binary drains this after dispatch
+    /// alongside free-text prompts; `None` means no workflow prompt is
+    /// pending. Keeping the prompt here (rather than returning it from
+    /// `dispatch`) preserves the existing `dispatch -> DispatchOutcome`
+    /// signature and matches the `pending_reasoning` drain pattern.
+    pub pending_prompt: Option<String>,
 }
 
 impl SessionState {
@@ -148,6 +156,7 @@ fn apply_outcome(
         transcript,
         status,
         pending_reasoning,
+        pending_prompt,
     } = state;
     match outcome {
         CommandOutcome::Error(message) => {
@@ -229,7 +238,111 @@ fn apply_outcome(
             transcript.clear();
             *status = Some("Transcript cleared.".into());
         }
+
+        // === Phase 7 (ADR 0010) — context mutations ===
+        CommandOutcome::ClearPlan => {
+            plan.cancel();
+            transcript.push("plan: cleared (back to NORMAL).".into());
+            *status = Some("Plan cleared.".into());
+        }
+        CommandOutcome::Compact { keep } => {
+            let dropped = transcript.len().saturating_sub(keep);
+            if keep == 0 {
+                transcript.clear();
+            } else if transcript.len() > keep {
+                let drain_from = transcript.len() - keep;
+                transcript.drain(0..drain_from);
+            }
+            transcript.push(format!("compact: dropped {dropped} older line(s)."));
+            *status = Some(format!("Compacted — {keep} recent line(s) kept."));
+        }
+
+        // === Phase 7 (ADR 0010) — context views ===
+        // Each view inspects the live SessionState and pushes a one-line
+        // summary to the transcript (the TUI's "display surface"). The
+        // oracle's richer dashboards depend on subsystems Vesper does not
+        // surface yet (token counters, live quota, queue state); the TUI
+        // surfaces what it actually has.
+        CommandOutcome::ContextView(view_kind) => {
+            let line = render_context_view(view_kind, plan, overrides, transcript);
+            transcript.push(line);
+            *status = None;
+        }
+
+        // === Phase 7 (ADR 0010) — workflow prompts ===
+        // Stash the constructed prompt on the session; the binary drains it
+        // after dispatch and spawns the AgentLoop. The display text lands in
+        // the transcript so the driver sees what was sent.
+        CommandOutcome::Workflow { display, prompt } => {
+            transcript.push(format!("workflow: {display}"));
+            *pending_prompt = Some(prompt);
+            *status = Some("WORKING... (workflow agent turn)".into());
+        }
+
+        // === Phase 7 (ADR 0010) — deferred subsystem commands ===
+        CommandOutcome::Deferred { command, reason } => {
+            transcript.push(format!("/{command}: deferred — {reason}"));
+            *status = Some(format!("/{command} is deferred: {reason}"));
+        }
+
         CommandOutcome::Quit => {}
+    }
+}
+
+/// Renders one [`ViewKind`] line for the transcript. Pure: reads state only.
+fn render_context_view(
+    view_kind: crate::commands::ViewKind,
+    plan: &PlanState,
+    overrides: &SuperpowerOverrides,
+    transcript: &[String],
+) -> String {
+    use crate::commands::ViewKind;
+    let phase = plan.phase();
+    let line_count = transcript.len();
+    let override_count = overrides.len();
+    match view_kind {
+        ViewKind::Recap => {
+            let phase_label = phase_label(phase);
+            format!(
+                "recap: {phase_label}, {line_count} transcript line(s), {override_count} active override(s)."
+            )
+        }
+        ViewKind::Context => format!(
+            "context: {line_count} transcript line(s); Phase={phase_label}. \
+             (Token-count view is deferred — needs runtime token accounting.)",
+            phase_label = phase_label(phase)
+        ),
+        ViewKind::Status => format!(
+            "status: Phase={phase_label}, transcript={line_count} lines, overrides={override_count}.",
+            phase_label = phase_label(phase)
+        ),
+        ViewKind::Tasks => format!(
+            "tasks: dashboard — Phase={phase_label}, {line_count} transcript line(s). \
+             (Queue / token / model views need runtime integration.)",
+            phase_label = phase_label(phase)
+        ),
+        ViewKind::MaxIterations => {
+            // The cap lives in vesper_agent::DEFAULT_MAX_TOOL_ITERATIONS (50).
+            // The TUI surfaces it as a fixed value; the oracle's `/max-iterations`
+            // also lets the driver SET it, which needs runtime integration.
+            "max-iterations: per-turn tool-call cap is 50 (DEFAULT_MAX_TOOL_ITERATIONS). \
+             Setting a per-session cap is deferred — needs runtime integration."
+                .to_string()
+        }
+        ViewKind::Usage => {
+            "usage: live quota / API-plan view is deferred — needs provider-quota integration."
+                .to_string()
+        }
+    }
+}
+
+/// Lower-cased phase label for view rendering.
+fn phase_label(phase: PlanPhase) -> &'static str {
+    match phase {
+        PlanPhase::Normal => "NORMAL",
+        PlanPhase::Planning => "PLANNING",
+        PlanPhase::Review => "REVIEW",
+        PlanPhase::Executing => "EXECUTING",
     }
 }
 
@@ -618,5 +731,185 @@ mod integration_tests {
                 .as_ref()
                 .is_some_and(|status| status.contains("cleared"))
         );
+    }
+
+    // ===================================================================
+    // Phase 7 (ADR 0010) — full-surface dispatch integration tests.
+    // ===================================================================
+
+    #[test]
+    fn phase7_clear_plan_resets_plan_mode_to_normal() {
+        let registry = registry();
+        let surface = surface();
+        let mut state = SessionState::new();
+
+        // Enter PLANNING, then clear-plan should drop back to NORMAL.
+        step(&mut state, &registry, &surface, "/plan ship the matrix");
+        assert_eq!(state.phase(), PlanPhase::Planning);
+        step(&mut state, &registry, &surface, "/clear-plan");
+        assert_eq!(state.phase(), PlanPhase::Normal);
+        assert!(state.pending_prompt.is_none());
+    }
+
+    #[test]
+    fn phase7_compact_keeps_only_the_last_n_lines() {
+        let registry = registry();
+        let surface = surface();
+        let mut state = SessionState::new();
+
+        // Seed 5 transcript lines.
+        for n in 1..=5 {
+            step(&mut state, &registry, &surface, &format!("line {n}"));
+        }
+        assert_eq!(state.transcript.len(), 5);
+        // /compact 2 keeps the last 2 user lines.
+        step(&mut state, &registry, &surface, "/compact 2");
+        // The compact itself pushes a "dropped N lines" notice, so the final
+        // length is 2 (kept) + 1 (notice) = 3.
+        assert!(
+            state.transcript.len() <= 3,
+            "compact must drop older lines; got {}",
+            state.transcript.len()
+        );
+        assert!(
+            state
+                .transcript
+                .iter()
+                .any(|line| line.contains("compact") && line.contains("dropped")),
+            "compact must push a dropped-lines notice"
+        );
+    }
+
+    #[test]
+    fn phase7_context_views_push_a_summary_line() {
+        let registry = registry();
+        let surface = surface();
+        let mut state = SessionState::new();
+
+        // Seed one line so the recap has something to summarize.
+        step(&mut state, &registry, &surface, "hello");
+        step(&mut state, &registry, &surface, "/recap");
+        assert!(
+            state
+                .transcript
+                .iter()
+                .any(|line| line.starts_with("recap:")),
+            "/recap must push a recap line"
+        );
+
+        step(&mut state, &registry, &surface, "/status");
+        assert!(
+            state
+                .transcript
+                .iter()
+                .any(|line| line.starts_with("status:")),
+            "/status must push a status line"
+        );
+
+        step(&mut state, &registry, &surface, "/max-iterations");
+        assert!(
+            state
+                .transcript
+                .iter()
+                .any(|line| line.starts_with("max-iterations:")),
+            "/max-iterations must push its line"
+        );
+    }
+
+    #[test]
+    fn phase7_workflow_command_stashes_a_pending_prompt() {
+        // The decisive Phase 7 contract for workflow commands: dispatch
+        // must stash the constructed prompt on SessionState.pending_prompt
+        // so the binary can drain it into a background AgentLoop turn.
+        let registry = registry();
+        let surface = surface();
+        let mut state = SessionState::new();
+
+        assert!(state.pending_prompt.is_none());
+        step(&mut state, &registry, &surface, "/security-review");
+        let prompt = state
+            .pending_prompt
+            .as_ref()
+            .expect("/security-review must stash a pending prompt");
+        assert!(
+            prompt.to_lowercase().contains("security"),
+            "the workflow prompt must mention security: {prompt}"
+        );
+        assert!(
+            state
+                .transcript
+                .iter()
+                .any(|line| line.contains("workflow") && line.contains("security-review")),
+            "/security-review must push a workflow display line"
+        );
+    }
+
+    #[test]
+    fn phase7_smart_pr_stashes_the_pr_prompt() {
+        let registry = registry();
+        let surface = surface();
+        let mut state = SessionState::new();
+
+        step(&mut state, &registry, &surface, "/smart pr");
+        let prompt = state
+            .pending_prompt
+            .as_ref()
+            .expect("/smart pr must stash a pending prompt");
+        assert!(
+            prompt.contains("gh pr create"),
+            "/smart pr must expand to a gh-pr-create prompt: {prompt}"
+        );
+    }
+
+    #[test]
+    fn phase7_deferred_command_pushes_a_clear_warning() {
+        // Deferred commands must NOT silently drop; they push a clear, named
+        // warning so the driver understands the command is recognized but
+        // its subsystem is not built yet.
+        let registry = registry();
+        let surface = surface();
+        let mut state = SessionState::new();
+
+        step(&mut state, &registry, &surface, "/mobile");
+        assert!(
+            state
+                .transcript
+                .iter()
+                .any(|line| line.contains("/mobile") && line.contains("deferred")),
+            "/mobile must push a deferred notice"
+        );
+        assert!(
+            state
+                .status
+                .as_ref()
+                .is_some_and(|status| status.contains("deferred")),
+            "/mobile status must mention deferred"
+        );
+        // A deferred command must NOT stash a pending prompt.
+        assert!(
+            state.pending_prompt.is_none(),
+            "/mobile must not trigger an agent turn"
+        );
+    }
+
+    #[test]
+    fn phase7_free_text_still_works_alongside_workflow_commands() {
+        // Regression: free-text prompts must still flow through dispatch and
+        // land in the transcript. The Phase 7 workflow path is additive.
+        let registry = registry();
+        let surface = surface();
+        let mut state = SessionState::new();
+
+        step(&mut state, &registry, &surface, "hello agent");
+        assert!(
+            state
+                .transcript
+                .iter()
+                .any(|line| line.contains("user: hello agent")),
+            "free text must still hit the transcript"
+        );
+        // Free text does not stash a workflow prompt (the binary treats it
+        // as a free-text prompt directly).
+        assert!(state.pending_prompt.is_none());
     }
 }

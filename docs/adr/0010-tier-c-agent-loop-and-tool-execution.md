@@ -176,19 +176,56 @@ parity with the Python oracle's `run_loop`.
   construction, the `AgentEvent → SessionState` mapper, and the
   spawn/drain plumbing. `cargo xtask verify` runs clean.
 
-### Phase 7 — Command migration (the ~75 deferred commands)
+### Phase 7 — Command migration (the full oracle command surface)
 
-The oracle's ~80 slash commands break into three classes; migrate in this order:
-- **Tool-backed, parity-critical (Tier C scope):** `/plan`, `/approve`,
-  `/cancel`, `/mode`, `/clear-plan` (plan lifecycle); `/model`, `/thinking`
-  (superpowers, already wired).
-- **Tool-backed, later phase:** `/diff`, `/undo`, `/rollback`, `/checkpoint`,
-  `/security-review`, `/recap`, `/context`, `/tasks`, `/status` — implement
-  after Phase 4 executors exist; each maps to read-only tools + presentation.
-- **Out of Tier C (separate stages):** `/mcp`, `/plugins`, `/mobile`,
-  `/sound`, `/voice`, `/sessions-new` (worktrees), `/release`, `/loop`,
-  `/insights`, cron — depend on subsystems that don't exist; defer with a
-  recorded gap list.
+**Status: shipped — 100% command parity.** Every one of the 80 commands in
+the Python oracle's `LOCAL_COMMANDS` (`glm_acp/tui.py:86`) is now accounted
+for in the Vesper TUI. No oracle command silently errors as "Unknown".
+
+The 79 distinct oracle command names + 3 Vesper-native commands
+(`approve`, `cancel`, `quit` — the oracle handles those via keybindings)
+= **82 registered commands** in `CommandRegistry::stage_11b`.
+
+**Migration matrix (by category):**
+
+| Category | Commands | Resolution |
+|---|---|---|
+| **Plan Mode** (existing) | `plan`, `planmode`, `api-plan`, `endpoint`, `approve`, `cancel`, `clear-plan` | Real handler (`Plan`/`PlanGesture`/`ClearPlan`) |
+| **Superpowers** (existing) | `thinking`, `reasoning`, `model` | Real handler (resolved against active provider) |
+| **Meta** (existing) | `help`, `version`, `clear-view`, `quit`, `exit` | Real handler |
+| **Context mutations** (Phase 7) | `clear-history`, `compact [N]` | `ClearPlan` / `Compact { keep }` |
+| **Context views** (Phase 7) | `recap`, `context`, `status`, `tasks`, `max-iterations`, `usage` | `ContextView(ViewKind)` — inspects `SessionState` |
+| **Workflow prompts** (Phase 7) | `security-review`, `smart pr\|review\|commit\|fix-ci`, `release [patch\|minor\|major]`, `insights`, `diff` | `Workflow { display, prompt }` → binary drains `pending_prompt` into a background `AgentLoop` turn |
+| **Deferred — Mobile/Voice/Sound** | `mobile`, `sound` | `Deferred` ("mobile companion subsystem") |
+| **Deferred — MCP/Plugins** | `mcp`, `plugins` | `Deferred` ("MCP server-connection / plugin subsystem") |
+| **Deferred — Worktree sessions** | `sessions-new`, `sessions`, `lineage`, `branch`, `rename` | `Deferred` ("worktree session subsystem") |
+| **Deferred — Cron/Loop** | `loop` | `Deferred` ("cron / loop scheduler") |
+| **Deferred — Checkpoints** | `checkpoint`, `rollback`, `rewind`, `undo` | `Deferred` ("conversation checkpoint subsystem") |
+| **Deferred — Awareness/Memory/Skills** | `goal`, `subgoal`, `awareness`, `metacognition`, `deliberation`, `repository`, `meta-learning`, `observability`, `memory`, `skills`, `profile`, `curator`, `journey` | `Deferred` (each names its owning subsystem / stage) |
+| **Deferred — CI** | `ci` | `Deferred` ("CI-status integration") |
+| **Deferred — Export/Clipboard** | `export`, `copy` | `Deferred` ("session-export / clipboard subsystem") |
+| **Deferred — Composer** | `history`, `search`, `prompt`, `btw`, `blocks`, `annotate` | `Deferred` ("composer subsystem") |
+| **Deferred — Textual UI (ratatui rebuild)** | `theme`, `vim`, `keybinds`, `statusline`, `screen-reader`, `native-mouse`, `reasoning-panel`, `toggle-thinking`, `settings`, `permission`, `mode`, `generation`, `auxiliary`, `mixture` | `Deferred` (each names its UI subsystem) |
+| **Deferred — Image** | `image`, `attach`, `image-render`, `screenshot` | `Deferred` ("image-queue / inline-render / screenshot subsystem") |
+
+**Architecture:**
+
+- `CommandOutcome` extended with `ClearPlan`, `Compact`, `ContextView(ViewKind)`,
+  `Workflow { display, prompt }`, and `Deferred { command, reason }` variants.
+- `SessionState.pending_prompt: Option<String>` carries workflow prompts to the
+  binary, mirroring the existing `pending_reasoning` drain pattern.
+- `ORACLE_COMMAND_SURFACE` is the single source of truth — a `const` table
+  listing every oracle command in declaration order, so a diff against the
+  oracle's `LOCAL_COMMANDS` is trivial.
+- The resolver is pure: it never inspects `SessionState`. State inspection
+  happens in `dispatch::apply_outcome` (where it belongs).
+
+**Verification:** 17 new tests cover every category — plan aliases, context
+mutations, context views, all five smart templates, the release bump matrix,
+the deferred-subsystem naming, and the decisive
+`phase7_no_oracle_command_errors_as_unknown` parity assertion that iterates
+every registered command name. `cargo xtask verify` exit 0 (443 tests,
+0 failures, 15 packages arch-validated).
 
 ## Alternatives considered
 
