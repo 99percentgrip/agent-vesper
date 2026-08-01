@@ -396,8 +396,16 @@ mod tests {
                 stream.write_all(request.as_bytes()).unwrap();
                 let _ = stream.shutdown(std::net::Shutdown::Write);
                 let mut response = String::new();
-                stream.read_to_string(&mut response).unwrap();
-                return response;
+                match stream.read_to_string(&mut response) {
+                    Ok(_) => return response,
+                    Err(error)
+                        if error.kind() == std::io::ErrorKind::ConnectionReset
+                            && !response.is_empty() =>
+                    {
+                        return response;
+                    }
+                    Err(error) => panic!("mobile response read failed: {error}"),
+                }
             }
             std::thread::sleep(Duration::from_millis(10));
         }
