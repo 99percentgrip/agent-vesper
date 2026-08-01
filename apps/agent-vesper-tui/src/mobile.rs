@@ -395,12 +395,42 @@ mod tests {
         for _ in 0..50 {
             if let Ok(mut stream) = TcpStream::connect(address) {
                 stream.write_all(request.as_bytes()).unwrap();
-                let mut response = String::new();
-                stream.read_to_string(&mut response).unwrap();
-                return response;
+                let mut response = Vec::new();
+                let mut chunk = [0_u8; 1024];
+                loop {
+                    match stream.read(&mut chunk) {
+                        Ok(0) => break,
+                        Ok(size) => {
+                            response.extend_from_slice(&chunk[..size]);
+                            if http_response_is_complete(&response) {
+                                break;
+                            }
+                        }
+                        Err(error) => panic!("mobile response read failed: {error}"),
+                    }
+                }
+                assert!(http_response_is_complete(&response));
+                return String::from_utf8(response).unwrap();
             }
             std::thread::sleep(Duration::from_millis(10));
         }
         panic!("mobile server did not accept connections");
+    }
+
+    fn http_response_is_complete(response: &[u8]) -> bool {
+        let Some(header_end) = response.windows(4).position(|window| window == b"\r\n\r\n") else {
+            return false;
+        };
+        let headers = std::str::from_utf8(&response[..header_end]).unwrap();
+        let content_length = headers
+            .lines()
+            .find_map(|line| {
+                let (name, value) = line.split_once(':')?;
+                name.eq_ignore_ascii_case("content-length")
+                    .then(|| value.trim().parse::<usize>().ok())
+                    .flatten()
+            })
+            .expect("mobile response content length");
+        response.len() >= header_end + 4 + content_length
     }
 }
