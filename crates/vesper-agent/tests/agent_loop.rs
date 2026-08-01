@@ -4,11 +4,12 @@
 //! `ProviderFactory` in a real `vesper-runtime::ProviderRegistry`, so the loop
 //! dispatches through the same composition seam production code uses.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use serde_json::json;
 use vesper_agent::{
-    AgentLoop, AgentLoopConfig, AgentTurnOutcome, DEFAULT_MAX_TOOL_ITERATIONS, ToolRegistry,
+    AgentLoop, AgentLoopConfig, AgentProgressEvent, AgentProgressPort, AgentTurnOutcome,
+    DEFAULT_MAX_TOOL_ITERATIONS, ToolRegistry,
 };
 use vesper_domain::{
     BoundedString, ContentPart, ContentText, ConversationMessage, ExtensionMap, FinishOutcome,
@@ -27,6 +28,17 @@ use vesper_testkit::{FakeProviderSession, ScriptedProviderResponse};
 struct FakeFactory {
     id: ProviderId,
     session: FakeProviderSession,
+}
+
+#[derive(Default)]
+struct RecordingProgressPort {
+    events: Mutex<Vec<AgentProgressEvent>>,
+}
+
+impl AgentProgressPort for RecordingProgressPort {
+    fn emit(&self, event: AgentProgressEvent) {
+        self.events.lock().unwrap().push(event);
+    }
 }
 
 impl ProviderFactory for FakeFactory {
@@ -143,7 +155,9 @@ async fn loop_executes_a_tool_call_then_completes_on_the_next_turn() {
         primary: true,
     }];
 
-    let agent = AgentLoop::new(registry, ToolRegistry::parity_default(), agent_config);
+    let progress = Arc::new(RecordingProgressPort::default());
+    let agent = AgentLoop::new(registry, ToolRegistry::parity_default(), agent_config)
+        .with_progress_port(progress.clone());
     let outcome = agent
         .run_prompt(
             user_message("read src/lib.rs"),
@@ -184,6 +198,23 @@ async fn loop_executes_a_tool_call_then_completes_on_the_next_turn() {
         }
         other => panic!("expected Completed, got {other:?}"),
     }
+    let events = progress.events.lock().unwrap();
+    assert!(matches!(
+        events.first(),
+        Some(AgentProgressEvent::TurnStarted)
+    ));
+    assert!(events.iter().any(|event| matches!(
+        event,
+        AgentProgressEvent::ContentDelta { text } if text.as_str() == "Reading the file."
+    )));
+    assert!(events.iter().any(|event| matches!(
+        event,
+        AgentProgressEvent::ToolStarted { name } if name == "read_file"
+    )));
+    assert!(events.iter().any(|event| matches!(
+        event,
+        AgentProgressEvent::ToolFinished { name, success: true } if name == "read_file"
+    )));
 }
 
 #[tokio::test]

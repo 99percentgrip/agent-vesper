@@ -32,8 +32,13 @@ business logic.
   provider's advertised descriptors.
 - `src/ui.rs` — `TerminalRenderer` trait, `ViewModel`, `StubRenderer` for
   tests, and the production `render_to_frame` ratatui/crossterm backend. The
-  production view owns the conversation/sidebar/composer composition and the
-  oracle-style slash-command palette projection.
+  production view owns the oracle-style conversation/reasoning/sidebar/
+  composer composition, full-height slash-command palette, clickable footer,
+  working-tree panel, live activity, TODO, and structured run report.
+- `src/mobile.rs` — credential-free bounded HTTP approval companion with
+  random pairing/approval capabilities, expiry, malformed-request rejection,
+  fail-closed public-bind policy, and QR rendering only for explicitly
+  advertised phone-reachable URLs.
 - `src/lib.rs` — public re-exports and `query_startup_view`, the single
   integration point between the TUI and the runtime registry.
 - `src/main.rs` — binary entry point; crossterm raw-mode + alternate-screen
@@ -81,7 +86,7 @@ business logic.
 - Stdout carries only terminal escapes via crossterm; no ACP/JSON-RPC may
   appear there. Tracing goes to stderr only.
 - The crate depends on `vesper-domain`, `vesper-provider`,
-  `vesper-provider-glm`, `vesper-provider-synthetic`, `vesper-runtime`,
+  `vesper-provider-glm`, `vesper-runtime`,
   `vesper-agent` (Phase 6 / ADR 0010: the binary composes the multi-turn
   agent loop), `vesper-memory` (Phase 8 / ADR 0011: the binary owns the
   durable memory store bundle), `vesper-checkpoints` (Phase 9 / ADR
@@ -92,6 +97,8 @@ business logic.
   and `vesper-observability` for opt-in telemetry, plus `vesper-harness` for
   the shared hosted tool implementation; it must not depend on
   `vesper-acp`, SQLite, or any disposable spike.
+  `vesper-provider-synthetic` is dev-only and may never be selected by a
+  production binary.
 - The Plan Mode state machine is **pure**: no I/O, no async, no global
   state. Every transition returns a `PlanTransition`; the event loop applies
   it.
@@ -156,11 +163,10 @@ business logic.
   Construction (`build_agent_loop` / `build_agent_config`) is credential-free
   and provider-aware (GLM `zai` / `synthetic`); dispatch fails fast on
   missing credentials or unknown providers.
-- ADR 0010 (Tier C Phase 7): 100% command parity with the Python oracle's
-  `LOCAL_COMMANDS`. Every oracle command resolves to a real handler (Plan
-  Mode, superpowers, context mutations/views, workflow prompts) or to a
-  `Deferred { command, reason }` notice naming the owning subsystem. No
-  oracle command silently errors as "Unknown". Workflow commands
+- ADR 0010 (Tier C Phase 7): 100% command routing parity with the Python
+  oracle's `LOCAL_COMMANDS`. Every registered command resolves to a concrete
+  typed handler; an accidental missing route fails as an internal parity
+  violation. No deferred fallback exists. Workflow commands
   (`/security-review`, `/smart`, `/release`, `/insights`, `/diff`) build a
   prompt and stash it on `SessionState.pending_prompt`; the binary drains it
   into a background `AgentLoop` turn (same path as free-text prompts).
@@ -200,11 +206,19 @@ business logic.
   `#[cfg(debug_assertions)]`; a release binary cannot load an unsigned
   plugin by any code path. Plugins are declarative only (the
   `executable_code` permission is rejected at validation time). With
-  Phase 10 shipped, exactly 26 commands remain deferred — all
-  explicitly documented as justified exclusions (composer / ratatui UI
-  rebuild / live-session-settings / image / audio / mobile). The
-  `phase10_zero_deferred_stubs_remain_excluding_documented_exclusions`
-  test asserts this end-to-end.
+  Phase 10 shipped. The former composer, live-settings, image, sound, mobile,
+  keybinding, accessibility, Vim, and terminal-integration exclusions are now
+  concrete native operations. Tests iterate the complete registry and reject
+  any hidden missing route.
+- Footer and palette rows are mouse-operable while TUI mouse capture is active.
+  F4 cycles bounded real Changes/Git/Diff/Files/GitHub views. F5 uses the same
+  optional `arecord`/`afrecord` plus local `faster-whisper` contract as the
+  frozen oracle and must report unavailable dependencies without fabricating
+  input. Ctrl-Shift-C copies only app-managed mouse-selected transcript text.
+- Provider catalogs and provider-specific settings belong to adapters. The
+  production composition currently registers only the real Z.ai adapter;
+  provider-neutral runtime/registry boundaries must not be described as a
+  second production provider.
 - When adding a new slash command, register it in
   `CommandRegistry::stage_11b`, document its surface in
   `CommandRegistry::help_text`, and add a test that proves it resolves

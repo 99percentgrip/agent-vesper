@@ -16,11 +16,16 @@ $fullInstallDir = $fullInstallDir.TrimEnd([System.IO.Path]::DirectorySeparatorCh
 
 $bundle = Join-Path $fullInstallDir "agent-vesper-acp.bundle"
 $launcher = Join-Path $fullInstallDir "agent-vesper-acp.cmd"
+$tuiLauncher = Join-Path $fullInstallDir "agent-vesper-tui.cmd"
 $removed = @()
 
 if (Test-Path -LiteralPath $launcher) {
     Remove-Item -LiteralPath $launcher -Force
     $removed += $launcher
+}
+if (Test-Path -LiteralPath $tuiLauncher) {
+    Remove-Item -LiteralPath $tuiLauncher -Force
+    $removed += $tuiLauncher
 }
 if (Test-Path -LiteralPath $bundle -PathType Container) {
     Remove-Item -LiteralPath $bundle -Recurse -Force

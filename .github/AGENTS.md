@@ -48,5 +48,6 @@ platform assumptions on hosts unavailable locally.
 - `workflows/platform-foundation.yml` — five-target production-foundation and
   eligible spike matrix.
 - `workflows/foundation-spikes.yml` — five-target disposable spike test matrix.
-- `workflows/release.yml` — tag-triggered ACP archive packaging and GitHub
-  Release publication for the registry and installers.
+- `workflows/release.yml` — tag-triggered ACP+TUI archive packaging and GitHub
+  Release publication for the registry and installers; the registry continues
+  to launch only the ACP binary from the shared bundle.

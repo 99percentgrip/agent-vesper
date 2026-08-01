@@ -33,6 +33,9 @@ license = "Apache-2.0"
 
 [workspace.dependencies]
 agent-client-protocol = { version = "=2.0.0", default-features = false, features = ["unstable_auth_methods", "unstable_session_fork"] }
+base64 = { version = "=0.22.1" }
+rand = { version = "=0.8.7" }
+qrcode = { version = "=0.14.1", default-features = false }
 clap = { version = "=4.6.4", default-features = false, features = ["derive", "error-context", "help", "std", "usage"] }
 futures-core = { version = "=0.3.33", default-features = false, features = ["std"] }
 futures-util = { version = "=0.3.33", default-features = false, features = ["std"] }

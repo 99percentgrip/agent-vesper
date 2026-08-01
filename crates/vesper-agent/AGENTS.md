@@ -31,7 +31,9 @@ the multi-turn, tool-executing layer above it.
   gate → execute → append `role: Tool` results → repeat, bounded by
   `max_tool_iterations`. Captures `update_plan` output into
   `AgentTurnOutcome::plan` so callers drive the Phase 5 PLANNING → REVIEW
-  transition.
+  transition. `AgentProgressPort` emits bounded in-memory provider/tool/plan
+  activity without tool arguments, outputs, paths, or secrets; hosts may also
+  clone a loop with per-turn provider/model configuration.
 
 ## Local Contracts
 

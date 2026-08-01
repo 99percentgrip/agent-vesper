@@ -64,14 +64,14 @@ fn print_help() {
     eprintln!("    agent-vesper-acp [OPTIONS]");
     eprintln!();
     eprintln!("OPTIONS:");
-    eprintln!("        --provider <glm|synthetic>    Select the provider factory");
+    eprintln!("        --provider <glm|zai>          Select the installed production provider");
     eprintln!("                                     (default: AGENT_VESPER_PROVIDER or glm)");
     eprintln!("    -V, --version                    Print version and exit");
     eprintln!("    -h, --help                       Print this help and exit");
     eprintln!();
     eprintln!("ENVIRONMENT:");
     eprintln!("    ZAI_API_KEY                      Z.ai API key (required for the GLM provider)");
-    eprintln!("    AGENT_VESPER_PROVIDER            Default provider (glm|synthetic)");
+    eprintln!("    AGENT_VESPER_PROVIDER            Default provider (glm|zai)");
     eprintln!("    AGENT_VESPER_LOG                 Tracing filter (default: warn, stderr only)");
     eprintln!("    --setup                           Store a Z.ai API key without printing it");
     eprintln!("    --check-auth                      Check configured Z.ai credentials");

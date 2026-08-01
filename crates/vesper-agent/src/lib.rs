@@ -30,8 +30,8 @@ pub mod registry;
 pub mod tools;
 
 pub use agent_loop::{
-    AgentLoop, AgentLoopConfig, AgentLoopError, AgentTurnOutcome, DEFAULT_MAX_TOOL_ITERATIONS,
-    MAX_CONTEXT_MESSAGES,
+    AgentLoop, AgentLoopConfig, AgentLoopError, AgentProgressEvent, AgentProgressPort,
+    AgentTurnOutcome, DEFAULT_MAX_TOOL_ITERATIONS, MAX_CONTEXT_MESSAGES,
 };
 pub use executor::{
     HostedTool, ToolContext, ToolError, ToolExecutor, ToolFuture, ToolResult, ToolService,

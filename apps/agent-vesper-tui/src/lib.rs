@@ -29,11 +29,16 @@ pub mod plan_mode;
 pub mod superpowers;
 pub mod ui;
 
-pub use commands::{CommandIntent, CommandOutcome, CommandRegistry, PlanGesture};
-pub use dispatch::{DispatchOutcome, SessionState, apply_model_plan, dispatch};
+pub use commands::{CommandIntent, CommandOutcome, CommandRegistry, MediaOp, PlanGesture};
+pub use dispatch::{
+    DispatchOutcome, PanelVisibility, SessionControls, SessionState, TaskItem, TerminalAction,
+    TerminalPreferences, apply_model_plan, apply_task_plan, dispatch,
+};
 pub use plan_mode::{PendingQuestion, PlanModeError, PlanPhase, PlanState, PlanTransition};
 pub use superpowers::{ProviderSuperpowerSurface, SuperpowerOverrides};
-pub use ui::{StubRenderer, TerminalRenderer, ViewModel, render_to_frame};
+pub use ui::{
+    FOOTER_ACTIONS, StubRenderer, TerminalRenderer, ViewModel, command_menu_height, render_to_frame,
+};
 
 use vesper_domain::ProviderId;
 use vesper_provider::SuperpowerDescriptor;

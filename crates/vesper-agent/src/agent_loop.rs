@@ -35,6 +35,41 @@ use crate::permission::{
 };
 use crate::registry::ToolRegistry;
 
+/// Live, bounded progress emitted while an agent turn is running.
+///
+/// Frontends may render these events in memory. They are not persisted by the
+/// loop and deliberately omit tool arguments, tool output, paths, and secrets.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AgentProgressEvent {
+    /// A new user turn entered the loop.
+    TurnStarted,
+    /// One provider iteration started.
+    ProviderTurnStarted { iteration: u32 },
+    /// Provider-visible reasoning text arrived.
+    ReasoningDelta { text: ContentText },
+    /// User-visible assistant text arrived.
+    ContentDelta { text: ContentText },
+    /// A named tool is about to pass through permission gating and execution.
+    ToolStarted { name: String },
+    /// A named tool finished. `success` is false for denied/failed results.
+    ToolFinished { name: String, success: bool },
+    /// The model replaced the current task plan.
+    PlanUpdated { markdown: String },
+}
+
+/// Host-owned sink for live agent progress.
+pub trait AgentProgressPort: Send + Sync {
+    /// Receives one bounded progress event.
+    fn emit(&self, event: AgentProgressEvent);
+}
+
+#[derive(Debug)]
+struct NoopProgressPort;
+
+impl AgentProgressPort for NoopProgressPort {
+    fn emit(&self, _event: AgentProgressEvent) {}
+}
+
 /// Hard upper bound on tool iterations when the caller omits one.
 pub const DEFAULT_MAX_TOOL_ITERATIONS: u32 = 50;
 /// Maximum retained messages in one provider request. Hosts may keep the
@@ -96,11 +131,13 @@ pub enum AgentLoopError {
 }
 
 /// The Tier C multi-turn agent loop.
+#[derive(Clone)]
 pub struct AgentLoop {
     registry: Arc<ProviderRegistry>,
     tools: ToolRegistry,
     config: AgentLoopConfig,
     permission_port: Arc<dyn PermissionPort>,
+    progress_port: Arc<dyn AgentProgressPort>,
 }
 
 impl AgentLoop {
@@ -116,6 +153,7 @@ impl AgentLoop {
             tools,
             config,
             permission_port: Arc::new(DenyPermissionPort),
+            progress_port: Arc::new(NoopProgressPort),
         }
     }
 
@@ -124,6 +162,41 @@ impl AgentLoop {
     pub fn with_permission_port(mut self, permission_port: Arc<dyn PermissionPort>) -> Self {
         self.permission_port = permission_port;
         self
+    }
+
+    /// Installs a host-owned live progress sink.
+    #[must_use]
+    pub fn with_progress_port(mut self, progress_port: Arc<dyn AgentProgressPort>) -> Self {
+        self.progress_port = progress_port;
+        self
+    }
+
+    /// Disables frontend progress for private advisory provider calls.
+    #[must_use]
+    pub fn without_progress(mut self) -> Self {
+        self.progress_port = Arc::new(NoopProgressPort);
+        self
+    }
+
+    /// Replaces the provider/model configuration for a subsequent turn while
+    /// preserving the tool registry and host ports.
+    #[must_use]
+    pub fn with_turn_configuration(mut self, config: AgentLoopConfig) -> Self {
+        self.config = config;
+        self
+    }
+
+    /// Replaces the tool surface, used for bounded provider-only advisers.
+    #[must_use]
+    pub fn with_tool_registry(mut self, tools: ToolRegistry) -> Self {
+        self.tools = tools;
+        self
+    }
+
+    /// Returns the current composition configuration for host-side cloning.
+    #[must_use]
+    pub fn configuration(&self) -> &AgentLoopConfig {
+        &self.config
     }
 
     /// Runs one user prompt to completion (or the iteration cap).
@@ -170,6 +243,7 @@ impl AgentLoop {
         permission: SessionPermissionMode,
         cancellation: Arc<dyn CancellationSignal>,
     ) -> Result<(AgentTurnOutcome, Vec<ConversationMessage>), AgentLoopError> {
+        self.progress_port.emit(AgentProgressEvent::TurnStarted);
         let advertised_tools = self.tools.definitions_for(mode);
         let session = self
             .registry
@@ -195,6 +269,8 @@ impl AgentLoop {
                     messages,
                 ));
             }
+            self.progress_port
+                .emit(AgentProgressEvent::ProviderTurnStarted { iteration });
             let request_messages = compact_history(&messages);
             let request = self.build_request(&ids, &request_messages, &advertised_tools, iteration);
             let mut stream = session
@@ -202,7 +278,8 @@ impl AgentLoop {
                 .await
                 .map_err(AgentLoopError::ProviderTurn)?;
 
-            let (assistant_parts, tool_calls, finish) = consume_stream(&mut stream).await?;
+            let (assistant_parts, tool_calls, finish) =
+                consume_stream(&mut stream, self.progress_port.as_ref()).await?;
             // Append the assistant turn (text + any tool invocations).
             messages.push(ConversationMessage {
                 id: ids.message(),
@@ -234,13 +311,27 @@ impl AgentLoop {
                 cancellation: Arc::clone(&cancellation),
             };
             for call in tool_calls {
+                let tool_name = call.tool_id.as_str().to_string();
+                self.progress_port.emit(AgentProgressEvent::ToolStarted {
+                    name: tool_name.clone(),
+                });
                 let output = self.gate_and_execute(&call, &context).await;
                 // Phase 5: capture the model-generated plan when the model
                 // emits `update_plan`, so callers (the TUI) can drive the
                 // PLANNING → REVIEW transition without a human-authored body.
                 if call.tool_id.as_str() == "update_plan" {
                     plan = Some(output.clone());
+                    self.progress_port.emit(AgentProgressEvent::PlanUpdated {
+                        markdown: output.clone(),
+                    });
                 }
+                let success = !output.starts_with("tool error:")
+                    && !output.starts_with("permission denied:")
+                    && !output.starts_with("unknown tool:");
+                self.progress_port.emit(AgentProgressEvent::ToolFinished {
+                    name: tool_name,
+                    success,
+                });
                 let bounded = ContentText::new(output).unwrap_or_else(|_| {
                     ContentText::new("[tool output too large]").expect("bounded")
                 });
@@ -364,13 +455,28 @@ fn compact_history(messages: &[ConversationMessage]) -> Vec<ConversationMessage>
 /// the terminal finish outcome.
 async fn consume_stream(
     stream: &mut vesper_provider::ProviderEventStream,
+    progress: &dyn AgentProgressPort,
 ) -> Result<(Vec<ContentPart>, Vec<ToolCall>, FinishOutcome), AgentLoopError> {
     let mut parts = Vec::new();
     let mut calls = Vec::new();
     let mut finish = None;
     while let Some(event) = stream.next().await {
         match event {
-            Ok(ProviderStreamEvent::ContentDelta { part, .. }) => parts.push(part),
+            Ok(ProviderStreamEvent::ReasoningDelta { text, kind, .. }) => {
+                if matches!(
+                    kind,
+                    vesper_domain::ReasoningKind::ProviderVisible
+                        | vesper_domain::ReasoningKind::Summary
+                ) {
+                    progress.emit(AgentProgressEvent::ReasoningDelta { text });
+                }
+            }
+            Ok(ProviderStreamEvent::ContentDelta { part, .. }) => {
+                if let ContentPart::Text(text) = &part {
+                    progress.emit(AgentProgressEvent::ContentDelta { text: text.clone() });
+                }
+                parts.push(part);
+            }
             Ok(ProviderStreamEvent::ToolCallCompleted(call)) => calls.push(call),
             Ok(ProviderStreamEvent::Completed {
                 finish: terminal, ..

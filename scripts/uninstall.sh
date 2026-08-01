@@ -18,12 +18,17 @@ case "$bundle_dir" in
     ""|/|.) fail "refusing to remove an empty or root bundle directory" ;;
 esac
 
-launcher="$install_dir/agent-vesper-acp"
+acp_launcher="$install_dir/agent-vesper-acp"
+tui_launcher="$install_dir/agent-vesper-tui"
 removed_launcher=0
 removed_bundle=0
 
-if [ -e "$launcher" ] || [ -L "$launcher" ]; then
-    rm -f "$launcher"
+if [ -e "$acp_launcher" ] || [ -L "$acp_launcher" ]; then
+    rm -f "$acp_launcher"
+    removed_launcher=1
+fi
+if [ -e "$tui_launcher" ] || [ -L "$tui_launcher" ]; then
+    rm -f "$tui_launcher"
     removed_launcher=1
 fi
 
@@ -68,7 +73,7 @@ fi
 # Installers use the environment for ZAI_API_KEY and do not own credentials.
 printf 'Agent Vesper uninstall complete.\n'
 if [ "$removed_launcher" -eq 1 ]; then
-    printf '  Removed %s\n' "$launcher"
+    printf '  Removed %s and %s when present\n' "$acp_launcher" "$tui_launcher"
 fi
 if [ "$removed_bundle" -eq 1 ]; then
     printf '  Removed %s\n' "$bundle_dir"

@@ -1,6 +1,6 @@
 #!/bin/sh
-# Agent Vesper installer — downloads the compiled `agent-vesper-acp` ACP stdio
-# binary for the host platform, verifies its SHA-256, installs it under
+# Agent Vesper installer — downloads the compiled ACP and native TUI binaries
+# for the host platform, verifies their archive SHA-256, installs them under
 # `$XDG_BIN_HOME` (default `~/.local/bin`), and ensures the install directory
 # is on `PATH`. Mirrors the original Python `native-glm-acp` installer UX.
 set -eu
@@ -62,17 +62,23 @@ fi
 tar -xzf "$temporary/$asset" -C "$temporary"
 [ -f "$temporary/agent-vesper-acp/agent-vesper-acp" ] || \
     fail "archive did not contain agent-vesper-acp bundle"
+[ -f "$temporary/agent-vesper-acp/agent-vesper-tui" ] || \
+    fail "archive did not contain agent-vesper-tui"
 
 mkdir -p "$install_dir"
 mkdir -p "$(dirname "$bundle_dir")"
 rm -rf "$bundle_dir"
 mv "$temporary/agent-vesper-acp" "$bundle_dir"
 printf '#!/bin/sh\nexec "%s/agent-vesper-acp" "$@"\n' "$bundle_dir" > "$install_dir/agent-vesper-acp"
+printf '#!/bin/sh\nexec "%s/agent-vesper-tui" "$@"\n' "$bundle_dir" > "$install_dir/agent-vesper-tui"
 chmod 0755 "$install_dir/agent-vesper-acp"
+chmod 0755 "$install_dir/agent-vesper-tui"
 
 installed_version="$("$install_dir/agent-vesper-acp" --version 2>&1)"
-printf 'Installed Agent Vesper %s:\n' "$installed_version"
+tui_version="$("$install_dir/agent-vesper-tui" --version 2>&1)"
+printf 'Installed Agent Vesper (%s; %s):\n' "$installed_version" "$tui_version"
 printf '  %s\n' "$install_dir/agent-vesper-acp"
+printf '  %s\n' "$install_dir/agent-vesper-tui"
 
 case ":${PATH:-}:" in
     *":$install_dir:"*) ;;
@@ -98,5 +104,6 @@ esac
 # credential store, matching its no-filesystem-I/O contract).
 printf '\nNext:\n'
 printf '  export ZAI_API_KEY="<your Z.ai key>"   # https://z.ai/\n'
-printf '  agent-vesper-acp --version            # verify\n'
+printf '  agent-vesper-acp --setup              # optional private credential store\n'
+printf '  agent-vesper-tui                      # launch the terminal harness\n'
 printf '\nThen register Agent Vesper as an ACP agent in Zed (see README "Install in Zed").\n'

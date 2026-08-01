@@ -203,10 +203,12 @@ fn glm_superpowers() -> Vec<vesper_provider::SuperpowerDescriptor> {
             default_value: SuperpowerValue::Choice {
                 value: BoundedString::new("glm-5.2").expect("bounded value"),
             },
-            allowed_values: ["glm-5.2", "glm-5.2-air", "glm-5.2-flash"]
+            allowed_values: GlmCatalog::snapshot()
+                .models
                 .into_iter()
-                .map(|raw| SuperpowerValue::Choice {
-                    value: BoundedString::new(raw).expect("bounded value"),
+                .map(|model| SuperpowerValue::Choice {
+                    value: BoundedString::new(model.model.model_id.as_str())
+                        .expect("catalog model ids are bounded"),
                 })
                 .collect(),
             command_alias: Some(BoundedString::new("model").expect("bounded alias")),

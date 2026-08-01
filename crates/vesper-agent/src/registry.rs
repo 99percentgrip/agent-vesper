@@ -20,17 +20,27 @@ use crate::tools::{
 };
 
 /// One registered tool: its definition plus its executor.
+#[derive(Clone)]
 struct Entry {
     definition: ToolDefinition,
     executor: Arc<dyn ToolExecutor>,
 }
 
 /// The parity-critical tool registry.
+#[derive(Clone)]
 pub struct ToolRegistry {
     entries: BTreeMap<String, Entry>,
 }
 
 impl ToolRegistry {
+    /// Creates a registry with no tools for provider-only advisory calls.
+    #[must_use]
+    pub fn empty() -> Self {
+        Self {
+            entries: BTreeMap::new(),
+        }
+    }
+
     /// Creates a registry populated with the nine parity-critical core tools.
     ///
     /// Tools are registered in stable harness-name order so `definitions_for`

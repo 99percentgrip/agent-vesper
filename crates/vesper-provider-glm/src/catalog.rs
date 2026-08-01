@@ -113,6 +113,21 @@ impl GlmCatalog {
             .find(|entry| entry.id == model)
             .map(descriptor)
     }
+
+    /// Returns whether a frozen model is available on an official API plan.
+    #[must_use]
+    pub fn supports_plan(model: &str, plan: GlmPlan) -> bool {
+        model_supports_plan(model, plan)
+    }
+
+    /// Returns whether a frozen model accepts direct image input.
+    #[must_use]
+    pub fn is_vision_model(model: &str) -> bool {
+        MODELS
+            .iter()
+            .find(|entry| entry.id == model)
+            .is_some_and(|entry| entry.vision)
+    }
 }
 
 impl ModelCatalog for GlmCatalog {

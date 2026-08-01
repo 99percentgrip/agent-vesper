@@ -54,9 +54,9 @@ jobs:
           registry_version="$(awk -F '\"' '/^[[:space:]]*\"version\":/ { print $4; exit }' registry/agent.json)"
           test "$GITHUB_REF_NAME" = "v$workspace_version"
           test "$registry_version" = "$workspace_version"
-      - name: Build ACP binary
+      - name: Build ACP and TUI binaries
         shell: bash
-        run: cargo build --locked --release --package agent-vesper-acp --target "${{ matrix.target }}"
+        run: cargo build --locked --release --package agent-vesper-acp --package agent-vesper-tui --target "${{ matrix.target }}"
       - name: Package Unix archive
         if: matrix.platform == 'unix'
         shell: bash
@@ -65,6 +65,7 @@ jobs:
           assets="$RUNNER_TEMP/release-assets"
           mkdir -p "$staging" "$assets"
           cp "target/${{ matrix.target }}/release/agent-vesper-acp" "$staging/agent-vesper-acp"
+          cp "target/${{ matrix.target }}/release/agent-vesper-tui" "$staging/agent-vesper-tui"
           tar -czf "$assets/${{ matrix.asset }}" -C "$RUNNER_TEMP" agent-vesper-acp
           (cd "$assets" && sha256sum "${{ matrix.asset }}" > "${{ matrix.asset }}.sha256")
       - name: Package Windows archive
@@ -75,6 +76,7 @@ jobs:
           $assets = Join-Path $env:RUNNER_TEMP "release-assets"
           New-Item -ItemType Directory -Path $staging, $assets -Force | Out-Null
           Copy-Item "target/${{ matrix.target }}/release/agent-vesper-acp.exe" (Join-Path $staging "agent-vesper-acp.exe")
+          Copy-Item "target/${{ matrix.target }}/release/agent-vesper-tui.exe" (Join-Path $staging "agent-vesper-tui.exe")
           $archive = Join-Path $assets "${{ matrix.asset }}"
           Compress-Archive -Path $staging -DestinationPath $archive -Force
           $hash = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()

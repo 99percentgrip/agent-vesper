@@ -8,8 +8,11 @@ license.workspace = true
 publish = false
 
 [dependencies]
+base64.workspace = true
 crossterm.workspace = true
 ratatui.workspace = true
+rand.workspace = true
+qrcode.workspace = true
 sha2.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
@@ -25,13 +28,13 @@ vesper-memory = { path = "../../crates/vesper-memory", version = "=0.1.0" }
 vesper-observability = { path = "../../crates/vesper-observability", version = "=0.1.0" }
 vesper-provider = { path = "../../crates/vesper-provider", version = "=0.1.0" }
 vesper-provider-glm = { path = "../../crates/vesper-provider-glm", version = "=0.1.0" }
-vesper-provider-synthetic = { path = "../../crates/vesper-provider-synthetic", version = "=0.1.0" }
 vesper-runtime = { path = "../../crates/vesper-runtime", version = "=0.1.0" }
 vesper-sessions = { path = "../../crates/vesper-sessions", version = "=0.1.0" }
 
 [dev-dependencies]
 serde_json.workspace = true
 tempfile.workspace = true
+vesper-provider-synthetic = { path = "../../crates/vesper-provider-synthetic", version = "=0.1.0" }
 
 [lints]
 workspace = true

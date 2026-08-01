@@ -12,13 +12,12 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Position},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph},
+    widgets::{Block, Borders, Gauge, List, ListItem, ListState, Paragraph, Wrap},
 };
 
+use crate::dispatch::{PanelVisibility, SessionControls, TaskItem, TerminalPreferences};
 use crate::plan_mode::{PlanPhase, PlanState};
 use crate::superpowers::{ProviderSuperpowerSurface, SuperpowerOverrides};
-
-const COMMAND_MENU_ROWS: usize = 10;
 
 /// Pure view model the renderer consumes every frame.
 #[derive(Debug, Clone, Default)]
@@ -42,6 +41,26 @@ pub struct ViewModel {
     pub command_menu_selected: usize,
     /// Whether an agent turn is currently running.
     pub agent_running: bool,
+    /// Typed live controls governing real agent turns.
+    pub controls: SessionControls,
+    /// Native dashboard panel visibility.
+    pub panels: PanelVisibility,
+    /// Latest model-authored TODO plan.
+    pub task_plan: Vec<TaskItem>,
+    /// Bounded live provider/tool activity.
+    pub activity: Vec<String>,
+    /// Provider-visible reasoning streamed during the current turn.
+    pub reasoning: String,
+    /// Assistant response accumulated during the current turn.
+    pub live_response: String,
+    /// Last structured turn-completion report.
+    pub last_report: Vec<String>,
+    /// Active F4 working-tree view, when the panel is open.
+    pub working_tree_title: Option<String>,
+    /// Bounded output from the selected real Git/files/GitHub query.
+    pub working_tree_lines: Vec<String>,
+    /// Theme, accessibility, mouse, and sound preferences.
+    pub preferences: TerminalPreferences,
 }
 
 /// Abstraction over a terminal backend.
@@ -53,16 +72,45 @@ pub trait TerminalRenderer {
     fn render(&mut self, model: &ViewModel);
 }
 
+/// Clickable footer segments shared by rendering and mouse hit-testing.
+pub const FOOTER_ACTIONS: &[(&str, &str)] = &[
+    ("^f Search", "open_search"),
+    ("^x Quit", "quit_agent"),
+    ("^c Cancel turn", "cancel_turn"),
+    ("^l Clear view", "clear_transcript"),
+    ("F1 Help", "show_help"),
+    ("F2 Reasoning", "toggle_thinking"),
+    ("F3 Settings", "settings"),
+    ("F4 Working tree", "toggle_working_tree"),
+    ("F5 Push to talk", "toggle_voice"),
+    ("F6 History", "open_history"),
+    ("^y Copy response", "copy_last_response"),
+    ("^p Palette", "open_palette"),
+];
+
+#[must_use]
+pub fn command_menu_height(area_height: u16, item_count: usize) -> u16 {
+    if item_count == 0 {
+        0
+    } else {
+        ((item_count.saturating_mul(2) + 2) as u16)
+            .min(area_height.saturating_mul(2) / 3)
+            .max(4)
+    }
+}
+
 /// Renders a [`ViewModel`] into the active [`Frame`] using the ratatui/crossterm
 /// backend. Used by the production binary; the [`TerminalRenderer`] trait is
 /// exercised by [`StubRenderer`] in unit tests.
 pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
+    if model.preferences.screen_reader {
+        render_screen_reader(frame, model);
+        return;
+    }
     let area = frame.area();
-    let menu_height = if model.command_menu.is_empty() {
-        0
-    } else {
-        (model.command_menu.len() as u16 + 2).min(12)
-    };
+    let theme = theme_style(&model.preferences.theme);
+    frame.render_widget(Block::default().style(theme), area);
+    let menu_height = command_menu_height(area.height, model.command_menu.len());
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -98,16 +146,43 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
     ]);
     frame.render_widget(Paragraph::new(header), chunks[0]);
 
+    let show_sidebar = model.panels.sidebar && chunks[1].width >= 110;
     let body = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Min(1), Constraint::Length(34)])
+        .constraints(if show_sidebar {
+            vec![Constraint::Min(50), Constraint::Length(40)]
+        } else {
+            vec![Constraint::Percentage(100), Constraint::Length(0)]
+        })
         .split(chunks[1]);
+
+    let working_tree_height = if model.working_tree_title.is_some() {
+        10
+    } else {
+        0
+    };
+    let reasoning_height = if model.panels.reasoning { 10 } else { 0 };
+    let activity_height = 0;
+    let conversation_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Min(5),
+            Constraint::Length(reasoning_height),
+            Constraint::Length(activity_height),
+            Constraint::Length(working_tree_height),
+        ])
+        .split(body[0]);
 
     // Conversation — prepended with Plan Mode context (pending questions
     // while PLANNING, the plan body while REVIEW), then the live transcript.
     let transcript_lines = transcript_lines_for(model);
-    let transcript_items: Vec<ListItem> = if transcript_lines.is_empty() {
-        vec![ListItem::new(Line::from(vec![
+    let transcript_area = conversation_chunks[0];
+    let wrapped_lines = estimated_wrapped_lines(
+        &transcript_lines,
+        usize::from(transcript_area.width.saturating_sub(2)),
+    );
+    let transcript = if transcript_lines.is_empty() {
+        ratatui::text::Text::from(Line::from(vec![
             Span::styled(
                 "Agent Vesper",
                 Style::default()
@@ -122,32 +197,84 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
                     .add_modifier(Modifier::BOLD),
             ),
             Span::raw(" to browse commands."),
-        ]))]
+        ]))
     } else {
-        transcript_lines.into_iter().map(ListItem::new).collect()
+        ratatui::text::Text::from(transcript_lines.join("\n"))
     };
-    frame.render_widget(
-        List::new(transcript_items).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" Conversation "),
-        ),
-        body[0],
+    let paragraph = Paragraph::new(transcript).wrap(Wrap { trim: false }).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Rgb(59, 160, 255)))
+            .title(" Conversation "),
     );
+    let visible_lines = usize::from(transcript_area.height.saturating_sub(2));
+    let scroll = wrapped_lines
+        .saturating_sub(visible_lines)
+        .min(u16::MAX as usize) as u16;
+    frame.render_widget(paragraph.scroll((scroll, 0)), transcript_area);
 
-    render_sidebar(frame, body[1], model);
+    if reasoning_height > 0 {
+        let reasoning = if model.reasoning.is_empty() {
+            "Waiting for provider-visible reasoning…"
+        } else {
+            model.reasoning.as_str()
+        };
+        frame.render_widget(
+            Paragraph::new(reasoning)
+                .wrap(Wrap { trim: false })
+                .style(Style::default().fg(Color::Rgb(159, 122, 234)))
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(Color::Rgb(159, 122, 234)))
+                        .title(" Reasoning "),
+                ),
+            conversation_chunks[1],
+        );
+    }
+    if activity_height > 0 {
+        let activity = model
+            .activity
+            .iter()
+            .rev()
+            .take(6)
+            .rev()
+            .map(|line| ListItem::new(line.as_str()))
+            .collect::<Vec<_>>();
+        frame.render_widget(
+            List::new(activity)
+                .style(Style::default().fg(Color::Cyan))
+                .block(Block::default().borders(Borders::ALL).title(format!(
+                    " Live activity • {} event(s) ",
+                    model.activity.len()
+                ))),
+            conversation_chunks[2],
+        );
+    }
+    if working_tree_height > 0 {
+        frame.render_widget(
+            Paragraph::new(model.working_tree_lines.join("\n"))
+                .wrap(Wrap { trim: false })
+                .block(Block::default().borders(Borders::ALL).title(format!(
+                    " Working tree • {} • F4 cycles ",
+                    model.working_tree_title.as_deref().unwrap_or_default()
+                ))),
+            conversation_chunks[3],
+        );
+    }
+
+    if show_sidebar {
+        render_sidebar(frame, body[1], model);
+    }
 
     if !model.command_menu.is_empty() {
         let selected = model
             .command_menu_selected
             .min(model.command_menu.len().saturating_sub(1));
-        let viewport_start = selected.saturating_sub(COMMAND_MENU_ROWS.saturating_sub(1));
         let menu_items = model
             .command_menu
             .iter()
             .enumerate()
-            .skip(viewport_start)
-            .take(COMMAND_MENU_ROWS)
             .map(|(index, (command, description))| {
                 let is_selected = index == selected;
                 let row_style = if is_selected {
@@ -155,8 +282,8 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
                 } else {
                     Style::default()
                 };
-                ListItem::new(Line::from(vec![
-                    Span::styled(
+                ListItem::new(vec![
+                    Line::from(Span::styled(
                         if is_selected {
                             format!("▸ {command}")
                         } else {
@@ -169,31 +296,39 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
                                 Color::Cyan
                             })
                             .add_modifier(Modifier::BOLD),
-                    ),
-                    Span::styled(
+                    )),
+                    Line::from(Span::styled(
                         format!("  {description}"),
                         row_style.fg(if is_selected {
                             Color::White
                         } else {
                             Color::Gray
                         }),
-                    ),
-                ]))
+                    )),
+                ])
                 .style(row_style)
             })
             .collect::<Vec<_>>();
-        frame.render_widget(
-            List::new(menu_items).block(Block::default().borders(Borders::ALL).title(format!(
-                " Commands {}/{} ",
-                selected + 1,
-                model.command_menu.len()
-            ))),
+        let mut menu_state = ListState::default().with_selected(Some(selected));
+        frame.render_stateful_widget(
+            List::new(menu_items).block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::Rgb(59, 160, 255)))
+                    .style(Style::default().bg(Color::Rgb(48, 59, 80)))
+                    .title(format!(
+                        " 🔎 Commands {}/{} — click a command or type to filter ",
+                        selected + 1,
+                        model.command_menu.len()
+                    )),
+            ),
             chunks[2],
+            &mut menu_state,
         );
     }
 
     let hint = if model.command_menu.is_empty() {
-        "↑↓ history  •  Enter send  •  Ctrl-C quit"
+        "↑↓ history  •  Enter send  •  Ctrl-C cancel  •  Ctrl-X quit"
     } else {
         "↑↓ navigate  •  Tab complete  •  Enter run  •  Esc close"
     };
@@ -223,33 +358,134 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
     } else {
         format!("> {}", model.input)
     };
+    let composer_title = if model.preferences.vim {
+        format!(
+            " Composer · VIM {} ",
+            model.preferences.vim_mode.to_uppercase()
+        )
+    } else {
+        " Composer ".into()
+    };
     frame.render_widget(
-        Paragraph::new(input_value)
-            .block(Block::default().borders(Borders::ALL).title(" Composer ")),
+        Paragraph::new(input_value).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Rgb(59, 160, 255)))
+                .title(composer_title),
+        ),
         chunks[5],
     );
     let cursor_x = chunks[5]
         .x
-        .saturating_add(1 + 2 + model.input.chars().count() as u16)
+        .saturating_add(
+            1 + 2
+                + model.input[..model.preferences.composer_cursor.min(model.input.len())]
+                    .chars()
+                    .count() as u16,
+        )
         .min(chunks[5].right().saturating_sub(1));
     frame.set_cursor_position(Position {
         x: cursor_x,
         y: chunks[5].y.saturating_add(1),
     });
+    let footer = FOOTER_ACTIONS
+        .iter()
+        .map(|(label, _)| *label)
+        .collect::<Vec<_>>()
+        .join("  ");
     frame.render_widget(
-        Paragraph::new("Type / for commands  •  Ctrl-C quit")
-            .style(Style::default().fg(Color::DarkGray)),
+        Paragraph::new(footer).style(Style::default().fg(Color::Rgb(91, 155, 213))),
         chunks[6],
     );
+}
+
+fn theme_style(theme: &str) -> Style {
+    match theme {
+        "light" => Style::default()
+            .fg(Color::Black)
+            .bg(Color::Rgb(245, 245, 245)),
+        "dracula" => Style::default()
+            .fg(Color::Rgb(248, 248, 242))
+            .bg(Color::Rgb(40, 42, 54)),
+        "nord" => Style::default()
+            .fg(Color::Rgb(216, 222, 233))
+            .bg(Color::Rgb(46, 52, 64)),
+        "ansi" => Style::default().fg(Color::White).bg(Color::Black),
+        _ => Style::default()
+            .fg(Color::Rgb(226, 232, 240))
+            .bg(Color::Rgb(7, 11, 18)),
+    }
+}
+
+fn estimated_wrapped_lines(lines: &[String], width: usize) -> usize {
+    let width = width.max(1);
+    lines
+        .iter()
+        .flat_map(|line| line.split('\n'))
+        .map(|line| line.chars().count().max(1).div_ceil(width))
+        .sum::<usize>()
+        .max(1)
+}
+
+fn render_screen_reader(frame: &mut Frame<'_>, model: &ViewModel) {
+    let area = frame.area();
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Min(4),
+            Constraint::Length(1),
+            Constraint::Length(2),
+        ])
+        .split(area);
+    let state = if model.agent_running {
+        "WORKING"
+    } else {
+        "READY"
+    };
+    frame.render_widget(
+        Paragraph::new(format!(
+            "Agent Vesper. Model {}. Mode {:?}. Permission {:?}. {state}.",
+            superpower_value_for(model, "model").unwrap_or_else(|| "provider".into()),
+            model.controls.operating_mode,
+            model.controls.permission_mode,
+        )),
+        chunks[0],
+    );
+    let mut transcript = transcript_lines_for(model);
+    if !model.activity.is_empty() {
+        transcript.push(format!("Activity: {}", model.activity.join("; ")));
+    }
+    frame.render_widget(
+        Paragraph::new(transcript.join("\n")).wrap(Wrap { trim: false }),
+        chunks[1],
+    );
+    frame.render_widget(
+        Paragraph::new(model.status.as_deref().unwrap_or("Ready")),
+        chunks[2],
+    );
+    frame.render_widget(Paragraph::new(format!("> {}", model.input)), chunks[3]);
+    frame.set_cursor_position(Position {
+        x: chunks[3]
+            .x
+            .saturating_add(
+                2 + model.input[..model.preferences.composer_cursor.min(model.input.len())]
+                    .chars()
+                    .count() as u16,
+            )
+            .min(chunks[3].right().saturating_sub(1)),
+        y: chunks[3].y,
+    });
 }
 
 fn render_sidebar(frame: &mut Frame<'_>, area: ratatui::layout::Rect, model: &ViewModel) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(7),
-            Constraint::Min(4),
-            Constraint::Length(6),
+            Constraint::Length(11),
+            Constraint::Length(10),
+            Constraint::Min(8),
+            Constraint::Length(8),
         ])
         .split(area);
 
@@ -264,33 +500,106 @@ fn render_sidebar(frame: &mut Frame<'_>, area: ratatui::layout::Rect, model: &Vi
         )),
         Line::from(format!("Model       {model_name}")),
         Line::from(format!("Thinking    {thinking}")),
+        Line::from(format!("Permission  {:?}", model.controls.permission_mode)),
+        Line::from(format!("Mode        {:?}", model.controls.operating_mode)),
+        Line::from(format!("Generation  {}", model.controls.generation_profile)),
+        Line::from(format!("API plan    {}", model.controls.endpoint_plan)),
         Line::from(format!("Phase       {}", model.plan.phase().label())),
         Line::from(format!("Transcript  {} lines", model.transcript.len())),
     ];
     frame.render_widget(
-        Paragraph::new(session).block(Block::default().borders(Borders::ALL).title(" Session ")),
+        Paragraph::new(session).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Rgb(236, 178, 46)))
+                .title(" Session "),
+        ),
         chunks[0],
     );
 
+    let activity = if model.activity.is_empty() {
+        vec![ListItem::new("Waiting for tool activity…")]
+    } else {
+        model
+            .activity
+            .iter()
+            .rev()
+            .take(8)
+            .rev()
+            .map(|line| ListItem::new(line.as_str()))
+            .collect()
+    };
     frame.render_widget(
-        Paragraph::new(superpower_lines_for(model))
-            .block(Block::default().borders(Borders::ALL).title(" Controls ")),
+        List::new(activity).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Rgb(236, 178, 46)))
+                .title(" Activity "),
+        ),
         chunks[1],
     );
 
-    let plan = match model.plan.phase() {
-        PlanPhase::Normal => "No active plan".to_string(),
-        PlanPhase::Planning => format!(
-            "Planning\n{} question(s) pending",
-            model.plan.pending_questions().len()
-        ),
-        PlanPhase::Review => "Plan ready\n/approve to execute\n/cancel to abort".into(),
-        PlanPhase::Executing => "Executing approved plan".into(),
+    let tasks = if !model.panels.tasks {
+        vec![ListItem::new("TODO panel hidden (/tasks)")]
+    } else if model.task_plan.is_empty() {
+        vec![ListItem::new("No model-authored tasks yet")]
+    } else {
+        model
+            .task_plan
+            .iter()
+            .map(|task| {
+                let (symbol, color) = match task.status.as_str() {
+                    "completed" => ("✓", Color::Green),
+                    "in_progress" => ("●", Color::Yellow),
+                    _ => ("○", Color::DarkGray),
+                };
+                ListItem::new(Line::from(vec![
+                    Span::styled(format!("{symbol} "), Style::default().fg(color)),
+                    Span::raw(task.content.as_str()),
+                ]))
+            })
+            .collect()
     };
+    let completed = model
+        .task_plan
+        .iter()
+        .filter(|task| task.status == "completed")
+        .count();
     frame.render_widget(
-        Paragraph::new(plan).block(Block::default().borders(Borders::ALL).title(" Plan ")),
+        List::new(tasks).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(format!(" TODO {completed}/{} ", model.task_plan.len())),
+        ),
         chunks[2],
     );
+
+    if model.last_report.is_empty() {
+        let ratio = if model.task_plan.is_empty() {
+            0.0
+        } else {
+            completed as f64 / model.task_plan.len() as f64
+        };
+        frame.render_widget(
+            Gauge::default()
+                .block(Block::default().borders(Borders::ALL).title(" Run "))
+                .gauge_style(Style::default().fg(Color::Cyan))
+                .ratio(ratio)
+                .label(if model.agent_running {
+                    "WORKING"
+                } else {
+                    "READY"
+                }),
+            chunks[3],
+        );
+    } else {
+        frame.render_widget(
+            Paragraph::new(model.last_report.join("\n"))
+                .wrap(Wrap { trim: false })
+                .block(Block::default().borders(Borders::ALL).title(" Run report ")),
+            chunks[3],
+        );
+    }
 }
 
 fn superpower_value_for(model: &ViewModel, alias: &str) -> Option<String> {
@@ -330,6 +639,9 @@ fn transcript_lines_for(model: &ViewModel) -> Vec<String> {
         PlanPhase::Normal | PlanPhase::Executing => {}
     }
     lines.extend(model.transcript.iter().cloned());
+    if model.agent_running && !model.live_response.is_empty() {
+        lines.push(format!("assistant (streaming): {}", model.live_response));
+    }
     lines
 }
 
@@ -341,52 +653,6 @@ fn banner_style_for_phase(phase: PlanPhase) -> Style {
         PlanPhase::Executing => Color::Green,
     };
     Style::default().fg(color).add_modifier(Modifier::BOLD)
-}
-
-fn superpower_lines_for(model: &ViewModel) -> Vec<Line<'_>> {
-    let Some(surface) = model.superpowers.as_ref() else {
-        return vec![Line::from(Span::styled(
-            "No provider superpowers advertised.",
-            Style::default().fg(Color::DarkGray),
-        ))];
-    };
-    let mut lines = Vec::new();
-    for descriptor in surface.descriptors() {
-        let alias = descriptor
-            .command_alias
-            .as_ref()
-            .map(|value| value.as_str())
-            .unwrap_or("<no-alias>");
-        let display = descriptor.display_name.as_str();
-        // Annotate with the active override (or the advertised default) so
-        // the driver sees the live superpower layer, not just the menu.
-        let active = model
-            .overrides
-            .get(descriptor.id.as_str(), Some(&descriptor.default_value));
-        let suffix = match active {
-            Some(value) => format!(" = {}", format_superpower_value(&value)),
-            None => String::new(),
-        };
-        let style = if model.overrides.get(descriptor.id.as_str(), None).is_some() {
-            // Override is live — emphasize it.
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default()
-        };
-        lines.push(Line::from(Span::styled(
-            format!("/{alias} — {display}{suffix}"),
-            style,
-        )));
-    }
-    if lines.is_empty() {
-        lines.push(Line::from(Span::styled(
-            "Provider advertised no superpowers.",
-            Style::default().fg(Color::DarkGray),
-        )));
-    }
-    lines
 }
 
 /// Renders a superpower value as a short, terminal-safe string.
@@ -473,7 +739,7 @@ mod tests {
     }
 
     #[test]
-    fn superpower_lines_handles_missing_surface() {
+    fn superpower_value_handles_missing_surface() {
         let model = ViewModel {
             plan: PlanState::default(),
             superpowers: None,
@@ -483,8 +749,7 @@ mod tests {
             status: None,
             ..ViewModel::default()
         };
-        let lines = superpower_lines_for(&model);
-        assert_eq!(lines.len(), 1);
+        assert_eq!(superpower_value_for(&model, "model"), None);
     }
 
     // Compile-time guard so the test module exercises the trait name.

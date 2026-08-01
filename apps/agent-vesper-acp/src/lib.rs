@@ -16,6 +16,7 @@ use vesper_domain::{
 use vesper_harness::{HarnessToolService, MemoryStores, WorkerFactory};
 use vesper_provider::{ProviderConfiguration, ProviderFactory};
 use vesper_provider_glm::{GlmFactory, provider_id};
+#[cfg(feature = "integration-test-harness")]
 use vesper_provider_synthetic::SyntheticFactory;
 use vesper_runtime::{
     ProviderRegistry, RuntimeCancellation, RuntimeDefaults, RuntimeSessionReads,
@@ -339,8 +340,8 @@ fn runtime_model(model: &ModelId, provider: &ProviderId) -> QualifiedModelId {
 /// concrete provider configuration, qualified model, and default endpoint so
 /// freshly created sessions carry a stable, persistable endpoint identity.
 /// GLM credentials and endpoint overrides are consulted only when the GLM
-/// adapter is selected; the synthetic adapter needs no secret and never touches
-/// GLM credential resolution.
+/// adapter is selected. The feature-gated synthetic test adapter never touches
+/// GLM credential resolution and is absent from normal production dispatch.
 struct ProviderProfile {
     provider_configuration: ProviderConfiguration,
     model: ModelId,
@@ -389,15 +390,17 @@ impl ProviderProfile {
                 model,
                 endpoint,
             })
-        } else if provider == &vesper_provider_synthetic::provider_id() {
-            // Synthetic: deterministic in-process reference adapter. No
-            // credential, no endpoint override, no network dependency.
-            Ok(Self {
-                provider_configuration: SyntheticFactory::default_configuration(),
-                model: ModelId::new("synthetic-1").map_err(|_| ())?,
-                endpoint: EndpointId::new("synthetic").map_err(|_| ())?,
-            })
         } else {
+            #[cfg(feature = "integration-test-harness")]
+            if provider == &vesper_provider_synthetic::provider_id() {
+                // Synthetic: deterministic in-process reference adapter. No
+                // credential, no endpoint override, no network dependency.
+                return Ok(Self {
+                    provider_configuration: SyntheticFactory::default_configuration(),
+                    model: ModelId::new("synthetic-1").map_err(|_| ())?,
+                    endpoint: EndpointId::new("synthetic").map_err(|_| ())?,
+                });
+            }
             Err(())
         }
     }
@@ -619,12 +622,13 @@ pub async fn run() -> Result<(), ()> {
 ///
 /// The composition boundary keeps the runtime provider-neutral: it maps a
 /// provider token to the matching concrete factory. `glm`/`zai` boot the Z.ai
-/// GLM adapter (the production default); `synthetic` boots the in-process
-/// reference adapter with no network or credential dependency. Unknown tokens
-/// fail closed with a startup error rather than an ambiguous default.
+/// GLM adapter (the production default). Under `integration-test-harness` only,
+/// `synthetic` boots the deterministic reference adapter. Unknown production
+/// tokens fail closed with a startup error rather than an ambiguous default.
 pub async fn boot(provider: &str) -> Result<(), ()> {
     match provider {
         "glm" | "zai" => run_with_factory(GlmFactory::default()).await,
+        #[cfg(feature = "integration-test-harness")]
         "synthetic" => run_with_factory(SyntheticFactory::default()).await,
         _ => Err(()),
     }
