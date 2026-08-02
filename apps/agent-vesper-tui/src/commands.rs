@@ -207,6 +207,8 @@ pub enum SessionConfigKey {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UiAction {
     OpenSettings,
+    /// Re-open the provider authentication screen (provider-routed `/auth`).
+    OpenAuth,
     ToggleReasoning,
     ToggleTasks,
     ToggleSidebar,
@@ -648,6 +650,7 @@ impl CommandRegistry {
                 &["off", "enabled"],
             ),
             "settings" => CommandOutcome::Ui(UiAction::OpenSettings),
+            "auth" => CommandOutcome::Ui(UiAction::OpenAuth),
             "reasoning-panel" | "toggle-thinking" => CommandOutcome::Ui(UiAction::ToggleReasoning),
             "statusline" => CommandOutcome::Ui(UiAction::ToggleSidebar),
             "theme" => resolve_session_choice(
@@ -1450,6 +1453,7 @@ const ORACLE_COMMAND_SURFACE: &[OracleCommandEntry] = &[
     // command order as the Python composer.
     OracleCommandEntry { name: "approve",           description: "Finalize the reviewed plan and start execution (Vesper-native)" },
     OracleCommandEntry { name: "cancel",            description: "Abort the in-flight plan (Vesper-native)" },
+    OracleCommandEntry { name: "auth",              description: "Re-authenticate or rotate the active provider's credential (Vesper-native, provider-routed)" },
     OracleCommandEntry { name: "quit",              description: "Exit the TUI (Vesper-native; oracle uses Ctrl+X)" },
 ];
 
@@ -1850,9 +1854,10 @@ mod tests {
     fn registry_knows_its_commands() {
         let registry = CommandRegistry::stage_11b();
         // Phase 7 (ADR 0010): the registry now covers the ENTIRE Python oracle
-        // LOCAL_COMMANDS surface (80 commands) PLUS the three Vesper-native
-        // commands (approve, cancel, quit) the oracle handles via keybindings.
-        // Every command below must be recognized.
+        // LOCAL_COMMANDS surface (80 commands) PLUS the four Vesper-native
+        // commands (approve, cancel, quit, auth) the oracle handles via
+        // keybindings (auth is provider-routed). Every command below must be
+        // recognized.
         for known in [
             "plan",
             "approve",
@@ -1909,13 +1914,17 @@ mod tests {
         // Genuinely unknown commands are still unknown.
         assert!(!registry.contains("frobnicate"));
         // The full surface count: 80 oracle command names (including the
-        // distinct `/export last` route) + 3 Vesper-native (approve, cancel,
-        // quit) = 83 total.
+        // distinct `/export last` route) + 4 Vesper-native (approve, cancel,
+        // quit, auth) = 84 total.
         assert!(registry.contains("export last"));
+        assert!(
+            registry.contains("auth"),
+            "Vesper-native /auth must be registered"
+        );
         assert_eq!(
             registry.names().len(),
-            83,
-            "Phase 7 parity: 80 oracle commands + 3 Vesper-native = 83 total"
+            84,
+            "Phase 7 parity: 80 oracle commands + 4 Vesper-native = 84 total"
         );
     }
 

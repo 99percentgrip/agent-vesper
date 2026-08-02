@@ -11,17 +11,19 @@ use ratatui::{
 };
 use zeroize::Zeroizing;
 
-/// One real provider credential exposed by the active build.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// One real provider credential exposed by the active build. Fields are owned
+/// because they are projected from each provider's advertised descriptor
+/// (owned `BoundedString`s), not hardcoded as `&'static str`.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AuthProvider {
     /// Runtime registry identity.
-    pub id: &'static str,
+    pub id: String,
     /// Human-facing provider name.
-    pub name: &'static str,
+    pub name: String,
     /// Environment variable accepted as a higher-precedence source.
-    pub environment_variable: &'static str,
+    pub environment_variable: String,
     /// Provider-owned key-management page.
-    pub key_url: &'static str,
+    pub key_url: String,
 }
 
 /// Startup destination derived from credential availability.
@@ -57,7 +59,7 @@ pub enum AuthHubAction {
     /// Persist this provider credential through the secure store.
     Save {
         /// Selected provider identity.
-        provider_id: &'static str,
+        provider_id: String,
         /// Secret value; its debug representation is redacted by `Zeroizing`'s
         /// wrapped string discipline and it is cleared on drop.
         secret: Zeroizing<String>,
@@ -126,7 +128,7 @@ impl AuthHubState {
     /// Currently selected registered provider.
     #[must_use]
     pub fn provider(&self) -> AuthProvider {
-        self.providers[self.selected]
+        self.providers[self.selected].clone()
     }
 
     /// Moves selection to the preceding provider.
@@ -333,7 +335,7 @@ fn render_provider_step(frame: &mut Frame<'_>, state: &AuthHubState, area: Rect)
                     format!("  {}  ", provider.name),
                     Style::default().fg(Color::White),
                 ),
-                Span::styled(provider.id, Style::default().fg(Color::Cyan)),
+                Span::styled(provider.id.as_str(), Style::default().fg(Color::Cyan)),
             ]))
         })
         .collect::<Vec<_>>();
@@ -413,12 +415,14 @@ mod tests {
     use super::*;
     use ratatui::{Terminal, backend::TestBackend};
 
-    const PROVIDER: AuthProvider = AuthProvider {
-        id: "zai",
-        name: "Z.ai",
-        environment_variable: "ZAI_API_KEY",
-        key_url: "https://z.ai/manage-apikey/apikey-list",
-    };
+    fn provider() -> AuthProvider {
+        AuthProvider {
+            id: "zai".into(),
+            name: "Z.ai".into(),
+            environment_variable: "ZAI_API_KEY".into(),
+            key_url: "https://z.ai/manage-apikey/apikey-list".into(),
+        }
+    }
 
     #[test]
     fn missing_credentials_route_to_auth_and_present_credentials_route_main() {
@@ -428,7 +432,7 @@ mod tests {
 
     #[test]
     fn secret_state_and_debug_are_masked() {
-        let mut state = AuthHubState::new(vec![PROVIDER]).unwrap();
+        let mut state = AuthHubState::new(vec![provider()]).unwrap();
         state.submit();
         state.paste("secret-canary");
         assert_eq!(state.masked_secret(), "*************");
@@ -439,7 +443,7 @@ mod tests {
 
     #[test]
     fn rendered_frame_contains_mask_but_not_secret() {
-        let mut state = AuthHubState::new(vec![PROVIDER]).unwrap();
+        let mut state = AuthHubState::new(vec![provider()]).unwrap();
         state.submit();
         state.paste("secret-canary");
         let backend = TestBackend::new(100, 30);
@@ -460,7 +464,7 @@ mod tests {
 
     #[test]
     fn small_terminal_render_does_not_panic() {
-        let state = AuthHubState::new(vec![PROVIDER]).unwrap();
+        let state = AuthHubState::new(vec![provider()]).unwrap();
         let backend = TestBackend::new(28, 8);
         let mut terminal = Terminal::new(backend).unwrap();
         terminal

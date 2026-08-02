@@ -3,8 +3,8 @@ use std::{collections::BTreeMap, sync::Arc};
 use tokio::sync::RwLock;
 use vesper_domain::ProviderId;
 use vesper_provider::{
-    CancellationSignal, ProviderConfiguration, ProviderFactory, ProviderFuture, ProviderSession,
-    ProviderSuperpowers, SuperpowerDescriptor,
+    CancellationSignal, ProviderConfiguration, ProviderDescriptor, ProviderFactory, ProviderFuture,
+    ProviderSession, ProviderSuperpowers, SuperpowerDescriptor,
 };
 
 use crate::RuntimeError;
@@ -15,6 +15,9 @@ trait ErasedProviderFactory: Send + Sync {
         configuration: &'a ProviderConfiguration,
         cancellation: Arc<dyn CancellationSignal>,
     ) -> ProviderFuture<'a, Result<Arc<dyn ProviderSession>, vesper_provider::ProviderError>>;
+
+    /// Advertised provider descriptor (identity + auth methods + config).
+    fn descriptor(&self) -> ProviderDescriptor;
 }
 
 struct FactoryAdapter<F>(F);
@@ -35,6 +38,10 @@ where
                 .await
                 .map(|session| Arc::new(session) as Arc<dyn ProviderSession>)
         })
+    }
+
+    fn descriptor(&self) -> ProviderDescriptor {
+        ProviderFactory::descriptor(&self.0)
     }
 }
 
@@ -143,6 +150,18 @@ impl ProviderRegistry {
     /// Returns whether a provider is registered.
     pub async fn contains(&self, provider_id: &ProviderId) -> bool {
         self.factories.read().await.contains_key(provider_id)
+    }
+
+    /// Returns the advertised descriptor for `provider_id` (identity, auth
+    /// methods, configuration contribution), or `None` when unregistered.
+    /// Hosts use this to route auth from advertised descriptors instead of
+    /// hardcoding provider match arms.
+    pub async fn descriptor(&self, provider_id: &ProviderId) -> Option<ProviderDescriptor> {
+        self.factories
+            .read()
+            .await
+            .get(provider_id)
+            .map(|entry| entry.factory.descriptor())
     }
 
     /// Lists every registered provider identity in stable order.

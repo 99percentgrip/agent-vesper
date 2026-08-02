@@ -36,10 +36,17 @@ pub struct AuthenticationMethodDescriptor {
     pub method_id: BoundedString<128>,
     /// Safe display label.
     pub display_name: BoundedString<256>,
-    /// Secret-reference field IDs required by the method.
+    /// Secret-reference field IDs required by the method. The first entry is
+    /// the preferred environment variable carrying the credential (e.g.
+    /// `ZAI_API_KEY`), so a host can render an auth UI without hardcoding
+    /// provider-specific values.
     pub secret_reference_fields: Vec<BoundedString<128>>,
     /// Whether an external runtime owns authentication.
     pub external_runtime_owned: bool,
+    /// Provider-owned page where a user can create or rotate the credential.
+    /// `None` when the method has no public key-management URL.
+    #[serde(default)]
+    pub key_url: Option<BoundedString<512>>,
 }
 
 /// Stable provider descriptor independent of a configured session.
@@ -140,6 +147,22 @@ pub trait ProviderFactory: Send + Sync {
         config: &'a ProviderConfiguration,
         cancellation: Arc<dyn CancellationSignal>,
     ) -> ProviderFuture<'a, Result<Self::Session, ProviderError>>;
+
+    /// Stable provider descriptor (identity, advertised authentication
+    /// methods, configuration contribution). Adapters override this to
+    /// advertise real authentication methods so a host can route auth purely
+    /// from advertised descriptors instead of hardcoding provider match arms.
+    /// The default returns a minimal descriptor with no auth methods.
+    fn descriptor(&self) -> ProviderDescriptor {
+        ProviderDescriptor {
+            provider_id: self.provider_id().clone(),
+            display_name: BoundedString::new(self.provider_id().as_str().to_owned())
+                .expect("provider id fits the display-name bound"),
+            authentication_methods: Vec::new(),
+            configuration: None,
+            metadata: ExtensionMap::default(),
+        }
+    }
 }
 
 /// Scoped provider transport/session port.

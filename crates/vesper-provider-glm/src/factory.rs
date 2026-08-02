@@ -57,6 +57,10 @@ impl GlmFactory {
                     BoundedString::new("Z_AI_API_KEY").expect("bounded field"),
                 ],
                 external_runtime_owned: false,
+                key_url: Some(
+                    BoundedString::new("https://z.ai/manage-apikey/apikey-list")
+                        .expect("bounded key url"),
+                ),
             }],
             configuration: Some(ProviderConfigContribution {
                 provider_id: provider_id(),
@@ -126,6 +130,12 @@ impl ProviderFactory for GlmFactory {
     fn provider_id(&self) -> &ProviderId {
         static ID: std::sync::OnceLock<ProviderId> = std::sync::OnceLock::new();
         ID.get_or_init(provider_id)
+    }
+
+    /// Advertises the real Z.ai auth descriptor so hosts route auth from the
+    /// provider instead of hardcoding provider match arms.
+    fn descriptor(&self) -> ProviderDescriptor {
+        Self::descriptor()
     }
 
     fn create_session<'a>(

@@ -45,7 +45,7 @@ pub use ui::{
 };
 
 use vesper_domain::ProviderId;
-use vesper_provider::SuperpowerDescriptor;
+use vesper_provider::{ProviderDescriptor, SuperpowerDescriptor};
 use vesper_runtime::ProviderRegistry;
 
 /// Snapshot of everything the TUI needs to know at startup about the
@@ -56,6 +56,31 @@ pub struct StartupView {
     pub provider_id: ProviderId,
     /// Superpower descriptors the active provider advertised.
     pub superpowers: Vec<SuperpowerDescriptor>,
+    /// Provider-routed authentication descriptor projected from the active
+    /// provider's advertised `ProviderDescriptor`. `None` when the provider
+    /// advertised no API-key auth method. Hosts render the auth UI from this
+    /// instead of hardcoding provider match arms.
+    pub auth: Option<AuthProvider>,
+}
+
+/// Projects a provider's advertised descriptor into the TUI's auth descriptor,
+/// using the first API-key method's first secret-reference field as the
+/// environment variable. Returns `None` when the provider advertised no auth
+/// method or no secret-reference field.
+#[must_use]
+pub fn auth_provider_from_descriptor(descriptor: &ProviderDescriptor) -> Option<AuthProvider> {
+    let method = descriptor.authentication_methods.first()?;
+    let environment_variable = method.secret_reference_fields.first()?;
+    Some(AuthProvider {
+        id: descriptor.provider_id.as_str().to_owned(),
+        name: method.display_name.as_str().to_owned(),
+        environment_variable: environment_variable.as_str().to_owned(),
+        key_url: method
+            .key_url
+            .as_ref()
+            .map(|url| url.as_str().to_owned())
+            .unwrap_or_default(),
+    })
 }
 
 /// Queries the runtime registry for the superpowers advertised by
@@ -69,9 +94,15 @@ pub async fn query_startup_view(
     provider_id: &ProviderId,
 ) -> StartupView {
     let superpowers = registry.superpowers(provider_id).await;
+    let auth = registry
+        .descriptor(provider_id)
+        .await
+        .as_ref()
+        .and_then(auth_provider_from_descriptor);
     StartupView {
         provider_id: provider_id.clone(),
         superpowers,
+        auth,
     }
 }
 

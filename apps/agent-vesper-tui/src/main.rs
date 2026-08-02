@@ -203,6 +203,7 @@ async fn run() -> Result<(), String> {
     enter_raw_mode().map_err(|error| format!("failed to enter raw mode: {error}"))?;
     let result = drive_loop(
         &provider_id,
+        startup.auth.clone(),
         &registry_commands,
         &surface,
         &mut session,
@@ -549,6 +550,7 @@ impl AgentProgressPort for ChannelProgressPort {
 #[allow(clippy::too_many_arguments)] // single-call composition boundary
 async fn drive_loop(
     provider_id: &ProviderId,
+    auth: Option<AuthProvider>,
     registry_commands: &CommandRegistry,
     surface: &ProviderSuperpowerSurface,
     session: &mut TuiSession,
@@ -561,7 +563,9 @@ async fn drive_loop(
 ) -> Result<(), String> {
     let mut terminal = Terminal::new(Backend::new(stdout()))
         .map_err(|error| format!("terminal init failed: {error}"))?;
-    ensure_provider_authenticated(&mut terminal, provider_id).await?;
+    if let Some(provider) = auth.clone() {
+        ensure_provider_authenticated(&mut terminal, provider).await?;
+    }
 
     loop {
         // Phase 6: drain any completed agent turn BEFORE redrawing so the
@@ -803,6 +807,31 @@ async fn drive_loop(
                         }
                     }
                 }
+                // Provider-routed `/auth`: re-open the authentication screen
+                // using the active provider's advertised descriptor. The
+                // terminal is the same one the main loop owns.
+                if session.state.pending_reauth {
+                    session.state.pending_reauth = false;
+                    match auth.clone() {
+                        Some(provider) => {
+                            match ensure_provider_authenticated(&mut terminal, provider).await {
+                                Ok(()) => session
+                                    .state
+                                    .transcript
+                                    .push("auth: provider credential is ready.".into()),
+                                Err(error) => {
+                                    session.state.status = Some(format!("auth: {error}"));
+                                }
+                            }
+                        }
+                        None => {
+                            session.state.status = Some(
+                                "auth: the active provider advertised no authentication descriptor."
+                                    .into(),
+                            );
+                        }
+                    }
+                }
                 if let Some(action) = session.state.pending_terminal_action.take() {
                     let result = match action {
                         TerminalAction::EnableMouseCapture => {
@@ -990,11 +1019,12 @@ async fn drive_loop(
 /// Intercepts startup before the conversation loop when the selected real
 /// provider has no locally valid credential. The same terminal is retained so
 /// successful setup transitions without a raw-mode or alternate-screen flash.
+/// The provider descriptor is provider-routed (projected from the active
+/// provider's advertised `ProviderDescriptor`), never hardcoded.
 async fn ensure_provider_authenticated(
     terminal: &mut Terminal<Backend>,
-    provider_id: &ProviderId,
+    provider: AuthProvider,
 ) -> Result<(), String> {
-    let provider = auth_provider_for(provider_id)?;
     let credential_present = tokio::task::spawn_blocking(|| {
         vesper_provider_glm::resolve_credential(&vesper_provider_glm::EnvironmentCredentialSource)
             .ok()
@@ -1060,7 +1090,7 @@ async fn ensure_provider_authenticated(
                 provider_id,
                 secret,
             } => {
-                let result = tokio::task::spawn_blocking(move || match provider_id {
+                let result = tokio::task::spawn_blocking(move || match provider_id.as_str() {
                     "zai" => vesper_provider_glm::store_api_key(secret.as_str()),
                     _ => Err(vesper_provider_glm::AuthStoreError::InvalidIdentity),
                 })
@@ -1083,20 +1113,6 @@ async fn ensure_provider_authenticated(
                 }
             }
         }
-    }
-}
-
-fn auth_provider_for(provider_id: &ProviderId) -> Result<AuthProvider, String> {
-    match provider_id.as_str() {
-        "zai" | "glm" => Ok(AuthProvider {
-            id: "zai",
-            name: "Z.ai",
-            environment_variable: "ZAI_API_KEY",
-            key_url: "https://z.ai/manage-apikey/apikey-list",
-        }),
-        other => Err(format!(
-            "provider `{other}` has no registered authentication descriptor"
-        )),
     }
 }
 

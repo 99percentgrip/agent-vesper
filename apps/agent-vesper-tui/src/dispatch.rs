@@ -112,6 +112,9 @@ pub struct SessionState {
     pub pending_context_report: bool,
     /// Selected fenced-code block action, executed by the binary.
     pub pending_code_block: Option<(usize, bool)>,
+    /// Whether the binary should re-open the provider-routed authentication
+    /// screen (`/auth`) using the active provider's advertised descriptor.
+    pub pending_reauth: bool,
 }
 
 /// Typed session controls. Defaults match the Python oracle.
@@ -327,6 +330,7 @@ fn apply_outcome(
         pending_provider_usage,
         pending_context_report,
         pending_code_block,
+        pending_reauth,
     } = state;
     match outcome {
         CommandOutcome::Error(message) => {
@@ -521,6 +525,10 @@ fn apply_outcome(
         CommandOutcome::Ui(action) => match action {
             UiAction::OpenSettings => {
                 *status = Some("Select a setting, then choose its value.".into());
+            }
+            UiAction::OpenAuth => {
+                *pending_reauth = true;
+                *status = Some("Opening provider authentication…".into());
             }
             UiAction::ToggleReasoning => {
                 panels.reasoning = !panels.reasoning;
