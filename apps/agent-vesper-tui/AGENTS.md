@@ -139,6 +139,13 @@ business logic.
   stored credentials use the OS credential manager with the documented
   owner-only Unix vault fallback. No live provider call is made by startup
   validation.
+- Auth is provider-routed: the `AuthProvider` is projected from each
+  provider's advertised `ProviderFactory::descriptor()` (env var via
+  `secret_reference_fields[0]`, `key_url`) through the registry and
+  `StartupView.auth`. The TUI holds no hardcoded provider match arms. A
+  provider-routed `/auth` slash command (`UiAction::OpenAuth` →
+  `SessionState.pending_reauth`) re-opens the screen mid-session. Storage
+  (`vesper-auth`) and per-adapter resolution are unchanged.
 
 ## Work Guidance
 
