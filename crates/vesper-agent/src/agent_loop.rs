@@ -453,6 +453,12 @@ fn compact_history(messages: &[ConversationMessage]) -> Vec<ConversationMessage>
 
 /// Consumes one provider stream, returning assistant content, tool calls, and
 /// the terminal finish outcome.
+///
+/// Streamed text deltas are coalesced into a single contiguous
+/// [`ContentPart::Text`] so one assistant turn renders as one message block
+/// (wrapped by the renderer) instead of one token chunk per line. A non-text
+/// content part or a completed tool call flushes the buffer to preserve
+/// ordering.
 async fn consume_stream(
     stream: &mut vesper_provider::ProviderEventStream,
     progress: &dyn AgentProgressPort,
@@ -460,6 +466,7 @@ async fn consume_stream(
     let mut parts = Vec::new();
     let mut calls = Vec::new();
     let mut finish = None;
+    let mut text_buffer = String::new();
     while let Some(event) = stream.next().await {
         match event {
             Ok(ProviderStreamEvent::ReasoningDelta { text, kind, .. }) => {
@@ -471,13 +478,20 @@ async fn consume_stream(
                     progress.emit(AgentProgressEvent::ReasoningDelta { text });
                 }
             }
-            Ok(ProviderStreamEvent::ContentDelta { part, .. }) => {
-                if let ContentPart::Text(text) = &part {
+            Ok(ProviderStreamEvent::ContentDelta { part, .. }) => match part {
+                ContentPart::Text(text) => {
                     progress.emit(AgentProgressEvent::ContentDelta { text: text.clone() });
+                    text_buffer.push_str(text.as_str());
                 }
-                parts.push(part);
+                other => {
+                    flush_text_buffer(&mut text_buffer, &mut parts);
+                    parts.push(other);
+                }
+            },
+            Ok(ProviderStreamEvent::ToolCallCompleted(call)) => {
+                flush_text_buffer(&mut text_buffer, &mut parts);
+                calls.push(call);
             }
-            Ok(ProviderStreamEvent::ToolCallCompleted(call)) => calls.push(call),
             Ok(ProviderStreamEvent::Completed {
                 finish: terminal, ..
             }) => {
@@ -488,8 +502,38 @@ async fn consume_stream(
             Err(error) => return Err(AgentLoopError::ProviderTurn(error)),
         }
     }
+    flush_text_buffer(&mut text_buffer, &mut parts);
     let finish = finish.ok_or(AgentLoopError::StreamWithoutTerminal)?;
     Ok((parts, calls, finish))
+}
+
+/// Flushes accumulated streamed text into one (or, past the 1 MiB
+/// [`ContentText`] bound, a few) content parts. Splits on UTF-8 char
+/// boundaries so a very large turn is never silently dropped.
+fn flush_text_buffer(buffer: &mut String, parts: &mut Vec<ContentPart>) {
+    if buffer.is_empty() {
+        return;
+    }
+    const CONTENT_TEXT_MAX: usize = 1_048_576;
+    let accumulated = std::mem::take(buffer);
+    let mut cursor = 0;
+    while cursor < accumulated.len() {
+        let mut end = cursor
+            .saturating_add(CONTENT_TEXT_MAX)
+            .min(accumulated.len());
+        // Walk back to a UTF-8 char boundary. (`str::floor_char_boundary`
+        // needs Rust 1.91+, above the workspace MSRV 1.88.)
+        while end > cursor && !accumulated.is_char_boundary(end) {
+            end -= 1;
+        }
+        if end <= cursor {
+            break;
+        }
+        if let Ok(text) = ContentText::new(&accumulated[cursor..end]) {
+            parts.push(ContentPart::Text(text));
+        }
+        cursor = end;
+    }
 }
 
 /// Records the originating `tool_call_id` on a tool-result message so adapters

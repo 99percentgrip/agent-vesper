@@ -374,3 +374,68 @@ async fn permission_gate_denies_mutating_tools_in_plan_mode() {
     // Silence unused-import warning for MessageRole re-export alias.
     let _ = MessageRole::Assistant;
 }
+
+#[tokio::test]
+async fn streamed_text_deltas_coalesce_into_one_contiguous_message() {
+    // Regression for the one-token-per-line rendering bug: a streamed turn
+    // split across many ContentDelta events must produce a SINGLE
+    // ContentPart::Text in the final assistant content, so the TUI renders one
+    // wrapped "assistant: ..." block instead of one line per token chunk.
+    let streamed: ScriptedProviderResponse = Ok(vec![
+        Ok(content_delta("The ")),
+        Ok(content_delta("quick ")),
+        Ok(content_delta("brown ")),
+        Ok(content_delta("fox **jumps**.")),
+        Ok(completed(FinishOutcome::Stop)),
+    ]);
+
+    let provider_id = provider();
+    let fake = FakeProviderSession::with_scripts([streamed]);
+    let registry = Arc::new(ProviderRegistry::new());
+    registry
+        .register(FakeFactory {
+            id: provider_id.clone(),
+            session: fake,
+        })
+        .await
+        .unwrap();
+
+    let agent = AgentLoop::new(
+        registry,
+        ToolRegistry::parity_default(),
+        config(&provider_id, 5),
+    );
+    let outcome = agent
+        .run_prompt(
+            user_message("say a sentence"),
+            SessionOperatingMode::Code,
+            SessionPermissionMode::Ask,
+        )
+        .await
+        .expect("loop must complete");
+
+    match outcome {
+        AgentTurnOutcome::Completed {
+            assistant_content, ..
+        } => {
+            let text_parts: Vec<&ContentPart> = assistant_content
+                .iter()
+                .filter(|part| matches!(part, ContentPart::Text(_)))
+                .collect();
+            assert_eq!(
+                text_parts.len(),
+                1,
+                "streamed deltas must coalesce into one text part, got {text_parts:?}"
+            );
+            let combined = text_parts
+                .iter()
+                .filter_map(|part| match part {
+                    ContentPart::Text(text) => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect::<String>();
+            assert_eq!(combined, "The quick brown fox **jumps**.");
+        }
+        other => panic!("expected Completed, got {other:?}"),
+    }
+}
