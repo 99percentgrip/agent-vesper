@@ -13,7 +13,7 @@ use vesper_provider::{
 use crate::{
     EnvironmentCredentialSource, GlmCatalog, GlmConfig, GlmCredentialSource, GlmSession,
     error::{adapter_error, cancelled_error},
-    provider_id, resolve_credential,
+    provider_id, resolve_credential, store_api_key,
 };
 
 /// Production GLM provider factory with injectable secret resolution.
@@ -151,7 +151,7 @@ impl ProviderFactory for GlmFactory {
                 .map_err(|error| adapter_error(&error, false))?;
             let credential =
                 resolve_credential(self.credentials.as_ref()).map_err(|error| *error)?;
-            GlmSession::from_config(parsed, credential)
+            GlmSession::from_config(parsed, credential.secret)
                 .map_err(|error| adapter_error(&error, false))
         })
     }
@@ -163,6 +163,33 @@ impl ModelCatalog for GlmFactory {
         cancellation: Arc<dyn CancellationSignal>,
     ) -> ProviderFuture<'a, Result<ModelCatalogSnapshot, ProviderError>> {
         <GlmCatalog as ModelCatalog>::models(&GlmCatalog, cancellation)
+    }
+}
+
+impl vesper_provider::ProviderCredentialPort for GlmFactory {
+    fn credential_present(&self) -> Result<bool, vesper_provider::CredentialError> {
+        // Mirror the production startup check: resolve from the environment/
+        // store source and confirm structural validity. The secret itself and
+        // any future pool selection stay adapter-internal.
+        Ok(resolve_credential(&EnvironmentCredentialSource)
+            .ok()
+            .is_some_and(|resolved| {
+                vesper_auth::validate_secret(resolved.secret.expose().as_str()).is_ok()
+            }))
+    }
+
+    fn store_credential(&self, secret: &str) -> Result<(), vesper_provider::CredentialError> {
+        store_api_key(secret)
+            .map(|_| ())
+            .map_err(|error| match error {
+                vesper_auth::CredentialStoreError::InvalidSecret => {
+                    vesper_provider::CredentialError::InvalidSecret
+                }
+                vesper_auth::CredentialStoreError::Unavailable => {
+                    vesper_provider::CredentialError::Unavailable
+                }
+                _ => vesper_provider::CredentialError::Failed,
+            })
     }
 }
 

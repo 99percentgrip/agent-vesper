@@ -26,8 +26,8 @@ use vesper_domain::ProviderId;
 
 pub use adapter::{GlmSession, continuation_message};
 pub use auth::{
-    AuthStoreError, EnvironmentCredentialSource, GlmCredentialSource, StaticCredentialSource,
-    credentials_path, resolve_credential, store_api_key, store_api_key_at,
+    AuthStoreError, EnvironmentCredentialSource, GlmCredentialSource, ResolvedCredential,
+    StaticCredentialSource, credentials_path, resolve_credential, store_api_key, store_api_key_at,
 };
 pub use catalog::GlmCatalog;
 pub use compatibility::{LegacyGlmConfiguration, translate_legacy_settings};

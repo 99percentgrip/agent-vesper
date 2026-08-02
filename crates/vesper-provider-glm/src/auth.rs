@@ -124,13 +124,23 @@ impl GlmCredentialSource for StaticCredentialSource {
     }
 }
 
+/// Forward-compatible resolved credential. Carries the secret today; future
+/// pool/rotation metadata slots in here without rewriting caller signatures.
+/// `Debug` is secret-safe: it delegates to `SecretValue`'s redacted `Debug`.
+#[derive(Debug)]
+pub struct ResolvedCredential {
+    /// The resolved secret.
+    pub secret: SecretValue,
+}
+
 /// Resolves `ZAI_API_KEY` before the legacy `Z_AI_API_KEY` alias.
 pub fn resolve_credential(
     source: &dyn GlmCredentialSource,
-) -> Result<SecretValue, Box<vesper_provider::ProviderError>> {
+) -> Result<ResolvedCredential, Box<vesper_provider::ProviderError>> {
     source
         .credential("ZAI_API_KEY")
         .or_else(|| source.credential("Z_AI_API_KEY"))
+        .map(|secret| ResolvedCredential { secret })
         .ok_or_else(|| Box::new(authentication_error()))
 }
 
@@ -146,7 +156,7 @@ mod tests {
             .with("Z_AI_API_KEY", SecretValue::new("legacy-canary"))
             .with("ZAI_API_KEY", SecretValue::new("primary-canary"));
         let credential = resolve_credential(&source).unwrap();
-        assert_eq!(credential.expose().as_str(), "primary-canary");
+        assert_eq!(credential.secret.expose().as_str(), "primary-canary");
         let debug = format!("{source:?} {credential:?}");
         assert!(!debug.contains("primary-canary"));
         assert!(!debug.contains("legacy-canary"));

@@ -165,6 +165,37 @@ pub trait ProviderFactory: Send + Sync {
     }
 }
 
+/// Provider-owned credential resolution/storage error (provider-neutral).
+/// Adapters map their concrete store errors onto this; secret values are
+/// never carried.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CredentialError {
+    /// No credential is configured (not an error for `credential_present`).
+    Absent,
+    /// Credential storage is unavailable on this platform/configuration.
+    Unavailable,
+    /// Credential failed local structural validation.
+    InvalidSecret,
+    /// A bounded credential operation failed.
+    Failed,
+}
+
+/// Provider-owned credential port. Adapters implement this so hosts route
+/// credential checks and storage through the provider instead of hardcoding
+/// provider match arms. Methods are synchronous and may perform blocking I/O
+/// (OS keyring, vault file); hosts wrap them in `spawn_blocking`.
+///
+/// The check returns only a presence boolean — the secret itself and any
+/// future pool/rotation selection stay adapter-internal, so the interface is
+/// pool-safe by construction.
+pub trait ProviderCredentialPort: Send + Sync {
+    /// Whether a locally valid credential is present. Returns `Ok(false)` when
+    /// no credential is configured.
+    fn credential_present(&self) -> Result<bool, CredentialError>;
+    /// Persist a credential for this provider (overwrites any existing one).
+    fn store_credential(&self, secret: &str) -> Result<(), CredentialError>;
+}
+
 /// Scoped provider transport/session port.
 pub trait ProviderSession: Send + Sync {
     /// Starts one ordered response stream.

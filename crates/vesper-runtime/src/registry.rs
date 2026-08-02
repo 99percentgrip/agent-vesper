@@ -3,8 +3,9 @@ use std::{collections::BTreeMap, sync::Arc};
 use tokio::sync::RwLock;
 use vesper_domain::ProviderId;
 use vesper_provider::{
-    CancellationSignal, ProviderConfiguration, ProviderDescriptor, ProviderFactory, ProviderFuture,
-    ProviderSession, ProviderSuperpowers, SuperpowerDescriptor,
+    CancellationSignal, CredentialError, ProviderConfiguration, ProviderCredentialPort,
+    ProviderDescriptor, ProviderFactory, ProviderFuture, ProviderSession, ProviderSuperpowers,
+    SuperpowerDescriptor,
 };
 
 use crate::RuntimeError;
@@ -49,6 +50,7 @@ where
 struct RegistryEntry {
     factory: Arc<dyn ErasedProviderFactory>,
     superpowers: Option<Arc<dyn ProviderSuperpowers>>,
+    credentials: Option<Arc<dyn ProviderCredentialPort>>,
 }
 
 /// Heterogeneous provider-factory registry with no concrete provider enum.
@@ -78,7 +80,7 @@ impl ProviderRegistry {
         F: ProviderFactory + 'static,
         F::Session: 'static,
     {
-        self.register_inner(factory, None).await
+        self.register_inner(factory, None, None).await
     }
 
     /// Registers one provider factory together with its [`ProviderSuperpowers`]
@@ -94,14 +96,54 @@ impl ProviderRegistry {
         F::Session: 'static,
         S: ProviderSuperpowers + 'static,
     {
-        self.register_inner(factory, Some(Arc::new(superpowers)))
+        self.register_inner(factory, Some(Arc::new(superpowers)), None)
             .await
+    }
+
+    /// Registers one provider factory together with its
+    /// [`ProviderCredentialPort`] so hosts can route credential checks and
+    /// storage through the provider instead of hardcoding match arms.
+    pub async fn register_with_credentials<F, C>(
+        &self,
+        factory: F,
+        credentials: C,
+    ) -> Result<(), RuntimeError>
+    where
+        F: ProviderFactory + 'static,
+        F::Session: 'static,
+        C: ProviderCredentialPort + 'static,
+    {
+        self.register_inner(factory, None, Some(Arc::new(credentials)))
+            .await
+    }
+
+    /// Registers one provider factory together with both its
+    /// [`ProviderSuperpowers`] surface and its [`ProviderCredentialPort`].
+    pub async fn register_with_superpowers_and_credentials<F, S, C>(
+        &self,
+        factory: F,
+        superpowers: S,
+        credentials: C,
+    ) -> Result<(), RuntimeError>
+    where
+        F: ProviderFactory + 'static,
+        F::Session: 'static,
+        S: ProviderSuperpowers + 'static,
+        C: ProviderCredentialPort + 'static,
+    {
+        self.register_inner(
+            factory,
+            Some(Arc::new(superpowers)),
+            Some(Arc::new(credentials)),
+        )
+        .await
     }
 
     async fn register_inner<F>(
         &self,
         factory: F,
         superpowers: Option<Arc<dyn ProviderSuperpowers>>,
+        credentials: Option<Arc<dyn ProviderCredentialPort>>,
     ) -> Result<(), RuntimeError>
     where
         F: ProviderFactory + 'static,
@@ -117,6 +159,7 @@ impl ProviderRegistry {
             RegistryEntry {
                 factory: Arc::new(FactoryAdapter(factory)),
                 superpowers,
+                credentials,
             },
         );
         Ok(())
@@ -162,6 +205,45 @@ impl ProviderRegistry {
             .await
             .get(provider_id)
             .map(|entry| entry.factory.descriptor())
+    }
+
+    /// Whether the provider has a locally valid credential. Routes through the
+    /// provider's [`ProviderCredentialPort`]; the secret stays adapter-internal.
+    /// Blocking credential I/O runs on a Tokio blocking thread.
+    pub async fn credential_present(
+        &self,
+        provider_id: &ProviderId,
+    ) -> Result<bool, CredentialError> {
+        let port = self
+            .factories
+            .read()
+            .await
+            .get(provider_id)
+            .and_then(|entry| entry.credentials.clone())
+            .ok_or(CredentialError::Unavailable)?;
+        tokio::task::spawn_blocking(move || port.credential_present())
+            .await
+            .map_err(|_| CredentialError::Failed)?
+    }
+
+    /// Persists a credential for `provider_id`, routing through the provider's
+    /// [`ProviderCredentialPort`]. Blocking credential I/O runs on a Tokio
+    /// blocking thread.
+    pub async fn store_credential(
+        &self,
+        provider_id: &ProviderId,
+        secret: String,
+    ) -> Result<(), CredentialError> {
+        let port = self
+            .factories
+            .read()
+            .await
+            .get(provider_id)
+            .and_then(|entry| entry.credentials.clone())
+            .ok_or(CredentialError::Unavailable)?;
+        tokio::task::spawn_blocking(move || port.store_credential(&secret))
+            .await
+            .map_err(|_| CredentialError::Failed)?
     }
 
     /// Lists every registered provider identity in stable order.
@@ -488,5 +570,67 @@ mod tests {
         // `provider_ids` returns every registered identity in stable order.
         let ids = registry.provider_ids().await;
         assert_eq!(ids, vec![plain_id, powered_id]);
+    }
+
+    /// Stub credential port that records stores and reports a fixed presence.
+    struct StubCredentialPort {
+        present: bool,
+        stored: Arc<Mutex<Vec<String>>>,
+    }
+
+    impl vesper_provider::ProviderCredentialPort for StubCredentialPort {
+        fn credential_present(&self) -> Result<bool, vesper_provider::CredentialError> {
+            Ok(self.present)
+        }
+        fn store_credential(&self, secret: &str) -> Result<(), vesper_provider::CredentialError> {
+            self.stored
+                .lock()
+                .expect("stored lock poisoned")
+                .push(secret.to_owned());
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn credential_check_and_store_route_through_the_registry() {
+        // Multi-provider proof: credential check and storage dispatch purely
+        // by ProviderId through the registered credential port — no hardcoded
+        // provider match arm, and blocking I/O runs on a Tokio blocking thread.
+        let registry = ProviderRegistry::new();
+        let id = ProviderId::new("cred").unwrap();
+        let stored = Arc::new(Mutex::new(Vec::new()));
+        let port = StubCredentialPort {
+            present: false,
+            stored: Arc::clone(&stored),
+        };
+        registry
+            .register_with_credentials(
+                RecordingFactory {
+                    id: id.clone(),
+                    calls: Arc::new(Mutex::new(Vec::new())),
+                },
+                port,
+            )
+            .await
+            .unwrap();
+
+        // No credential present -> hub would open.
+        assert!(!registry.credential_present(&id).await.unwrap());
+        // Store routes to the port.
+        registry
+            .store_credential(&id, "secret-canary".to_owned())
+            .await
+            .unwrap();
+        assert_eq!(
+            stored.lock().unwrap().as_slice(),
+            &["secret-canary".to_owned()]
+        );
+        // Unknown provider (or a provider registered without a port) surfaces
+        // Unavailable rather than dispatching to a default.
+        let unknown = ProviderId::new("missing").unwrap();
+        assert_eq!(
+            registry.credential_present(&unknown).await,
+            Err(vesper_provider::CredentialError::Unavailable)
+        );
     }
 }

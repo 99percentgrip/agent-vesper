@@ -203,6 +203,7 @@ async fn run() -> Result<(), String> {
     enter_raw_mode().map_err(|error| format!("failed to enter raw mode: {error}"))?;
     let result = drive_loop(
         &provider_id,
+        &registry,
         startup.auth.clone(),
         &registry_commands,
         &surface,
@@ -309,8 +310,9 @@ async fn register_default_providers(
     // adapters belong in tests and must never appear as user-selectable models.
     let glm = vesper_provider_glm::GlmFactory::default();
     let glm_superpowers = vesper_provider_glm::GlmFactory::default();
+    let glm_credentials = vesper_provider_glm::GlmFactory::default();
     registry
-        .register_with_superpowers(glm, glm_superpowers)
+        .register_with_superpowers_and_credentials(glm, glm_superpowers, glm_credentials)
         .await?;
     #[cfg(test)]
     {
@@ -550,6 +552,7 @@ impl AgentProgressPort for ChannelProgressPort {
 #[allow(clippy::too_many_arguments)] // single-call composition boundary
 async fn drive_loop(
     provider_id: &ProviderId,
+    registry: &vesper_runtime::ProviderRegistry,
     auth: Option<AuthProvider>,
     registry_commands: &CommandRegistry,
     surface: &ProviderSuperpowerSurface,
@@ -564,7 +567,7 @@ async fn drive_loop(
     let mut terminal = Terminal::new(Backend::new(stdout()))
         .map_err(|error| format!("terminal init failed: {error}"))?;
     if let Some(provider) = auth.clone() {
-        ensure_provider_authenticated(&mut terminal, provider, false).await?;
+        ensure_provider_authenticated(&mut terminal, registry, provider, false).await?;
     }
 
     loop {
@@ -814,7 +817,13 @@ async fn drive_loop(
                     session.state.pending_reauth = false;
                     match auth.clone() {
                         Some(provider) => {
-                            match ensure_provider_authenticated(&mut terminal, provider, true).await
+                            match ensure_provider_authenticated(
+                                &mut terminal,
+                                registry,
+                                provider,
+                                true,
+                            )
+                            .await
                             {
                                 Ok(()) => session
                                     .state
@@ -1024,16 +1033,18 @@ async fn drive_loop(
 /// provider's advertised `ProviderDescriptor`), never hardcoded.
 async fn ensure_provider_authenticated(
     terminal: &mut Terminal<Backend>,
+    registry: &vesper_runtime::ProviderRegistry,
     provider: AuthProvider,
     force: bool,
 ) -> Result<(), String> {
-    let credential_present = tokio::task::spawn_blocking(|| {
-        vesper_provider_glm::resolve_credential(&vesper_provider_glm::EnvironmentCredentialSource)
-            .ok()
-            .is_some_and(|secret| vesper_auth::validate_secret(secret.expose().as_str()).is_ok())
-    })
-    .await
-    .map_err(|_| "credential availability check failed".to_owned())?;
+    let provider_id = vesper_domain::ProviderId::new(provider.id.as_str())
+        .map_err(|error| format!("invalid provider id {0}: {error}", provider.id))?;
+    // Provider-routed check: routes through the active provider's credential
+    // port; the secret stays adapter-internal (no hardcoded provider call).
+    let credential_present = registry
+        .credential_present(&provider_id)
+        .await
+        .unwrap_or(false);
     // Startup checks first and skips the screen when a valid credential
     // already exists; a forced `/auth` always re-opens the screen so the user
     // can rotate or replace the key (OpenCode `/connect` semantics).
@@ -1095,25 +1106,20 @@ async fn ensure_provider_authenticated(
                 provider_id,
                 secret,
             } => {
-                let result = tokio::task::spawn_blocking(move || match provider_id.as_str() {
-                    "zai" => vesper_provider_glm::store_api_key(secret.as_str()),
-                    _ => Err(vesper_provider_glm::AuthStoreError::InvalidIdentity),
-                })
-                .await
-                .map_err(|_| "credential storage task failed".to_owned())?;
-                match result {
-                    Ok(receipt) => {
-                        let backend = match receipt.backend {
-                            vesper_auth::StorageBackend::NativeKeyring => "OS credential manager",
-                            vesper_auth::StorageBackend::PrivateFile(_) => {
-                                "owner-only private vault"
-                            }
-                        };
-                        tracing::info!(storage_backend = backend, "provider credential saved");
+                // Provider-routed save: dispatch by ProviderId through the
+                // registry; no hardcoded provider match arm.
+                let target = vesper_domain::ProviderId::new(provider_id.as_str())
+                    .map_err(|error| format!("invalid provider id: {error}"))?;
+                match registry
+                    .store_credential(&target, secret.as_str().to_owned())
+                    .await
+                {
+                    Ok(()) => {
+                        tracing::info!("provider credential saved via provider-routed store");
                         return Ok(());
                     }
                     Err(error) => hub.save_failed(format!(
-                        "Secure save failed: {error}. Check your OS credential service."
+                        "Secure save failed: {error:?}. Check your OS credential service."
                     )),
                 }
             }
@@ -2741,7 +2747,7 @@ fn spawn_usage_query(
     let credential =
         vesper_provider_glm::resolve_credential(&vesper_provider_glm::EnvironmentCredentialSource)
             .map_err(|error| format!("quota authentication failed: {error}"))?;
-    let provider = vesper_provider_glm::GlmSession::from_config(glm_config, credential)
+    let provider = vesper_provider_glm::GlmSession::from_config(glm_config, credential.secret)
         .map_err(|error| format!("quota session failed: {error}"))?;
     let (tx, rx) = mpsc::unbounded_channel::<AgentEvent>();
     let task = tokio::spawn(async move {
