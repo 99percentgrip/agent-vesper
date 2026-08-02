@@ -5,6 +5,7 @@ members = [
     "crates/vesper-config",
     "crates/vesper-acp",
     "crates/vesper-agent",
+    "crates/vesper-auth",
     "crates/vesper-harness",
     "crates/vesper-checkpoints",
     "crates/vesper-domain",
@@ -42,6 +43,7 @@ futures-util = { version = "=0.3.33", default-features = false, features = ["std
 glob = { version = "0.3", default-features = false }
 httpdate = { version = "=1.0.3" }
 jsonschema = { version = "=0.49.2", default-features = false }
+keyring = { version = "=4.1.6" }
 ratatui = { version = "=0.30.2", default-features = false, features = ["crossterm"] }
 crossterm = { version = "=0.29.0", default-features = false, features = ["events", "windows"] }
 regex = { version = "1", default-features = false, features = ["std"] }

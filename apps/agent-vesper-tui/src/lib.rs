@@ -23,12 +23,16 @@
 //! See `apps/agent-vesper-tui/AGENTS.md` for purpose, ownership, contracts,
 //! and verification.
 
+pub mod auth_hub;
 pub mod commands;
 pub mod dispatch;
 pub mod plan_mode;
 pub mod superpowers;
 pub mod ui;
 
+pub use auth_hub::{
+    AuthHubAction, AuthHubState, AuthProvider, StartupRoute, render_auth_hub, startup_route,
+};
 pub use commands::{CommandIntent, CommandOutcome, CommandRegistry, MediaOp, PlanGesture};
 pub use dispatch::{
     DispatchOutcome, PanelVisibility, SessionControls, SessionState, TaskItem, TerminalAction,

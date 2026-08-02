@@ -15,6 +15,9 @@ business logic.
 - `src/plan_mode.rs` — pure 4-phase Plan Mode state machine
   (NORMAL → PLANNING → REVIEW → EXECUTING) mirroring the Python oracle's
   `PLAN_MODE_PROMPT`.
+- `src/auth_hub.rs` — pure provider-driven Hermes startup state machine and
+  responsive masked Ratatui renderer. It may expose only authentication
+  descriptors registered by production provider adapters.
 - `src/commands.rs` — slash-command parsing, registry, and resolution
   against the active provider's superpowers. Tier C Phase 7 (ADR 0010): the
   registry now covers the **entire** Python oracle `LOCAL_COMMANDS` surface
@@ -44,6 +47,8 @@ business logic.
 - `src/main.rs` — binary entry point; crossterm raw-mode + alternate-screen
   lifecycle and the interactive event loop. Delegates every transition to
   `dispatch::dispatch` so it owns no Plan Mode discipline itself. Owns the
+  startup credential interception route and performs native credential-store
+  calls on Tokio blocking threads before entering the conversation loop. Owns the
   credential-free `RuntimeSupervisor` and drains `SessionState.pending_reasoning`
   into the runtime `UpdateSessionReasoning` command after each dispatch (ADR 0009).
   Phase 6 (ADR 0010): also owns the multi-turn `vesper_agent::AgentLoop` bridge —
@@ -85,7 +90,7 @@ business logic.
 
 - Stdout carries only terminal escapes via crossterm; no ACP/JSON-RPC may
   appear there. Tracing goes to stderr only.
-- The crate depends on `vesper-domain`, `vesper-provider`,
+- The crate depends on `vesper-auth`, `vesper-domain`, `vesper-provider`,
   `vesper-provider-glm`, `vesper-runtime`,
   `vesper-agent` (Phase 6 / ADR 0010: the binary composes the multi-turn
   agent loop), `vesper-memory` (Phase 8 / ADR 0011: the binary owns the
@@ -129,12 +134,19 @@ business logic.
   excluded from JSONL events.
 - Provider selection follows `AGENT_VESPER_PROVIDER` (default `zai`), the
   same composition-boundary convention as `agent-vesper-acp`.
+- Missing or locally malformed required credentials route to the Hermes Auth
+  Hub before the main loop. Environment credentials retain precedence; new
+  stored credentials use the OS credential manager with the documented
+  owner-only Unix vault fallback. No live provider call is made by startup
+  validation.
 
 ## Work Guidance
 
 - Keep the Plan Mode, command registry, superpower adapter, dispatch surface,
   and renderer trait unit-testable without touching a real terminal — the
   production binary is the only module that may invoke crossterm directly.
+- Keep Auth Hub provider choices registry-driven. Do not render aspirational
+  providers, models, plans, endpoints, or authentication methods.
 - The composer must expose the registered oracle commands while the input
   begins with `/`: the binary owns palette selection/completion key handling,
   while `CommandRegistry::completion_candidates` remains pure and derives its

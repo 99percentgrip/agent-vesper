@@ -29,11 +29,11 @@ original Python `native-glm-acp` installer.
 - SHA-256 verification is mandatory; a missing/mismatched checksum fails the
   install.
 - Installed launchers invoke their bundled binary verbatim and add no behavior.
-- Credentials are not stored by the installer. It documents both
-  `ZAI_API_KEY` and the explicit `agent-vesper-acp --setup` private credential
-  store; uninstall preserves either source.
-- Uninstallers never remove provider credentials. Agent Vesper's environment
-  credential is outside the installer-owned artifact set.
+- Credentials are not stored by the installer. First-run guidance leads with
+  the TUI's Hermes Auth Hub and also documents `agent-vesper-acp --setup` and
+  the optional `ZAI_API_KEY` environment override.
+- Uninstallers never remove provider credentials. OS-keyring entries and the
+  private-vault fallback are outside the installer-owned artifact set.
 - The installers call both binaries with `--version` to confirm success.
 
 ## Verification

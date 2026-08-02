@@ -31,9 +31,10 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use agent_vesper_tui::{
-    CommandIntent, CommandRegistry, DispatchOutcome, FOOTER_ACTIONS, MediaOp, PlanPhase,
-    ProviderSuperpowerSurface, SessionState, TerminalAction, ViewModel, apply_model_plan,
-    apply_task_plan, command_menu_height, dispatch, query_startup_view, render_to_frame,
+    AuthHubAction, AuthHubState, AuthProvider, CommandIntent, CommandRegistry, DispatchOutcome,
+    FOOTER_ACTIONS, MediaOp, PlanPhase, ProviderSuperpowerSurface, SessionState, StartupRoute,
+    TerminalAction, ViewModel, apply_model_plan, apply_task_plan, command_menu_height, dispatch,
+    query_startup_view, render_auth_hub, render_to_frame, startup_route,
 };
 use crossterm::{
     event::{
@@ -560,6 +561,7 @@ async fn drive_loop(
 ) -> Result<(), String> {
     let mut terminal = Terminal::new(Backend::new(stdout()))
         .map_err(|error| format!("terminal init failed: {error}"))?;
+    ensure_provider_authenticated(&mut terminal, provider_id).await?;
 
     loop {
         // Phase 6: drain any completed agent turn BEFORE redrawing so the
@@ -983,6 +985,119 @@ async fn drive_loop(
         }
     }
     Ok(())
+}
+
+/// Intercepts startup before the conversation loop when the selected real
+/// provider has no locally valid credential. The same terminal is retained so
+/// successful setup transitions without a raw-mode or alternate-screen flash.
+async fn ensure_provider_authenticated(
+    terminal: &mut Terminal<Backend>,
+    provider_id: &ProviderId,
+) -> Result<(), String> {
+    let provider = auth_provider_for(provider_id)?;
+    let credential_present = tokio::task::spawn_blocking(|| {
+        vesper_provider_glm::resolve_credential(&vesper_provider_glm::EnvironmentCredentialSource)
+            .ok()
+            .is_some_and(|secret| vesper_auth::validate_secret(secret.expose().as_str()).is_ok())
+    })
+    .await
+    .map_err(|_| "credential availability check failed".to_owned())?;
+    if startup_route(credential_present) == StartupRoute::Main {
+        return Ok(());
+    }
+
+    let mut hub = AuthHubState::new(vec![provider]).map_err(str::to_owned)?;
+    loop {
+        terminal
+            .draw(|frame| render_auth_hub(frame, &hub))
+            .map_err(|error| format!("authentication hub redraw failed: {error}"))?;
+        let event =
+            event::read().map_err(|error| format!("authentication input failed: {error}"))?;
+        let action = match event {
+            Event::Paste(value) => {
+                hub.paste(&value);
+                AuthHubAction::Continue
+            }
+            Event::Key(KeyEvent {
+                code,
+                modifiers,
+                kind: KeyEventKind::Press,
+                ..
+            }) => match code {
+                KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
+                    AuthHubAction::Quit
+                }
+                KeyCode::Up | KeyCode::Left => {
+                    hub.previous_provider();
+                    AuthHubAction::Continue
+                }
+                KeyCode::Down | KeyCode::Right | KeyCode::Tab => {
+                    hub.next_provider();
+                    AuthHubAction::Continue
+                }
+                KeyCode::Backspace => {
+                    hub.backspace();
+                    AuthHubAction::Continue
+                }
+                KeyCode::Esc => hub.cancel(),
+                KeyCode::Enter => hub.submit(),
+                KeyCode::Char(character)
+                    if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+                {
+                    hub.insert(character);
+                    AuthHubAction::Continue
+                }
+                _ => AuthHubAction::Continue,
+            },
+            _ => AuthHubAction::Continue,
+        };
+        match action {
+            AuthHubAction::Continue => {}
+            AuthHubAction::Quit => {
+                return Err("authentication cancelled; a provider credential is required".into());
+            }
+            AuthHubAction::Save {
+                provider_id,
+                secret,
+            } => {
+                let result = tokio::task::spawn_blocking(move || match provider_id {
+                    "zai" => vesper_provider_glm::store_api_key(secret.as_str()),
+                    _ => Err(vesper_provider_glm::AuthStoreError::InvalidIdentity),
+                })
+                .await
+                .map_err(|_| "credential storage task failed".to_owned())?;
+                match result {
+                    Ok(receipt) => {
+                        let backend = match receipt.backend {
+                            vesper_auth::StorageBackend::NativeKeyring => "OS credential manager",
+                            vesper_auth::StorageBackend::PrivateFile(_) => {
+                                "owner-only private vault"
+                            }
+                        };
+                        tracing::info!(storage_backend = backend, "provider credential saved");
+                        return Ok(());
+                    }
+                    Err(error) => hub.save_failed(format!(
+                        "Secure save failed: {error}. Check your OS credential service."
+                    )),
+                }
+            }
+        }
+    }
+}
+
+fn auth_provider_for(provider_id: &ProviderId) -> Result<AuthProvider, String> {
+    match provider_id.as_str() {
+        "zai" | "glm" => Ok(AuthProvider {
+            id: "zai",
+            name: "Z.ai",
+            environment_variable: "ZAI_API_KEY",
+            key_url: "https://z.ai/manage-apikey/apikey-list",
+        }),
+        other => Err(format!(
+            "provider `{other}` has no registered authentication descriptor"
+        )),
+    }
 }
 
 fn enter_raw_mode() -> io::Result<()> {
