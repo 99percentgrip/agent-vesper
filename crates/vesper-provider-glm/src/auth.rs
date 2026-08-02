@@ -137,6 +137,7 @@ pub fn resolve_credential(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
     use tempfile::TempDir;
 
     #[test]
@@ -151,6 +152,7 @@ mod tests {
         assert!(!debug.contains("legacy-canary"));
     }
 
+    #[cfg(unix)]
     #[test]
     fn stored_credentials_round_trip_through_private_vault() {
         let temp = TempDir::new().unwrap();
