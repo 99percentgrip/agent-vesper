@@ -1,6 +1,6 @@
 # Full Harness Parity Audit
 
-Date: 2026-08-01
+Last verified: 2026-08-02
 
 ## Verdict
 
@@ -116,13 +116,15 @@ The final source state passed:
 - local archive checksum verification and dual-binary installer execution
 - installed-binary PTY smoke: startup, `/permission` nested picker exposing
   Ask/Read Only/Bypass, keyboard selection, `/quit`, and clean exit
+- unconfigured-provider PTY smoke: `/usage` reports missing Z.ai credentials
+  inside the TUI without invoking a panic hook or corrupting the terminal
 
 Final release payloads installed for the current user:
 
 | Binary | Installed path | SHA-256 |
 | --- | --- | --- |
-| ACP | `/home/alex/.local/share/agent-vesper/agent-vesper-acp` | `cbe02788b645d7df62189b47a2f62a867ce79703d6da02d2308b76c4e78d6deb` |
-| TUI | `/home/alex/.local/share/agent-vesper/agent-vesper-tui` | `65fc2278e25dbfe90c8e65314a1e31d738923b1d32720e0323d789211cc19038` |
+| ACP | `/home/alex/.local/share/agent-vesper/agent-vesper-acp` | `7d857d2d57f2d15ea257e29f6d9a5a0bb97fc7675b99c109a168a83e13f6abc2` |
+| TUI | `/home/alex/.local/share/agent-vesper/agent-vesper-tui` | `943a25a124269b3df0cd5093e5a6939cb0620754b0ffc59988e75206112d954e` |
 
 Launchers are installed at `/home/alex/.local/bin/agent-vesper-acp` and
 `/home/alex/.local/bin/agent-vesper-tui`; both report version `0.1.0`.
