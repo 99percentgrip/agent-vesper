@@ -564,7 +564,7 @@ async fn drive_loop(
     let mut terminal = Terminal::new(Backend::new(stdout()))
         .map_err(|error| format!("terminal init failed: {error}"))?;
     if let Some(provider) = auth.clone() {
-        ensure_provider_authenticated(&mut terminal, provider).await?;
+        ensure_provider_authenticated(&mut terminal, provider, false).await?;
     }
 
     loop {
@@ -814,7 +814,8 @@ async fn drive_loop(
                     session.state.pending_reauth = false;
                     match auth.clone() {
                         Some(provider) => {
-                            match ensure_provider_authenticated(&mut terminal, provider).await {
+                            match ensure_provider_authenticated(&mut terminal, provider, true).await
+                            {
                                 Ok(()) => session
                                     .state
                                     .transcript
@@ -1024,6 +1025,7 @@ async fn drive_loop(
 async fn ensure_provider_authenticated(
     terminal: &mut Terminal<Backend>,
     provider: AuthProvider,
+    force: bool,
 ) -> Result<(), String> {
     let credential_present = tokio::task::spawn_blocking(|| {
         vesper_provider_glm::resolve_credential(&vesper_provider_glm::EnvironmentCredentialSource)
@@ -1032,7 +1034,10 @@ async fn ensure_provider_authenticated(
     })
     .await
     .map_err(|_| "credential availability check failed".to_owned())?;
-    if startup_route(credential_present) == StartupRoute::Main {
+    // Startup checks first and skips the screen when a valid credential
+    // already exists; a forced `/auth` always re-opens the screen so the user
+    // can rotate or replace the key (OpenCode `/connect` semantics).
+    if !force && startup_route(credential_present) == StartupRoute::Main {
         return Ok(());
     }
 
