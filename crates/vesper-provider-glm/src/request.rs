@@ -2,8 +2,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{Map, Value, json};
 use vesper_domain::{
-    ContentPart, ConversationMessage, ImageDescriptor, MediaSource, MessageRole, ReasoningKind,
-    SafeMessage, ToolCall, ToolChoiceIntent, ToolDefinition, ToolId,
+    ContentPart, ConversationMessage, FeatureRequirement, ImageDescriptor, MediaSource,
+    MessageRole, ReasoningKind, SafeMessage, ToolCall, ToolChoiceIntent, ToolDefinition, ToolId,
 };
 use vesper_provider::{
     CapabilityResolution, ContinuationStrategy, FallbackDecision, FallbackPolicy, ProviderRequest,
@@ -57,10 +57,25 @@ pub fn serialize_request(
         GlmCatalog::find(config.model.as_str()).ok_or(GlmAdapterError::UnknownModel)?;
     // Lenient capability resolution: a capability the host requires but GLM
     // cannot honor natively is downgraded to standard generation rather than
-    // aborting the turn. A basic text turn ("hello") must always succeed even
-    // when the host session advertises a capability the active model does not
-    // expose. Structural validation (provider/model match, sampling bounds,
-    // continuation bounds, and control-capability presence) still hard-fails.
+    // Lenient capability resolution: a capability mismatch never aborts the
+    // turn. A required-but-unsupported capability is downgraded to standard
+    // generation (recorded as a fallback decision). A control whose capability
+    // intent is implied but not declared — e.g. `request.reasoning` carrying
+    // reasoning through the session snapshot without an explicit
+    // `provider:reasoning` intent — is tolerated rather than rejected, because
+    // the GLM adapter knows its own catalog. If reasoning itself is unsupported
+    // for the active model, the turn falls back to disabled thinking. A basic
+    // text turn ("hello") must always succeed. Structural validation
+    // (provider/model match, sampling bounds, continuation bounds) still fails.
+    let reasoning_capability_unsupported = request.reasoning.is_some()
+        && matches!(
+            descriptor.capabilities.resolve(
+                "provider:reasoning",
+                FeatureRequirement::Require,
+                false
+            ),
+            CapabilityResolution::Reject
+        );
     let fallback_available = |cap: &vesper_domain::CapabilityRequest| {
         request.fallback_policy == FallbackPolicy::DeclaredOnly && cap.fallback.is_some()
     };
@@ -98,7 +113,9 @@ pub fn serialize_request(
         });
     }
     match request.validate_capabilities(&descriptor.capabilities) {
-        Ok(_) | Err(vesper_provider::RequestValidationError::UnsupportedRequiredCapability(_)) => {}
+        Ok(_)
+        | Err(vesper_provider::RequestValidationError::UnsupportedRequiredCapability(_))
+        | Err(vesper_provider::RequestValidationError::MissingCapabilityIntent(_)) => {}
         Err(_) => {
             return Err(GlmAdapterError::UnsupportedRequest(
                 "capability validation failed",
@@ -112,13 +129,19 @@ pub fn serialize_request(
     }
     validate_provider_extensions(request)?;
 
-    let reasoning = request
-        .reasoning
-        .as_ref()
-        .and_then(|intent| intent.mode.as_ref())
-        .map(|value| parse_request_reasoning(value.as_str()))
-        .transpose()?
-        .unwrap_or(config.reasoning);
+    let reasoning = if reasoning_capability_unsupported {
+        // Reasoning capability is unavailable for the active model: fall back
+        // to standard (disabled) generation rather than aborting the turn.
+        GlmReasoningMode::Disabled
+    } else {
+        request
+            .reasoning
+            .as_ref()
+            .and_then(|intent| intent.mode.as_ref())
+            .map(|value| parse_request_reasoning(value.as_str()))
+            .transpose()?
+            .unwrap_or(config.reasoning)
+    };
     validate_reasoning_for_model(reasoning, config.model.as_str())?;
     let preserve_thinking = reasoning != GlmReasoningMode::Disabled
         && (matches!(reasoning, GlmReasoningMode::High | GlmReasoningMode::Max)
@@ -841,6 +864,30 @@ mod tests {
             }),
             "the unsupported audio capability must be recorded as a Reject fallback decision: {:?}",
             serialized.fallback_decisions
+        );
+    }
+
+    #[test]
+    fn reasoning_without_declared_capability_intent_does_not_crash() {
+        // Regression for the real first-turn crash: a host threads
+        // `reasoning = Some(enabled)` through the session snapshot WITHOUT an
+        // explicit `provider:reasoning` capability intent. validate_capabilities
+        // raises MissingCapabilityIntent, which previously surfaced as
+        // UnsupportedCapability and aborted the turn. The adapter now tolerates
+        // it and serializes a standard thinking-enabled request.
+        let mut request = base_request();
+        request.capabilities = Vec::new();
+        request.reasoning = Some(ReasoningIntent {
+            mode: Some(vesper_domain::BoundedString::new("enabled").unwrap()),
+            stream_visible: true,
+            retention: ReasoningRetention::Persist,
+        });
+        let serialized = serialize_request(&request, &GlmConfig::default())
+            .expect("reasoning without a declared capability intent must not crash");
+        assert_eq!(
+            serialized.body["thinking"]["type"],
+            json!("enabled"),
+            "reasoning stays enabled when GLM supports it natively"
         );
     }
 }
