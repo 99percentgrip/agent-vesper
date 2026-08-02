@@ -15,7 +15,7 @@ business logic.
 - `src/plan_mode.rs` — pure 4-phase Plan Mode state machine
   (NORMAL → PLANNING → REVIEW → EXECUTING) mirroring the Python oracle's
   `PLAN_MODE_PROMPT`.
-- `src/auth_hub.rs` — pure provider-driven Hermes startup state machine and
+- `src/auth_hub.rs` — pure provider-driven authentication startup state machine and
   responsive masked Ratatui renderer. It may expose only authentication
   descriptors registered by production provider adapters.
 - `src/commands.rs` — slash-command parsing, registry, and resolution
@@ -134,8 +134,8 @@ business logic.
   excluded from JSONL events.
 - Provider selection follows `AGENT_VESPER_PROVIDER` (default `zai`), the
   same composition-boundary convention as `agent-vesper-acp`.
-- Missing or locally malformed required credentials route to the Hermes Auth
-  Hub before the main loop. Environment credentials retain precedence; new
+- Missing or locally malformed required credentials route to the Agent
+  Vesper Authentication screen before the main loop. Environment credentials retain precedence; new
   stored credentials use the OS credential manager with the documented
   owner-only Unix vault fallback. No live provider call is made by startup
   validation.

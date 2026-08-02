@@ -3,10 +3,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde_json::{Map, Value, json};
 use vesper_domain::{
     ContentPart, ConversationMessage, ImageDescriptor, MediaSource, MessageRole, ReasoningKind,
-    ToolCall, ToolChoiceIntent, ToolDefinition, ToolId,
+    SafeMessage, ToolCall, ToolChoiceIntent, ToolDefinition, ToolId,
 };
 use vesper_provider::{
-    CapabilityResolution, ContinuationStrategy, FallbackDecision, ProviderRequest,
+    CapabilityResolution, ContinuationStrategy, FallbackDecision, FallbackPolicy, ProviderRequest,
     StructuredOutputIntent,
 };
 
@@ -55,16 +55,55 @@ pub fn serialize_request(
     }
     let descriptor =
         GlmCatalog::find(config.model.as_str()).ok_or(GlmAdapterError::UnknownModel)?;
-    let decisions = request
-        .validate_capabilities(&descriptor.capabilities)
-        .map_err(|_| GlmAdapterError::UnsupportedRequest("capability validation failed"))?;
-    if decisions
-        .iter()
-        .any(|decision| decision.resolution == CapabilityResolution::Reject)
-    {
-        return Err(GlmAdapterError::UnsupportedRequest(
-            "required capability is unavailable",
-        ));
+    // Lenient capability resolution: a capability the host requires but GLM
+    // cannot honor natively is downgraded to standard generation rather than
+    // aborting the turn. A basic text turn ("hello") must always succeed even
+    // when the host session advertises a capability the active model does not
+    // expose. Structural validation (provider/model match, sampling bounds,
+    // continuation bounds, and control-capability presence) still hard-fails.
+    let fallback_available = |cap: &vesper_domain::CapabilityRequest| {
+        request.fallback_policy == FallbackPolicy::DeclaredOnly && cap.fallback.is_some()
+    };
+    let mut decisions: Vec<FallbackDecision> = Vec::with_capacity(request.capabilities.len());
+    for cap in &request.capabilities {
+        let resolution = descriptor.capabilities.resolve(
+            cap.capability.as_str(),
+            cap.requirement,
+            fallback_available(cap),
+        );
+        if matches!(
+            resolution,
+            CapabilityResolution::Native | CapabilityResolution::Emulated
+        ) {
+            continue;
+        }
+        decisions.push(FallbackDecision {
+            capability: cap.capability.clone(),
+            resolution,
+            explanation: cap
+                .fallback
+                .as_ref()
+                .filter(|_| resolution == CapabilityResolution::Fallback)
+                .map_or_else(
+                    || {
+                        SafeMessage::new(format!(
+                            "GLM downgraded capability {} (resolved as {:?}) to standard generation",
+                            cap.capability.as_str(),
+                            resolution
+                        ))
+                        .expect("bounded fallback explanation")
+                    },
+                    |fallback| fallback.description.clone(),
+                ),
+        });
+    }
+    match request.validate_capabilities(&descriptor.capabilities) {
+        Ok(_) | Err(vesper_provider::RequestValidationError::UnsupportedRequiredCapability(_)) => {}
+        Err(_) => {
+            return Err(GlmAdapterError::UnsupportedRequest(
+                "capability validation failed",
+            ));
+        }
     }
     if !matches!(request.structured_output, StructuredOutputIntent::None) {
         return Err(GlmAdapterError::UnsupportedRequest(
@@ -739,5 +778,69 @@ mod tests {
             message.namespace = vesper_domain::ExtensionNamespace::new("provider.other").unwrap();
         }
         assert!(serialize_request(&request, &GlmConfig::default()).is_err());
+    }
+
+    #[test]
+    fn agent_loop_first_turn_serializes_without_capability_error() {
+        // Mirrors vesper-agent agent_loop::build_request for Code mode: a
+        // non-empty tool surface advertised with provider:tools and
+        // provider:tool-choice as FeatureRequirement::Require, reasoning None
+        // (so the GLM serializer falls back to config.reasoning = Enabled).
+        let mut request = base_request();
+        request.reasoning = None;
+        request.sampling = None;
+        request.maximum_output_tokens = None;
+        request.capabilities = vec![
+            CapabilityRequest {
+                capability: CapabilityId::new("provider:tools").unwrap(),
+                requirement: FeatureRequirement::Require,
+                fallback: None,
+            },
+            CapabilityRequest {
+                capability: CapabilityId::new("provider:tool-choice").unwrap(),
+                requirement: FeatureRequirement::Require,
+                fallback: None,
+            },
+        ];
+        request.tools.push(ToolDefinition {
+            id: ToolId::new("read-file").unwrap(),
+            harness_name: HarnessToolName::new("read_file").unwrap(),
+            provider_name: None,
+            description: "Read one file".into(),
+            input_schema: json!({"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}),
+            execution_class: ToolExecutionClass::ReadOnly,
+            extensions: Default::default(),
+        });
+        request.tool_choice = ToolChoiceIntent::Auto;
+        let result = serialize_request(&request, &GlmConfig::default());
+        assert!(
+            result.is_ok(),
+            "agent-loop first turn must serialize: {result:?}"
+        );
+    }
+
+    #[test]
+    fn unsupported_required_capability_falls_back_instead_of_crashing() {
+        // GLM catalog declares provider:audio as Unsupported. Requesting it
+        // with FeatureRequirement::Require previously threw UnsupportedCapability
+        // and aborted the turn; the adapter now downgrades it to standard
+        // generation and records a fallback decision so a basic turn still
+        // succeeds. (Directive: fall back, do not throw a hard error.)
+        let mut request = base_request();
+        request.capabilities.push(CapabilityRequest {
+            capability: CapabilityId::new("provider:audio").unwrap(),
+            requirement: FeatureRequirement::Require,
+            fallback: None,
+        });
+        let serialized = serialize_request(&request, &GlmConfig::default())
+            .expect("unsupported required capability must fall back, not crash");
+        assert!(
+            serialized.fallback_decisions.iter().any(|decision| {
+                decision.capability.as_str() == "provider:audio"
+                    && decision.resolution == CapabilityResolution::Reject
+            }),
+            "the unsupported audio capability must be recorded as a Reject fallback decision: {:?}",
+            serialized.fallback_decisions
+        );
     }
 }

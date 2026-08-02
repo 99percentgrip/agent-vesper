@@ -30,7 +30,7 @@ original Python `native-glm-acp` installer.
   install.
 - Installed launchers invoke their bundled binary verbatim and add no behavior.
 - Credentials are not stored by the installer. First-run guidance leads with
-  the TUI's Hermes Auth Hub and also documents `agent-vesper-acp --setup` and
+  the TUI's Agent Vesper Authentication screen and also documents `agent-vesper-acp --setup` and
   the optional `ZAI_API_KEY` environment override.
 - Uninstallers never remove provider credentials. OS-keyring entries and the
   private-vault fallback are outside the installer-owned artifact set.

@@ -1,4 +1,4 @@
-# ADR 0014: Hermes Authentication Hub and Native Credential Storage
+# ADR 0014: Agent Vesper Authentication and Native Credential Storage
 
 Status: ACCEPTED
 
@@ -11,7 +11,7 @@ the TUI still entered the main harness without credentials and deferred the
 failure until a provider-backed action. Credential setup also wrote directly
 to a plaintext JSON file. The UI-polish milestone also called “Stage 15”
 requires a startup authentication screen and native secure storage. This ADR
-uses “Hermes” for that presentation milestone and does not renumber or alter
+uses “Agent Vesper Authentication” for that presentation milestone and does not renumber or alter
 the accepted command-migration stages.
 
 The production registry currently contains one real provider adapter: Z.ai.
@@ -43,7 +43,7 @@ OpenAI, Anthropic, Google, or synthetic-provider credentials.
    exposes only Z.ai.
 6. The TUI checks for a locally valid credential before drawing the normal
    conversation loop. Missing or structurally malformed credentials route to
-   Hermes in the same terminal. Successful persistence transitions through a
+   the authentication screen in the same terminal. Successful persistence transitions through a
    full redraw without leaving raw mode or the alternate screen.
 7. Startup validation is deliberately local: non-empty, bounded, and free of
    control characters. It does not claim that a key is accepted remotely and

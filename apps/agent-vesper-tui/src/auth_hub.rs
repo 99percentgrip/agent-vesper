@@ -1,4 +1,4 @@
-//! Provider-driven Hermes authentication hub.
+//! Provider-driven Agent Vesper authentication hub.
 
 use std::fmt;
 
@@ -29,7 +29,7 @@ pub struct AuthProvider {
 pub enum StartupRoute {
     /// Credentials exist; enter the main harness.
     Main,
-    /// Required credentials are absent; intercept into Hermes.
+    /// Required credentials are absent; intercept into the authentication screen.
     Auth,
 }
 
@@ -235,7 +235,7 @@ impl AuthHubState {
     }
 }
 
-/// Renders the responsive centered Hermes authentication screen.
+/// Renders the responsive centered authentication screen.
 pub fn render_auth_hub(frame: &mut Frame<'_>, state: &AuthHubState) {
     let area = frame.area();
     frame.render_widget(
@@ -251,7 +251,7 @@ pub fn render_auth_hub(frame: &mut Frame<'_>, state: &AuthHubState) {
         .title(Line::from(vec![
             Span::styled(" ◆ ", Style::default().fg(Color::Cyan)),
             Span::styled(
-                "Hermes Authentication Hub ",
+                "Agent Vesper Authentication ",
                 Style::default()
                     .fg(Color::White)
                     .add_modifier(Modifier::BOLD),

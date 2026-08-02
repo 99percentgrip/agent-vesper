@@ -100,11 +100,12 @@ case ":${PATH:-}:" in
         ;;
 esac
 
-# Agent Vesper accepts an environment credential, the Hermes Auth Hub, or the
-# explicit setup command. Persisted secrets use the OS credential manager when
-# available, with the documented private-vault fallback.
+# Agent Vesper accepts an environment credential, the Agent Vesper
+# Authentication screen, or the explicit setup command. Persisted secrets use
+# the OS credential manager when available, with the documented private-vault
+# fallback.
 printf '\nNext:\n'
-printf '  agent-vesper-tui                      # launch; Auth Hub opens if needed\n'
+printf '  agent-vesper-tui                      # launch; authentication screen opens if needed\n'
 printf '  agent-vesper-acp --setup              # optional non-interactive setup\n'
 printf '  export ZAI_API_KEY="<your Z.ai key>"   # optional environment override\n'
 printf '\nThen register Agent Vesper as an ACP agent in Zed (see README "Install in Zed").\n'

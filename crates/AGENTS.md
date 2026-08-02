@@ -13,7 +13,7 @@ test-only conformance support.
 - `vesper-security` depends on no workspace crate.
 - `vesper-auth` depends only on `vesper-security`; it owns native OS
   credential-manager access and the strict owner-only Unix vault fallback
-  (ADR 0014 — Hermes Authentication Hub).
+  (ADR 0014 — Agent Vesper Authentication).
 - `vesper-memory` depends only on `vesper-domain` and `vesper-security`; it
   owns the durable memory graph, learned skills, user profile, and bounded
   awareness ledger (ADR 0011 — Stage 12).
