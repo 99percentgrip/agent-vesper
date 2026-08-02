@@ -37,7 +37,19 @@ business logic.
   tests, and the production `render_to_frame` ratatui/crossterm backend. The
   production view owns the oracle-style conversation/reasoning/sidebar/
   composer composition, full-height slash-command palette, clickable footer,
-  working-tree panel, live activity, TODO, and structured run report.
+  working-tree panel, live activity, TODO, and structured run report. The
+  Conversation and Reasoning panels render assistant/reasoning text through
+  `markdown::render_markdown`; scroll is estimated from the rendered Lines.
+- `src/markdown.rs` — self-contained, streaming-safe markdown → ratatui
+  `Line` renderer. Re-parses the buffered assistant text every frame so
+  partial syntax degrades gracefully: open inline markers (`**bold` with no
+  closer) render literally and unclosed fenced code blocks render the
+  remainder as a styled code block. Supports bold, italics, inline code,
+  fenced code blocks, ordered/unordered lists with nesting, and ATX
+  headings. Underscore emphasis is intentionally unsupported so `snake_case`
+  identifiers stay intact. Pure, `#![forbid(unsafe_code)]`, no new
+  dependency (kept the crate free of an external markdown crate's
+  unsafe/MSRV risk).
 - `src/mobile.rs` — credential-free bounded HTTP approval companion with
   random pairing/approval capabilities, expiry, malformed-request rejection,
   fail-closed public-bind policy, and QR rendering only for explicitly

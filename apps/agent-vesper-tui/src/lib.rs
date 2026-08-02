@@ -17,6 +17,8 @@
 //!   registry, the Plan Mode state machine, and the override store. Terminal-
 //!   free so the full lifecycle is unit-testable.
 //! - [`ui`] — `TerminalRenderer` trait + `ratatui`/`crossterm` backend.
+//! - [`markdown`] — streaming-safe markdown → `ratatui` `Line` renderer used
+//!   by the Conversation and Reasoning panels.
 //!
 //! ## DOX
 //!
@@ -26,6 +28,7 @@
 pub mod auth_hub;
 pub mod commands;
 pub mod dispatch;
+pub mod markdown;
 pub mod plan_mode;
 pub mod superpowers;
 pub mod ui;

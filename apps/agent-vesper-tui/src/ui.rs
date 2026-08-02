@@ -177,12 +177,13 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
     // while PLANNING, the plan body while REVIEW), then the live transcript.
     let transcript_lines = transcript_lines_for(model);
     let transcript_area = conversation_chunks[0];
-    let wrapped_lines = estimated_wrapped_lines(
-        &transcript_lines,
-        usize::from(transcript_area.width.saturating_sub(2)),
-    );
-    let transcript = if transcript_lines.is_empty() {
-        ratatui::text::Text::from(Line::from(vec![
+    let inner_width = usize::from(transcript_area.width.saturating_sub(2));
+    // Render the transcript to markdown Lines once, then estimate the
+    // wrapped-line count from the *rendered* output. Estimating from the raw
+    // strings would over-count (markdown collapses fenced code markers) and
+    // over-scroll the first line out of view.
+    let (transcript, wrapped_lines) = if transcript_lines.is_empty() {
+        let ready = Line::from(vec![
             Span::styled(
                 "Agent Vesper",
                 Style::default()
@@ -197,9 +198,16 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
                     .add_modifier(Modifier::BOLD),
             ),
             Span::raw(" to browse commands."),
-        ]))
+        ]);
+        (ratatui::text::Text::from(ready), 1)
     } else {
-        ratatui::text::Text::from(transcript_lines.join("\n"))
+        // Parse the joined transcript as one markdown document so multi-line
+        // constructs (code fences, multi-line lists) render correctly, and so
+        // streaming partial syntax degrades gracefully.
+        let joined = transcript_lines.join("\n");
+        let rendered = crate::markdown::render_markdown(&joined);
+        let estimate = estimated_wrapped_lines(&rendered, inner_width);
+        (ratatui::text::Text::from(rendered), estimate)
     };
     let paragraph = Paragraph::new(transcript).wrap(Wrap { trim: false }).block(
         Block::default()
@@ -214,13 +222,13 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
     frame.render_widget(paragraph.scroll((scroll, 0)), transcript_area);
 
     if reasoning_height > 0 {
-        let reasoning = if model.reasoning.is_empty() {
-            "Waiting for provider-visible reasoning…"
+        let reasoning_lines: Vec<Line<'static>> = if model.reasoning.is_empty() {
+            vec![Line::from("Waiting for provider-visible reasoning…")]
         } else {
-            model.reasoning.as_str()
+            crate::markdown::render_markdown(&model.reasoning)
         };
         frame.render_widget(
-            Paragraph::new(reasoning)
+            Paragraph::new(reasoning_lines)
                 .wrap(Wrap { trim: false })
                 .style(Style::default().fg(Color::Rgb(159, 122, 234)))
                 .block(
@@ -417,12 +425,22 @@ fn theme_style(theme: &str) -> Style {
     }
 }
 
-fn estimated_wrapped_lines(lines: &[String], width: usize) -> usize {
+/// Estimates how many display rows `lines` will occupy after ratatui wraps
+/// them to `width` columns. Operates on the *rendered* markdown [`Line`]s so
+/// the estimate reflects collapsed fenced-code markers, list indentation, and
+/// heading prefixes rather than the raw source strings.
+fn estimated_wrapped_lines(lines: &[Line<'_>], width: usize) -> usize {
     let width = width.max(1);
     lines
         .iter()
-        .flat_map(|line| line.split('\n'))
-        .map(|line| line.chars().count().max(1).div_ceil(width))
+        .map(|line| {
+            let chars: usize = line
+                .spans
+                .iter()
+                .map(|span| span.content.chars().count())
+                .sum();
+            chars.max(1).div_ceil(width)
+        })
         .sum::<usize>()
         .max(1)
 }
@@ -775,5 +793,89 @@ mod tests {
         let _: &dyn TerminalRenderer = &renderer;
         let mut dynamic: Box<dyn TerminalRenderer> = Box::new(renderer);
         dynamic.render(&model);
+    }
+
+    #[test]
+    fn render_to_frame_renders_markdown_in_conversation_without_panicking() {
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
+        let model = ViewModel {
+            transcript: vec![
+                "assistant: Here is **bold** and `code`".to_string(),
+                "- item one".to_string(),
+                "- item two".to_string(),
+                "```rust\nfn main() {}\n```".to_string(),
+            ],
+            ..ViewModel::default()
+        };
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).expect("test backend");
+        terminal
+            .draw(|f| render_to_frame(f, &model))
+            .expect("draw must not panic with markdown transcript");
+
+        // The styled text must have made it to the buffer (markdown removed
+        // the literal `**` / `` ` `` markers from visible plain text).
+        let content: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(content.contains("bold"), "bold text should be visible");
+        assert!(content.contains("item one"), "list item should be visible");
+        assert!(content.contains("fn main"), "code block should be visible");
+    }
+
+    #[test]
+    fn render_to_frame_survives_zero_width_resize() {
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
+        let model = ViewModel {
+            transcript: vec!["assistant: **bold** `code`".to_string()],
+            ..ViewModel::default()
+        };
+        // A degenerate 1x1 area stresses the wrap path; must not panic.
+        let backend = TestBackend::new(1, 1);
+        let mut terminal = Terminal::new(backend).expect("test backend");
+        terminal
+            .draw(|f| render_to_frame(f, &model))
+            .expect("degenerate resize must not panic");
+    }
+
+    #[test]
+    fn render_to_frame_renders_reasoning_markdown() {
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
+        let model = ViewModel {
+            panels: PanelVisibility {
+                reasoning: true,
+                ..PanelVisibility::default()
+            },
+            reasoning: "Thinking about **this** step.".to_string(),
+            ..ViewModel::default()
+        };
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).expect("test backend");
+        terminal
+            .draw(|f| render_to_frame(f, &model))
+            .expect("reasoning markdown must not panic");
+        let content: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(
+            content.contains("this"),
+            "reasoning bold text should be visible"
+        );
     }
 }
