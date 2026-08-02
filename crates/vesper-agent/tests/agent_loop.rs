@@ -13,9 +13,9 @@ use vesper_agent::{
 };
 use vesper_domain::{
     BoundedString, ContentPart, ContentText, ConversationMessage, ExtensionMap, FinishOutcome,
-    MessageId, MessageRole, MessageRole::User, ProviderId, QualifiedModelId, SchemaVersion,
-    SessionOperatingMode, SessionPermissionMode, ToolCall, ToolCallId, ToolId,
-    VersionedExtensionEnvelope,
+    MessageId, MessageRole, MessageRole::User, ProviderId, QualifiedModelId, ReasoningKind,
+    ReasoningRetention, SchemaVersion, SessionOperatingMode, SessionPermissionMode, ToolCall,
+    ToolCallId, ToolId, VersionedExtensionEnvelope,
 };
 use vesper_provider::{
     CancellationSignal, ProviderConfiguration, ProviderError, ProviderFactory, ProviderFuture,
@@ -95,6 +95,17 @@ fn content_delta(text: &str) -> ProviderStreamEvent {
     ProviderStreamEvent::ContentDelta {
         stream_id: BoundedString::new("content").unwrap(),
         part: ContentPart::Text(ContentText::new(text).unwrap()),
+    }
+}
+
+/// Builds a provider-visible reasoning stream delta, mirroring how the GLM
+/// adapter maps `delta.reasoning_content` to a `ReasoningDelta` event.
+fn reasoning_delta(text: &str, kind: ReasoningKind) -> ProviderStreamEvent {
+    ProviderStreamEvent::ReasoningDelta {
+        stream_id: BoundedString::new("reasoning").unwrap(),
+        text: ContentText::new(text).unwrap(),
+        kind,
+        retention: ReasoningRetention::SessionOnly,
     }
 }
 
@@ -438,4 +449,132 @@ async fn streamed_text_deltas_coalesce_into_one_contiguous_message() {
         }
         other => panic!("expected Completed, got {other:?}"),
     }
+}
+
+#[tokio::test]
+async fn provider_visible_reasoning_streams_to_the_progress_port_in_order() {
+    // A reasoning model emits provider-visible thinking BEFORE the visible
+    // content. The loop must forward each reasoning delta to the progress
+    // port so a host can render it live — exactly as it does for content
+    // deltas. This is the regression guard for the reasoning pipeline.
+    let turn: ScriptedProviderResponse = Ok(vec![
+        Ok(reasoning_delta("step one", ReasoningKind::ProviderVisible)),
+        Ok(reasoning_delta("step two", ReasoningKind::ProviderVisible)),
+        Ok(content_delta("the answer")),
+        Ok(completed(FinishOutcome::Stop)),
+    ]);
+
+    let provider_id = provider();
+    let fake = FakeProviderSession::with_scripts([turn]);
+    let registry = Arc::new(ProviderRegistry::new());
+    registry
+        .register(FakeFactory {
+            id: provider_id.clone(),
+            session: fake,
+        })
+        .await
+        .unwrap();
+
+    let progress = Arc::new(RecordingProgressPort::default());
+    let agent = AgentLoop::new(
+        registry,
+        ToolRegistry::parity_default(),
+        config(&provider_id, 10),
+    )
+    .with_progress_port(progress.clone());
+    agent
+        .run_prompt(
+            user_message("think then answer"),
+            SessionOperatingMode::Code,
+            SessionPermissionMode::Ask,
+        )
+        .await
+        .expect("loop must complete");
+
+    let events = progress.events.lock().unwrap().clone();
+
+    // Both reasoning chunks must arrive, in order, before the content delta.
+    let reasoning: Vec<String> = events
+        .iter()
+        .filter_map(|event| match event {
+            AgentProgressEvent::ReasoningDelta { text } => Some(text.as_str().to_string()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        reasoning,
+        vec!["step one".to_string(), "step two".to_string()],
+        "provider-visible reasoning deltas must stream in order"
+    );
+
+    // Content must still stream too — the reasoning branch must not swallow
+    // the content path.
+    assert!(
+        events.iter().any(|event| matches!(
+            event,
+            AgentProgressEvent::ContentDelta { text } if text.as_str() == "the answer"
+        )),
+        "content delta must still arrive alongside reasoning"
+    );
+
+    // Reasoning must precede content in the event stream.
+    let reasoning_idx = events
+        .iter()
+        .position(|event| matches!(event, AgentProgressEvent::ReasoningDelta { .. }))
+        .expect("at least one reasoning event");
+    let content_idx = events
+        .iter()
+        .position(|event| matches!(event, AgentProgressEvent::ContentDelta { .. }))
+        .expect("a content event");
+    assert!(
+        reasoning_idx < content_idx,
+        "reasoning must stream before content"
+    );
+}
+
+#[tokio::test]
+async fn opaque_continuation_reasoning_is_not_forwarded_to_the_progress_port() {
+    // Only ProviderVisible / Summary reasoning is host-displayable; opaque
+    // continuation records must NOT be forwarded (they would leak non-
+    // displayable provider state into the live UI).
+    let turn: ScriptedProviderResponse = Ok(vec![
+        Ok(reasoning_delta("hidden", ReasoningKind::OpaqueContinuation)),
+        Ok(content_delta("ok")),
+        Ok(completed(FinishOutcome::Stop)),
+    ]);
+
+    let provider_id = provider();
+    let fake = FakeProviderSession::with_scripts([turn]);
+    let registry = Arc::new(ProviderRegistry::new());
+    registry
+        .register(FakeFactory {
+            id: provider_id.clone(),
+            session: fake,
+        })
+        .await
+        .unwrap();
+
+    let progress = Arc::new(RecordingProgressPort::default());
+    let agent = AgentLoop::new(
+        registry,
+        ToolRegistry::parity_default(),
+        config(&provider_id, 10),
+    )
+    .with_progress_port(progress.clone());
+    agent
+        .run_prompt(
+            user_message("answer only"),
+            SessionOperatingMode::Code,
+            SessionPermissionMode::Ask,
+        )
+        .await
+        .expect("loop must complete");
+
+    let events = progress.events.lock().unwrap();
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(event, AgentProgressEvent::ReasoningDelta { .. })),
+        "opaque continuation reasoning must not reach the progress port"
+    );
 }

@@ -7059,6 +7059,60 @@ mod tests {
     }
 
     #[test]
+    fn drain_agent_event_streams_reasoning_and_content_into_session_buffers() {
+        // Closes the loop on the UI binding: progress events emitted by the
+        // agent loop must land in `session.reasoning` / `session.live_response`,
+        // which `ViewModel.reasoning` / `ViewModel.live_response` clone each
+        // frame for the Conversation and Reasoning panels.
+        let mut session = TuiSession {
+            state: SessionState::new(),
+            input: String::new(),
+            conversation: Vec::new(),
+            agent_rx: None,
+            agent_task: None,
+            agent_running: true,
+            approval_rx: mpsc::unbounded_channel().1,
+            pending_approval: None,
+            mobile_server: None,
+            mobile_approval_id: None,
+            keybindings: default_keybindings(),
+            command_matches: Vec::new(),
+            command_selected: 0,
+            session_id: "test-session".into(),
+            telemetry: Arc::new(vesper_observability::TrajectoryRecorder::disabled()),
+            activity: Vec::new(),
+            reasoning: String::new(),
+            live_response: String::new(),
+            turn_started: None,
+            last_report: Vec::new(),
+            pending_images: Vec::new(),
+            last_image: None,
+            working_tree_view: None,
+            working_tree_lines: Vec::new(),
+            voice_recording: None,
+            selection_anchor: None,
+            selected_text: String::new(),
+        };
+        let (tx, rx): (mpsc::UnboundedSender<AgentEvent>, _) = mpsc::unbounded_channel();
+        let _ = tx.send(AgentEvent::Progress(AgentProgressEvent::ReasoningDelta {
+            text: ContentText::new("thinking…").unwrap(),
+        }));
+        let _ = tx.send(AgentEvent::Progress(AgentProgressEvent::ContentDelta {
+            text: ContentText::new("answering…").unwrap(),
+        }));
+        session.agent_rx = Some(rx);
+        drain_agent_event(&mut session);
+
+        assert_eq!(session.reasoning, "thinking…");
+        assert_eq!(session.live_response, "answering…");
+        assert!(
+            session.agent_running,
+            "no Completed event arrived, so the turn stays in flight"
+        );
+        drop(tx);
+    }
+
+    #[test]
     fn tui_tool_service_advertises_the_complete_python_tool_surface() {
         let service = TuiToolService::new(
             Arc::new(MemoryStores::open_default()),
