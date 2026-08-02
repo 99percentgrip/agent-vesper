@@ -124,4 +124,44 @@ mod tests {
         assert_eq!(session.phase(), PlanPhase::Normal);
         assert!(session.overrides.is_empty());
     }
+
+    #[test]
+    fn auth_descriptor_is_projected_from_advertised_provider_descriptor() {
+        // Provider-routed auth proof: an AuthProvider must be projected purely
+        // from the active provider's advertised ProviderDescriptor, with no
+        // hardcoded provider match arm. The env var comes from the first
+        // secret-reference field; key_url from the advertised field.
+        use vesper_domain::BoundedString;
+        use vesper_provider::{AuthenticationMethodDescriptor, ProviderDescriptor};
+        let descriptor = ProviderDescriptor {
+            provider_id: ProviderId::new("zai").unwrap(),
+            display_name: BoundedString::new("Z.ai GLM").unwrap(),
+            authentication_methods: vec![AuthenticationMethodDescriptor {
+                method_id: BoundedString::new("zai-api-key").unwrap(),
+                display_name: BoundedString::new("Z.ai API key").unwrap(),
+                secret_reference_fields: vec![BoundedString::new("ZAI_API_KEY").unwrap()],
+                external_runtime_owned: false,
+                key_url: Some(
+                    BoundedString::new("https://z.ai/manage-apikey/apikey-list").unwrap(),
+                ),
+            }],
+            configuration: None,
+            metadata: Default::default(),
+        };
+        let auth = auth_provider_from_descriptor(&descriptor).expect("projected");
+        assert_eq!(auth.id, "zai");
+        assert_eq!(auth.name, "Z.ai API key");
+        assert_eq!(auth.environment_variable, "ZAI_API_KEY");
+        assert_eq!(auth.key_url, "https://z.ai/manage-apikey/apikey-list");
+
+        // A descriptor with no auth method projects to None.
+        let bare = ProviderDescriptor {
+            provider_id: ProviderId::new("bare").unwrap(),
+            display_name: BoundedString::new("Bare").unwrap(),
+            authentication_methods: Vec::new(),
+            configuration: None,
+            metadata: Default::default(),
+        };
+        assert!(auth_provider_from_descriptor(&bare).is_none());
+    }
 }
