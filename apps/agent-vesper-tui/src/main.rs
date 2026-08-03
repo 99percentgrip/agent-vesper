@@ -3847,7 +3847,7 @@ struct ZaiExtractionAdapter {
 impl ZaiExtractionAdapter {
     fn new(credential_source: Arc<dyn vesper_provider_glm::GlmCredentialSource>) -> Self {
         let endpoint =
-            vesper_provider_glm::GlmEndpoint::official(vesper_provider_glm::GlmPlan::Standard)
+            vesper_provider_glm::GlmEndpoint::official(vesper_provider_glm::GlmPlan::Coding)
                 .expect("static Zai Standard endpoint");
         let base = endpoint.base_url();
         let endpoint_url = format!("{base}/chat/completions");
