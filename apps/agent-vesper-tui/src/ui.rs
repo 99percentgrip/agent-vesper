@@ -12,7 +12,10 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Position},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Gauge, List, ListItem, ListState, Paragraph, Wrap},
+    widgets::{
+        Block, Borders, Gauge, List, ListItem, ListState, Paragraph, Scrollbar,
+        ScrollbarOrientation, ScrollbarState, Wrap,
+    },
 };
 
 use crate::dispatch::{PanelVisibility, SessionControls, TaskItem, TerminalPreferences};
@@ -61,6 +64,12 @@ pub struct ViewModel {
     pub working_tree_lines: Vec<String>,
     /// Theme, accessibility, mouse, and sound preferences.
     pub preferences: TerminalPreferences,
+    /// Manual conversation scroll offset in **rendered lines from the top**.
+    /// `None` = auto-follow (stick to bottom, the default); `Some(n)` = the
+    /// user pressed PageUp/Home and is reading history at offset `n`. The
+    /// renderer mirrors this into a `ScrollbarState` so the visual scrollbar
+    /// reflects the same position the `Paragraph::scroll` call uses.
+    pub conversation_manual_scroll: Option<u16>,
 }
 
 /// Abstraction over a terminal backend.
@@ -216,10 +225,34 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
             .title(" Conversation "),
     );
     let visible_lines = usize::from(transcript_area.height.saturating_sub(2));
-    let scroll = wrapped_lines
+    let max_scroll = wrapped_lines
         .saturating_sub(visible_lines)
         .min(u16::MAX as usize) as u16;
-    frame.render_widget(paragraph.scroll((scroll, 0)), transcript_area);
+    // `None` (auto-follow) sticks to the bottom; `Some(n)` honors the user's
+    // manual scroll position (clamped to the valid range so a resize or new
+    // content cannot push the offset past the last rendered line).
+    let effective_scroll = model
+        .conversation_manual_scroll
+        .map(|manual| manual.min(max_scroll))
+        .unwrap_or(max_scroll);
+    frame.render_widget(paragraph.scroll((effective_scroll, 0)), transcript_area);
+
+    // Vertical scrollbar on the right edge of the Conversation block. The
+    // state mirrors the same `effective_scroll` used by the paragraph so the
+    // thumb position is always truthful, even when the user is in manual
+    // scroll mode (PageUp/Home). We render against the *inner* area (inside
+    // the borders) so the scrollbar sits next to the text rather than over
+    // the right border.
+    let mut scrollbar_state = ScrollbarState::new(wrapped_lines.min(u16::MAX as usize))
+        .position(usize::from(effective_scroll))
+        .viewport_content_length(visible_lines);
+    frame.render_stateful_widget(
+        Scrollbar::new(ScrollbarOrientation::VerticalRight)
+            .thumb_style(Style::default().fg(Color::Rgb(120, 140, 160)))
+            .track_style(Style::default().fg(Color::Rgb(60, 70, 85))),
+        transcript_area,
+        &mut scrollbar_state,
+    );
 
     if reasoning_height > 0 {
         let reasoning_lines: Vec<Line<'static>> = if model.reasoning.is_empty() {
@@ -876,6 +909,83 @@ mod tests {
         assert!(
             content.contains("this"),
             "reasoning bold text should be visible"
+        );
+    }
+
+    #[test]
+    fn render_to_frame_renders_vertical_scrollbar_when_transcript_overflows() {
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
+        // A transcript taller than the viewport must render the new Scrollbar
+        // widget without panicking, and the renderer must honor an explicit
+        // `conversation_manual_scroll` (PageUp/Home) without going past the
+        // valid range.
+        let long_lines: Vec<String> = (0..200)
+            .map(|i| format!("assistant: line number {i} of a long transcript"))
+            .collect();
+        let model = ViewModel {
+            transcript: long_lines,
+            conversation_manual_scroll: Some(40),
+            ..ViewModel::default()
+        };
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).expect("test backend");
+        terminal
+            .draw(|f| render_to_frame(f, &model))
+            .expect("scrollbar render must not panic when transcript overflows");
+
+        // Manual scroll position 40 should be honored: line 40 should be near
+        // the top of the viewport (not the bottom of the transcript).
+        let content: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(
+            content.contains("line number 40"),
+            "manual scroll offset 40 must position that line in the viewport"
+        );
+        assert!(
+            !content.contains("line number 199"),
+            "the bottom of the transcript must NOT be visible under manual scroll 40"
+        );
+    }
+
+    #[test]
+    fn render_to_frame_auto_follows_when_manual_scroll_is_none() {
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
+        // `None` (auto-follow) must keep the bottom of the transcript visible
+        // even when the transcript is much taller than the viewport.
+        let long_lines: Vec<String> = (0..200)
+            .map(|i| format!("user: turn {i} of many"))
+            .collect();
+        let model = ViewModel {
+            transcript: long_lines,
+            conversation_manual_scroll: None,
+            ..ViewModel::default()
+        };
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).expect("test backend");
+        terminal
+            .draw(|f| render_to_frame(f, &model))
+            .expect("auto-follow render must not panic");
+        let content: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(
+            content.contains("turn 199"),
+            "auto-follow (None) must show the bottom of the transcript"
         );
     }
 }

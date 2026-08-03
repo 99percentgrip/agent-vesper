@@ -614,6 +614,7 @@ async fn drive_loop(
                 .map(|view| ["Changes", "Git", "Diff", "Files", "GitHub"][view].to_owned()),
             working_tree_lines: session.working_tree_lines.clone(),
             preferences: session.state.preferences.clone(),
+            conversation_manual_scroll: session.state.conversation_manual_scroll,
         };
         if let Err(error) = terminal.draw(|frame| {
             render_to_frame(frame, &model);
@@ -694,6 +695,38 @@ async fn drive_loop(
             continue;
         }
         match code {
+            // Conversation scroll bindings. Active only when the slash-command
+            // palette is closed (so they never steal arrow-key nav from the
+            // palette). `PageUp` switches to manual mode at offset N;
+            // `PageDown` advances N lines (the renderer clamps to the bottom
+            // and visually behaves like auto-follow when manual >= max);
+            // `Home` jumps to the top; `End` returns to auto-follow (None).
+            // The renderer mirrors `conversation_manual_scroll` into a
+            // `ScrollbarState` so the thumb reflects these movements.
+            KeyCode::PageUp | KeyCode::PageDown | KeyCode::Home | KeyCode::End
+                if session.command_matches.is_empty() =>
+            {
+                let page = page_size_for_scroll(terminal.size().map(|s| s.height).unwrap_or(20));
+                let current = session.state.conversation_manual_scroll.unwrap_or(u16::MAX);
+                match code {
+                    KeyCode::PageUp => {
+                        session.state.conversation_manual_scroll =
+                            Some(current.saturating_sub(page));
+                    }
+                    KeyCode::PageDown => {
+                        session.state.conversation_manual_scroll =
+                            Some(current.saturating_add(page));
+                    }
+                    KeyCode::Home => {
+                        session.state.conversation_manual_scroll = Some(0);
+                    }
+                    KeyCode::End => {
+                        session.state.conversation_manual_scroll = None;
+                    }
+                    _ => {}
+                }
+                continue;
+            }
             KeyCode::Char('p') if ctrl => {
                 session.input = "/".into();
                 session.state.preferences.composer_cursor = 1;
@@ -777,6 +810,10 @@ async fn drive_loop(
                 session.state.preferences.composer_cursor = 0;
                 session.command_matches.clear();
                 session.command_selected = 0;
+                // Submitting a prompt always returns to auto-follow so the
+                // user sees the freshly-streamed response at the bottom of
+                // the panel, regardless of where they were reading before.
+                session.state.conversation_manual_scroll = None;
                 // ADR 0009 / Tier A: drain any pending reasoning update into
                 // the runtime session. `dispatch` stays pure and produces the
                 // command intent here; the binary owns the async runtime call.
@@ -1158,6 +1195,17 @@ fn enter_raw_mode() -> io::Result<()> {
 /// composer value. This is deliberately kept at the terminal boundary: the
 /// registry remains pure and the palette disappears while an agent turn is in
 /// flight, matching the Python composer behavior.
+/// Heuristic page size for `PageUp` / `PageDown` conversation scrolling.
+///
+/// Reserves ~6 lines for the input composer, status, and footer chrome; the
+/// conversation panel occupies the rest. Half of that height is a sensible
+/// page step that matches what users expect from a typical terminal pager.
+/// Floors at 3 so a tiny terminal still scrolls visibly per key press.
+fn page_size_for_scroll(terminal_height: u16) -> u16 {
+    let conversation_estimate = terminal_height.saturating_sub(6);
+    (conversation_estimate / 2).max(3)
+}
+
 fn refresh_command_menu(
     session: &mut TuiSession,
     registry: &CommandRegistry,
