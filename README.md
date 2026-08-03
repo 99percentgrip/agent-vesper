@@ -18,7 +18,7 @@
 
 Agent Vesper is a **pure-Rust** AI agent harness that **remembers you across conversations**. It provides a provider-neutral runtime where any LLM provider can plug in — today it ships with the Z.ai GLM adapter, tomorrow any provider can join with zero TUI or runtime changes. The agent learns your preferences, tracks your projects, and recalls relevant context before every reply — all running locally with zero external services.
 
-Built as a faithful native port of the [Native GLM ACP](https://github.com/99percentgrip/Native-GLM-ACP) Python oracle and enhanced with a [mem0](https://github.com/mem0ai/mem0)-equivalent V3 cognitive memory engine.
+Built as a native port of the [Native GLM ACP](https://github.com/99percentgrip/Native-GLM-ACP) Python oracle with an advanced cognitive memory engine.
 
 ## Features
 
@@ -172,7 +172,7 @@ apps/
 ├── agent-vesper-tui/     Interactive terminal UI (ratatui + crossterm)
 
 crates/
-├── vesper-cognition/     mem0 V3 cognitive memory engine (SQLite + FTS5 + entity graph)
+├── vesper-cognition/     cognitive memory engine (SQLite + FTS5 + entity graph)
 ├── vesper-memory/        Durable memory graph, skills, profile, awareness ledger
 ├── vesper-agent/         Multi-turn tool-executing agent loop (Tier C)
 ├── vesper-runtime/       Provider-neutral session actors + reasoning dial
@@ -200,7 +200,7 @@ crates/
 
 ## Cognitive Memory Pipeline
 
-The memory engine implements a faithful port of mem0's V3 "April 2026" algorithm:
+The memory engine implements a single-pass ADD-only extraction pipeline:
 
 ```
 User says something
@@ -213,7 +213,7 @@ User says something
               → Silently injected into the user message before the provider call
 ```
 
-**Optional enhancements (TencentDB Agent Memory-inspired):**
+**Optional enhancements:**
 - Conflict detection (store/skip classification via second LLM call)
 - RRF fusion (Reciprocal Rank Fusion as alternative to additive scoring)
 - Both disabled by default — enable via `CognitiveConfig`
