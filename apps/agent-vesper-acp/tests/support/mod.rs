@@ -357,10 +357,20 @@ fn wait_for_exit(child: &mut Child) {
 }
 
 fn unique_suffix() -> u128 {
-    std::time::SystemTime::now()
+    // Combine wall-clock nanoseconds with a monotonic per-process counter.
+    // On Apple Silicon the clock has nanosecond resolution, but two parallel
+    // test threads can still observe the same nanosecond tick; the counter
+    // guarantees every ProcessHarness temp dir is distinct even under that
+    // race, which prevents cross-test isolation-root collisions when the
+    // workspace test harness runs process_blockers in parallel.
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
-        .as_nanos()
+        .as_nanos();
+    let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
+    nanos.wrapping_add(seq as u128)
 }
 
 /// Returns the platform-specific minimum env-var keys the spawned
