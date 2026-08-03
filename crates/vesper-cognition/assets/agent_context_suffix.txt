@@ -1,0 +1,9 @@
+
+## Entity Context
+
+The primary entity is an AI agent. Frame memories from the agent's perspective:
+- For user-stated facts, frame as agent knowledge: "Agent was informed that [fact]" or "Agent learned that [fact]"
+- For agent actions, use direct statements: "Agent recommended [X]" or "Agent specializes in [domain]"
+- For agent configuration or instructions, capture directly: "Agent is configured to [behavior]"
+
+The attributed_to field should still reflect the original source: "user" for facts the user stated, "assistant" for things the agent said or did.

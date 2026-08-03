@@ -13,6 +13,7 @@ crossterm.workspace = true
 ratatui.workspace = true
 rand.workspace = true
 qrcode.workspace = true
+reqwest.workspace = true
 sha2.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
@@ -22,6 +23,7 @@ tracing-subscriber.workspace = true
 vesper-agent = { path = "../../crates/vesper-agent", version = "=0.1.0" }
 vesper-auth = { path = "../../crates/vesper-auth", version = "=0.1.0" }
 vesper-checkpoints = { path = "../../crates/vesper-checkpoints", version = "=0.1.0" }
+vesper-cognition = { path = "../../crates/vesper-cognition", version = "=0.1.0" }
 vesper-domain = { path = "../../crates/vesper-domain", version = "=0.1.0" }
 vesper-harness = { path = "../../crates/vesper-harness", version = "=0.1.0" }
 vesper-mcp = { path = "../../crates/vesper-mcp", version = "=0.1.0" }

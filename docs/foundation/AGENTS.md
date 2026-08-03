@@ -8,6 +8,10 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 - `evidence-index.md` is the durable execution ledger and command record.
 - ADRs under `adr/` record Stage 0 compatibility and product choices.
+- `mem0-cognitive-memory-blueprint.md` is the reconnaissance record for the
+  external mem0 (`29fa4155`) oracle and the evidence base for ADR 0015
+  (Stage 16 — `vesper-cognition`). The mem0 oracle is independent of the
+  frozen Python harness; this is the only place where mem0 is cited.
 - The remaining reports document source-baseline diagnosis, fixture/oracle results, disposable Rust spikes, and readiness.
 
 ## Local Contracts

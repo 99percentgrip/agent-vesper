@@ -135,6 +135,16 @@ async fn run() -> Result<(), String> {
     // root cannot be opened we keep going so the rest of the TUI works —
     // memory commands will surface a clear error in the transcript.
     let memory_stores = Arc::new(MemoryStores::open_default());
+    // Phase 11 (ADR 0015 — Stage 16): open the cognitive-memory engine. The
+    // bundle stays `engine = None` when the Zai credential is missing or
+    // the SQLite database cannot be opened — the TUI keeps running with
+    // cognitive-memory features disabled. Concrete trait-impl wiring lives
+    // in `CognitionBundle::open_default`; the slash-command surface for
+    // `/remember` `/recall` `/forget` is additive and ships independently.
+    let cognition_bundle = Arc::new(CognitionBundle::open_default(Arc::new(
+        vesper_provider_glm::EnvironmentCredentialSource,
+    )));
+    let _ = &cognition_bundle;
     // Phase 9 (ADR 0012): open the durable checkpoints subsystem rooted at
     // `AGENT_VESPER_CHECKPOINT_ROOT` (falling back to
     // `.agent-vesper/checkpoints/`). Same confinement + atomic-write
@@ -3538,6 +3548,226 @@ impl MemoryStores {
             awareness,
             root_display,
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 11 (ADR 0015 — Stage 16): cognitive memory engine wiring.
+//
+// The TUI binary owns a `CognitionBundle` that constructs the three
+// `CognitionPorts` trait impls using the existing Zai adapter
+// (`vesper_provider_glm::resolve_credential`) plus a blocking
+// reqwest client. This is consistent with the binary's existing pattern of
+// performing blocking I/O on Tokio threads (per the Stage 8 closeout). The
+// Zai adapter does not currently expose embeddings or a synchronous chat
+// helper, so the trait impls live here.
+// ---------------------------------------------------------------------------
+
+/// Bundle of the cognitive-memory engine. `None` when no credential is
+/// available or when the SQLite path cannot be opened — the TUI keeps
+/// running with cognitive-memory features disabled.
+#[allow(dead_code)]
+struct CognitionBundle {
+    engine: Option<Arc<vesper_cognition::CognitiveMemory>>,
+    /// Human-readable root path used in error notices.
+    root_display: String,
+}
+
+impl CognitionBundle {
+    /// Opens the cognitive-memory SQLite database at
+    /// `AGENT_VESPER_COGNITION_ROOT` (falling back to
+    /// `.agent-vesper/cognition/`). Returns a bundle with `engine = None`
+    /// when either the credential is missing or the database cannot be
+    /// opened — the TUI keeps running with cognitive-memory disabled.
+    fn open_default(credential_source: Arc<dyn vesper_provider_glm::GlmCredentialSource>) -> Self {
+        let root = match std::env::var("AGENT_VESPER_COGNITION_ROOT") {
+            Ok(value) => std::path::PathBuf::from(value),
+            Err(_) => std::env::current_dir()
+                .unwrap_or_else(|_| std::path::PathBuf::from("."))
+                .join(".agent-vesper")
+                .join("cognition"),
+        };
+        let _ = std::fs::create_dir_all(&root);
+        let db_path = root.join("cognition.db");
+        let root_display = root.display().to_string();
+
+        // Probe the credential once at startup; if it's missing we keep the
+        // engine disabled without making per-turn network calls.
+        if vesper_provider_glm::resolve_credential(credential_source.as_ref()).is_err() {
+            return Self {
+                engine: None,
+                root_display,
+            };
+        }
+        let ports = vesper_cognition::CognitionPorts {
+            embedder: Arc::new(ZaiEmbeddingAdapter::new(Arc::clone(&credential_source))),
+            extractor: Arc::new(ZaiExtractionAdapter::new(Arc::clone(&credential_source))),
+            entity_nlp: Arc::new(ZaiEntityExtractor),
+        };
+        let config = vesper_cognition::CognitiveConfig::default();
+        let engine = vesper_cognition::open(&db_path, ports, config)
+            .ok()
+            .map(Arc::new);
+        Self {
+            engine,
+            root_display,
+        }
+    }
+}
+
+/// Zai embeddings via `POST {base}/embeddings` with model `embedding-3`
+/// (1024-d). Uses a blocking reqwest client consistent with the binary's
+/// other blocking credential-store I/O on Tokio threads.
+#[derive(Clone)]
+struct ZaiEmbeddingAdapter {
+    credential_source: Arc<dyn vesper_provider_glm::GlmCredentialSource>,
+    client: reqwest::blocking::Client,
+    endpoint_url: String,
+    model: String,
+}
+
+impl ZaiEmbeddingAdapter {
+    fn new(credential_source: Arc<dyn vesper_provider_glm::GlmCredentialSource>) -> Self {
+        let endpoint =
+            vesper_provider_glm::GlmEndpoint::official(vesper_provider_glm::GlmPlan::Standard)
+                .expect("static Zai endpoint");
+        let base = endpoint.base_url();
+        let endpoint_url = format!("{base}embeddings");
+        Self {
+            credential_source,
+            client: reqwest::blocking::Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .expect("reqwest blocking client"),
+            endpoint_url,
+            model: String::from("embedding-3"),
+        }
+    }
+
+    fn resolve_key(&self) -> Result<String, vesper_cognition::CognitionError> {
+        vesper_provider_glm::resolve_credential(self.credential_source.as_ref())
+            .map(|c| c.secret.expose().as_str().to_string())
+            .map_err(|_| vesper_cognition::CognitionError::Embedding)
+    }
+}
+
+impl vesper_cognition::EmbeddingPort for ZaiEmbeddingAdapter {
+    fn embed(
+        &self,
+        text: &str,
+        _action: vesper_cognition::EmbedAction,
+    ) -> Result<Vec<f32>, vesper_cognition::CognitionError> {
+        let key = self.resolve_key()?;
+        let body = serde_json::json!({
+            "model": self.model,
+            "input": text,
+        });
+        let response = self
+            .client
+            .post(&self.endpoint_url)
+            .bearer_auth(&key)
+            .json(&body)
+            .send()
+            .map_err(|_| vesper_cognition::CognitionError::Embedding)?;
+        if !response.status().is_success() {
+            return Err(vesper_cognition::CognitionError::Embedding);
+        }
+        let parsed: serde_json::Value = response
+            .json()
+            .map_err(|_| vesper_cognition::CognitionError::Embedding)?;
+        let vector = parsed["data"][0]["embedding"]
+            .as_array()
+            .ok_or(vesper_cognition::CognitionError::Embedding)?;
+        vector
+            .iter()
+            .map(|v| {
+                v.as_f64()
+                    .map(|f| f as f32)
+                    .ok_or(vesper_cognition::CognitionError::Embedding)
+            })
+            .collect()
+    }
+}
+
+/// Zai chat completions with `response_format={"type":"json_object"}` for
+/// extraction. Uses the agent-loop's configured model name.
+#[derive(Clone)]
+struct ZaiExtractionAdapter {
+    credential_source: Arc<dyn vesper_provider_glm::GlmCredentialSource>,
+    client: reqwest::blocking::Client,
+    endpoint_url: String,
+    model: String,
+}
+
+impl ZaiExtractionAdapter {
+    fn new(credential_source: Arc<dyn vesper_provider_glm::GlmCredentialSource>) -> Self {
+        let endpoint =
+            vesper_provider_glm::GlmEndpoint::official(vesper_provider_glm::GlmPlan::Standard)
+                .expect("static Zai endpoint");
+        let base = endpoint.base_url();
+        let endpoint_url = format!("{base}chat/completions");
+        Self {
+            credential_source,
+            client: reqwest::blocking::Client::builder()
+                .timeout(std::time::Duration::from_secs(60))
+                .build()
+                .expect("reqwest blocking client"),
+            endpoint_url,
+            model: std::env::var("AGENT_VESPER_COGNITION_MODEL")
+                .unwrap_or_else(|_| String::from("glm-4.6")),
+        }
+    }
+
+    fn resolve_key(&self) -> Result<String, vesper_cognition::CognitionError> {
+        vesper_provider_glm::resolve_credential(self.credential_source.as_ref())
+            .map(|c| c.secret.expose().as_str().to_string())
+            .map_err(|_| vesper_cognition::CognitionError::Extraction)
+    }
+}
+
+impl vesper_cognition::ExtractionLlmPort for ZaiExtractionAdapter {
+    fn extract(
+        &self,
+        system_prompt: &str,
+        user_prompt: &str,
+    ) -> Result<String, vesper_cognition::CognitionError> {
+        let key = self.resolve_key()?;
+        let body = serde_json::json!({
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "response_format": {"type": "json_object"},
+        });
+        let response = self
+            .client
+            .post(&self.endpoint_url)
+            .bearer_auth(&key)
+            .json(&body)
+            .send()
+            .map_err(|_| vesper_cognition::CognitionError::Extraction)?;
+        if !response.status().is_success() {
+            return Err(vesper_cognition::CognitionError::Extraction);
+        }
+        let parsed: serde_json::Value = response
+            .json()
+            .map_err(|_| vesper_cognition::CognitionError::Extraction)?;
+        parsed["choices"][0]["message"]["content"]
+            .as_str()
+            .map(str::to_string)
+            .ok_or(vesper_cognition::CognitionError::Extraction)
+    }
+}
+
+/// Default in-crate regex entity extractor. Wraps the public
+/// `vesper_cognition::extract_entities` function in a port-impl struct so it
+/// can plug into `CognitionPorts.entity_nlp`.
+struct ZaiEntityExtractor;
+
+impl vesper_cognition::EntityExtractorPort for ZaiEntityExtractor {
+    fn extract(&self, text: &str) -> Vec<vesper_cognition::EntityCandidate> {
+        vesper_cognition::extract_entities(text)
     }
 }
 

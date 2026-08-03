@@ -17,6 +17,14 @@ test-only conformance support.
 - `vesper-memory` depends only on `vesper-domain` and `vesper-security`; it
   owns the durable memory graph, learned skills, user profile, and bounded
   awareness ledger (ADR 0011 — Stage 12).
+- `vesper-cognition` depends only on `vesper-domain` and `vesper-security`
+  (plus `rusqlite` (bundled), `rust-stemmers`, and standard utility crates);
+  it owns the mem0-equivalent V3 cognitive memory engine — single-pass
+  ADD-only extraction, hybrid semantic + FTS5 BM25 + entity-boost retrieval,
+  and the embedded SQLite backing (ADR 0015 — Stage 16). It is the **only**
+  production crate permitted to declare `rusqlite`; provider embeddings +
+  extraction LLM + entity NLP are trait ports fulfilled at the composition
+  boundary, never inside this crate.
 - `vesper-checkpoints` depends only on `vesper-domain` and
   `vesper-security`; it owns the workspace snapshot/rollback, session
   lineage, and bounded cron/export/clipboard/CI surface (ADR 0012 —
@@ -79,6 +87,9 @@ test-only conformance support.
   Stage 6 transactional writer.
 - `vesper-memory/AGENTS.md` — ADR 0011 (Stage 12) persistent memory graph,
   learned skills, user profile, and bounded epistemic ledger.
+- `vesper-cognition/AGENTS.md` — ADR 0015 (Stage 16) mem0-equivalent V3
+  cognitive memory engine: ADD-only extraction, hybrid semantic + FTS5 BM25 +
+  entity retrieval, embedded SQLite backing, and provider-routed trait ports.
 - `vesper-checkpoints/AGENTS.md` — ADR 0012 (Stage 14) workspace snapshots,
   rollback, session lineage, and bounded cron/export/clipboard/CI surface.
 - `vesper-mcp/AGENTS.md` — ADR 0013 (Stage 15) MCP stdio client and
