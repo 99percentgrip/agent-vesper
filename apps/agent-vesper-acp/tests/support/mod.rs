@@ -12,7 +12,16 @@ use std::{
 use serde_json::{Value, json};
 
 pub const CANARY: &str = "vesper-stage41-secret-canary";
-const TIMEOUT: Duration = Duration::from_secs(10);
+// Per-operation timeout for receiving one JSON-RPC line from the spawned
+// agent process. The agent normally responds in well under 1 second, but
+// when `cargo test --workspace` runs every test binary in parallel on a
+// shared CI runner, process startup and IPC can briefly exceed 10 seconds
+// under contention. 30 seconds gives ~3x headroom for that contention
+// while still failing fast enough that a genuinely-hung process is
+// surfaced in a reasonable test cycle. (The dedicated serial
+// `process_blockers -- --test-threads=1` step rarely approaches this
+// ceiling because it has no parallel contention.)
+const TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Clone)]
 pub struct ReaderGate(Arc<(Mutex<bool>, Condvar)>);
