@@ -16,7 +16,8 @@ subsystem that backs the Tier C Phase 8 un-stubbed commands
 - `src/store.rs` — `MemoryStore` (append-only JSONL memory entries) with
   atomic write-to-temp + rename, mirroring the `vesper-sessions` writer.
 - `src/skills.rs` — `SkillStore` (markdown skill files under
-  `<root>/skills/<slug>.md`) and `SkillSummary`.
+  `<root>/skills/<slug>.md`), `SkillSummary`, and bounded JSON skill bundles
+  under `<root>/bundles/<slug>.json`.
 - `src/profile.rs` — `UserProfile` (single markdown file with bounded
   size, append/forget with category sections).
 - `src/awareness.rs` — `AwarenessLedger` and the `EpistemicRecord` /
@@ -42,6 +43,8 @@ subsystem that backs the Tier C Phase 8 un-stubbed commands
 - Records are bounded: summary ≤ 1024 chars, scope list ≤ 8 entries,
   evidence list ≤ 16 entries, total entries ≤ 10_000. Inputs that
   exceed bounds are rejected, not silently truncated.
+- Skill bundles are validated before atomic replacement: at most 32
+  validated skill slugs and 32 KiB serialized JSON per bundle.
 
 ## Work Guidance
 
@@ -56,6 +59,8 @@ subsystem that backs the Tier C Phase 8 un-stubbed commands
   is opt-in via `save()`/`load()` to a single JSON file. The harness
   (not this crate) is responsible for keeping the live state coherent
   with provider evidence.
+- Bundle files are durable grouping metadata only; loading a bundle never
+  implicitly executes or mutates a skill.
 
 ## Verification
 

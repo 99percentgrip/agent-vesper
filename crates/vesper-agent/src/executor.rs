@@ -3,16 +3,16 @@
 //! Each parity-critical tool implements [`ToolExecutor`]. The registry routes a
 //! normalized [`ToolCall`] to its executor; the executor returns bounded text
 //! that the agent loop feeds back to the model as a `role: Tool` message.
-//! Phase 1 ships stub executors (canned results, no real I/O); real
-//! filesystem/shell execution arrives in Phase 4 behind the same trait.
+//! Core executors perform bounded, confined filesystem and shell I/O; host
+//! capabilities are injected through the same trait.
 
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
 use vesper_domain::{
-    ContentText, SessionOperatingMode, SessionPermissionMode, ToolCall, ToolDefinition,
-    WorkspaceRoot,
+    ContentText, ConversationMessage, SessionOperatingMode, SessionPermissionMode, ToolCall,
+    ToolDefinition, WorkspaceRoot,
 };
 use vesper_provider::CancellationSignal;
 
@@ -31,6 +31,10 @@ pub struct ToolContext {
     pub operating_mode: SessionOperatingMode,
     /// Active permission mode (gates destructive tools upstream).
     pub permission_mode: SessionPermissionMode,
+    /// Conversation visible to the current turn. Stateful hosts populate this
+    /// so context-aware tools can search the active session without owning
+    /// persistence.
+    pub conversation: Vec<ConversationMessage>,
     /// Hierarchical cancellation view; executors must observe it on long ops.
     pub cancellation: Arc<dyn CancellationSignal>,
 }
@@ -43,6 +47,7 @@ impl std::fmt::Debug for ToolContext {
             .field("workspace_roots", &self.workspace_roots)
             .field("operating_mode", &self.operating_mode)
             .field("permission_mode", &self.permission_mode)
+            .field("conversation_messages", &self.conversation.len())
             .field("cancellation", &"<cancellation-signal>")
             .finish()
     }
@@ -51,7 +56,7 @@ impl std::fmt::Debug for ToolContext {
 /// One executor's bounded result fed back to the model.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ToolResult {
-    /// Bounded textual result (Phase 1 stubs return a canned summary).
+    /// Bounded textual result returned to the provider loop.
     pub text: ContentText,
 }
 
@@ -109,6 +114,56 @@ pub trait ToolExecutor: Send + Sync {
     ) -> ToolFuture<'a, Result<ToolResult, ToolError>>;
 }
 
+/// Composition-boundary service for tools owned by another subsystem.
+///
+/// The agent crate owns the routing contract but not memory, MCP, plugin,
+/// worker, or automation state. Hosts inject those capabilities through this
+/// trait so the loop can advertise and execute them without taking a
+/// dependency on frontend or persistence crates.
+pub trait ToolService: Send + Sync {
+    /// Definitions contributed by this service.
+    fn definitions(&self) -> Vec<ToolDefinition>;
+
+    /// Executes one service-owned tool call.
+    fn execute<'a>(
+        &'a self,
+        call: &'a ToolCall,
+        context: &'a ToolContext,
+    ) -> ToolFuture<'a, Result<ToolResult, ToolError>>;
+}
+
+/// Adapter that turns one service-owned definition into a normal registry
+/// executor. The registry remains unaware of the service implementation.
+pub struct HostedTool {
+    definition: ToolDefinition,
+    service: Arc<dyn ToolService>,
+}
+
+impl HostedTool {
+    /// Creates a hosted executor for one definition.
+    #[must_use]
+    pub fn new(definition: ToolDefinition, service: Arc<dyn ToolService>) -> Self {
+        Self {
+            definition,
+            service,
+        }
+    }
+}
+
+impl ToolExecutor for HostedTool {
+    fn definition(&self) -> ToolDefinition {
+        self.definition.clone()
+    }
+
+    fn execute<'a>(
+        &'a self,
+        call: &'a ToolCall,
+        context: &'a ToolContext,
+    ) -> ToolFuture<'a, Result<ToolResult, ToolError>> {
+        self.service.execute(call, context)
+    }
+}
+
 /// Convenience: the stable harness name as a plain string.
 #[must_use]
 pub fn harness_name(definition: &ToolDefinition) -> String {
@@ -132,13 +187,14 @@ pub fn uncancellable_context(
         workspace_roots: roots,
         operating_mode,
         permission_mode,
+        conversation: Vec::new(),
         cancellation: Arc::new(NeverCancelled),
     }
 }
 
 /// Builds a stable, schema-only tool definition for the parity registry.
 #[must_use]
-pub(crate) fn schema_definition(
+pub fn schema_definition(
     name: &str,
     description: &str,
     class: vesper_domain::ToolExecutionClass,

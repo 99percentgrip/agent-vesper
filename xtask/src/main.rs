@@ -955,9 +955,14 @@ fn architecture() -> Result<(), String> {
             if matches!(
                 dependency.name.as_str(),
                 "rusqlite" | "sqlx" | "libsqlite3-sys"
-            ) {
+            ) && package.name != "vesper-cognition"
+            {
+                // ADR 0015 (Stage 16): `vesper-cognition` is the only
+                // production crate permitted to declare a SQLite dependency.
+                // Every other crate remains SQLite-free. (The historical
+                // "Stage 5" blanket ban is superseded by this allowlist.)
                 return Err(format!(
-                    "SQLite dependency {} is prohibited during Stage 5",
+                    "SQLite dependency {} is prohibited outside vesper-cognition",
                     dependency.name
                 ));
             }
@@ -1143,8 +1148,19 @@ fn allowed_dependencies() -> BTreeMap<&'static str, BTreeSet<&'static str>> {
     BTreeMap::from([
         ("vesper-domain", BTreeSet::new()),
         ("vesper-security", BTreeSet::new()),
+        ("vesper-auth", BTreeSet::from(["vesper-security"])),
         (
             "vesper-memory",
+            BTreeSet::from(["vesper-domain", "vesper-security"]),
+        ),
+        (
+            // ADR 0015 (Stage 16): cognitive memory engine. Owns SQLite +
+            // FTS5 + the trait ports for embeddings/extraction-LLM/entity-NLP.
+            // Concrete provider impls live at the composition boundary
+            // (apps/agent-vesper-tui/src/main.rs). This is the only production
+            // crate permitted to declare `rusqlite` (per-crate exception
+            // below in scan_production_sources).
+            "vesper-cognition",
             BTreeSet::from(["vesper-domain", "vesper-security"]),
         ),
         (
@@ -1177,6 +1193,7 @@ fn allowed_dependencies() -> BTreeMap<&'static str, BTreeSet<&'static str>> {
         (
             "vesper-provider-glm",
             BTreeSet::from([
+                "vesper-auth",
                 "vesper-domain",
                 "vesper-provider",
                 "vesper-config",
@@ -1219,11 +1236,28 @@ fn allowed_dependencies() -> BTreeMap<&'static str, BTreeSet<&'static str>> {
             ]),
         ),
         (
+            // Shared hosted services keep ACP and TUI on one Python-oracle
+            // tool implementation while leaving protocol/provider concerns
+            // at their composition boundaries.
+            "vesper-harness",
+            BTreeSet::from([
+                "vesper-agent",
+                "vesper-checkpoints",
+                "vesper-domain",
+                "vesper-mcp",
+                "vesper-memory",
+                "vesper-runtime",
+                "vesper-sessions",
+            ]),
+        ),
+        (
             "agent-vesper-acp",
             BTreeSet::from([
                 "vesper-acp",
+                "vesper-agent",
                 "vesper-config",
                 "vesper-domain",
+                "vesper-harness",
                 "vesper-provider",
                 "vesper-provider-glm",
                 "vesper-provider-synthetic",
@@ -1239,14 +1273,19 @@ fn allowed_dependencies() -> BTreeMap<&'static str, BTreeSet<&'static str>> {
             "agent-vesper-tui",
             BTreeSet::from([
                 "vesper-agent",
+                "vesper-auth",
                 "vesper-checkpoints",
+                "vesper-cognition",
                 "vesper-domain",
+                "vesper-harness",
                 "vesper-mcp",
                 "vesper-memory",
+                "vesper-observability",
                 "vesper-provider",
                 "vesper-provider-glm",
                 "vesper-provider-synthetic",
                 "vesper-runtime",
+                "vesper-sessions",
             ]),
         ),
         ("xtask", BTreeSet::from(["vesper-testkit"])),
@@ -1310,6 +1349,29 @@ fn scan_production_sources(root: &Path) -> Result<(), String> {
                     "ratatui",
                     "reqwest",
                     "rusqlite",
+                    "spikes/",
+                    "vesper_provider_glm",
+                ]
+            } else if crate_name == Some("vesper-mcp") {
+                &[
+                    "agent_client_protocol",
+                    "agent-client-protocol",
+                    "ratatui",
+                    "rusqlite",
+                    "spikes/",
+                    "vesper_provider_glm",
+                ]
+            } else if crate_name == Some("vesper-cognition") {
+                // ADR 0015 (Stage 16): this is the only production crate
+                // permitted to depend on SQLite. The `rusqlite` term is
+                // intentionally NOT in this list (it's in `shared_forbidden`)
+                // — we carve out the exception by allowing rusqlite while
+                // forbidding every other foundational escape.
+                &[
+                    "agent_client_protocol",
+                    "agent-client-protocol",
+                    "ratatui",
+                    "reqwest",
                     "spikes/",
                     "vesper_provider_glm",
                 ]

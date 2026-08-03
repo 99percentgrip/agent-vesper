@@ -31,6 +31,8 @@ pub enum SessionStoreError {
     BlockingTaskFailed,
     #[error("session blocking gate is closed")]
     BlockingGateClosed,
+    #[error("session search query exceeds {maximum} bytes")]
+    SearchQueryTooLong { maximum: usize },
     #[error("composite session sources do not match memory, Agent Vesper, legacy order")]
     InvalidSourceOrder,
     #[error("session record could not be serialized for atomic write")]

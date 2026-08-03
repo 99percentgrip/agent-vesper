@@ -1,5 +1,6 @@
 use std::{future::Future, path::PathBuf, pin::Pin, time::SystemTime};
 
+use serde::Serialize;
 use vesper_domain::SessionId;
 
 use crate::SessionStoreError;
@@ -36,7 +37,6 @@ pub enum UnsupportedSessionOperation {
     Write,
     Delete,
     Migrate,
-    PersistentSearch,
 }
 
 /// Explicit read-only repository capability declaration.
@@ -65,14 +65,14 @@ impl SessionRepositoryCapabilities {
             write: SessionCapability::Unsupported,
             delete: SessionCapability::Unsupported,
             migrate: SessionCapability::Unsupported,
-            persistent_search: SessionCapability::Unsupported,
+            persistent_search: SessionCapability::Supported,
         }
     }
 
     /// Capabilities of a Stage 6 transactional Agent Vesper writer.
     ///
-    /// Read, write, and replay remain available; delete, migrate, and search
-    /// stay unavailable until their owning stages.
+    /// Read, write, replay, and bounded search are available; delete and
+    /// migrate remain unavailable until their owning stages.
     #[must_use]
     pub const fn read_write() -> Self {
         Self {
@@ -83,7 +83,7 @@ impl SessionRepositoryCapabilities {
             write: SessionCapability::Supported,
             delete: SessionCapability::Unsupported,
             migrate: SessionCapability::Unsupported,
-            persistent_search: SessionCapability::Unsupported,
+            persistent_search: SessionCapability::Supported,
         }
     }
 
@@ -140,6 +140,65 @@ pub enum MetadataOrigin {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SessionListFilter {
     pub cwd: Option<String>,
+}
+
+/// Bounded request for persisted session search.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionSearchRequest {
+    /// Case-insensitive text query. Empty queries browse recent messages.
+    pub query: String,
+    /// Restrict search to one session when supplied.
+    pub session_id: Option<SessionId>,
+    /// When supplied, return a context window around this message ordinal.
+    pub around_ordinal: Option<usize>,
+    /// Maximum number of matching messages to return.
+    pub limit: usize,
+    /// Number of neighboring messages to include around a match.
+    pub window: usize,
+}
+
+impl SessionSearchRequest {
+    /// Creates a request with safe defaults.
+    #[must_use]
+    pub fn new(query: impl Into<String>) -> Self {
+        Self {
+            query: query.into(),
+            session_id: None,
+            around_ordinal: None,
+            limit: 20,
+            window: 5,
+        }
+    }
+}
+
+/// One bounded message returned as search context.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SessionSearchMessage {
+    /// Zero-based message ordinal in the persisted transcript.
+    pub ordinal: usize,
+    /// Visible role (`user` or `assistant`).
+    pub role: String,
+    /// Secret-safe bounded text.
+    pub text: String,
+}
+
+/// One persisted-history search hit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionSearchHit {
+    /// Session identity.
+    pub session_id: SessionId,
+    /// Source selected by the repository.
+    pub source: SessionSource,
+    /// Matching message ordinal.
+    pub ordinal: usize,
+    /// Matching message role.
+    pub role: String,
+    /// Short bounded excerpt around the match.
+    pub snippet: String,
+    /// Neighboring visible messages for follow-up context.
+    pub context: Vec<SessionSearchMessage>,
+    /// Deterministic relevance score (higher is more relevant).
+    pub score: u32,
 }
 
 /// Raw, bounded session record. Decoding belongs to the next persistence part.

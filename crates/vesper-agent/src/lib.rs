@@ -10,7 +10,7 @@
 //! ## Layout
 //!
 //! - [`executor`] — `ToolExecutor` trait, `ToolContext`, `ToolResult`.
-//! - [`tools`] — the nine parity-critical stub executors.
+//! - [`tools`] — the nine parity-critical confined executors.
 //! - [`registry`] — `ToolRegistry` mapping tool names → executors.
 //! - [`permission`] — pure `(mode × permission × class)` gate.
 //! - [`agent_loop`] — the `AgentLoop` ReAct driver.
@@ -24,12 +24,26 @@ pub mod agent_loop;
 pub mod confinement;
 pub mod executor;
 pub mod permission;
+pub mod project_context;
+pub mod references;
 pub mod registry;
 pub mod tools;
 
 pub use agent_loop::{
-    AgentLoop, AgentLoopConfig, AgentLoopError, AgentTurnOutcome, DEFAULT_MAX_TOOL_ITERATIONS,
+    AgentLoop, AgentLoopConfig, AgentLoopError, AgentProgressEvent, AgentProgressPort,
+    AgentTurnOutcome, DEFAULT_MAX_TOOL_ITERATIONS, MAX_CONTEXT_MESSAGES,
 };
-pub use executor::{ToolContext, ToolError, ToolExecutor, ToolFuture, ToolResult};
-pub use permission::{PermissionDecision, check_tool_permission};
+pub use executor::{
+    HostedTool, ToolContext, ToolError, ToolExecutor, ToolFuture, ToolResult, ToolService,
+    schema_definition,
+};
+pub use permission::{
+    ApprovalBroker, DenyPermissionPort, PermissionDecision, PermissionPort, PermissionRequest,
+    check_tool_permission,
+};
+pub use project_context::{MAX_PROJECT_CONTEXT_BYTES, project_instructions};
+pub use references::{
+    MAX_FOLDER_FILES, MAX_REFERENCE_BYTES, MAX_REFERENCE_FILE_BYTES, MAX_REFERENCES,
+    ReferenceError, expand_references,
+};
 pub use registry::ToolRegistry;

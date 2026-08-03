@@ -57,10 +57,7 @@ fn capability_contract_is_explicitly_read_only() {
     assert_eq!(capabilities.write, SessionCapability::Unsupported);
     assert_eq!(capabilities.delete, SessionCapability::Unsupported);
     assert_eq!(capabilities.migrate, SessionCapability::Unsupported);
-    assert_eq!(
-        capabilities.persistent_search,
-        SessionCapability::Unsupported
-    );
+    assert_eq!(capabilities.persistent_search, SessionCapability::Supported);
     assert!(matches!(
         SessionRepositoryCapabilities::reject(UnsupportedSessionOperation::Write),
         Err(SessionStoreError::UnsupportedOperation(

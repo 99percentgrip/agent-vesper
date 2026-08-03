@@ -15,7 +15,6 @@
 use std::collections::BTreeMap;
 use std::fmt;
 use std::future::Future;
-use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -166,18 +165,17 @@ impl Default for SecretScope {
 /// Attempts to read `name` from the active task-local scope.
 ///
 /// Returns `None` when there is no scope, no tokio runtime, or the name is
-/// absent. Uses `catch_unwind` to safely handle the "no task context" panic
-/// that `task_local` raises when accessed outside a tokio task.
+/// absent. `try_with` is intentionally used instead of the panicking `with`
+/// variant so an ordinary unscoped lookup never invokes the panic hook.
 fn try_scope_lookup(name: &str) -> Option<SecretValue> {
-    let owned_name = name.to_owned();
-    let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
-        ACTIVE_SCOPE.with(|opt_scope| {
+    ACTIVE_SCOPE
+        .try_with(|opt_scope| {
             opt_scope
                 .as_ref()
-                .and_then(|scope| scope.get(&owned_name).cloned())
+                .and_then(|scope| scope.get(name).cloned())
         })
-    }));
-    result.ok().flatten()
+        .ok()
+        .flatten()
 }
 
 /// Error from secret-scope resolution.

@@ -20,6 +20,7 @@ jobs:
         run: cargo xtask verify
       - name: Verify documentation structure
         run: |
+          sh -n scripts/install.sh scripts/uninstall.sh
           test -f docs/architecture.md
           test -f docs/workspace-map.md
           test -f docs/dependencies.md

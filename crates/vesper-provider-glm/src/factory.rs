@@ -13,7 +13,7 @@ use vesper_provider::{
 use crate::{
     EnvironmentCredentialSource, GlmCatalog, GlmConfig, GlmCredentialSource, GlmSession,
     error::{adapter_error, cancelled_error},
-    provider_id, resolve_credential,
+    provider_id, resolve_credential, store_api_key,
 };
 
 /// Production GLM provider factory with injectable secret resolution.
@@ -57,6 +57,10 @@ impl GlmFactory {
                     BoundedString::new("Z_AI_API_KEY").expect("bounded field"),
                 ],
                 external_runtime_owned: false,
+                key_url: Some(
+                    BoundedString::new("https://z.ai/manage-apikey/apikey-list")
+                        .expect("bounded key url"),
+                ),
             }],
             configuration: Some(ProviderConfigContribution {
                 provider_id: provider_id(),
@@ -128,6 +132,12 @@ impl ProviderFactory for GlmFactory {
         ID.get_or_init(provider_id)
     }
 
+    /// Advertises the real Z.ai auth descriptor so hosts route auth from the
+    /// provider instead of hardcoding provider match arms.
+    fn descriptor(&self) -> ProviderDescriptor {
+        Self::descriptor()
+    }
+
     fn create_session<'a>(
         &'a self,
         config: &'a ProviderConfiguration,
@@ -141,7 +151,7 @@ impl ProviderFactory for GlmFactory {
                 .map_err(|error| adapter_error(&error, false))?;
             let credential =
                 resolve_credential(self.credentials.as_ref()).map_err(|error| *error)?;
-            GlmSession::from_config(parsed, credential)
+            GlmSession::from_config(parsed, credential.secret)
                 .map_err(|error| adapter_error(&error, false))
         })
     }
@@ -153,6 +163,33 @@ impl ModelCatalog for GlmFactory {
         cancellation: Arc<dyn CancellationSignal>,
     ) -> ProviderFuture<'a, Result<ModelCatalogSnapshot, ProviderError>> {
         <GlmCatalog as ModelCatalog>::models(&GlmCatalog, cancellation)
+    }
+}
+
+impl vesper_provider::ProviderCredentialPort for GlmFactory {
+    fn credential_present(&self) -> Result<bool, vesper_provider::CredentialError> {
+        // Mirror the production startup check: resolve from the environment/
+        // store source and confirm structural validity. The secret itself and
+        // any future pool selection stay adapter-internal.
+        Ok(resolve_credential(&EnvironmentCredentialSource)
+            .ok()
+            .is_some_and(|resolved| {
+                vesper_auth::validate_secret(resolved.secret.expose().as_str()).is_ok()
+            }))
+    }
+
+    fn store_credential(&self, secret: &str) -> Result<(), vesper_provider::CredentialError> {
+        store_api_key(secret)
+            .map(|_| ())
+            .map_err(|error| match error {
+                vesper_auth::CredentialStoreError::InvalidSecret => {
+                    vesper_provider::CredentialError::InvalidSecret
+                }
+                vesper_auth::CredentialStoreError::Unavailable => {
+                    vesper_provider::CredentialError::Unavailable
+                }
+                _ => vesper_provider::CredentialError::Failed,
+            })
     }
 }
 
@@ -203,10 +240,12 @@ fn glm_superpowers() -> Vec<vesper_provider::SuperpowerDescriptor> {
             default_value: SuperpowerValue::Choice {
                 value: BoundedString::new("glm-5.2").expect("bounded value"),
             },
-            allowed_values: ["glm-5.2", "glm-5.2-air", "glm-5.2-flash"]
+            allowed_values: GlmCatalog::snapshot()
+                .models
                 .into_iter()
-                .map(|raw| SuperpowerValue::Choice {
-                    value: BoundedString::new(raw).expect("bounded value"),
+                .map(|model| SuperpowerValue::Choice {
+                    value: BoundedString::new(model.model.model_id.as_str())
+                        .expect("catalog model ids are bounded"),
                 })
                 .collect(),
             command_alias: Some(BoundedString::new("model").expect("bounded alias")),

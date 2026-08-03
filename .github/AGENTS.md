@@ -7,10 +7,12 @@ platform assumptions on hosts unavailable locally.
 
 ## Local Contracts
 
-- Workflows must not call live model providers or require provider credentials.
 - Keep the five release-target families explicit in the matrix: linux-x86_64,
   linux-arm64, macos-intel, macos-apple-silicon, windows-x86_64.
-- Do not add publishing, release, push, or deployment steps.
+- Validation workflows must not call live providers or require credentials.
+  The tag-triggered `release.yml` workflow is the sole publishing workflow and
+  may publish only compiled, checksummed release archives; it must not make
+  provider calls.
 - The default toolchain is pinned to Rust 1.95.0 via `rust-toolchain.toml`
   (with `clippy` and `rustfmt` components); MSRV 1.88.0 is enforced
   independently in `msrv.yml` and the spike workflows.
@@ -46,3 +48,6 @@ platform assumptions on hosts unavailable locally.
 - `workflows/platform-foundation.yml` — five-target production-foundation and
   eligible spike matrix.
 - `workflows/foundation-spikes.yml` — five-target disposable spike test matrix.
+- `workflows/release.yml` — tag-triggered ACP+TUI archive packaging and GitHub
+  Release publication for the registry and installers; the registry continues
+  to launch only the ACP binary from the shared bundle.

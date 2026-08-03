@@ -1,0 +1,32 @@
+[package]
+name = "vesper-cognition"
+description = "mem0-equivalent cognitive memory: ADD-only V3 extraction, hybrid semantic+FTS5 BM25+entity retrieval, embedded SQLite backing (ADR 0015 - Stage 16)"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+serde          = { workspace = true }
+serde_json     = { workspace = true }
+thiserror      = { workspace = true }
+chrono         = { workspace = true }
+uuid           = { workspace = true }
+md-5           = { workspace = true }
+# Override the workspace `regex` (which is `default-features = false,
+# features = ["std"]`) to add `unicode` — the entity-extraction regexes use
+# `\b` word boundaries and `\s` whitespace classes that need it. This adds
+# the feature only for this crate; the rest of the workspace is unaffected.
+regex          = { version = "1", default-features = false, features = ["std", "unicode-perl"] }
+rusqlite       = { workspace = true }
+rust-stemmers  = { workspace = true }
+vesper-domain  = { path = "../vesper-domain",   version = "=0.2.0" }
+vesper-security = { path = "../vesper-security", version = "=0.2.0" }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

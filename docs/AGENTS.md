@@ -19,7 +19,7 @@ Own durable project documentation and evidence-backed engineering records.
 - `stage5/` owns read-only session persistence contracts, discovery/runtime/
   replay evidence, disk invariance, governance, and Stage 6 readiness.
 - Root documentation files own current architecture, workspace, dependency,
-  security, contribution, and migration status contracts.
+  security, contribution, migration status, and full-harness parity evidence.
 
 ## Local Contracts
 

@@ -65,7 +65,10 @@ impl ProcessHarness {
         Self::spawn_binary(
             env!("CARGO_BIN_EXE_agent-vesper-acp-test-driver"),
             address,
-            [("AGENT_VESPER_TEST_DISPATCH_GATE", gate.to_string())],
+            [
+                ("AGENT_VESPER_TEST_DISPATCH_GATE", gate.to_string()),
+                ("AGENT_VESPER_FULL_HARNESS", "0".to_owned()),
+            ],
         )
     }
 
@@ -98,6 +101,7 @@ impl ProcessHarness {
             .env("ZAI_API_KEY", CANARY)
             .env("AGENT_VESPER_GLM_BASE_URL", format!("http://{address}/v4"))
             .env("AGENT_VESPER_ALLOW_INSECURE_LOOPBACK", "1")
+            .env("AGENT_VESPER_FULL_HARNESS", "0")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());

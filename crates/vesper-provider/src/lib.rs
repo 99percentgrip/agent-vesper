@@ -17,10 +17,10 @@ pub use capability::{
 };
 pub use error::{ProviderError, RetryDecision};
 pub use ports::{
-    AuthenticationMethodDescriptor, AuxiliaryRequestPort, CancellationSignal,
+    AuthenticationMethodDescriptor, AuxiliaryRequestPort, CancellationSignal, CredentialError,
     EndpointConfiguration, ModelCatalog, ModelCatalogProvenance, ModelCatalogSnapshot,
-    ModelDescriptor, ProviderConfiguration, ProviderDescriptor, ProviderEventStream,
-    ProviderFactory, ProviderFuture, ProviderSession,
+    ModelDescriptor, ProviderConfiguration, ProviderCredentialPort, ProviderDescriptor,
+    ProviderEventStream, ProviderFactory, ProviderFuture, ProviderSession,
 };
 pub use request::{
     AuxiliaryRequestIntent, ContinuationContext, ContinuationReason, ContinuationStrategy,

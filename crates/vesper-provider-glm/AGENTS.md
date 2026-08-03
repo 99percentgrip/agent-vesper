@@ -13,8 +13,8 @@ quota normalization, and legacy GLM compatibility translation.
 
 ## Local Contracts
 
-- Depend only on `vesper-domain`, `vesper-provider`, `vesper-config`, and
-  `vesper-security` in production.
+- Depend only on `vesper-auth`, `vesper-domain`, `vesper-provider`,
+  `vesper-config`, and `vesper-security` in production.
 - `vesper-testkit` is permitted only as a dev dependency.
 - Use no live provider calls or real credentials in tests.
 - Bound every wire line, event, tool field, metadata value, and error prefix.
@@ -27,6 +27,8 @@ quota normalization, and legacy GLM compatibility translation.
 ## Work Guidance
 
 - Keep exact GLM wire compatibility inside this crate.
+- Keep environment-variable precedence and legacy credential reads, but route
+  all new stored credentials through `vesper-auth`.
 - Use loopback ephemeral servers and synthetic credential sources in tests.
 - ADR 0009: advertise **one** session-scoped reasoning dial (`zai:reasoning`,
   alias `thinking`, scale `{disabled, enabled, high, max}`). The former

@@ -32,10 +32,12 @@ exits — no `@contextmanager` wrapper needed.
   `checkpoints/<id>/`) and `restore()` (copy files back to the workspace).
 - `src/sessions.rs` — `SessionLineage` (sessions-new / sessions / lineage
   / branch / rename).
-- `src/cron.rs` — `CronRegistry` (`/loop`): records entries; the TUI is
-  not a daemon so no actual scheduling happens here.
-- `src/export.rs` — `SessionExporter` (`/export`): writes transcript +
-  lineage to a bounded markdown file.
+- `src/cron.rs` — `CronRegistry` (`/loop`): records, updates, pauses,
+  resumes, removes, and leases bounded entries; the shared harness owns the
+  optional host scheduler that executes due jobs and records bounded results.
+- `src/export.rs` — `SessionExporter` (`/export`, `/export last`): writes
+  either the full transcript + lineage or only the final assistant response
+  to a bounded markdown file.
 - `src/clipboard.rs` — `ClipboardPort` (`/copy`): abstraction with a
   safe fallback when no platform clipboard is reachable from this
   terminal.
@@ -65,6 +67,8 @@ exits — no `@contextmanager` wrapper needed.
   - `MAX_RETENTION_COUNT` checkpoints kept on disk (default 50, hard 100)
   - `MAX_LINEAGE_DEPTH` session chain length (default 100)
   - `MAX_CRON_JOBS` (default 500)
+- Cron records remain JSONL-compatible with older entries; missing `enabled`
+  fields default to `true`.
 - **Pruning is aggressive and synchronous.** Every `create` checks the
   retention count and unlinks the oldest `checkpoints/<id>/` directories
   before the new checkpoint is committed.

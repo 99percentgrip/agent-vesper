@@ -5,10 +5,14 @@ members = [
     "crates/vesper-config",
     "crates/vesper-acp",
     "crates/vesper-agent",
+    "crates/vesper-auth",
+    "crates/vesper-cognition",
+    "crates/vesper-harness",
     "crates/vesper-checkpoints",
     "crates/vesper-domain",
     "crates/vesper-mcp",
     "crates/vesper-memory",
+    "crates/vesper-observability",
     "crates/vesper-policy",
     "crates/vesper-provider",
     "crates/vesper-provider-glm",
@@ -23,7 +27,7 @@ exclude = ["spikes/*"]
 resolver = "3"
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Aleksejs Kozlitins"]
 edition = "2024"
 rust-version = "1.88"
@@ -31,16 +35,25 @@ license = "Apache-2.0"
 
 [workspace.dependencies]
 agent-client-protocol = { version = "=2.0.0", default-features = false, features = ["unstable_auth_methods", "unstable_session_fork"] }
+base64 = { version = "=0.22.1" }
+rand = { version = "=0.8.7" }
+qrcode = { version = "=0.14.1", default-features = false }
 clap = { version = "=4.6.4", default-features = false, features = ["derive", "error-context", "help", "std", "usage"] }
 futures-core = { version = "=0.3.33", default-features = false, features = ["std"] }
 futures-util = { version = "=0.3.33", default-features = false, features = ["std"] }
 glob = { version = "0.3", default-features = false }
 httpdate = { version = "=1.0.3" }
 jsonschema = { version = "=0.49.2", default-features = false }
+keyring = { version = "=4.1.6" }
+md-5 = { version = "0.10", default-features = false, features = ["std"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std", "serde"] }
+uuid = { version = "1", default-features = false, features = ["std", "rng", "v4"] }
+rusqlite = { version = "0.39", features = ["bundled"] }
+rust-stemmers = { version = "1.2", default-features = false }
 ratatui = { version = "=0.30.2", default-features = false, features = ["crossterm"] }
 crossterm = { version = "=0.29.0", default-features = false, features = ["events", "windows"] }
 regex = { version = "1", default-features = false, features = ["std"] }
-reqwest = { version = "=0.13.4", default-features = false, features = ["json", "rustls"] }
+reqwest = { version = "=0.13.4", default-features = false, features = ["blocking", "json", "rustls"] }
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = { version = "=1.0.151" }
 sha2 = { version = "=0.11.0", default-features = false }
@@ -74,4 +87,4 @@ source-commit = "bf4d4287e2e3320aa3f09015f678e6169d520045"
 fixture-schema = 1
 persistence-stage = 6
 session-writes-enabled = true
-sqlite-enabled = false
+sqlite-enabled = true

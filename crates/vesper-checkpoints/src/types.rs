@@ -47,6 +47,10 @@ pub const MAX_CRON_JOBS: usize = 500;
 pub const MAX_LABEL_CHARS: usize = 120;
 /// Maximum characters in a cron prompt.
 pub const MAX_CRON_PROMPT_CHARS: usize = 32_000;
+/// Maximum retained scheduler output per run.
+pub const MAX_CRON_OUTPUT_CHARS: usize = 64_000;
+/// Claim lease duration. Expired claims are recoverable by the next tick.
+pub const CRON_CLAIM_TTL_SECONDS: u64 = 1_800;
 
 /// One row of the workspace snapshot: a single captured file's metadata.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -181,12 +185,43 @@ pub struct CronEntry {
     pub name: String,
     /// Prompt to run on each scheduled tick.
     pub prompt: String,
-    /// Schedule expression in the oracle's format (`every 30m`,
-    /// `every 1h`, `daily 09:00`, etc.). The TUI does not actually run a
-    /// scheduler — this is recorded so a future daemon can pick it up.
+    /// Schedule expression in the oracle's bounded format (`every 30m`,
+    /// `every 1h`, `daily 09:00`, or `hourly`).
     pub schedule: String,
     /// ISO-8601 timestamp of the last registered update.
     pub created_at: SystemTime,
+    /// Whether a scheduler may dispatch this job. Defaults to enabled when
+    /// reading older JSONL records.
+    #[serde(default = "default_cron_enabled")]
+    pub enabled: bool,
+    /// Next eligible execution time. Older registry rows may omit this and
+    /// are treated as immediately due on their first scheduler tick.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_run_at: Option<SystemTime>,
+    /// Cross-process claim lease owned by one runner.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub claim: Option<CronClaim>,
+    /// Number of completed attempts.
+    #[serde(default)]
+    pub run_count: u64,
+    /// Last bounded run status (`ok`, `error`, `cancelled`, or `silent`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_status: Option<String>,
+    /// Last bounded output/error projection; full artifacts remain host-owned.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_output: Option<String>,
+}
+
+/// One bounded scheduler claim lease.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CronClaim {
+    pub token: String,
+    pub claimed_at: SystemTime,
+    pub expires_at: SystemTime,
+}
+
+fn default_cron_enabled() -> bool {
+    true
 }
 
 impl CronEntry {
@@ -203,6 +238,11 @@ impl CronEntry {
         }
         if self.schedule.chars().count() > MAX_LABEL_CHARS {
             return Err(CheckpointError::BoundsViolated("schedule length"));
+        }
+        if let Some(output) = &self.last_output
+            && output.chars().count() > MAX_CRON_OUTPUT_CHARS
+        {
+            return Err(CheckpointError::BoundsViolated("cron output length"));
         }
         Ok(())
     }

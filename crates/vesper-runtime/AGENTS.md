@@ -23,6 +23,9 @@ provider turns, and acceptance of pure converted session state.
   enter the runtime itself.
 - No filesystem writes or detached tasks; the optional `save_session` path
   flows entirely through the injected `RuntimeSessionWrites` port.
+- A composed external multi-turn engine may commit a completed visible turn
+  through `accept_external_turn`; the actor remains the sole owner of history
+  and the existing injected writer remains the only persistence path.
 - Freshly created sessions carry a default endpoint identity supplied by the
   composition boundary through `RuntimeDefaults.endpoint`, so the converted
   record is always persistable; the runtime is provider-neutral and never

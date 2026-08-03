@@ -86,19 +86,25 @@ When the user requests a durable behavior change, record it here or in the relev
 - Production Rust crates follow the accepted ADRs under `docs/adr/`, use MSRV
   1.88, and must not claim GLM parity or multi-provider readiness before their
   migration gates.
+- Never advertise invented providers, models, API plans, reasoning modes, or
+  UI controls. Provider-specific values come from the owning real adapter and
+  the frozen oracle; production currently registers only Z.ai.
+- “Multi-provider” means the provider-neutral registry/runtime architecture
+  until another real adapter has authentication, catalog, transport, fixtures,
+  and CI evidence. It must not be presented as multiple available providers.
+- A feature may be called impossible or excluded only after checking the
+  frozen oracle and current primary documentation and recording concrete
+  technical evidence. Missing dependencies must fail truthfully; placeholders
+  and mocked production behavior are prohibited.
 - Production crates never depend on `vesper-testkit`, frontend crates, or
   disposable packages under `spikes/`.
 - No live provider calls or user-state writes are permitted in foundation
   verification.
-- Stage 5 owns bounded read-only Agent Vesper and legacy session discovery,
-  decoding, runtime injection, ACP lifecycle replay, keyed-load consistency,
-  adversarial security, real-process disk invariance, and fixture/testkit
-  governance.
-- Stage 6 owns the transactional Agent Vesper session writer with crash-safe
-  atomic writes, derived `.meta` sidecars, per-session write isolation, the
-  runtime `save_session` write port, and sanitized ACP write-failure mapping.
-  Repair, migration, search, agent/tools, and interactive frontends remain
-  prohibited until their owning stages.
+- Production harness work includes transactional sessions, provider-neutral
+  runtime and agent loop, hosted tools, memory/checkpoints/MCP/plugins/workers,
+  ACP composition, and the native TUI. Current status and evidence live in
+  `docs/migration-status.md`; historical stage reports remain evidence, not
+  current scope restrictions.
 
 ## Child DOX Index
 

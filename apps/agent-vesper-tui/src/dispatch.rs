@@ -20,10 +20,12 @@
 //! [`PlanState::answer`](crate::plan_mode::PlanState::answer) so the driver
 //! can refine the plan inline.
 
-use vesper_domain::{BoundedString, ProviderId};
+use vesper_domain::{BoundedString, ProviderId, SessionOperatingMode, SessionPermissionMode};
 use vesper_provider::SuperpowerValue;
 
-use crate::commands::{CommandIntent, CommandOutcome, CommandRegistry, PlanGesture};
+use crate::commands::{
+    CommandIntent, CommandOutcome, CommandRegistry, PlanGesture, SessionConfigKey, UiAction,
+};
 use crate::plan_mode::{PlanPhase, PlanState};
 use crate::superpowers::{ProviderSuperpowerSurface, SuperpowerOverrides};
 
@@ -36,8 +38,8 @@ pub struct SessionState {
     /// Plan Mode state machine.
     pub plan: PlanState,
     /// Active superpower overrides, mutated by `/effort`, `/thinking`,
-    /// `/model`. Surfaced to the renderer and (in a future stage) handed to
-    /// the runtime as part of the next provider request.
+    /// `/model`. Surfaced to the renderer and applied to every next provider
+    /// request by the binary composition boundary.
     pub overrides: SuperpowerOverrides,
     /// Visible transcript lines, oldest first.
     pub transcript: Vec<String>,
@@ -78,6 +80,139 @@ pub struct SessionState {
     /// `PluginLoader` / `TrustedPublishers` and drains this after
     /// dispatch; `None` means no MCP op is pending.
     pub pending_mcp_op: Option<crate::commands::McpOp>,
+    /// Phase 11 (ADR 0015 — Stage 16): a cognitive-memory command
+    /// resolved to a structured [`crate::commands::CognitionOp`].
+    pub pending_cognition_op: Option<crate::commands::CognitionOp>,
+    /// Live execution controls used by both the picker UI and every agent turn.
+    pub controls: SessionControls,
+    /// Pending runtime mode synchronization after `/permission` or `/mode`.
+    pub pending_mode_update: Option<(SessionOperatingMode, SessionPermissionMode)>,
+    /// Latest model-authored TODO plan, independent of Plan Mode phase.
+    pub task_plan: Vec<TaskItem>,
+    /// Native terminal panel visibility.
+    pub panels: PanelVisibility,
+    /// Native presentation and terminal-integration preferences.
+    pub preferences: TerminalPreferences,
+    /// Crossterm side effect for the binary to drain after pure dispatch.
+    pub pending_terminal_action: Option<TerminalAction>,
+    /// Persisted session selected through `/history` for the binary to load.
+    pub pending_history_session: Option<String>,
+    /// Whether the binary should temporarily suspend the TUI and run $EDITOR.
+    pub pending_prompt_editor: bool,
+    /// Whether to open the real working-tree diff annotation editor.
+    pub pending_diff_annotator: bool,
+    /// Toggle request for the optional mobile approval server.
+    pub pending_mobile_toggle: bool,
+    /// Whether to edit and live-reload persistent keybindings.
+    pub pending_keybind_editor: bool,
+    /// Native image operation for the binary to execute after dispatch.
+    pub pending_media_op: Option<crate::commands::MediaOp>,
+    /// Side question to execute with the configured auxiliary model.
+    pub pending_auxiliary_question: Option<String>,
+    /// Whether to query the selected provider's real quota endpoint.
+    pub pending_provider_usage: bool,
+    /// Whether the binary should calculate the oracle-compatible live context estimate.
+    pub pending_context_report: bool,
+    /// Selected fenced-code block action, executed by the binary.
+    pub pending_code_block: Option<(usize, bool)>,
+    /// Whether the binary should re-open the provider-routed authentication
+    /// screen (`/auth`) using the active provider's advertised descriptor.
+    pub pending_reauth: bool,
+}
+
+/// Typed session controls. Defaults match the Python oracle.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionControls {
+    pub endpoint_plan: String,
+    pub permission_mode: SessionPermissionMode,
+    pub operating_mode: SessionOperatingMode,
+    pub generation_profile: String,
+    pub auxiliary_model: String,
+    pub mixture_mode: String,
+    pub max_tool_iterations: u32,
+}
+
+impl Default for SessionControls {
+    fn default() -> Self {
+        Self {
+            endpoint_plan: "coding".into(),
+            permission_mode: SessionPermissionMode::Ask,
+            operating_mode: SessionOperatingMode::Code,
+            generation_profile: "balanced".into(),
+            auxiliary_model: "main".into(),
+            mixture_mode: "off".into(),
+            max_tool_iterations: vesper_agent::DEFAULT_MAX_TOOL_ITERATIONS,
+        }
+    }
+}
+
+/// User-controlled dashboard panel visibility.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PanelVisibility {
+    pub reasoning: bool,
+    pub tasks: bool,
+    pub sidebar: bool,
+}
+
+impl Default for PanelVisibility {
+    fn default() -> Self {
+        Self {
+            reasoning: true,
+            tasks: true,
+            sidebar: true,
+        }
+    }
+}
+
+/// Native terminal preferences which immediately affect rendering/feedback.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TerminalPreferences {
+    pub theme: String,
+    pub screen_reader: bool,
+    pub native_mouse: bool,
+    pub sound: bool,
+    pub vim: bool,
+    pub vim_mode: String,
+    pub composer_cursor: usize,
+    pub vim_pending_operator: Option<char>,
+    pub vim_pending_g: bool,
+    pub vim_clipboard: String,
+    pub vim_undo: String,
+    pub vim_visual_anchor: usize,
+}
+
+impl Default for TerminalPreferences {
+    fn default() -> Self {
+        Self {
+            theme: "vesper".into(),
+            screen_reader: false,
+            native_mouse: false,
+            sound: false,
+            vim: false,
+            vim_mode: "insert".into(),
+            composer_cursor: 0,
+            vim_pending_operator: None,
+            vim_pending_g: false,
+            vim_clipboard: String::new(),
+            vim_undo: String::new(),
+            vim_visual_anchor: 0,
+        }
+    }
+}
+
+/// Terminal side effects kept out of the pure dispatch module.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TerminalAction {
+    EnableMouseCapture,
+    DisableMouseCapture,
+}
+
+/// One model-authored task rendered in the native TODO panel.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskItem {
+    pub content: String,
+    pub status: String,
+    pub priority: String,
 }
 
 impl SessionState {
@@ -182,6 +317,24 @@ fn apply_outcome(
         pending_memory_op,
         pending_checkpoint_op,
         pending_mcp_op,
+        pending_cognition_op,
+        controls,
+        pending_mode_update,
+        task_plan: _,
+        panels,
+        preferences,
+        pending_terminal_action,
+        pending_history_session,
+        pending_prompt_editor,
+        pending_diff_annotator,
+        pending_mobile_toggle,
+        pending_keybind_editor,
+        pending_media_op,
+        pending_auxiliary_question,
+        pending_provider_usage,
+        pending_context_report,
+        pending_code_block,
+        pending_reauth,
     } = state;
     match outcome {
         CommandOutcome::Error(message) => {
@@ -221,6 +374,40 @@ fn apply_outcome(
         CommandOutcome::Superpower {
             descriptor, value, ..
         } => {
+            if descriptor.id.as_str() == "zai:model"
+                && let SuperpowerValue::Choice { value: model } = &value
+                && !vesper_provider_glm::GlmCatalog::supports_plan(
+                    model.as_str(),
+                    glm_plan(&controls.endpoint_plan),
+                )
+            {
+                *status = Some(format!(
+                    "Model `{}` is unavailable on the {} API plan.",
+                    model.as_str(),
+                    controls.endpoint_plan
+                ));
+                return;
+            }
+            if descriptor.id.as_str() == "zai:model"
+                && let SuperpowerValue::Choice { value: model } = &value
+                && model.as_str() != "glm-5.2"
+                && let Some(thinking) = surface.by_alias("thinking")
+                && let Some(SuperpowerValue::Choice { value: current }) =
+                    overrides.get(thinking.id.as_str(), Some(&thinking.default_value))
+                && matches!(current.as_str(), "high" | "max")
+            {
+                let enabled = SuperpowerValue::Choice {
+                    value: BoundedString::new("enabled").expect("static mode is bounded"),
+                };
+                overrides.set(thinking.id.as_str(), enabled.clone());
+                if thinking.id.as_str() == "zai:reasoning" {
+                    *pending_reasoning = Some(
+                        vesper_provider_glm::reasoning_mode_for_superpower(&enabled)
+                            .expect("static reasoning mode is valid"),
+                    );
+                }
+                transcript.push("thinking reset to enabled for the selected model".into());
+            }
             // Persist the override so it surfaces in the renderer.
             overrides.set(descriptor.id.as_str(), value.clone());
 
@@ -263,6 +450,209 @@ fn apply_outcome(
             transcript.clear();
             *status = Some("Transcript cleared.".into());
         }
+        CommandOutcome::SessionConfig { key, value } => {
+            match key {
+                SessionConfigKey::EndpointPlan => {
+                    if surface.provider_id().as_str() != "zai" {
+                        *status = Some("API plans are owned by the active provider.".into());
+                        return;
+                    }
+                    controls.endpoint_plan = value.clone();
+                    if let Some(descriptor) = surface.by_alias("model") {
+                        let active =
+                            overrides.get(descriptor.id.as_str(), Some(&descriptor.default_value));
+                        if let Some(SuperpowerValue::Choice { value: model }) = active
+                            && !vesper_provider_glm::GlmCatalog::supports_plan(
+                                model.as_str(),
+                                glm_plan(&value),
+                            )
+                        {
+                            overrides.set(
+                                descriptor.id.as_str(),
+                                SuperpowerValue::Choice {
+                                    value: BoundedString::new("glm-5.2")
+                                        .expect("static model is bounded"),
+                                },
+                            );
+                            transcript.push(format!(
+                                "model reset to glm-5.2 because `{}` is unavailable on {value}",
+                                model.as_str()
+                            ));
+                        }
+                    }
+                    if controls.auxiliary_model != "main"
+                        && (!vesper_provider_glm::GlmCatalog::supports_plan(
+                            &controls.auxiliary_model,
+                            glm_plan(&value),
+                        ) || vesper_provider_glm::GlmCatalog::is_vision_model(
+                            &controls.auxiliary_model,
+                        ))
+                    {
+                        controls.auxiliary_model = "main".into();
+                    }
+                }
+                SessionConfigKey::Permission => {
+                    controls.permission_mode = match value.as_str() {
+                        "read" => SessionPermissionMode::ReadOnly,
+                        "bypass" => SessionPermissionMode::Bypass,
+                        _ => SessionPermissionMode::Ask,
+                    };
+                    *pending_mode_update =
+                        Some((controls.operating_mode, controls.permission_mode));
+                }
+                SessionConfigKey::OperatingMode => {
+                    controls.operating_mode = if value == "code" {
+                        SessionOperatingMode::Code
+                    } else {
+                        SessionOperatingMode::Plan
+                    };
+                    *pending_mode_update =
+                        Some((controls.operating_mode, controls.permission_mode));
+                }
+                SessionConfigKey::GenerationProfile => {
+                    controls.generation_profile = value.clone();
+                }
+                SessionConfigKey::AuxiliaryModel => {
+                    controls.auxiliary_model = value.clone();
+                }
+                SessionConfigKey::MixtureMode => controls.mixture_mode = value.clone(),
+                SessionConfigKey::Theme => preferences.theme = value.clone(),
+                SessionConfigKey::MaxIterations => {
+                    controls.max_tool_iterations = value
+                        .parse()
+                        .expect("command resolver validates max iterations");
+                }
+            }
+            transcript.push(format!("session setting: {key:?} → {value}"));
+            *status = Some(format!("Updated {key:?} to {value}."));
+        }
+        CommandOutcome::Ui(action) => match action {
+            UiAction::OpenSettings => {
+                *status = Some("Select a setting, then choose its value.".into());
+            }
+            UiAction::OpenAuth => {
+                *pending_reauth = true;
+                *status = Some("Opening provider authentication…".into());
+            }
+            UiAction::ToggleReasoning => {
+                panels.reasoning = !panels.reasoning;
+                *status = Some(format!(
+                    "Reasoning panel {}.",
+                    if panels.reasoning { "shown" } else { "hidden" }
+                ));
+            }
+            UiAction::ToggleTasks => {
+                panels.tasks = !panels.tasks;
+                *status = Some(format!(
+                    "TODO panel {}.",
+                    if panels.tasks { "shown" } else { "hidden" }
+                ));
+            }
+            UiAction::ToggleSidebar => {
+                panels.sidebar = !panels.sidebar;
+                *status = Some(format!(
+                    "Session sidebar {}.",
+                    if panels.sidebar { "shown" } else { "hidden" }
+                ));
+            }
+            UiAction::ToggleScreenReader => {
+                preferences.screen_reader = !preferences.screen_reader;
+                *status = Some(format!(
+                    "Screen-reader mode {}.",
+                    if preferences.screen_reader {
+                        "enabled"
+                    } else {
+                        "disabled"
+                    }
+                ));
+            }
+            UiAction::ToggleNativeMouse => {
+                preferences.native_mouse = !preferences.native_mouse;
+                *pending_terminal_action = Some(if preferences.native_mouse {
+                    TerminalAction::DisableMouseCapture
+                } else {
+                    TerminalAction::EnableMouseCapture
+                });
+                *status = Some(format!(
+                    "Native terminal mouse {}.",
+                    if preferences.native_mouse {
+                        "enabled"
+                    } else {
+                        "disabled"
+                    }
+                ));
+            }
+            UiAction::ToggleSound => {
+                preferences.sound = !preferences.sound;
+                *status = Some(format!(
+                    "Completion sound {}.",
+                    if preferences.sound {
+                        "enabled"
+                    } else {
+                        "disabled"
+                    }
+                ));
+            }
+            UiAction::OpenPromptEditor => {
+                *pending_prompt_editor = true;
+                *status = Some("Opening $VISUAL/$EDITOR…".into());
+            }
+            UiAction::OpenDiffAnnotator => {
+                *pending_diff_annotator = true;
+                *status = Some("Opening working-tree diff annotator…".into());
+            }
+            UiAction::ToggleVim => {
+                preferences.vim = !preferences.vim;
+                preferences.vim_mode = if preferences.vim { "normal" } else { "insert" }.into();
+                preferences.vim_pending_operator = None;
+                *status = Some(if preferences.vim {
+                    "Vim composer enabled — press i to edit.".into()
+                } else {
+                    "Vim composer disabled.".into()
+                });
+            }
+            UiAction::ToggleMobile => {
+                *pending_mobile_toggle = true;
+                *status = Some("Toggling mobile approval companion…".into());
+            }
+            UiAction::OpenKeybindEditor => {
+                *pending_keybind_editor = true;
+                *status = Some("Opening keybinding editor…".into());
+            }
+        },
+        CommandOutcome::Search { query } => {
+            let query_lower = query.to_lowercase();
+            let matches = transcript
+                .iter()
+                .enumerate()
+                .filter(|(_, line)| line.to_lowercase().contains(&query_lower))
+                .map(|(index, line)| format!("search hit {}: {line}", index + 1))
+                .take(50)
+                .collect::<Vec<_>>();
+            let count = matches.len();
+            transcript.extend(matches);
+            *status = Some(format!("Search `{query}`: {count} match(es)."));
+        }
+        CommandOutcome::History { session_id } => {
+            *pending_history_session = Some(session_id.clone());
+            *status = Some(format!("Loading session `{session_id}`…"));
+        }
+        CommandOutcome::Media(operation) => {
+            *pending_media_op = Some(operation);
+            *status = Some("Processing image operation…".into());
+        }
+        CommandOutcome::AuxiliaryQuestion { question } => {
+            *pending_auxiliary_question = Some(question);
+            *status = Some("Asking the auxiliary model…".into());
+        }
+        CommandOutcome::ProviderUsage => {
+            *pending_provider_usage = true;
+            *status = Some("Querying live provider quota…".into());
+        }
+        CommandOutcome::CodeBlock { index, write } => {
+            *pending_code_block = Some((index, write));
+            *status = Some("Processing selected code block…".into());
+        }
 
         // === Phase 7 (ADR 0010) — context mutations ===
         CommandOutcome::ClearPlan => {
@@ -289,9 +679,14 @@ fn apply_outcome(
         // surface yet (token counters, live quota, queue state); the TUI
         // surfaces what it actually has.
         CommandOutcome::ContextView(view_kind) => {
-            let line = render_context_view(view_kind, plan, overrides, transcript);
-            transcript.push(line);
-            *status = None;
+            if view_kind == crate::commands::ViewKind::Context {
+                *pending_context_report = true;
+                *status = Some("Calculating context-window usage...".into());
+            } else {
+                let line = render_context_view(view_kind, plan, overrides, transcript, controls);
+                transcript.push(line);
+                *status = None;
+            }
         }
 
         // === Phase 7 (ADR 0010) — workflow prompts ===
@@ -302,12 +697,6 @@ fn apply_outcome(
             transcript.push(format!("workflow: {display}"));
             *pending_prompt = Some(prompt);
             *status = Some("WORKING... (workflow agent turn)".into());
-        }
-
-        // === Phase 7 (ADR 0010) — deferred subsystem commands ===
-        CommandOutcome::Deferred { command, reason } => {
-            transcript.push(format!("/{command}: deferred — {reason}"));
-            *status = Some(format!("/{command} is deferred: {reason}"));
         }
 
         // === Phase 8 (ADR 0011) — memory subsystem commands ===
@@ -353,8 +742,63 @@ fn apply_outcome(
             ));
         }
 
+        // === Phase 11 (ADR 0015 — Stage 16) — cognitive-memory commands ===
+        CommandOutcome::Cognition(op) => {
+            let name = op.command_name();
+            transcript.push(format!(
+                "cognition: /{name} accepted (executing against the cognitive-memory engine)"
+            ));
+            *pending_cognition_op = Some(op);
+            *status = Some(format!(
+                "/{name}: reading/writing the cognitive-memory store..."
+            ));
+        }
+
         CommandOutcome::Quit => {}
     }
+}
+
+fn glm_plan(value: &str) -> vesper_provider_glm::GlmPlan {
+    match value {
+        "standard" => vesper_provider_glm::GlmPlan::Standard,
+        "bigmodel" => vesper_provider_glm::GlmPlan::BigModel,
+        _ => vesper_provider_glm::GlmPlan::Coding,
+    }
+}
+
+/// Replaces the TODO projection from the bounded markdown emitted by
+/// `update_plan`. Malformed lines are ignored rather than displayed as tasks.
+pub fn apply_task_plan(state: &mut SessionState, markdown: &str) {
+    state.task_plan = markdown
+        .lines()
+        .filter_map(parse_task_line)
+        .take(100)
+        .collect();
+}
+
+fn parse_task_line(line: &str) -> Option<TaskItem> {
+    let trimmed = line.trim();
+    let marker_end = trimmed.find(']')?;
+    let status = match &trimmed[..=marker_end] {
+        "[x]" => "completed",
+        "[~]" => "in_progress",
+        "[ ]" => "pending",
+        _ => return None,
+    };
+    let rest = trimmed[marker_end + 1..].trim();
+    let metadata_start = rest.find('(')?;
+    let metadata_end = rest[metadata_start..].find(')')? + metadata_start;
+    let metadata = &rest[metadata_start + 1..metadata_end];
+    let (_declared_status, priority) = metadata.split_once('/')?;
+    let content = rest[metadata_end + 1..].trim();
+    if content.is_empty() {
+        return None;
+    }
+    Some(TaskItem {
+        content: content.to_string(),
+        status: status.into(),
+        priority: priority.to_string(),
+    })
 }
 
 /// Renders one [`ViewKind`] line for the transcript. Pure: reads state only.
@@ -363,6 +807,7 @@ fn render_context_view(
     plan: &PlanState,
     overrides: &SuperpowerOverrides,
     transcript: &[String],
+    controls: &SessionControls,
 ) -> String {
     use crate::commands::ViewKind;
     let phase = plan.phase();
@@ -375,11 +820,7 @@ fn render_context_view(
                 "recap: {phase_label}, {line_count} transcript line(s), {override_count} active override(s)."
             )
         }
-        ViewKind::Context => format!(
-            "context: {line_count} transcript line(s); Phase={phase_label}. \
-             (Token-count view is deferred — needs runtime token accounting.)",
-            phase_label = phase_label(phase)
-        ),
+        ViewKind::Context => unreachable!("the binary owns live context accounting"),
         ViewKind::Status => format!(
             "status: Phase={phase_label}, transcript={line_count} lines, overrides={override_count}.",
             phase_label = phase_label(phase)
@@ -390,17 +831,12 @@ fn render_context_view(
             phase_label = phase_label(phase)
         ),
         ViewKind::MaxIterations => {
-            // The cap lives in vesper_agent::DEFAULT_MAX_TOOL_ITERATIONS (50).
-            // The TUI surfaces it as a fixed value; the oracle's `/max-iterations`
-            // also lets the driver SET it, which needs runtime integration.
-            "max-iterations: per-turn tool-call cap is 50 (DEFAULT_MAX_TOOL_ITERATIONS). \
-             Setting a per-session cap is deferred — needs runtime integration."
-                .to_string()
+            format!(
+                "max-iterations: live per-turn tool-call cap is {} (set with `/max-iterations 1-200`).",
+                controls.max_tool_iterations
+            )
         }
-        ViewKind::Usage => {
-            "usage: live quota / API-plan view is deferred — needs provider-quota integration."
-                .to_string()
-        }
+        ViewKind::Usage => "usage: query routed to the active provider quota integration.".into(),
     }
 }
 
@@ -440,7 +876,7 @@ mod integration_tests {
     use vesper_provider::{SuperpowerDescriptor, SuperpowerKind, SuperpowerScope, SuperpowerValue};
 
     fn provider() -> ProviderId {
-        ProviderId::new("test").unwrap()
+        ProviderId::new("zai").unwrap()
     }
 
     fn reasoning_descriptor() -> SuperpowerDescriptor {
@@ -466,8 +902,29 @@ mod integration_tests {
         }
     }
 
+    fn model_descriptor() -> SuperpowerDescriptor {
+        SuperpowerDescriptor {
+            id: BoundedString::new("zai:model").unwrap(),
+            provider_id: provider(),
+            display_name: BoundedString::new("Model").unwrap(),
+            kind: SuperpowerKind::Choice,
+            scope: SuperpowerScope::Session,
+            default_value: SuperpowerValue::Choice {
+                value: BoundedString::new("glm-5.2").unwrap(),
+            },
+            allowed_values: ["glm-5.2", "glm-5-turbo", "glm-5v-turbo"]
+                .into_iter()
+                .map(|raw| SuperpowerValue::Choice {
+                    value: BoundedString::new(raw).unwrap(),
+                })
+                .collect(),
+            command_alias: Some(BoundedString::new("model").unwrap()),
+            help: None,
+        }
+    }
+
     fn surface() -> ProviderSuperpowerSurface {
-        ProviderSuperpowerSurface::new(provider(), vec![reasoning_descriptor()])
+        ProviderSuperpowerSurface::new(provider(), vec![reasoning_descriptor(), model_descriptor()])
     }
 
     fn registry() -> CommandRegistry {
@@ -493,7 +950,7 @@ mod integration_tests {
         let mut state = SessionState::new();
 
         assert_eq!(state.phase(), PlanPhase::Normal);
-        let outcome = step(&mut state, &registry, &surface, "/plan ship the matrix");
+        let outcome = step(&mut state, &registry, &surface, "/planmode ship the matrix");
         assert_eq!(outcome, DispatchOutcome::Continue);
         assert_eq!(state.phase(), PlanPhase::Planning);
         assert!(state.plan.prd().is_some());
@@ -517,7 +974,7 @@ mod integration_tests {
             &mut state,
             &registry,
             &surface,
-            "/plan build a REST gateway",
+            "/planmode build a REST gateway",
         );
         assert_eq!(state.phase(), PlanPhase::Planning);
 
@@ -541,7 +998,7 @@ mod integration_tests {
         let surface = surface();
         let mut state = SessionState::new();
 
-        step(&mut state, &registry, &surface, "/plan PRD");
+        step(&mut state, &registry, &surface, "/planmode PRD");
         assert_eq!(state.phase(), PlanPhase::Planning);
         let _ = apply_model_plan(&mut state, "the plan body");
         assert_eq!(state.phase(), PlanPhase::Review);
@@ -563,7 +1020,7 @@ mod integration_tests {
         let surface = surface();
         let mut state = SessionState::new();
 
-        step(&mut state, &registry, &surface, "/plan PRD");
+        step(&mut state, &registry, &surface, "/planmode PRD");
         let _ = apply_model_plan(&mut state, "body");
         assert_eq!(state.phase(), PlanPhase::Review);
 
@@ -639,13 +1096,64 @@ mod integration_tests {
     }
 
     #[test]
+    fn permission_and_mode_commands_govern_pending_runtime_and_agent_state() {
+        let registry = registry();
+        let surface = surface();
+        let mut state = SessionState::new();
+
+        step(&mut state, &registry, &surface, "/permission bypass");
+        assert_eq!(
+            state.controls.permission_mode,
+            SessionPermissionMode::Bypass
+        );
+        assert_eq!(
+            state.pending_mode_update,
+            Some((SessionOperatingMode::Code, SessionPermissionMode::Bypass))
+        );
+
+        state.pending_mode_update = None;
+        step(&mut state, &registry, &surface, "/mode ask");
+        assert_eq!(state.controls.operating_mode, SessionOperatingMode::Plan);
+        assert_eq!(
+            state.pending_mode_update,
+            Some((SessionOperatingMode::Plan, SessionPermissionMode::Bypass))
+        );
+    }
+
+    #[test]
+    fn plan_model_and_thinking_compatibility_matches_the_oracle() {
+        let registry = registry();
+        let surface = surface();
+        let mut state = SessionState::new();
+
+        step(&mut state, &registry, &surface, "/model glm-5v-turbo");
+        assert!(state.status.as_deref().unwrap().contains("unavailable"));
+
+        step(&mut state, &registry, &surface, "/plan standard");
+        step(&mut state, &registry, &surface, "/model glm-5.2");
+        step(&mut state, &registry, &surface, "/thinking max");
+        step(&mut state, &registry, &surface, "/model glm-5-turbo");
+        assert!(matches!(
+            state.overrides.get("zai:reasoning", None),
+            Some(SuperpowerValue::Choice { value }) if value.as_str() == "enabled"
+        ));
+
+        step(&mut state, &registry, &surface, "/model glm-5v-turbo");
+        step(&mut state, &registry, &surface, "/plan coding");
+        assert!(matches!(
+            state.overrides.get("zai:model", None),
+            Some(SuperpowerValue::Choice { value }) if value.as_str() == "glm-5.2"
+        ));
+    }
+
+    #[test]
     fn free_text_answers_a_pending_question_during_planning() {
         // Directive 2: the driver can type answers directly to refine the plan.
         let registry = registry();
         let surface = surface();
         let mut state = SessionState::new();
 
-        step(&mut state, &registry, &surface, "/plan PRD");
+        step(&mut state, &registry, &surface, "/planmode PRD");
         // Simulate the model raising one interrogation question.
         state.plan.ask("Which framework?").unwrap();
         assert_eq!(state.plan.pending_questions().len(), 1);
@@ -679,7 +1187,7 @@ mod integration_tests {
         let surface = surface();
         let mut state = SessionState::new();
 
-        step(&mut state, &registry, &surface, "/plan PRD");
+        step(&mut state, &registry, &surface, "/planmode PRD");
         let snapshot = state.clone();
 
         let outcome = step(&mut state, &registry, &surface, "/quit");
@@ -707,6 +1215,7 @@ mod integration_tests {
                 transcript: state.transcript.clone(),
                 input: String::new(),
                 status: state.status.clone(),
+                ..ViewModel::default()
             };
             renderer.render(&model);
         };
@@ -722,7 +1231,7 @@ mod integration_tests {
             PlanPhase::Normal
         );
 
-        step(&mut state, &registry, &surface, "/plan PRD");
+        step(&mut state, &registry, &surface, "/planmode PRD");
         render(&state, &mut renderer);
         assert_eq!(
             renderer.last_model.as_ref().unwrap().plan.phase(),
@@ -812,7 +1321,7 @@ mod integration_tests {
         let mut state = SessionState::new();
 
         // Enter PLANNING, then clear-plan should drop back to NORMAL.
-        step(&mut state, &registry, &surface, "/plan ship the matrix");
+        step(&mut state, &registry, &surface, "/planmode ship the matrix");
         assert_eq!(state.phase(), PlanPhase::Planning);
         step(&mut state, &registry, &surface, "/clear-plan");
         assert_eq!(state.phase(), PlanPhase::Normal);
@@ -1156,30 +1665,14 @@ mod integration_tests {
     }
 
     #[test]
-    fn phase7_deferred_command_pushes_a_clear_warning() {
-        // Deferred commands must NOT silently drop; they push a clear, named
-        // warning so the driver understands the command is recognized but
-        // its subsystem is not built yet.
+    fn keybinding_editor_command_routes_to_a_real_pending_operation() {
         let registry = registry();
         let surface = surface();
         let mut state = SessionState::new();
 
-        step(&mut state, &registry, &surface, "/mobile");
-        assert!(
-            state
-                .transcript
-                .iter()
-                .any(|line| line.contains("/mobile") && line.contains("deferred")),
-            "/mobile must push a deferred notice"
-        );
-        assert!(
-            state
-                .status
-                .as_ref()
-                .is_some_and(|status| status.contains("deferred")),
-            "/mobile status must mention deferred"
-        );
-        // A deferred command must NOT stash a pending prompt.
+        step(&mut state, &registry, &surface, "/keybinds");
+        assert!(state.pending_keybind_editor);
+        assert!(state.pending_prompt.is_none());
         assert!(
             state.pending_prompt.is_none(),
             "/mobile must not trigger an agent turn"

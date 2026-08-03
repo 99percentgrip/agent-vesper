@@ -12,11 +12,9 @@
 //! - **Workflow prompts** that construct a prompt and trigger a background
 //!   `AgentLoop` turn (`/security-review`, `/smart`, `/release`, `/insights`,
 //!   `/diff`)
-//! - **Deferred commands** that depend on a subsystem Vesper has not built
-//!   yet (mobile, voice, MCP, plugins, worktrees, checkpoints, awareness
-//!   views, image rendering, etc.) — these resolve to a clear
-//!   [`CommandOutcome::Deferred`] notice rather than silently erroring as
-//!   "Unknown command", so the migration surface is auditable.
+//! - Every registered command has a concrete route. An accidental missing
+//!   route is reported as an internal parity violation so it cannot masquerade
+//!   as a supported feature.
 //!
 //! The registry is pure: it parses user input into a [`CommandIntent`] and
 //! resolves it to a [`CommandOutcome`] without inspecting session state
@@ -94,6 +92,30 @@ pub enum CommandOutcome {
     /// `/clear-view` — clear only the visible transcript (not Plan Mode state).
     ClearView,
 
+    /// One validated live session setting selected through the command picker.
+    SessionConfig {
+        /// Stable setting identity.
+        key: SessionConfigKey,
+        /// Canonical selected value.
+        value: String,
+    },
+
+    /// A terminal-only view action.
+    Ui(UiAction),
+
+    /// Search the visible conversation for a case-insensitive query.
+    Search { query: String },
+    /// Load one persisted TUI session selected from the native history picker.
+    History { session_id: String },
+    /// Queue, render, or capture an image through the native media bridge.
+    Media(MediaOp),
+    /// Ask the configured auxiliary model without mutating main history.
+    AuxiliaryQuestion { question: String },
+    /// Query the active provider's live account/plan usage endpoint.
+    ProviderUsage,
+    /// Copy or write one fenced code block from recent assistant output.
+    CodeBlock { index: usize, write: bool },
+
     // === Tier C Phase 7 (ADR 0010) — context mutations ===
     /// `/clear-plan`, `/clear-history` — clear Plan Mode back to NORMAL.
     ClearPlan,
@@ -111,18 +133,6 @@ pub enum CommandOutcome {
     /// what the binary feeds to the loop (drained via
     /// [`crate::dispatch::SessionState::pending_prompt`]).
     Workflow { display: String, prompt: String },
-
-    // === Tier C Phase 7 (ADR 0010) — deferred subsystem commands ===
-    /// The command is recognized but depends on a subsystem Vesper has not
-    /// built yet. The dispatch surface pushes a clear, actionable warning
-    /// rather than erroring as "Unknown command", so the migration surface
-    /// stays auditable.
-    Deferred {
-        /// Canonical command name (without the leading slash).
-        command: String,
-        /// The subsystem / stage that owns the future implementation.
-        reason: String,
-    },
 
     // === Tier C Phase 8 (ADR 0011) — memory subsystem commands ===
     /// A memory command resolved to a structured [`MemoryOp`] that the
@@ -157,6 +167,12 @@ pub enum CommandOutcome {
     /// `pending_checkpoint_op`).
     Mcp(McpOp),
 
+    // === Phase 11 (ADR 0015 — Stage 16) — cognitive-memory commands ===
+    /// A cognitive-memory command (`/remember`, `/recall`, `/forget`)
+    /// resolved to a structured [`CognitionOp`] that the binary will
+    /// execute against the durable [`vesper_cognition::CognitiveMemory`].
+    Cognition(CognitionOp),
+
     /// Quit/exit requested.
     Quit,
     /// Unknown command or invalid argument; the message is shown to the user.
@@ -178,6 +194,45 @@ pub enum ViewKind {
     MaxIterations,
     /// `/usage` — live quota / API-plan usage.
     Usage,
+}
+
+/// Live session settings implemented by the native Rust harness.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionConfigKey {
+    EndpointPlan,
+    Permission,
+    OperatingMode,
+    GenerationProfile,
+    AuxiliaryModel,
+    MixtureMode,
+    Theme,
+    MaxIterations,
+}
+
+/// Terminal projections which do not mutate provider/domain state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UiAction {
+    OpenSettings,
+    /// Re-open the provider authentication screen (provider-routed `/auth`).
+    OpenAuth,
+    ToggleReasoning,
+    ToggleTasks,
+    ToggleSidebar,
+    ToggleScreenReader,
+    ToggleNativeMouse,
+    ToggleSound,
+    OpenPromptEditor,
+    OpenDiffAnnotator,
+    ToggleVim,
+    ToggleMobile,
+    OpenKeybindEditor,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MediaOp {
+    Queue { path: String },
+    Render { protocol: Option<String> },
+    Screenshot,
 }
 
 /// Plan-related slash gestures that take no argument.
@@ -292,6 +347,9 @@ pub enum CheckpointOp {
     /// `/export` — write transcript + lineage to a bounded markdown file
     /// under `<root>/exports/`.
     SessionExport,
+    /// `/export last` — write only the final assistant response to a bounded
+    /// markdown file under `<root>/exports/`.
+    SessionExportLast,
     /// `/copy [target]` — copy the last response / a target to the
     /// clipboard (with persistence fallback when no clipboard is
     /// reachable).
@@ -317,7 +375,7 @@ impl CheckpointOp {
             Self::CheckpointRewind { .. } => "rewind",
             Self::CheckpointUndo { .. } => "undo",
             Self::CronRegister { .. } => "loop",
-            Self::SessionExport => "export",
+            Self::SessionExport | Self::SessionExportLast => "export",
             Self::ClipboardCopy { .. } => "copy",
             Self::CiStatus => "ci",
         }
@@ -382,9 +440,31 @@ impl McpOp {
 ///
 /// Tier C Phase 7 (ADR 0010): the registry now covers the **entire** Python
 /// oracle `LOCAL_COMMANDS` surface (80 commands). Each command is either
-/// implemented (Plan Mode, superpowers, context, workflow) or deferred with a
-/// clear [`CommandOutcome::Deferred`] reason naming the subsystem/stage that
-/// owns the future work. No oracle command falls through to "Unknown command".
+/// implemented through a typed immediate or pending operation. No oracle
+/// command falls through to "Unknown command".
+/// Phase 11 (ADR 0015 — Stage 16): one structured operation against the
+/// cognitive-memory engine backed by [`vesper_cognition::CognitiveMemory`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CognitionOp {
+    /// `/remember <text>` — force an extraction + injection into the cognitive store.
+    Remember { text: String },
+    /// `/recall <query>` — manually search the cognitive store.
+    Recall { query: String },
+    /// `/forget <id>` — delete a specific memory by its ID.
+    Forget { id: String },
+}
+
+impl CognitionOp {
+    #[must_use]
+    pub fn command_name(&self) -> &'static str {
+        match self {
+            Self::Remember { .. } => "remember",
+            Self::Recall { .. } => "recall",
+            Self::Forget { .. } => "forget",
+        }
+    }
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct CommandRegistry {
     /// Known command names in stable registration order. The order matches
@@ -397,8 +477,7 @@ impl CommandRegistry {
     /// command surface (Tier C Phase 7, ADR 0010).
     ///
     /// Every entry in `glm_acp/tui.py:LOCAL_COMMANDS` is registered here.
-    /// Implemented commands resolve to their handler; deferred commands
-    /// resolve to [`CommandOutcome::Deferred`] with the owning subsystem.
+    /// Every command resolves to a concrete typed handler.
     ///
     /// ADR 0009: `/effort` is retired — the GLM reasoning dial collapsed to
     /// the single `/thinking` control.
@@ -417,6 +496,24 @@ impl CommandRegistry {
     #[must_use]
     pub fn names(&self) -> &[String] {
         &self.names
+    }
+
+    /// Returns the oracle command palette entries matching the current
+    /// composer value. The returned names include the leading slash and are
+    /// kept in the oracle's registration order so the terminal UI can offer
+    /// the same discoverable slash surface as the Python composer.
+    #[must_use]
+    pub fn completion_candidates(&self, input: &str) -> Vec<(String, String)> {
+        let trimmed = input.trim_start().to_ascii_lowercase();
+        let Some(query) = trimmed.strip_prefix('/') else {
+            return Vec::new();
+        };
+
+        ORACLE_COMMAND_SURFACE
+            .iter()
+            .filter(|entry| query.is_empty() || entry.name.starts_with(query))
+            .map(|entry| (format!("/{}", entry.name), entry.description.to_string()))
+            .collect()
     }
 
     /// Returns true when `name` matches a registered command.
@@ -462,15 +559,22 @@ impl CommandRegistry {
     ) -> CommandOutcome {
         match name {
             // === Plan Mode ===
-            "plan" | "planmode" | "api-plan" | "endpoint" => {
+            "planmode" => {
                 if argument.is_empty() {
-                    CommandOutcome::Error("Usage: /plan <your requirements as a PRD>".into())
+                    CommandOutcome::Error("Usage: /planmode <your requirements as a PRD>".into())
                 } else {
                     CommandOutcome::Plan {
                         prd: argument.to_string(),
                     }
                 }
             }
+            "plan" | "api-plan" | "endpoint" => resolve_glm_session_choice(
+                active_provider,
+                name,
+                argument,
+                SessionConfigKey::EndpointPlan,
+                &["coding", "standard", "bigmodel"],
+            ),
             "approve" => {
                 if plan_state.phase() != crate::plan_mode::PlanPhase::Review {
                     CommandOutcome::Error(
@@ -507,9 +611,159 @@ impl CommandRegistry {
             "recap" => CommandOutcome::ContextView(ViewKind::Recap),
             "context" => CommandOutcome::ContextView(ViewKind::Context),
             "status" => CommandOutcome::ContextView(ViewKind::Status),
-            "tasks" => CommandOutcome::ContextView(ViewKind::Tasks),
-            "max-iterations" => CommandOutcome::ContextView(ViewKind::MaxIterations),
-            "usage" => CommandOutcome::ContextView(ViewKind::Usage),
+            "tasks" => CommandOutcome::Ui(UiAction::ToggleTasks),
+            "max-iterations" => {
+                let value = argument.trim();
+                if value.is_empty() {
+                    CommandOutcome::ContextView(ViewKind::MaxIterations)
+                } else {
+                    match value.parse::<u32>() {
+                        Ok(value @ 1..=200) => CommandOutcome::SessionConfig {
+                            key: SessionConfigKey::MaxIterations,
+                            value: value.to_string(),
+                        },
+                        _ => CommandOutcome::Error("Usage: /max-iterations [1-200]".into()),
+                    }
+                }
+            }
+            "usage" => {
+                if active_provider.as_str() == "zai" {
+                    CommandOutcome::ProviderUsage
+                } else {
+                    CommandOutcome::Error(format!(
+                        "provider `{active_provider}` does not expose a quota integration"
+                    ))
+                }
+            }
+
+            // === Live session settings / native UI ===
+            "permission" => resolve_session_choice(
+                name,
+                argument,
+                SessionConfigKey::Permission,
+                &["ask", "read", "bypass"],
+            ),
+            "mode" => resolve_session_choice(
+                name,
+                argument,
+                SessionConfigKey::OperatingMode,
+                &["ask", "code"],
+            ),
+            "generation" => resolve_glm_session_choice(
+                active_provider,
+                name,
+                argument,
+                SessionConfigKey::GenerationProfile,
+                &["balanced", "precise", "exploratory"],
+            ),
+            "auxiliary" => resolve_glm_session_choice(
+                active_provider,
+                name,
+                argument,
+                SessionConfigKey::AuxiliaryModel,
+                &[
+                    "main",
+                    "glm-5.2",
+                    "glm-5-turbo",
+                    "glm-4.7",
+                    "glm-5v-turbo",
+                    "glm-4.5v",
+                    "glm-4.6v",
+                ],
+            ),
+            "mixture" => resolve_glm_session_choice(
+                active_provider,
+                name,
+                argument,
+                SessionConfigKey::MixtureMode,
+                &["off", "enabled"],
+            ),
+            "settings" => CommandOutcome::Ui(UiAction::OpenSettings),
+            "auth" => CommandOutcome::Ui(UiAction::OpenAuth),
+            "reasoning-panel" | "toggle-thinking" => CommandOutcome::Ui(UiAction::ToggleReasoning),
+            "statusline" => CommandOutcome::Ui(UiAction::ToggleSidebar),
+            "theme" => resolve_session_choice(
+                name,
+                argument,
+                SessionConfigKey::Theme,
+                &["vesper", "ansi", "light", "dracula", "nord"],
+            ),
+            "screen-reader" => CommandOutcome::Ui(UiAction::ToggleScreenReader),
+            "native-mouse" => CommandOutcome::Ui(UiAction::ToggleNativeMouse),
+            "sound" => CommandOutcome::Ui(UiAction::ToggleSound),
+            "search" => {
+                let query = argument.trim();
+                if query.is_empty() {
+                    CommandOutcome::Error("Usage: /search <conversation text>".into())
+                } else {
+                    CommandOutcome::Search {
+                        query: query.to_owned(),
+                    }
+                }
+            }
+            "history" => {
+                let session_id = argument.trim();
+                if session_id.is_empty() {
+                    CommandOutcome::Error("Choose a session from the /history picker.".into())
+                } else {
+                    CommandOutcome::History {
+                        session_id: session_id.to_owned(),
+                    }
+                }
+            }
+            "prompt" => CommandOutcome::Ui(UiAction::OpenPromptEditor),
+            "annotate" => CommandOutcome::Ui(UiAction::OpenDiffAnnotator),
+            "vim" => CommandOutcome::Ui(UiAction::ToggleVim),
+            "mobile" => CommandOutcome::Ui(UiAction::ToggleMobile),
+            "keybinds" => CommandOutcome::Ui(UiAction::OpenKeybindEditor),
+            "image" | "attach" => {
+                let path = argument.trim();
+                if path.is_empty() {
+                    CommandOutcome::Error(format!("Usage: /{name} <image path>"))
+                } else {
+                    CommandOutcome::Media(MediaOp::Queue {
+                        path: path.to_owned(),
+                    })
+                }
+            }
+            "image-render" => {
+                let protocol = argument.trim().to_ascii_lowercase();
+                if protocol.is_empty()
+                    || matches!(protocol.as_str(), "auto" | "kitty" | "sixel" | "iterm2")
+                {
+                    CommandOutcome::Media(MediaOp::Render {
+                        protocol: (!protocol.is_empty()).then_some(protocol),
+                    })
+                } else {
+                    CommandOutcome::Error("Usage: /image-render [auto|kitty|sixel|iterm2]".into())
+                }
+            }
+            "screenshot" => CommandOutcome::Media(MediaOp::Screenshot),
+            "btw" => {
+                let question = argument.trim();
+                if question.is_empty() {
+                    CommandOutcome::Error("Usage: /btw <side question>".into())
+                } else {
+                    CommandOutcome::AuxiliaryQuestion {
+                        question: question.to_owned(),
+                    }
+                }
+            }
+            "blocks" => {
+                let mut parts = argument.split_whitespace();
+                let action = parts.next().unwrap_or_default();
+                let index = parts.next().and_then(|value| value.parse::<usize>().ok());
+                if !matches!(action, "copy" | "write") || parts.next().is_some() {
+                    CommandOutcome::Error("Choose a code block from the /blocks picker.".into())
+                } else if let Some(index) = index {
+                    CommandOutcome::CodeBlock {
+                        index: index.saturating_sub(1),
+                        write: action == "write",
+                    }
+                } else {
+                    CommandOutcome::Error("Choose a code block from the /blocks picker.".into())
+                }
+            }
 
             // === Phase 7 — workflow prompts (construct text + trigger AgentLoop) ===
             "security-review" => CommandOutcome::Workflow {
@@ -689,7 +943,14 @@ impl CommandRegistry {
                     CommandOutcome::Checkpoint(CheckpointOp::CronRegister { prompt, schedule })
                 }
             }
-            "export" => CommandOutcome::Checkpoint(CheckpointOp::SessionExport),
+            "export" => {
+                if argument.trim() == "last" {
+                    CommandOutcome::Checkpoint(CheckpointOp::SessionExportLast)
+                } else {
+                    CommandOutcome::Checkpoint(CheckpointOp::SessionExport)
+                }
+            }
+            "export last" => CommandOutcome::Checkpoint(CheckpointOp::SessionExportLast),
             "copy" => {
                 let target = if argument.trim().is_empty() {
                     "last-response".to_string()
@@ -805,12 +1066,42 @@ impl CommandRegistry {
                 }
             }
 
-            // === Phase 7 — deferred subsystem commands ===
-            // Each deferred command resolves to a clear, actionable notice
-            // naming the subsystem that owns the future implementation. This
-            // keeps the migration surface 100% auditable: every oracle command
-            // is recognized, none silently errors as "Unknown".
-            other => deferred_outcome(other),
+            // === Phase 11 (ADR 0015 — Stage 16) — cognitive-memory commands ===
+            "remember" => {
+                let text = argument.trim();
+                if text.is_empty() {
+                    CommandOutcome::Error("Usage: /remember <text to remember>".into())
+                } else {
+                    CommandOutcome::Cognition(CognitionOp::Remember {
+                        text: text.to_string(),
+                    })
+                }
+            }
+            "recall" => {
+                let query = argument.trim();
+                if query.is_empty() {
+                    CommandOutcome::Error("Usage: /recall <search query>".into())
+                } else {
+                    CommandOutcome::Cognition(CognitionOp::Recall {
+                        query: query.to_string(),
+                    })
+                }
+            }
+            "forget" => {
+                let id = argument.trim();
+                if id.is_empty() {
+                    CommandOutcome::Error("Usage: /forget <memory-id>".into())
+                } else {
+                    CommandOutcome::Cognition(CognitionOp::Forget { id: id.to_string() })
+                }
+            }
+
+            // A registered command without a concrete route is a parity bug,
+            // not a user-visible feature state. Fail closed so tests and the
+            // audit surface expose the missing implementation immediately.
+            other => CommandOutcome::Error(format!(
+                "internal parity violation: registered command /{other} has no implementation"
+            )),
         }
     }
 
@@ -876,19 +1167,31 @@ impl CommandRegistry {
 
     fn help_text(&self) -> String {
         // Phase 7: the help text now reflects the full oracle surface. We
-        // group commands by category so the user can scan them quickly, and
-        // we surface the deferred commands with their owning subsystem so the
-        // migration surface is visible from inside the TUI.
+        // group concrete commands by category so the user can scan them.
         let mut buffer = String::new();
-        buffer.push_str("Vesper TUI commands (Tier C Phase 7 — full oracle parity)\n\n");
+        buffer.push_str("Agent Vesper command surface\n\n");
         buffer.push_str("Plan Mode:\n");
-        buffer.push_str("  /plan <PRD>        enter Plan Mode and interrogate the requirements\n");
+        buffer.push_str("  /planmode <PRD>    enter Plan Mode and interrogate the requirements\n");
         buffer.push_str("  /approve           finalize the reviewed plan and start execution\n");
         buffer.push_str("  /cancel            abort the in-flight plan\n");
         buffer.push_str("  /clear-plan        clear Plan Mode back to NORMAL\n");
         buffer.push_str("\nSuperpowers (resolved against the active provider):\n");
         buffer.push_str("  /thinking <lvl>    session reasoning (disabled/enabled/high/max)\n");
+        buffer.push_str("  /reasoning <lvl>   alias for /thinking\n");
         buffer.push_str("  /model <name>      switch the active model\n");
+        buffer.push_str("  /plan <value>      select coding, standard, or bigmodel API plan\n");
+        buffer.push_str("  /api-plan          alias for /plan\n");
+        buffer.push_str("  /endpoint          alias for /plan\n");
+        buffer.push_str("  /permission        select Ask, Read Only, or Bypass\n");
+        buffer.push_str("  /mode              select Ask or Code operating mode\n");
+        buffer.push_str("  /generation        select balanced, precise, or exploratory\n");
+        buffer.push_str("  /auxiliary         select the auxiliary model\n");
+        buffer.push_str("  /mixture           toggle reference review\n");
+        buffer.push_str("  /settings          browse all settings without typing values\n");
+        buffer.push_str("  /theme             select a native terminal theme\n");
+        buffer.push_str("  /screen-reader     toggle the plain accessibility layout\n");
+        buffer.push_str("  /native-mouse      release or recapture terminal mouse input\n");
+        buffer.push_str("  /sound             toggle completion bell notifications\n");
         buffer.push_str("\nContext:\n");
         buffer.push_str("  /clear-view        clear the visible transcript\n");
         buffer.push_str("  /clear-history     alias for /clear-plan\n");
@@ -899,8 +1202,30 @@ impl CommandRegistry {
         buffer.push_str("  /context           context-window usage by segment\n");
         buffer.push_str("  /status            session, model, permissions, context summary\n");
         buffer.push_str("  /tasks             session dashboard\n");
+        buffer.push_str("  /reasoning-panel   show or hide streamed reasoning\n");
+        buffer.push_str("  /toggle-thinking   alias for /reasoning-panel\n");
+        buffer.push_str("  /statusline        show or hide the session sidebar\n");
         buffer.push_str("  /max-iterations    show the per-turn tool-call iteration cap\n");
-        buffer.push_str("  /usage             live quota / API-plan usage (deferred)\n");
+        buffer.push_str("  /usage             show the current usage summary\n");
+        buffer.push_str("  /history           browse and resume persisted sessions\n");
+        buffer.push_str("  /search <text>     grep the visible conversation\n");
+        buffer.push_str("  /prompt            compose a multi-line prompt in $VISUAL/$EDITOR\n");
+        buffer.push_str(
+            "  /btw <question>    ask the configured auxiliary model without changing history\n",
+        );
+        buffer
+            .push_str("  /image <path>      queue a PNG, JPEG, or WebP for a vision-model turn\n");
+        buffer.push_str("  /attach <path>     alias for /image\n");
+        buffer.push_str(
+            "  /image-render      render the last image with a detected terminal protocol\n",
+        );
+        buffer.push_str("  /screenshot        capture and queue a desktop screenshot\n");
+        buffer.push_str("  /blocks            pick a recent fenced code block to copy or write\n");
+        buffer.push_str("  /annotate          annotate the live git diff in $VISUAL/$EDITOR\n");
+        buffer.push_str("  /vim               toggle the native modal composer\n");
+        buffer.push_str("  /mobile            toggle the credential-free approval companion\n");
+        buffer
+            .push_str("  /keybinds          edit persistent live keybindings in $VISUAL/$EDITOR\n");
         buffer.push_str("\nWorkflows (construct a prompt + trigger a background agent turn):\n");
         buffer.push_str("  /security-review   scan the working-tree diff for vulnerabilities\n");
         buffer.push_str(
@@ -913,16 +1238,42 @@ impl CommandRegistry {
         buffer.push_str("  /version           print the agent version\n");
         buffer.push_str("  /help              show this help\n");
         buffer.push_str("  /quit | /exit      exit the TUI\n");
-        buffer.push_str("\nDeferred (subsystem not yet built — see ADR 0010 Phase 7 matrix):\n");
-        buffer.push_str("  mobile, sound, mcp, plugins, sessions-new, sessions, lineage,\n");
-        buffer.push_str("  branch, rename, loop, checkpoint, rollback, rewind, undo,\n");
-        buffer.push_str("  goal, subgoal, awareness, metacognition, deliberation, repository,\n");
-        buffer.push_str("  meta-learning, observability, memory, skills, profile, curator,\n");
-        buffer.push_str("  journey, ci, export, copy, history, search, prompt, btw, blocks,\n");
-        buffer.push_str("  annotate, theme, vim, keybinds, statusline, screen-reader,\n");
-        buffer.push_str("  native-mouse, reasoning-panel, toggle-thinking, settings,\n");
-        buffer.push_str("  permission, mode, generation, auxiliary, mixture, image,\n");
-        buffer.push_str("  image-render, screenshot, attach\n");
+        buffer.push_str("\nMemory & awareness (durable):\n");
+        buffer.push_str("  /memory [query]     list project-local memory entries\n");
+        buffer.push_str("  /goal <summary>     add a persistent goal\n");
+        buffer.push_str("  /subgoal <criterion> add a goal acceptance criterion\n");
+        buffer.push_str("  /skills             list learned skills\n");
+        buffer.push_str("  /profile            show approved profile preferences\n");
+        buffer.push_str("  /awareness          show epistemic state\n");
+        buffer.push_str("  /metacognition      show metacognitive state\n");
+        buffer.push_str("  /deliberation       show grounded-deliberation state\n");
+        buffer.push_str("  /repository         show repository metadata\n");
+        buffer.push_str("  /meta-learning      show learning candidates\n");
+        buffer.push_str("  /observability      show local reliability metrics\n");
+        buffer.push_str("  /curator            run deterministic skill maintenance\n");
+        buffer.push_str("  /journey            show the memory/skill/profile timeline\n");
+        buffer.push_str("\nCognitive memory (durable):\n");
+        buffer.push_str("  /remember <text>    add a fact to the cognitive memory store\n");
+        buffer.push_str("  /recall <query>     search the cognitive memory store\n");
+        buffer.push_str("  /forget <id>        delete a cognitive memory by ID\n");
+        buffer.push_str("\nSessions, checkpoints & export (durable):\n");
+        buffer.push_str("  /sessions-new [name] create a session\n");
+        buffer.push_str("  /sessions           list sessions\n");
+        buffer.push_str("  /lineage            show the active session lineage\n");
+        buffer.push_str("  /branch [name]      branch the active session\n");
+        buffer.push_str("  /rename <name>      rename the active session\n");
+        buffer.push_str("  /checkpoint [label] capture an explicit workspace snapshot\n");
+        buffer.push_str("  /rollback <id>      restore a checkpoint\n");
+        buffer.push_str("  /rewind <id>        alias for /rollback\n");
+        buffer.push_str("  /undo [N]           restore an earlier checkpoint\n");
+        buffer.push_str("  /loop <prompt>      register a bounded cron entry\n");
+        buffer.push_str("  /export             export the full session\n");
+        buffer.push_str("  /export last        export only the final assistant response\n");
+        buffer.push_str("  /copy [target]      copy a response with a safe fallback\n");
+        buffer.push_str("  /ci                 show bounded CI status\n");
+        buffer.push_str("\nMCP & plugins (durable):\n");
+        buffer.push_str("  /mcp [list|add|remove|tools] manage MCP servers\n");
+        buffer.push_str("  /plugins [list|publishers|verify|load|trust] manage plugins\n");
         buffer
     }
 }
@@ -1018,107 +1369,41 @@ fn resolve_smart(argument: &str) -> CommandOutcome {
     }
 }
 
-/// Returns the [`CommandOutcome::Deferred`] notice for a command that depends
-/// on a subsystem Vesper has not built yet. The reason names the owning
-/// subsystem / stage so the migration surface stays auditable.
-fn deferred_outcome(command: &str) -> CommandOutcome {
-    let reason = deferred_reason(command)
-        .unwrap_or_else(|| "deferred to a future stage (no subsystem owns it yet)".to_string());
-    CommandOutcome::Deferred {
-        command: command.to_string(),
-        reason,
+fn resolve_session_choice(
+    command: &str,
+    argument: &str,
+    key: SessionConfigKey,
+    allowed: &[&str],
+) -> CommandOutcome {
+    let value = argument.trim().to_ascii_lowercase();
+    if value.is_empty() {
+        return CommandOutcome::Error(format!(
+            "Usage: /{command} <value>. Allowed: {}",
+            allowed.join(", ")
+        ));
     }
+    if !allowed.contains(&value.as_str()) {
+        return CommandOutcome::Error(format!(
+            "Invalid /{command} value `{value}`. Allowed: {}",
+            allowed.join(", ")
+        ));
+    }
+    CommandOutcome::SessionConfig { key, value }
 }
 
-/// Maps a deferred command name to a human-readable reason naming the owning
-/// subsystem. Returns `None` for implemented commands (which never reach the
-/// deferred path).
-fn deferred_reason(command: &str) -> Option<String> {
-    let reason: &str = match command {
-        // Mobile / voice / sound subsystem
-        "mobile" => "mobile companion subsystem (Stage 13+, deferred)",
-        "sound" => "notification-sound subsystem (Stage 13+, deferred)",
-
-        // MCP / plugins
-        //
-        // NOTE: `/mcp` and `/plugins` moved to `vesper-mcp` (McpRegistry +
-        // McpClient + PluginLoader + TrustedPublishers) in Phase 10
-        // (ADR 0013). They are no longer deferred.
-        // "mcp" => "MCP server-connection subsystem (Stage 14+, deferred)",
-        // "plugins" => "plugin publisher / install subsystem (Stage 14+, deferred)",
-
-        // Worktree session subsystem
-        //
-        // NOTE: The 9 worktree/checkpoint commands below moved to the
-        // durable `vesper-checkpoints` subsystem in Phase 9 (ADR 0012).
-        // They are no longer deferred — see the explicit
-        // `Checkpoint(CheckpointOp)` arms in `resolve_known`.
-
-        // Cron / loop scheduler
-        //
-        // NOTE: `/loop` also moved to `vesper-checkpoints` (CronRegistry).
-
-        // Checkpoint / rollback subsystem
-        //
-        // NOTE: `/checkpoint` `/rollback` `/rewind` `/undo` also moved to
-        // `vesper-checkpoints` (CheckpointsLedger).
-
-        // Awareness / memory / skills views (the data lives in the harness;
-        // surfacing it in the TUI is a later stage)
-        //
-        // NOTE: The 13 commands below moved to the durable `vesper-memory`
-        // subsystem in Phase 8 (ADR 0011). They are no longer deferred —
-        // see the explicit `Memory(MemoryOp)` arms in `resolve_known`.
-        // `goal`/`subgoal`/`awareness`/`metacognition`/`deliberation`/
-        // `repository`/`meta-learning`/`observability`/`memory`/`skills`/
-        // `profile`/`curator`/`journey` all resolve to real ops now.
-
-        // CI integration
-        //
-        // NOTE: `/ci` moved to `vesper-checkpoints` (CiStatusReader).
-        // `ci` => "CI-status integration (Stage 17+, deferred)",
-
-        // Export / clipboard
-        //
-        // NOTE: `/export` and `/copy` moved to `vesper-checkpoints`
-        // (SessionExporter + ClipboardPort).
-
-        // Composer features
-        "history" => "session-history browser (Stage 12+, deferred)",
-        "search" => "conversation-search composer (Stage 12+, deferred)",
-        "prompt" => "$EDITOR multi-line composer (Stage 12+, deferred)",
-        "btw" => "side-question composer (Stage 12+, deferred)",
-        "blocks" => "code-block picker composer (Stage 12+, deferred)",
-        "annotate" => "diff-hunk annotation composer (Stage 12+, deferred)",
-
-        // Textual-specific UI (Vesper uses ratatui, not Textual; these need
-        // native reimplementation)
-        "theme" => "ratatui theme subsystem (Stage 18+, deferred)",
-        "vim" => "vim-mode composer (Stage 18+, deferred)",
-        "keybinds" => "configurable keybind subsystem (Stage 18+, deferred)",
-        "statusline" => "configurable statusline subsystem (Stage 18+, deferred)",
-        "screen-reader" => "screen-reader mode (Stage 18+, deferred)",
-        "native-mouse" => "native mouse-mode toggle (Stage 18+, deferred)",
-        "reasoning-panel" | "toggle-thinking" => "reasoning-panel UI toggle (Stage 18+, deferred)",
-
-        // Live session settings (provider-quota / mode UI)
-        "settings" => "live session-settings panel (Stage 18+, deferred)",
-        "permission" => "permission-mode UI (Stage 18+, deferred)",
-        "mode" => "session-mode UI (Stage 18+, deferred)",
-        "generation" => "generation-profile UI (Stage 18+, deferred)",
-        "auxiliary" => "auxiliary-model UI (Stage 18+, deferred)",
-        "mixture" => "mixture-of-agents UI (Stage 18+, deferred)",
-
-        // Image subsystem
-        "image" | "attach" => "image-queue subsystem (Stage 19+, deferred)",
-        "image-render" => "inline image-render subsystem (Stage 19+, deferred)",
-        "screenshot" => "screenshot-capture subsystem (Stage 19+, deferred)",
-
-        // Anything else that slipped through — fail closed with a generic
-        // reason so the migration matrix stays complete.
-        _ => return None,
-    };
-    Some(reason.to_string())
+fn resolve_glm_session_choice(
+    active_provider: &ProviderId,
+    command: &str,
+    argument: &str,
+    key: SessionConfigKey,
+    allowed: &[&str],
+) -> CommandOutcome {
+    if active_provider.as_str() != "zai" {
+        return CommandOutcome::Error(format!(
+            "/{command} is a Z.ai-specific setting and is unavailable for provider `{active_provider}`"
+        ));
+    }
+    resolve_session_choice(command, argument, key, allowed)
 }
 
 // ===========================================================================
@@ -1142,14 +1427,9 @@ struct OracleCommandEntry {
 ///
 /// This is the authoritative migration matrix: every command here is
 /// registered in [`CommandRegistry::stage_11b`] and resolved by
-/// [`CommandRegistry::resolve_known`] (either to a real handler or to a
-/// [`CommandOutcome::Deferred`] notice naming the owning subsystem).
+/// [`CommandRegistry::resolve_known`] through a concrete typed handler.
 #[rustfmt::skip]
 const ORACLE_COMMAND_SURFACE: &[OracleCommandEntry] = &[
-    // === Vesper-native (not in oracle LOCAL_COMMANDS; handled via keybindings there) ===
-    OracleCommandEntry { name: "approve",           description: "Finalize the reviewed plan and start execution (Vesper-native)" },
-    OracleCommandEntry { name: "cancel",            description: "Abort the in-flight plan (Vesper-native)" },
-    OracleCommandEntry { name: "quit",              description: "Exit the TUI (Vesper-native; oracle uses Ctrl+X)" },
     // === Python oracle LOCAL_COMMANDS (glm_acp/tui.py:86) — in declaration order ===
     OracleCommandEntry { name: "plan",              description: "Switch between Coding Plan, Standard API, and BigModel (CN)" },
     OracleCommandEntry { name: "thinking",          description: "Change provider thinking: Off, Standard, Deep High, or Deep Max" },
@@ -1217,6 +1497,9 @@ const ORACLE_COMMAND_SURFACE: &[OracleCommandEntry] = &[
     OracleCommandEntry { name: "lineage",           description: "Show the session-lineage chain" },
     OracleCommandEntry { name: "mcp",               description: "Manage MCP server connections" },
     OracleCommandEntry { name: "ci",                description: "Show CI status for the current branch" },
+    OracleCommandEntry { name: "remember",          description: "Manually add a fact to the cognitive memory store" },
+    OracleCommandEntry { name: "recall",            description: "Search the cognitive memory store for relevant context" },
+    OracleCommandEntry { name: "forget",            description: "Delete a cognitive memory by its ID" },
     OracleCommandEntry { name: "version",           description: "Show package, Python, and platform version info" },
     OracleCommandEntry { name: "help",              description: "Show the full harness command reference" },
     OracleCommandEntry { name: "copy",              description: "Copy the last response to clipboard" },
@@ -1228,8 +1511,16 @@ const ORACLE_COMMAND_SURFACE: &[OracleCommandEntry] = &[
     OracleCommandEntry { name: "journey",           description: "Show the timeline of memories + skills + profile" },
     OracleCommandEntry { name: "native-mouse",      description: "Toggle native terminal mouse mode" },
     OracleCommandEntry { name: "planmode",          description: "Activate Plan Mode with a PRD" },
+    OracleCommandEntry { name: "export last",       description: "Export the last response to a Markdown file" },
     OracleCommandEntry { name: "image",             description: "Queue an image for the next prompt" },
     OracleCommandEntry { name: "exit",              description: "Close the terminal agent" },
+    // === Vesper-native additions (the oracle handles these via keybindings) ===
+    // Keep these after the oracle surface so opening `/` starts with the same
+    // command order as the Python composer.
+    OracleCommandEntry { name: "approve",           description: "Finalize the reviewed plan and start execution (Vesper-native)" },
+    OracleCommandEntry { name: "cancel",            description: "Abort the in-flight plan (Vesper-native)" },
+    OracleCommandEntry { name: "auth",              description: "Re-authenticate or rotate the active provider's credential (Vesper-native, provider-routed)" },
+    OracleCommandEntry { name: "quit",              description: "Exit the TUI (Vesper-native; oracle uses Ctrl+X)" },
 ];
 
 /// Coerces a free-form argument into the value shape a descriptor expects.
@@ -1289,7 +1580,7 @@ mod tests {
     use vesper_provider::{SuperpowerKind, SuperpowerScope};
 
     fn provider() -> ProviderId {
-        ProviderId::new("test").unwrap()
+        ProviderId::new("zai").unwrap()
     }
 
     fn choice_descriptor(alias: &str, allowed: &[&str]) -> SuperpowerDescriptor {
@@ -1352,13 +1643,33 @@ mod tests {
     }
 
     #[test]
-    fn resolve_plan_requires_a_prd() {
+    fn completion_candidates_match_slash_prefixes_and_export_last() {
+        let registry = CommandRegistry::stage_11b();
+
+        let root = registry.completion_candidates("/");
+        assert_eq!(root.len(), registry.names().len());
+        assert!(root.iter().all(|(name, _)| name.starts_with('/')));
+
+        let help = registry.completion_candidates("/hel");
+        assert_eq!(help.first().map(|(name, _)| name.as_str()), Some("/help"));
+
+        let export = registry.completion_candidates("/export l");
+        assert_eq!(
+            export.first().map(|(name, _)| name.as_str()),
+            Some("/export last")
+        );
+
+        assert!(registry.completion_candidates("prompt").is_empty());
+    }
+
+    #[test]
+    fn resolve_planmode_requires_a_prd() {
         let registry = CommandRegistry::stage_11b();
         let plan_state = PlanState::default();
         let provider = provider();
         let outcome = registry.resolve(
             &CommandIntent::Slash {
-                name: "plan".into(),
+                name: "planmode".into(),
                 argument: "".into(),
             },
             &plan_state,
@@ -1369,7 +1680,7 @@ mod tests {
 
         let outcome = registry.resolve(
             &CommandIntent::Slash {
-                name: "plan".into(),
+                name: "planmode".into(),
                 argument: "ship the matrix".into(),
             },
             &plan_state,
@@ -1533,6 +1844,62 @@ mod tests {
     }
 
     #[test]
+    fn help_marks_shipped_commands_active_and_lists_current_exclusions() {
+        let registry = CommandRegistry::stage_11b();
+        let help = match registry.resolve(
+            &CommandIntent::Slash {
+                name: "help".into(),
+                argument: String::new(),
+            },
+            &PlanState::default(),
+            &provider(),
+            &[],
+        ) {
+            CommandOutcome::Help(text) => text,
+            other => panic!("expected help text, got {other:?}"),
+        };
+        for command in [
+            "/memory",
+            "/goal",
+            "/sessions-new",
+            "/checkpoint",
+            "/export",
+            "/export last",
+            "/copy",
+            "/ci",
+            "/mcp",
+            "/plugins",
+            "/settings",
+            "/permission",
+            "/mode",
+            "/generation",
+            "/auxiliary",
+            "/mixture",
+            "/reasoning-panel",
+            "/statusline",
+            "/theme",
+            "/screen-reader",
+            "/native-mouse",
+            "/sound",
+            "/history",
+            "/search",
+            "/prompt",
+            "/btw",
+            "/image",
+            "/attach",
+            "/image-render",
+            "/screenshot",
+            "/blocks",
+            "/annotate",
+            "/vim",
+            "/mobile",
+            "/keybinds",
+        ] {
+            assert!(help.contains(command), "{command} must be active in help");
+        }
+    }
+
+    #[test]
     fn unknown_command_is_an_error() {
         let registry = CommandRegistry::stage_11b();
         let plan_state = PlanState::default();
@@ -1553,9 +1920,10 @@ mod tests {
     fn registry_knows_its_commands() {
         let registry = CommandRegistry::stage_11b();
         // Phase 7 (ADR 0010): the registry now covers the ENTIRE Python oracle
-        // LOCAL_COMMANDS surface (80 commands) PLUS the three Vesper-native
-        // commands (approve, cancel, quit) the oracle handles via keybindings.
-        // Every command below must be recognized.
+        // LOCAL_COMMANDS surface (80 commands) PLUS the four Vesper-native
+        // commands (approve, cancel, quit, auth) the oracle handles via
+        // keybindings (auth is provider-routed). Every command below must be
+        // recognized.
         for known in [
             "plan",
             "approve",
@@ -1585,7 +1953,6 @@ mod tests {
             "release",
             "insights",
             "diff",
-            "mobile",
             "mcp",
             "plugins",
             "checkpoint",
@@ -1612,13 +1979,30 @@ mod tests {
         );
         // Genuinely unknown commands are still unknown.
         assert!(!registry.contains("frobnicate"));
-        // The full surface count: 79 distinct oracle command names (the
-        // oracle's `/export last` parses as `/export` with arg `last`) + 3
-        // Vesper-native (approve, cancel, quit) = 82 total.
+        // The full surface count: 80 oracle command names (including the
+        // distinct `/export last` route) + 7 Vesper-native (approve, cancel,
+        // quit, auth, remember, recall, forget) = 87 total.
+        assert!(registry.contains("export last"));
+        assert!(
+            registry.contains("auth"),
+            "Vesper-native /auth must be registered"
+        );
+        assert!(
+            registry.contains("remember"),
+            "Stage 16 Vesper-native /remember must be registered"
+        );
+        assert!(
+            registry.contains("recall"),
+            "Stage 16 Vesper-native /recall must be registered"
+        );
+        assert!(
+            registry.contains("forget"),
+            "Stage 16 Vesper-native /forget must be registered"
+        );
         assert_eq!(
             registry.names().len(),
-            82,
-            "Phase 7 parity: 79 oracle commands + 3 Vesper-native = 82 total"
+            87,
+            "Phase 7 parity: 80 oracle commands + 7 Vesper-native = 87 total"
         );
     }
 
@@ -1670,16 +2054,21 @@ mod tests {
     }
 
     #[test]
-    fn phase7_plan_aliases_resolve_to_plan() {
-        // /planmode, /api-plan, /endpoint are oracle aliases for /plan.
-        for alias in ["planmode", "api-plan", "endpoint"] {
+    fn planmode_and_endpoint_selectors_have_distinct_oracle_semantics() {
+        assert_eq!(
+            resolve_bare_intent(&CommandIntent::parse("/planmode ship the matrix")),
+            CommandOutcome::Plan {
+                prd: "ship the matrix".into()
+            }
+        );
+        for alias in ["plan", "api-plan", "endpoint"] {
             let registry = CommandRegistry::stage_11b();
             let plan_state = PlanState::default();
             let provider = provider();
             let outcome = registry.resolve(
                 &CommandIntent::Slash {
                     name: alias.into(),
-                    argument: "ship the matrix".into(),
+                    argument: "standard".into(),
                 },
                 &plan_state,
                 &provider,
@@ -1687,10 +2076,11 @@ mod tests {
             );
             assert_eq!(
                 outcome,
-                CommandOutcome::Plan {
-                    prd: "ship the matrix".into()
+                CommandOutcome::SessionConfig {
+                    key: SessionConfigKey::EndpointPlan,
+                    value: "standard".into()
                 },
-                "/{alias} should alias /plan"
+                "/{alias} should select the API endpoint plan"
             );
         }
     }
@@ -1760,16 +2150,13 @@ mod tests {
         );
         assert_eq!(
             resolve_bare("tasks"),
-            CommandOutcome::ContextView(ViewKind::Tasks)
+            CommandOutcome::Ui(UiAction::ToggleTasks)
         );
         assert_eq!(
             resolve_bare("max-iterations"),
             CommandOutcome::ContextView(ViewKind::MaxIterations)
         );
-        assert_eq!(
-            resolve_bare("usage"),
-            CommandOutcome::ContextView(ViewKind::Usage)
-        );
+        assert_eq!(resolve_bare("usage"), CommandOutcome::ProviderUsage);
     }
 
     #[test]
@@ -1882,70 +2269,6 @@ mod tests {
                     assert!(!prompt.is_empty());
                 }
                 other => panic!("/{name} should be Workflow, got {other:?}"),
-            }
-        }
-    }
-
-    #[test]
-    fn phase7_every_deferred_command_names_a_subsystem() {
-        // Every deferred command must resolve to Deferred with a non-empty
-        // reason naming the owning subsystem — never Error("Unknown command").
-        // This is the heart of the parity contract: no oracle command is
-        // silently dropped.
-        //
-        // Phase 8 (ADR 0011): the 13 memory/awareness commands moved out.
-        // Phase 9 (ADR 0012): the 13 checkpoint/session/loop/export/copy/ci
-        // commands moved out. The remaining list covers only the
-        // still-deferred commands (composer, ratatui UI rebuilds,
-        // live-session settings, image, audio, mobile).
-        //
-        // Phase 10 (ADR 0013): `/mcp` and `/plugins` moved out — this is
-        // the final stage. The list below is now the COMPLETE set of
-        // remaining deferred commands, all of which are explicitly
-        // documented as out-of-scope for the ratatui CLI binary (see ADR
-        // 0013 §"Migration matrix" for the justification of each).
-        let deferred_commands = [
-            "mobile",
-            "sound",
-            "btw",
-            "blocks",
-            "annotate",
-            "theme",
-            "vim",
-            "keybinds",
-            "statusline",
-            "screen-reader",
-            "native-mouse",
-            "reasoning-panel",
-            "toggle-thinking",
-            "settings",
-            "permission",
-            "mode",
-            "generation",
-            "auxiliary",
-            "mixture",
-            "image",
-            "attach",
-            "image-render",
-            "screenshot",
-            // Composer features still need a TUI rebuild (history/search/
-            // prompt are doable; btw/blocks/annotate need a composer).
-            "history",
-            "search",
-            "prompt",
-        ];
-        for name in deferred_commands {
-            match resolve_bare(name) {
-                CommandOutcome::Deferred { command, reason } => {
-                    assert_eq!(command, name);
-                    assert!(
-                        !reason.is_empty(),
-                        "/{name} must name an owning subsystem in its reason"
-                    );
-                }
-                other => {
-                    panic!("/{name} should be Deferred, got {other:?}")
-                }
             }
         }
     }
@@ -2088,6 +2411,11 @@ mod tests {
                 other => panic!("{input} should resolve to Checkpoint(_), got {other:?}"),
             }
         }
+
+        assert!(matches!(
+            resolve_bare_intent(&CommandIntent::parse("/export last")),
+            CommandOutcome::Checkpoint(CheckpointOp::SessionExportLast)
+        ));
     }
 
     #[test]
@@ -2224,24 +2552,11 @@ mod tests {
     }
 
     #[test]
-    fn phase10_zero_deferred_stubs_remain_excluding_documented_exclusions() {
-        // THE final-parity assertion the lead architect demanded: "Verify
-        // that exactly zero Deferred stubs remain in the
-        // ORACLE_COMMAND_SURFACE (excluding the 26 explicitly documented
-        // ratatui/system exclusions)."
-        //
-        // We iterate EVERY registered oracle command and collect the ones
-        // that still resolve to Deferred. The result must equal EXACTLY
-        // the 26 documented exclusions (composer×3 + ratatui-UI×8 +
-        // live-settings×6 + image×4 + audio/mobile×2 + composer-extra×3
-        // = 26).
+    fn registered_surface_has_no_missing_routes() {
         let registry = CommandRegistry::stage_11b();
         let plan_state = PlanState::default();
         let provider = provider();
-        let mut deferred: Vec<String> = Vec::new();
         for name in registry.names() {
-            // Skip commands that take a required argument — those Error
-            // on missing arg, not Deferred. We send a placeholder.
             let outcome = registry.resolve(
                 &CommandIntent::Slash {
                     name: name.clone(),
@@ -2251,68 +2566,13 @@ mod tests {
                 &provider,
                 &[],
             );
-            if let CommandOutcome::Deferred { command, .. } = outcome {
-                deferred.push(command);
+            if let CommandOutcome::Error(message) = outcome {
+                assert!(
+                    !message.starts_with("internal parity violation"),
+                    "/{name} lacks a concrete route: {message}"
+                );
             }
         }
-        // The 26 documented exclusions (see ADR 0013 §"Migration matrix"
-        // for the per-category justification).
-        let expected_exclusions: &[&str] = &[
-            // Mobile/sound (2): network + audio subsystems.
-            "mobile",
-            "sound",
-            // Composer (6): Textual-specific composer features needing a
-            // TUI rebuild. (history/search/prompt are listed but need a
-            // real composer widget; btw/blocks/annotate need richer UI.)
-            "history",
-            "search",
-            "prompt",
-            "btw",
-            "blocks",
-            "annotate",
-            // ratatui UI rebuild (8): theming, vim mode, configurable
-            // keybinds, configurable statusline, screen-reader mode,
-            // native mouse, reasoning panel, thinking toggle. All need
-            // ratatui feature work that does not exist today.
-            "theme",
-            "vim",
-            "keybinds",
-            "statusline",
-            "screen-reader",
-            "native-mouse",
-            "reasoning-panel",
-            "toggle-thinking",
-            // Live session settings (6): provider-quota UIs that require
-            // live API access, which foundation verification forbids.
-            "settings",
-            "permission",
-            "mode",
-            "generation",
-            "auxiliary",
-            "mixture",
-            // Image subsystem (4): terminal image protocols (sixel/kitty/
-            // iTerm) that ratatui does not support.
-            "image",
-            "attach",
-            "image-render",
-            "screenshot",
-        ];
-        assert_eq!(
-            expected_exclusions.len(),
-            26,
-            "the documented exclusion list must contain exactly 26 entries"
-        );
-        // The deferred set must equal the documented exclusions, no more,
-        // no less.
-        let mut expected: Vec<&str> = expected_exclusions.to_vec();
-        expected.sort();
-        deferred.sort();
-        assert_eq!(
-            deferred.iter().map(String::as_str).collect::<Vec<_>>(),
-            expected,
-            "the remaining deferred commands must EXACTLY match the 26 \
-             documented exclusions — no command may be silently dropped"
-        );
     }
 
     #[test]

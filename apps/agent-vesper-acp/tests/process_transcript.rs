@@ -78,6 +78,7 @@ fn stdio_transcript_reaches_real_glm_adapter_with_protocol_pure_stdout() {
         .env("ZAI_API_KEY", CANARY)
         .env("AGENT_VESPER_GLM_BASE_URL", format!("http://{address}/v4"))
         .env("AGENT_VESPER_ALLOW_INSECURE_LOOPBACK", "1")
+        .env("AGENT_VESPER_FULL_HARNESS", "0")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -408,6 +409,7 @@ fn cancellation_after_reasoning_emits_no_post_cancel_content() {
         .env("ZAI_API_KEY", CANARY)
         .env("AGENT_VESPER_GLM_BASE_URL", format!("http://{address}/v4"))
         .env("AGENT_VESPER_ALLOW_INSECURE_LOOPBACK", "1")
+        .env("AGENT_VESPER_FULL_HARNESS", "0")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());

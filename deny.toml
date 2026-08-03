@@ -22,10 +22,12 @@ allow = [
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
+# ADR 0015 (Stage 16) supersedes the historical Stage-5 blanket SQLite ban.
+# vesper-cognition is the ONLY production crate permitted to declare rusqlite
+# (enforced by cargo xtask architecture's per-crate allowlist). sqlx remains
+# banned — the project does not use an async SQLite driver.
 deny = [
-    { crate = "rusqlite", reason = "Stage 5 session persistence is read-only and explicitly excludes SQLite" },
     { crate = "sqlx", reason = "Stage 5 session persistence is read-only and explicitly excludes SQLite" },
-    { crate = "libsqlite3-sys", reason = "Stage 5 must not acquire SQLite transitively" },
 ]
 skip = []
 skip-tree = []

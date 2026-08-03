@@ -15,6 +15,7 @@ mod filesystem;
 mod layout;
 mod metadata;
 mod replay;
+mod search;
 mod vesper_format;
 mod writer;
 
@@ -22,7 +23,8 @@ pub use composite::{CompositeSessionRepository, EmptySessionRepository};
 pub use contracts::{
     BoxSessionFuture, MetadataOrigin, SessionCapability, SessionListFilter, SessionLister,
     SessionMetadata, SessionReadIntent, SessionReader, SessionRecord, SessionRepository,
-    SessionRepositoryCapabilities, SessionSource, UnsupportedSessionOperation,
+    SessionRepositoryCapabilities, SessionSearchHit, SessionSearchMessage, SessionSearchRequest,
+    SessionSource, UnsupportedSessionOperation,
 };
 pub use conversion::{
     CompatibilityAvailability, ConfigurationIssue, LegacyCompatibilityData, LegacyRuntimeConverter,
@@ -42,6 +44,7 @@ pub use replay::{
     AvailableCommandDescriptor, ReplayError, ReplayFuture, ReplayMessage, ReplayMetadata,
     ReplayPlan, ReplayPlanEntry, ReplayPlanPriority, ReplayPlanStatus, ReplaySink, ReplayUpdate,
 };
+pub use search::search_sessions;
 pub use vesper_format::{
     VesperDecodeBounds, VesperLoadOutcome, VesperSessionDecoder, VesperSessionV1,
 };

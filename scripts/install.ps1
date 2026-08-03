@@ -3,8 +3,8 @@ param(
     [string]$InstallDir = $(if ($env:AGENT_VESPER_INSTALL_DIR) { $env:AGENT_VESPER_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA "Programs\AgentVesper" })
 )
 
-# Agent Vesper installer (Windows) — downloads the compiled `agent-vesper-acp`
-# ACP stdio binary, verifies its SHA-256, installs it under
+# Agent Vesper installer (Windows) — downloads the compiled ACP and native TUI
+# binaries, verifies the archive SHA-256, installs them under
 # `%LOCALAPPDATA%\Programs\AgentVesper`, and adds that directory to the user
 # PATH. Mirrors the original Python `native-glm-acp` Windows installer UX.
 $ErrorActionPreference = "Stop"
@@ -45,13 +45,20 @@ try {
     if (-not (Test-Path -LiteralPath $source -PathType Container)) {
         throw "agent-vesper installer: archive did not contain agent-vesper-acp bundle"
     }
+    if (-not (Test-Path -LiteralPath (Join-Path $source "agent-vesper-tui.exe") -PathType Leaf)) {
+        throw "agent-vesper installer: archive did not contain agent-vesper-tui.exe"
+    }
 
     New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
     $bundle = Join-Path $InstallDir "agent-vesper-acp.bundle"
     Remove-Item -LiteralPath $bundle -Recurse -Force -ErrorAction SilentlyContinue
     Move-Item -LiteralPath $source -Destination $bundle
     $launcher = Join-Path $InstallDir "agent-vesper-acp.cmd"
-    Set-Content -LiteralPath $launcher -Value "@echo off`r`n\"%~dp0agent-vesper-acp.bundle\agent-vesper-acp.exe\" %*" -NoNewline
+    $launcherContent = "@echo off`r`n`"%~dp0agent-vesper-acp.bundle\agent-vesper-acp.exe`" %*"
+    Set-Content -LiteralPath $launcher -Value $launcherContent -NoNewline
+    $tuiLauncher = Join-Path $InstallDir "agent-vesper-tui.cmd"
+    $tuiLauncherContent = "@echo off`r`n`"%~dp0agent-vesper-acp.bundle\agent-vesper-tui.exe`" %*"
+    Set-Content -LiteralPath $tuiLauncher -Value $tuiLauncherContent -NoNewline
 
     $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
     $pathEntries = @($userPath -split ";" | Where-Object { $_ })
@@ -64,12 +71,15 @@ try {
     }
 
     $installedVersion = & $launcher --version 2>&1
-    Write-Host "Installed Agent Vesper ${installedVersion}:"
+    $tuiVersion = & $tuiLauncher --version 2>&1
+    Write-Host "Installed Agent Vesper (${installedVersion}; ${tuiVersion}):"
     Write-Host "  $launcher"
+    Write-Host "  $tuiLauncher"
     Write-Host ""
     Write-Host "Next:"
-    Write-Host "  set ZAI_API_KEY=<your Z.ai key>   (get one at https://z.ai/)"
-    Write-Host "  agent-vesper-acp --version        (verify)"
+    Write-Host "  agent-vesper-tui                  (launch; Auth Hub opens if needed)"
+    Write-Host "  agent-vesper-acp --setup          (optional non-interactive setup)"
+    Write-Host "  set ZAI_API_KEY=<your Z.ai key>   (optional environment override)"
     Write-Host ""
     Write-Host "Then register Agent Vesper as an ACP agent in Zed (see README 'Install in Zed')."
 } finally {

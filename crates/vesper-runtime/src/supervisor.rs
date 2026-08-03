@@ -12,12 +12,13 @@ use tokio::{
     task::JoinHandle,
 };
 use vesper_domain::{
-    BoundedString, ContentPart, CorrelationId, EndpointId, EventId, EventSchemaVersion,
-    EventSequence, ExtensionMap, FinishOutcome, HarnessCommand, HarnessCommandPayload,
-    HarnessEvent, HarnessEventPayload, MessageId, MessageRole, ProviderRequestId, QualifiedModelId,
-    ReasoningRetention, Revision, RuntimeAuthenticationMethod, RuntimeCapability, SafeMessage,
-    SessionId, SessionListFilter, SessionOperatingMode, SessionPermissionMode, SessionSummary,
-    SystemInstruction, ToolChoiceIntent, TurnId, WorkspaceRoot,
+    BoundedString, ContentPart, ConversationMessage, CorrelationId, EndpointId, EventId,
+    EventSchemaVersion, EventSequence, ExtensionMap, FinishOutcome, HarnessCommand,
+    HarnessCommandPayload, HarnessEvent, HarnessEventPayload, MessageId, MessageRole,
+    ProviderRequestId, QualifiedModelId, ReasoningRetention, Revision, RuntimeAuthenticationMethod,
+    RuntimeCapability, SafeMessage, SessionId, SessionListFilter, SessionOperatingMode,
+    SessionPermissionMode, SessionSummary, SystemInstruction, ToolChoiceIntent, TurnId,
+    WorkspaceRoot,
 };
 use vesper_provider::{
     FallbackPolicy, ProviderConfiguration, ProviderRequest, ProviderStreamContract,
@@ -527,6 +528,30 @@ impl RuntimeSupervisor {
         receiver.await.map_err(|_| RuntimeError::ChannelClosed)?
     }
 
+    /// Accepts a completed turn produced by an external multi-turn engine.
+    ///
+    /// The provider-neutral runtime remains the owner of visible session
+    /// history and persistence even when a composition boundary runs the
+    /// richer `vesper-agent` loop outside the runtime actor.
+    pub async fn accept_external_turn(
+        &self,
+        id: &SessionId,
+        user: ConversationMessage,
+        assistant_content: Vec<ContentPart>,
+    ) -> Result<(), RuntimeError> {
+        let handle = self.handle(id).await?;
+        let (sender, receiver) = oneshot::channel();
+        handle
+            .request(SessionCommand::AcceptExternalTurn {
+                user,
+                assistant_content,
+                response: sender,
+            })
+            .await
+            .map_err(|_| RuntimeError::SessionNotFound(id.clone()))?;
+        receiver.await.map_err(|_| RuntimeError::ChannelClosed)?
+    }
+
     /// Transactionally persists a live session snapshot when a write path has
     /// been injected. Returns `Ok(None)` when persistence is not configured so
     /// callers can treat saving as optional without branching on injection.
@@ -916,6 +941,11 @@ enum SessionCommand {
         expected_revision: Option<Revision>,
         completion: oneshot::Sender<Result<SessionTurnResult, RuntimeError>>,
     },
+    AcceptExternalTurn {
+        user: ConversationMessage,
+        assistant_content: Vec<ContentPart>,
+        response: oneshot::Sender<Result<(), RuntimeError>>,
+    },
     Cancel {
         turn_id: TurnId,
         response: oneshot::Sender<Result<(), RuntimeError>>,
@@ -1002,6 +1032,32 @@ impl SessionActor {
                 }
                 self.drive_prompt(turn_id, message_id, content, correlation, completion)
                     .await;
+            }
+            SessionCommand::AcceptExternalTurn {
+                user,
+                assistant_content,
+                response,
+            } => {
+                let result = if self.state.active_turn.is_some() {
+                    Err(RuntimeError::TurnAlreadyActive)
+                } else {
+                    self.state.history.push(user);
+                    if !assistant_content.is_empty() {
+                        self.state.history.push(ConversationMessage {
+                            id: MessageId::new(format!(
+                                "assistant-external-{}",
+                                self.state.revision.get()
+                            ))
+                            .expect("bounded external assistant ID"),
+                            role: MessageRole::Assistant,
+                            content: assistant_content,
+                            extensions: ExtensionMap::default(),
+                        });
+                    }
+                    self.increment_revision();
+                    Ok(())
+                };
+                let _ = response.send(result);
             }
             SessionCommand::Cancel { turn_id, response } => {
                 let _ = response.send(Err(RuntimeError::TurnNotActive(turn_id)));

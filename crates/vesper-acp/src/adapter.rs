@@ -1,8 +1,8 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     path::PathBuf,
     sync::{
-        Arc,
+        Arc, Mutex as StdMutex,
         atomic::{AtomicU64, Ordering},
     },
 };
@@ -13,8 +13,14 @@ use agent_client_protocol::{
         ProtocolVersion,
         v1::{
             AuthenticateResponse, ClientNotification, ClientRequest, CloseSessionResponse,
-            ForkSessionResponse, ListSessionsResponse, LoadSessionResponse, NewSessionResponse,
-            ResumeSessionResponse, SessionInfo,
+            ContentBlock, ContentChunk, DeleteSessionResponse, ForkSessionResponse,
+            ListSessionsResponse, LoadSessionResponse, LogoutResponse, NewSessionResponse,
+            PermissionOption, PermissionOptionKind, RequestPermissionOutcome,
+            RequestPermissionRequest, RequestPermissionResponse, ResumeSessionResponse,
+            SelectedPermissionOutcome, SessionConfigOption, SessionConfigOptionCategory,
+            SessionConfigSelectOption, SessionConfigValueId, SessionInfo, SessionMode,
+            SessionModeState, SessionNotification, SessionUpdate, SetSessionConfigOptionResponse,
+            SetSessionModeResponse, TextContent, ToolCallUpdate, ToolCallUpdateFields,
         },
     },
 };
@@ -24,9 +30,10 @@ use tokio::{
     task::JoinSet,
 };
 use vesper_domain::{
-    BoundedString, CommandId, CommandInitiator, CommandSchemaVersion, ContentPart, CorrelationId,
-    HarnessCommand, HarnessCommandPayload, MessageRole, PromptSubmission, SessionId,
-    SessionListFilter, TurnId,
+    BoundedString, CommandId, CommandInitiator, CommandSchemaVersion, ContentPart,
+    ConversationMessage, CorrelationId, HarnessCommand, HarnessCommandPayload, MessageRole,
+    PromptSubmission, SessionId, SessionListFilter, SessionOperatingMode, SessionPermissionMode,
+    TurnId,
 };
 use vesper_runtime::{
     ReplayError, ReplayFuture, ReplayMessage, ReplayMetadata, ReplayPlan, ReplayPlanPriority,
@@ -35,6 +42,10 @@ use vesper_runtime::{
 
 use crate::{
     compat::prompt_response_value,
+    engine::{
+        AcpPermissionDecision, AcpPermissionRequest, AcpPermissionRequester, AcpPromptEngine,
+        AcpPromptRequest,
+    },
     mapping::{
         AcpEventMapper, content_from_acp, message_id_from_meta, session_id, stop_reason,
         truthful_initialize_response, workspace_roots,
@@ -63,6 +74,7 @@ pub struct AcpAdapter {
     runtime: Arc<RuntimeSupervisor>,
     config: AcpAdapterConfig,
     ids: Arc<AtomicU64>,
+    prompt_engine: Option<Arc<dyn AcpPromptEngine>>,
 }
 
 impl std::fmt::Debug for AcpAdapter {
@@ -82,7 +94,16 @@ impl AcpAdapter {
             runtime,
             config,
             ids: Arc::new(AtomicU64::new(1)),
+            prompt_engine: None,
         }
+    }
+
+    /// Injects an optional full multi-turn engine. Without this injection the
+    /// adapter retains the runtime's provider-neutral single-turn behavior.
+    #[must_use]
+    pub fn with_prompt_engine(mut self, engine: Arc<dyn AcpPromptEngine>) -> Self {
+        self.prompt_engine = Some(engine);
+        self
     }
 
     /// Runs official SDK dispatch over stdin/stdout until clean EOF.
@@ -99,6 +120,7 @@ impl AcpAdapter {
         let runtime = Arc::clone(&self.runtime);
         let config = self.config.clone();
         let ids = Arc::clone(&self.ids);
+        let prompt_engine = self.prompt_engine.clone();
         let output_flow = OutputFlow::default();
         let transport_flow = output_flow.clone();
         let transport = Stdio::new().with_debug(move |line, direction| {
@@ -153,6 +175,7 @@ impl AcpAdapter {
                     Arc::clone(&barriers),
                     Arc::clone(&ids),
                     output_flow.clone(),
+                    prompt_engine,
                 ));
                 let event_connection = connection.clone();
                 let event_barriers = Arc::clone(&barriers);
@@ -250,6 +273,7 @@ impl TerminalBarriers {
     }
 }
 
+#[allow(clippy::too_many_arguments)] // bounded protocol-dispatch composition boundary
 async fn dispatch_requests(
     runtime: Arc<RuntimeSupervisor>,
     mut requests: mpsc::Receiver<InboundRequest>,
@@ -258,14 +282,20 @@ async fn dispatch_requests(
     barriers: Arc<TerminalBarriers>,
     ids: Arc<AtomicU64>,
     output_flow: OutputFlow,
+    prompt_engine: Option<Arc<dyn AcpPromptEngine>>,
 ) -> Result<(), agent_client_protocol::Error> {
     let active = Arc::new(Mutex::new(BTreeMap::<SessionId, TurnId>::new()));
+    let engine_active = Arc::new(Mutex::new(BTreeSet::<SessionId>::new()));
+    let permission_requester = Arc::new(AcpClientPermissionRequester::new(connection.clone()));
     let context = RequestContext {
         connection,
         barriers,
         active: Arc::clone(&active),
+        engine_active: Arc::clone(&engine_active),
         ids,
         output_flow,
+        prompt_engine,
+        permission_requester,
     };
     let mut prompts = JoinSet::new();
     loop {
@@ -283,6 +313,12 @@ async fn dispatch_requests(
                 let Some(notification) = notification else { break };
                 if let ClientNotification::CancelNotification(cancel) = notification {
                     let session = session_id(&cancel.session_id);
+                    context.permission_requester.cancel(&session);
+                    if let Some(engine) = context.prompt_engine.as_ref()
+                        && engine_active.lock().await.contains(&session)
+                    {
+                        let _ = engine.cancel(&session).await;
+                    }
                     if let Some(turn) = active.lock().await.get(&session).cloned() {
                         let command = command(
                             HarnessCommandPayload::CancelTurn {
@@ -310,13 +346,97 @@ async fn dispatch_requests(
     Ok(())
 }
 
+struct AcpClientPermissionRequester {
+    connection: ConnectionTo<Client>,
+    pending: Arc<StdMutex<BTreeMap<SessionId, tokio::sync::oneshot::Sender<()>>>>,
+}
+
+impl std::fmt::Debug for AcpClientPermissionRequester {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("AcpClientPermissionRequester(..)")
+    }
+}
+
+impl AcpClientPermissionRequester {
+    fn new(connection: ConnectionTo<Client>) -> Self {
+        Self {
+            connection,
+            pending: Arc::new(StdMutex::new(BTreeMap::new())),
+        }
+    }
+}
+
+impl AcpPermissionRequester for AcpClientPermissionRequester {
+    fn request<'a>(
+        &'a self,
+        request: AcpPermissionRequest,
+    ) -> crate::engine::AcpPromptFuture<'a, AcpPermissionDecision> {
+        let connection = self.connection.clone();
+        let session_id = request.session_id.clone();
+        let tool_call = ToolCallUpdate::new(
+            format!("vesper-permission-{}", request.tool),
+            ToolCallUpdateFields::new()
+                .title(format!("{}: {}", request.title, request.reason))
+                .raw_input(request.arguments),
+        );
+        let permission = RequestPermissionRequest::new(
+            session_id.as_str().to_owned(),
+            tool_call,
+            vec![
+                PermissionOption::new("allow-once", "Allow once", PermissionOptionKind::AllowOnce),
+                PermissionOption::new(
+                    "reject-once",
+                    "Reject once",
+                    PermissionOptionKind::RejectOnce,
+                ),
+            ],
+        );
+        let (cancel_sender, mut cancel_receiver) = tokio::sync::oneshot::channel();
+        if let Ok(mut pending) = self.pending.lock()
+            && let Some(previous) = pending.insert(session_id.clone(), cancel_sender)
+        {
+            let _ = previous.send(());
+        }
+        let pending = Arc::clone(&self.pending);
+        Box::pin(async move {
+            let response = connection.send_request(permission).block_task();
+            let decision = tokio::select! {
+                result = response => match result {
+                    Ok(RequestPermissionResponse { outcome: RequestPermissionOutcome::Selected(SelectedPermissionOutcome { option_id, .. }), .. })
+                        if option_id.to_string() == "allow-once" || option_id.to_string() == "allow-always" => AcpPermissionDecision::Allow,
+                    Ok(RequestPermissionResponse { outcome: RequestPermissionOutcome::Cancelled, .. }) => AcpPermissionDecision::Cancelled,
+                    Ok(RequestPermissionResponse { outcome: RequestPermissionOutcome::Selected(_), .. }) => AcpPermissionDecision::Deny,
+                    Ok(_) => AcpPermissionDecision::Deny,
+                    Err(_) => AcpPermissionDecision::Deny,
+                },
+                _ = &mut cancel_receiver => AcpPermissionDecision::Cancelled,
+            };
+            if let Ok(mut pending) = pending.lock() {
+                pending.remove(&session_id);
+            }
+            decision
+        })
+    }
+
+    fn cancel(&self, session_id: &SessionId) {
+        if let Ok(mut pending) = self.pending.lock()
+            && let Some(sender) = pending.remove(session_id)
+        {
+            let _ = sender.send(());
+        }
+    }
+}
+
 #[derive(Clone)]
 struct RequestContext {
     connection: ConnectionTo<Client>,
     barriers: Arc<TerminalBarriers>,
     active: Arc<Mutex<BTreeMap<SessionId, TurnId>>>,
+    engine_active: Arc<Mutex<BTreeSet<SessionId>>>,
     ids: Arc<AtomicU64>,
     output_flow: OutputFlow,
+    prompt_engine: Option<Arc<dyn AcpPromptEngine>>,
+    permission_requester: Arc<dyn AcpPermissionRequester>,
 }
 
 async fn handle_request(
@@ -329,8 +449,11 @@ async fn handle_request(
         connection,
         barriers,
         active,
+        engine_active,
         ids,
         output_flow,
+        prompt_engine,
+        permission_requester,
     } = context;
     let InboundRequest { request, responder } = inbound;
     macro_rules! execute {
@@ -379,16 +502,21 @@ async fn handle_request(
             let RuntimeResponse::Session(snapshot) = response else {
                 return responder.respond_with_internal_error("unexpected runtime response");
             };
+            let session_id = snapshot.session_id.as_str().to_owned();
+            let modes = session_modes(snapshot.operating_mode);
+            let config_options = session_config_options(&snapshot);
             respond_json(
                 responder,
-                NewSessionResponse::new(snapshot.session_id.as_str().to_owned()),
+                NewSessionResponse::new(session_id)
+                    .modes(modes)
+                    .config_options(config_options),
             )
         }
         ClientRequest::LoadSessionRequest(request) => {
             let id = session_id(&request.session_id);
             let response = execute!(runtime.execute(command(
                 HarnessCommandPayload::LoadSession {
-                    session_id: id,
+                    session_id: id.clone(),
                     workspace_roots: workspace_roots(request.cwd, request.additional_directories,),
                 },
                 next_text_id(&ids, "load"),
@@ -397,7 +525,13 @@ async fn handle_request(
                 return responder.respond_with_internal_error("unexpected runtime response");
             };
             replay_snapshot(&connection, *snapshot, &output_flow).await?;
-            respond_json(responder, LoadSessionResponse::new())
+            let snapshot = execute!(runtime.snapshot(&id));
+            respond_json(
+                responder,
+                LoadSessionResponse::new()
+                    .modes(session_modes(snapshot.operating_mode))
+                    .config_options(session_config_options(&snapshot)),
+            )
         }
         ClientRequest::ResumeSessionRequest(request) => {
             let response = execute!(runtime.execute(command(
@@ -411,7 +545,13 @@ async fn handle_request(
                 return responder.respond_with_internal_error("unexpected runtime response");
             };
             replay_snapshot(&connection, *snapshot, &output_flow).await?;
-            respond_json(responder, ResumeSessionResponse::new())
+            let snapshot = execute!(runtime.snapshot(&session_id(&request.session_id)));
+            respond_json(
+                responder,
+                ResumeSessionResponse::new()
+                    .modes(session_modes(snapshot.operating_mode))
+                    .config_options(session_config_options(&snapshot)),
+            )
         }
         ClientRequest::ListSessionsRequest(request) => {
             let response = execute!(runtime.execute(command(
@@ -489,6 +629,102 @@ async fn handle_request(
                     &message_id,
                 ));
             }
+            if let Some(engine) = prompt_engine {
+                let snapshot = execute!(runtime.snapshot(&session));
+                let workspace_roots = snapshot.workspace_roots.clone();
+                let operating_mode = snapshot.operating_mode;
+                let permission_mode = snapshot.permission_mode;
+                let history = snapshot.history.clone();
+                let engine_session = session.clone();
+                let engine_content = content.clone();
+                let engine_message_id = message_id.clone();
+                let response_message_id = message_id.clone();
+                let save_runtime = Arc::clone(&runtime);
+                engine_active.lock().await.insert(session.clone());
+                let engine_active_task = Arc::clone(&engine_active);
+                let connection = connection.clone();
+                let output_flow = output_flow.clone();
+                let request_session = request.session_id.clone();
+                prompts.spawn(async move {
+                    let result = engine
+                        .run(AcpPromptRequest {
+                            session_id: engine_session.clone(),
+                            content: engine_content.clone(),
+                            history,
+                            operating_mode,
+                            permission_mode,
+                            workspace_roots,
+                            permission_requester: Some(Arc::clone(&permission_requester)),
+                        })
+                        .await;
+                    match result {
+                        Ok(result) => {
+                            engine_active_task.lock().await.remove(&engine_session);
+                            if result.cancelled {
+                                return responder.respond(prompt_response_value(
+                                    agent_client_protocol::schema::v1::StopReason::Cancelled,
+                                    &response_message_id,
+                                ));
+                            }
+                            let assistant_content = if result.text.is_empty() {
+                                Vec::new()
+                            } else {
+                                match vesper_domain::ContentText::new(result.text.clone()) {
+                                    Ok(text) => vec![ContentPart::Text(text)],
+                                    Err(_) => {
+                                        return responder.respond_with_error(
+                                            agent_client_protocol::Error::invalid_params().data(
+                                                json!({
+                                                    "reason": "harness-output-too-large"
+                                                }),
+                                            ),
+                                        );
+                                    }
+                                }
+                            };
+                            let user = ConversationMessage {
+                                id: engine_message_id,
+                                role: MessageRole::User,
+                                content: engine_content,
+                                extensions: vesper_domain::ExtensionMap::default(),
+                            };
+                            if let Err(error) = save_runtime
+                                .accept_external_turn(&engine_session, user, assistant_content)
+                                .await
+                            {
+                                return responder.respond_with_error(sdk_runtime_error(error));
+                            }
+                            if let Err(error) = save_runtime.save_session(&engine_session).await {
+                                return responder.respond_with_error(sdk_runtime_error(error));
+                            }
+                            let chunk = ContentChunk::new(ContentBlock::Text(TextContent::new(
+                                result.text.as_str(),
+                            )));
+                            connection
+                                .send_notification(SessionNotification::new(
+                                    request_session,
+                                    SessionUpdate::AgentMessageChunk(chunk),
+                                ))
+                                .map_err(agent_client_protocol::util::internal_error)?;
+                            output_flow.wait_until_writer_accepts().await?;
+                            responder.respond(prompt_response_value(
+                                agent_client_protocol::schema::v1::StopReason::EndTurn,
+                                &response_message_id,
+                            ))
+                        }
+                        Err(error) => {
+                            engine_active_task.lock().await.remove(&engine_session);
+                            tracing::warn!(error = %error, "harness engine failed");
+                            responder.respond_with_error(
+                                agent_client_protocol::util::internal_error(
+                                    "harness engine failed",
+                                ),
+                            )
+                        }
+                    }
+                });
+                return Ok(());
+            }
             let response = execute!(runtime.execute(command(
                 HarnessCommandPayload::SubmitPrompt {
                     session_id: session.clone(),
@@ -535,11 +771,136 @@ async fn handle_request(
             });
             Ok(())
         }
-        ClientRequest::SetSessionModeRequest(_)
-        | ClientRequest::SetSessionConfigOptionRequest(_)
-        | ClientRequest::DeleteSessionRequest(_)
-        | ClientRequest::LogoutRequest(_)
-        | ClientRequest::ExtMethodRequest(_) => {
+        ClientRequest::SetSessionModeRequest(request) => {
+            let session = session_id(&request.session_id);
+            let mode = request.mode_id.to_string();
+            let operating_mode = match mode.as_str() {
+                "code" | "normal" => Some(SessionOperatingMode::Code),
+                "plan" | "planning" => Some(SessionOperatingMode::Plan),
+                _ => {
+                    return responder.respond_with_error(
+                        agent_client_protocol::Error::invalid_params()
+                            .data(json!({"reason": "unsupported-session-mode"})),
+                    );
+                }
+            };
+            execute!(runtime.execute(command(
+                HarnessCommandPayload::UpdateSessionMode {
+                    session_id: session.clone(),
+                    operating_mode,
+                    permission_mode: None,
+                },
+                next_text_id(&ids, "mode"),
+            )));
+            connection
+                .send_notification(agent_client_protocol::schema::v1::SessionNotification::new(
+                    request.session_id,
+                    agent_client_protocol::schema::v1::SessionUpdate::CurrentModeUpdate(
+                        agent_client_protocol::schema::v1::CurrentModeUpdate::new(mode),
+                    ),
+                ))
+                .map_err(agent_client_protocol::util::internal_error)?;
+            output_flow.wait_until_writer_accepts().await?;
+            respond_json(responder, SetSessionModeResponse::default())
+        }
+        ClientRequest::SetSessionConfigOptionRequest(request) => {
+            let session = session_id(&request.session_id);
+            let config_id = request.config_id.to_string();
+            let value = request.value.as_value_id().map(|value| value.to_string());
+            let payload = match config_id.as_str() {
+                "thought_level" | "reasoning" => {
+                    let Some(value) = value else {
+                        return responder.respond_with_error(
+                            agent_client_protocol::Error::invalid_params()
+                                .data(json!({"reason": "thought-level-requires-value"})),
+                        );
+                    };
+                    HarnessCommandPayload::UpdateSessionReasoning {
+                        session_id: session.clone(),
+                        mode: Some(
+                            BoundedString::new(value)
+                                .map_err(agent_client_protocol::util::internal_error)?,
+                        ),
+                    }
+                }
+                "permission" | "permission_mode" => {
+                    let Some(value) = value else {
+                        return responder.respond_with_error(
+                            agent_client_protocol::Error::invalid_params()
+                                .data(json!({"reason": "permission-mode-requires-value"})),
+                        );
+                    };
+                    let permission_mode = match value.as_str() {
+                        "ask" => SessionPermissionMode::Ask,
+                        "bypass" => SessionPermissionMode::Bypass,
+                        "read-only" | "readonly" => SessionPermissionMode::ReadOnly,
+                        _ => {
+                            return responder.respond_with_error(
+                                agent_client_protocol::Error::invalid_params()
+                                    .data(json!({"reason": "unsupported-permission-mode"})),
+                            );
+                        }
+                    };
+                    HarnessCommandPayload::UpdateSessionMode {
+                        session_id: session.clone(),
+                        operating_mode: None,
+                        permission_mode: Some(permission_mode),
+                    }
+                }
+                "mode" | "operating_mode" => {
+                    let Some(value) = value else {
+                        return responder.respond_with_error(
+                            agent_client_protocol::Error::invalid_params()
+                                .data(json!({"reason": "mode-requires-value"})),
+                        );
+                    };
+                    let operating_mode = match value.as_str() {
+                        "code" | "normal" => SessionOperatingMode::Code,
+                        "plan" | "planning" => SessionOperatingMode::Plan,
+                        _ => {
+                            return responder.respond_with_error(
+                                agent_client_protocol::Error::invalid_params()
+                                    .data(json!({"reason": "unsupported-operating-mode"})),
+                            );
+                        }
+                    };
+                    HarnessCommandPayload::UpdateSessionMode {
+                        session_id: session.clone(),
+                        operating_mode: Some(operating_mode),
+                        permission_mode: None,
+                    }
+                }
+                _ => {
+                    return responder.respond_with_error(
+                        agent_client_protocol::Error::invalid_params()
+                            .data(json!({"reason": "unsupported-session-config-option"})),
+                    );
+                }
+            };
+            execute!(runtime.execute(command(payload, next_text_id(&ids, "config"))));
+            let snapshot = execute!(runtime.snapshot(&session));
+            respond_json(
+                responder,
+                SetSessionConfigOptionResponse::new(session_config_options(&snapshot)),
+            )
+        }
+        ClientRequest::DeleteSessionRequest(request) => {
+            execute!(runtime.execute(command(
+                HarnessCommandPayload::CloseSession {
+                    session_id: session_id(&request.session_id),
+                },
+                next_text_id(&ids, "delete"),
+            )));
+            respond_json(responder, DeleteSessionResponse::new())
+        }
+        ClientRequest::LogoutRequest(_) => {
+            // Credentials are resolved from the provider-owned environment
+            // source and never stored by the Rust harness. Logout therefore
+            // has no local secret mutation to perform, but remains a valid
+            // ACP operation instead of a silent method-not-found.
+            respond_json(responder, LogoutResponse::new())
+        }
+        ClientRequest::ExtMethodRequest(_) => {
             responder.respond_with_error(agent_client_protocol::Error::method_not_found())
         }
         _ => responder.respond_with_error(agent_client_protocol::Error::method_not_found()),
@@ -552,6 +913,58 @@ fn respond_json(
 ) -> Result<(), agent_client_protocol::Error> {
     responder
         .respond(serde_json::to_value(value).map_err(agent_client_protocol::util::internal_error)?)
+}
+
+fn session_modes(operating_mode: SessionOperatingMode) -> SessionModeState {
+    let current = match operating_mode {
+        SessionOperatingMode::Code => "code",
+        SessionOperatingMode::Plan => "plan",
+    };
+    SessionModeState::new(
+        current,
+        vec![
+            SessionMode::new("code", "Code").description("Normal coding mode"),
+            SessionMode::new("plan", "Plan").description("Read-only planning mode"),
+        ],
+    )
+}
+
+fn session_config_options(snapshot: &vesper_runtime::SessionSnapshot) -> Vec<SessionConfigOption> {
+    let thought_level = snapshot
+        .reasoning
+        .as_ref()
+        .and_then(|reasoning| reasoning.mode.as_ref())
+        .map(|mode| mode.as_str().to_owned())
+        .unwrap_or_else(|| "default".to_owned());
+    vec![
+        SessionConfigOption::select(
+            "thought_level",
+            "Thought level",
+            SessionConfigValueId::new(thought_level),
+            vec![
+                SessionConfigSelectOption::new("default", "Default"),
+                SessionConfigSelectOption::new("disabled", "Disabled"),
+                SessionConfigSelectOption::new("enabled", "Enabled"),
+                SessionConfigSelectOption::new("high", "High"),
+                SessionConfigSelectOption::new("max", "Maximum"),
+            ],
+        )
+        .category(SessionConfigOptionCategory::ThoughtLevel),
+        SessionConfigOption::select(
+            "permission",
+            "Permission mode",
+            match snapshot.permission_mode {
+                SessionPermissionMode::Ask => "ask",
+                SessionPermissionMode::Bypass => "bypass",
+                SessionPermissionMode::ReadOnly => "read-only",
+            },
+            vec![
+                SessionConfigSelectOption::new("ask", "Ask"),
+                SessionConfigSelectOption::new("bypass", "Bypass"),
+                SessionConfigSelectOption::new("read-only", "Read only"),
+            ],
+        ),
+    ]
 }
 
 async fn replay_snapshot(

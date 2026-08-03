@@ -36,10 +36,17 @@ pub struct AuthenticationMethodDescriptor {
     pub method_id: BoundedString<128>,
     /// Safe display label.
     pub display_name: BoundedString<256>,
-    /// Secret-reference field IDs required by the method.
+    /// Secret-reference field IDs required by the method. The first entry is
+    /// the preferred environment variable carrying the credential (e.g.
+    /// `ZAI_API_KEY`), so a host can render an auth UI without hardcoding
+    /// provider-specific values.
     pub secret_reference_fields: Vec<BoundedString<128>>,
     /// Whether an external runtime owns authentication.
     pub external_runtime_owned: bool,
+    /// Provider-owned page where a user can create or rotate the credential.
+    /// `None` when the method has no public key-management URL.
+    #[serde(default)]
+    pub key_url: Option<BoundedString<512>>,
 }
 
 /// Stable provider descriptor independent of a configured session.
@@ -140,6 +147,53 @@ pub trait ProviderFactory: Send + Sync {
         config: &'a ProviderConfiguration,
         cancellation: Arc<dyn CancellationSignal>,
     ) -> ProviderFuture<'a, Result<Self::Session, ProviderError>>;
+
+    /// Stable provider descriptor (identity, advertised authentication
+    /// methods, configuration contribution). Adapters override this to
+    /// advertise real authentication methods so a host can route auth purely
+    /// from advertised descriptors instead of hardcoding provider match arms.
+    /// The default returns a minimal descriptor with no auth methods.
+    fn descriptor(&self) -> ProviderDescriptor {
+        ProviderDescriptor {
+            provider_id: self.provider_id().clone(),
+            display_name: BoundedString::new(self.provider_id().as_str().to_owned())
+                .expect("provider id fits the display-name bound"),
+            authentication_methods: Vec::new(),
+            configuration: None,
+            metadata: ExtensionMap::default(),
+        }
+    }
+}
+
+/// Provider-owned credential resolution/storage error (provider-neutral).
+/// Adapters map their concrete store errors onto this; secret values are
+/// never carried.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CredentialError {
+    /// No credential is configured (not an error for `credential_present`).
+    Absent,
+    /// Credential storage is unavailable on this platform/configuration.
+    Unavailable,
+    /// Credential failed local structural validation.
+    InvalidSecret,
+    /// A bounded credential operation failed.
+    Failed,
+}
+
+/// Provider-owned credential port. Adapters implement this so hosts route
+/// credential checks and storage through the provider instead of hardcoding
+/// provider match arms. Methods are synchronous and may perform blocking I/O
+/// (OS keyring, vault file); hosts wrap them in `spawn_blocking`.
+///
+/// The check returns only a presence boolean — the secret itself and any
+/// future pool/rotation selection stay adapter-internal, so the interface is
+/// pool-safe by construction.
+pub trait ProviderCredentialPort: Send + Sync {
+    /// Whether a locally valid credential is present. Returns `Ok(false)` when
+    /// no credential is configured.
+    fn credential_present(&self) -> Result<bool, CredentialError>;
+    /// Persist a credential for this provider (overwrites any existing one).
+    fn store_credential(&self, secret: &str) -> Result<(), CredentialError>;
 }
 
 /// Scoped provider transport/session port.

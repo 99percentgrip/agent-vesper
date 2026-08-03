@@ -9,6 +9,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+use serde::{Deserialize, Serialize};
+
 use crate::error::MemoryError;
 use crate::io::write_atomic;
 use crate::types::SkillSlug;
@@ -17,6 +19,10 @@ use crate::types::SkillSlug;
 pub const MAX_SKILL_BYTES: usize = 24_000;
 /// Hard cap on the number of skill files the store will enumerate.
 pub const MAX_SKILL_FILES: usize = 200;
+/// Maximum number of skills referenced by one bundle.
+pub const MAX_BUNDLE_SKILLS: usize = 32;
+/// Maximum serialized size of one bundle.
+pub const MAX_BUNDLE_BYTES: usize = 32_000;
 
 /// One-line summary of a learned skill (name + first non-empty line).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,6 +31,20 @@ pub struct SkillSummary {
     pub slug: String,
     /// First non-empty, non-header line of the markdown body (≤ 120 chars).
     pub headline: String,
+}
+
+/// A project-local group of learned skills and its activation instruction.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SkillBundle {
+    /// Stable bundle slug.
+    pub name: String,
+    /// Human-readable bundle description.
+    pub description: String,
+    /// Skill slugs included in the bundle.
+    pub skills: Vec<String>,
+    /// Optional instruction shown when the bundle is loaded.
+    #[serde(default)]
+    pub instruction: String,
 }
 
 /// Read/write access to learned-skill markdown files.
@@ -62,6 +82,10 @@ impl SkillStore {
 
     fn skills_dir(&self) -> PathBuf {
         self.root.join("skills")
+    }
+
+    fn bundles_dir(&self) -> PathBuf {
+        self.root.join("bundles")
     }
 
     fn skill_path(&self, slug: &SkillSlug) -> PathBuf {
@@ -136,6 +160,64 @@ impl SkillStore {
     pub fn forget(&self, slug: &SkillSlug) -> Result<bool, MemoryError> {
         let path = self.skill_path(slug);
         match std::fs::remove_file(&path) {
+            Ok(()) => Ok(true),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(_) => Err(MemoryError::io("remove")),
+        }
+    }
+
+    /// Lists project-local skill bundles.
+    pub fn list_bundles(&self) -> Vec<SkillBundle> {
+        let dir = self.bundles_dir();
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return Vec::new();
+        };
+        entries
+            .flatten()
+            .filter_map(|entry| {
+                (entry.path().extension().and_then(|ext| ext.to_str()) == Some("json"))
+                    .then(|| std::fs::read_to_string(entry.path()).ok())
+                    .flatten()
+                    .and_then(|body| serde_json::from_str::<SkillBundle>(&body).ok())
+            })
+            .take(MAX_SKILL_FILES)
+            .collect()
+    }
+
+    /// Reads one bundle by validated slug.
+    pub fn read_bundle(&self, name: &SkillSlug) -> Result<SkillBundle, MemoryError> {
+        let path = self.bundles_dir().join(format!("{}.json", name.as_str()));
+        let body = std::fs::read_to_string(path)
+            .map_err(|_| MemoryError::NotFound(format!("bundle:{}", name.as_str())))?;
+        serde_json::from_str(&body).map_err(MemoryError::from)
+    }
+
+    /// Creates or replaces one bundle atomically.
+    pub fn write_bundle(&self, bundle: SkillBundle) -> Result<(), MemoryError> {
+        let slug = SkillSlug::new(&bundle.name)?;
+        if bundle.description.chars().count() > 1024
+            || bundle.instruction.chars().count() > 8_000
+            || bundle.skills.len() > MAX_BUNDLE_SKILLS
+            || bundle
+                .skills
+                .iter()
+                .any(|skill| SkillSlug::new(skill).is_err())
+        {
+            return Err(MemoryError::BoundsViolated("skill bundle"));
+        }
+        let body = serde_json::to_vec(&bundle)?;
+        if body.len() > MAX_BUNDLE_BYTES {
+            return Err(MemoryError::BoundsViolated("skill bundle bytes"));
+        }
+        let dir = self.bundles_dir();
+        std::fs::create_dir_all(&dir).map_err(|_| MemoryError::io("create"))?;
+        write_atomic(&dir.join(format!("{}.json", slug.as_str())), &body)
+    }
+
+    /// Removes one bundle. Idempotent.
+    pub fn forget_bundle(&self, name: &SkillSlug) -> Result<bool, MemoryError> {
+        let path = self.bundles_dir().join(format!("{}.json", name.as_str()));
+        match std::fs::remove_file(path) {
             Ok(()) => Ok(true),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
             Err(_) => Err(MemoryError::io("remove")),
@@ -246,5 +328,61 @@ mod tests {
         let summaries = store.list();
         assert_eq!(summaries.len(), 1);
         assert_eq!(summaries[0].slug, "safe");
+    }
+
+    #[test]
+    fn bundle_round_trips_and_is_idempotently_removable() {
+        let temp = TempDir::new().unwrap();
+        let (_root, store) = store_under(&temp);
+        let bundle = SkillBundle {
+            name: "release-workflow".into(),
+            description: "Release checks".into(),
+            skills: vec!["rust-cargo-bump".into(), "release-notes".into()],
+            instruction: "Load both skills before publishing.".into(),
+        };
+        store.write_bundle(bundle.clone()).unwrap();
+        assert_eq!(
+            store
+                .read_bundle(&SkillSlug::new("release-workflow").unwrap())
+                .unwrap(),
+            bundle
+        );
+        assert_eq!(store.list_bundles(), vec![bundle]);
+        assert!(
+            store
+                .forget_bundle(&SkillSlug::new("release-workflow").unwrap())
+                .unwrap()
+        );
+        assert!(
+            !store
+                .forget_bundle(&SkillSlug::new("release-workflow").unwrap())
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn bundle_rejects_invalid_skill_slug_and_oversized_instruction() {
+        let temp = TempDir::new().unwrap();
+        let (_root, store) = store_under(&temp);
+        let invalid = store.write_bundle(SkillBundle {
+            name: "safe".into(),
+            description: String::new(),
+            skills: vec!["../escape".into()],
+            instruction: String::new(),
+        });
+        assert_eq!(
+            invalid.unwrap_err(),
+            MemoryError::BoundsViolated("skill bundle")
+        );
+        let oversized = store.write_bundle(SkillBundle {
+            name: "large".into(),
+            description: String::new(),
+            skills: Vec::new(),
+            instruction: "x".repeat(8_001),
+        });
+        assert_eq!(
+            oversized.unwrap_err(),
+            MemoryError::BoundsViolated("skill bundle")
+        );
     }
 }

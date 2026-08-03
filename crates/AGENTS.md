@@ -11,9 +11,20 @@ test-only conformance support.
 - `vesper-domain` depends on no workspace crate.
 - `vesper-provider` depends only on `vesper-domain`.
 - `vesper-security` depends on no workspace crate.
+- `vesper-auth` depends only on `vesper-security`; it owns native OS
+  credential-manager access and the strict owner-only Unix vault fallback
+  (ADR 0014 — Agent Vesper Authentication).
 - `vesper-memory` depends only on `vesper-domain` and `vesper-security`; it
   owns the durable memory graph, learned skills, user profile, and bounded
   awareness ledger (ADR 0011 — Stage 12).
+- `vesper-cognition` depends only on `vesper-domain` and `vesper-security`
+  (plus `rusqlite` (bundled), `rust-stemmers`, and standard utility crates);
+  it owns the mem0-equivalent V3 cognitive memory engine — single-pass
+  ADD-only extraction, hybrid semantic + FTS5 BM25 + entity-boost retrieval,
+  and the embedded SQLite backing (ADR 0015 — Stage 16). It is the **only**
+  production crate permitted to declare `rusqlite`; provider embeddings +
+  extraction LLM + entity NLP are trait ports fulfilled at the composition
+  boundary, never inside this crate.
 - `vesper-checkpoints` depends only on `vesper-domain` and
   `vesper-security`; it owns the workspace snapshot/rollback, session
   lineage, and bounded cron/export/clipboard/CI surface (ADR 0012 —
@@ -28,8 +39,8 @@ test-only conformance support.
 - `vesper-policy` depends only on `vesper-domain` and `vesper-security`.
 - `vesper-testkit` may depend on all foundational crates and owns synthetic
   read-store/no-write helpers; no production crate may depend on it.
-- `vesper-provider-glm` may depend on domain/provider/config/security and use
-  `vesper-testkit` only as a dev dependency.
+- `vesper-provider-glm` may depend on auth/domain/provider/config/security and
+  use `vesper-testkit` only as a dev dependency.
 - `vesper-runtime` may depend on domain/provider and the read-only repository,
   converted-state, and transactional write ports from `vesper-sessions`;
   filesystem I/O remains implemented only by `vesper-sessions`, and runtime
@@ -39,8 +50,9 @@ test-only conformance support.
   SDK types stay in this crate.
 - `vesper-sessions` may depend on domain/config and owns read-only, bounded
   discovery, legacy decoding, safe metadata, pure runtime-state seeds,
-  deterministic identities, ACP-neutral replay plans, and the Stage 6
-  transactional Agent Vesper session writer. It must not depend on runtime,
+  deterministic identities, ACP-neutral replay plans, bounded persisted
+  search, and the Stage 6 transactional Agent Vesper session writer. It must
+  not depend on runtime,
   ACP, GLM, SQLite, or testkit in production.
 - HTTP and concrete GLM behavior are confined to `vesper-provider-glm`; no crate
   may depend on ACP, SQLite, TUI, MCP, or a disposable spike.
@@ -59,6 +71,8 @@ test-only conformance support.
 - `vesper-config/AGENTS.md` — platform paths, profiles, and typed configuration.
 - `vesper-provider/AGENTS.md` — provider ports, capabilities, and stream rules.
 - `vesper-security/AGENTS.md` — secret-safe and authority-boundary primitives.
+- `vesper-auth/AGENTS.md` — native-first provider-neutral credential storage
+  and owner-only Unix vault fallback.
 - `vesper-policy/AGENTS.md` — pure permission and policy decisions.
 - `vesper-testkit/AGENTS.md` — fixture and fake-conformance helpers.
 - `vesper-provider-glm/AGENTS.md` — Z.ai GLM provider adapter.
@@ -73,6 +87,9 @@ test-only conformance support.
   Stage 6 transactional writer.
 - `vesper-memory/AGENTS.md` — ADR 0011 (Stage 12) persistent memory graph,
   learned skills, user profile, and bounded epistemic ledger.
+- `vesper-cognition/AGENTS.md` — ADR 0015 (Stage 16) mem0-equivalent V3
+  cognitive memory engine: ADD-only extraction, hybrid semantic + FTS5 BM25 +
+  entity retrieval, embedded SQLite backing, and provider-routed trait ports.
 - `vesper-checkpoints/AGENTS.md` — ADR 0012 (Stage 14) workspace snapshots,
   rollback, session lineage, and bounded cron/export/clipboard/CI surface.
 - `vesper-mcp/AGENTS.md` — ADR 0013 (Stage 15) MCP stdio client and
@@ -81,3 +98,7 @@ test-only conformance support.
   tool-executing agent loop, tool registry + executors, and permission gating
   that compose `vesper-runtime`. Owns no provider-wire, ACP mapping, or
   persistence internals.
+- `vesper-harness/AGENTS.md` — shared hosted Python-oracle tool services for
+  ACP and TUI compositions.
+- `vesper-observability/AGENTS.md` — opt-in secret-safe trajectory recording
+  and bounded reliability aggregation for composed hosts.
