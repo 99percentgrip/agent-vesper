@@ -2,7 +2,7 @@
 
 # Agent Vesper
 
-### A Rust-native AI agent with persistent cognitive memory, built for Z.ai GLM models.
+### A Rust-native AI agent with persistent cognitive memory — provider-neutral by design.
 
 [![CI](https://github.com/99percentgrip/agent-vesper/actions/workflows/ci.yml/badge.svg)](https://github.com/99percentgrip/agent-vesper/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/99percentgrip/agent-vesper)](https://github.com/99percentgrip/agent-vesper/releases)
@@ -16,7 +16,7 @@
 
 ---
 
-Agent Vesper is a **pure-Rust** AI agent harness that **remembers you across conversations**. It turns the Z.ai GLM model family into a personalized coding companion that learns your preferences, tracks your projects, and recalls relevant context before every reply — all running locally with zero external services.
+Agent Vesper is a **pure-Rust** AI agent harness that **remembers you across conversations**. It provides a provider-neutral runtime where any LLM provider can plug in — today it ships with the Z.ai GLM adapter, tomorrow any provider can join with zero TUI or runtime changes. The agent learns your preferences, tracks your projects, and recalls relevant context before every reply — all running locally with zero external services.
 
 Built as a faithful native port of the [Native GLM ACP](https://github.com/99percentgrip/Native-GLM-ACP) Python oracle and enhanced with a [mem0](https://github.com/mem0ai/mem0)-equivalent V3 cognitive memory engine.
 
