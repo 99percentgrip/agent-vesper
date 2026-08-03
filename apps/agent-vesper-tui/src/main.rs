@@ -3806,13 +3806,17 @@ impl CognitionBundle {
                 .unwrap_or_default()
                 .as_str()
             {
-                "local" => Arc::new(vesper_cognition::LocalHashEmbedder::new(
-                    config.embedding_dim,
-                )),
-                // Neural embeddings via BigModel CN (open.bigmodel.cn) with JWT auth.
-                _ => Arc::new(BigModelEmbeddingAdapter::new(Arc::clone(
+                // Neural embeddings via BigModel CN (requires separate BigModel account + JWT auth).
+                "bigmodel" => Arc::new(BigModelEmbeddingAdapter::new(Arc::clone(
                     &credential_source,
                 ))),
+                // Default: local hash embedder. The Zai platform does NOT offer
+                // embedding models — only chat models (confirmed via the /models
+                // endpoint). The local hash embedder produces consistent vectors
+                // for cosine similarity with zero network overhead.
+                _ => Arc::new(vesper_cognition::LocalHashEmbedder::new(
+                    config.embedding_dim,
+                )),
             },
             extractor: Arc::new(ZaiExtractionAdapter::new(Arc::clone(&credential_source))),
             entity_nlp: Arc::new(ZaiEntityExtractor),
