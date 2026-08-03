@@ -3620,12 +3620,24 @@ impl CognitionBundle {
                 root_display,
             };
         }
+        let config = vesper_cognition::CognitiveConfig::default();
         let ports = vesper_cognition::CognitionPorts {
-            embedder: Arc::new(ZaiEmbeddingAdapter::new(Arc::clone(&credential_source))),
+            // Default: local hash embedder (zero network, works immediately).
+            // Override with AGENT_VESPER_COGNITION_EMBEDDING_API=bigmodel
+            // to use the Zai BigModel CN adapter (requires JWT auth).
+            embedder: match std::env::var("AGENT_VESPER_COGNITION_EMBEDDING_API")
+                .unwrap_or_default()
+                .as_str()
+            {
+                "bigmodel" => Arc::new(ZaiEmbeddingAdapter::new(Arc::clone(&credential_source))),
+                _ => Arc::new(vesper_cognition::LocalHashEmbedder::new(
+                    config.embedding_dim,
+                )),
+            },
             extractor: Arc::new(ZaiExtractionAdapter::new(Arc::clone(&credential_source))),
             entity_nlp: Arc::new(ZaiEntityExtractor),
         };
-        let config = vesper_cognition::CognitiveConfig::default();
+
         let engine = vesper_cognition::open(&db_path, ports, config)
             .ok()
             .map(Arc::new);
