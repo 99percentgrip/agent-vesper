@@ -675,12 +675,19 @@ async fn drive_loop(
                 const WHEEL_STEP: u16 = 3;
                 match mouse.kind {
                     MouseEventKind::ScrollUp => {
-                        session.state.conversation_manual_scroll =
-                            Some(current_up.saturating_add(WHEEL_STEP));
+                        let next = current_up.saturating_add(WHEEL_STEP);
+                        session.state.conversation_manual_scroll = Some(next);
+                        session.state.status =
+                            Some(format!("Scrolled up {next} lines. End = follow."));
                     }
                     MouseEventKind::ScrollDown => {
                         let next_up = current_up.saturating_sub(WHEEL_STEP);
                         session.state.conversation_manual_scroll = (next_up > 0).then_some(next_up);
+                        session.state.status = if next_up > 0 {
+                            Some(format!("{next_up} lines from bottom. End = follow."))
+                        } else {
+                            Some("Following latest output.".into())
+                        };
                     }
                     _ => {}
                 }
@@ -734,21 +741,31 @@ async fn drive_loop(
                 let current_up = session.state.conversation_manual_scroll.unwrap_or(0);
                 match code {
                     KeyCode::PageUp => {
-                        session.state.conversation_manual_scroll =
-                            Some(current_up.saturating_add(page));
+                        let next = current_up.saturating_add(page);
+                        session.state.conversation_manual_scroll = Some(next);
+                        session.state.status = Some(format!(
+                            "Scrolled up {next} lines from bottom. End = follow."
+                        ));
                     }
                     KeyCode::PageDown => {
                         let next_up = current_up.saturating_sub(page);
                         session.state.conversation_manual_scroll = (next_up > 0).then_some(next_up);
+                        session.state.status = if next_up > 0 {
+                            Some(format!("{next_up} lines from bottom. End = follow."))
+                        } else {
+                            Some("Following latest output.".into())
+                        };
                     }
                     // Home jumps to the very top. We use u16::MAX as a
                     // sentinel meaning "as far up as possible" — the renderer
                     // clamps to `max_scroll`.
                     KeyCode::Home => {
                         session.state.conversation_manual_scroll = Some(u16::MAX);
+                        session.state.status = Some("Jumped to top. End = follow.".into());
                     }
                     KeyCode::End => {
                         session.state.conversation_manual_scroll = None;
+                        session.state.status = Some("Following latest output.".into());
                     }
                     _ => {}
                 }
