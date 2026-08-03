@@ -3655,7 +3655,7 @@ impl ZaiEmbeddingAdapter {
             vesper_provider_glm::GlmEndpoint::official(vesper_provider_glm::GlmPlan::BigModel)
                 .expect("static BigModel CN endpoint");
         let base = endpoint.base_url();
-        let endpoint_url = format!("{base}embeddings");
+        let endpoint_url = format!("{base}/embeddings");
         Self {
             credential_source,
             client: reqwest::blocking::Client::builder()
@@ -3743,7 +3743,7 @@ impl ZaiExtractionAdapter {
             vesper_provider_glm::GlmEndpoint::official(vesper_provider_glm::GlmPlan::Standard)
                 .expect("static Zai Standard endpoint");
         let base = endpoint.base_url();
-        let endpoint_url = format!("{base}chat/completions");
+        let endpoint_url = format!("{base}/chat/completions");
         Self {
             credential_source,
             client: reqwest::blocking::Client::builder()
