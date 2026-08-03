@@ -118,12 +118,16 @@ pub struct SessionState {
     /// Whether the binary should re-open the provider-routed authentication
     /// screen (`/auth`) using the active provider's advertised descriptor.
     pub pending_reauth: bool,
-    /// Manual conversation scroll offset in **rendered lines from the top**.
+    /// Manual conversation scroll expressed as **lines up from the bottom**.
     /// `None` = auto-follow (stick to bottom, the default); `Some(n)` = the
-    /// user pressed PageUp/Home and is reading history at offset `n`. Reset
-    /// to `None` by `End`, a new prompt submission, or PageDown reaching the
-    /// bottom. Mirrored into [`crate::ui::ViewModel`] each frame so the
-    /// scrollbar thumb reflects the same position the paragraph uses.
+    /// user pressed PageUp/Home and is reading history `n` lines above the
+    /// newest line. Tracking from the bottom (rather than absolute offset
+    /// from the top) means the input handler can update this without knowing
+    /// `max_scroll`, which only the renderer can compute from the wrapped
+    /// markdown line count. The renderer mirrors this into a `ScrollbarState`
+    /// so the visual scrollbar reflects the same position the
+    /// `Paragraph::scroll` call uses. Reset to `None` by `End`, a new prompt
+    /// submission, or PageDown/ScrollDown reaching the bottom.
     pub conversation_manual_scroll: Option<u16>,
 }
 

@@ -64,11 +64,13 @@ pub struct ViewModel {
     pub working_tree_lines: Vec<String>,
     /// Theme, accessibility, mouse, and sound preferences.
     pub preferences: TerminalPreferences,
-    /// Manual conversation scroll offset in **rendered lines from the top**.
+    /// Manual conversation scroll expressed as **lines up from the bottom**
+    /// (so the input handler can mutate it without knowing `max_scroll`).
     /// `None` = auto-follow (stick to bottom, the default); `Some(n)` = the
-    /// user pressed PageUp/Home and is reading history at offset `n`. The
-    /// renderer mirrors this into a `ScrollbarState` so the visual scrollbar
-    /// reflects the same position the `Paragraph::scroll` call uses.
+    /// user pressed PageUp/Home and is reading history `n` lines above the
+    /// newest line. The renderer mirrors this into a `ScrollbarState` whose
+    /// `position = max_scroll.saturating_sub(n)` — the same value passed to
+    /// `Paragraph::scroll` — so the thumb position is always truthful.
     pub conversation_manual_scroll: Option<u16>,
 }
 
@@ -228,13 +230,17 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
     let max_scroll = wrapped_lines
         .saturating_sub(visible_lines)
         .min(u16::MAX as usize) as u16;
-    // `None` (auto-follow) sticks to the bottom; `Some(n)` honors the user's
-    // manual scroll position (clamped to the valid range so a resize or new
-    // content cannot push the offset past the last rendered line).
-    let effective_scroll = model
+    // `manual_scroll` is expressed as **lines up from the bottom**, so the
+    // input handler can mutate it without knowing `max_scroll` (which only
+    // the renderer can compute from the wrapped markdown line count).
+    // `None` (auto-follow) sticks to the bottom; `Some(n)` scrolls `n` lines
+    // up from the bottom, clamped to the valid range so a resize or new
+    // content cannot overshoot the top of the transcript.
+    let manual = model
         .conversation_manual_scroll
-        .map(|manual| manual.min(max_scroll))
-        .unwrap_or(max_scroll);
+        .unwrap_or(0)
+        .min(max_scroll);
+    let effective_scroll = max_scroll.saturating_sub(manual);
     frame.render_widget(paragraph.scroll((effective_scroll, 0)), transcript_area);
 
     // Vertical scrollbar on the right edge of the Conversation block. The
@@ -926,7 +932,10 @@ mod tests {
             .collect();
         let model = ViewModel {
             transcript: long_lines,
-            conversation_manual_scroll: Some(40),
+            // 50 lines up from the bottom: the bottom-most line must NOT be
+            // visible (we scrolled past it), but a line near the bottom of
+            // the visible window (~150 of 200) should be present.
+            conversation_manual_scroll: Some(50),
             ..ViewModel::default()
         };
 
@@ -936,8 +945,6 @@ mod tests {
             .draw(|f| render_to_frame(f, &model))
             .expect("scrollbar render must not panic when transcript overflows");
 
-        // Manual scroll position 40 should be honored: line 40 should be near
-        // the top of the viewport (not the bottom of the transcript).
         let content: String = terminal
             .backend()
             .buffer()
@@ -946,12 +953,17 @@ mod tests {
             .map(|cell| cell.symbol())
             .collect();
         assert!(
-            content.contains("line number 40"),
-            "manual scroll offset 40 must position that line in the viewport"
-        );
-        assert!(
             !content.contains("line number 199"),
-            "the bottom of the transcript must NOT be visible under manual scroll 40"
+            "scrolling 50 lines up from the bottom must NOT show the newest line"
+        );
+        // The scrollbar renders without panic (proven by reaching this point),
+        // and the manual offset of 50 from the bottom puts lines around
+        // index 150 (of 200) somewhere in the visible window.
+        assert!(
+            content.contains("line number 149")
+                || content.contains("line number 150")
+                || content.contains("line number 151"),
+            "manual scroll 50-from-bottom should keep mid-transcript lines visible"
         );
     }
 
@@ -986,6 +998,46 @@ mod tests {
         assert!(
             content.contains("turn 199"),
             "auto-follow (None) must show the bottom of the transcript"
+        );
+    }
+
+    #[test]
+    fn render_to_frame_clamps_manual_scroll_to_max_scroll() {
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
+        // Home sets `manual_scroll = Some(u16::MAX)` (the "as far up as
+        // possible" sentinel). The renderer must clamp it to `max_scroll`,
+        // positioning the TOP of the transcript in the viewport (line 0
+        // visible, line 199 NOT visible). This guards against the original
+        // bug where the input handler subtracted from u16::MAX and produced
+        // a value that overflowed back to the bottom.
+        let long_lines: Vec<String> = (0..200).map(|i| format!("assistant: line {i}")).collect();
+        let model = ViewModel {
+            transcript: long_lines,
+            conversation_manual_scroll: Some(u16::MAX),
+            ..ViewModel::default()
+        };
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).expect("test backend");
+        terminal
+            .draw(|f| render_to_frame(f, &model))
+            .expect("Home sentinel render must not panic");
+        let content: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(
+            content.contains("line 0"),
+            "Home (Some(u16::MAX)) must clamp to max_scroll and show the top"
+        );
+        assert!(
+            !content.contains("line 199"),
+            "Home must NOT show the bottom of the transcript"
         );
     }
 }

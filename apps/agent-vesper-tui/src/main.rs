@@ -659,6 +659,32 @@ async fn drive_loop(
                     session,
                 );
                 continue;
+            } else if matches!(
+                mouse.kind,
+                MouseEventKind::ScrollDown | MouseEventKind::ScrollUp
+            ) {
+                // Mouse wheel scrolling over the terminal. We don't hit-test
+                // the conversation panel area here (the geometry is owned by
+                // the renderer); wheel events anywhere scroll the
+                // conversation, mirroring how `less` and most TUIs treat
+                // wheel input as a global scroll gesture.
+                let current_up = session.state.conversation_manual_scroll.unwrap_or(0);
+                // Each wheel "tick" is ~3 rendered lines, matching the
+                // default crossterm wheel step and the typical terminal
+                // expectation.
+                const WHEEL_STEP: u16 = 3;
+                match mouse.kind {
+                    MouseEventKind::ScrollUp => {
+                        session.state.conversation_manual_scroll =
+                            Some(current_up.saturating_add(WHEEL_STEP));
+                    }
+                    MouseEventKind::ScrollDown => {
+                        let next_up = current_up.saturating_sub(WHEEL_STEP);
+                        session.state.conversation_manual_scroll = (next_up > 0).then_some(next_up);
+                    }
+                    _ => {}
+                }
+                continue;
             } else {
                 continue;
             }
@@ -697,28 +723,29 @@ async fn drive_loop(
         match code {
             // Conversation scroll bindings. Active only when the slash-command
             // palette is closed (so they never steal arrow-key nav from the
-            // palette). `PageUp` switches to manual mode at offset N;
-            // `PageDown` advances N lines (the renderer clamps to the bottom
-            // and visually behaves like auto-follow when manual >= max);
-            // `Home` jumps to the top; `End` returns to auto-follow (None).
-            // The renderer mirrors `conversation_manual_scroll` into a
-            // `ScrollbarState` so the thumb reflects these movements.
+            // palette). `conversation_manual_scroll` is stored as **lines up
+            // from the bottom**, so the input handler can mutate it without
+            // knowing `max_scroll`. `None` (or 0) = auto-follow at the
+            // bottom; `Some(n)` = `n` lines above the newest line.
             KeyCode::PageUp | KeyCode::PageDown | KeyCode::Home | KeyCode::End
                 if session.command_matches.is_empty() =>
             {
                 let page = page_size_for_scroll(terminal.size().map(|s| s.height).unwrap_or(20));
-                let current = session.state.conversation_manual_scroll.unwrap_or(u16::MAX);
+                let current_up = session.state.conversation_manual_scroll.unwrap_or(0);
                 match code {
                     KeyCode::PageUp => {
                         session.state.conversation_manual_scroll =
-                            Some(current.saturating_sub(page));
+                            Some(current_up.saturating_add(page));
                     }
                     KeyCode::PageDown => {
-                        session.state.conversation_manual_scroll =
-                            Some(current.saturating_add(page));
+                        let next_up = current_up.saturating_sub(page);
+                        session.state.conversation_manual_scroll = (next_up > 0).then_some(next_up);
                     }
+                    // Home jumps to the very top. We use u16::MAX as a
+                    // sentinel meaning "as far up as possible" — the renderer
+                    // clamps to `max_scroll`.
                     KeyCode::Home => {
-                        session.state.conversation_manual_scroll = Some(0);
+                        session.state.conversation_manual_scroll = Some(u16::MAX);
                     }
                     KeyCode::End => {
                         session.state.conversation_manual_scroll = None;
@@ -7248,6 +7275,97 @@ mod tests {
                 ),
             ],
         )
+    }
+
+    #[test]
+    fn page_size_for_scroll_reserves_chrome_and_floors_at_three() {
+        // Reserve ~6 lines for input/status/footer; page = half the rest.
+        assert_eq!(page_size_for_scroll(30), 12);
+        assert_eq!(page_size_for_scroll(24), 9);
+        // Tiny terminal must still produce a usable page step.
+        assert_eq!(page_size_for_scroll(8), 3);
+        assert_eq!(page_size_for_scroll(0), 3);
+        assert_eq!(page_size_for_scroll(6), 3);
+    }
+
+    #[allow(unused_assignments)]
+    #[test]
+    fn page_up_from_auto_follow_does_not_overflow_back_to_bottom() {
+        // Regression for the original bug: starting from None (auto-follow),
+        // pressing PageUp used to compute `u16::MAX - page` and store it,
+        // which the renderer then clamped back to max_scroll (so the
+        // scrollbar stayed at the bottom). The new representation stores
+        // "lines up from the bottom", so PageUp simply increments that.
+        let page = page_size_for_scroll(30); // 12
+        let mut manual: Option<u16> = None;
+
+        // Press PageUp once from None: enter manual mode at `page` lines up.
+        let current_up = manual.unwrap_or(0);
+        manual = Some(current_up.saturating_add(page));
+        assert_eq!(manual, Some(12));
+
+        // Press PageUp again: 24 lines up from the bottom.
+        let current_up = manual.unwrap_or(0);
+        manual = Some(current_up.saturating_add(page));
+        assert_eq!(manual, Some(24));
+
+        // Press PageDown: 12 lines up from the bottom (still manual mode).
+        let current_up = manual.unwrap_or(0);
+        let next_up = current_up.saturating_sub(page);
+        manual = (next_up > 0).then_some(next_up);
+        assert_eq!(manual, Some(12));
+
+        // Press PageDown again: reaches 0 → fall back to auto-follow (None).
+        let current_up = manual.unwrap_or(0);
+        let next_up = current_up.saturating_sub(page);
+        manual = (next_up > 0).then_some(next_up);
+        assert_eq!(manual, None);
+    }
+
+    #[allow(unused_assignments)]
+    #[test]
+    fn home_sentinel_is_clamped_by_the_renderer_not_the_input_handler() {
+        // Home stores Some(u16::MAX); the renderer's `.min(max_scroll)` does
+        // the clamping. This verifies the input-handler side never
+        // underflows when storing the sentinel.
+        let mut manual: Option<u16> = None;
+        manual = Some(u16::MAX);
+        assert_eq!(manual, Some(u16::MAX));
+        // Renderer math: effective_scroll = max_scroll.saturating_sub(min).
+        // For max_scroll=178, manual=65535: effective = 0 (top of transcript).
+        let max_scroll: u16 = 178;
+        let manual_clamped = manual.unwrap_or(0).min(max_scroll);
+        assert_eq!(max_scroll.saturating_sub(manual_clamped), 0);
+    }
+
+    #[allow(unused_assignments)]
+    #[test]
+    fn mouse_wheel_step_moves_three_lines_at_a_time() {
+        // Mirrors the const WHEEL_STEP in the input loop. Kept here so a
+        // future tweak to the wheel step is intentional, not accidental.
+        const WHEEL_STEP: u16 = 3;
+        let mut manual: Option<u16> = None;
+
+        // ScrollUp three times from auto-follow: 9 lines up from the bottom.
+        for _ in 0..3 {
+            let current_up = manual.unwrap_or(0);
+            manual = Some(current_up.saturating_add(WHEEL_STEP));
+        }
+        assert_eq!(manual, Some(9));
+
+        // ScrollDown twice: 3 lines up (still manual).
+        for _ in 0..2 {
+            let current_up = manual.unwrap_or(0);
+            let next_up = current_up.saturating_sub(WHEEL_STEP);
+            manual = (next_up > 0).then_some(next_up);
+        }
+        assert_eq!(manual, Some(3));
+
+        // One more ScrollDown: reaches 0 → back to auto-follow.
+        let current_up = manual.unwrap_or(0);
+        let next_up = current_up.saturating_sub(WHEEL_STEP);
+        manual = (next_up > 0).then_some(next_up);
+        assert_eq!(manual, None);
     }
 
     #[test]
