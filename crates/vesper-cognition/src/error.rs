@@ -27,13 +27,14 @@ pub enum CognitionError {
     #[error("embedding dimension mismatch: expected {expected}, got {actual}")]
     EmbeddingDimension { expected: usize, actual: usize },
 
-    /// The embedding port failed.
-    #[error("embedding port failure")]
-    Embedding,
+    /// The embedding port failed. Carries the underlying HTTP status + body
+    /// so the composition boundary can surface actionable diagnostics.
+    #[error("embedding port failure: {0}")]
+    Embedding(String),
 
-    /// The extraction LLM port failed.
-    #[error("extraction LLM port failure")]
-    Extraction,
+    /// The extraction LLM port failed. Carries the underlying HTTP status + body.
+    #[error("extraction LLM port failure: {0}")]
+    Extraction(String),
 
     /// The LLM returned a response that could not be parsed as JSON.
     #[error("extraction response was not valid JSON")]

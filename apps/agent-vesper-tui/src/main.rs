@@ -3636,9 +3636,11 @@ impl CognitionBundle {
     }
 }
 
-/// Zai embeddings via `POST {base}/embeddings` with model `embedding-3`
-/// (1024-d). Uses a blocking reqwest client consistent with the binary's
-/// other blocking credential-store I/O on Tokio threads.
+/// Zai embeddings via BigModel CN `POST {base}/embeddings` with model
+/// `embedding-3` (1024-d). Embeddings are NOT available on the Zai global
+/// endpoint (api.z.ai) — only on BigModel CN (open.bigmodel.cn). Confirmed
+/// by Zai SDK GitHub issue #67. Uses a blocking reqwest client consistent
+/// with the binary's other blocking I/O on Tokio threads.
 #[derive(Clone)]
 struct ZaiEmbeddingAdapter {
     credential_source: Arc<dyn vesper_provider_glm::GlmCredentialSource>,
@@ -3650,8 +3652,8 @@ struct ZaiEmbeddingAdapter {
 impl ZaiEmbeddingAdapter {
     fn new(credential_source: Arc<dyn vesper_provider_glm::GlmCredentialSource>) -> Self {
         let endpoint =
-            vesper_provider_glm::GlmEndpoint::official(vesper_provider_glm::GlmPlan::Standard)
-                .expect("static Zai endpoint");
+            vesper_provider_glm::GlmEndpoint::official(vesper_provider_glm::GlmPlan::BigModel)
+                .expect("static BigModel CN endpoint");
         let base = endpoint.base_url();
         let endpoint_url = format!("{base}embeddings");
         Self {
@@ -3668,7 +3670,9 @@ impl ZaiEmbeddingAdapter {
     fn resolve_key(&self) -> Result<String, vesper_cognition::CognitionError> {
         vesper_provider_glm::resolve_credential(self.credential_source.as_ref())
             .map(|c| c.secret.expose().as_str().to_string())
-            .map_err(|_| vesper_cognition::CognitionError::Embedding)
+            .map_err(|_| {
+                vesper_cognition::CognitionError::Embedding("credential resolution failed".into())
+            })
     }
 }
 
@@ -3682,6 +3686,7 @@ impl vesper_cognition::EmbeddingPort for ZaiEmbeddingAdapter {
         let body = serde_json::json!({
             "model": self.model,
             "input": text,
+            "dimensions": 1024,
         });
         let response = self
             .client
@@ -3689,29 +3694,41 @@ impl vesper_cognition::EmbeddingPort for ZaiEmbeddingAdapter {
             .bearer_auth(&key)
             .json(&body)
             .send()
-            .map_err(|_| vesper_cognition::CognitionError::Embedding)?;
+            .map_err(|e| {
+                vesper_cognition::CognitionError::Embedding(format!("HTTP send failed: {e}"))
+            })?;
         if !response.status().is_success() {
-            return Err(vesper_cognition::CognitionError::Embedding);
+            let status = response.status();
+            let body_text = response.text().unwrap_or_else(|_| "(no body)".into());
+            return Err(vesper_cognition::CognitionError::Embedding(format!(
+                "HTTP {status} - {body_text}"
+            )));
         }
-        let parsed: serde_json::Value = response
-            .json()
-            .map_err(|_| vesper_cognition::CognitionError::Embedding)?;
-        let vector = parsed["data"][0]["embedding"]
-            .as_array()
-            .ok_or(vesper_cognition::CognitionError::Embedding)?;
+        let parsed: serde_json::Value = response.json().map_err(|e| {
+            vesper_cognition::CognitionError::Embedding(format!("JSON parse failed: {e}"))
+        })?;
+        let vector = parsed["data"][0]["embedding"].as_array().ok_or_else(|| {
+            vesper_cognition::CognitionError::Embedding(format!(
+                "missing data[0].embedding in response: {parsed}"
+            ))
+        })?;
         vector
             .iter()
             .map(|v| {
-                v.as_f64()
-                    .map(|f| f as f32)
-                    .ok_or(vesper_cognition::CognitionError::Embedding)
+                v.as_f64().map(|f| f as f32).ok_or_else(|| {
+                    vesper_cognition::CognitionError::Embedding(
+                        "embedding vector contains non-numeric value".into(),
+                    )
+                })
             })
             .collect()
     }
 }
 
 /// Zai chat completions with `response_format={"type":"json_object"}` for
-/// extraction. Uses the agent-loop's configured model name.
+/// extraction. Uses the Standard plan endpoint (api.z.ai) — chat completions
+/// are available on the global endpoint. Default model `glm-4.6`; override
+/// via `AGENT_VESPER_COGNITION_MODEL`.
 #[derive(Clone)]
 struct ZaiExtractionAdapter {
     credential_source: Arc<dyn vesper_provider_glm::GlmCredentialSource>,
@@ -3724,7 +3741,7 @@ impl ZaiExtractionAdapter {
     fn new(credential_source: Arc<dyn vesper_provider_glm::GlmCredentialSource>) -> Self {
         let endpoint =
             vesper_provider_glm::GlmEndpoint::official(vesper_provider_glm::GlmPlan::Standard)
-                .expect("static Zai endpoint");
+                .expect("static Zai Standard endpoint");
         let base = endpoint.base_url();
         let endpoint_url = format!("{base}chat/completions");
         Self {
@@ -3742,7 +3759,9 @@ impl ZaiExtractionAdapter {
     fn resolve_key(&self) -> Result<String, vesper_cognition::CognitionError> {
         vesper_provider_glm::resolve_credential(self.credential_source.as_ref())
             .map(|c| c.secret.expose().as_str().to_string())
-            .map_err(|_| vesper_cognition::CognitionError::Extraction)
+            .map_err(|_| {
+                vesper_cognition::CognitionError::Extraction("credential resolution failed".into())
+            })
     }
 }
 
@@ -3767,23 +3786,30 @@ impl vesper_cognition::ExtractionLlmPort for ZaiExtractionAdapter {
             .bearer_auth(&key)
             .json(&body)
             .send()
-            .map_err(|_| vesper_cognition::CognitionError::Extraction)?;
+            .map_err(|e| {
+                vesper_cognition::CognitionError::Extraction(format!("HTTP send failed: {e}"))
+            })?;
         if !response.status().is_success() {
-            return Err(vesper_cognition::CognitionError::Extraction);
+            let status = response.status();
+            let body_text = response.text().unwrap_or_else(|_| "(no body)".into());
+            return Err(vesper_cognition::CognitionError::Extraction(format!(
+                "HTTP {status} - {body_text}"
+            )));
         }
-        let parsed: serde_json::Value = response
-            .json()
-            .map_err(|_| vesper_cognition::CognitionError::Extraction)?;
+        let parsed: serde_json::Value = response.json().map_err(|e| {
+            vesper_cognition::CognitionError::Extraction(format!("JSON parse failed: {e}"))
+        })?;
         parsed["choices"][0]["message"]["content"]
             .as_str()
             .map(str::to_string)
-            .ok_or(vesper_cognition::CognitionError::Extraction)
+            .ok_or_else(|| {
+                vesper_cognition::CognitionError::Extraction(format!(
+                    "missing choices[0].message.content in response: {parsed}"
+                ))
+            })
     }
 }
 
-/// Default in-crate regex entity extractor. Wraps the public
-/// `vesper_cognition::extract_entities` function in a port-impl struct so it
-/// can plug into `CognitionPorts.entity_nlp`.
 struct ZaiEntityExtractor;
 
 impl vesper_cognition::EntityExtractorPort for ZaiEntityExtractor {

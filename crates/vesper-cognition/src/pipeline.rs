@@ -166,7 +166,9 @@ impl CognitiveMemory {
                 .embedder
                 .embed_batch(&dedup_refs, EmbedAction::Add)?;
             if embeddings.len() != dedup_texts.len() {
-                return Err(CognitionError::Embedding);
+                return Err(CognitionError::Embedding(
+                    "batch embedding count mismatch".into(),
+                ));
             }
             dedup_texts.iter().cloned().zip(embeddings).collect()
         };
