@@ -44,7 +44,7 @@ curl -fsSL https://github.com/99percentgrip/agent-vesper/raw/main/scripts/instal
 Or pin a version:
 
 ```sh
-AGENT_VESPER_VERSION=0.1.0 sh scripts/install.sh
+AGENT_VESPER_VERSION=0.2.0 sh scripts/install.sh
 ```
 
 The installers install the ACP server used by Zed. The TUI is currently built
