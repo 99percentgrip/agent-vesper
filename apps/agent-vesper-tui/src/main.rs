@@ -6961,6 +6961,7 @@ fn drain_cognition_op(
     match op {
         CognitionOp::Remember { text } => {
             let msg = vesper_cognition::Message::user(&text);
+            // First attempt: full LLM extraction (type/priority/scene classification).
             let req = vesper_cognition::AddRequest {
                 messages: std::slice::from_ref(&msg),
                 scope: &scope,
@@ -6991,9 +6992,50 @@ fn drain_cognition_op(
                     );
                 }
                 Err(err) => {
-                    state
-                        .transcript
-                        .push(format!("cognition: /remember failed: {err}"));
+                    // Fallback: if LLM extraction failed (429/balance/network),
+                    // store the raw text without extraction. The memory is still
+                    // searchable via BM25 keyword + entity boost — just without
+                    // type/priority/scene classification.
+                    let err_str = format!("{err}");
+                    let is_api_error = err_str.contains("429")
+                        || err_str.contains("balance")
+                        || err_str.contains("HTTP 5")
+                        || err_str.contains("send failed")
+                        || err_str.contains("credential");
+                    if is_api_error {
+                        let raw_req = vesper_cognition::AddRequest {
+                            messages: std::slice::from_ref(&msg),
+                            scope: &scope,
+                            extras: None,
+                            expiration_date: None,
+                            infer: false,
+                            custom_instructions: None,
+                            observation_date: None,
+                        };
+                        match engine.add(raw_req) {
+                            Ok(events) if !events.is_empty() => {
+                                state.transcript.push(format!(
+                                    "cognition: stored raw text (LLM extraction skipped — API error: {err_str})"
+                                ));
+                                for evt in events.iter().take(5) {
+                                    state.transcript.push(format!(
+                                        "  [{}] {}",
+                                        &evt.id[..8.min(evt.id.len())],
+                                        evt.memory.chars().take(100).collect::<String>()
+                                    ));
+                                }
+                            }
+                            _ => {
+                                state.transcript.push(format!(
+                                    "cognition: /remember failed completely — {err_str}"
+                                ));
+                            }
+                        }
+                    } else {
+                        state
+                            .transcript
+                            .push(format!("cognition: /remember failed: {err_str}"));
+                    }
                 }
             }
             state.status = None;
