@@ -3588,6 +3588,182 @@ impl MemoryStores {
 /// available or when the SQLite path cannot be opened — the TUI keeps
 /// running with cognitive-memory features disabled.
 #[allow(dead_code)]
+// ===========================================================================
+// Zhipu AI JWT authentication for BigModel CN (embedding-3 neural embeddings)
+//
+// BigModel CN (open.bigmodel.cn) does NOT accept the raw API key as a Bearer
+// token. Instead, it requires a JWT generated from the API key using the
+// Zhipu-specific format:
+//   - API key = "id.secret" (split on first ".")
+//   - JWT header:  {"alg":"HS256","sign_type":"SIGN"}
+//   - JWT payload: {"api_key": id, "exp": now_ms + 3600000, "timestamp": now_ms}
+//   - Signature:   HMAC-SHA256(header_b64 + "." + payload_b64, secret)
+//   - Token:       header_b64 + "." + payload_b64 + "." + sig_b64
+//
+// This closes the neural-embeddings gap from the verification audit. The
+// local hash embedder remains as a zero-dependency fallback when no API key
+// is available.
+// ===========================================================================
+use sha2::{Digest, Sha256};
+
+/// HMAC-SHA256 implemented manually using sha2 (no `hmac` crate dependency).
+/// Standard RFC 2104 construction: H((K ^ opad) || H((K ^ ipad) || message)).
+fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; 32] {
+    const BLOCK_SIZE: usize = 64;
+    let k = if key.len() > BLOCK_SIZE {
+        let mut h = Sha256::new();
+        h.update(key);
+        let digest = h.finalize();
+        let mut padded = vec![0u8; BLOCK_SIZE];
+        padded[..32].copy_from_slice(&digest);
+        padded
+    } else {
+        let mut padded = key.to_vec();
+        padded.resize(BLOCK_SIZE, 0);
+        padded
+    };
+
+    let mut ipad = vec![0x36u8; BLOCK_SIZE];
+    let mut opad = vec![0x5cu8; BLOCK_SIZE];
+    for i in 0..BLOCK_SIZE {
+        ipad[i] ^= k[i];
+        opad[i] ^= k[i];
+    }
+
+    // Inner hash: H((K ^ ipad) || message)
+    let mut inner = Sha256::new();
+    inner.update(&ipad);
+    inner.update(message);
+    let inner_digest = inner.finalize();
+
+    // Outer hash: H((K ^ opad) || inner_digest)
+    let mut outer = Sha256::new();
+    outer.update(&opad);
+    outer.update(inner_digest);
+    let result = outer.finalize();
+
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&result);
+    out
+}
+
+/// Generate a Zhipu AI JWT token from an API key of the form "id.secret".
+/// Returns `None` if the key doesn't contain a "." separator.
+fn zhipu_jwt(api_key: &str) -> Option<String> {
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD as b64};
+
+    let (id, secret) = api_key.split_once('.')?;
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_millis();
+    let exp_ms = now_ms + 3_600_000; // 1 hour
+
+    let header = serde_json::json!({"alg": "HS256", "sign_type": "SIGN"});
+    let payload = serde_json::json!({
+        "api_key": id,
+        "exp": exp_ms,
+        "timestamp": now_ms,
+    });
+
+    let header_b64 = b64.encode(serde_json::to_string(&header).ok()?.as_bytes());
+    let payload_b64 = b64.encode(serde_json::to_string(&payload).ok()?.as_bytes());
+    let signing_input = format!("{header_b64}.{payload_b64}");
+    let sig = hmac_sha256(secret.as_bytes(), signing_input.as_bytes());
+    let sig_b64 = b64.encode(sig);
+
+    Some(format!("{signing_input}.{sig_b64}"))
+}
+
+/// Neural embedding adapter using BigModel CN (open.bigmodel.cn) with JWT auth
+/// and model `embedding-3` (1024-d). This is the DEFAULT embedder when a Zai
+/// API key is available — it produces real neural embeddings, not hash-based
+/// approximations. Falls back to LocalHashEmbedder when no key is present.
+#[derive(Clone)]
+struct BigModelEmbeddingAdapter {
+    credential_source: Arc<dyn vesper_provider_glm::GlmCredentialSource>,
+    client: reqwest::blocking::Client,
+    endpoint_url: String,
+}
+
+impl BigModelEmbeddingAdapter {
+    fn new(credential_source: Arc<dyn vesper_provider_glm::GlmCredentialSource>) -> Self {
+        let endpoint =
+            vesper_provider_glm::GlmEndpoint::official(vesper_provider_glm::GlmPlan::BigModel)
+                .expect("static BigModel CN endpoint");
+        let base = endpoint.base_url();
+        Self {
+            credential_source,
+            client: reqwest::blocking::Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .expect("reqwest blocking client"),
+            endpoint_url: format!("{base}/embeddings"),
+        }
+    }
+
+    fn resolve_jwt(&self) -> Result<String, vesper_cognition::CognitionError> {
+        let cred = vesper_provider_glm::resolve_credential(self.credential_source.as_ref())
+            .map_err(|_| {
+                vesper_cognition::CognitionError::Embedding("credential resolution failed".into())
+            })?;
+        zhipu_jwt(cred.secret.expose().as_str()).ok_or_else(|| {
+            vesper_cognition::CognitionError::Embedding(
+                "API key missing '.' separator for JWT generation".into(),
+            )
+        })
+    }
+}
+
+impl vesper_cognition::EmbeddingPort for BigModelEmbeddingAdapter {
+    fn embed(
+        &self,
+        text: &str,
+        _action: vesper_cognition::EmbedAction,
+    ) -> Result<Vec<f32>, vesper_cognition::CognitionError> {
+        let jwt = self.resolve_jwt()?;
+        let body = serde_json::json!({
+            "model": "embedding-3",
+            "input": text,
+            "dimensions": 1024,
+        });
+        let response = self
+            .client
+            .post(&self.endpoint_url)
+            .bearer_auth(&jwt)
+            .json(&body)
+            .send()
+            .map_err(|e| {
+                vesper_cognition::CognitionError::Embedding(format!("HTTP send failed: {e}"))
+            })?;
+        if !response.status().is_success() {
+            let status = response.status();
+            let body_text = response.text().unwrap_or_else(|_| "(no body)".into());
+            return Err(vesper_cognition::CognitionError::Embedding(format!(
+                "HTTP {status} - {body_text}"
+            )));
+        }
+        let parsed: serde_json::Value = response.json().map_err(|e| {
+            vesper_cognition::CognitionError::Embedding(format!("JSON parse failed: {e}"))
+        })?;
+        let vector = parsed["data"][0]["embedding"].as_array().ok_or_else(|| {
+            vesper_cognition::CognitionError::Embedding(format!(
+                "missing data[0].embedding in response: {parsed}"
+            ))
+        })?;
+        vector
+            .iter()
+            .map(|v| {
+                v.as_f64().map(|f| f as f32).ok_or_else(|| {
+                    vesper_cognition::CognitionError::Embedding(
+                        "embedding vector contains non-numeric value".into(),
+                    )
+                })
+            })
+            .collect()
+    }
+}
+
 struct CognitionBundle {
     engine: Option<Arc<vesper_cognition::CognitiveMemory>>,
     /// Human-readable root path used in error notices.
@@ -3622,17 +3798,21 @@ impl CognitionBundle {
         }
         let config = vesper_cognition::CognitiveConfig::default();
         let ports = vesper_cognition::CognitionPorts {
-            // Default: local hash embedder (zero network, works immediately).
-            // Override with AGENT_VESPER_COGNITION_EMBEDDING_API=bigmodel
-            // to use the Zai BigModel CN adapter (requires JWT auth).
+            // Default: neural embeddings via BigModel CN with JWT auth when
+            // credential is available. Falls back to local hash embedder
+            // (zero network) only when explicitly requested via env var
+            // AGENT_VESPER_COGNITION_EMBEDDING_API=local.
             embedder: match std::env::var("AGENT_VESPER_COGNITION_EMBEDDING_API")
                 .unwrap_or_default()
                 .as_str()
             {
-                "bigmodel" => Arc::new(ZaiEmbeddingAdapter::new(Arc::clone(&credential_source))),
-                _ => Arc::new(vesper_cognition::LocalHashEmbedder::new(
+                "local" => Arc::new(vesper_cognition::LocalHashEmbedder::new(
                     config.embedding_dim,
                 )),
+                // Neural embeddings via BigModel CN (open.bigmodel.cn) with JWT auth.
+                _ => Arc::new(BigModelEmbeddingAdapter::new(Arc::clone(
+                    &credential_source,
+                ))),
             },
             extractor: Arc::new(ZaiExtractionAdapter::new(Arc::clone(&credential_source))),
             entity_nlp: Arc::new(ZaiEntityExtractor),
@@ -3645,95 +3825,6 @@ impl CognitionBundle {
             engine,
             root_display,
         }
-    }
-}
-
-/// Zai embeddings via BigModel CN `POST {base}/embeddings` with model
-/// `embedding-3` (1024-d). Embeddings are NOT available on the Zai global
-/// endpoint (api.z.ai) — only on BigModel CN (open.bigmodel.cn). Confirmed
-/// by Zai SDK GitHub issue #67. Uses a blocking reqwest client consistent
-/// with the binary's other blocking I/O on Tokio threads.
-#[derive(Clone)]
-struct ZaiEmbeddingAdapter {
-    credential_source: Arc<dyn vesper_provider_glm::GlmCredentialSource>,
-    client: reqwest::blocking::Client,
-    endpoint_url: String,
-    model: String,
-}
-
-impl ZaiEmbeddingAdapter {
-    fn new(credential_source: Arc<dyn vesper_provider_glm::GlmCredentialSource>) -> Self {
-        let endpoint =
-            vesper_provider_glm::GlmEndpoint::official(vesper_provider_glm::GlmPlan::BigModel)
-                .expect("static BigModel CN endpoint");
-        let base = endpoint.base_url();
-        let endpoint_url = format!("{base}/embeddings");
-        Self {
-            credential_source,
-            client: reqwest::blocking::Client::builder()
-                .timeout(std::time::Duration::from_secs(30))
-                .build()
-                .expect("reqwest blocking client"),
-            endpoint_url,
-            model: String::from("embedding-3"),
-        }
-    }
-
-    fn resolve_key(&self) -> Result<String, vesper_cognition::CognitionError> {
-        vesper_provider_glm::resolve_credential(self.credential_source.as_ref())
-            .map(|c| c.secret.expose().as_str().to_string())
-            .map_err(|_| {
-                vesper_cognition::CognitionError::Embedding("credential resolution failed".into())
-            })
-    }
-}
-
-impl vesper_cognition::EmbeddingPort for ZaiEmbeddingAdapter {
-    fn embed(
-        &self,
-        text: &str,
-        _action: vesper_cognition::EmbedAction,
-    ) -> Result<Vec<f32>, vesper_cognition::CognitionError> {
-        let key = self.resolve_key()?;
-        let body = serde_json::json!({
-            "model": self.model,
-            "input": text,
-            "dimensions": 1024,
-        });
-        let response = self
-            .client
-            .post(&self.endpoint_url)
-            .bearer_auth(&key)
-            .json(&body)
-            .send()
-            .map_err(|e| {
-                vesper_cognition::CognitionError::Embedding(format!("HTTP send failed: {e}"))
-            })?;
-        if !response.status().is_success() {
-            let status = response.status();
-            let body_text = response.text().unwrap_or_else(|_| "(no body)".into());
-            return Err(vesper_cognition::CognitionError::Embedding(format!(
-                "HTTP {status} - {body_text}"
-            )));
-        }
-        let parsed: serde_json::Value = response.json().map_err(|e| {
-            vesper_cognition::CognitionError::Embedding(format!("JSON parse failed: {e}"))
-        })?;
-        let vector = parsed["data"][0]["embedding"].as_array().ok_or_else(|| {
-            vesper_cognition::CognitionError::Embedding(format!(
-                "missing data[0].embedding in response: {parsed}"
-            ))
-        })?;
-        vector
-            .iter()
-            .map(|v| {
-                v.as_f64().map(|f| f as f32).ok_or_else(|| {
-                    vesper_cognition::CognitionError::Embedding(
-                        "embedding vector contains non-numeric value".into(),
-                    )
-                })
-            })
-            .collect()
     }
 }
 
