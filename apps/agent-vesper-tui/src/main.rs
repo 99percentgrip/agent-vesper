@@ -7083,8 +7083,21 @@ fn cognitive_context_for_prompt(bundle: &CognitionBundle, prompt: &str) -> Optio
     }
     let mut block =
         String::from("\n\n--- Relevant context from cognitive memory (auto-recalled):\n");
+    // Token budget: ~4 chars/token, cap at max_injection_tokens * 4 chars.
+    // Truncate each hit to 200 chars; stop adding hits when budget is reached.
+    let max_chars = 2000 * 4; // default 2000 tokens
+    let mut chars_used = block.len();
     for hit in &hits {
-        block.push_str(&format!("- ({:.2}) {}\n", hit.score, hit.memory));
+        let line = format!(
+            "- ({:.2}) {}\n",
+            hit.score,
+            hit.memory.chars().take(200).collect::<String>()
+        );
+        chars_used += line.len();
+        if chars_used > max_chars {
+            break;
+        }
+        block.push_str(&line);
     }
     Some(block)
 }

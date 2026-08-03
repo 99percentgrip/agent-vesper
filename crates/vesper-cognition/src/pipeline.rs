@@ -22,6 +22,8 @@ use crate::prompts::{
 };
 use crate::score::{ScoredCandidate, score_and_rank};
 use crate::store::{CognitiveStore, NewMemory};
+type PendingRecord = (String, ExtractedMemory, Vec<f32>, BTreeMap<String, Value>);
+
 use crate::types::{
     Attribution, HistoryEvent, MemoryEvent, MemoryHit, MemoryRecord, Message, Scope,
 };
@@ -176,8 +178,6 @@ impl CognitiveMemory {
         // === Phase 4 + 5: per-memory + hash dedup ===
         let now = chrono::Utc::now().to_rfc3339();
         let base_extras = req.extras.cloned().unwrap_or_default();
-        /// One Phase-6 record: (memory_id, extracted_memory, embedding, extras).
-        type PendingRecord = (String, ExtractedMemory, Vec<f32>, BTreeMap<String, Value>);
         let mut records: Vec<PendingRecord> = Vec::new();
         let mut seen_hashes: HashSet<String> = HashSet::new();
         for mem in &extracted {
@@ -217,6 +217,14 @@ impl CognitiveMemory {
             return Ok(Vec::new());
         }
 
+        // === Phase 5.5: optional conflict detection (TencentDB-inspired) ===
+        // When enabled, a second LLM call classifies each new memory as
+        // store/skip/update/merge against existing memories. Default: disabled
+        // (preserves V3 ADD-only behavior).
+        if self.config.enable_conflict_detection && !records.is_empty() {
+            records = self.conflict_detection_pass(records, &existing_stored);
+        }
+
         // === Phase 6: batch persist + history ===
         let mut events = Vec::with_capacity(records.len());
         for (id, mem, embedding, extras) in &records {
@@ -239,7 +247,9 @@ impl CognitiveMemory {
                         "user"
                     }
                 }),
-                memory_type: None,
+                memory_type: mem.memory_type.as_deref(),
+                priority: mem.priority,
+                scene: mem.scene.as_deref(),
                 expiration_date: req.expiration_date,
                 created_at: &now,
                 updated_at: &now,
@@ -277,6 +287,73 @@ impl CognitiveMemory {
         Ok(events)
     }
 
+    /// Optional conflict-detection pass (TencentDB Agent Memory inspired).
+    /// Sends new memories + existing memories to the extraction LLM and asks
+    /// it to classify each as store/skip/update/merge. Memories classified as
+    /// "skip" are dropped; "store" proceeds as normal.
+    /// This is a SIMPLIFIED v1: update/merge actions are treated as store
+    /// (the V3 ADD-only model doesn't support overwrites). A future version
+    /// can implement true update/merge against existing memory IDs.
+    fn conflict_detection_pass(
+        &self,
+        new_records: Vec<PendingRecord>,
+        existing: &[crate::store::StoredMemory],
+    ) -> Vec<PendingRecord> {
+        // Build a compact summary of existing memories for the LLM.
+        let existing_summary: Vec<String> = existing
+            .iter()
+            .take(20)
+            .map(|m| format!("- {}", m.data.chars().take(100).collect::<String>()))
+            .collect();
+        let new_summary: Vec<String> = new_records
+            .iter()
+            .map(|(_, mem, _, _)| format!("- {}", mem.text.chars().take(100).collect::<String>()))
+            .collect();
+
+        let system = "You are a memory conflict detector. Compare new memories against existing ones. For each new memory, output a JSON array of objects with \"text\" and \"action\" (\"store\" if new/useful, \"skip\" if duplicate/redundant). Return ONLY the JSON array.";
+        let user = format!(
+            "Existing memories:\n{}\n\nNew memories to evaluate:\n{}\n\nClassify each new memory:",
+            existing_summary.join("\n"),
+            new_summary.join("\n"),
+        );
+
+        let response = match self.ports.extractor.extract(system, &user) {
+            Ok(text) => text,
+            Err(_) => return new_records, // On failure, keep all (fail-open).
+        };
+
+        // Parse the conflict detection response.
+        let actions: Vec<serde_json::Value> = match crate::extract::extract_json(&response) {
+            Some(json_str) => serde_json::from_str(&json_str).unwrap_or_default(),
+            None => return new_records, // Parse failure → keep all.
+        };
+
+        // Build a set of texts to skip.
+        let skip_texts: HashSet<String> = actions
+            .iter()
+            .filter_map(|item| {
+                if item.get("action").and_then(|a| a.as_str()) == Some("skip") {
+                    item.get("text").and_then(|t| t.as_str()).map(String::from)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if skip_texts.is_empty() {
+            return new_records;
+        }
+
+        // Filter out skipped memories.
+        new_records
+            .into_iter()
+            .filter(|(_, mem, _, _)| {
+                let text_prefix: String = mem.text.chars().take(100).collect();
+                !skip_texts.iter().any(|s| text_prefix.contains(s.as_str()))
+            })
+            .collect()
+    }
+
     fn add_raw_messages(&self, req: AddRequest<'_>) -> Result<Vec<MemoryEvent>> {
         let now = chrono::Utc::now().to_rfc3339();
         let mut events = Vec::new();
@@ -299,6 +376,8 @@ impl CognitiveMemory {
                 actor_id: msg.name.as_deref(),
                 role: Some(&msg.role),
                 memory_type: None,
+                priority: None,
+                scene: None,
                 expiration_date: req.expiration_date,
                 created_at: &now,
                 updated_at: &now,
@@ -401,16 +480,30 @@ impl CognitiveMemory {
         };
 
         // Step 7: candidate set is semantic_candidates (already filtered).
-        // Step 8: score and rank.
+        // Step 8: score and rank (select strategy from config).
         let scored: Vec<ScoredCandidate> = semantic_candidates;
-        Ok(score_and_rank(
-            &scored,
-            &bm25_scores,
-            &entity_boosts,
-            req.threshold,
-            req.top_k,
-            req.explain,
-        ))
+        let hits = match self.config.fusion_strategy {
+            crate::FusionStrategy::Additive => score_and_rank(
+                &scored,
+                &bm25_scores,
+                &entity_boosts,
+                req.threshold,
+                req.top_k,
+                req.explain,
+            ),
+            crate::FusionStrategy::RRF => crate::score::score_and_rank_rrf(
+                &scored,
+                &bm25_scores,
+                &entity_boosts,
+                req.threshold,
+                req.top_k,
+                req.explain,
+            ),
+        };
+        // Heat tracking: increment recall_count for returned hits.
+        let hit_ids: Vec<String> = hits.iter().map(|h| h.id.clone()).collect();
+        let _ = self.store.increment_recall_counts(&hit_ids);
+        Ok(hits)
     }
 
     // ----- admin ops --------------------------------------------------
@@ -549,6 +642,8 @@ impl CognitiveMemory {
             actor_id: None,
             role: None,
             memory_type: Some("procedural_memory"),
+            priority: Some(90),
+            scene: None,
             expiration_date: None,
             created_at: &now,
             updated_at: &now,
@@ -660,7 +755,10 @@ mod tests {
             extractor: Arc::new(StubExtractor(std::sync::Mutex::new(response.to_string()))),
             entity_nlp: Arc::new(DefaultEntities),
         };
-        let config = crate::CognitiveConfig { embedding_dim: dim };
+        let config = crate::CognitiveConfig {
+            embedding_dim: dim,
+            ..Default::default()
+        };
         CognitiveMemory::new(store, ports, config)
     }
 
