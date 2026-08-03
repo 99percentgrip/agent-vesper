@@ -199,6 +199,22 @@ impl CognitiveStore {
             CREATE INDEX IF NOT EXISTS idx_eml_memory ON entity_memory_links(memory_id);
             ",
         )?;
+        Self::migrate_columns(conn)?;
+        Ok(())
+    }
+
+    /// Add new columns to existing databases. SQLite ALTER TABLE ADD COLUMN
+    /// is idempotent via error-swallowing — if the column exists, the error
+    /// is silently ignored.
+    fn migrate_columns(conn: &Connection) -> Result<()> {
+        let migrations = [
+            "ALTER TABLE memories ADD COLUMN priority INTEGER",
+            "ALTER TABLE memories ADD COLUMN scene TEXT",
+            "ALTER TABLE memories ADD COLUMN recall_count INTEGER NOT NULL DEFAULT 0",
+        ];
+        for sql in &migrations {
+            let _ = conn.execute(sql, []);
+        }
         Ok(())
     }
 
