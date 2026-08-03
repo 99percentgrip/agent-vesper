@@ -1,39 +1,41 @@
+<div align="center">
+
 # Agent Vesper
 
-Agent Vesper is an active migration of the completed Native GLM ACP harness into
-a Rust-native, provider-neutral agent architecture. The frozen Python project at
-commit `bf4d4287e2e3320aa3f09015f678e6169d520045` is the behavioral reference.
+### A Rust-native AI agent with persistent cognitive memory, built for Z.ai GLM models.
 
-This repository contains the Rust-native Agent Vesper ACP harness, the Z.ai GLM
-provider, the session/runtime engine, the agent/tool loop, and the interactive
-TUI. The frozen Python project remains the behavioral reference for the native
-GLM command surface. Optional browser, web, vision, and live ACP permission
-integrations are implemented as explicit runtime capabilities rather than
-claimed as part of the provider-neutral core.
+[![CI](https://github.com/99percentgrip/agent-vesper/actions/workflows/ci.yml/badge.svg)](https://github.com/99percentgrip/agent-vesper/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/99percentgrip/agent-vesper)](https://github.com/99percentgrip/agent-vesper/releases)
+[![MSRV](https://img.shields.io/badge/MSRV-1.88-orange.svg)](https://blog.rust-lang.org/2025/06/23/Rust-1.88.0.html)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Crates](https://img.shields.io/badge/workspace-19%20crates-FF6B35.svg)](#architecture)
 
-All seven Stage 4.1 process-level blockers pass locally. The session writer,
-bounded search, memory, checkpoints, MCP/plugin, observability, agent-loop,
-permission, and TUI command surfaces are covered by the local verification
-gate. SQLite remains intentionally excluded. The five-target host matrix is
-validated by GitHub Actions rather than local execution.
+**[Install](#install)** · **[Features](#features)** · **[Quick Start](#quick-start)** · **[Commands](#slash-commands)** · **[Architecture](#architecture)**
 
-Stage 11b adds the `agent-vesper-tui` interactive frontend: a pure 4-phase
-Plan Mode state machine (NORMAL → PLANNING → REVIEW → EXECUTING), a
-provider-superpowers discovery layer, and a `ratatui`/`crossterm` event loop.
-ADR 0009 reconciles the GLM reasoning surface with the Python oracle into a
-single session-scoped `/thinking` dial (`{disabled, enabled, high, max}`) and
-threads a session reasoning override through the runtime into the GLM wire
-`reasoning_effort`. `/effort` is retired. Model-driven planning and bounded
-tool execution are available through the native harness capabilities.
+</div>
+
+---
+
+Agent Vesper is a **pure-Rust** AI agent harness that **remembers you across conversations**. It turns the Z.ai GLM model family into a personalized coding companion that learns your preferences, tracks your projects, and recalls relevant context before every reply — all running locally with zero external services.
+
+Built as a faithful native port of the [Native GLM ACP](https://github.com/99percentgrip/Native-GLM-ACP) Python oracle and enhanced with a [mem0](https://github.com/mem0ai/mem0)-equivalent V3 cognitive memory engine.
+
+## Features
+
+<table>
+<tr><td><b>🧠 Cognitive Memory</b></td><td>The agent extracts facts from every conversation, stores them in a local SQLite database, and <b>silently recalls relevant memories before each reply</b>. You never repeat yourself. Type <code>/remember</code> to add a fact manually, <code>/recall</code> to search, <code>/forget</code> to delete.</td></tr>
+<tr><td><b>📝 Rich Markdown TUI</b></td><td>Full-screen terminal UI with streaming reasoning traces, syntax-highlighted code blocks, styled conversation panels, and a live slash-command palette. Built on <code>ratatui</code> + <code>crossterm</code>.</td></tr>
+<tr><td><b>🎯 Plan Mode</b></td><td>A pure 4-phase state machine (<code>NORMAL → PLANNING → REVIEW → EXECUTING</code>) that lets the model author a plan, you review it, then it executes with bounded tool calls.</td></tr>
+<tr><td><b>🔧 87 Slash Commands</b></td><td>The complete Python oracle command surface — memory, skills, checkpoints, MCP, plugins, goals, awareness, sessions, export, CI status, and more.</td></tr>
+<tr><td><b>🔐 Provider-Neutral Auth</b></td><td>Credentials route through the provider layer — never hardcoded. OS keyring with owner-only Unix vault fallback. <code>/auth</code> force-rotates without restart.</td></tr>
+<tr><td><b>📦 Ed25519-Signed Plugins</b></td><td>Declarative plugin packages (permissions only — no executable code). Unsigned loading is structurally erased from <code>--release</code> builds via <code>#[cfg(debug_assertions)]</code>.</td></tr>
+<tr><td><b>🔄 Session Lineage</b></td><td>Workspace snapshots, rollback, session branching, and a bounded cron/export/clipboard/CI surface — all RAII-safe with strict <code>Drop</code> file-handle discipline.</td></tr>
+<tr><td><b>⚡ Hybrid Retrieval</b></td><td>Multi-signal scoring: <code>(semantic + BM25 + entity_boost) / max_possible</code>. Snowball lemmatization, FTS5 keyword search, entity-graph boosting with hyper-connection penalty.</td></tr>
+<tr><td><b>📊 Priority + Heat Tracking</b></td><td>Every memory gets a type (<code>persona</code>/<code>episodic</code>/<code>instruction</code>), priority (0-100), and scene label. Frequently-recalled memories accumulate heat and float to the top.</td></tr>
+<tr><td><b>🛡️ Secret-Safe</b></td><td>All error messages are sanitized. No file contents, API keys, paths, or memory text leak through <code>CognitionError</code>. <code>#![forbid(unsafe_code)]</code> enforced workspace-wide.</td></tr>
+</table>
 
 ## Install
-
-Agent Vesper ships two binaries: `agent-vesper-acp` (the ACP-protocol-v1 stdio
-server an editor drives) and `agent-vesper-tui` (the interactive terminal UI).
-The `registry/agent.json` manifest and the `scripts/install.sh` /
-`scripts/install.ps1` installers mirror the original Python `native-glm-acp`
-distribution so the compiled Rust binary registers as an ACP agent exactly
-like the source of truth.
 
 ### macOS / Linux
 
@@ -47,92 +49,195 @@ Or pin a version:
 AGENT_VESPER_VERSION=0.3.0 sh scripts/install.sh
 ```
 
-The installers install the ACP server used by Zed. The TUI is currently built
-from source with `cargo build --release -p agent-vesper-tui`.
-
-Then set your Z.ai credential (Agent Vesper resolves it from the environment;
-it keeps no on-disk credential store):
-
-```sh
-export ZAI_API_KEY="<your Z.ai key>"   # https://z.ai/
-agent-vesper-acp --version             # verify
-```
-
-To uninstall the ACP binary, bundle, and PATH entry created by the installer:
-
-```sh
-curl -fsSL https://github.com/99percentgrip/agent-vesper/raw/main/scripts/uninstall.sh | sh
-```
-
-The uninstaller preserves `ZAI_API_KEY` and any other provider-owned
-credentials. Custom locations can be selected with the same
-`AGENT_VESPER_INSTALL_DIR`, `AGENT_VESPER_BUNDLE_DIR`, and
-`AGENT_VESPER_SHELL_PROFILE` variables used by the installer.
-
 ### Windows (PowerShell)
 
 ```powershell
 irm https://github.com/99percentgrip/agent-vesper/raw/main/scripts/install.ps1 | iex
 ```
 
-Uninstall with:
+### Set your credential
 
-```powershell
-irm https://github.com/99percentgrip/agent-vesper/raw/main/scripts/uninstall.ps1 | iex
+```sh
+export ZAI_API_KEY="<your-key>"   # Get one at https://z.ai/
+agent-vesper-tui                   # Launch the TUI
 ```
-
-Both installers and uninstallers are reversible for their own artifacts, like
-the Native GLM ACP distribution. Agent Vesper does not currently install the
-TUI as a release artifact, and it intentionally does not offer a credential
-purge flag because credentials are environment-owned rather than installer-
-owned.
 
 ### Install in Zed
 
-Once `agent-vesper-acp` is on `PATH` and `ZAI_API_KEY` is exported, add it as
-a custom agent in Zed's `settings.json`:
+Add to Zed's `settings.json`:
 
 ```json
 {
   "agent_servers": {
     "agent-vesper": {
       "command": "agent-vesper-acp",
-      "env": { "ZAI_API_KEY": "<your Z.ai key>" }
+      "env": { "ZAI_API_KEY": "<your-key>" }
     }
   }
 }
 ```
 
-Restart Zed, then open the Agent Panel and select **Agent Vesper**. The binary
-speaks ACP protocol v1 over stdio; no child process or filesystem I/O is
-performed by the server itself.
+Restart Zed → Agent Panel → **Agent Vesper**.
 
-> The ACP Registry entry (`registry/agent.json`) is the publish path for
-> one-click discovery. Pushing a matching `v<version>` tag runs the release
-> workflow, builds the five target archives, emits SHA-256 files, and publishes
-> the GitHub Release assets consumed by the manifest and installers.
+### Uninstall
 
-## Local verification
+```sh
+# macOS / Linux
+curl -fsSL https://github.com/99percentgrip/agent-vesper/raw/main/scripts/uninstall.sh | sh
 
-The pinned development toolchain is installed automatically by Rustup.
-
-```bash
-cargo xtask verify
-cargo xtask msrv
-cargo xtask fixtures coverage --stage 2
-cargo xtask fixtures coverage --stage 3
-cargo xtask fixtures coverage --stage 4
-cargo xtask fixtures coverage --stage 5
-cargo xtask contracts verify
-cargo xtask provider glm verify
-cargo xtask runtime verify
-cargo xtask acp verify
-cargo xtask sessions verify
+# Windows
+irm https://github.com/99percentgrip/agent-vesper/raw/main/scripts/uninstall.ps1 | iex
 ```
 
-The first command runs formatting, Clippy, tests, fixture validation/index
-verification, and architecture rules. The MSRV command requires the Rust 1.88.0
-toolchain. See [migration status](docs/migration-status.md), [architecture](docs/architecture.md),
-and [contributing](CONTRIBUTING.md).
+Credentials are never touched by the uninstaller.
 
-No runtime performance claim is made at this stage.
+## Quick Start
+
+```sh
+# 1. Launch the TUI
+agent-vesper-tui
+
+# 2. Teach it who you are
+/remember I'm Alex, a Rust developer working on Agent Vesper
+
+# 3. Teach it your preferences
+/remember I prefer conventional commits and dislike unwrapped unwrap() calls
+
+# 4. Ask a question — it already knows you
+What's the best way to handle errors in my codebase?
+
+# 5. Search its memory
+/recall error handling
+
+# 6. Check what it knows about you
+/recall preferences
+```
+
+The agent silently recalls relevant memories before every reply. You don't need to repeat context — it already knows.
+
+## Slash Commands
+
+| Command | Description |
+|---|---|
+| `/remember <text>` | Add a fact to the cognitive memory store |
+| `/recall <query>` | Search the cognitive memory store |
+| `/forget <id>` | Delete a cognitive memory by ID |
+| `/memory [query]` | List project-local memory entries |
+| `/goal <text>` | Set a persistent goal |
+| `/skills` | List learned skills |
+| `/profile` | Show approved user-profile preferences |
+| `/awareness` | Show live epistemic state |
+| `/checkpoint [label]` | Capture a workspace snapshot |
+| `/rollback <id>` | Restore a checkpoint |
+| `/sessions` | Search past sessions |
+| `/mcp [list\|add\|remove\|tools]` | Manage MCP servers |
+| `/plugins [list\|verify\|load\|trust]` | Manage signed plugins |
+| `/thinking <level>` | Set reasoning depth (disabled/enabled/high/max) |
+| `/model <name>` | Switch the active model |
+| `/plan <coding\|standard\|bigmodel>` | Select API plan |
+| `/compact [N]` | Compact older context |
+| `/export [md\|json]` | Export the current session |
+| `/help` | Show the full command reference |
+
+**87 commands total** — type `/help` in the TUI for the complete list.
+
+## Configuration
+
+All configurable from the TUI — no restart needed:
+
+| Option | Values | Description |
+|---|---|---|
+| **Model** | GLM-5.2, GLM-5-Turbo, GLM-4.7, GLM-4.6 (+ vision models) | Model list syncs to the selected API plan |
+| **Reasoning** | Off, Enabled, High, Max | Session-scoped reasoning depth |
+| **API Plan** | Coding, Standard, BigModel (CN) | Switch endpoints |
+| **Permissions** | Ask, Read Only, Bypass | Gate destructive tools |
+| **Generation** | Balanced, Precise, Exploratory | Temperature / sampling strategy |
+
+### Cognitive Memory Configuration
+
+| Env Var | Default | Description |
+|---|---|---|
+| `AGENT_VESPER_COGNITION_ROOT` | `.agent-vesper/cognition/` | SQLite database location |
+| `AGENT_VESPER_COGNITION_USER_ID` | `local` | Scope identifier for memory partitioning |
+| `AGENT_VESPER_COGNITION_MODEL` | `glm-4.6` | Extraction LLM model |
+| `AGENT_VESPER_COGNITION_EMBEDDING_API` | (local hash) | Set to `bigmodel` for neural embeddings (requires BigModel CN JWT auth) |
+
+## Architecture
+
+Agent Vesper is a **19-crate Rust workspace** with strict dependency boundaries enforced by `cargo xtask architecture`:
+
+```
+apps/
+├── agent-vesper-acp/     ACP protocol-v1 stdio server (for Zed/editors)
+├── agent-vesper-tui/     Interactive terminal UI (ratatui + crossterm)
+
+crates/
+├── vesper-cognition/     mem0 V3 cognitive memory engine (SQLite + FTS5 + entity graph)
+├── vesper-memory/        Durable memory graph, skills, profile, awareness ledger
+├── vesper-agent/         Multi-turn tool-executing agent loop (Tier C)
+├── vesper-runtime/       Provider-neutral session actors + reasoning dial
+├── vesper-provider-glm/  Z.ai GLM provider adapter (auth, catalog, SSE, retry)
+├── vesper-mcp/           MCP stdio client + Ed25519-signed plugin loader
+├── vesper-checkpoints/   Workspace snapshots, rollback, session lineage
+├── vesper-sessions/      Transactional session writer + read-only discovery
+├── vesper-acp/           Official-SDK ACP protocol adapter
+├── vesper-domain/        Provider-neutral values and events
+├── vesper-security/      Secret-safe primitives, path confinement
+├── vesper-auth/          OS credential manager + Unix vault fallback
+├── vesper-config/        Platform paths, profiles, typed configuration
+├── vesper-policy/        Pure permission and policy decisions
+├── vesper-harness/       Shared hosted Python-oracle tool services
+├── vesper-observability/ Secret-safe trajectory recording
+├── vesper-provider-synthetic/  Deterministic reference provider
+└── vesper-testkit/       Synthetic read-store / no-write helpers
+```
+
+**Key principles:**
+- `#![forbid(unsafe_code)]` enforced workspace-wide
+- MSRV 1.88 (tested in CI)
+- No external services required (SQLite embedded, local hash embedder by default)
+- Provider-neutral trait ports — adding a 2nd provider needs zero TUI edits
+
+## Cognitive Memory Pipeline
+
+The memory engine implements a faithful port of mem0's V3 "April 2026" algorithm:
+
+```
+User says something
+  → LLM extracts atomic facts (single call, JSON output)
+    → Facts get type (persona/episodic/instruction) + priority (0-100) + scene label
+      → MD5 hash dedup drops exact duplicates
+        → Entities extracted + linked to memories (semantic dedup ≥ 0.95)
+          → Stored in SQLite with FTS5 BM25 index
+            → On next prompt: hybrid search recalls top-5 relevant memories
+              → Silently injected into the user message before the provider call
+```
+
+**Optional enhancements (TencentDB Agent Memory-inspired):**
+- Conflict detection (store/skip classification via second LLM call)
+- RRF fusion (Reciprocal Rank Fusion as alternative to additive scoring)
+- Both disabled by default — enable via `CognitiveConfig`
+
+## Local Verification
+
+```sh
+cargo xtask verify          # fmt + clippy -D warnings + 655 tests + architecture
+cargo xtask architecture    # dependency-boundary validation (22 packages)
+cargo xtask msrv            # Rust 1.88 compatibility check
+```
+
+See [migration status](docs/migration-status.md), [architecture](docs/architecture.md), and [ADRs](docs/adr/).
+
+## License
+
+Apache-2.0
+
+---
+
+<div align="center">
+
+**[Install](#install)** · **[Features](#features)** · **[Commands](#slash-commands)** · **[Architecture](#architecture)**
+
+Agent Vesper · [99percentgrip](https://github.com/99percentgrip) · Apache-2.0
+
+</div>
