@@ -37,6 +37,7 @@
 //! `cargo xtask architecture`).
 
 mod bm25;
+mod embedder;
 mod error;
 mod extract;
 mod filters;
@@ -56,6 +57,7 @@ pub mod assets {
 }
 
 pub use bm25::{ENTITY_BOOST_WEIGHT, get_bm25_params, normalize_bm25};
+pub use embedder::LocalHashEmbedder;
 pub use error::{CognitionError, Result};
 pub use extract::{ExtractedMemory, extract_json, parse_extraction_response, remove_code_blocks};
 pub use filters::{FieldOp, FilterDsl};
