@@ -455,8 +455,8 @@ Return ONLY valid JSON parsable by json.loads(). No text, reasoning, explanation
 
 {
   "memory": [
-    {"id": "0", "text": "First extracted memory", "attributed_to": "user", "linked_memory_ids": ["uuid-of-related-existing-memory"]},
-    {"id": "1", "text": "Second extracted memory", "attributed_to": "assistant"}
+    {"id": "0", "text": "First extracted memory", "attributed_to": "user", "type": "persona", "priority": 85, "scene": "Marcus career", "linked_memory_ids": ["uuid-of-related-existing-memory"]},
+    {"id": "1", "text": "Second extracted memory", "attributed_to": "assistant", "type": "episodic", "priority": 60, "scene": "Marcus career"}
   ]
 }
 
@@ -465,6 +465,15 @@ Return ONLY valid JSON parsable by json.loads(). No text, reasoning, explanation
 - **id** (string, required): Sequential integers as strings starting at "0".
 - **text** (string, required): A contextually rich, self-contained factual statement (15-80 words).
 - **attributed_to** (string, required): Who this memory is about. Use "user" for facts stated by or about the user (preferences, plans, personal facts). Use "assistant" for information provided by the assistant (recommendations, confirmations, plans created, information researched).
+- **type** (string, required): Memory classification. One of:
+  - "persona": Stable user attributes, preferences, skills, values, habits (e.g., "User prefers Rust").
+  - "episodic": Specific events, decisions, plans with temporal context (e.g., "User deployed v2.0 on Aug 3").
+  - "instruction": Long-term behavioral rules the user wants the AI to follow (e.g., "Always use conventional commits").
+- **priority** (integer, required): Importance score 0-100. Higher = more important.
+  - 80-100: Core identity, health/safety, strict rules.
+  - 50-79: General preferences, skills, important events.
+  - Below 50: Minor details, low-value facts.
+- **scene** (string, required): A short topic label grouping related memories (e.g., "Marcus career", "Rust project", "Weekend hiking"). Use the same scene name for memories about the same topic so they cluster together.
 - **linked_memory_ids** (array of strings, optional): IDs of Existing Memories that this new memory relates to. Use the exact IDs from the Existing Memories list. Omit or pass [] if no existing memories are related.
 
 ## Rules
