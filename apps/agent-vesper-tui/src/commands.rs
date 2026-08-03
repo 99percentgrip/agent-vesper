@@ -167,6 +167,12 @@ pub enum CommandOutcome {
     /// `pending_checkpoint_op`).
     Mcp(McpOp),
 
+    // === Phase 11 (ADR 0015 — Stage 16) — cognitive-memory commands ===
+    /// A cognitive-memory command (`/remember`, `/recall`, `/forget`)
+    /// resolved to a structured [`CognitionOp`] that the binary will
+    /// execute against the durable [`vesper_cognition::CognitiveMemory`].
+    Cognition(CognitionOp),
+
     /// Quit/exit requested.
     Quit,
     /// Unknown command or invalid argument; the message is shown to the user.
@@ -436,6 +442,29 @@ impl McpOp {
 /// oracle `LOCAL_COMMANDS` surface (80 commands). Each command is either
 /// implemented through a typed immediate or pending operation. No oracle
 /// command falls through to "Unknown command".
+/// Phase 11 (ADR 0015 — Stage 16): one structured operation against the
+/// cognitive-memory engine backed by [`vesper_cognition::CognitiveMemory`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CognitionOp {
+    /// `/remember <text>` — force an extraction + injection into the cognitive store.
+    Remember { text: String },
+    /// `/recall <query>` — manually search the cognitive store.
+    Recall { query: String },
+    /// `/forget <id>` — delete a specific memory by its ID.
+    Forget { id: String },
+}
+
+impl CognitionOp {
+    #[must_use]
+    pub fn command_name(&self) -> &'static str {
+        match self {
+            Self::Remember { .. } => "remember",
+            Self::Recall { .. } => "recall",
+            Self::Forget { .. } => "forget",
+        }
+    }
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct CommandRegistry {
     /// Known command names in stable registration order. The order matches
@@ -1037,6 +1066,36 @@ impl CommandRegistry {
                 }
             }
 
+            // === Phase 11 (ADR 0015 — Stage 16) — cognitive-memory commands ===
+            "remember" => {
+                let text = argument.trim();
+                if text.is_empty() {
+                    CommandOutcome::Error("Usage: /remember <text to remember>".into())
+                } else {
+                    CommandOutcome::Cognition(CognitionOp::Remember {
+                        text: text.to_string(),
+                    })
+                }
+            }
+            "recall" => {
+                let query = argument.trim();
+                if query.is_empty() {
+                    CommandOutcome::Error("Usage: /recall <search query>".into())
+                } else {
+                    CommandOutcome::Cognition(CognitionOp::Recall {
+                        query: query.to_string(),
+                    })
+                }
+            }
+            "forget" => {
+                let id = argument.trim();
+                if id.is_empty() {
+                    CommandOutcome::Error("Usage: /forget <memory-id>".into())
+                } else {
+                    CommandOutcome::Cognition(CognitionOp::Forget { id: id.to_string() })
+                }
+            }
+
             // A registered command without a concrete route is a parity bug,
             // not a user-visible feature state. Fail closed so tests and the
             // audit surface expose the missing implementation immediately.
@@ -1193,6 +1252,10 @@ impl CommandRegistry {
         buffer.push_str("  /observability      show local reliability metrics\n");
         buffer.push_str("  /curator            run deterministic skill maintenance\n");
         buffer.push_str("  /journey            show the memory/skill/profile timeline\n");
+        buffer.push_str("\nCognitive memory (durable):\n");
+        buffer.push_str("  /remember <text>    add a fact to the cognitive memory store\n");
+        buffer.push_str("  /recall <query>     search the cognitive memory store\n");
+        buffer.push_str("  /forget <id>        delete a cognitive memory by ID\n");
         buffer.push_str("\nSessions, checkpoints & export (durable):\n");
         buffer.push_str("  /sessions-new [name] create a session\n");
         buffer.push_str("  /sessions           list sessions\n");
@@ -1434,6 +1497,9 @@ const ORACLE_COMMAND_SURFACE: &[OracleCommandEntry] = &[
     OracleCommandEntry { name: "lineage",           description: "Show the session-lineage chain" },
     OracleCommandEntry { name: "mcp",               description: "Manage MCP server connections" },
     OracleCommandEntry { name: "ci",                description: "Show CI status for the current branch" },
+    OracleCommandEntry { name: "remember",          description: "Manually add a fact to the cognitive memory store" },
+    OracleCommandEntry { name: "recall",            description: "Search the cognitive memory store for relevant context" },
+    OracleCommandEntry { name: "forget",            description: "Delete a cognitive memory by its ID" },
     OracleCommandEntry { name: "version",           description: "Show package, Python, and platform version info" },
     OracleCommandEntry { name: "help",              description: "Show the full harness command reference" },
     OracleCommandEntry { name: "copy",              description: "Copy the last response to clipboard" },
@@ -1914,17 +1980,29 @@ mod tests {
         // Genuinely unknown commands are still unknown.
         assert!(!registry.contains("frobnicate"));
         // The full surface count: 80 oracle command names (including the
-        // distinct `/export last` route) + 4 Vesper-native (approve, cancel,
-        // quit, auth) = 84 total.
+        // distinct `/export last` route) + 7 Vesper-native (approve, cancel,
+        // quit, auth, remember, recall, forget) = 87 total.
         assert!(registry.contains("export last"));
         assert!(
             registry.contains("auth"),
             "Vesper-native /auth must be registered"
         );
+        assert!(
+            registry.contains("remember"),
+            "Stage 16 Vesper-native /remember must be registered"
+        );
+        assert!(
+            registry.contains("recall"),
+            "Stage 16 Vesper-native /recall must be registered"
+        );
+        assert!(
+            registry.contains("forget"),
+            "Stage 16 Vesper-native /forget must be registered"
+        );
         assert_eq!(
             registry.names().len(),
-            84,
-            "Phase 7 parity: 80 oracle commands + 4 Vesper-native = 84 total"
+            87,
+            "Phase 7 parity: 80 oracle commands + 7 Vesper-native = 87 total"
         );
     }
 

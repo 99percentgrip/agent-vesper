@@ -222,6 +222,7 @@ async fn run() -> Result<(), String> {
         &runtime_session_id,
         &agent,
         &memory_stores,
+        &cognition_bundle,
         &mut checkpoint_stores,
         &mut mcp_stores,
     )
@@ -571,6 +572,7 @@ async fn drive_loop(
     runtime_session_id: &SessionId,
     agent: &Arc<AgentLoop>,
     memory_stores: &MemoryStores,
+    cognition_bundle: &CognitionBundle,
     checkpoint_stores: &mut CheckpointStores,
     mcp_stores: &mut McpStores,
 ) -> Result<(), String> {
@@ -943,8 +945,13 @@ async fn drive_loop(
                         std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
                     match vesper_agent::expand_references(&root, &text) {
                         Ok(expanded) => {
-                            if let Err(error) = spawn_agent_turn(agent, expanded, session, surface)
-                            {
+                            if let Err(error) = spawn_agent_turn(
+                                agent,
+                                expanded,
+                                session,
+                                surface,
+                                cognition_bundle,
+                            ) {
                                 session.state.status = Some(error);
                             }
                         }
@@ -975,6 +982,10 @@ async fn drive_loop(
                 // against the durable vesper_mcp stores.
                 if let Some(op) = session.state.pending_mcp_op.take() {
                     drain_mcp_op(op, mcp_stores, &mut session.state);
+                }
+                // Phase 11 (ADR 0015 — Stage 16): drain pending cognitive-memory op.
+                if let Some(op) = session.state.pending_cognition_op.take() {
+                    drain_cognition_op(op, cognition_bundle, &mut session.state);
                 }
             }
             KeyCode::Backspace => {
@@ -2440,6 +2451,7 @@ fn spawn_agent_turn(
     user_text: String,
     session: &mut TuiSession,
     surface: &ProviderSuperpowerSurface,
+    cognition: &CognitionBundle,
 ) -> Result<(), String> {
     let config = turn_configuration(agent, &session.state, surface)?;
     if !session.pending_images.is_empty() {
@@ -2460,6 +2472,15 @@ fn spawn_agent_turn(
         .map(|image| image.descriptor.clone())
         .collect::<Vec<_>>();
     let user = build_user_message_with_images(&user_text, images);
+    // Pre-dispatch cognitive context injection (ADR 0015): silently append
+    // auto-recalled memories to the user message before the provider call.
+    // The original_user restoration below strips it from persisted history.
+    let mut user = user;
+    if let Some(context) = cognitive_context_for_prompt(cognition, &user_text)
+        && let Ok(extra) = vesper_domain::ContentText::new(context)
+    {
+        user.content.push(vesper_domain::ContentPart::Text(extra));
+    }
     session.conversation.push(user.clone());
     let history = session.conversation.clone();
     let mixture_enabled =
@@ -6777,6 +6798,162 @@ fn drain_mcp_op(
             }
         }
     }
+}
+
+/// Phase 11 (ADR 0015 — Stage 16): drain a pending cognitive-memory op
+/// against the durable `vesper_cognition::CognitiveMemory` engine. Mirrors
+/// the `drain_memory_op` / `drain_mcp_op` pattern. Operations involve
+/// blocking LLM/embedding calls — the UI freezes briefly while the HTTP
+/// round-trip completes (acceptable for an explicit slash command).
+fn drain_cognition_op(
+    op: agent_vesper_tui::commands::CognitionOp,
+    bundle: &CognitionBundle,
+    state: &mut SessionState,
+) {
+    use agent_vesper_tui::commands::CognitionOp;
+    let Some(engine) = bundle.engine.as_ref() else {
+        state.transcript.push(format!(
+            "cognition: engine unavailable (no Zai credential or root {} could not be opened)",
+            bundle.root_display
+        ));
+        state.status = Some("cognitive memory is disabled.".into());
+        return;
+    };
+    let scope = vesper_cognition::Scope {
+        user_id: Some(
+            std::env::var("AGENT_VESPER_COGNITION_USER_ID").unwrap_or_else(|_| "local".into()),
+        ),
+        ..Default::default()
+    };
+    match op {
+        CognitionOp::Remember { text } => {
+            let msg = vesper_cognition::Message::user(&text);
+            let req = vesper_cognition::AddRequest {
+                messages: std::slice::from_ref(&msg),
+                scope: &scope,
+                extras: None,
+                expiration_date: None,
+                infer: true,
+                custom_instructions: None,
+                observation_date: None,
+            };
+            match engine.add(req) {
+                Ok(events) if !events.is_empty() => {
+                    let count = events.len();
+                    state.transcript.push(format!(
+                        "cognition: remembered {count} fact{} from your input",
+                        if count == 1 { "" } else { "s" }
+                    ));
+                    for evt in events.iter().take(10) {
+                        state.transcript.push(format!(
+                            "  [{}] {}",
+                            &evt.id[..8.min(evt.id.len())],
+                            evt.memory.chars().take(100).collect::<String>()
+                        ));
+                    }
+                }
+                Ok(_) => {
+                    state.transcript.push(
+                        "cognition: nothing new to remember (already known or no extractable facts)".into(),
+                    );
+                }
+                Err(err) => {
+                    state
+                        .transcript
+                        .push(format!("cognition: /remember failed: {err}"));
+                }
+            }
+            state.status = None;
+        }
+        CognitionOp::Recall { query } => {
+            let req = vesper_cognition::SearchRequest {
+                query: &query,
+                scope: &scope,
+                filters: None,
+                top_k: 10,
+                threshold: 0.05,
+                explain: false,
+                show_expired: false,
+            };
+            match engine.search(req) {
+                Ok(hits) if !hits.is_empty() => {
+                    let count = hits.len();
+                    state.transcript.push(format!(
+                        "cognition: {count} memor{} recalled for \"{query}\"",
+                        if count == 1 { "y" } else { "ies" }
+                    ));
+                    for hit in hits.iter().take(10) {
+                        state.transcript.push(format!(
+                            "  [{:.2}] {}",
+                            hit.score,
+                            hit.memory.chars().take(120).collect::<String>()
+                        ));
+                    }
+                }
+                Ok(_) => {
+                    state
+                        .transcript
+                        .push(format!("cognition: no memories match \"{query}\""));
+                }
+                Err(err) => {
+                    state
+                        .transcript
+                        .push(format!("cognition: /recall failed: {err}"));
+                }
+            }
+            state.status = None;
+        }
+        CognitionOp::Forget { id } => {
+            match engine.delete(&id) {
+                Ok(()) => {
+                    state
+                        .transcript
+                        .push(format!("cognition: deleted memory {id}"));
+                }
+                Err(err) => {
+                    state
+                        .transcript
+                        .push(format!("cognition: /forget failed: {err}"));
+                }
+            }
+            state.status = None;
+        }
+    }
+}
+
+/// Pre-dispatch cognitive context injection (ADR 0015 — Stage 16).
+/// Searches the cognitive-memory engine with the user prompt and formats
+/// the top hits as a bulleted context block. Returns `None` when the engine
+/// is unavailable or no hits are found. The caller appends the block to the
+/// user message content before sending to the provider; the persisted
+/// history is restored to the original text after the turn (silent).
+fn cognitive_context_for_prompt(bundle: &CognitionBundle, prompt: &str) -> Option<String> {
+    let engine = bundle.engine.as_ref()?;
+    let scope = vesper_cognition::Scope {
+        user_id: Some(
+            std::env::var("AGENT_VESPER_COGNITION_USER_ID").unwrap_or_else(|_| "local".into()),
+        ),
+        ..Default::default()
+    };
+    let req = vesper_cognition::SearchRequest {
+        query: prompt,
+        scope: &scope,
+        filters: None,
+        top_k: 5,
+        threshold: 0.15,
+        explain: false,
+        show_expired: false,
+    };
+    let hits = engine.search(req).ok()?;
+    if hits.is_empty() {
+        return None;
+    }
+    let mut block =
+        String::from("\n\n--- Relevant context from cognitive memory (auto-recalled):\n");
+    for hit in &hits {
+        block.push_str(&format!("- ({:.2}) {}\n", hit.score, hit.memory));
+    }
+    Some(block)
 }
 
 #[cfg(test)]

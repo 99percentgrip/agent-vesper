@@ -80,6 +80,9 @@ pub struct SessionState {
     /// `PluginLoader` / `TrustedPublishers` and drains this after
     /// dispatch; `None` means no MCP op is pending.
     pub pending_mcp_op: Option<crate::commands::McpOp>,
+    /// Phase 11 (ADR 0015 — Stage 16): a cognitive-memory command
+    /// resolved to a structured [`crate::commands::CognitionOp`].
+    pub pending_cognition_op: Option<crate::commands::CognitionOp>,
     /// Live execution controls used by both the picker UI and every agent turn.
     pub controls: SessionControls,
     /// Pending runtime mode synchronization after `/permission` or `/mode`.
@@ -314,6 +317,7 @@ fn apply_outcome(
         pending_memory_op,
         pending_checkpoint_op,
         pending_mcp_op,
+        pending_cognition_op,
         controls,
         pending_mode_update,
         task_plan: _,
@@ -735,6 +739,18 @@ fn apply_outcome(
             *pending_mcp_op = Some(op);
             *status = Some(format!(
                 "/{name}: reading/writing the MCP/plugins subsystem..."
+            ));
+        }
+
+        // === Phase 11 (ADR 0015 — Stage 16) — cognitive-memory commands ===
+        CommandOutcome::Cognition(op) => {
+            let name = op.command_name();
+            transcript.push(format!(
+                "cognition: /{name} accepted (executing against the cognitive-memory engine)"
+            ));
+            *pending_cognition_op = Some(op);
+            *status = Some(format!(
+                "/{name}: reading/writing the cognitive-memory store..."
             ));
         }
 
