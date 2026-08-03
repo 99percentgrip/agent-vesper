@@ -640,8 +640,8 @@ impl CognitiveStore {
     ) -> Result<()> {
         let conn = self.lock();
         let normalized = candidate.normalized();
-        // Exact-text dedup within scope.
-        let existing_id: Option<String> = conn
+        // Phase 1: exact-text dedup within scope.
+        let exact_id: Option<String> = conn
             .query_row(
                 "SELECT id FROM entities
                  WHERE data_normalized = ?1
@@ -652,7 +652,34 @@ impl CognitiveStore {
                 |row| row.get(0),
             )
             .optional()?;
-        let entity_id = match existing_id {
+
+        // Phase 2: semantic dedup (cosine >= 0.95). Mirrors mem0's
+        // `_upsert_entity` semantic_match check. Scans in-scope entities
+        // and finds the closest by cosine similarity.
+        let semantic_id: Option<String> = if exact_id.is_none() {
+            let (where_clause, bindings) = entity_scope_where(scope);
+            let sql = format!("SELECT e.id, e.embedding FROM entities e {where_clause}");
+            let mut stmt = conn.prepare(&sql)?;
+            let rows = stmt.query_map(rusqlite::params_from_iter(bindings.iter()), |row| {
+                let id: String = row.get(0)?;
+                let blob: Vec<u8> = row.get(1)?;
+                Ok((id, blob))
+            })?;
+            let mut best: Option<(String, f32)> = None;
+            for row in rows {
+                let (id, blob) = row?;
+                let existing_emb = blob_to_embed(&blob);
+                let sim = crate::score::cosine(embedding, &existing_emb);
+                if sim >= 0.95 && best.as_ref().is_none_or(|(_, s)| sim > *s) {
+                    best = Some((id, sim));
+                }
+            }
+            best.map(|(id, _)| id)
+        } else {
+            None
+        };
+
+        let entity_id = match exact_id.or(semantic_id) {
             Some(id) => id,
             None => {
                 let id = uuid_str();
