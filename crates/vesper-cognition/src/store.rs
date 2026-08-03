@@ -38,6 +38,9 @@ pub(crate) struct StoredMemory {
     pub actor_id: Option<String>,
     pub role: Option<String>,
     pub memory_type: Option<String>,
+    pub priority: Option<i32>,
+    pub scene: Option<String>,
+    pub recall_count: i32,
     pub expiration_date: Option<String>,
     pub created_at: String,
     pub updated_at: String,
@@ -144,6 +147,9 @@ impl CognitiveStore {
                 actor_id        TEXT,
                 role            TEXT,
                 memory_type     TEXT,
+                priority        INTEGER,
+                scene           TEXT,
+                recall_count    INTEGER NOT NULL DEFAULT 0,
                 expiration_date TEXT,
                 created_at      TEXT NOT NULL,
                 updated_at      TEXT NOT NULL,
@@ -267,8 +273,8 @@ impl CognitiveStore {
             "INSERT INTO memories (
                 id, data, hash, text_lemmatized, embedding, attributed_to,
                 user_id, agent_id, run_id, actor_id, role, memory_type,
-                expiration_date, created_at, updated_at, extras
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+                priority, scene, expiration_date, created_at, updated_at, extras
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
             params![
                 id,
                 record.data,
@@ -282,12 +288,29 @@ impl CognitiveStore {
                 record.actor_id,
                 record.role,
                 record.memory_type,
+                record.priority,
+                record.scene,
                 record.expiration_date,
                 record.created_at,
                 record.updated_at,
                 extras_json,
             ],
         )?;
+        Ok(())
+    }
+
+    /// Increment the recall_count for the given memory IDs (heat tracking).
+    pub(crate) fn increment_recall_counts(&self, memory_ids: &[String]) -> Result<()> {
+        if memory_ids.is_empty() {
+            return Ok(());
+        }
+        let conn = self.lock();
+        for id in memory_ids {
+            let _ = conn.execute(
+                "UPDATE memories SET recall_count = recall_count + 1 WHERE id = ?1",
+                params![id],
+            );
+        }
         Ok(())
     }
 
@@ -338,7 +361,7 @@ impl CognitiveStore {
         let sql = format!(
             "SELECT id, data, hash, text_lemmatized, embedding, attributed_to,
                     user_id, agent_id, run_id, actor_id, role, memory_type,
-                    expiration_date, created_at, updated_at, extras
+                    priority, scene, recall_count, expiration_date, created_at, updated_at, extras
              FROM memories {where_clause} ORDER BY created_at DESC LIMIT ?"
         );
         let mut all_bindings: Vec<Box<dyn rusqlite::ToSql>> = bindings;
@@ -433,6 +456,9 @@ impl CognitiveStore {
                 scope_user_id: m.scope.user_id.clone(),
                 scope_agent_id: m.scope.agent_id.clone(),
                 scope_run_id: m.scope.run_id.clone(),
+                priority: m.priority,
+                scene: m.scene.clone(),
+                recall_count: m.recall_count,
             })
             .collect()
     }
@@ -460,7 +486,7 @@ impl CognitiveStore {
         let conn = self.lock();
         let mut stmt = conn.prepare(
             "SELECT id, data, hash, text_lemmatized, attributed_to, user_id, agent_id,
-                    run_id, actor_id, role, memory_type, expiration_date, created_at,
+                    run_id, actor_id, role, memory_type, priority, scene, recall_count, expiration_date, created_at,
                     updated_at, extras
              FROM memories WHERE id = ?",
         )?;
@@ -538,7 +564,7 @@ impl CognitiveStore {
         let (where_clause, bindings) = scope_where(scope, show_expired);
         let sql = format!(
             "SELECT id, data, hash, text_lemmatized, attributed_to, user_id, agent_id,
-                    run_id, actor_id, role, memory_type, expiration_date, created_at,
+                    run_id, actor_id, role, memory_type, priority, scene, recall_count, expiration_date, created_at,
                     updated_at, extras
              FROM memories {where_clause}
              ORDER BY created_at DESC LIMIT ?"
@@ -808,6 +834,8 @@ pub(crate) struct NewMemory<'a> {
     pub actor_id: Option<&'a str>,
     pub role: Option<&'a str>,
     pub memory_type: Option<&'a str>,
+    pub priority: Option<i32>,
+    pub scene: Option<&'a str>,
     pub expiration_date: Option<&'a str>,
     pub created_at: &'a str,
     pub updated_at: &'a str,
@@ -830,10 +858,13 @@ fn row_to_memory(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredMemory> {
     let actor_id: Option<String> = row.get(9)?;
     let role: Option<String> = row.get(10)?;
     let memory_type: Option<String> = row.get(11)?;
-    let expiration_date: Option<String> = row.get(12)?;
-    let created_at: String = row.get(13)?;
-    let updated_at: String = row.get(14)?;
-    let extras_json: String = row.get(15)?;
+    let priority: Option<i32> = row.get(12)?;
+    let scene: Option<String> = row.get(13)?;
+    let recall_count: i32 = row.get::<_, Option<i32>>(14).ok().flatten().unwrap_or(0);
+    let expiration_date: Option<String> = row.get(15)?;
+    let created_at: String = row.get(16)?;
+    let updated_at: String = row.get(17)?;
+    let extras_json: String = row.get(18)?;
     let extras: std::collections::BTreeMap<String, Value> =
         serde_json::from_str(&extras_json).unwrap_or_default();
     Ok(StoredMemory {
@@ -846,6 +877,9 @@ fn row_to_memory(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredMemory> {
         actor_id,
         role,
         memory_type,
+        priority,
+        scene,
+        recall_count,
         expiration_date,
         created_at,
         updated_at,
@@ -872,10 +906,13 @@ fn row_to_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<MemoryRecord> {
     let actor_id: Option<String> = row.get(8)?;
     let role: Option<String> = row.get(9)?;
     let memory_type: Option<String> = row.get(10)?;
-    let expiration_date: Option<String> = row.get(11)?;
-    let created_at: String = row.get(12)?;
-    let updated_at: String = row.get(13)?;
-    let extras_json: String = row.get(14)?;
+    let priority: Option<i32> = row.get(11)?;
+    let scene: Option<String> = row.get(12)?;
+    let recall_count: i32 = row.get::<_, Option<i32>>(13).ok().flatten().unwrap_or(0);
+    let expiration_date: Option<String> = row.get(14)?;
+    let created_at: String = row.get(15)?;
+    let updated_at: String = row.get(16)?;
+    let extras_json: String = row.get(17)?;
     let extras: std::collections::BTreeMap<String, Value> =
         serde_json::from_str(&extras_json).unwrap_or_default();
     Ok(MemoryRecord {
@@ -892,6 +929,9 @@ fn row_to_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<MemoryRecord> {
         actor_id,
         role,
         memory_type,
+        priority,
+        scene,
+        recall_count,
         expiration_date,
         created_at,
         updated_at,
@@ -1113,6 +1153,8 @@ mod tests {
             actor_id: None,
             role: None,
             memory_type: None,
+            priority: None,
+            scene: None,
             expiration_date: None,
             created_at: &now,
             updated_at: &now,
@@ -1147,6 +1189,8 @@ mod tests {
                 actor_id: None,
                 role: None,
                 memory_type: None,
+                priority: None,
+                scene: None,
                 expiration_date: None,
                 created_at: &now,
                 updated_at: &now,

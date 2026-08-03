@@ -25,6 +25,15 @@ pub struct ExtractedMemory {
     /// Per ADR 0015 these are NOT persisted in OSS V3 (matches mem0).
     #[serde(default)]
     pub linked_memory_ids: Vec<String>,
+    /// Memory classification: "persona" | "episodic" | "instruction" | "procedural".
+    #[serde(default)]
+    pub memory_type: Option<String>,
+    /// Priority 0-100 (higher = more important). Low-priority memories can be pruned.
+    #[serde(default)]
+    pub priority: Option<i32>,
+    /// Scene/topic name for grouping related memories.
+    #[serde(default)]
+    pub scene: Option<String>,
 }
 
 #[derive(Deserialize)]

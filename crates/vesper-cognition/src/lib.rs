@@ -74,16 +74,38 @@ pub use types::{
 };
 
 /// Engine configuration.
-#[derive(Debug, Clone, Copy)]
+/// Fusion strategy for hybrid retrieval.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(clippy::upper_case_acronyms)]
+pub enum FusionStrategy {
+    /// Additive: `(semantic + bm25 + entity_boost) / max_possible` (mem0 V3 default).
+    Additive,
+    /// Reciprocal Rank Fusion: `sum(1/(60 + rank + 1))` across ranked lists.
+    RRF,
+}
+
 pub struct CognitiveConfig {
-    /// Required embedding vector dimension. Defaults to 1024 (Zai `embedding-3`).
+    /// Required embedding vector dimension. Defaults to 1024.
     pub embedding_dim: usize,
+    /// Enable the optional conflict-detection LLM pass after extraction.
+    /// When enabled, a second LLM call compares new memories against existing
+    /// ones with store/skip/update/merge actions (TencentDB-inspired).
+    /// Default: false (preserves V3 ADD-only behavior).
+    pub enable_conflict_detection: bool,
+    /// Fusion strategy for hybrid retrieval scoring.
+    pub fusion_strategy: FusionStrategy,
+    /// Maximum tokens (approx ~4 chars/token) for pre-dispatch context injection.
+    /// Default: 2000 (≈8000 chars).
+    pub max_injection_tokens: usize,
 }
 
 impl Default for CognitiveConfig {
     fn default() -> Self {
         Self {
             embedding_dim: 1024,
+            enable_conflict_detection: false,
+            fusion_strategy: FusionStrategy::Additive,
+            max_injection_tokens: 2000,
         }
     }
 }

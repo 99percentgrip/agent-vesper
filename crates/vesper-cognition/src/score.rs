@@ -54,6 +54,9 @@ pub(crate) struct ScoredCandidate {
     pub scope_user_id: Option<String>,
     pub scope_agent_id: Option<String>,
     pub scope_run_id: Option<String>,
+    pub priority: Option<i32>,
+    pub scene: Option<String>,
+    pub recall_count: i32,
 }
 
 /// Score and rank candidates additively, returning top-k `MemoryHit`s.
@@ -88,12 +91,44 @@ pub(crate) fn score_and_rank(
         let bm25 = bm25_scores.get(&cand.memory_id).copied().unwrap_or(0.0);
         let entity = entity_boosts.get(&cand.memory_id).copied().unwrap_or(0.0);
         let raw = cand.semantic_score + bm25 + entity;
-        let combined = (raw / max_possible).min(1.0);
+        let mut combined = (raw / max_possible).min(1.0);
+        // Priority boost: high-priority memories get up to +10% score.
+        if let Some(priority) = cand.priority
+            && priority > 50
+        {
+            combined *= 1.0 + (priority as f32 - 50.0) / 500.0;
+        }
         scored.push((combined, cand, bm25, entity, raw));
     }
 
-    // Stable sort by combined score descending.
-    scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    // Sort by combined score descending; recall_count breaks ties (hotter wins).
+    scored.sort_by(|a, b| {
+        b.0.partial_cmp(&a.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| b.1.recall_count.cmp(&a.1.recall_count))
+    });
+
+    // Scene-coherent boost: memories sharing a scene with a top-3 result get +5%.
+    let top_scenes: std::collections::HashSet<&str> = scored
+        .iter()
+        .take(3)
+        .filter_map(|(_, c, _, _, _)| c.scene.as_deref())
+        .collect();
+    if !top_scenes.is_empty() {
+        for (combined, cand, _, _, _) in scored.iter_mut() {
+            if let Some(scene) = &cand.scene
+                && top_scenes.contains(scene.as_str())
+            {
+                *combined = (*combined * 1.05).min(1.0);
+            }
+        }
+        // Re-sort after scene boost.
+        scored.sort_by(|a, b| {
+            b.0.partial_cmp(&a.0)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| b.1.recall_count.cmp(&a.1.recall_count))
+        });
+    }
 
     scored
         .into_iter()
@@ -114,6 +149,9 @@ pub(crate) fn score_and_rank(
                 agent_id: cand.scope_agent_id.clone(),
                 run_id: cand.scope_run_id.clone(),
             },
+            memory_type: None,
+            priority: cand.priority,
+            scene: cand.scene.clone(),
             extras: cand.extras.clone(),
             score_details: explain.then_some(ScoreBreakdown {
                 semantic_score: cand.semantic_score,
@@ -145,6 +183,95 @@ pub fn entity_boost(similarity: f32, num_linked: usize) -> f32 {
     similarity * ENTITY_BOOST_WEIGHT * memory_count_weight
 }
 
+/// Reciprocal Rank Fusion (RRF): merges multiple ranked lists by
+/// `score = sum(1/(k + rank + 1))`. Items appearing in multiple lists
+/// accumulate scores. The standard RRF constant k=60 from the original paper.
+pub fn score_and_rank_rrf(
+    semantic_results: &[ScoredCandidate],
+    bm25_scores: &HashMap<String, f32>,
+    entity_boosts: &HashMap<String, f32>,
+    threshold: f32,
+    top_k: usize,
+    _explain: bool,
+) -> Vec<MemoryHit> {
+    const RRF_K: f32 = 60.0;
+
+    // Filter by threshold first (same as additive).
+    let filtered: Vec<&ScoredCandidate> = semantic_results
+        .iter()
+        .filter(|c| c.semantic_score >= threshold)
+        .collect();
+
+    // Build ranked lists by raw score.
+    let mut sem_ranked: Vec<&ScoredCandidate> = filtered.clone();
+    sem_ranked.sort_by(|a, b| {
+        b.semantic_score
+            .partial_cmp(&a.semantic_score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    let mut bm25_ranked: Vec<(&str, f32)> =
+        bm25_scores.iter().map(|(k, v)| (k.as_str(), *v)).collect();
+    bm25_ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    let mut ent_ranked: Vec<(&str, f32)> = entity_boosts
+        .iter()
+        .map(|(k, v)| (k.as_str(), *v))
+        .collect();
+    ent_ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    // Compute RRF scores.
+    let mut rrf_scores: HashMap<String, f32> = HashMap::new();
+    for (rank, cand) in sem_ranked.iter().enumerate() {
+        *rrf_scores.entry(cand.memory_id.clone()).or_insert(0.0) +=
+            1.0 / (RRF_K + rank as f32 + 1.0);
+    }
+    for (rank, (id, _)) in bm25_ranked.iter().enumerate() {
+        *rrf_scores.entry(id.to_string()).or_insert(0.0) += 1.0 / (RRF_K + rank as f32 + 1.0);
+    }
+    for (rank, (id, _)) in ent_ranked.iter().enumerate() {
+        *rrf_scores.entry(id.to_string()).or_insert(0.0) += 1.0 / (RRF_K + rank as f32 + 1.0);
+    }
+
+    // Sort by RRF score, tie-break by recall_count.
+    let mut scored: Vec<(&ScoredCandidate, f32)> = filtered
+        .iter()
+        .filter_map(|c| rrf_scores.get(&c.memory_id).map(|s| (*c, *s)))
+        .collect();
+    scored.sort_by(|a, b| {
+        b.1.partial_cmp(&a.1)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| b.0.recall_count.cmp(&a.0.recall_count))
+    });
+
+    scored
+        .into_iter()
+        .take(top_k)
+        .map(|(cand, rrf_score)| MemoryHit {
+            id: cand.memory_id.clone(),
+            memory: cand.payload_data.clone(),
+            score: rrf_score,
+            hash: cand.hash.clone(),
+            created_at: cand.created_at.clone(),
+            updated_at: cand.updated_at.clone(),
+            attributed_to: cand
+                .attributed_to
+                .as_deref()
+                .and_then(crate::types::Attribution::parse),
+            scope: crate::types::Scope {
+                user_id: cand.scope_user_id.clone(),
+                agent_id: cand.scope_agent_id.clone(),
+                run_id: cand.scope_run_id.clone(),
+            },
+            memory_type: None,
+            priority: cand.priority,
+            scene: cand.scene.clone(),
+            extras: cand.extras.clone(),
+            score_details: None,
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -163,6 +290,9 @@ mod tests {
             scope_user_id: None,
             scope_agent_id: None,
             scope_run_id: None,
+            priority: None,
+            scene: None,
+            recall_count: 0,
         }
     }
 
