@@ -329,16 +329,24 @@ fn snapshot<'a>(roots: impl IntoIterator<Item = &'a Path>) -> BTreeMap<PathBuf, 
     for (root_index, root) in roots.into_iter().enumerate() {
         for entry in fs::read_dir(root).unwrap() {
             let entry = entry.unwrap();
+            // Read content FIRST, then stat. On APFS (macOS Apple Silicon)
+            // an in-flight atomic-replace window can report metadata.len()==0
+            // while the kernel page cache still serves the previous content,
+            // producing a false "disk changed" mismatch (same SHA, different
+            // bytes). Deriving `bytes` from the same buffer that produced the
+            // SHA guarantees the two fields stay consistent under concurrent
+            // filesystem activity.
+            let content = fs::read(entry.path()).unwrap();
             let metadata = entry.metadata().unwrap();
             assert!(metadata.is_file());
-            let bytes = fs::read(entry.path()).unwrap();
-            let digest: [u8; 32] = Sha256::digest(&bytes).into();
+            let bytes_len = content.len() as u64;
+            let digest: [u8; 32] = Sha256::digest(&content).into();
             result.insert(
                 PathBuf::from(root_index.to_string())
                     .join(entry.path().strip_prefix(root).unwrap()),
                 FileState {
                     sha256: digest,
-                    bytes: metadata.len(),
+                    bytes: bytes_len,
                     modified: metadata.modified().ok(),
                 },
             );
@@ -403,8 +411,18 @@ fn write_json(path: &Path, value: &Value) {
 }
 
 fn unique_suffix() -> u128 {
-    SystemTime::now()
+    // Combine wall-clock nanoseconds with a monotonic per-process counter.
+    // On Apple Silicon the clock has nanosecond resolution, but two parallel
+    // test threads can still observe the same nanosecond tick; the counter
+    // guarantees every SyntheticStores root is distinct even under that race,
+    // which prevents cross-test file collisions when the workspace test
+    // harness runs process_blockers in parallel.
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let nanos = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap()
-        .as_nanos()
+        .as_nanos();
+    let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
+    nanos.wrapping_add(seq as u128)
 }
