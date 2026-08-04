@@ -269,7 +269,12 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
         // all entries into one document (the previous approach) collapses
         // markdown constructs across role boundaries and loses the per-turn
         // segmentation the reference layout shows.
-        let rendered = render_transcript_with_role_banners(&transcript_lines);
+        //
+        // `inner_width` is passed in so user banner lines can be padded to
+        // the next multiple of the inner width — ratatui 0.30 does NOT fill
+        // trailing empty cells with the line's bg, so explicit padding is
+        // required for the banner to span the full pane width.
+        let rendered = render_transcript_with_role_banners(&transcript_lines, inner_width);
         let estimate = estimated_wrapped_lines(&rendered, inner_width);
         (ratatui::text::Text::from(rendered), estimate)
     };
@@ -705,19 +710,52 @@ fn user_banner_style() -> Style {
 /// style can apply turn-by-turn. Multi-line constructs inside one entry
 /// (code fences, lists with nested indentation) still render correctly
 /// because the markdown parser sees the full entry as one document.
-fn render_transcript_with_role_banners(transcript_lines: &[String]) -> Vec<Line<'static>> {
+///
+/// **Full-width banner fix (v0.4.1):** ratatui 0.30's `Paragraph` widget
+/// does NOT fill trailing empty cells with the `Line`'s background color —
+/// only cells containing rendered characters get the bg. To make the banner
+/// span the full pane width (the directive's "100%-width" requirement),
+/// every user line is padded with explicit trailing spaces styled with the
+/// banner bg. The padding is sized to the **next multiple of `inner_width`**
+/// so that wrapped lines also fill every wrap row's trailing cells, not
+/// just the last row. Empirically verified: an unpadded line paints only
+/// the typed characters; a padded line paints all `inner_width` cells.
+fn render_transcript_with_role_banners(
+    transcript_lines: &[String],
+    inner_width: usize,
+) -> Vec<Line<'static>> {
     let user_style = user_banner_style();
+    let inner_width = inner_width.max(1);
     let mut rendered: Vec<Line<'static>> = Vec::new();
     for raw in transcript_lines {
         let is_user_turn = raw.starts_with("user:");
         let mut lines = crate::markdown::render_markdown(raw);
         if is_user_turn {
             for line in lines.iter_mut() {
-                // `patch` keeps span-local foreground / modifier overrides
-                // (bold code labels, list bullets) while layering the banner
-                // background underneath, so trailing empty cells fill the
-                // full pane width with the dark-blue banner color.
+                // Patch the line style FIRST so span styles (which carry
+                // their own foreground / modifier) layer on top while the
+                // banner bg stays underneath.
                 line.style = line.style.patch(user_style);
+                // Compute the line's current display width by summing span
+                // content char counts. Pad to the next multiple of
+                // `inner_width` so every wrap row (not just the last) ends
+                // with bg-styled spaces and reads as a full-width banner.
+                let current_width: usize = line
+                    .spans
+                    .iter()
+                    .map(|span| span.content.chars().count())
+                    .sum();
+                let target_width = if current_width == 0 {
+                    inner_width
+                } else {
+                    // next multiple of inner_width, e.g. 17 → 38, 100 → 114
+                    let chunks = current_width.div_ceil(inner_width);
+                    chunks * inner_width
+                };
+                if target_width > current_width {
+                    let padding = " ".repeat(target_width - current_width);
+                    line.spans.push(Span::styled(padding, user_style));
+                }
             }
         }
         rendered.extend(lines);
@@ -1308,10 +1346,14 @@ mod tests {
         use ratatui::backend::TestBackend;
 
         // The reference Native GLM TUI shows user turns inside a full-width
-        // dark-blue container so turn changes read instantly. The renderer
-        // must apply a distinct background style to every cell on every line
-        // belonging to a `user:` turn (including trailing empty cells, so
-        // the banner stretches across the full pane width).
+        // dark-blue container so turn changes read instantly. ratatui 0.30
+        // Paragraph does NOT fill trailing empty cells with the Line's bg,
+        // so the renderer must explicitly space-pad each user banner line
+        // to `inner_width` for the banner to span the full pane width.
+        //
+        // We use a 40x20 viewport so both the assistant and user lines are
+        // visible inside the conversation block (a smaller viewport cuts
+        // the user line out of view and would make the assertion meaningless).
         let model = ViewModel {
             transcript: vec![
                 "assistant: hello there".to_string(),
@@ -1320,7 +1362,9 @@ mod tests {
             ..ViewModel::default()
         };
 
-        let backend = TestBackend::new(40, 10);
+        let width_u16 = 40u16;
+        let height_u16 = 20u16;
+        let backend = TestBackend::new(width_u16, height_u16);
         let mut terminal = Terminal::new(backend).expect("test backend");
         terminal
             .draw(|f| render_to_frame(f, &model))
@@ -1328,36 +1372,72 @@ mod tests {
 
         let buffer = terminal.backend().buffer();
         let user_banner_bg = Color::Rgb(11, 36, 71);
-        // Find at least one cell on the user turn row ("please help") and
-        // confirm the dark-blue banner bg is set.
-        let content: String = buffer.content.iter().map(|cell| cell.symbol()).collect();
-        assert!(content.contains("please help"), "user text must be visible");
+        let width = usize::from(width_u16);
+        let height = usize::from(height_u16);
 
-        let mut found_banner_cell = false;
-        for cell in &buffer.content {
-            if (cell.symbol() == "p" || cell.symbol() == "l") && cell.bg == user_banner_bg {
-                found_banner_cell = true;
+        // Find the y-row whose first inner cell is 'p' (start of "please").
+        let mut user_row: Option<usize> = None;
+        for y in 0..height {
+            for x in 0..width.saturating_sub(1) {
+                let cell = &buffer.content[y * width + x];
+                if cell.symbol() == "p"
+                    && buffer.content[y * width + x + 1].symbol() == "l"
+                    && cell.bg == user_banner_bg
+                {
+                    user_row = Some(y);
+                    break;
+                }
+            }
+            if user_row.is_some() {
                 break;
             }
         }
+        let user_row = user_row.expect("user row containing 'please' must be visible");
+
+        // CRITICAL ASSERTION: scan from the right edge of the user row
+        // inward and confirm the rightmost cell carrying the banner bg sits
+        // at the very right of the conversation block's inner area. The
+        // original (broken) v0.4.0 implementation only painted typed
+        // characters and left trailing cells at bg=Reset, so the banner
+        // stopped at column 18 (end of "user: please help"); this assertion
+        // would fail there and only pass after the explicit space-padding
+        // that fills every cell on the row up to the right border.
+        let mut rightmost_bg_x: Option<usize> = None;
+        for x in (0..width).rev() {
+            let cell = &buffer.content[user_row * width + x];
+            if cell.bg == user_banner_bg {
+                rightmost_bg_x = Some(x);
+                break;
+            }
+        }
+        let rightmost_bg_x =
+            rightmost_bg_x.expect("at least one banner-bg cell must exist on the user row");
+
+        // The conversation block has Borders::ALL on a 40-wide pane, so the
+        // right border glyph sits at x = 39 and the rightmost inner cell at
+        // x = 38. The rightmost banner-bg cell must reach x = 38 (the edge
+        // of the inner area), proving the banner spans the FULL pane width.
+        // We allow ±1 to stay robust against a different border placement
+        // but reject the broken behavior where the banner stops mid-row at
+        // the end of the typed text.
         assert!(
-            found_banner_cell,
-            "at least one user-turn character cell must carry the dark-blue banner background"
+            rightmost_bg_x >= 37,
+            "rightmost banner-bg cell on the user row is at x={rightmost_bg_x} (y={user_row}); \
+             it must reach x≥37 (full pane width) — the v0.4.0 bug stopped the banner at the \
+             end of the typed text (~x=18) because ratatui does not fill trailing empty cells"
         );
 
-        // Find a trailing empty cell on the user row and confirm it ALSO
-        // carries the banner bg — this is what makes the banner span the
-        // full pane width rather than only covering the typed characters.
-        let mut found_full_width_fill = false;
+        // Also confirm a typed character cell carries the bg (sanity).
+        let mut found_typed_with_bg = false;
         for cell in &buffer.content {
-            if cell.symbol() == " " && cell.bg == user_banner_bg {
-                found_full_width_fill = true;
+            if cell.symbol() == "p" && cell.bg == user_banner_bg {
+                found_typed_with_bg = true;
                 break;
             }
         }
         assert!(
-            found_full_width_fill,
-            "trailing empty cells on the user turn row must fill with the banner bg"
+            found_typed_with_bg,
+            "at least one user-turn character cell must carry the dark-blue banner background"
         );
     }
 
