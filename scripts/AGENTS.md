@@ -11,8 +11,14 @@ original Python `native-glm-acp` installer.
 
 - `install.sh` — POSIX installer (Linux + macOS). Downloads the
   `agent-vesper-acp-<platform>-<arch>.tar.gz` release, verifies SHA-256,
-  installs both launchers under `$XDG_BIN_HOME` (default `~/.local/bin`), and
-  updates the shell profile PATH.
+  installs both launchers under `$XDG_BIN_HOME` (default `~/.local/bin`),
+  updates the shell profile PATH, and bundles the standalone `uv` binary
+  (from `astral-sh/uv` latest release) into the bundle dir so the
+  push-to-talk voice backend can auto-bootstrap a `faster-whisper` venv via
+  the bundled `uv` with no external venv toolchain. (The bootstrap's
+  `python3 -m venv` fallback still needs system `python3`+`python3-venv`, but
+  is only reached if the bundled `uv` is absent.) A failed `uv` download is
+  non-fatal.
 - `install.ps1` — Windows installer. Downloads the
   `agent-vesper-acp-windows-x86_64.zip` release, verifies SHA-256, installs a
   `.cmd` launchers under `%LOCALAPPDATA%\Programs\AgentVesper`, and adds that

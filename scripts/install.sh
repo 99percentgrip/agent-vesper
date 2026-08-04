@@ -80,6 +80,42 @@ printf 'Installed Agent Vesper (%s; %s):\n' "$installed_version" "$tui_version"
 printf '  %s\n' "$install_dir/agent-vesper-acp"
 printf '  %s\n' "$install_dir/agent-vesper-tui"
 
+# Bundle the standalone `uv` binary so the push-to-talk voice backend can
+# auto-bootstrap a `faster-whisper` venv with no external toolchain required
+# (Linux/macOS only; voice recording is unsupported on Windows). This closes
+# the dependency on a pre-installed `uv`/`python3-venv`. A failed download is
+# non-fatal: the install still succeeds and voice falls back to system tools.
+uv_warn() {
+    printf 'agent-vesper installer: warning — uv download failed; voice backend will use system uv/python3-venv if available\n' >&2
+}
+case "$platform-$architecture" in
+    linux-x86_64)   uv_target="x86_64-unknown-linux-gnu" ;;
+    linux-aarch64)  uv_target="aarch64-unknown-linux-gnu" ;;
+    darwin-x86_64)  uv_target="x86_64-apple-darwin" ;;
+    darwin-aarch64) uv_target="aarch64-apple-darwin" ;;
+    *) uv_target="" ;;
+esac
+if [ -n "$uv_target" ]; then
+    uv_asset="uv-$uv_target.tar.gz"
+    uv_url="https://github.com/astral-sh/uv/releases/latest/download/$uv_asset"
+    printf 'Bundling uv for voice backend (%s)...\n' "$uv_target"
+    if curl -fL --retry 3 --show-error --silent "$uv_url" -o "$temporary/$uv_asset"; then
+        tar -xzf "$temporary/$uv_asset" -C "$temporary"
+        # uv release archive layout: uv-<target>/uv and uv-<target>/uvx
+        uv_src="$(find "$temporary" -type f -name uv -path "*$uv_target*" 2>/dev/null | head -1)"
+        [ -z "$uv_src" ] && uv_src="$(find "$temporary" -type f -name uv 2>/dev/null | head -1)"
+        if [ -n "$uv_src" ] && "$uv_src" --version >/dev/null 2>&1; then
+            cp "$uv_src" "$bundle_dir/uv"
+            chmod 0755 "$bundle_dir/uv"
+            printf '  %s/uv (%s)\n' "$bundle_dir" "$("$bundle_dir/uv" --version 2>&1)"
+        else
+            uv_warn
+        fi
+    else
+        uv_warn
+    fi
+fi
+
 case ":${PATH:-}:" in
     *":$install_dir:"*) ;;
     *)
