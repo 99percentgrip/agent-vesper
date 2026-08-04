@@ -44,7 +44,8 @@ pub use dispatch::{
 pub use plan_mode::{PendingQuestion, PlanModeError, PlanPhase, PlanState, PlanTransition};
 pub use superpowers::{ProviderSuperpowerSurface, SuperpowerOverrides};
 pub use ui::{
-    FOOTER_ACTIONS, StubRenderer, TerminalRenderer, ViewModel, command_menu_height, render_to_frame,
+    FOOTER_ACTIONS, PermissionChoice, PermissionModal, StubRenderer, TerminalRenderer, ViewModel,
+    command_menu_height, render_to_frame,
 };
 
 use vesper_domain::ProviderId;

@@ -40,6 +40,14 @@ business logic.
   working-tree panel, live activity, TODO, and structured run report. The
   Conversation and Reasoning panels render assistant/reasoning text through
   `markdown::render_markdown`; scroll is estimated from the rendered Lines.
+  User turns (`user:` prefix) render inside a full-width dark-blue role
+  banner (`USER_BANNER_STYLE` via `render_transcript_with_role_banners`) so
+  conversational turn changes read instantly. The interactive
+  `render_permission_modal` overlays a centered `Clear` + bordered dialog
+  (`PermissionModal`/`PermissionChoice` exported from `lib.rs`) whenever
+  `ViewModel::pending_permission` is set; the binary's event loop intercepts
+  Tab/Left/Right (toggle focus) and Enter/Esc (submit/dismiss) while the
+  modal is up and resolves through `PermissionRequest::approve` / `reject`.
 - `src/markdown.rs` — self-contained, streaming-safe markdown → ratatui
   `Line` renderer. Re-parses the buffered assistant text every frame so
   partial syntax degrades gracefully: open inline markers (`**bold` with no

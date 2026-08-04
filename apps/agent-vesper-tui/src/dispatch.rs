@@ -129,6 +129,11 @@ pub struct SessionState {
     /// `Paragraph::scroll` call uses. Reset to `None` by `End`, a new prompt
     /// submission, or PageDown/ScrollDown reaching the bottom.
     pub conversation_manual_scroll: Option<u16>,
+    /// Currently focused action button in the tool-permission modal. Defaults
+    /// to `Allow` (the conservative pick); Tab/Left/Right toggles between
+    /// `Deny` and `Allow`. Mirrored into the renderer's
+    /// `ViewModel::pending_permission` only while a request is pending.
+    pub permission_modal_focus: crate::ui::PermissionChoice,
 }
 
 /// Typed session controls. Defaults match the Python oracle.
@@ -347,6 +352,7 @@ fn apply_outcome(
         pending_code_block,
         pending_reauth,
         conversation_manual_scroll: _,
+        permission_modal_focus: _,
     } = state;
     match outcome {
         CommandOutcome::Error(message) => {

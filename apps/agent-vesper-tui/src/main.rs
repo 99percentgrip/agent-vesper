@@ -32,9 +32,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use agent_vesper_tui::{
     AuthHubAction, AuthHubState, AuthProvider, CommandIntent, CommandRegistry, DispatchOutcome,
-    FOOTER_ACTIONS, MediaOp, PlanPhase, ProviderSuperpowerSurface, SessionState, StartupRoute,
-    TerminalAction, ViewModel, apply_model_plan, apply_task_plan, command_menu_height, dispatch,
-    query_startup_view, render_auth_hub, render_to_frame, startup_route,
+    FOOTER_ACTIONS, MediaOp, PermissionChoice, PermissionModal, PlanPhase,
+    ProviderSuperpowerSurface, SessionState, StartupRoute, TerminalAction, ViewModel,
+    apply_model_plan, apply_task_plan, command_menu_height, dispatch, query_startup_view,
+    render_auth_hub, render_to_frame, startup_route,
 };
 use crossterm::{
     event::{
@@ -615,6 +616,16 @@ async fn drive_loop(
             working_tree_lines: session.working_tree_lines.clone(),
             preferences: session.state.preferences.clone(),
             conversation_manual_scroll: session.state.conversation_manual_scroll,
+            pending_permission: session
+                .pending_approval
+                .as_ref()
+                .map(|request| PermissionModal {
+                    tool: request.tool.clone(),
+                    arguments: serde_json::to_string_pretty(&request.arguments)
+                        .unwrap_or_else(|_| request.arguments.to_string()),
+                    reason: request.reason.clone(),
+                    focus: session.state.permission_modal_focus,
+                }),
         };
         if let Err(error) = terminal.draw(|frame| {
             render_to_frame(frame, &model);
@@ -707,6 +718,74 @@ async fn drive_loop(
         };
 
         let ctrl = modifiers.contains(KeyModifiers::CONTROL);
+        // Tool-permission modal interceptor: when a one-time approval is
+        // pending, the modal overlays the conversation and consumes the
+        // keyboard. Only Tab/Left/Right (toggle focus), Enter (submit), and
+        // Esc (deny) reach the runtime — every other key is swallowed so the
+        // user cannot accidentally type into the composer while the modal
+        // is up.
+        if session.pending_approval.is_some() {
+            match code {
+                KeyCode::Tab | KeyCode::Left | KeyCode::Right => {
+                    let next = session.state.permission_modal_focus.toggle();
+                    session.state.permission_modal_focus = next;
+                    session.state.status = Some(format!(
+                        "Permission modal focus: {}.",
+                        match next {
+                            PermissionChoice::Deny => "Deny",
+                            PermissionChoice::Allow => "Allow once",
+                        }
+                    ));
+                }
+                KeyCode::Enter => {
+                    let request = session
+                        .pending_approval
+                        .take()
+                        .expect("request present in guard");
+                    let tool = request.tool.clone();
+                    let focus = session.state.permission_modal_focus;
+                    match focus {
+                        PermissionChoice::Allow => {
+                            request.approve();
+                            if let Some(server) = session.mobile_server.as_ref() {
+                                server.clear_approval();
+                            }
+                            session.mobile_approval_id = None;
+                            session.state.status = Some(format!("Approved `{tool}` once."));
+                        }
+                        PermissionChoice::Deny => {
+                            request.reject("driver rejected one-time approval");
+                            if let Some(server) = session.mobile_server.as_ref() {
+                                server.clear_approval();
+                            }
+                            session.mobile_approval_id = None;
+                            session.state.status = Some(format!("Rejected `{tool}`."));
+                        }
+                    }
+                    // Reset focus to the conservative default for the next
+                    // approval request.
+                    session.state.permission_modal_focus = PermissionChoice::Allow;
+                }
+                KeyCode::Esc => {
+                    let request = session
+                        .pending_approval
+                        .take()
+                        .expect("request present in guard");
+                    let tool = request.tool.clone();
+                    request.reject("driver dismissed one-time approval");
+                    if let Some(server) = session.mobile_server.as_ref() {
+                        server.clear_approval();
+                    }
+                    session.mobile_approval_id = None;
+                    session.state.permission_modal_focus = PermissionChoice::Allow;
+                    session.state.status = Some(format!("Dismissed `{tool}`."));
+                }
+                _ => {
+                    // Swallow everything else while the modal is up.
+                }
+            }
+            continue;
+        }
         if let Some(action) = bound_action(&session.keybindings, code, modifiers) {
             if apply_keybinding_action(
                 &action,
@@ -781,35 +860,9 @@ async fn drive_loop(
                 break;
             }
             KeyCode::Enter => {
-                if let Some(request) = session.pending_approval.take() {
-                    match session.input.trim() {
-                        "/approve" => {
-                            let tool = request.tool.clone();
-                            request.approve();
-                            if let Some(server) = session.mobile_server.as_ref() {
-                                server.clear_approval();
-                            }
-                            session.mobile_approval_id = None;
-                            session.state.status = Some(format!("Approved `{tool}` once."));
-                        }
-                        "/cancel" | "/reject" => {
-                            let tool = request.tool.clone();
-                            request.reject("driver rejected one-time approval");
-                            if let Some(server) = session.mobile_server.as_ref() {
-                                server.clear_approval();
-                            }
-                            session.mobile_approval_id = None;
-                            session.state.status = Some(format!("Rejected `{tool}`."));
-                        }
-                        _ => {
-                            session.pending_approval = Some(request);
-                            session.state.status =
-                                Some("Approval required: type /approve or /cancel.".into());
-                        }
-                    }
-                    session.input.clear();
-                    continue;
-                }
+                // Note: the tool-permission modal interceptor (above)
+                // handles Enter while `pending_approval` is set; this branch
+                // only fires when no modal is up.
                 if let Some(selected) = selected_command_completion(session) {
                     let typed = session.input.trim_end();
                     if typed != selected || command_expands_to_argument(&selected, surface) {
@@ -3080,6 +3133,11 @@ fn active_superpower_choice(
 /// loop emits at most one request at a time because it awaits the decision
 /// before executing the tool, so retaining one request is sufficient and
 /// keeps the interaction deterministic.
+///
+/// The interactive tool-permission modal (Tab/arrow focus + Enter submit)
+/// is the canonical UX; the credential-free mobile companion remains
+/// available as an alternative approver. The legacy text-command path
+/// (`/approve` / `/cancel`) was retired when the modal shipped.
 fn drain_permission_request(session: &mut TuiSession) {
     if session.pending_approval.is_some() {
         return;
@@ -3087,9 +3145,10 @@ fn drain_permission_request(session: &mut TuiSession) {
     match session.approval_rx.try_recv() {
         Ok(request) => {
             session.state.status = Some(format!(
-                "APPROVAL REQUIRED: `{}` — type /approve or /cancel",
+                "APPROVAL REQUIRED: `{}` — Tab to switch, Enter to confirm.",
                 request.tool
             ));
+            session.state.permission_modal_focus = PermissionChoice::Allow;
             session.pending_approval = Some(request);
             if let Some(server) = session.mobile_server.as_ref() {
                 session.mobile_approval_id = Some(server.register_approval());
