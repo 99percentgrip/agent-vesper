@@ -1,7 +1,7 @@
 {
   "id": "agent-vesper",
   "name": "Agent Vesper",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Agent Vesper — a Rust-native, provider-neutral ACP coding agent runtime. ACP-protocol-v1 stdio server for Z.ai GLM models, installable as an ACP agent in Zed and other ACP-compatible editors.",
   "repository": "https://github.com/99percentgrip/agent-vesper",
   "website": "https://github.com/99percentgrip/agent-vesper",
