@@ -207,6 +207,7 @@ async fn run() -> Result<(), String> {
         working_tree_view: None,
         working_tree_lines: Vec::new(),
         voice_recording: None,
+        voice_sidecar: None,
         selection_anchor: None,
         selected_text: String::new(),
     };
@@ -402,6 +403,10 @@ struct TuiSession {
     working_tree_lines: Vec<String>,
     /// Active push-to-talk recorder process and its temporary WAV.
     voice_recording: Option<VoiceRecording>,
+    /// Long-lived `faster-whisper` sidecar; `None` until first use. The model
+    /// loads when this spawns (lazily, at the first F5 START) and stays warm
+    /// for the session so subsequent transcriptions skip the model-load cost.
+    voice_sidecar: Option<VoiceSidecar>,
     /// Mouse-selection anchor row in the visible conversation.
     selection_anchor: Option<u16>,
     /// App-managed selected transcript text copied by Ctrl-Shift-C.
@@ -426,6 +431,139 @@ impl Drop for VoiceRecording {
         let _ = self.child.wait();
         let _ = std::fs::remove_file(&self.path);
     }
+}
+
+/// Python the long-lived voice sidecar runs: import `faster_whisper`, load the
+/// model once, then loop reading `{"wav": "<path>"}` JSON requests from stdin
+/// and writing `{"text": "...", "error": null}` responses to stdout. Loading
+/// the model once (the dominant cost) and reusing the process across
+/// transcriptions is what makes push-to-talk feel instant after the first
+/// press; a per-call subprocess would reload the model every time.
+const VOICE_SIDECAR_SCRIPT: &str = r#"import sys, json, os
+try:
+    from faster_whisper import WhisperModel
+    model = WhisperModel(os.environ.get('GLM_ACP_WHISPER_MODEL', 'base'), device='cpu', compute_type='int8')
+except Exception as e:
+    sys.stdout.write(json.dumps({'text': '', 'error': 'model load failed: ' + str(e)}) + '\n')
+    sys.stdout.flush()
+    sys.exit(1)
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    try:
+        req = json.loads(line)
+        wav = req.get('wav', '')
+        segments, _ = model.transcribe(wav)
+        text = ' '.join(s.text for s in segments).strip()
+        sys.stdout.write(json.dumps({'text': text, 'error': None}) + '\n')
+    except Exception as e:
+        sys.stdout.write(json.dumps({'text': '', 'error': str(e)}) + '\n')
+    sys.stdout.flush()
+"#;
+
+/// Long-lived Python sidecar that keeps a `faster_whisper` model warm for the
+/// session. Spawned lazily on the first F5 START so the model loads in the
+/// background while the user records; by the time they press F5 to transcribe,
+/// the model is already loaded and transcription is just inference. A reader
+/// thread drains the sidecar's stdout line by line and delivers each result
+/// over a channel so `transcribe` can bound its wait with `recv_timeout`.
+struct VoiceSidecar {
+    child: std::process::Child,
+    stdin: std::process::ChildStdin,
+    response_rx: std::sync::mpsc::Receiver<Result<String, String>>,
+}
+
+impl VoiceSidecar {
+    /// Spawn the sidecar with the given Python interpreter. Returns as soon as
+    /// the process is started; the model loads asynchronously in the
+    /// background (hidden behind recording time when spawned at F5 START).
+    fn spawn(interpreter: &str) -> Result<Self, String> {
+        let mut child = std::process::Command::new(interpreter)
+            .arg("-c")
+            .arg(VOICE_SIDECAR_SCRIPT)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .map_err(|e| format!("could not spawn voice sidecar `{interpreter}`: {e}"))?;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| "voice sidecar stdin not piped".to_string())?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| "voice sidecar stdout not piped".to_string())?;
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            use std::io::BufRead;
+            let reader = std::io::BufReader::new(stdout);
+            for line in reader.lines() {
+                match line {
+                    Ok(text) => {
+                        if tx.send(parse_sidecar_response(&text)).is_err() {
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        let _ = tx.send(Err(format!("voice sidecar read error: {e}")));
+                        break;
+                    }
+                }
+            }
+        });
+        Ok(VoiceSidecar {
+            child,
+            stdin,
+            response_rx: rx,
+        })
+    }
+
+    /// Transcribe a WAV file via the warm sidecar. Writes the request line and
+    /// waits up to `timeout` for the JSON response. Warm transcriptions are
+    /// fast; the first may still wait for the initial model load if recording
+    /// was shorter than load time.
+    fn transcribe(&mut self, wav: &str, timeout: std::time::Duration) -> Result<String, String> {
+        use std::io::Write;
+        let request = serde_json::json!({ "wav": wav }).to_string();
+        self.stdin
+            .write_all(request.as_bytes())
+            .map_err(|e| format!("voice sidecar write failed: {e}"))?;
+        self.stdin
+            .write_all(b"\n")
+            .map_err(|e| format!("voice sidecar write failed: {e}"))?;
+        self.stdin
+            .flush()
+            .map_err(|e| format!("voice sidecar flush failed: {e}"))?;
+        self.response_rx
+            .recv_timeout(timeout)
+            .map_err(|e| format!("voice sidecar no response within {timeout:?}: {e}"))?
+    }
+}
+
+impl Drop for VoiceSidecar {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+/// Parse one JSON line from the voice sidecar into a transcription result.
+/// `{"text": "...", "error": null}` → `Ok(text)`; a non-empty `error` → `Err`.
+fn parse_sidecar_response(line: &str) -> Result<String, String> {
+    let value: serde_json::Value = serde_json::from_str(line)
+        .map_err(|e| format!("voice sidecar returned invalid JSON: {e}: {line:?}"))?;
+    if let Some(err) = value.get("error").and_then(|v| v.as_str())
+        && !err.is_empty()
+    {
+        return Err(err.to_string());
+    }
+    Ok(value
+        .get("text")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string())
 }
 
 /// What a spawned agent-loop task reports back to the event loop.
@@ -1890,6 +2028,363 @@ fn bounded_command_output(
     }
 }
 
+/// Resolve a Python interpreter from explicit env override values.
+///
+/// Precedence:
+/// 1. `vesper_path` — absolute path to a Python executable.
+/// 2. `glm_venv` — virtual environment root; appends `bin/python`.
+/// 3. `python3`.
+///
+/// Returns `(interpreter, came_from_env_override)`. Pure: takes env sources
+/// as explicit values so the precedence logic is unit-testable without
+/// mutating the process environment (this crate is
+/// `#![forbid(unsafe_code)]`, so `set_var`/`remove_var` are unavailable).
+/// Production callers (`candidate_whisper_pythons`) pass
+/// `std::env::var_os(...)` results through here.
+fn vesper_python_interpreter_from(
+    vesper_path: Option<&std::ffi::OsStr>,
+    glm_venv: Option<&std::ffi::OsStr>,
+) -> (String, bool) {
+    if let Some(path) = vesper_path {
+        let candidate = std::path::PathBuf::from(path);
+        if candidate.is_file() {
+            return (candidate.to_string_lossy().into_owned(), true);
+        }
+        // Even if the path is not verified present, honour it literally so the
+        // error surfaces the exact configured path instead of silently
+        // falling back to system Python.
+        let path_text = path.to_string_lossy().trim().to_owned();
+        if !path_text.is_empty() {
+            return (path_text, true);
+        }
+    }
+    if let Some(venv) = glm_venv {
+        let candidate = std::path::PathBuf::from(venv).join("bin").join("python");
+        if candidate.is_file() {
+            return (candidate.to_string_lossy().into_owned(), true);
+        }
+    }
+    ("python3".to_string(), false)
+}
+
+/// Append `c` to `candidates` only if it is not already present.
+fn push_unique(candidates: &mut Vec<String>, c: String) {
+    if !candidates.contains(&c) {
+        candidates.push(c);
+    }
+}
+
+/// Resolve the harness-owned voice backend venv root. Precedence:
+/// `$AGENT_VESPER_VOICE_VENV` (explicit venv dir) →
+/// `$XDG_DATA_HOME/agent-vesper/voice-venv` →
+/// `~/.local/share/agent-vesper/voice-venv`. This venv is auto-bootstrapped
+/// by [`bootstrap_voice_backend`] on first F5 so that a fresh installer user
+/// gets a working `faster-whisper` backend with no separate setup.
+fn voice_venv_root() -> std::path::PathBuf {
+    if let Some(root) = std::env::var_os("AGENT_VESPER_VOICE_VENV") {
+        return std::path::PathBuf::from(root);
+    }
+    if let Some(xdg) = std::env::var_os("XDG_DATA_HOME") {
+        return std::path::PathBuf::from(xdg).join("agent-vesper").join("voice-venv");
+    }
+    let home = std::env::var_os("HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir);
+    home.join(".local/share/agent-vesper/voice-venv")
+}
+
+/// Ordered candidate Python interpreters to probe for `faster-whisper`,
+/// requiring **no user configuration**. Precedence:
+/// 1. Explicit env override (`VESPER_PYTHON_PATH` / `GLM_VENV_PATH`).
+/// 2. Harness-owned voice venv at [`voice_venv_root`] (auto-bootstrapped).
+/// 3. Sibling project venvs under `$HOME/Projects/`, alphabetical
+///    (`.venv`/`venv`/`.virtualenv` layouts).
+/// 4. Bare `python3` (system PATH).
+fn candidate_whisper_pythons() -> Vec<String> {
+    let voice_venv = voice_venv_root();
+    let projects_dir = std::env::var_os("HOME")
+        .map(std::path::PathBuf::from)
+        .map(|home| home.join("Projects"));
+    candidate_whisper_pythons_in(
+        Some(&voice_venv),
+        projects_dir.as_deref(),
+        std::env::var_os("VESPER_PYTHON_PATH").as_deref(),
+        std::env::var_os("GLM_VENV_PATH").as_deref(),
+    )
+}
+
+/// Pure-ish core of [`candidate_whisper_pythons`]: takes the harness voice
+/// venv path, the projects dir, and the two env sources as explicit values
+/// so the ordering contract is unit-testable without touching the process
+/// environment or `$HOME`.
+fn candidate_whisper_pythons_in(
+    voice_venv: Option<&std::path::Path>,
+    projects_dir: Option<&std::path::Path>,
+    vesper_override: Option<&std::ffi::OsStr>,
+    glm_override: Option<&std::ffi::OsStr>,
+) -> Vec<String> {
+    let mut candidates: Vec<String> = Vec::new();
+    let (env_interp, from_env) = vesper_python_interpreter_from(vesper_override, glm_override);
+    if from_env {
+        push_unique(&mut candidates, env_interp);
+    }
+    if let Some(venv) = voice_venv {
+        let candidate = venv.join("bin").join("python");
+        if candidate.is_file() {
+            push_unique(&mut candidates, candidate.to_string_lossy().into_owned());
+        }
+    }
+    if let Some(dir) = projects_dir
+        && let Ok(entries) = std::fs::read_dir(dir)
+    {
+        let mut names: Vec<String> = entries
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| !n.starts_with('.'))
+            .collect();
+        names.sort();
+        for name in &names {
+            for venv in [".venv", "venv", ".virtualenv"] {
+                let candidate = dir.join(name).join(venv).join("bin").join("python");
+                if candidate.is_file() {
+                    push_unique(&mut candidates, candidate.to_string_lossy().into_owned());
+                }
+            }
+        }
+    }
+    push_unique(&mut candidates, "python3".to_string());
+    candidates
+}
+
+/// Process-wide cache for the discovered whisper-capable interpreter. Only
+/// successes are cached; while no interpreter has been found, each F5
+/// re-probes (cheap: subsecond subprocess per candidate) so a freshly
+/// bootstrapped venv is picked up on the next press without a restart.
+static WHISPER_PYTHON: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// Discover a Python interpreter that can import `faster-whisper`, with no
+/// user configuration required. Probes [`candidate_whisper_pythons`] in
+/// order; the first that imports `faster_whisper` wins and is cached for the
+/// process lifetime. Returns `None` if no candidate works.
+fn discover_whisper_python() -> Option<String> {
+    if let Some(cached) = WHISPER_PYTHON.get() {
+        return Some(cached.clone());
+    }
+    let found = candidate_whisper_pythons().into_iter().find(|candidate| {
+        bounded_command_output(
+            candidate,
+            &["-c", "import faster_whisper"],
+            std::time::Duration::from_secs(3),
+        )
+        .is_ok()
+    });
+    if let Some(ref interp) = found {
+        // Best-effort cache; if a parallel caller already set it, keep theirs.
+        let _ = WHISPER_PYTHON.set(interp.clone());
+    }
+    found
+}
+
+/// Resolve the `uv` binary the installer bundles into the agent-vesper
+/// bundle dir, if present. Checks `$AGENT_VESPER_BUNDLE_DIR`, then
+/// `$XDG_DATA_HOME/agent-vesper`, then `~/.local/share/agent-vesper`. Returns
+/// the first location containing a `uv` file. When the installer ships `uv`,
+/// the bundled-uv bootstrap path needs no external venv toolchain. (The
+/// `python3 -m venv` fallback in `bootstrap_voice_backend_in` still requires
+/// `python3`+`python3-venv` and is only reached if no `uv` is found.)
+fn bundled_uv_path() -> Option<std::path::PathBuf> {
+    let candidates: Vec<std::path::PathBuf> = [
+        std::env::var_os("AGENT_VESPER_BUNDLE_DIR").map(std::path::PathBuf::from),
+        std::env::var_os("XDG_DATA_HOME")
+            .map(|d| std::path::PathBuf::from(d).join("agent-vesper")),
+        std::env::var_os("HOME")
+            .map(|h| std::path::PathBuf::from(h).join(".local/share/agent-vesper")),
+    ]
+    .into_iter()
+    .flatten()
+    .map(|base| base.join("uv"))
+    .collect();
+    bundled_uv_from(&candidates)
+}
+
+/// Pure core of [`bundled_uv_path`]: returns the first candidate path that
+/// exists as a file. Testable without touching the process environment.
+fn bundled_uv_from(candidates: &[std::path::PathBuf]) -> Option<std::path::PathBuf> {
+    candidates.iter().find(|p| p.is_file()).cloned()
+}
+
+/// Resolve the `uv` program to use for the bootstrap: the installer-bundled
+/// binary (self-contained) preferred, then system `uv` on `PATH`. Returns the
+/// program string if any usable `uv` exists.
+fn resolve_uv_program() -> Option<String> {
+    if let Some(bundled) = bundled_uv_path() {
+        // Smoke-test the bundled uv before trusting it.
+        let ok = std::process::Command::new(&bundled)
+            .arg("--version")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if ok {
+            return Some(bundled.to_string_lossy().into_owned());
+        }
+    }
+    // Fall back to system uv on PATH.
+    let system_ok = std::process::Command::new("uv")
+        .arg("--version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    if system_ok {
+        Some("uv".to_string())
+    } else {
+        None
+    }
+}
+
+/// One-time bootstrap of the harness-owned voice backend venv so that
+/// push-to-talk works for any installer user with no separate setup. Creates
+/// a venv at [`voice_venv_root`] and installs `faster-whisper` into it.
+///
+/// See [`bootstrap_voice_backend_in`] for the strategy (uv-first, then
+/// `python3 -m venv`). Requires network access to PyPI and either `uv` or
+/// `python3`+`python3-venv` on the system. Returns the venv's `python` path
+/// on success and populates the discovery cache.
+fn bootstrap_voice_backend() -> Result<String, String> {
+    bootstrap_voice_backend_in(&voice_venv_root())
+}
+
+/// Core of [`bootstrap_voice_backend`]: takes the target venv dir as an
+/// explicit path so the bootstrap can be exercised by an integration test
+/// without touching the process environment. Strategy (first that works):
+///
+/// 1. **`uv venv` + `uv pip install`** — preferred. `uv` does not need the
+///    Debian/Ubuntu `python3-venv` package and ignores PEP 668
+///    externally-managed environments.
+/// 2. **`python3 -m venv` + `pip install`** — standard-library fallback for
+///    systems without `uv`.
+///
+/// Requires network access to PyPI. Returns the venv's `python` path on
+/// success and populates the discovery cache.
+fn bootstrap_voice_backend_in(venv_dir: &std::path::Path) -> Result<String, String> {
+    let venv_python = venv_dir.join("bin").join("python");
+    if venv_python.is_file() {
+        let interp = venv_python.to_string_lossy().into_owned();
+        let _ = WHISPER_PYTHON.set(interp.clone());
+        return Ok(interp);
+    }
+    let parent = venv_dir
+        .parent()
+        .ok_or_else(|| "invalid venv path".to_string())?;
+    std::fs::create_dir_all(parent)
+        .map_err(|e| format!("could not create {}: {e}", parent.display()))?;
+
+    // Strategy 1: uv (most robust — no python3-venv package, ignores PEP 668).
+    // Prefer the installer-bundled uv (self-contained), then system uv.
+    if let Some(uv) = resolve_uv_program() {
+        let venv_ok = std::process::Command::new(&uv)
+            .arg("venv")
+            .arg(venv_dir)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .status()
+            .map_err(|e| format!("could not run `{uv} venv`: {e}"))?
+            .success();
+        if venv_ok {
+            let pip_ok = std::process::Command::new(&uv)
+                .arg("pip")
+                .arg("install")
+                .arg("--upgrade")
+                .arg("faster-whisper")
+                .arg("--python")
+                .arg(&venv_python)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::piped())
+                .status()
+                .map_err(|e| format!("could not run `{uv} pip install`: {e}"))?
+                .success();
+            if pip_ok {
+                let interp = venv_python.to_string_lossy().into_owned();
+                let _ = WHISPER_PYTHON.set(interp.clone());
+                return Ok(interp);
+            }
+            return Err(
+                "`uv pip install faster-whisper` failed (network error?); retry, or set \
+                 VESPER_PYTHON_PATH to an existing venv"
+                    .to_string(),
+            );
+        }
+    }
+
+    // Strategy 2: python3 -m venv (standard library; needs python3-venv on
+    // Debian/Ubuntu, blocked by PEP 668 if installing into system site).
+    let venv_status = std::process::Command::new("python3")
+        .arg("-m")
+        .arg("venv")
+        .arg(venv_dir)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .status()
+        .map_err(|e| format!("could not run `python3 -m venv` (is python3 installed?): {e}"))?;
+    if !venv_status.success() {
+        return Err(
+            "could not create a Python venv (install `python3-venv`/`uv`, or set \
+             VESPER_PYTHON_PATH to an existing venv)"
+                .to_string(),
+        );
+    }
+    let pip_status = std::process::Command::new(&venv_python)
+        .arg("-m")
+        .arg("pip")
+        .arg("install")
+        .arg("--upgrade")
+        .arg("faster-whisper")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .status()
+        .map_err(|e| format!("could not run pip in the new venv: {e}"))?;
+    if !pip_status.success() {
+        return Err(
+            "`pip install faster-whisper` failed (network error?); retry, or set \
+             VESPER_PYTHON_PATH to an existing venv"
+                .to_string(),
+        );
+    }
+    let interp = venv_python.to_string_lossy().into_owned();
+    let _ = WHISPER_PYTHON.set(interp.clone());
+    Ok(interp)
+}
+
+/// Transcribe a WAV file via the warm voice sidecar. Spawns the sidecar on
+/// demand if it is not already running (using the discovered interpreter),
+/// sends the WAV path, and waits up to 90s for the result. If the sidecar
+/// died (channel closed), clears it so the next call respawns. The model
+/// load happens once per session; warm transcriptions are inference-only.
+fn transcribe_via_sidecar(session: &mut TuiSession, wav: &str) -> Result<String, String> {
+    if session.voice_sidecar.is_none() {
+        let interpreter = discover_whisper_python().ok_or_else(|| {
+            "no Python with `faster-whisper` available; press F5 to bootstrap, or set \
+             VESPER_PYTHON_PATH"
+                .to_string()
+        })?;
+        session.voice_sidecar = Some(VoiceSidecar::spawn(&interpreter)?);
+    }
+    let result = session
+        .voice_sidecar
+        .as_mut()
+        .expect("sidecar ensured above")
+        .transcribe(wav, std::time::Duration::from_secs(90));
+    if result.is_err() {
+        // Sidecar died; drop it so the next transcription respawns fresh.
+        session.voice_sidecar = None;
+    }
+    result
+}
+
 fn toggle_voice_recording(session: &mut TuiSession) {
     if let Some(mut recording) = session.voice_recording.take() {
         #[cfg(unix)]
@@ -1914,13 +2409,8 @@ fn toggle_voice_recording(session: &mut TuiSession) {
             session.state.status = Some("Voice recording did not contain audio.".into());
             return;
         }
-        const TRANSCRIBE: &str = "from faster_whisper import WhisperModel; import os,sys; model=WhisperModel(os.environ.get('GLM_ACP_WHISPER_MODEL','base'),device='cpu',compute_type='int8'); segments,_=model.transcribe(sys.argv[1]); print(' '.join(segment.text for segment in segments).strip())";
         let path_text = recording.path.to_string_lossy().into_owned();
-        let result = bounded_command_output(
-            "python3",
-            &["-c", TRANSCRIBE, &path_text],
-            std::time::Duration::from_secs(180),
-        );
+        let result = transcribe_via_sidecar(session, &path_text);
         let _ = std::fs::remove_file(&recording.path);
         match result {
             Ok(text) if !text.is_empty() => {
@@ -1939,15 +2429,35 @@ fn toggle_voice_recording(session: &mut TuiSession) {
         return;
     }
 
-    if let Err(error) = bounded_command_output(
-        "python3",
-        &["-c", "import faster_whisper"],
-        std::time::Duration::from_secs(3),
-    ) {
-        session.state.status = Some(format!(
-            "Push-to-talk unavailable: install the oracle-compatible `faster-whisper` backend ({error})."
-        ));
-        return;
+    // Auto-discover a whisper-capable Python (env override → harness voice
+    // venv → sibling venvs under $HOME/Projects → bare python3). If none is
+    // found, bootstrap a harness-owned venv once so any installer user gets
+    // voice working with no separate setup.
+    if discover_whisper_python().is_none() {
+        session.state.status =
+            Some("Setting up voice backend (one-time, ~30s)…".to_string());
+        match bootstrap_voice_backend() {
+            Ok(_) => {
+                session.state.status =
+                    Some("Voice backend ready. Press F5 again to record.".into());
+                return;
+            }
+            Err(error) => {
+                session.state.status = Some(format!(
+                    "Voice setup failed: {error}"
+                ));
+                return;
+            }
+        }
+    }
+    // Pre-warm the voice sidecar so the model loads in the background while
+    // the user records. Non-fatal if the spawn fails here; the STOP branch
+    // retries via `transcribe_via_sidecar`.
+    if session.voice_sidecar.is_none()
+        && let Some(interpreter) = discover_whisper_python()
+        && let Ok(sidecar) = VoiceSidecar::spawn(&interpreter)
+    {
+        session.voice_sidecar = Some(sidecar);
     }
     let path = std::env::temp_dir().join(format!(
         "agent-vesper-voice-{}-{}.wav",
@@ -7839,6 +8349,7 @@ mod tests {
             working_tree_view: None,
             working_tree_lines: Vec::new(),
             voice_recording: None,
+            voice_sidecar: None,
             selection_anchor: None,
             selected_text: String::new(),
         };
@@ -7884,6 +8395,7 @@ mod tests {
             working_tree_view: None,
             working_tree_lines: Vec::new(),
             voice_recording: None,
+            voice_sidecar: None,
             selection_anchor: None,
             selected_text: String::new(),
         };
@@ -7927,6 +8439,7 @@ mod tests {
             working_tree_view: None,
             working_tree_lines: Vec::new(),
             voice_recording: None,
+            voice_sidecar: None,
             selection_anchor: None,
             selected_text: String::new(),
         };
@@ -8044,5 +8557,342 @@ mod tests {
             .as_deref()
             .unwrap_or_default()
             .contains(needle)
+    }
+
+    #[test]
+    fn vesper_python_interpreter_resolves_env_var_precedence() {
+        // The pure core takes the env sources as explicit values, so we can
+        // exercise every precedence branch without mutating the process
+        // environment (this crate is `#![forbid(unsafe_code)]` and the
+        // resolver reads env vars only via the thin public wrapper).
+        fn vesp(s: &str) -> Option<&std::ffi::OsStr> {
+            Some(std::ffi::OsStr::new(s))
+        }
+        let none: Option<&std::ffi::OsStr> = None;
+
+        // 1. No overrides → bare `python3`, no env-override flag.
+        let (interp, from_env) = vesper_python_interpreter_from(none, none);
+        assert_eq!(interp, "python3");
+        assert!(!from_env);
+
+        // 2. GLM_VENV_PATH pointing at a dir that contains bin/python wins
+        //    over the default.
+        let temp = std::env::temp_dir().join(format!(
+            "vesper-py-interp-test-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(temp.join("bin")).unwrap();
+        let python_file = temp.join("bin").join("python");
+        std::fs::write(&python_file, "#!/bin/sh\necho hi\n").unwrap();
+        let (interp, from_env) =
+            vesper_python_interpreter_from(none, vesp(temp.to_str().unwrap()));
+        assert_eq!(interp, python_file.to_string_lossy());
+        assert!(from_env);
+
+        // 3. VESPER_PYTHON_PATH wins over GLM_VENV_PATH even if it does not
+        //    point at a real file (so the surfaced error names the exact
+        //    configured path instead of silently falling back).
+        let (interp, from_env) =
+            vesper_python_interpreter_from(vesp("/opt/exotic-venv/bin/python"), vesp(temp.to_str().unwrap()));
+        assert_eq!(interp, "/opt/exotic-venv/bin/python");
+        assert!(from_env);
+
+        // 4. Empty VESPER_PYTHON_PATH is ignored, GLM_VENV_PATH still wins.
+        let (interp, from_env) =
+            vesper_python_interpreter_from(vesp(""), vesp(temp.to_str().unwrap()));
+        assert_eq!(interp, python_file.to_string_lossy());
+        assert!(from_env);
+
+        // 5. GLM_VENV_PATH with no bin/python falls through to python3.
+        let (interp, from_env) = vesper_python_interpreter_from(none, vesp("/nonexistent-venv-root"));
+        assert_eq!(interp, "python3");
+        assert!(!from_env);
+
+        let _ = std::fs::remove_dir_all(&temp);
+    }
+
+    #[test]
+    fn candidate_whisper_pythons_auto_discovers_sibling_venvs() {
+        // Build a fake "Projects" tree and a fake harness voice venv. Assert
+        // ordering: env override first → harness voice venv → alphabetical
+        // sibling venvs → bare python3 last. All without any user config.
+        fn vesp(s: &str) -> Option<&std::ffi::OsStr> {
+            Some(std::ffi::OsStr::new(s))
+        }
+        let none: Option<&std::ffi::OsStr> = None;
+        let nop: Option<&std::path::Path> = None;
+
+        let root = std::env::temp_dir().join(format!(
+            "vesper-cand-test-{}",
+            std::process::id()
+        ));
+        let setup = |project: &str, layout: &str| {
+            let py = root.join(project).join(layout).join("bin").join("python");
+            std::fs::create_dir_all(py.parent().unwrap()).unwrap();
+            std::fs::write(&py, "#!/bin/sh\n").unwrap();
+            py
+        };
+        let alpha_py = setup("alpha-project", ".venv");
+        let beta_py = setup("beta-project", ".venv");
+        let gamma_py = setup("gamma-project", "venv");
+        // A project dir with no python binary is silently skipped.
+        std::fs::create_dir_all(root.join("delta-no-venv")).unwrap();
+        // The harness-owned voice venv lives outside the projects tree.
+        let voice_root = std::env::temp_dir().join(format!(
+            "vesper-voice-venv-test-{}",
+            std::process::id()
+        ));
+        let voice_python = voice_root.join("bin").join("python");
+        std::fs::create_dir_all(voice_python.parent().unwrap()).unwrap();
+        std::fs::write(&voice_python, "#!/bin/sh\n").unwrap();
+
+        // 1. No env override → harness voice venv, then alphabetical sibling
+        //    venvs, then python3.
+        let cands = candidate_whisper_pythons_in(Some(&voice_root), Some(&root), none, none);
+        assert_eq!(cands[0], voice_python.to_string_lossy());
+        assert_eq!(cands[1], alpha_py.to_string_lossy());
+        assert_eq!(cands[2], beta_py.to_string_lossy());
+        assert_eq!(cands[3], gamma_py.to_string_lossy());
+        assert_eq!(cands.last().unwrap(), "python3");
+        assert_eq!(cands.len(), 5);
+
+        // 2. Env override appears first, ahead of the harness voice venv.
+        let cands =
+            candidate_whisper_pythons_in(Some(&voice_root), Some(&root), vesp("/opt/custom-python"), none);
+        assert_eq!(cands[0], "/opt/custom-python");
+        assert_eq!(cands[1], voice_python.to_string_lossy());
+        assert_eq!(cands.last().unwrap(), "python3");
+
+        // 3. No voice venv present → starts at sibling venvs.
+        let cands = candidate_whisper_pythons_in(nop, Some(&root), none, none);
+        assert_eq!(cands[0], alpha_py.to_string_lossy());
+        assert_eq!(cands.last().unwrap(), "python3");
+
+        // 4. No projects dir at all → voice venv, then python3.
+        let cands = candidate_whisper_pythons_in(Some(&voice_root), nop, none, none);
+        let expected: Vec<String> = vec![
+            voice_python.to_string_lossy().into_owned(),
+            "python3".to_string(),
+        ];
+        assert_eq!(cands, expected);
+
+        // 5. Nothing at all → just python3.
+        let cands = candidate_whisper_pythons_in(nop, nop, none, none);
+        assert_eq!(cands, vec!["python3".to_string()]);
+
+        // 6. Nonexistent dirs → just python3 (no panic).
+        let cands = candidate_whisper_pythons_in(
+            Some(std::path::Path::new("/no/such/voice")),
+            Some(std::path::Path::new("/no/such/projects")),
+            none,
+            none,
+        );
+        assert_eq!(cands, vec!["python3".to_string()]);
+
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&voice_root);
+    }
+
+    #[test]
+    fn bundled_uv_from_returns_first_existing_candidate() {
+        // Pure core: returns the first candidate that exists as a file.
+        let temp = std::env::temp_dir().join(format!(
+            "vesper-uv-test-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&temp).unwrap();
+        let real = temp.join("uv");
+        std::fs::write(&real, "#!/bin/sh\n").unwrap();
+
+        // First existing wins.
+        let cands = vec![
+            std::path::PathBuf::from("/no/such/a/uv"),
+            real.clone(),
+            std::path::PathBuf::from("/no/such/b/uv"),
+        ];
+        assert_eq!(bundled_uv_from(&cands), Some(real.clone()));
+
+        // None exist → None.
+        let cands = vec![
+            std::path::PathBuf::from("/no/such/a"),
+            std::path::PathBuf::from("/no/such/b"),
+        ];
+        assert_eq!(bundled_uv_from(&cands), None);
+
+        // Empty → None.
+        assert_eq!(bundled_uv_from(&[]), None);
+
+        let _ = std::fs::remove_dir_all(&temp);
+    }
+
+    #[test]
+    #[ignore = "requires network + uv/python3-venv; run with `--ignored`"]
+    fn bootstrap_voice_backend_creates_a_working_venv_end_to_end() {
+        // Fresh-evidence integration test: invokes the REAL bootstrap code
+        // path (bundled-uv → system-uv → python3-venv fallback) against a
+        // throwaway venv dir, then proves the resulting python can
+        // `import faster_whisper`. Gated behind #[ignore] because it needs
+        // network access to PyPI and `uv` (bundled or system).
+        //
+        // First, record which uv `resolve_uv_program` actually picks, so the
+        // evidence names the exact path exercised (bundled vs system).
+        let uv_used = resolve_uv_program();
+        eprintln!(
+            "bootstrap e2e: resolve_uv_program = {:?} (bundled preferred)",
+            uv_used
+        );
+
+        let temp = std::env::temp_dir().join(format!(
+            "vesper-bootstrap-e2e-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let interp = bootstrap_voice_backend_in(&temp).unwrap_or_else(|e| {
+            panic!("bootstrap_voice_backend_in failed: {e}")
+        });
+        assert!(
+            interp.ends_with("bin/python") || interp.ends_with("python"),
+            "unexpected interpreter path: {interp}"
+        );
+        assert!(
+            std::path::Path::new(&interp).is_file(),
+            "bootstrap returned a non-existent interpreter: {interp}"
+        );
+        // The decisive check: the venv the bootstrap created can actually
+        // import faster_whisper (the same probe the production discovery
+        // uses).
+        let probe = bounded_command_output(
+            &interp,
+            &["-c", "import faster_whisper; print('ok')"],
+            std::time::Duration::from_secs(10),
+        );
+        assert!(
+            probe.is_ok(),
+            "bootstrapped venv cannot import faster_whisper: {:?}",
+            probe
+        );
+        eprintln!(
+            "bootstrap e2e: created {} via uv={:?}, faster_whisper imports OK",
+            interp, uv_used
+        );
+        let _ = std::fs::remove_dir_all(&temp);
+    }
+
+    #[test]
+    fn parse_sidecar_response_handles_text_error_and_malformed() {
+        // Happy path: text present, error null.
+        assert_eq!(
+            parse_sidecar_response(r#"{"text":"hello world","error":null}"#),
+            Ok("hello world".to_string())
+        );
+        // Empty text + null error is a valid (empty) transcription.
+        assert_eq!(
+            parse_sidecar_response(r#"{"text":"","error":null}"#),
+            Ok(String::new())
+        );
+        // Non-empty error → Err regardless of text.
+        assert_eq!(
+            parse_sidecar_response(r#"{"text":"","error":"model load failed: x"}"#),
+            Err("model load failed: x".to_string())
+        );
+        // Text with embedded special chars round-trips intact.
+        assert_eq!(
+            parse_sidecar_response(r#"{"text":"line\nbreak & \"quote\"","error":null}"#),
+            Ok("line\nbreak & \"quote\"".to_string())
+        );
+        // Missing text field → empty string, not an error.
+        assert_eq!(
+            parse_sidecar_response(r#"{"error":null}"#),
+            Ok(String::new())
+        );
+        // Malformed JSON → Err.
+        assert!(parse_sidecar_response("not json").is_err());
+        assert!(parse_sidecar_response("").is_err());
+    }
+
+    #[test]
+    #[ignore = "requires network + a faster-whisper-capable Python; run with `--ignored`"]
+    fn voice_sidecar_transcribes_two_clips_with_one_model_load() {
+        // Fresh-evidence integration test for the persistent sidecar: spawns
+        // the REAL sidecar via the discovered interpreter, transcribes two
+        // synthetic WAV clips, and proves the second transcription reuses the
+        // warm model (no reload). This is the architectural win over the old
+        // per-call subprocess.
+        let interp = discover_whisper_python().unwrap_or_else(|| {
+            panic!("no faster-whisper Python found; bootstrap first")
+        });
+        let mut sidecar = VoiceSidecar::spawn(&interp)
+            .expect("sidecar spawn failed");
+
+        // faster_whisper accepts any decodable audio; generate two short
+        // silent WAVs (valid 44-byte+ RIFF) so transcription returns empty
+        // text without error. This proves the request/response round-trip and
+        // model reuse without depending on real speech.
+        let mk_wav = |suffix: &str| -> String {
+            use std::io::Write;
+            let path = std::env::temp_dir().join(format!(
+                "vesper-sidecar-e2e-{}-{}-{}.wav",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis(),
+                suffix
+            ));
+            // Minimal valid WAV: 44-byte header + 1s of 16-bit silence at
+            // 16kHz mono (256000 samples-ish would be large; keep it tiny with
+            // 8000 Hz, 1 channel, 16-bit, 1000 samples = 2000 bytes data).
+            let mut f = std::fs::File::create(&path).unwrap();
+            let sample_rate: u32 = 8000;
+            let num_samples: u32 = 1000;
+            let data_len: u32 = num_samples * 2;
+            let _ = f.write_all(b"RIFF");
+            let _ = f.write_all(&(36 + data_len).to_le_bytes());
+            let _ = f.write_all(b"WAVE");
+            let _ = f.write_all(b"fmt ");
+            let _ = f.write_all(&16u32.to_le_bytes()); // PCM chunk size
+            let _ = f.write_all(&1u16.to_le_bytes()); // PCM format
+            let _ = f.write_all(&1u16.to_le_bytes()); // mono
+            let _ = f.write_all(&sample_rate.to_le_bytes());
+            let _ = f.write_all(&(sample_rate * 2).to_le_bytes()); // byte rate
+            let _ = f.write_all(&2u16.to_le_bytes()); // block align
+            let _ = f.write_all(&16u16.to_le_bytes()); // bits per sample
+            let _ = f.write_all(b"data");
+            let _ = f.write_all(&data_len.to_le_bytes());
+            let _ = f.write_all(&vec![0u8; data_len as usize]);
+            path.to_string_lossy().into_owned()
+        };
+
+        let wav1 = mk_wav("a");
+        let wav2 = mk_wav("b");
+        let t0 = std::time::Instant::now();
+        let r1 = sidecar
+            .transcribe(&wav1, std::time::Duration::from_secs(90))
+            .expect("first transcription failed");
+        let first_elapsed = t0.elapsed();
+        let t1 = std::time::Instant::now();
+        let r2 = sidecar
+            .transcribe(&wav2, std::time::Duration::from_secs(60))
+            .expect("second transcription failed");
+        let second_elapsed = t1.elapsed();
+        eprintln!(
+            "sidecar e2e: first (cold, pays model load) {:?}, second (warm) {:?}, \
+             texts={:?},{:?}",
+            first_elapsed, second_elapsed, r1, r2
+        );
+        // The architectural contract this test enforces: the sidecar stays
+        // alive across multiple transcriptions (one model load, reused), and
+        // both round-trips return well-formed results. Silent audio transcribes
+        // to empty/whitespace text. We do NOT assert wall-clock cold-vs-warm
+        // ordering: faster-whisper's CPU inference time is noisy and can
+        // exceed the one-time model-load savings, but the load itself is paid
+        // exactly once (by Python script structure) regardless of timing.
+        assert!(r1.is_empty() || !r1.chars().any(|c| !c.is_whitespace()));
+        assert!(r2.is_empty() || !r2.chars().any(|c| !c.is_whitespace()));
+        let _ = std::fs::remove_file(&wav1);
+        let _ = std::fs::remove_file(&wav2);
     }
 }

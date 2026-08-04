@@ -253,7 +253,34 @@ business logic.
   F4 cycles bounded real Changes/Git/Diff/Files/GitHub views. F5 uses the same
   optional `arecord`/`afrecord` plus local `faster-whisper` contract as the
   frozen oracle and must report unavailable dependencies without fabricating
-  input. Ctrl-Shift-C copies only app-managed mouse-selected transcript text.
+  input. The voice sidecar's Python interpreter is **auto-discovered** with no
+  user configuration: the binary probes, in order, an explicit env override
+  (`VESPER_PYTHON_PATH` → absolute Python path; `GLM_VENV_PATH` → virtualenv
+  root with `bin/python` appended), then the harness-owned voice venv at
+  `$AGENT_VESPER_VOICE_VENV`/`$XDG_DATA_HOME/agent-vesper/voice-venv`/
+  `~/.local/share/agent-vesper/voice-venv`, then sibling project venvs under
+  `$HOME/Projects/*/{.venv,venv,.virtualenv}/bin/python` (alphabetical), then
+  bare `python3`. Each candidate is probed with `import faster_whisper`; the
+  first success is cached for the process lifetime. When **no** candidate
+  works on first F5, the binary **auto-bootstraps** the harness-owned voice
+  venv (`uv venv` + `uv pip install faster-whisper`, falling back to
+  `python3 -m venv` + `pip install`) and asks the user to press F5 again; this
+  makes voice work for any installer user with no separate setup. The `uv`
+  used is the **installer-bundled** binary at the bundle dir
+  (`$AGENT_VESPER_BUNDLE_DIR` / `$XDG_DATA_HOME/agent-vesper` /
+  `~/.local/share/agent-vesper/uv`) preferred over system `uv`; with the
+  bundled `uv` present, venv creation needs no external toolchain (the
+  `python3 -m venv` fallback still requires `python3`+`python3-venv` and is
+  only reached if `uv` is absent). Transcription uses a **long-lived Python
+  sidecar** (`VoiceSidecar`): one process loads the `faster-whisper` model
+  once on first F5 START (hidden behind recording time) and stays warm for the
+  session, transcribing subsequent clips without reloading the model — this is
+  what makes push-to-talk feel instant after the first press (the old per-call
+  subprocess reloaded the model every time). The sidecar is killed on session
+  exit. The
+  bootstrap result is cached so subsequent presses are instant. When all
+  strategies fail, the status line names the fix. Ctrl-Shift-C copies only
+  app-managed mouse-selected transcript text.
 - Provider catalogs and provider-specific settings belong to adapters. The
   production composition currently registers only the real Z.ai adapter;
   provider-neutral runtime/registry boundaries must not be described as a
