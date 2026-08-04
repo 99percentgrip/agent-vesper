@@ -68,37 +68,47 @@ type Backend = CrosstermBackend<io::Stdout>;
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
-    if std::env::args()
-        .skip(1)
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args
+        .iter()
         .any(|arg| matches!(arg.as_str(), "--version" | "-V"))
     {
         println!("agent-vesper-tui {}", env!("CARGO_PKG_VERSION"));
         return Ok(());
     }
-    if std::env::args()
-        .skip(1)
+    if args
+        .iter()
         .any(|arg| matches!(arg.as_str(), "--help" | "-h"))
     {
         println!(
-            "agent-vesper-tui {}\nNative multi-provider agent harness terminal.\n\nUSAGE:\n    agent-vesper-tui\n    agent-vesper-tui --version",
+            "agent-vesper-tui {}\nNative multi-provider agent harness terminal.\n\nUSAGE:\n    agent-vesper-tui                      # new session\n    agent-vesper-tui --resume <SESSION_ID> # resume a saved session\n    agent-vesper-tui --version",
             env!("CARGO_PKG_VERSION")
         );
         return Ok(());
     }
+    // Parse `--resume <id>` or `--resume=<id>`.
+    let resume_id: Option<String> = args
+        .iter()
+        .position(|arg| arg == "--resume")
+        .and_then(|index| args.get(index + 1).cloned())
+        .or_else(|| {
+            args.iter()
+                .find_map(|arg| arg.strip_prefix("--resume=").map(str::to_string))
+        });
     // Tracing goes to stderr only; stdout is reserved for terminal escapes.
     let _ = tracing_subscriber::fmt()
         .with_writer(io::stderr)
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .try_init();
 
-    if let Err(message) = run().await {
+    if let Err(message) = run(resume_id).await {
         error!("agent-vesper-tui exited with error: {message}");
         return Err(io::Error::other(message));
     }
     Ok(())
 }
 
-async fn run() -> Result<(), String> {
+async fn run(resume_id: Option<String>) -> Result<(), String> {
     let provider_id = ProviderId::new(provider_name_from_env().as_str())
         .map_err(|error| format!("invalid provider id: {error}"))?;
 
@@ -212,6 +222,16 @@ async fn run() -> Result<(), String> {
         selected_text: String::new(),
     };
 
+    // `--resume <id>`: load a previously persisted session before entering the
+    // event loop so the user continues exactly where they left off. A failed
+    // load is non-fatal — print to stderr and start a fresh session.
+    if let Some(id) = &resume_id
+        && let Err(error) = load_tui_session(id, &mut session)
+    {
+        eprintln!("agent-vesper-tui: could not resume session `{id}`: {error}");
+        eprintln!("Starting a fresh session instead.");
+    }
+
     enter_raw_mode().map_err(|error| format!("failed to enter raw mode: {error}"))?;
     let result = drive_loop(
         &provider_id,
@@ -230,6 +250,20 @@ async fn run() -> Result<(), String> {
     )
     .await;
     let _ = leave_raw_mode();
+    // Persist the final session state so the resume link below always points
+    // at a real file — even if the user quit before any agent turn completed
+    // (turns also persist incrementally, this is a safety net for exit time).
+    if let Err(error) = persist_tui_conversation(&session) {
+        eprintln!("agent-vesper-tui: could not save session for resume: {error}");
+    }
+    // Print the resume link to stderr (matching the frozen oracle's behavior:
+    // stdout stays reserved for terminal escapes). Only print when the session
+    // has an id, so a fresh run always offers a resume path for next time.
+    if !session.session_id.is_empty() {
+        eprintln!();
+        eprintln!("📋 Session saved. To resume this conversation:");
+        eprintln!("   agent-vesper-tui --resume {}", session.session_id);
+    }
     result
 }
 
@@ -278,7 +312,14 @@ async fn init_runtime_session(
                     path: BoundedString::new(".").expect("bounded path"),
                     primary: true,
                 }],
-                requested_session_id: Some(SessionId::new("vesper-tui").expect("bounded id")),
+                // A unique per-session UUID (matching the frozen oracle's
+                // `f8fa7dde-…` style) so each TUI run persists to its own
+                // `<uuid>.json` and is independently resumable via
+                // `agent-vesper-tui --resume <uuid>`.
+                requested_session_id: Some(
+                    SessionId::new(uuid::Uuid::new_v4().to_string())
+                        .expect("bounded uuid session id"),
+                ),
             },
         ))
         .await?;
