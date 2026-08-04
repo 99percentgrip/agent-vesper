@@ -9,11 +9,11 @@
 
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout, Position},
+    layout::{Alignment, Constraint, Direction, Layout, Position, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{
-        Block, Borders, Gauge, List, ListItem, ListState, Paragraph, Scrollbar,
+        Block, Borders, Clear, Gauge, List, ListItem, ListState, Paragraph, Scrollbar,
         ScrollbarOrientation, ScrollbarState, Wrap,
     },
 };
@@ -21,6 +21,49 @@ use ratatui::{
 use crate::dispatch::{PanelVisibility, SessionControls, TaskItem, TerminalPreferences};
 use crate::plan_mode::{PlanPhase, PlanState};
 use crate::superpowers::{ProviderSuperpowerSurface, SuperpowerOverrides};
+
+/// Which action button the tool-permission modal highlights.
+///
+/// Defaults to `Allow` (the safe, conservative pick — the user must move focus
+/// to `Deny` deliberately). Mirrored into the [`ViewModel`] every frame and
+/// mutated by Tab/arrow-key input while the modal is open.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PermissionChoice {
+    /// Red-highlighted `[ Deny ]` button (reject the one-time approval).
+    Deny,
+    /// Green-highlighted `[ Allow once ]` button (default focus).
+    #[default]
+    Allow,
+}
+
+impl PermissionChoice {
+    /// Toggles between `Deny` and `Allow` (Tab / Left / Right).
+    #[must_use]
+    pub const fn toggle(self) -> Self {
+        match self {
+            Self::Deny => Self::Allow,
+            Self::Allow => Self::Deny,
+        }
+    }
+}
+
+/// Host-visible tool-permission modal state. Surfaced through
+/// [`ViewModel::pending_permission`] when the agent loop has emitted an
+/// unresolved one-time approval request. The renderer paints a centered
+/// `Clear` + bordered dialog over the conversation; the binary's event loop
+/// owns the focus pointer and submits the user's decision back through
+/// [`vesper_agent::PermissionRequest::approve`] / `reject`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PermissionModal {
+    /// Tool awaiting approval (e.g. `run_shell_command`).
+    pub tool: String,
+    /// Pretty-printed JSON arguments the model supplied.
+    pub arguments: String,
+    /// Human-readable static-gate reason.
+    pub reason: String,
+    /// Currently focused action button.
+    pub focus: PermissionChoice,
+}
 
 /// Pure view model the renderer consumes every frame.
 #[derive(Debug, Clone, Default)]
@@ -72,6 +115,12 @@ pub struct ViewModel {
     /// `position = max_scroll.saturating_sub(n)` — the same value passed to
     /// `Paragraph::scroll` — so the thumb position is always truthful.
     pub conversation_manual_scroll: Option<u16>,
+    /// Pending tool-permission modal. `Some` whenever the agent loop has
+    /// emitted a one-time approval request that has not been resolved; the
+    /// renderer overlays a centered `Clear` + bordered dialog over the
+    /// conversation. The binary's event loop intercepts Tab/arrow/Enter/Esc
+    /// while this is set so the user can only choose `Deny` or `Allow once`.
+    pub pending_permission: Option<PermissionModal>,
 }
 
 /// Abstraction over a terminal backend.
@@ -212,11 +261,15 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
         ]);
         (ratatui::text::Text::from(ready), 1)
     } else {
-        // Parse the joined transcript as one markdown document so multi-line
-        // constructs (code fences, multi-line lists) render correctly, and so
-        // streaming partial syntax degrades gracefully.
-        let joined = transcript_lines.join("\n");
-        let rendered = crate::markdown::render_markdown(&joined);
+        // Render each top-level transcript line through markdown separately
+        // so role banners can apply a distinct background style across the
+        // full pane width. A `user:` prefix marks a user turn (full-width
+        // dark-blue banner); every other role (assistant, streaming, plan
+        // context, errors) renders against the default background. Joining
+        // all entries into one document (the previous approach) collapses
+        // markdown constructs across role boundaries and loses the per-turn
+        // segmentation the reference layout shows.
+        let rendered = render_transcript_with_role_banners(&transcript_lines);
         let estimate = estimated_wrapped_lines(&rendered, inner_width);
         (ratatui::text::Text::from(rendered), estimate)
     };
@@ -444,6 +497,171 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
         Paragraph::new(footer).style(Style::default().fg(Color::Rgb(91, 155, 213))),
         chunks[6],
     );
+
+    // Overlay the tool-permission modal LAST so it paints over every other
+    // panel. `Clear` resets the underlying cells first so the dialog reads as
+    // a true pop-up rather than a tinted in-place block.
+    render_permission_modal(frame, model);
+}
+
+/// Renders the interactive tool-permission modal centered over the screen.
+/// Called from [`render_to_frame`] only when
+/// [`ViewModel::pending_permission`] is set.
+///
+/// The modal uses [`Clear`] to reset the underlying cells, then paints a
+/// bordered dialog with the tool name, JSON arguments, and two action
+/// buttons (`[ Deny ]` red, `[ Allow once ]` green). The currently focused
+/// button is highlighted; Tab / Left / Right toggles focus; Enter submits.
+///
+/// Dimensions scale with the terminal: width is ~3/4 of the pane clamped to
+/// `[40, 90]`, height is ~2/5 of the pane clamped to `[9, 22]`. A degenerate
+/// 1×1 terminal still renders without panicking because every layout
+/// constraint has a `Length` floor.
+fn render_permission_modal(frame: &mut Frame<'_>, model: &ViewModel) {
+    let Some(modal) = model.pending_permission.as_ref() else {
+        return;
+    };
+    let screen = frame.area();
+
+    // Width / height scale smoothly with the terminal but never collapse
+    // below the modal's structural minimums. The clamps guard against
+    // degenerate resize windows (the directive: "the modal dimensions scale
+    // smoothly and do not panic on compact terminal windows").
+    let width = (screen.width * 3 / 4).clamp(40, 90).min(screen.width);
+    let height = (screen.height * 2 / 5).clamp(9, 22).min(screen.height);
+    let x = screen.x + (screen.width.saturating_sub(width)) / 2;
+    let y = screen.y + (screen.height.saturating_sub(height)) / 2;
+    let modal_area = Rect {
+        x,
+        y,
+        width,
+        height,
+    };
+
+    // Erase the underlying cells first so the dialog reads as a true pop-up.
+    frame.render_widget(Clear, modal_area);
+
+    // Two stacked regions: content body (flexible) + button row (fixed).
+    let body_height = height.saturating_sub(4);
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(body_height.max(3)),
+            Constraint::Length(3),
+        ])
+        .split(modal_area);
+
+    // Body: reason → blank → tool name → blank → "Arguments:" → wrapped args.
+    let mut body_lines: Vec<Line<'static>> = Vec::new();
+    if !modal.reason.is_empty() {
+        body_lines.push(Line::from(Span::styled(
+            modal.reason.clone(),
+            Style::default().fg(Color::Yellow),
+        )));
+    }
+    body_lines.push(Line::raw(""));
+    body_lines.push(Line::from(vec![
+        Span::styled("Tool:  ", Style::default().add_modifier(Modifier::BOLD)),
+        Span::raw(modal.tool.clone()),
+    ]));
+    body_lines.push(Line::raw(""));
+    body_lines.push(Line::from(Span::styled(
+        "Arguments:",
+        Style::default().add_modifier(Modifier::BOLD),
+    )));
+    // Wrap the JSON arguments into the inner width so a long shell command
+    // stays readable and never overflows the bordered dialog.
+    let inner_width = usize::from(width.saturating_sub(2)).max(1);
+    for wrapped in wrap_text_simple(&modal.arguments, inner_width) {
+        body_lines.push(Line::from(Span::styled(
+            wrapped,
+            Style::default().fg(Color::Rgb(159, 214, 255)),
+        )));
+    }
+
+    frame.render_widget(
+        Paragraph::new(body_lines).wrap(Wrap { trim: false }).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Rgb(220, 80, 80)))
+                .title(Line::from(vec![Span::styled(
+                    " Tool permission required ",
+                    Style::default()
+                        .fg(Color::Rgb(255, 230, 120))
+                        .add_modifier(Modifier::BOLD),
+                )])),
+        ),
+        chunks[0],
+    );
+
+    // Action buttons. Focused button gets a saturated background; unfocused
+    // button dims. Tab / Left / Right toggles focus; Enter submits the
+    // focused choice.
+    let deny_focused = matches!(modal.focus, PermissionChoice::Deny);
+    let allow_focused = matches!(modal.focus, PermissionChoice::Allow);
+    let deny_style = if deny_focused {
+        Style::default()
+            .bg(Color::Rgb(180, 30, 30))
+            .fg(Color::White)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+    let allow_style = if allow_focused {
+        Style::default()
+            .bg(Color::Rgb(20, 150, 60))
+            .fg(Color::White)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+
+    let button_row = Line::from(vec![
+        Span::raw("   "),
+        Span::styled("[ Deny ]", deny_style),
+        Span::raw("       "),
+        Span::styled("[ Allow once ]", allow_style),
+        Span::raw("   "),
+    ]);
+    frame.render_widget(
+        Paragraph::new(button_row).alignment(Alignment::Center),
+        chunks[1],
+    );
+}
+
+/// Greedy word-boundary wrapper for modal body text. Used for the JSON
+/// arguments preview so a long shell command stays readable inside the
+/// bordered dialog without overflowing. Not a general-purpose wrapper —
+/// only the tool-permission modal uses it.
+fn wrap_text_simple(text: &str, width: usize) -> Vec<String> {
+    let width = width.max(1);
+    let mut out = Vec::new();
+    for source_line in text.split('\n') {
+        if source_line.is_empty() {
+            out.push(String::new());
+            continue;
+        }
+        let mut current = String::new();
+        for word in source_line.split_whitespace() {
+            let sep = if current.is_empty() { "" } else { " " };
+            let candidate_len =
+                current.chars().count() + sep.chars().count() + word.chars().count();
+            if candidate_len > width && !current.is_empty() {
+                out.push(std::mem::take(&mut current));
+                current.push_str(word);
+            } else {
+                current.push_str(sep);
+                current.push_str(word);
+            }
+        }
+        if !current.is_empty() || out.last().is_some_and(|s| s.is_empty()) {
+            out.push(current);
+        }
+    }
+    if out.is_empty() {
+        out.push(String::new());
+    }
+    out
 }
 
 fn theme_style(theme: &str) -> Style {
@@ -462,6 +680,49 @@ fn theme_style(theme: &str) -> Style {
             .fg(Color::Rgb(226, 232, 240))
             .bg(Color::Rgb(7, 11, 18)),
     }
+}
+
+/// Background style applied to user-turn banner lines. The reference Native
+/// GLM TUI shows user turns inside a dark-blue full-width container so the
+/// conversational turn changes read instantly. ratatui's `Line::style`
+/// background fills trailing empty cells, so a single styled `Line` paints
+/// the whole pane row even when the visible text is short.
+fn user_banner_style() -> Style {
+    Style::default()
+        .fg(Color::Rgb(226, 240, 255))
+        .bg(Color::Rgb(11, 36, 71))
+        .add_modifier(Modifier::BOLD)
+}
+
+/// Renders each transcript entry through markdown, then paints every line of
+/// a user turn (`user:` prefix) with the dark-blue banner style. Non-user
+/// lines (assistant, streaming, plan context, errors) keep the default
+/// styling so the conversation alternates visually between user and
+/// assistant turns.
+///
+/// Splitting per entry (rather than joining all entries into one markdown
+/// document) is intentional: it preserves role boundaries so the banner
+/// style can apply turn-by-turn. Multi-line constructs inside one entry
+/// (code fences, lists with nested indentation) still render correctly
+/// because the markdown parser sees the full entry as one document.
+fn render_transcript_with_role_banners(transcript_lines: &[String]) -> Vec<Line<'static>> {
+    let user_style = user_banner_style();
+    let mut rendered: Vec<Line<'static>> = Vec::new();
+    for raw in transcript_lines {
+        let is_user_turn = raw.starts_with("user:");
+        let mut lines = crate::markdown::render_markdown(raw);
+        if is_user_turn {
+            for line in lines.iter_mut() {
+                // `patch` keeps span-local foreground / modifier overrides
+                // (bold code labels, list bullets) while layering the banner
+                // background underneath, so trailing empty cells fill the
+                // full pane width with the dark-blue banner color.
+                line.style = line.style.patch(user_style);
+            }
+        }
+        rendered.extend(lines);
+    }
+    rendered
 }
 
 /// Estimates how many display rows `lines` will occupy after ratatui wraps
@@ -1038,6 +1299,168 @@ mod tests {
         assert!(
             !content.contains("line 199"),
             "Home must NOT show the bottom of the transcript"
+        );
+    }
+
+    #[test]
+    fn user_turns_render_with_dark_blue_role_banner_background() {
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
+        // The reference Native GLM TUI shows user turns inside a full-width
+        // dark-blue container so turn changes read instantly. The renderer
+        // must apply a distinct background style to every cell on every line
+        // belonging to a `user:` turn (including trailing empty cells, so
+        // the banner stretches across the full pane width).
+        let model = ViewModel {
+            transcript: vec![
+                "assistant: hello there".to_string(),
+                "user: please help".to_string(),
+            ],
+            ..ViewModel::default()
+        };
+
+        let backend = TestBackend::new(40, 10);
+        let mut terminal = Terminal::new(backend).expect("test backend");
+        terminal
+            .draw(|f| render_to_frame(f, &model))
+            .expect("role banner render must not panic");
+
+        let buffer = terminal.backend().buffer();
+        let user_banner_bg = Color::Rgb(11, 36, 71);
+        // Find at least one cell on the user turn row ("please help") and
+        // confirm the dark-blue banner bg is set.
+        let content: String = buffer.content.iter().map(|cell| cell.symbol()).collect();
+        assert!(content.contains("please help"), "user text must be visible");
+
+        let mut found_banner_cell = false;
+        for cell in &buffer.content {
+            if (cell.symbol() == "p" || cell.symbol() == "l") && cell.bg == user_banner_bg {
+                found_banner_cell = true;
+                break;
+            }
+        }
+        assert!(
+            found_banner_cell,
+            "at least one user-turn character cell must carry the dark-blue banner background"
+        );
+
+        // Find a trailing empty cell on the user row and confirm it ALSO
+        // carries the banner bg — this is what makes the banner span the
+        // full pane width rather than only covering the typed characters.
+        let mut found_full_width_fill = false;
+        for cell in &buffer.content {
+            if cell.symbol() == " " && cell.bg == user_banner_bg {
+                found_full_width_fill = true;
+                break;
+            }
+        }
+        assert!(
+            found_full_width_fill,
+            "trailing empty cells on the user turn row must fill with the banner bg"
+        );
+    }
+
+    #[test]
+    fn render_permission_modal_overlays_centered_dialog_without_panicking() {
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
+        let model = ViewModel {
+            transcript: vec!["assistant: working…".to_string()],
+            pending_permission: Some(PermissionModal {
+                tool: "run_shell_command".to_string(),
+                arguments: r#"{"command":"ls -la"}"#.to_string(),
+                reason: "Shell tool requires one-time approval".to_string(),
+                focus: PermissionChoice::Allow,
+            }),
+            ..ViewModel::default()
+        };
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).expect("test backend");
+        terminal
+            .draw(|f| render_to_frame(f, &model))
+            .expect("modal render must not panic");
+
+        let content: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(
+            content.contains("Tool permission required"),
+            "modal title must be visible"
+        );
+        assert!(
+            content.contains("run_shell_command"),
+            "modal must show the tool name"
+        );
+        assert!(
+            content.contains("Deny") && content.contains("Allow once"),
+            "both action buttons must be visible"
+        );
+    }
+
+    #[test]
+    fn render_permission_modal_survives_compact_terminal_resize() {
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
+        // A degenerate 1x1 / 4x4 area stresses the modal layout math; the
+        // clamps (width ≥ 9, height ≥ 9, both `.min(screen)`) must keep the
+        // Rect inside the screen and prevent any panic from `Layout::split`.
+        for (w, h) in [(1u16, 1u16), (4, 4), (10, 10), (40, 12), (200, 60)] {
+            let model = ViewModel {
+                pending_permission: Some(PermissionModal {
+                    tool: "x".to_string(),
+                    arguments: "{}".to_string(),
+                    reason: "r".to_string(),
+                    focus: PermissionChoice::Deny,
+                }),
+                ..ViewModel::default()
+            };
+            let backend = TestBackend::new(w, h);
+            let mut terminal = Terminal::new(backend).expect("test backend");
+            terminal
+                .draw(|f| render_to_frame(f, &model))
+                .unwrap_or_else(|e| panic!("modal must not panic at {w}x{h}: {e}"));
+        }
+    }
+
+    #[test]
+    fn permission_choice_toggle_round_trips() {
+        // Tab / Left / Right toggle focus. Default is Allow (conservative);
+        // a single toggle moves to Deny; a second returns to Allow.
+        assert_eq!(PermissionChoice::Allow.toggle(), PermissionChoice::Deny);
+        assert_eq!(PermissionChoice::Deny.toggle(), PermissionChoice::Allow);
+        assert_eq!(
+            PermissionChoice::default(),
+            PermissionChoice::Allow,
+            "default focus must be Allow so the user must deliberately move to Deny"
+        );
+    }
+
+    #[test]
+    fn wrap_text_simple_respects_width_without_dropping_words() {
+        let wrapped = wrap_text_simple("alpha beta gamma delta", 10);
+        // Each output line must fit within the requested width.
+        for line in &wrapped {
+            assert!(
+                line.chars().count() <= 10,
+                "line `{line}` exceeds the requested width"
+            );
+        }
+        // No word may be dropped.
+        let joined = wrapped.join(" ");
+        for word in ["alpha", "beta", "gamma", "delta"] {
+            assert!(joined.contains(word), "word `{word}` was dropped");
+        }
+        assert!(
+            !wrapped.is_empty(),
+            "wrapper must produce at least one line"
         );
     }
 }
