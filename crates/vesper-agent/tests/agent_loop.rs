@@ -9,13 +9,14 @@ use std::sync::{Arc, Mutex};
 use serde_json::json;
 use vesper_agent::{
     AgentLoop, AgentLoopConfig, AgentProgressEvent, AgentProgressPort, AgentTurnOutcome,
-    DEFAULT_MAX_TOOL_ITERATIONS, ToolRegistry,
+    DEFAULT_MAX_TOOL_ITERATIONS, ToolContext, ToolError, ToolExecutor, ToolFuture, ToolRegistry,
+    ToolResult, ToolService, schema_definition,
 };
 use vesper_domain::{
     BoundedString, ContentPart, ContentText, ConversationMessage, ExtensionMap, FinishOutcome,
     MessageId, MessageRole, MessageRole::User, ProviderId, QualifiedModelId, ReasoningKind,
     ReasoningRetention, SchemaVersion, SessionOperatingMode, SessionPermissionMode, ToolCall,
-    ToolCallId, ToolId, VersionedExtensionEnvelope,
+    ToolCallId, ToolDefinition, ToolExecutionClass, ToolId, VersionedExtensionEnvelope,
 };
 use vesper_provider::{
     CancellationSignal, ProviderConfiguration, ProviderError, ProviderFactory, ProviderFuture,
@@ -577,4 +578,448 @@ async fn opaque_continuation_reasoning_is_not_forwarded_to_the_progress_port() {
             .any(|event| matches!(event, AgentProgressEvent::ReasoningDelta { .. })),
         "opaque continuation reasoning must not reach the progress port"
     );
+}
+
+// =========================================================================
+// Phase 2 — deferred tool loading & dynamic context injection
+// =========================================================================
+
+/// A host-injected service exposing one advertised tool (`discover_tools`)
+/// that returns a brand-new tool schema via `ToolResult::injected_tools`.
+/// Used to prove the agent loop mutates its advertised pool mid-turn.
+struct DiscoveringToolService;
+
+impl ToolService for DiscoveringToolService {
+    fn definitions(&self) -> Vec<ToolDefinition> {
+        vec![schema_definition(
+            "discover_tools",
+            "Discover tools on demand and inject their schemas into the loop.",
+            ToolExecutionClass::ReadOnly,
+            &[("query", "string", true)],
+        )]
+    }
+
+    fn execute<'a>(
+        &'a self,
+        _call: &'a ToolCall,
+        _context: &'a ToolContext,
+    ) -> ToolFuture<'a, Result<ToolResult, ToolError>> {
+        Box::pin(async move {
+            // Inject a schema that was NOT in the initial advertisement.
+            let injected = schema_definition(
+                "injected_runtime_tool",
+                "A tool surfaced mid-session by discover_tools.",
+                ToolExecutionClass::ReadOnly,
+                &[("path", "string", true)],
+            );
+            Ok(ToolResult::new("discovered 1 tool")
+                .expect("bounded")
+                .with_injected_tools(vec![injected]))
+        })
+    }
+}
+
+#[tokio::test]
+async fn loop_injects_returned_tool_schemas_into_the_next_turn_advertisement() {
+    let discover_call = ToolCall {
+        id: ToolCallId::new("call-1").unwrap(),
+        tool_id: ToolId::new("discover_tools").unwrap(),
+        arguments: json!({"query": "files"}),
+        extensions: ExtensionMap::default(),
+    };
+    // Turn 1: assistant text + discover_tools tool call.
+    let turn_with_tool: ScriptedProviderResponse = Ok(vec![
+        Ok(content_delta("Looking up tools.")),
+        Ok(ProviderStreamEvent::ToolCallCompleted(discover_call)),
+        Ok(completed(FinishOutcome::ToolCalls)),
+    ]);
+    // Turn 2: model stops, no further tool calls.
+    let turn_done: ScriptedProviderResponse = Ok(vec![
+        Ok(content_delta("Done.")),
+        Ok(completed(FinishOutcome::Stop)),
+    ]);
+
+    let provider_id = provider();
+    let fake = FakeProviderSession::with_scripts([turn_with_tool, turn_done]);
+    // FakeProviderSession shares its recorded-request buffer via
+    // `Arc<Mutex<_>>`; clone the handle before moving the original into the
+    // factory so we can inspect what the loop advertised on each turn.
+    let recorded = fake.clone();
+    let registry = Arc::new(ProviderRegistry::new());
+    registry
+        .register(FakeFactory {
+            id: provider_id.clone(),
+            session: fake,
+        })
+        .await
+        .unwrap();
+
+    // Register the discover_tools service alongside the 9 parity tools. The
+    // injected_runtime_tool is intentionally NOT advertised initially.
+    let tools = ToolRegistry::parity_default().with_service(Arc::new(DiscoveringToolService));
+
+    let progress = Arc::new(RecordingProgressPort::default());
+    let agent = AgentLoop::new(registry, tools, config(&provider_id, 10))
+        .with_progress_port(progress.clone());
+    let outcome = agent
+        .run_prompt(
+            user_message("discover a tool"),
+            SessionOperatingMode::Code,
+            SessionPermissionMode::Bypass,
+        )
+        .await
+        .expect("loop must complete");
+
+    // Two turns: discovery turn + final turn.
+    assert!(
+        matches!(outcome, AgentTurnOutcome::Completed { iterations: 2, .. }),
+        "expected the loop to run exactly two iterations, got {outcome:?}"
+    );
+
+    let requests = recorded.requests();
+    assert_eq!(requests.len(), 2, "two provider turns must be recorded");
+
+    let initial_names: Vec<String> = requests[0]
+        .tools
+        .iter()
+        .map(|definition| definition.harness_name.as_str().to_owned())
+        .collect();
+    assert!(
+        initial_names.contains(&"discover_tools".to_owned()),
+        "discover_tools must be advertised on turn 1: {initial_names:?}"
+    );
+    assert!(
+        !initial_names.contains(&"injected_runtime_tool".to_owned()),
+        "injected_runtime_tool must NOT be advertised on turn 1: {initial_names:?}"
+    );
+    // Sanity: 9 parity tools + discover_tools = 10 on turn 1.
+    assert_eq!(initial_names.len(), 10);
+
+    let subsequent_names: Vec<String> = requests[1]
+        .tools
+        .iter()
+        .map(|definition| definition.harness_name.as_str().to_owned())
+        .collect();
+    assert!(
+        subsequent_names.contains(&"injected_runtime_tool".to_owned()),
+        "injected_runtime_tool MUST be advertised on turn 2 after discover_tools injected it: {subsequent_names:?}"
+    );
+    assert!(
+        subsequent_names.contains(&"discover_tools".to_owned()),
+        "originally advertised tools must remain after injection: {subsequent_names:?}"
+    );
+    // 10 initial + 1 injected, with no duplicates.
+    assert_eq!(subsequent_names.len(), 11);
+}
+
+#[tokio::test]
+async fn loop_deduplicates_injected_tools_that_collide_with_an_advertised_name() {
+    // A service whose tool injects a schema colliding (by harness_name) with
+    // an already-advertised tool. The loop must dedup by harness_name and
+    // not bloat the advertised pool.
+    struct DuplicateInjectingService;
+    impl ToolService for DuplicateInjectingService {
+        fn definitions(&self) -> Vec<ToolDefinition> {
+            vec![schema_definition(
+                "announce_dupe",
+                "Returns a schema that collides with an existing tool name.",
+                ToolExecutionClass::ReadOnly,
+                &[],
+            )]
+        }
+        fn execute<'a>(
+            &'a self,
+            _call: &'a ToolCall,
+            _context: &'a ToolContext,
+        ) -> ToolFuture<'a, Result<ToolResult, ToolError>> {
+            Box::pin(async move {
+                // Collides with `read_file`, which is already advertised.
+                let dupe = schema_definition(
+                    "read_file",
+                    "A duplicate that should be deduped by harness_name.",
+                    ToolExecutionClass::ReadOnly,
+                    &[("path", "string", true)],
+                );
+                Ok(ToolResult::new("injecting a duplicate")
+                    .expect("bounded")
+                    .with_injected_tools(vec![dupe]))
+            })
+        }
+    }
+
+    let announce_call = ToolCall {
+        id: ToolCallId::new("call-1").unwrap(),
+        tool_id: ToolId::new("announce_dupe").unwrap(),
+        arguments: json!({}),
+        extensions: ExtensionMap::default(),
+    };
+    let turn_with_tool: ScriptedProviderResponse = Ok(vec![
+        Ok(ProviderStreamEvent::ToolCallCompleted(announce_call)),
+        Ok(completed(FinishOutcome::ToolCalls)),
+    ]);
+    let turn_done: ScriptedProviderResponse = Ok(vec![Ok(completed(FinishOutcome::Stop))]);
+
+    let provider_id = provider();
+    let fake = FakeProviderSession::with_scripts([turn_with_tool, turn_done]);
+    let recorded = fake.clone();
+    let registry = Arc::new(ProviderRegistry::new());
+    registry
+        .register(FakeFactory {
+            id: provider_id.clone(),
+            session: fake,
+        })
+        .await
+        .unwrap();
+
+    let tools = ToolRegistry::parity_default().with_service(Arc::new(DuplicateInjectingService));
+    let progress = Arc::new(RecordingProgressPort::default());
+    let agent = AgentLoop::new(registry, tools, config(&provider_id, 10))
+        .with_progress_port(progress.clone());
+    agent
+        .run_prompt(
+            user_message("trigger dupe"),
+            SessionOperatingMode::Code,
+            SessionPermissionMode::Bypass,
+        )
+        .await
+        .expect("loop must complete");
+
+    let requests = recorded.requests();
+    assert_eq!(requests.len(), 2);
+    // Turn 2 must have exactly 10 tools (9 parity + announce_dupe); the
+    // duplicate `read_file` injection must NOT add a second read_file slot.
+    let subsequent_names: Vec<String> = requests[1]
+        .tools
+        .iter()
+        .map(|definition| definition.harness_name.as_str().to_owned())
+        .collect();
+    let read_file_count = subsequent_names
+        .iter()
+        .filter(|name| name.as_str() == "read_file")
+        .count();
+    assert_eq!(
+        read_file_count, 1,
+        "dedup must keep exactly one read_file entry: {subsequent_names:?}"
+    );
+    assert_eq!(subsequent_names.len(), 10);
+}
+
+// =========================================================================
+// Phase 3 — end-to-end deferred loading + gateway execution
+// =========================================================================
+
+/// Stub gateway executor used in the loop test. Records every dispatch so the
+/// test can prove an injected tool routed through the gateway rather than
+/// failing with UnknownTool.
+#[derive(Clone, Default)]
+struct RecordingGatewayExecutor {
+    dispatched: Arc<Mutex<Vec<String>>>,
+}
+
+impl ToolExecutor for RecordingGatewayExecutor {
+    fn definition(&self) -> ToolDefinition {
+        schema_definition(
+            "stub_gateway",
+            "Stub gateway executor for tests.",
+            ToolExecutionClass::NestedWorkflow,
+            &[],
+        )
+    }
+
+    fn execute<'a>(
+        &'a self,
+        call: &'a ToolCall,
+        _context: &'a ToolContext,
+    ) -> ToolFuture<'a, Result<ToolResult, ToolError>> {
+        let name = call.tool_id.as_str().to_owned();
+        let dispatched = Arc::clone(&self.dispatched);
+        Box::pin(async move {
+            dispatched.lock().unwrap().push(name.clone());
+            Ok(ToolResult::new(format!("gateway executed `{name}`")).expect("bounded"))
+        })
+    }
+}
+
+/// Discovery service that injects a brand-new tool whose name matches a
+/// gateway prefix registered alongside the registry.
+struct DiscoverAndInjectService {
+    injected_name: String,
+}
+
+impl ToolService for DiscoverAndInjectService {
+    fn definitions(&self) -> Vec<ToolDefinition> {
+        vec![schema_definition(
+            "discover",
+            "Discover and inject a new tool into the loop.",
+            ToolExecutionClass::ReadOnly,
+            &[],
+        )]
+    }
+
+    fn execute<'a>(
+        &'a self,
+        _call: &'a ToolCall,
+        _context: &'a ToolContext,
+    ) -> ToolFuture<'a, Result<ToolResult, ToolError>> {
+        let injected_name = self.injected_name.clone();
+        Box::pin(async move {
+            let injected = schema_definition(
+                &injected_name,
+                "A tool surfaced by discover; routes through the gateway.",
+                ToolExecutionClass::NestedWorkflow,
+                &[("input", "string", true)],
+            );
+            Ok(ToolResult::new(format!("discovered {injected_name}"))
+                .expect("bounded")
+                .with_injected_tools(vec![injected]))
+        })
+    }
+}
+
+#[tokio::test]
+async fn loop_calls_an_injected_tool_through_the_gateway_on_the_next_turn() {
+    let injected_name = "stub__runtime_tool".to_owned();
+
+    let discover_call = ToolCall {
+        id: ToolCallId::new("call-discover").unwrap(),
+        tool_id: ToolId::new("discover").unwrap(),
+        arguments: json!({}),
+        extensions: ExtensionMap::default(),
+    };
+    let injected_call = ToolCall {
+        id: ToolCallId::new("call-injected").unwrap(),
+        tool_id: ToolId::new(&injected_name).unwrap(),
+        arguments: json!({"input": "hello"}),
+        extensions: ExtensionMap::default(),
+    };
+
+    // Turn 1: model calls `discover`, which injects `stub__runtime_tool`.
+    let turn_discover: ScriptedProviderResponse = Ok(vec![
+        Ok(ProviderStreamEvent::ToolCallCompleted(discover_call)),
+        Ok(completed(FinishOutcome::ToolCalls)),
+    ]);
+    // Turn 2: model calls the freshly-advertised injected tool.
+    let turn_injected: ScriptedProviderResponse = Ok(vec![
+        Ok(ProviderStreamEvent::ToolCallCompleted(injected_call)),
+        Ok(completed(FinishOutcome::ToolCalls)),
+    ]);
+    // Turn 3: model stops with no further tool calls.
+    let turn_done: ScriptedProviderResponse = Ok(vec![Ok(completed(FinishOutcome::Stop))]);
+
+    let provider_id = provider();
+    let fake = FakeProviderSession::with_scripts([turn_discover, turn_injected, turn_done]);
+    let recorded = fake.clone();
+    let registry = Arc::new(ProviderRegistry::new());
+    registry
+        .register(FakeFactory {
+            id: provider_id.clone(),
+            session: fake,
+        })
+        .await
+        .unwrap();
+
+    let gateway_dispatched: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let gateway: Arc<dyn ToolExecutor> = Arc::new(RecordingGatewayExecutor {
+        dispatched: Arc::clone(&gateway_dispatched),
+    });
+    let tools = ToolRegistry::parity_default()
+        .with_service(Arc::new(DiscoveringWrapper(Arc::new(
+            DiscoverAndInjectService {
+                injected_name: injected_name.clone(),
+            },
+        ))))
+        .with_gateway("stub__", gateway);
+
+    let progress = Arc::new(RecordingProgressPort::default());
+    let agent = AgentLoop::new(registry, tools, config(&provider_id, 10))
+        .with_progress_port(progress.clone());
+    let outcome = agent
+        .run_prompt(
+            user_message("discover then call the new tool"),
+            SessionOperatingMode::Code,
+            SessionPermissionMode::Bypass,
+        )
+        .await
+        .expect("loop must complete");
+
+    // Three turns: discover → injected → stop.
+    assert!(
+        matches!(outcome, AgentTurnOutcome::Completed { iterations: 3, .. }),
+        "expected the loop to run three iterations, got {outcome:?}"
+    );
+
+    // The injected tool must have been advertised on turn 2 (not turn 1).
+    let requests = recorded.requests();
+    assert_eq!(requests.len(), 3, "three provider turns must be recorded");
+    let turn1_names: Vec<&str> = requests[0]
+        .tools
+        .iter()
+        .map(|definition| definition.harness_name.as_str())
+        .collect();
+    let turn2_names: Vec<&str> = requests[1]
+        .tools
+        .iter()
+        .map(|definition| definition.harness_name.as_str())
+        .collect();
+    assert!(
+        !turn1_names.contains(&injected_name.as_str()),
+        "injected tool must NOT be advertised on turn 1: {turn1_names:?}"
+    );
+    assert!(
+        turn2_names.contains(&injected_name.as_str()),
+        "injected tool MUST be advertised on turn 2: {turn2_names:?}"
+    );
+
+    // The injected tool must have been executed via the gateway, not refused
+    // as UnknownTool. The progress port records both ToolStarted and
+    // ToolFinished; a gateway-routed call surfaces as `success: true`.
+    let events = progress.events.lock().unwrap();
+    let started_injected = events.iter().any(|event| {
+        matches!(
+            event,
+            AgentProgressEvent::ToolStarted { name } if name == &injected_name
+        )
+    });
+    assert!(
+        started_injected,
+        "the injected tool must have been started: {events:?}"
+    );
+    let finished_injected_ok = events.iter().any(|event| {
+        matches!(
+            event,
+            AgentProgressEvent::ToolFinished { name, success: true } if name == &injected_name
+        )
+    });
+    assert!(
+        finished_injected_ok,
+        "the injected tool must have finished successfully (no UnknownTool): {events:?}"
+    );
+
+    // Belt-and-suspenders: the gateway executor recorded exactly one dispatch
+    // for the injected name.
+    let dispatched = gateway_dispatched.lock().unwrap().clone();
+    assert_eq!(
+        dispatched,
+        vec![injected_name.clone()],
+        "the gateway executor must have dispatched exactly the injected tool name once: {dispatched:?}"
+    );
+}
+
+/// Thin wrapper that delegates to an inner `ToolService`. Used so the
+/// end-to-end test can keep `DiscoverAndInjectService` parameterized while
+/// still being constructable as `Arc<dyn ToolService>`.
+struct DiscoveringWrapper(Arc<DiscoverAndInjectService>);
+
+impl ToolService for DiscoveringWrapper {
+    fn definitions(&self) -> Vec<ToolDefinition> {
+        self.0.definitions()
+    }
+
+    fn execute<'a>(
+        &'a self,
+        call: &'a ToolCall,
+        context: &'a ToolContext,
+    ) -> ToolFuture<'a, Result<ToolResult, ToolError>> {
+        self.0.execute(call, context)
+    }
 }

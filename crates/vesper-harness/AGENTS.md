@@ -35,6 +35,15 @@ Z.ai and Playwright MCP server descriptors.
   persists bounded status/output; dropping the service aborts that scheduler.
 - No protocol, provider-wire, UI, SQLite, or live-provider dependency is
   allowed here.
+- **Phase 3 deferred loading + MCP gateway.** `mcp_list_tools` now translates
+  discovered MCP tool descriptors into `ToolDefinition`s named
+  `mcp__<server>__<tool>` (with `defer_loading = false`) and returns them via
+  `ToolResult::with_injected_tools` instead of a stringified text payload.
+  `McpGatewayExecutor` (registered under the `mcp__` prefix by
+  `HarnessToolService::build_default_registry`) parses the call name back into
+  `(server, tool)` and dispatches to `McpClient::call_tool`. Workers and ACP
+  composition now route through this gateway so injected MCP tools advertised
+  on the next turn are actually executable when the model calls them by name.
 
 ## Work Guidance
 

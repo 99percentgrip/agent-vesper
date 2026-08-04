@@ -12,7 +12,11 @@ the multi-turn, tool-executing layer above it.
 
 - `src/executor.rs` — `ToolExecutor`/`ToolService` traits, hosted subsystem
   adapters, `ToolContext`, `ToolResult`, `ToolError`, and the schema-definition
-  helper.
+  helper. `ToolResult` carries a `text` field plus an `injected_tools` channel
+  (deferred-loading Phase 2): a tool may return additional `ToolDefinition`s
+  that the agent loop splices into its advertised pool for the next
+  iteration. `ToolResult` derives only `PartialEq` (not `Eq`) because
+  `Vec<ToolDefinition>` is not `Eq`-derivable.
 - `src/confinement.rs` — path-confinement *enforcement* (`confine`). `vesper-security`
   ships only authority descriptors, so the executor layer owns the
   canonicalize/boundary enforcement here (symlinks followed; escapes fail closed).
@@ -20,7 +24,11 @@ the multi-turn, tool-executing layer above it.
   `write_file`, `edit_file`, `apply_patch`, `list_directory`, `search_files`,
   `grep`, `run_command`, `update_plan`) with confined filesystem/shell I/O.
 - `src/registry.rs` — `ToolRegistry`: name → executor routing + mode-filtered
-  `definitions_for`.
+  `definitions_for`. As of the deferred-loading Phase 1, `definitions_for`
+  also excludes any `ToolDefinition` whose `defer_loading` is `true` — those
+  tools remain registered for execution but are hidden from the initial
+  advertisement so the model does not see them until they are surfaced on
+  demand.
 - `src/permission.rs` — pure `check_tool_permission(mode, permission, class)`
   plus the host-owned asynchronous `PermissionPort`; `Ask` never authorizes
   by itself and the default port fails closed.
@@ -33,7 +41,11 @@ the multi-turn, tool-executing layer above it.
   `AgentTurnOutcome::plan` so callers drive the Phase 5 PLANNING → REVIEW
   transition. `AgentProgressPort` emits bounded in-memory provider/tool/plan
   activity without tool arguments, outputs, paths, or secrets; hosts may also
-  clone a loop with per-turn provider/model configuration.
+  clone a loop with per-turn provider/model configuration. As of
+  deferred-loading Phase 2, the `advertised_tools` binding is mutable per
+  turn: when an executor returns `ToolResult.injected_tools`, the loop
+  merges them (deduplicated by `ToolId` or `harness_name`) into the
+  advertised pool so the next iteration advertises them to the model.
 
 ## Local Contracts
 
@@ -63,6 +75,26 @@ the multi-turn, tool-executing layer above it.
   runs; `ReadOnly` tools always pass, `Mutating`/`Shell`/`Process`/
   `NestedWorkflow` require `Code` mode, `Bypass`, or a host-approved `Ask`
   decision. `Ask` without a `PermissionPort` fails closed.
+- The advertised tool pool starts as `definitions_for(mode)` (which itself
+  excludes `defer_loading == true` tools) and is **mutable** across turns.
+  When an executor returns `ToolResult.injected_tools`, the loop merges those
+  schemas into the advertised pool, deduplicating by `ToolId` or
+  `harness_name`, so the next iteration advertises them. This is the
+  Claude Code-style deferred-loading seam — the loop never re-references
+  the registry between turns, so injected schemas live only inside the
+  per-turn advertised list (Phase 2 does not register them for execution;
+  that is a future phase's concern).
+- **Phase 3 gateway routing.** `ToolRegistry` carries an optional list of
+  `(prefix, executor)` gateways registered via `with_gateway`. When a tool
+  name is not in `entries` but matches a registered prefix, `execute()`
+  routes to the longest-matching gateway executor. `gate_and_execute`
+  looks up definitions from the loop's live advertised pool (covering
+  injected schemas) and falls back to `ToolRegistry::definition()` (so a
+  hallucinated call to a registered-but-mode-filtered tool like
+  `write_file` in Plan mode is still denied by the permission gate rather
+  than reported as "unknown tool"). The composition boundary wires the
+  `McpGatewayExecutor` under the `mcp__` prefix so dynamically discovered
+  MCP tools can be executed after they are injected and advertised.
 - `#![forbid(unsafe_code)]`, workspace MSRV 1.88, workspace lints, and
   `-D warnings` Clippy apply.
 
@@ -79,7 +111,12 @@ the multi-turn, tool-executing layer above it.
   Host-owned memory, checkpoint, MCP, plugin, worker, and automation tools
   are injected through `ToolService::with_service`; set their
   `ToolExecutionClass` in the host definition and add a mode-eligibility
-  test for the composition boundary.
+  test for the composition boundary. To opt a tool into Claude Code-style
+  deferred loading (hide it from the initial advertisement while keeping it
+  executable), set `ToolDefinition.defer_loading = true` on the registered
+  definition; `definitions_for(mode)` will then exclude it from both `Plan`
+  and `Code` mode advertisement, but `contains`/`definition`/`execute` keep
+  working by name.
 
 ## Verification
 

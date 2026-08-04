@@ -54,18 +54,38 @@ impl std::fmt::Debug for ToolContext {
 }
 
 /// One executor's bounded result fed back to the model.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// As of deferred-loading Phase 2, a result may carry
+/// [`ToolDefinition`]s that the agent loop splices into its advertised
+/// tool pool for the next iteration (Claude Code-style deferred loading).
+#[derive(Debug, Clone, PartialEq)]
 pub struct ToolResult {
     /// Bounded textual result returned to the provider loop.
     pub text: ContentText,
+    /// Tool schemas dynamically injected into the agent loop's advertised
+    /// tool pool after this result is fed back. Used for deferred loading:
+    /// a discovery-style tool returns the schemas it surfaced here so the
+    /// next loop iteration advertises them to the model. Defaults to empty
+    /// for backward compatibility.
+    pub injected_tools: Vec<ToolDefinition>,
 }
 
 impl ToolResult {
-    /// Wraps a result string in a bounded [`ContentText`].
+    /// Wraps a result string in a bounded [`ContentText`]; `injected_tools`
+    /// starts empty.
     pub fn new(text: impl Into<String>) -> Result<Self, ToolError> {
         Ok(Self {
             text: ContentText::new(text).map_err(ToolError::output_boundary)?,
+            injected_tools: Vec::new(),
         })
+    }
+
+    /// Builder: attaches tool definitions to inject into the next turn's
+    /// advertised pool after this result is fed back to the loop.
+    #[must_use]
+    pub fn with_injected_tools(mut self, tools: Vec<ToolDefinition>) -> Self {
+        self.injected_tools = tools;
+        self
     }
 }
 
@@ -224,6 +244,7 @@ pub fn schema_definition(
         }),
         execution_class: class,
         extensions: vesper_domain::ExtensionMap::default(),
+        defer_loading: false,
     }
 }
 

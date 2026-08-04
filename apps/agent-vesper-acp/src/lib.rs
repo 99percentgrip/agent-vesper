@@ -231,7 +231,7 @@ impl AcpHarnessEngine {
             config.workspace_roots = request.workspace_roots;
         }
         config.system_instructions = vesper_agent::project_instructions(&config.workspace_roots);
-        let hosted: Arc<dyn vesper_agent::ToolService> = self.hosted.clone();
+        let hosted = Arc::clone(&self.hosted);
         let permission_port: Arc<dyn vesper_agent::PermissionPort> = request
             .permission_requester
             .as_ref()
@@ -244,7 +244,7 @@ impl AcpHarnessEngine {
             .unwrap_or_else(|| Arc::new(vesper_agent::DenyPermissionPort));
         let loop_engine = vesper_agent::AgentLoop::new(
             Arc::clone(&self.registry),
-            vesper_agent::ToolRegistry::parity_default().with_service(hosted),
+            hosted.build_default_registry(),
             config,
         )
         .with_permission_port(permission_port);

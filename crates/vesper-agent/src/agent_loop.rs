@@ -244,7 +244,7 @@ impl AgentLoop {
         cancellation: Arc<dyn CancellationSignal>,
     ) -> Result<(AgentTurnOutcome, Vec<ConversationMessage>), AgentLoopError> {
         self.progress_port.emit(AgentProgressEvent::TurnStarted);
-        let advertised_tools = self.tools.definitions_for(mode);
+        let mut advertised_tools = self.tools.definitions_for(mode);
         let session = self
             .registry
             .create_session(
@@ -315,7 +315,11 @@ impl AgentLoop {
                 self.progress_port.emit(AgentProgressEvent::ToolStarted {
                     name: tool_name.clone(),
                 });
-                let output = self.gate_and_execute(&call, &context).await;
+                let outcome = self
+                    .gate_and_execute(&call, &context, &advertised_tools)
+                    .await;
+                let output = outcome.text;
+                let injected = outcome.injected;
                 // Phase 5: capture the model-generated plan when the model
                 // emits `update_plan`, so callers (the TUI) can drive the
                 // PLANNING → REVIEW transition without a human-authored body.
@@ -337,7 +341,14 @@ impl AgentLoop {
                 });
                 tool_results.push(ToolResult {
                     text: bounded.clone(),
+                    injected_tools: injected.clone(),
                 });
+                // Phase 2 deferred loading: if the executor returned injected
+                // schemas, splice them into the advertised pool so the next
+                // `build_request` iteration advertises them to the model.
+                if !injected.is_empty() {
+                    merge_injected_tools(&mut advertised_tools, injected);
+                }
                 messages.push(ConversationMessage {
                     id: ids.message(),
                     role: MessageRole::Tool,
@@ -394,9 +405,35 @@ impl AgentLoop {
     /// Applies the permission gate, then routes to the registry. Permission
     /// denials and unknown/failed tools are returned as bounded text so the
     /// model can recover on the next turn (mirroring the oracle's behavior).
-    async fn gate_and_execute(&self, call: &ToolCall, context: &ToolContext) -> String {
-        let Some(definition) = self.tools.definition(call.tool_id.as_str()) else {
-            return format!("unknown tool: {}", call.tool_id);
+    ///
+    /// Returns a [`GateOutcome`] so the loop can both feed the text back to
+    /// the model and, when the executor opted in, splice the
+    /// `injected_tools` it returned into the next iteration's advertised
+    /// pool (deferred-loading Phase 2).
+    ///
+    /// The definition lookup consults the loop's live `advertised_tools`
+    /// pool (deferred-loading Phase 3) rather than the registry's static
+    /// entries. This lets dynamically injected schemas — discovered by a
+    /// tool call earlier in the same turn — pass the permission gate and
+    /// route to the registry's gateway executor without being
+    /// pre-registered as full entries.
+    async fn gate_and_execute(
+        &self,
+        call: &ToolCall,
+        context: &ToolContext,
+        advertised_tools: &[ToolDefinition],
+    ) -> GateOutcome {
+        // Look up the definition in the live advertised pool first (covers
+        // dynamically injected schemas). Fall back to the registry's static
+        // entries so a model that hallucinates a call to a registered-but-
+        // mode-filtered tool (e.g. `write_file` in Plan mode) is denied by
+        // the permission gate rather than reported as "unknown tool".
+        let definition = advertised_tools
+            .iter()
+            .find(|definition| definition.harness_name.as_str() == call.tool_id.as_str())
+            .or_else(|| self.tools.definition(call.tool_id.as_str()));
+        let Some(definition) = definition else {
+            return GateOutcome::text(format!("unknown tool: {}", call.tool_id));
         };
         let decision = check_tool_permission(
             context.operating_mode,
@@ -405,8 +442,11 @@ impl AgentLoop {
         );
         match decision {
             PermissionDecision::Allow => match self.tools.execute(call, context).await {
-                Ok(result) => result.text.as_str().to_string(),
-                Err(error) => format!("tool error: {error}"),
+                Ok(result) => GateOutcome {
+                    text: result.text.as_str().to_string(),
+                    injected: result.injected_tools,
+                },
+                Err(error) => GateOutcome::text(format!("tool error: {error}")),
             },
             PermissionDecision::Ask(reason) => {
                 match self
@@ -415,18 +455,59 @@ impl AgentLoop {
                     .await
                 {
                     PermissionDecision::Allow => match self.tools.execute(call, context).await {
-                        Ok(result) => result.text.as_str().to_string(),
-                        Err(error) => format!("tool error: {error}"),
+                        Ok(result) => GateOutcome {
+                            text: result.text.as_str().to_string(),
+                            injected: result.injected_tools,
+                        },
+                        Err(error) => GateOutcome::text(format!("tool error: {error}")),
                     },
                     PermissionDecision::Ask(nested_reason)
                     | PermissionDecision::Deny(nested_reason) => {
-                        format!("permission denied: {reason}; {nested_reason}")
+                        GateOutcome::text(format!("permission denied: {reason}; {nested_reason}"))
                     }
                 }
             }
             PermissionDecision::Deny(reason) => {
-                format!("permission denied: {reason}")
+                GateOutcome::text(format!("permission denied: {reason}"))
             }
+        }
+    }
+}
+
+/// One tool call's outcome after passing the permission gate.
+///
+/// `text` is fed back to the model as a `role: Tool` message; `injected`
+/// carries schemas the executor asked the loop to advertise on the next
+/// iteration. Permission denials, unknown tools, and executor errors all
+/// produce an empty `injected` list (the executor never ran successfully).
+struct GateOutcome {
+    /// Tool-result text fed back to the model.
+    text: String,
+    /// Tool schemas to inject into the advertised pool on the next iteration.
+    injected: Vec<ToolDefinition>,
+}
+
+impl GateOutcome {
+    /// Builds a text-only outcome (denials, errors, unknown tools).
+    fn text(text: String) -> Self {
+        Self {
+            text,
+            injected: Vec::new(),
+        }
+    }
+}
+
+/// Merges newly-injected tool schemas into the advertised pool, deduplicating
+/// by `ToolId` or `harness_name`. A tool already present under either key is
+/// skipped so a discovery call that returns the same schema twice (or returns
+/// a schema the loop already advertises) cannot bloat the context window.
+fn merge_injected_tools(advertised: &mut Vec<ToolDefinition>, new_tools: Vec<ToolDefinition>) {
+    for definition in new_tools {
+        let already_present = advertised.iter().any(|existing| {
+            existing.id == definition.id || existing.harness_name == definition.harness_name
+        });
+        if !already_present {
+            advertised.push(definition);
         }
     }
 }

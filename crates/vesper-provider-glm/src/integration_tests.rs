@@ -251,6 +251,7 @@ fn request(with_tools: bool) -> ProviderRequest {
                 input_schema: json!({"type":"object"}),
                 execution_class: ToolExecutionClass::ReadOnly,
                 extensions: Default::default(),
+                defer_loading: false,
             },
             ToolDefinition {
                 id: ToolId::new("write_file").unwrap(),
@@ -260,6 +261,7 @@ fn request(with_tools: bool) -> ProviderRequest {
                 input_schema: json!({"type":"object"}),
                 execution_class: ToolExecutionClass::Mutating,
                 extensions: Default::default(),
+                defer_loading: false,
             },
         ]
     } else {

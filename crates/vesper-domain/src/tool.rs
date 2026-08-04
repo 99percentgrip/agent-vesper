@@ -137,6 +137,15 @@ pub struct ToolDefinition {
     /// Namespaced extension metadata.
     #[serde(default)]
     pub extensions: ExtensionMap,
+    /// Whether the tool is hidden from the registry's default
+    /// `definitions_for(mode)` advertisement and only surfaced to the model
+    /// on demand (Claude Code-style deferred loading). A tool with this set
+    /// stays registered for execution but is not part of the initial tool
+    /// list the provider sees at session start. Defaults to `false` so
+    /// existing serialized tool definitions and configs deserialize without
+    /// breaking.
+    #[serde(default)]
+    pub defer_loading: bool,
 }
 
 /// One normalized tool invocation.

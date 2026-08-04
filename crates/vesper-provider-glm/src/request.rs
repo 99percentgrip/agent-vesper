@@ -740,6 +740,7 @@ mod tests {
             }),
             execution_class: ToolExecutionClass::ReadOnly,
             extensions: Default::default(),
+            defer_loading: false,
         };
         request.tool_choice = ToolChoiceIntent::Named(tool.id.clone());
         request.tools.push(tool);
@@ -833,6 +834,7 @@ mod tests {
             input_schema: json!({"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}),
             execution_class: ToolExecutionClass::ReadOnly,
             extensions: Default::default(),
+            defer_loading: false,
         });
         request.tool_choice = ToolChoiceIntent::Auto;
         let result = serialize_request(&request, &GlmConfig::default());

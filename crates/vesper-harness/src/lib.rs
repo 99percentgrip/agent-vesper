@@ -57,6 +57,139 @@ fn tui_tool_failure(name: &str, error: impl std::fmt::Display) -> vesper_agent::
     vesper_agent::ToolError::Failed(format!("{name} failed: {error}"))
 }
 
+/// Prefix the gateway executor and `mcp_list_tools` injection use to name
+/// dynamically-discovered MCP tools so the agent loop's gateway routing
+/// recognizes them. Format: `mcp__<server>__<tool>`.
+const MCP_GATEWAY_PREFIX: &str = "mcp__";
+
+/// Parses an `mcp__<server>__<tool>` gateway name into `(server, tool)`.
+/// Returns `None` when the name does not match the expected shape so the
+/// gateway can return a clear error rather than dispatching with a
+/// malformed server/tool pair.
+fn parse_mcp_gateway_name(name: &str) -> Option<(&str, &str)> {
+    let rest = name.strip_prefix(MCP_GATEWAY_PREFIX)?;
+    let (server, tool) = rest.split_once("__")?;
+    if server.is_empty() || tool.is_empty() {
+        return None;
+    }
+    Some((server, tool))
+}
+
+/// Translates one advertised MCP tool descriptor into a provider-neutral
+/// [`ToolDefinition`] whose `harness_name` matches the gateway prefix so
+/// the agent loop can both advertise and execute it after a `mcp_list_tools`
+/// discovery call.
+///
+/// `defer_loading` is `false` because these definitions are surfaced when
+/// the model has actively requested them via `mcp_list_tools` — they should
+/// be live in the next turn's advertisement, not hidden behind another
+/// discovery step.
+fn mcp_descriptor_to_tool_definition(
+    server_id: &str,
+    descriptor: &vesper_mcp::McpToolDescriptor,
+) -> vesper_domain::ToolDefinition {
+    let harness_name_value = format!("mcp__{server_id}__{}", descriptor.name);
+    let description = descriptor
+        .description
+        .clone()
+        .unwrap_or_else(|| format!("MCP tool `{}` from server `{}`", descriptor.name, server_id));
+    let input_schema = descriptor
+        .input_schema
+        .clone()
+        .unwrap_or_else(|| serde_json::json!({"type": "object"}));
+    vesper_domain::ToolDefinition {
+        id: vesper_domain::ToolId::new(&harness_name_value).unwrap_or_else(|_| {
+            vesper_domain::ToolId::new("mcp_tool").expect("static fallback id")
+        }),
+        harness_name: vesper_domain::HarnessToolName::new(&harness_name_value)
+            .expect("bounded harness name"),
+        provider_name: None,
+        description,
+        input_schema,
+        execution_class: vesper_domain::ToolExecutionClass::NestedWorkflow,
+        extensions: vesper_domain::ExtensionMap::default(),
+        defer_loading: false,
+    }
+}
+
+/// Gateway executor for `mcp__<server>__<tool>` tool names. The harness
+/// registers ONE of these under the `mcp__` prefix; the agent-loop registry
+/// routes any call whose name starts with `mcp__` to it. This executor
+/// parses out the server id and tool name, then dispatches via
+/// [`vesper_mcp::McpClient::call_tool`].
+pub struct McpGatewayExecutor {
+    plugin_root: std::path::PathBuf,
+}
+
+impl std::fmt::Debug for McpGatewayExecutor {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("McpGatewayExecutor")
+            .field("plugin_root", &self.plugin_root)
+            .finish_non_exhaustive()
+    }
+}
+
+impl McpGatewayExecutor {
+    /// Creates a gateway executor rooted at `plugin_root`, the same root the
+    /// `McpRegistry` lives in.
+    #[must_use]
+    pub fn new(plugin_root: std::path::PathBuf) -> Self {
+        Self { plugin_root }
+    }
+}
+
+impl vesper_agent::ToolExecutor for McpGatewayExecutor {
+    fn definition(&self) -> vesper_domain::ToolDefinition {
+        // The gateway has no single definition — it dispatches by name. The
+        // stub definition here is informational only; the loop never
+        // advertises it because gateways are registered via `with_gateway`,
+        // not `with_service`, and `definitions_for` consults `entries`.
+        vesper_agent::schema_definition(
+            "mcp_gateway",
+            "Gateway executor for dynamically-discovered MCP tools (mcp__<server>__<tool>).",
+            vesper_domain::ToolExecutionClass::NestedWorkflow,
+            &[],
+        )
+    }
+
+    fn execute<'a>(
+        &'a self,
+        call: &'a vesper_domain::ToolCall,
+        _context: &'a vesper_agent::ToolContext,
+    ) -> vesper_agent::ToolFuture<'a, Result<vesper_agent::ToolResult, vesper_agent::ToolError>>
+    {
+        let name = call.tool_id.as_str().to_owned();
+        let arguments = call.arguments.clone();
+        let plugin_root = self.plugin_root.clone();
+        Box::pin(async move {
+            let (server, tool) = parse_mcp_gateway_name(&name).ok_or_else(|| {
+                vesper_agent::ToolError::Failed(format!(
+                    "MCP gateway name `{name}` is not `{MCP_GATEWAY_PREFIX}<server>__<tool>`"
+                ))
+            })?;
+            let server_owned = server.to_owned();
+            let tool_owned = tool.to_owned();
+            let result = tokio::task::spawn_blocking(move || {
+                let registry = vesper_mcp::McpRegistry::open(&plugin_root)
+                    .map_err(|error| tui_tool_failure("mcp_gateway", error))?;
+                let server = registry.get_with_builtins(&server_owned).ok_or_else(|| {
+                    vesper_agent::ToolError::Failed(format!("MCP server not found: {server_owned}"))
+                })?;
+                vesper_mcp::McpClient::call_tool(&server, &tool_owned, arguments)
+                    .map_err(|error| tui_tool_failure("mcp_gateway", error))
+            })
+            .await
+            .map_err(|_| vesper_agent::ToolError::Failed("mcp gateway task failed".into()))??;
+            vesper_agent::ToolResult::new(truncate_text(
+                &serde_json::to_string(&result)
+                    .map_err(|error| tui_tool_failure("mcp_gateway", error))?,
+                16_000,
+            ))
+        })
+    }
+}
+
 fn mcp_result(
     name: &str,
     registry_root: &std::path::Path,
@@ -349,8 +482,9 @@ async fn execute_extended_tui_tool(
         }
         "mcp_list_tools" => {
             let server_id = required_string("server")?;
+            let server_id_for_injection = server_id.clone();
             let registry_root = plugin_root.to_path_buf();
-            let tools = tokio::task::spawn_blocking(move || {
+            let descriptors = tokio::task::spawn_blocking(move || {
                 let registry = vesper_mcp::McpRegistry::open(&registry_root)
                     .map_err(|error| tui_tool_failure("mcp_list_tools", error))?;
                 let server = registry.get_with_builtins(&server_id).ok_or_else(|| {
@@ -361,9 +495,19 @@ async fn execute_extended_tui_tool(
             })
             .await
             .map_err(|_| vesper_agent::ToolError::Failed("MCP discovery task failed".into()))??;
-            vesper_agent::ToolResult::new(
-                serde_json::to_string(&tools).map_err(|error| tui_tool_failure(name, error))?,
-            )
+            let injected: Vec<vesper_domain::ToolDefinition> = descriptors
+                .iter()
+                .map(|descriptor| {
+                    mcp_descriptor_to_tool_definition(&server_id_for_injection, descriptor)
+                })
+                .collect();
+            let summary = format!(
+                "discovered {} tool(s) from `{server_id_for_injection}`; they are now advertised and callable as `mcp__{server_id_for_injection}__<tool>`",
+                injected.len(),
+            );
+            Ok(vesper_agent::ToolResult::new(summary)
+                .map_err(|error| tui_tool_failure("mcp_list_tools", error))?
+                .with_injected_tools(injected))
         }
         "mcp_call" => {
             let server_id = required_string("server")?;
@@ -1022,7 +1166,7 @@ async fn run_provider_worker(
         }];
     }
     let tools = if let Some(service) = service {
-        ToolRegistry::parity_default().with_service(service)
+        service.build_default_registry()
     } else {
         ToolRegistry::parity_default()
     };
@@ -1853,6 +1997,116 @@ mod tests {
             assert!(names.contains(name), "missing shared hosted tool {name}");
         }
     }
+
+    // ------------------- Phase 3: MCP gateway & translation -------------------
+
+    #[test]
+    fn parse_mcp_gateway_name_extracts_server_and_tool() {
+        assert_eq!(
+            parse_mcp_gateway_name("mcp__playwright__navigate"),
+            Some(("playwright", "navigate"))
+        );
+        assert_eq!(
+            parse_mcp_gateway_name("mcp__zai-search__web_search_prime"),
+            Some(("zai-search", "web_search_prime"))
+        );
+    }
+
+    #[test]
+    fn parse_mcp_gateway_name_rejects_malformed_names() {
+        // Missing prefix.
+        assert_eq!(parse_mcp_gateway_name("playwright__navigate"), None);
+        // Missing the inner __ separator after the prefix.
+        assert_eq!(parse_mcp_gateway_name("mcp__playwright"), None);
+        // Empty server or tool.
+        assert_eq!(parse_mcp_gateway_name("mcp____navigate"), None);
+        assert_eq!(parse_mcp_gateway_name("mcp__playwright__"), None);
+        // Not an mcp__ name at all.
+        assert_eq!(parse_mcp_gateway_name("read_file"), None);
+        assert_eq!(parse_mcp_gateway_name(""), None);
+    }
+
+    #[test]
+    fn mcp_descriptor_translates_into_a_gateway_routed_tool_definition() {
+        let descriptor = vesper_mcp::McpToolDescriptor {
+            name: "navigate".to_owned(),
+            description: Some("Navigate to a URL.".to_owned()),
+            input_schema: Some(serde_json::json!({
+                "type": "object",
+                "properties": {"url": {"type": "string"}},
+                "required": ["url"],
+            })),
+        };
+        let definition = mcp_descriptor_to_tool_definition("playwright", &descriptor);
+        assert_eq!(
+            definition.harness_name.as_str(),
+            "mcp__playwright__navigate"
+        );
+        assert_eq!(definition.description, "Navigate to a URL.");
+        assert_eq!(
+            definition.execution_class,
+            vesper_domain::ToolExecutionClass::NestedWorkflow
+        );
+        assert!(
+            !definition.defer_loading,
+            "injected tools must NOT be deferred"
+        );
+        assert_eq!(
+            definition.input_schema,
+            serde_json::json!({
+                "type": "object",
+                "properties": {"url": {"type": "string"}},
+                "required": ["url"],
+            })
+        );
+    }
+
+    #[test]
+    fn mcp_descriptor_falls_back_to_default_description_and_schema() {
+        let descriptor = vesper_mcp::McpToolDescriptor {
+            name: "ping".to_owned(),
+            description: None,
+            input_schema: None,
+        };
+        let definition = mcp_descriptor_to_tool_definition("echo", &descriptor);
+        assert_eq!(definition.harness_name.as_str(), "mcp__echo__ping");
+        assert!(
+            definition.description.contains("echo"),
+            "default description must mention the server id: {}",
+            definition.description
+        );
+        assert_eq!(
+            definition.input_schema,
+            serde_json::json!({"type": "object"}),
+            "missing inputSchema must default to a permissive object schema"
+        );
+    }
+
+    #[test]
+    fn build_default_registry_wires_the_mcp_gateway() {
+        // Use a real tempdir so the HarnessToolService constructor (which
+        // creates roots and reads publishers.jsonl) does not error.
+        let root = tempfile::tempdir().unwrap();
+        let stores = Arc::new(MemoryStores::open_default());
+        let service = Arc::new(HarnessToolService::new(
+            stores,
+            root.path().join("cron"),
+            root.path().join("mcp"),
+            None,
+        ));
+        let registry = service.build_default_registry();
+        // The 9 parity tools + 36 hosted tools are still advertised.
+        assert_eq!(
+            registry
+                .definitions_for(vesper_domain::SessionOperatingMode::Code)
+                .len(),
+            9 + 36
+        );
+        // The gateway is registered under the mcp__ prefix.
+        assert!(registry.has_gateway(MCP_GATEWAY_PREFIX));
+        // A call to a name matching the prefix is considered registered.
+        assert!(registry.contains("mcp__anything__here"));
+    }
 }
 
 /// Drains one [`MemoryOp`] against the durable stores, pushing the result
@@ -1972,6 +2226,22 @@ impl HarnessToolService {
             worker_factory,
             cron_abort,
         }
+    }
+
+    /// Composes the parity-default registry with this hosted service and the
+    /// MCP gateway executor. Composition boundaries (TUI, ACP, internal
+    /// workers) call this so dynamically-discovered MCP tools advertised via
+    /// `mcp_list_tools` can actually be executed when the model calls them
+    /// by their `mcp__<server>__<tool>` name on a later turn.
+    #[must_use]
+    pub fn build_default_registry(self: Arc<Self>) -> ToolRegistry {
+        let plugin_root = self.plugin_root.clone();
+        ToolRegistry::parity_default()
+            .with_service(self)
+            .with_gateway(
+                MCP_GATEWAY_PREFIX,
+                Arc::new(McpGatewayExecutor::new(plugin_root)),
+            )
     }
 
     fn read_only_worker_service(&self) -> Arc<Self> {
