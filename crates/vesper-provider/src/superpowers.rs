@@ -105,6 +105,164 @@ pub trait ProviderSuperpowers: Send + Sync {
     fn superpowers(&self) -> Vec<SuperpowerDescriptor>;
 }
 
+/// A provider's policy governing its advertised superpowers: which candidate
+/// values are valid for the current session state, how a change cascades, and
+/// how a reasoning superpower maps to the runtime reasoning mode.
+///
+/// This moves **provider-specific** model/plan/reasoning logic OUT of the
+/// frontend (which must stay provider-neutral — no hardcoded provider match
+/// arms) and BEHIND the owning provider adapter. Each provider implements this
+/// for its own superpowers; a [`PermissiveSuperpowerPolicy`] default accepts
+/// every advertised value with no constraints and no cascades, which suits
+/// providers with no inter-superpower rules (e.g. a local model server that
+/// exposes only its loaded model).
+///
+/// The policy is consulted by `command_alias` (e.g. `"model"`, `"thinking"`,
+/// `"reasoning"`), not by provider-namespaced descriptor id, so the frontend
+/// never names a concrete provider.
+pub trait SuperpowerPolicy: Send + Sync {
+    /// Filter the advertised candidate values for `alias` down to those valid
+    /// for the current session state. `active_plan`/`active_model` are the
+    /// current session choices (empty string when unset). Providers with no
+    /// constraint return the input unchanged.
+    fn valid_choices(
+        &self,
+        alias: &str,
+        advertised: &[SuperpowerValue],
+        active_plan: &str,
+        active_model: &str,
+    ) -> Vec<SuperpowerValue>;
+
+    /// Validate a chosen `value` for `alias` against the current session
+    /// state. `Ok(())` accepts; `Err(message)` rejects with a user-facing
+    /// reason. Providers with no constraint always accept.
+    fn validate(
+        &self,
+        alias: &str,
+        value: &SuperpowerValue,
+        active_plan: &str,
+        active_model: &str,
+    ) -> Result<(), String>;
+
+    /// Side effects to apply when `alias` changes to `value`, given the active
+    /// plan. Each effect sets `target_alias` to `new_value`, but only when the
+    /// target's current value is one of `apply_only_if_current_in` (empty ⇒
+    /// apply unconditionally). Providers with no cascade rule return an empty
+    /// vector.
+    fn on_change(
+        &self,
+        alias: &str,
+        value: &SuperpowerValue,
+        active_plan: &str,
+    ) -> Vec<SuperpowerSideEffect>;
+
+    /// Side effects when the endpoint plan changes (e.g. the model must reset
+    /// because it is unavailable on the new plan). Returns the model to reset
+    /// to (if any), the auxiliary model to reset to (if any), and whether the
+    /// provider owns this plan at all. Providers with no plan concept return
+    /// [`PlanChangeReaction::none`] (the default).
+    fn on_plan_change(
+        &self,
+        new_plan: &str,
+        current_model: &str,
+        current_auxiliary: &str,
+    ) -> PlanChangeReaction;
+
+    /// Map a reasoning-superpower value to the runtime reasoning-mode label, if
+    /// this provider owns a reasoning superpower. `None` otherwise.
+    fn reasoning_mode(&self, reasoning_value: &SuperpowerValue) -> Option<BoundedString<64>>;
+}
+
+/// What a provider wants to happen when the endpoint plan changes.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PlanChangeReaction {
+    /// Whether this provider owns endpoint plans at all. `false` ⇒ the plan
+    /// change is rejected for this provider.
+    pub owns_plans: bool,
+    /// The model to reset to when the current model is unavailable on the new
+    /// plan; `None` to keep the current model.
+    pub reset_model_to: Option<String>,
+    /// The auxiliary model to reset to (e.g. `"main"` when the auxiliary is a
+    /// vision model unavailable on the new plan); `None` to keep it.
+    pub reset_auxiliary_to: Option<String>,
+}
+
+impl PlanChangeReaction {
+    /// No reaction (for providers with no endpoint-plan concept).
+    #[must_use]
+    pub fn none() -> Self {
+        Self::default()
+    }
+}
+
+/// A provider-routed side effect of one superpower changing.
+///
+/// When `alias` changes, a [`SuperpowerPolicy`] may emit these to cascade the
+/// change onto other superpowers (e.g. resetting `thinking` when `model`
+/// changes). The host applies `new_value` to `target_alias` only when the
+/// target's current value is in `apply_only_if_current_in` (empty ⇒ apply
+/// unconditionally).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SuperpowerSideEffect {
+    /// Alias of the superpower to change (e.g. `"thinking"`).
+    pub target_alias: String,
+    /// Value to set on the target.
+    pub new_value: SuperpowerValue,
+    /// If non-empty, the effect applies only when the target's current value
+    /// is one of these. Empty ⇒ apply unconditionally.
+    pub apply_only_if_current_in: Vec<SuperpowerValue>,
+}
+
+/// A `SuperpowerPolicy` that accepts every advertised value, applies no
+/// cascades, and owns no reasoning mapping. The default for providers with no
+/// inter-superpower rules.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct PermissiveSuperpowerPolicy;
+
+impl SuperpowerPolicy for PermissiveSuperpowerPolicy {
+    fn valid_choices(
+        &self,
+        _alias: &str,
+        advertised: &[SuperpowerValue],
+        _active_plan: &str,
+        _active_model: &str,
+    ) -> Vec<SuperpowerValue> {
+        advertised.to_vec()
+    }
+
+    fn validate(
+        &self,
+        _alias: &str,
+        _value: &SuperpowerValue,
+        _active_plan: &str,
+        _active_model: &str,
+    ) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn on_change(
+        &self,
+        _alias: &str,
+        _value: &SuperpowerValue,
+        _active_plan: &str,
+    ) -> Vec<SuperpowerSideEffect> {
+        Vec::new()
+    }
+
+    fn on_plan_change(
+        &self,
+        _new_plan: &str,
+        _current_model: &str,
+        _current_auxiliary: &str,
+    ) -> PlanChangeReaction {
+        PlanChangeReaction::none()
+    }
+
+    fn reasoning_mode(&self, _reasoning_value: &SuperpowerValue) -> Option<BoundedString<64>> {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     //! Round-trip and ordering invariants for superpower descriptors.

@@ -3,9 +3,9 @@ use std::{collections::BTreeMap, sync::Arc};
 use tokio::sync::RwLock;
 use vesper_domain::ProviderId;
 use vesper_provider::{
-    CancellationSignal, CredentialError, ProviderConfiguration, ProviderCredentialPort,
-    ProviderDescriptor, ProviderFactory, ProviderFuture, ProviderSession, ProviderSuperpowers,
-    SuperpowerDescriptor,
+    CancellationSignal, CredentialError, PermissiveSuperpowerPolicy, ProviderConfiguration,
+    ProviderCredentialPort, ProviderDescriptor, ProviderFactory, ProviderFuture, ProviderSession,
+    ProviderSuperpowers, SuperpowerDescriptor, SuperpowerPolicy,
 };
 
 use crate::RuntimeError;
@@ -51,6 +51,7 @@ struct RegistryEntry {
     factory: Arc<dyn ErasedProviderFactory>,
     superpowers: Option<Arc<dyn ProviderSuperpowers>>,
     credentials: Option<Arc<dyn ProviderCredentialPort>>,
+    policy: Option<Arc<dyn SuperpowerPolicy>>,
 }
 
 /// Heterogeneous provider-factory registry with no concrete provider enum.
@@ -80,7 +81,7 @@ impl ProviderRegistry {
         F: ProviderFactory + 'static,
         F::Session: 'static,
     {
-        self.register_inner(factory, None, None).await
+        self.register_inner(factory, None, None, None).await
     }
 
     /// Registers one provider factory together with its [`ProviderSuperpowers`]
@@ -96,7 +97,7 @@ impl ProviderRegistry {
         F::Session: 'static,
         S: ProviderSuperpowers + 'static,
     {
-        self.register_inner(factory, Some(Arc::new(superpowers)), None)
+        self.register_inner(factory, Some(Arc::new(superpowers)), None, None)
             .await
     }
 
@@ -113,7 +114,7 @@ impl ProviderRegistry {
         F::Session: 'static,
         C: ProviderCredentialPort + 'static,
     {
-        self.register_inner(factory, None, Some(Arc::new(credentials)))
+        self.register_inner(factory, None, Some(Arc::new(credentials)), None)
             .await
     }
 
@@ -135,6 +136,32 @@ impl ProviderRegistry {
             factory,
             Some(Arc::new(superpowers)),
             Some(Arc::new(credentials)),
+            None,
+        )
+        .await
+    }
+
+    /// Registers one provider factory together with its
+    /// [`ProviderSuperpowers`] surface and its [`SuperpowerPolicy`] (the
+    /// provider-routed model/plan/reasoning logic), so hosts never hardcode a
+    /// concrete provider's behavior.
+    pub async fn register_with_superpowers_and_policy<F, S, P>(
+        &self,
+        factory: F,
+        superpowers: S,
+        policy: P,
+    ) -> Result<(), RuntimeError>
+    where
+        F: ProviderFactory + 'static,
+        F::Session: 'static,
+        S: ProviderSuperpowers + 'static,
+        P: SuperpowerPolicy + 'static,
+    {
+        self.register_inner(
+            factory,
+            Some(Arc::new(superpowers)),
+            None,
+            Some(Arc::new(policy)),
         )
         .await
     }
@@ -144,6 +171,7 @@ impl ProviderRegistry {
         factory: F,
         superpowers: Option<Arc<dyn ProviderSuperpowers>>,
         credentials: Option<Arc<dyn ProviderCredentialPort>>,
+        policy: Option<Arc<dyn SuperpowerPolicy>>,
     ) -> Result<(), RuntimeError>
     where
         F: ProviderFactory + 'static,
@@ -160,6 +188,7 @@ impl ProviderRegistry {
                 factory: Arc::new(FactoryAdapter(factory)),
                 superpowers,
                 credentials,
+                policy,
             },
         );
         Ok(())
@@ -261,6 +290,19 @@ impl ProviderRegistry {
             .and_then(|entry| entry.superpowers.as_ref())
             .map(|surface| surface.superpowers())
             .unwrap_or_default()
+    }
+
+    /// Returns the [`SuperpowerPolicy`] for `provider_id` (the provider-routed
+    /// model/plan/reasoning logic), or a permissive default when the provider
+    /// registered none (or is unknown). Hosts route through this instead of
+    /// hardcoding provider-specific behavior.
+    pub async fn superpower_policy(&self, provider_id: &ProviderId) -> Arc<dyn SuperpowerPolicy> {
+        self.factories
+            .read()
+            .await
+            .get(provider_id)
+            .and_then(|entry| entry.policy.clone())
+            .unwrap_or_else(|| Arc::new(PermissiveSuperpowerPolicy))
     }
 
     /// Returns the superpower descriptors for every registered provider, in
