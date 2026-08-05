@@ -29,6 +29,7 @@ pub mod auth_hub;
 pub mod commands;
 pub mod dispatch;
 pub mod lmstudio_hub;
+pub mod lmstudio_provider;
 pub mod markdown;
 pub mod plan_mode;
 pub mod superpowers;
@@ -46,6 +47,7 @@ pub use lmstudio_hub::{
     LmStudioHub, LmStudioSettings, LmStudioSettingsAction, load_lmstudio_settings,
     render_lmstudio_hub, save_lmstudio_settings,
 };
+pub use lmstudio_provider::LmStudioFactory;
 pub use plan_mode::{PendingQuestion, PlanModeError, PlanPhase, PlanState, PlanTransition};
 pub use superpowers::{ProviderSuperpowerSurface, SuperpowerOverrides};
 pub use ui::{

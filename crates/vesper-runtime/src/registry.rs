@@ -142,6 +142,32 @@ impl ProviderRegistry {
     }
 
     /// Registers one provider factory together with its
+    /// [`ProviderSuperpowers`] surface, its [`ProviderCredentialPort`], AND its
+    /// [`SuperpowerPolicy`] — the full provider-routed surface.
+    pub async fn register_with_all<F, S, C, P>(
+        &self,
+        factory: F,
+        superpowers: S,
+        credentials: C,
+        policy: P,
+    ) -> Result<(), RuntimeError>
+    where
+        F: ProviderFactory + 'static,
+        F::Session: 'static,
+        S: ProviderSuperpowers + 'static,
+        C: ProviderCredentialPort + 'static,
+        P: SuperpowerPolicy + 'static,
+    {
+        self.register_inner(
+            factory,
+            Some(Arc::new(superpowers)),
+            Some(Arc::new(credentials)),
+            Some(Arc::new(policy)),
+        )
+        .await
+    }
+
+    /// Registers one provider factory together with its
     /// [`ProviderSuperpowers`] surface and its [`SuperpowerPolicy`] (the
     /// provider-routed model/plan/reasoning logic), so hosts never hardcode a
     /// concrete provider's behavior.
