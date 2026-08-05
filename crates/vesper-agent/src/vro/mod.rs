@@ -8,29 +8,39 @@
 //! ## Phase behavior
 //!
 //! - **VRO-1** established the contracts + seam.
-//! - **VRO-2.1** adds the deterministic [`TaskProfiler`]. When the feature
-//!   flag is **on**, [`route`](VroOrchestrator::route) now runs the profiler to
-//!   build a [`TaskProfile`] (available via [`profile`](VroOrchestrator::profile)
-//!   for telemetry/inspection). The routing decision is still
-//!   [`VroRoutingDecision::Direct`] because **no strategy executor is wired
-//!   yet** — VRO-2.2+ will dispatch the selected strategy. When the flag is
-//!   **off** (the shipped default), `route` returns `Direct` immediately
-//!   without profiling, preserving byte-for-byte direct execution.
+//! - **VRO-2.1** added the deterministic [`TaskProfiler`].
+//! - **VRO-2.2** added the [`VerifierRegistry`] + cargo verifiers.
+//! - **VRO-2.3** wires the profiler + verifiers into the
+//!   [`GenerateVerifyRepair`](vesper_domain::ReasoningStrategy) loop
+//!   ([`orchestrator`]). [`route`](VroOrchestrator::route) now returns
+//!   [`VroRoutingDecision::Orchestrate`] for non-`Direct` strategies when the
+//!   flag is on; the host then calls [`execute`](VroOrchestrator::execute) with
+//!   a provider-backed [`CandidateGenerator`].
 //!
-//! Nothing in this module touches [`crate::AgentLoopConfig`],
-//! [`crate::agent_loop::AgentLoop`], the tool registry, or the permission gate.
-//! The existing direct execution loop is unchanged.
+//! **Zero-breakage contract:** when `enabled` is `false` (shipped default), or
+//! when the profiled strategy is [`Direct`](vesper_domain::ReasoningStrategy),
+//! [`route`](VroOrchestrator::route) returns `Direct` and the host keeps using
+//! the unchanged `agent_loop.rs` direct path. Nothing in this module touches
+//! [`crate::AgentLoopConfig`], [`crate::agent_loop::AgentLoop`], the tool
+//! registry, or the permission gate.
 //!
 //! See `crates/vesper-agent/AGENTS.md` for ownership and contract scope.
 
+pub mod orchestrator;
 pub mod profiler;
 pub mod verifiers;
 
+pub use orchestrator::{CandidateGenerator, GeneratedCandidate, run_generate_verify_repair};
 pub use profiler::TaskProfiler;
+use std::path::Path;
+use std::sync::Arc;
 pub use verifiers::{
     CargoCheckVerifier, CargoTestVerifier, VerificationContext, Verifier, VerifierRegistry,
 };
-use vesper_domain::{ReasoningBudget, ReasoningConfig, ReasoningMode, TaskProfile};
+use vesper_domain::{
+    ReasoningBudget, ReasoningConfig, ReasoningMode, ReasoningOutcome, ReasoningRequest,
+    ReasoningStrategy, TaskProfile,
+};
 
 /// The routing decision a host consumes before dispatching a turn.
 ///
@@ -45,39 +55,57 @@ pub enum VroRoutingDecision {
     Orchestrate,
 }
 
-/// Phase VRO-1/VRO-2.1 orchestrator scaffolding.
+/// Phase VRO-1..VRO-2.3 orchestrator.
 ///
-/// Holds the reasoning configuration and a [`TaskProfiler`]. It answers the
-/// single question the composition boundary needs: *does this turn route
-/// through VRO or through direct execution?*
+/// Holds the reasoning configuration, a [`TaskProfiler`], and a shared
+/// [`VerifierRegistry`]. It answers two questions the composition boundary
+/// needs:
 ///
-/// - When `enabled` is `false` (shipped default), `route` returns `Direct`
-///   immediately — no profiling, zero behavior change.
-/// - When `enabled` is `true`, `route` runs the profiler to build a
-///   [`TaskProfile`] but **still returns `Direct`**, because no strategy
-///   executor is wired yet. The profile is surfaced via [`Self::profile`] for
-///   telemetry and validation.
+/// - [`route`](Self::route): *does this turn route through VRO or the direct
+///   execution loop?* Returns `Direct` when disabled, in `Off` mode, or when
+///   the profiled strategy is [`Direct`](ReasoningStrategy); otherwise
+///   `Orchestrate`.
+/// - [`execute`](Self::execute): when routing chose `Orchestrate`, runs the
+///   Generate-Verify-Repair loop (or a strategy-appropriate variant) using a
+///   caller-supplied [`CandidateGenerator`] (the provider seam).
 ///
-/// This type performs **no I/O**, holds no provider handles, and mutates no
-/// session state. It is safe to construct cheaply at host startup and clone
-/// per turn.
-#[derive(Debug, Clone, Default)]
+/// When `enabled` is `false` (shipped default) the direct path is always taken
+/// with zero behavior change.
+///
+/// This type holds no provider handles and mutates no session state. It is
+/// safe to construct cheaply at host startup and clone per turn (the registry
+/// is shared behind an [`Arc`]).
+#[derive(Debug, Clone)]
 pub struct VroOrchestrator {
     config: ReasoningConfig,
     profiler: TaskProfiler,
+    registry: Arc<VerifierRegistry>,
+}
+
+impl Default for VroOrchestrator {
+    fn default() -> Self {
+        // Disabled orchestrator: empty registry (it never executes).
+        Self {
+            config: ReasoningConfig::default(),
+            profiler: TaskProfiler::new(),
+            registry: Arc::new(VerifierRegistry::new()),
+        }
+    }
 }
 
 impl VroOrchestrator {
-    /// Creates a new orchestrator bound to the given configuration.
+    /// Creates a new orchestrator bound to the given configuration, wiring the
+    /// default cargo verifiers (`cargo_check`, `cargo_test`) into the registry.
     #[must_use]
     pub fn new(config: ReasoningConfig) -> Self {
         Self {
             config,
             profiler: TaskProfiler::new(),
+            registry: Arc::new(VerifierRegistry::default_cargo()),
         }
     }
 
-    /// Creates a disabled orchestrator (equivalent to `new(ReasoningConfig::default())`).
+    /// Creates a disabled orchestrator with an empty registry.
     #[must_use]
     pub fn disabled() -> Self {
         Self::default()
@@ -107,9 +135,14 @@ impl VroOrchestrator {
         self.config.preset_for(mode)
     }
 
+    /// Returns a reference to the verifier registry.
+    #[must_use]
+    pub fn registry(&self) -> &VerifierRegistry {
+        &self.registry
+    }
+
     /// Profiles a user message into a [`TaskProfile`] using the deterministic
-    /// [`TaskProfiler`]. Always available regardless of the `enabled` flag so
-    /// hosts and tests can inspect profiling without enabling orchestration.
+    /// [`TaskProfiler`]. Always available regardless of the `enabled` flag.
     #[must_use]
     pub fn profile(&self, user_message: &str) -> TaskProfile {
         self.profiler.profile(user_message)
@@ -117,13 +150,11 @@ impl VroOrchestrator {
 
     /// Decides whether a turn routes through VRO or the direct execution loop.
     ///
-    /// **Zero-breakage contract (VRO-1/VRO-2.1):**
-    /// - When `enabled` is `false`, returns [`VroRoutingDecision::Direct`]
-    ///   immediately (no profiling).
-    /// - When `enabled` is `true`, runs the [`TaskProfiler`] to build a profile
-    ///   (for telemetry), but **still returns `Direct`** because no strategy
-    ///   executor is wired yet. VRO-2.2+ will return `Orchestrate` based on the
-    ///   profiled strategy.
+    /// **Zero-breakage contract:**
+    /// - `enabled == false` ⇒ `Direct` (no profiling).
+    /// - `mode == Off` ⇒ `Direct`.
+    /// - profiled strategy `== Direct` ⇒ `Direct` (host uses `agent_loop.rs`).
+    /// - otherwise ⇒ `Orchestrate` (host should call [`execute`](Self::execute)).
     pub fn route(&self, user_message: &str, mode: ReasoningMode) -> VroRoutingDecision {
         // Master switch off -> direct, no work done.
         if !self.config.enabled {
@@ -133,11 +164,58 @@ impl VroOrchestrator {
         if mode == ReasoningMode::Off {
             return VroRoutingDecision::Direct;
         }
-        // VRO-2.1: profile the request so the composition boundary can observe
-        // the TaskProfile. Execution stays on the direct path until a strategy
-        // executor lands (VRO-2.2+); the profile is discarded here.
-        let _profile = self.profiler.profile(user_message);
-        VroRoutingDecision::Direct
+        // VRO-2.3: profile and route on the recommended strategy. A Direct
+        // profile falls back to the unchanged direct execution loop.
+        let profile = self.profiler.profile(user_message);
+        if profile.recommended_strategy == ReasoningStrategy::Direct {
+            VroRoutingDecision::Direct
+        } else {
+            VroRoutingDecision::Orchestrate
+        }
+    }
+
+    /// Executes a turn through the orchestrator (call only when
+    /// [`route`](Self::route) returned [`VroRoutingDecision::Orchestrate`]).
+    ///
+    /// Profiles the request, resolves the budget (caller override or the mode
+    /// preset), and dispatches to the strategy executor. VRO-2.3 implements
+    /// the [`GenerateVerifyRepair`](ReasoningStrategy) loop; other non-`Direct`
+    /// strategies fall back to a single generate-and-verify pass
+    /// (`max_repairs == 0`) until their dedicated executors land.
+    ///
+    /// `generator` is the provider seam: the host supplies a real
+    /// provider-backed [`CandidateGenerator`]; the orchestrator never makes a
+    /// provider call itself.
+    pub async fn execute(
+        &self,
+        request: &ReasoningRequest,
+        generator: &dyn CandidateGenerator,
+        workspace_root: &Path,
+    ) -> ReasoningOutcome {
+        let profile = self.profiler.profile_request(request);
+        let budget = request
+            .budget_override
+            .unwrap_or_else(|| self.config.preset_for(request.mode));
+        // Repair budget: full for GenerateVerifyRepair; zero (single pass) for
+        // the other non-Direct strategies VRO-2.3 does not yet specialize.
+        let repair_budget =
+            if profile.recommended_strategy == ReasoningStrategy::GenerateVerifyRepair {
+                budget
+            } else {
+                ReasoningBudget {
+                    max_repairs: 0,
+                    ..budget
+                }
+            };
+        run_generate_verify_repair(
+            &request.user_message,
+            &profile.available_verifiers,
+            &self.registry,
+            generator,
+            workspace_root,
+            repair_budget,
+        )
+        .await
     }
 }
 
@@ -154,28 +232,39 @@ mod tests {
     }
 
     #[test]
-    fn route_still_returns_direct_in_vro_2_1_even_when_enabled() {
-        // VRO-2.1: even with the flag on, the profiler now RUNS but the routing
-        // decision stays Direct because no strategy executor is wired yet.
-        // (This preserves the VRO-1 zero-breakage contract.) VRO-2.2+ will
-        // return Orchestrate based on the profiled strategy.
-        let enabled_cfg = ReasoningConfig {
+    fn route_returns_orchestrate_for_non_direct_when_enabled() {
+        // VRO-2.3: with the flag on, a non-Direct profile now routes through
+        // the orchestrator (Orchestrate). A Direct profile (chat) still falls
+        // back to the unchanged direct execution loop.
+        let vro = VroOrchestrator::new(ReasoningConfig {
             enabled: true,
             ..ReasoningConfig::default()
-        };
-        let vro = VroOrchestrator::new(enabled_cfg);
+        });
         assert!(vro.enabled());
+
+        // "refactor src/main.rs" profiles to coding / PlanExecuteVerify (non-Direct).
+        assert_eq!(
+            vro.route("refactor src/main.rs", ReasoningMode::Auto),
+            VroRoutingDecision::Orchestrate,
+            "non-Direct profile must route to Orchestrate when enabled"
+        );
+        // A chat greeting profiles to Direct -> stays on the direct path.
+        assert_eq!(
+            vro.route("hello world", ReasoningMode::Auto),
+            VroRoutingDecision::Direct,
+            "Direct profile must stay on the direct execution loop"
+        );
+        // Every non-Off mode behaves the same for a non-Direct profile.
         for mode in [
-            ReasoningMode::Auto,
             ReasoningMode::Fast,
             ReasoningMode::Balanced,
             ReasoningMode::Deep,
             ReasoningMode::Maximum,
         ] {
             assert_eq!(
-                vro.route("refactor the session writer", mode),
-                VroRoutingDecision::Direct,
-                "VRO-2.1 must still route Direct even when enabled (mode {mode:?})"
+                vro.route("calculate the result in calc.py", mode),
+                VroRoutingDecision::Orchestrate,
+                "non-Direct profile routes Orchestrate for mode {mode:?}"
             );
         }
     }
@@ -188,15 +277,33 @@ mod tests {
             vro.route("anything", ReasoningMode::Auto),
             VroRoutingDecision::Direct
         );
+        // A non-Direct prompt still routes Direct when disabled.
+        assert_eq!(
+            vro.route("refactor src/main.rs", ReasoningMode::Auto),
+            VroRoutingDecision::Direct
+        );
         // Off mode also routes direct even when enabled.
         let enabled = VroOrchestrator::new(ReasoningConfig {
             enabled: true,
             ..ReasoningConfig::default()
         });
         assert_eq!(
-            enabled.route("anything", ReasoningMode::Off),
+            enabled.route("refactor src/main.rs", ReasoningMode::Off),
             VroRoutingDecision::Direct
         );
+    }
+
+    #[test]
+    fn enabled_orchestrator_wires_default_cargo_verifiers() {
+        // new() registers the cargo verifiers so execute() has verifiers to run.
+        let vro = VroOrchestrator::new(ReasoningConfig {
+            enabled: true,
+            ..ReasoningConfig::default()
+        });
+        assert!(vro.registry().contains("cargo_check"));
+        assert!(vro.registry().contains("cargo_test"));
+        // The disabled default has an empty registry.
+        assert!(VroOrchestrator::disabled().registry().ids().is_empty());
     }
 
     #[test]
