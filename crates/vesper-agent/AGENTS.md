@@ -47,17 +47,28 @@ the multi-turn, tool-executing layer above it.
   merges them (deduplicated by `ToolId` or `harness_name`) into the
   advertised pool so the next iteration advertises them to the model.
 - `src/vro/mod.rs` — Vesper Reasoning Orchestrator (VRO) scaffolding.
-  `VroOrchestrator` holds a `ReasoningConfig` (from `vesper-domain`) and a
-  `TaskProfiler`, and exposes `route(user_message, mode)` →
-  `VroRoutingDecision`, the single seam the composition boundary consults
-  before dispatching a turn. **When `enabled` is `false` (the shipped default),
-  `route` returns `Direct` immediately without profiling — zero behavior
-  regression (PRD §21 VRO-1 exit criterion).** When `enabled` is `true`,
-  VRO-2.1 runs the [`TaskProfiler`](crate::vro::profiler::TaskProfiler) to build
-  a `TaskProfile` but **still returns `Direct`** because no strategy executor
-  is wired yet; VRO-2.2+ will dispatch the selected strategy. This module
-  performs no I/O, holds no provider handles, and never touches
+  `VroOrchestrator` holds a `ReasoningConfig` (from `vesper-domain`), a
+  `TaskProfiler`, and a shared `VerifierRegistry` (behind an `Arc` so the
+  orchestrator stays `Clone`). `route(user_message, mode)` →
+  `VroRoutingDecision` profiles the request and returns **`Orchestrate`** for
+  non-`Direct` strategies when the flag is on (VRO-2.3), or `Direct` when
+  disabled / in `Off` mode / the profile is `Direct` — the host then uses the
+  unchanged `agent_loop.rs` direct path. `execute(request, generator,
+  workspace_root)` runs the strategy loop via a caller-supplied
+  [`CandidateGenerator`](crate::vro::orchestrator::CandidateGenerator) (the
+  provider seam — the orchestrator never makes a provider call itself). This
+  module performs no I/O, holds no provider handles, and never touches
   `AgentLoopConfig`, `AgentLoop`, the tool registry, or the permission gate.
+- `src/vro/orchestrator.rs` — VRO-2.3 Generate-Verify-Repair loop (PRD §11.3,
+  §10.9). `CandidateGenerator` trait (async object-safe via boxed `Send`
+  future), `GeneratedCandidate`, and `run_generate_verify_repair(...)`: generate
+  → verify all mandatory verifiers → halt on all-pass (`Succeeded`) / any
+  `VerificationStatus::Error` (`Inconclusive`) / `max_repairs` exhausted
+  (`Failed`) / `max_model_calls` safety bound (`BudgetExceeded`) / non-repairable
+  failure (`Failed`); otherwise consume one repair unit, feed the failed
+  verifiers' findings back to the generator as corrections, and re-generate.
+  Tested with fakes (no real provider / no real cargo) for deterministic
+  halt-condition coverage.
 - `src/vro/profiler.rs` — VRO-2.1 deterministic `TaskProfiler`: converts a
   user prompt (or `ReasoningRequest`) into a `TaskProfile` using pure
   keyword/substring heuristics (**no LLM call**, no `regex` dependency — the
