@@ -37,13 +37,18 @@ Orchestrator (VRO) Phase VRO-1 domain contracts.
   upgraded `VerificationFinding` from a `String` placeholder to a real struct
   (`message`/`severity`/`location`) with a `VerificationSeverity` enum, and
   added `VerificationStatus::Error` (the verifier itself could not run, distinct
-  from `Failed`). Fields whose types are not yet defined use documented
-  placeholders (`String` aliases or `serde_json::Value`); real domain IDs
-  (`RequestId`/`CandidateId`/`SessionId`) are reused. `Candidate` and
-  `ReasoningOutcome` derive `PartialEq` only (they carry
-  `serde_json::Value`/`f32`). Budget preset values pinned by §24 are sourced
-  from the PRD; fields §24 does not pin carry documented VRO-1 conservative
-  baselines deferred to research phase R3. No orchestration logic lives here.
+  from `Failed`). VRO-3.1 added `ModelCapabilities` (PRD §10.2) — the generic,
+  provider-neutral observed-capability contract (boolean flags: native/emulated
+  tools, structured output, system prompts, streaming, cancellation, vision)
+  reused by any future real provider adapter. Provider names are FORBIDDEN in
+  this file (xtask architecture guard scans for them). Fields whose types are
+  not yet defined use documented placeholders (`String` aliases or
+  `serde_json::Value`); real domain IDs (`RequestId`/`CandidateId`/`SessionId`)
+  are reused. `Candidate` and `ReasoningOutcome` derive `PartialEq` only (they
+  carry `serde_json::Value`/`f32`). Budget preset values pinned by §24 are
+  sourced from the PRD; fields §24 does not pin carry documented VRO-1
+  conservative baselines deferred to research phase R3. No orchestration logic
+  lives here.
 
 ## Verification
 

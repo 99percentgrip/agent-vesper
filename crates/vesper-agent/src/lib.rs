@@ -25,6 +25,7 @@ pub mod confinement;
 pub mod executor;
 pub mod permission;
 pub mod project_context;
+pub mod providers;
 pub mod references;
 pub mod registry;
 pub mod tools;
