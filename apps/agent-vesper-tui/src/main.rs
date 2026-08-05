@@ -210,6 +210,12 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
         // The active provider's superpower policy (provider-routed model/plan/
         // reasoning logic), shared with every helper via this session wrapper.
         policy: policy.clone(),
+        provider_ids: registry
+            .provider_ids()
+            .await
+            .into_iter()
+            .map(|id| (id.as_str().to_string(), id.as_str().to_string()))
+            .collect(),
         // Pure dispatch state lives in the library so the full Plan Mode
         // lifecycle is unit-testable; the binary only owns the input buffer
         // and the in-flight agent-turn channel.
@@ -461,11 +467,12 @@ async fn register_default_providers(
 /// transcript state, fully unit-tested) together with the `input` buffer that
 /// never crosses the dispatch boundary. Only the binary owns the terminal; all
 /// transition discipline lives in [`agent_vesper_tui::dispatch`].
+/// Mutable per-session state held across the event loop.
+///
+/// Wraps the library-owned [`SessionState`] (pure Plan Mode + override +
 struct TuiSession {
-    /// The active provider's superpower policy (model/plan/reasoning logic),
-    /// held here so every helper that takes `&TuiSession` can route
-    /// provider-neutrally without a separate parameter thread.
     policy: Arc<dyn vesper_provider::SuperpowerPolicy>,
+    provider_ids: Vec<(String, String)>,
     /// Pure dispatch state (plan, overrides, transcript, status).
     state: SessionState,
     /// In-progress input line being typed by the driver.
@@ -1734,6 +1741,7 @@ fn refresh_command_menu(
         registry,
         surface,
         &*session.policy,
+        &session.provider_ids,
         &session.state,
     );
     if session.command_matches.is_empty() {
@@ -1754,12 +1762,23 @@ fn command_palette_candidates(
     registry: &CommandRegistry,
     surface: &ProviderSuperpowerSurface,
     policy: &dyn vesper_provider::SuperpowerPolicy,
+    provider_ids: &[(String, String)],
     state: &SessionState,
 ) -> Vec<(String, String)> {
     let trimmed = input.trim_start();
     let Some((command, argument)) = trimmed.split_once(' ') else {
         return registry.completion_candidates(trimmed);
     };
+    // /provider picker: show registered providers as arrow-key-selectable
+    // candidates (same UX as /model — no name typing required).
+    if command == "/provider" {
+        let query = argument.trim().to_ascii_lowercase();
+        return provider_ids
+            .iter()
+            .filter(|(id, _)| query.is_empty() || id.to_ascii_lowercase().starts_with(&query))
+            .map(|(id, name)| (format!("/provider {id}"), name.clone()))
+            .collect();
+    }
     if let Some(choices) = session_setting_candidates(command, state, surface) {
         let query = argument.trim().to_ascii_lowercase();
         return choices
@@ -8408,6 +8427,7 @@ mod tests {
             &registry,
             &palette_surface(),
             &vesper_provider_glm::GlmSuperpowerPolicy,
+            &[],
             &SessionState::new(),
         );
         assert_eq!(choices.len(), registry.names().len());
@@ -8428,6 +8448,7 @@ mod tests {
             &registry,
             &surface,
             &vesper_provider_glm::GlmSuperpowerPolicy,
+            &[],
             &state,
         );
         assert_eq!(thinking.len(), 4);
@@ -8438,6 +8459,7 @@ mod tests {
                 &registry,
                 &surface,
                 &vesper_provider_glm::GlmSuperpowerPolicy,
+                &[],
                 &state
             )[0]
             .0,
@@ -8449,6 +8471,7 @@ mod tests {
                 &registry,
                 &surface,
                 &vesper_provider_glm::GlmSuperpowerPolicy,
+                &[],
                 &state
             )[0]
             .0,
@@ -8460,6 +8483,7 @@ mod tests {
                 &registry,
                 &surface,
                 &vesper_provider_glm::GlmSuperpowerPolicy,
+                &[],
                 &state
             )[0]
             .0,
@@ -8477,6 +8501,7 @@ mod tests {
             &registry,
             &surface,
             &vesper_provider_glm::GlmSuperpowerPolicy,
+            &[],
             &state,
         );
         assert_eq!(
@@ -8491,6 +8516,7 @@ mod tests {
             &registry,
             &surface,
             &vesper_provider_glm::GlmSuperpowerPolicy,
+            &[],
             &state,
         );
         assert!(settings.iter().any(|choice| choice.0 == "/model"));
@@ -8509,6 +8535,7 @@ mod tests {
             &registry,
             &surface,
             &vesper_provider_glm::GlmSuperpowerPolicy,
+            &[],
             &state,
         );
         assert_eq!(coding.len(), 3);
@@ -8520,6 +8547,7 @@ mod tests {
             &registry,
             &surface,
             &vesper_provider_glm::GlmSuperpowerPolicy,
+            &[],
             &state,
         );
         assert_eq!(standard.len(), 6);
@@ -8536,6 +8564,7 @@ mod tests {
             &registry,
             &surface,
             &vesper_provider_glm::GlmSuperpowerPolicy,
+            &[],
             &state,
         );
         assert_eq!(
@@ -8833,6 +8862,7 @@ mod tests {
         // an abort notice instead of wedging the UI on WORKING... forever.
         let mut session = TuiSession {
             policy: std::sync::Arc::new(vesper_provider::PermissiveSuperpowerPolicy),
+            provider_ids: vec![("zai".into(), "Z.ai".into())],
             state: SessionState::new(),
             input: String::new(),
             conversation: Vec::new(),
@@ -8880,6 +8910,7 @@ mod tests {
         // drain must NOT clear the in-flight flag — the WORKING banner stays.
         let mut session = TuiSession {
             policy: std::sync::Arc::new(vesper_provider::PermissiveSuperpowerPolicy),
+            provider_ids: vec![("zai".into(), "Z.ai".into())],
             state: SessionState::new(),
             input: String::new(),
             conversation: Vec::new(),
@@ -8925,6 +8956,7 @@ mod tests {
         // frame for the Conversation and Reasoning panels.
         let mut session = TuiSession {
             policy: std::sync::Arc::new(vesper_provider::PermissiveSuperpowerPolicy),
+            provider_ids: vec![("zai".into(), "Z.ai".into())],
             state: SessionState::new(),
             input: String::new(),
             conversation: Vec::new(),
