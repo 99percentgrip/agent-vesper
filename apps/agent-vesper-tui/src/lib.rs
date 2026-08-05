@@ -28,6 +28,7 @@
 pub mod auth_hub;
 pub mod commands;
 pub mod dispatch;
+pub mod lmstudio_hub;
 pub mod markdown;
 pub mod plan_mode;
 pub mod superpowers;
@@ -40,6 +41,10 @@ pub use commands::{CommandIntent, CommandOutcome, CommandRegistry, MediaOp, Plan
 pub use dispatch::{
     DispatchOutcome, PanelVisibility, SessionControls, SessionState, TaskItem, TerminalAction,
     TerminalPreferences, apply_model_plan, apply_task_plan, dispatch,
+};
+pub use lmstudio_hub::{
+    LmStudioHub, LmStudioSettings, LmStudioSettingsAction, load_lmstudio_settings,
+    render_lmstudio_hub, save_lmstudio_settings,
 };
 pub use plan_mode::{PendingQuestion, PlanModeError, PlanPhase, PlanState, PlanTransition};
 pub use superpowers::{ProviderSuperpowerSurface, SuperpowerOverrides};

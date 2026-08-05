@@ -14,6 +14,7 @@ ratatui.workspace = true
 rand.workspace = true
 qrcode.workspace = true
 reqwest.workspace = true
+serde.workspace = true
 sha2.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

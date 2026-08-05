@@ -18,6 +18,15 @@ business logic.
 - `src/auth_hub.rs` — pure provider-driven authentication startup state machine and
   responsive masked Ratatui renderer. It may expose only authentication
   descriptors registered by production provider adapters.
+- `src/lmstudio_hub.rs` — pure LM Studio provider settings state machine +
+  Ratatui renderer + atomic JSON persistence (`/lmstudio`). Mirrors the
+  `auth_hub` pattern: the user adjusts the LAN/localhost `api_base_url` and
+  optional pinned model **inside the TUI** (not a config file); the binary owns
+  the terminal event loop and persists on `Save`. The settings file holds only
+  non-secret fields (`$AGENT_VESPER_LMSTUDIO_ROOT` or `.agent-vesper/lmstudio/
+  settings.json`); the optional API key is read from the `LMSTUDIO_API_KEY`
+  env var (surfaced as a screen hint) — moving it to the OS credential store is
+  the security follow-up.
 - `src/commands.rs` — slash-command parsing, registry, and resolution
   against the active provider's superpowers. Tier C Phase 7 (ADR 0010): the
   registry now covers the **entire** Python oracle `LOCAL_COMMANDS` surface

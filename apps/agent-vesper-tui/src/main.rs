@@ -32,10 +32,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use agent_vesper_tui::{
     AuthHubAction, AuthHubState, AuthProvider, CommandIntent, CommandRegistry, DispatchOutcome,
-    FOOTER_ACTIONS, MediaOp, PermissionChoice, PermissionModal, PlanPhase,
-    ProviderSuperpowerSurface, SessionState, StartupRoute, TerminalAction, ViewModel,
-    apply_model_plan, apply_task_plan, command_menu_height, dispatch, query_startup_view,
-    render_auth_hub, render_to_frame, startup_route,
+    FOOTER_ACTIONS, LmStudioHub, LmStudioSettings, LmStudioSettingsAction, MediaOp,
+    PermissionChoice, PermissionModal, PlanPhase, ProviderSuperpowerSurface, SessionState,
+    StartupRoute, TerminalAction, ViewModel, apply_model_plan, apply_task_plan,
+    command_menu_height, dispatch, load_lmstudio_settings, query_startup_view, render_auth_hub,
+    render_lmstudio_hub, render_to_frame, save_lmstudio_settings, startup_route,
 };
 use crossterm::{
     event::{
@@ -1167,6 +1168,28 @@ async fn drive_loop(
                         }
                     }
                 }
+                if session.state.pending_lmstudio_settings {
+                    session.state.pending_lmstudio_settings = false;
+                    match open_lmstudio_settings(&mut terminal).await {
+                        Ok(settings) if settings.is_empty() => {
+                            session.state.status = Some("lmstudio: no endpoint set.".into());
+                        }
+                        Ok(settings) => {
+                            let model = settings.model().unwrap_or("auto-discover").to_owned();
+                            session.state.status = Some(format!(
+                                "lmstudio: endpoint set to {}",
+                                settings.api_base_url
+                            ));
+                            session.state.transcript.push(format!(
+                                "lmstudio: now using {} (model: {model}).",
+                                settings.api_base_url
+                            ));
+                        }
+                        Err(error) => {
+                            session.state.status = Some(format!("lmstudio: {error}"));
+                        }
+                    }
+                }
                 if let Some(action) = session.state.pending_terminal_action.take() {
                     let result = match action {
                         TerminalAction::EnableMouseCapture => {
@@ -1365,6 +1388,76 @@ async fn drive_loop(
 /// successful setup transitions without a raw-mode or alternate-screen flash.
 /// The provider descriptor is provider-routed (projected from the active
 /// provider's advertised `ProviderDescriptor`), never hardcoded.
+/// Opens the LM Studio provider settings screen so the user can adjust the
+/// LAN/localhost `api_base_url` and optional model **from inside the TUI**
+/// (not a config file). Mirrors [`ensure_provider_authenticated`]: takes over
+/// the terminal, runs a pure [`LmStudioHub`] event loop, and persists on save.
+///
+/// Returns the settings that are now in effect (the saved ones, or the
+/// pre-existing ones if the user cancelled).
+async fn open_lmstudio_settings(
+    terminal: &mut Terminal<Backend>,
+) -> Result<LmStudioSettings, String> {
+    let existing = load_lmstudio_settings();
+    let mut hub = LmStudioHub::from_settings(&existing);
+    loop {
+        terminal
+            .draw(|frame| render_lmstudio_hub(frame, &hub))
+            .map_err(|error| format!("LM Studio settings redraw failed: {error}"))?;
+        let event =
+            event::read().map_err(|error| format!("LM Studio settings input failed: {error}"))?;
+        let action = match event {
+            Event::Paste(value) => {
+                hub.paste(&value);
+                LmStudioSettingsAction::Continue
+            }
+            Event::Key(KeyEvent {
+                code,
+                modifiers,
+                kind: KeyEventKind::Press,
+                ..
+            }) => match code {
+                KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
+                    LmStudioSettingsAction::Quit
+                }
+                KeyCode::Up | KeyCode::Left => {
+                    hub.prev_field();
+                    LmStudioSettingsAction::Continue
+                }
+                KeyCode::Down | KeyCode::Right | KeyCode::Tab => {
+                    hub.next_field();
+                    LmStudioSettingsAction::Continue
+                }
+                KeyCode::Backspace => {
+                    hub.backspace();
+                    LmStudioSettingsAction::Continue
+                }
+                KeyCode::Esc => hub.cancel(),
+                KeyCode::Enter => hub.submit(),
+                KeyCode::Char(character)
+                    if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+                {
+                    hub.insert(character);
+                    LmStudioSettingsAction::Continue
+                }
+                _ => LmStudioSettingsAction::Continue,
+            },
+            _ => LmStudioSettingsAction::Continue,
+        };
+        match action {
+            LmStudioSettingsAction::Continue => {}
+            LmStudioSettingsAction::Quit => return Ok(existing),
+            LmStudioSettingsAction::Save { settings } => match save_lmstudio_settings(&settings) {
+                Ok(()) => {
+                    tracing::info!(target: "lmstudio", url = %settings.api_base_url, "LM Studio settings saved");
+                    return Ok(settings);
+                }
+                Err(error) => hub.save_failed(error),
+            },
+        }
+    }
+}
+
 async fn ensure_provider_authenticated(
     terminal: &mut Terminal<Backend>,
     registry: &vesper_runtime::ProviderRegistry,
