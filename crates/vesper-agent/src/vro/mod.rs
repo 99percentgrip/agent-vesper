@@ -24,8 +24,12 @@
 //! See `crates/vesper-agent/AGENTS.md` for ownership and contract scope.
 
 pub mod profiler;
+pub mod verifiers;
 
 pub use profiler::TaskProfiler;
+pub use verifiers::{
+    CargoCheckVerifier, CargoTestVerifier, VerificationContext, Verifier, VerifierRegistry,
+};
 use vesper_domain::{ReasoningBudget, ReasoningConfig, ReasoningMode, TaskProfile};
 
 /// The routing decision a host consumes before dispatching a turn.

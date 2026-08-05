@@ -68,6 +68,20 @@ the multi-turn, tool-executing layer above it.
   risk (`delete`/`commit`/`production` → `High`) → grounding + verifiers
   (`.rs` → `cargo_check`/`cargo_test`/`clippy`) → complexity/ambiguity →
   §12 strategy ladder. `profile_request` honors a caller `risk_hint` override.
+- `src/vro/verifiers.rs` — VRO-2.2 deterministic verifier registry (PRD §10.8).
+  Async object-safe `Verifier` trait (boxed `Send` future — the workspace has
+  no `async_trait`/`trait-variant` dep, so the trait returns
+  `Pin<Box<dyn Future + Send>>` directly), `VerificationContext`
+  (workspace root + evidence refs), and `VerifierRegistry` keyed by
+  `verifier_id` (`register`/`contains`/`ids`/`run`; `default_cargo()` preloads
+  `cargo_check` + `cargo_test`). `CargoCheckVerifier` runs
+  `cargo check --message-format=json` and parses compiler diagnostics into
+  `VerificationFinding`s (pure `parse_findings` is unit-testable without
+  cargo); `CargoTestVerifier` runs `cargo test` and maps failures. Both shell
+  out via `std::process::Command` offloaded to `tokio::task::spawn_blocking`.
+  Compiler/test failures are `repairable: true`; a verifier that cannot run
+  (cargo missing, crash) returns `VerificationStatus::Error` (distinct from
+  `Failed`). No new dependencies.
 
 ## Local Contracts
 

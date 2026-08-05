@@ -528,11 +528,37 @@ pub type Assumption = String;
 /// structured `EvidenceRef` replaces this in a later phase.
 pub type EvidenceRef = String;
 
+/// Severity of a single [`VerificationFinding`] (PRD §10.8).
+///
+/// Ordered low → high: `Info` < `Warning` < `Error` < `Critical`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum VerificationSeverity {
+    /// Informational; does not affect pass/fail.
+    #[default]
+    Info,
+    /// A non-blocking concern.
+    Warning,
+    /// A blocking problem.
+    Error,
+    /// A problem with severe consequence (data loss, security, …).
+    Critical,
+}
+
 /// A single verification finding (PRD §10.8).
 ///
-/// **Placeholder**: the finding text. A structured `VerificationFinding`
-/// replaces this in a later phase.
-pub type VerificationFinding = String;
+/// Upgraded from a `String` placeholder in VRO-2.2 to carry the directive's
+/// `message` / `severity` / `location` fields. `location` is optional because
+/// some findings (e.g. a missing dependency) are not tied to a source span.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct VerificationFinding {
+    /// Human-readable description of the finding.
+    pub message: String,
+    /// How serious this finding is.
+    pub severity: VerificationSeverity,
+    /// Optional source location such as `"src/lib.rs:42"`.
+    pub location: Option<String>,
+}
 
 /// Provider-structured output payload (PRD §14.4, §14.5).
 ///
@@ -542,14 +568,20 @@ pub type VerificationFinding = String;
 pub type StructuredOutput = serde_json::Value;
 
 /// Verifier pass/fail status (PRD §10.8).
+///
+/// VRO-2.2 adds `Error`: the verifier itself could not run (e.g. `cargo` not
+/// found, the command crashed, a timeout). This is distinct from `Failed`,
+/// which means the verifier ran and found problems with the target.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum VerificationStatus {
     /// The verifier passed.
     #[default]
     Passed,
-    /// The verifier failed.
+    /// The verifier ran and found problems with the target.
     Failed,
+    /// The verifier itself could not run (cargo missing, crash, timeout).
+    Error,
     /// The verifier was skipped (not applicable / unavailable).
     Skipped,
     /// The verifier could not reach a determination.
@@ -1070,7 +1102,11 @@ mod tests {
             verifier_id: VerifierId::new("cargo_test").unwrap(),
             status: VerificationStatus::Failed,
             confidence: 0.12,
-            findings: vec!["test foo::bar failed".into()],
+            findings: vec![VerificationFinding {
+                message: "test foo::bar failed".into(),
+                severity: VerificationSeverity::Error,
+                location: Some("tests/foo.rs:7".into()),
+            }],
             evidence_refs: vec!["file:tests/foo.rs:L7".into()],
             repairable: true,
         };
@@ -1167,9 +1203,11 @@ mod tests {
             let decoded: OutcomeStatus = serde_json::from_str(&encoded).unwrap();
             assert_eq!(decoded, status);
         }
+        // VRO-2.2: VerificationStatus now includes Error (verifier could not run).
         for status in [
             VerificationStatus::Passed,
             VerificationStatus::Failed,
+            VerificationStatus::Error,
             VerificationStatus::Skipped,
             VerificationStatus::Inconclusive,
         ] {
@@ -1177,5 +1215,49 @@ mod tests {
             let decoded: VerificationStatus = serde_json::from_str(&encoded).unwrap();
             assert_eq!(decoded, status);
         }
+    }
+
+    #[test]
+    fn verification_finding_struct_round_trips_with_severity_and_location() {
+        let finding = VerificationFinding {
+            message: "cannot find function `foo` in this scope".into(),
+            severity: VerificationSeverity::Error,
+            location: Some("src/lib.rs:42".into()),
+        };
+        let encoded = serde_json::to_string(&finding).unwrap();
+        let decoded: VerificationFinding = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(decoded, finding);
+        // Serde shape (kebab-case severity).
+        assert!(encoded.contains("\"severity\":\"error\""));
+        assert!(encoded.contains("\"location\":\"src/lib.rs:42\""));
+        // A finding without a location round-trips too.
+        let no_loc = VerificationFinding {
+            message: "missing dependency".into(),
+            severity: VerificationSeverity::Warning,
+            location: None,
+        };
+        let encoded = serde_json::to_string(&no_loc).unwrap();
+        assert_eq!(
+            serde_json::from_str::<VerificationFinding>(&encoded).unwrap(),
+            no_loc
+        );
+    }
+
+    #[test]
+    fn verification_severity_is_ordered_and_serializes_kebab_case() {
+        assert!(VerificationSeverity::Critical > VerificationSeverity::Error);
+        assert!(VerificationSeverity::Error > VerificationSeverity::Warning);
+        assert!(VerificationSeverity::Warning > VerificationSeverity::Info);
+        for sev in [
+            VerificationSeverity::Info,
+            VerificationSeverity::Warning,
+            VerificationSeverity::Error,
+            VerificationSeverity::Critical,
+        ] {
+            let encoded = serde_json::to_string(&sev).unwrap();
+            let decoded: VerificationSeverity = serde_json::from_str(&encoded).unwrap();
+            assert_eq!(decoded, sev);
+        }
+        assert_eq!(VerificationSeverity::default(), VerificationSeverity::Info);
     }
 }
