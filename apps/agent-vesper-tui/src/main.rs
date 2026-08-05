@@ -3237,6 +3237,8 @@ fn provider_configuration_for(provider_id: &ProviderId) -> Result<ProviderConfig
     match provider_id.as_str() {
         // The GLM adapter registers under the stable `zai` identity.
         "zai" => Ok(vesper_provider_glm::GlmFactory::default_configuration()),
+        // The LM Studio local/LAN model server.
+        "lmstudio" => Ok(agent_vesper_tui::LmStudioFactory::default_configuration()),
         // The deterministic in-process reference adapter.
         #[cfg(test)]
         "vesper-synthetic" => {
@@ -3250,6 +3252,7 @@ fn provider_configuration_for(provider_id: &ProviderId) -> Result<ProviderConfig
 fn model_id_for_provider(provider_id: &ProviderId) -> Result<ModelId, String> {
     let id = match provider_id.as_str() {
         "zai" => "glm-5.2",
+        "lmstudio" => "local-model",
         #[cfg(test)]
         "vesper-synthetic" => "synthetic-1",
         other => return Err(format!("unsupported provider id: {other}")),
@@ -3260,6 +3263,7 @@ fn model_id_for_provider(provider_id: &ProviderId) -> Result<ModelId, String> {
 fn default_endpoint_for_provider(provider_id: &ProviderId) -> Result<EndpointId, String> {
     let endpoint = match provider_id.as_str() {
         "zai" => "zai-coding",
+        "lmstudio" => "lmstudio-local",
         #[cfg(test)]
         "vesper-synthetic" => "synthetic",
         other => return Err(format!("unsupported provider id: {other}")),

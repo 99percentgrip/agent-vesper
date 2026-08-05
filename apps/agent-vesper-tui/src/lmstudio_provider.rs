@@ -91,6 +91,21 @@ impl LmStudioFactory {
         ID
     }
 
+    /// Minimal default configuration (the session ignores it — it uses the
+    /// internal LmStudioConfig from the settings).
+    #[must_use]
+    pub fn default_configuration() -> vesper_provider::ProviderConfiguration {
+        use vesper_domain::{ExtensionNamespace, SchemaVersion, VersionedExtensionEnvelope};
+        vesper_provider::ProviderConfiguration {
+            provider_id: pid(),
+            values: VersionedExtensionEnvelope {
+                namespace: ExtensionNamespace::new("provider.lmstudio").expect("bounded"),
+                version: SchemaVersion::new(1).expect("static schema"),
+                values: ExtensionMap::default(),
+            },
+        }
+    }
+
     fn req_headers(&self, headers: &[(String, String)]) -> reqwest::header::HeaderMap {
         let mut map = reqwest::header::HeaderMap::new();
         for (name, value) in headers {
