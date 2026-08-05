@@ -33,14 +33,17 @@ Orchestrator (VRO) Phase VRO-1 domain contracts.
   data contracts — `ReasoningRequest` (§14.1), `DeliberationArtifact` (§14.3),
   `Candidate` (§14.4), `ReasoningOutcome` (§14.5) — plus `VerificationResult`
   (§10.8), `OutcomeStatus`, `VerificationStatus`, `PrivacyMode`, and the
-  `InferenceCost`/`VerificationSummary`/`WorkflowPlanStep` placeholders. Fields
-  whose types are not yet defined use documented placeholders (`String` aliases
-  or `serde_json::Value`); real domain IDs (`RequestId`/`CandidateId`/`SessionId`)
-  are reused. `Candidate` and `ReasoningOutcome` derive `PartialEq` only (they
-  carry `serde_json::Value`/`f32`). Budget preset values pinned by §24 are
-  sourced from the PRD; fields §24 does not pin carry documented VRO-1
-  conservative baselines deferred to research phase R3. No orchestration logic
-  lives here.
+  `InferenceCost`/`VerificationSummary`/`WorkflowPlanStep` placeholders. VRO-2.2
+  upgraded `VerificationFinding` from a `String` placeholder to a real struct
+  (`message`/`severity`/`location`) with a `VerificationSeverity` enum, and
+  added `VerificationStatus::Error` (the verifier itself could not run, distinct
+  from `Failed`). Fields whose types are not yet defined use documented
+  placeholders (`String` aliases or `serde_json::Value`); real domain IDs
+  (`RequestId`/`CandidateId`/`SessionId`) are reused. `Candidate` and
+  `ReasoningOutcome` derive `PartialEq` only (they carry
+  `serde_json::Value`/`f32`). Budget preset values pinned by §24 are sourced
+  from the PRD; fields §24 does not pin carry documented VRO-1 conservative
+  baselines deferred to research phase R3. No orchestration logic lives here.
 
 ## Verification
 

@@ -72,6 +72,6 @@ pub use vro::{
     Assumption, Candidate, Complexity, ContextRef, DeliberationArtifact, EvidenceRef,
     InferenceCost, OutcomeStatus, PrivacyMode, ReasoningBudget, ReasoningConfig, ReasoningMode,
     ReasoningOutcome, ReasoningRequest, ReasoningStrategy, RiskLevel, StructuredOutput, TaskDomain,
-    TaskProfile, VerificationFinding, VerificationResult, VerificationStatus, VerificationSummary,
-    VerifierId, WorkflowMemoryConfig, WorkflowPlanStep,
+    TaskProfile, VerificationFinding, VerificationResult, VerificationSeverity, VerificationStatus,
+    VerificationSummary, VerifierId, WorkflowMemoryConfig, WorkflowPlanStep,
 };
