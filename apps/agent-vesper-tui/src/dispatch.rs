@@ -118,6 +118,9 @@ pub struct SessionState {
     /// Whether the binary should re-open the provider-routed authentication
     /// screen (`/auth`) using the active provider's advertised descriptor.
     pub pending_reauth: bool,
+    /// Whether the binary should open the LM Studio provider settings screen
+    /// (`/lmstudio`) so the user can adjust the LAN/localhost endpoint.
+    pub pending_lmstudio_settings: bool,
     /// Manual conversation scroll expressed as **lines up from the bottom**.
     /// `None` = auto-follow (stick to bottom, the default); `Some(n)` = the
     /// user pressed PageUp/Home and is reading history `n` lines above the
@@ -351,6 +354,7 @@ fn apply_outcome(
         pending_context_report,
         pending_code_block,
         pending_reauth,
+        pending_lmstudio_settings,
         conversation_manual_scroll: _,
         permission_modal_focus: _,
     } = state;
@@ -551,6 +555,10 @@ fn apply_outcome(
             UiAction::OpenAuth => {
                 *pending_reauth = true;
                 *status = Some("Opening provider authentication…".into());
+            }
+            UiAction::OpenLmStudioSettings => {
+                *pending_lmstudio_settings = true;
+                *status = Some("Opening LM Studio settings…".into());
             }
             UiAction::ToggleReasoning => {
                 panels.reasoning = !panels.reasoning;
