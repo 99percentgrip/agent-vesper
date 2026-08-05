@@ -19,6 +19,7 @@ pub mod session;
 pub mod tool;
 pub mod usage;
 pub mod version;
+pub mod vro;
 
 pub use bounded::{BoundedString, BoundedStringError, ContentText, SafeMessage};
 pub use capability::{CapabilityFallback, CapabilityId, CapabilityRequest, FeatureRequirement};
@@ -65,4 +66,8 @@ pub use usage::{
 pub use version::{
     CommandSchemaVersion, CompatibilityRecordVersion, ContractFamily, DomainSchemaVersion,
     EventSchemaVersion, SchemaVersion, VersionCompatibilityError, VersionedExtensionEnvelope,
+};
+pub use vro::{
+    Complexity, ReasoningBudget, ReasoningConfig, ReasoningMode, ReasoningStrategy, RiskLevel,
+    TaskDomain, TaskProfile, VerifierId, WorkflowMemoryConfig,
 };

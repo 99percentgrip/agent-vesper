@@ -46,6 +46,18 @@ the multi-turn, tool-executing layer above it.
   turn: when an executor returns `ToolResult.injected_tools`, the loop
   merges them (deduplicated by `ToolId` or `harness_name`) into the
   advertised pool so the next iteration advertises them to the model.
+- `src/vro/mod.rs` — Vesper Reasoning Orchestrator (VRO) Phase VRO-1
+  scaffolding. `VroOrchestrator` holds a `ReasoningConfig` (from
+  `vesper-domain`) and exposes `route(user_message, mode)` →
+  `VroRoutingDecision`, the single seam the composition boundary consults
+  before dispatching a turn. **VRO-1: `route` always returns `Direct`**
+  (PRD §21 exit criterion "No behavior regression when disabled") — no
+  orchestration logic is wired yet, so the existing `agent_loop.rs` direct
+  execution path is taken unchanged regardless of the `enabled` flag. This
+  module performs no I/O, holds no provider handles, and never touches
+  `AgentLoopConfig`, `AgentLoop`, the tool registry, or the permission gate.
+  Future phases (VRO-2+) replace the body of `route` with a real routing
+  decision.
 
 ## Local Contracts
 
