@@ -10,9 +10,10 @@
 use std::sync::Arc;
 
 use futures_util;
+use futures_util::StreamExt;
+use std::task::Context;
 use vesper_agent::providers::lmstudio::{
-    ChatMessage, LmStudioConfig, LmStudioHttpResponse, build_chat_request, build_models_request,
-    parse_chat_response, parse_models_response,
+    ChatMessage, LmStudioConfig, build_chat_request, build_models_request, parse_models_response,
 };
 use vesper_domain::{
     BoundedString, ContentPart, ContentText, ErrorCategory, ErrorInfo, ExtensionMap, FinishOutcome,
@@ -176,72 +177,126 @@ impl ProviderSession for LmStudioSession {
         request: ProviderRequest,
         _cancellation: Arc<dyn CancellationSignal>,
     ) -> ProviderFuture<'a, Result<ProviderEventStream, ProviderError>> {
+        let client = self.client.clone();
+        let config = self.config.clone();
+        let model = self.model.clone();
         Box::pin(async move {
             let messages = provider_request_to_chat_messages(&request);
-            let chat_req = build_chat_request(&self.config, &self.model, &messages);
+            let chat_req = build_chat_request(&config, &model, &messages);
 
-            let resp = self
-                .client
+            // Override the body to enable SSE streaming.
+            let mut body_json: serde_json::Value =
+                serde_json::from_str(&chat_req.body.unwrap_or_default()).unwrap_or_default();
+            body_json["stream"] = serde_json::json!(true);
+
+            let resp = client
                 .post(&chat_req.url)
-                .headers(self.req_headers_from(&chat_req.headers))
-                .body(chat_req.body.unwrap_or_default())
+                .headers(reqwest_header_map(&chat_req.headers))
+                .body(body_json.to_string())
                 .send()
                 .await
                 .map_err(|e| err(format!("HTTP send: {e}")))?;
 
-            let status = resp.status();
-            let body: serde_json::Value = resp
-                .json()
-                .await
-                .map_err(|e| err(format!("HTTP body: {e}")))?;
-
-            if !status.is_success() {
+            if !resp.status().is_success() {
+                let status = resp.status();
+                let body: serde_json::Value = resp
+                    .json()
+                    .await
+                    .map_err(|e| err(format!("HTTP body: {e}")))?;
                 return Err(err(format!("HTTP {status}: {body}")));
             }
 
-            let lm_resp = LmStudioHttpResponse {
-                status: status.as_u16(),
-                body,
-            };
-            let (content, _tokens) =
-                parse_chat_response(&lm_resp).map_err(|e| err(format!("parse: {e}")))?;
-
-            let stream_id = BoundedString::new("content").expect("bounded");
-            let text = ContentText::new(content)
-                .unwrap_or_else(|_| ContentText::new("(empty response)").expect("bounded"));
-            let events = vec![
-                Ok(ProviderStreamEvent::ResponseStarted {
+            // Spawn a task that reads the SSE byte stream and sends events
+            // through an unbounded channel. The receiver is wrapped as a
+            // Stream via poll_fn (no extra deps needed).
+            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+            tokio::spawn(async move {
+                let stream_id = BoundedString::<128>::new("content").expect("bounded");
+                let _ = tx.send(Ok(ProviderStreamEvent::ResponseStarted {
                     response_id: None,
                     metadata: ExtensionMap::default(),
-                }),
-                Ok(ProviderStreamEvent::ContentDelta {
-                    stream_id: stream_id.clone(),
-                    part: ContentPart::Text(text),
-                }),
-                Ok(ProviderStreamEvent::Completed {
+                }));
+                let mut byte_stream = resp.bytes_stream();
+                let mut buffer = String::new();
+                while let Some(chunk_result) = byte_stream.next().await {
+                    match chunk_result {
+                        Ok(bytes) => {
+                            buffer.push_str(&String::from_utf8_lossy(&bytes));
+                            while let Some(pos) = buffer.find("\n\n") {
+                                let chunk = buffer[..pos].to_string();
+                                buffer = buffer[pos + 2..].to_string();
+                                if let Some(event) = parse_sse_chunk(&chunk, &stream_id) {
+                                    let is_done =
+                                        matches!(event, ProviderStreamEvent::Completed { .. });
+                                    let _ = tx.send(Ok(event));
+                                    if is_done {
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            let _ = tx.send(Err(err(format!("stream read: {e}"))));
+                            return;
+                        }
+                    }
+                }
+                let _ = tx.send(Ok(ProviderStreamEvent::Completed {
                     finish: FinishOutcome::Stop,
                     metadata: ExtensionMap::default(),
-                }),
-            ];
+                }));
+            });
 
-            Ok(Box::pin(futures_util::stream::iter(events)) as ProviderEventStream)
+            Ok(Box::pin(futures_util::stream::poll_fn(
+                move |cx: &mut Context<'_>| rx.poll_recv(cx),
+            )) as ProviderEventStream)
         })
     }
 }
 
-impl LmStudioSession {
-    fn req_headers_from(&self, headers: &[(String, String)]) -> reqwest::header::HeaderMap {
-        let mut map = reqwest::header::HeaderMap::new();
-        for (name, value) in headers {
-            if let (Ok(n), Ok(v)) = (
-                reqwest::header::HeaderName::from_bytes(name.as_bytes()),
-                reqwest::header::HeaderValue::from_str(value),
-            ) {
-                map.append(n, v);
+/// Parses one SSE chunk into a `ProviderStreamEvent`.
+fn parse_sse_chunk(chunk: &str, stream_id: &BoundedString<128>) -> Option<ProviderStreamEvent> {
+    for line in chunk.lines() {
+        if let Some(data) = line.strip_prefix("data: ") {
+            let data = data.trim();
+            if data == "[DONE]" {
+                return Some(ProviderStreamEvent::Completed {
+                    finish: FinishOutcome::Stop,
+                    metadata: ExtensionMap::default(),
+                });
+            }
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(data)
+                && let Some(content) = json
+                    .get("choices")
+                    .and_then(|c| c.get(0))
+                    .and_then(|c| c.get("delta"))
+                    .and_then(|d| d.get("content"))
+                    .and_then(|c| c.as_str())
+                && !content.is_empty()
+            {
+                let text = ContentText::new(content.to_string())
+                    .unwrap_or_else(|_| ContentText::new("(error)").expect("bounded"));
+                return Some(ProviderStreamEvent::ContentDelta {
+                    stream_id: stream_id.clone(),
+                    part: ContentPart::Text(text),
+                });
             }
         }
-        map
     }
+    None
+}
+
+fn reqwest_header_map(headers: &[(String, String)]) -> reqwest::header::HeaderMap {
+    let mut map = reqwest::header::HeaderMap::new();
+    for (name, value) in headers {
+        if let (Ok(n), Ok(v)) = (
+            reqwest::header::HeaderName::from_bytes(name.as_bytes()),
+            reqwest::header::HeaderValue::from_str(value),
+        ) {
+            map.append(n, v);
+        }
+    }
+    map
 }
 
 // ---------------------------------------------------------------------------
