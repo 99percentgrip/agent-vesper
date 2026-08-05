@@ -32,5 +32,6 @@ pub use stream::{
     RateLimitUpdate,
 };
 pub use superpowers::{
-    ProviderSuperpowers, SuperpowerDescriptor, SuperpowerKind, SuperpowerScope, SuperpowerValue,
+    PermissiveSuperpowerPolicy, PlanChangeReaction, ProviderSuperpowers, SuperpowerDescriptor,
+    SuperpowerKind, SuperpowerPolicy, SuperpowerScope, SuperpowerSideEffect, SuperpowerValue,
 };

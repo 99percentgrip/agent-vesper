@@ -629,13 +629,10 @@ impl CommandRegistry {
                 }
             }
             "usage" => {
-                if active_provider.as_str() == "zai" {
-                    CommandOutcome::ProviderUsage
-                } else {
-                    CommandOutcome::Error(format!(
-                        "provider `{active_provider}` does not expose a quota integration"
-                    ))
-                }
+                // Provider-routed: available to every provider. Providers
+                // without a quota integration surface a graceful error when
+                // the agent loop queries them.
+                CommandOutcome::ProviderUsage
             }
 
             // === Live session settings / native UI ===
@@ -1395,17 +1392,16 @@ fn resolve_session_choice(
 }
 
 fn resolve_glm_session_choice(
-    active_provider: &ProviderId,
+    _active_provider: &ProviderId,
     command: &str,
     argument: &str,
     key: SessionConfigKey,
     allowed: &[&str],
 ) -> CommandOutcome {
-    if active_provider.as_str() != "zai" {
-        return CommandOutcome::Error(format!(
-            "/{command} is a Z.ai-specific setting and is unavailable for provider `{active_provider}`"
-        ));
-    }
+    // Provider-routed: the command resolves for any provider. The dispatch
+    // handler's `policy.on_plan_change(...).owns_plans` gate rejects the
+    // endpoint-plan change at execution time for providers that don't own
+    // plans — no hardcoded provider match arm here.
     resolve_session_choice(command, argument, key, allowed)
 }
 

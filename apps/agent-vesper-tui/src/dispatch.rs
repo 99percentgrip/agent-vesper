@@ -269,6 +269,7 @@ pub fn dispatch(
     intent: &CommandIntent,
     registry: &CommandRegistry,
     surface: &ProviderSuperpowerSurface,
+    policy: &dyn vesper_provider::SuperpowerPolicy,
     provider_id: &ProviderId,
     state: &mut SessionState,
 ) -> DispatchOutcome {
@@ -276,7 +277,7 @@ pub fn dispatch(
     match outcome {
         CommandOutcome::Quit => DispatchOutcome::Quit,
         other => {
-            apply_outcome(other, surface, state);
+            apply_outcome(other, surface, policy, state);
             DispatchOutcome::Continue
         }
     }
@@ -324,6 +325,7 @@ pub fn apply_model_plan(state: &mut SessionState, plan_body: &str) -> crate::Pla
 fn apply_outcome(
     outcome: CommandOutcome,
     surface: &ProviderSuperpowerSurface,
+    policy: &dyn vesper_provider::SuperpowerPolicy,
     state: &mut SessionState,
 ) {
     let SessionState {
@@ -396,57 +398,75 @@ fn apply_outcome(
         CommandOutcome::Superpower {
             descriptor, value, ..
         } => {
-            if descriptor.id.as_str() == "zai:model"
-                && let SuperpowerValue::Choice { value: model } = &value
-                && !vesper_provider_glm::GlmCatalog::supports_plan(
-                    model.as_str(),
-                    glm_plan(&controls.endpoint_plan),
-                )
+            // Provider-routed superpower handling: every provider-specific rule
+            // (model/plan validation, thinking cascades, reasoning-mode mapping)
+            // lives behind the active provider's SuperpowerPolicy. The harness
+            // never names a concrete provider or a provider-namespaced
+            // descriptor id — it routes by `command_alias`.
+            let alias = descriptor
+                .command_alias
+                .as_ref()
+                .map(|bounded| bounded.as_str())
+                .unwrap_or("");
+            let active_model = surface
+                .by_alias("model")
+                .and_then(|model_desc| {
+                    overrides.get(model_desc.id.as_str(), Some(&model_desc.default_value))
+                })
+                .and_then(|v| match v {
+                    SuperpowerValue::Choice { value } => Some(value.as_str().to_string()),
+                    _ => None,
+                })
+                .unwrap_or_default();
+
+            // 1. Validate via the policy (e.g. GLM rejects a model unavailable
+            //    on the active API plan). `Err` ⇒ surface the reason and abort.
+            if let Err(message) =
+                policy.validate(alias, &value, &controls.endpoint_plan, &active_model)
             {
-                *status = Some(format!(
-                    "Model `{}` is unavailable on the {} API plan.",
-                    model.as_str(),
-                    controls.endpoint_plan
-                ));
+                *status = Some(message);
                 return;
             }
-            if descriptor.id.as_str() == "zai:model"
-                && let SuperpowerValue::Choice { value: model } = &value
-                && model.as_str() != "glm-5.2"
-                && let Some(thinking) = surface.by_alias("thinking")
-                && let Some(SuperpowerValue::Choice { value: current }) =
-                    overrides.get(thinking.id.as_str(), Some(&thinking.default_value))
-                && matches!(current.as_str(), "high" | "max")
-            {
-                let enabled = SuperpowerValue::Choice {
-                    value: BoundedString::new("enabled").expect("static mode is bounded"),
-                };
-                overrides.set(thinking.id.as_str(), enabled.clone());
-                if thinking.id.as_str() == "zai:reasoning" {
-                    *pending_reasoning = Some(
-                        vesper_provider_glm::reasoning_mode_for_superpower(&enabled)
-                            .expect("static reasoning mode is valid"),
-                    );
-                }
-                transcript.push("thinking reset to enabled for the selected model".into());
-            }
-            // Persist the override so it surfaces in the renderer.
+
+            // 2. Persist the override so it surfaces in the renderer.
             overrides.set(descriptor.id.as_str(), value.clone());
 
-            // ADR 0009: when the resolved superpower is the reconciled
-            // `zai:reasoning` dial, translate the value into the runtime
-            // reasoning-mode label the binary will push through the
-            // `UpdateSessionReasoning` command. The mapping lives in the GLM
-            // crate (the TUI is a GLM composition boundary); other providers
-            // would supply their own mapper when registered.
-            if descriptor.id.as_str() == "zai:reasoning" {
-                match vesper_provider_glm::reasoning_mode_for_superpower(&value) {
-                    Ok(mode) => *pending_reasoning = Some(mode),
-                    Err(error) => {
-                        *status = Some(format!("invalid reasoning value: {error}"));
-                        return;
+            // 3. Provider-routed cascades (e.g. resetting `thinking` when a
+            //    non-flagship `model` is selected). Each side effect applies
+            //    only when its guard matches the target's current value.
+            for effect in policy.on_change(alias, &value, &controls.endpoint_plan) {
+                let Some(target) = surface.by_alias(&effect.target_alias) else {
+                    continue;
+                };
+                let current = overrides
+                    .get(target.id.as_str(), Some(&target.default_value))
+                    .unwrap_or_else(|| target.default_value.clone());
+                let guarded = effect.apply_only_if_current_in.is_empty()
+                    || effect.apply_only_if_current_in.contains(&current);
+                if guarded {
+                    overrides.set(target.id.as_str(), effect.new_value.clone());
+                    // A cascaded value may itself carry a reasoning-mode label
+                    // (e.g. the reconciled reasoning dial reset to `enabled`).
+                    if let Some(mode) = policy.reasoning_mode(&effect.new_value) {
+                        *pending_reasoning = Some(
+                            BoundedString::new(mode.as_str())
+                                .expect("reasoning-mode label is bounded"),
+                        );
                     }
+                    transcript.push(format!(
+                        "{} reset for the selected superpower",
+                        effect.target_alias
+                    ));
                 }
+            }
+
+            // 4. Provider-routed reasoning-mode mapping: when the changed
+            //    superpower carries a runtime reasoning-mode label the provider
+            //    owns, push it for the binary to forward to the runtime.
+            if let Some(mode) = policy.reasoning_mode(&value) {
+                *pending_reasoning = Some(
+                    BoundedString::new(mode.as_str()).expect("reasoning-mode label is bounded"),
+                );
             }
 
             transcript.push(format!(
@@ -475,42 +495,39 @@ fn apply_outcome(
         CommandOutcome::SessionConfig { key, value } => {
             match key {
                 SessionConfigKey::EndpointPlan => {
-                    if surface.provider_id().as_str() != "zai" {
-                        *status = Some("API plans are owned by the active provider.".into());
+                    // Provider-routed: the active provider's policy decides
+                    // whether it owns endpoint plans, and what to reset.
+                    let active_model = surface
+                        .by_alias("model")
+                        .and_then(|d| overrides.get(d.id.as_str(), Some(&d.default_value)))
+                        .and_then(|v| match v {
+                            SuperpowerValue::Choice { value } => Some(value.as_str().to_string()),
+                            _ => None,
+                        })
+                        .unwrap_or_default();
+                    let reaction =
+                        policy.on_plan_change(&value, &active_model, &controls.auxiliary_model);
+                    if !reaction.owns_plans {
+                        *status = Some("Endpoint plans are owned by the active provider.".into());
                         return;
                     }
                     controls.endpoint_plan = value.clone();
-                    if let Some(descriptor) = surface.by_alias("model") {
-                        let active =
-                            overrides.get(descriptor.id.as_str(), Some(&descriptor.default_value));
-                        if let Some(SuperpowerValue::Choice { value: model }) = active
-                            && !vesper_provider_glm::GlmCatalog::supports_plan(
-                                model.as_str(),
-                                glm_plan(&value),
-                            )
-                        {
-                            overrides.set(
-                                descriptor.id.as_str(),
-                                SuperpowerValue::Choice {
-                                    value: BoundedString::new("glm-5.2")
-                                        .expect("static model is bounded"),
-                                },
-                            );
-                            transcript.push(format!(
-                                "model reset to glm-5.2 because `{}` is unavailable on {value}",
-                                model.as_str()
-                            ));
-                        }
-                    }
-                    if controls.auxiliary_model != "main"
-                        && (!vesper_provider_glm::GlmCatalog::supports_plan(
-                            &controls.auxiliary_model,
-                            glm_plan(&value),
-                        ) || vesper_provider_glm::GlmCatalog::is_vision_model(
-                            &controls.auxiliary_model,
-                        ))
+                    if let Some(reset_to) = reaction.reset_model_to
+                        && let Some(descriptor) = surface.by_alias("model")
                     {
-                        controls.auxiliary_model = "main".into();
+                        overrides.set(
+                            descriptor.id.as_str(),
+                            SuperpowerValue::Choice {
+                                value: BoundedString::new(reset_to.as_str())
+                                    .expect("model label is bounded"),
+                            },
+                        );
+                        transcript.push(format!(
+                            "model reset to {reset_to} because `{active_model}` is unavailable on {value}"
+                        ));
+                    }
+                    if let Some(reset_aux) = reaction.reset_auxiliary_to {
+                        controls.auxiliary_model = reset_aux;
                     }
                 }
                 SessionConfigKey::Permission => {
@@ -784,14 +801,6 @@ fn apply_outcome(
     }
 }
 
-fn glm_plan(value: &str) -> vesper_provider_glm::GlmPlan {
-    match value {
-        "standard" => vesper_provider_glm::GlmPlan::Standard,
-        "bigmodel" => vesper_provider_glm::GlmPlan::BigModel,
-        _ => vesper_provider_glm::GlmPlan::Coding,
-    }
-}
-
 /// Replaces the TODO projection from the bounded markdown emitted by
 /// `update_plan`. Malformed lines are ignored rather than displayed as tasks.
 pub fn apply_task_plan(state: &mut SessionState, markdown: &str) {
@@ -965,8 +974,12 @@ mod integration_tests {
         surface: &ProviderSuperpowerSurface,
         raw: &str,
     ) -> DispatchOutcome {
+        // The integration-test surface mirrors GLM's advertised superpowers,
+        // so route through the GLM policy (the same one the binary fetches
+        // from the registry for the active provider).
         let intent = CommandIntent::parse(raw);
-        dispatch(&intent, registry, surface, &provider(), state)
+        let policy = vesper_provider_glm::GlmSuperpowerPolicy;
+        dispatch(&intent, registry, surface, &policy, &provider(), state)
     }
 
     #[test]

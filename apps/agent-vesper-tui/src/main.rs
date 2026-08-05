@@ -125,6 +125,9 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
 
     let startup = query_startup_view(&registry, &provider_id).await;
     let surface = ProviderSuperpowerSurface::new(startup.provider_id.clone(), startup.superpowers);
+    // The active provider's superpower policy (model/plan/reasoning logic),
+    // routed provider-neutrally — the harness never names a concrete provider.
+    let policy = registry.superpower_policy(&provider_id).await;
 
     // Runtime supervisor owns the live session state. Building it, creating a
     // session, and applying reasoning overrides are all credential-free: the
@@ -190,6 +193,9 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
     );
 
     let mut session = TuiSession {
+        // The active provider's superpower policy (provider-routed model/plan/
+        // reasoning logic), shared with every helper via this session wrapper.
+        policy: policy.clone(),
         // Pure dispatch state lives in the library so the full Plan Mode
         // lifecycle is unit-testable; the binary only owns the input buffer
         // and the in-flight agent-turn channel.
@@ -240,6 +246,7 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
         startup.auth.clone(),
         &registry_commands,
         &surface,
+        &*policy,
         &mut session,
         &supervisor,
         &runtime_session_id,
@@ -387,6 +394,10 @@ async fn register_default_providers(
 /// never crosses the dispatch boundary. Only the binary owns the terminal; all
 /// transition discipline lives in [`agent_vesper_tui::dispatch`].
 struct TuiSession {
+    /// The active provider's superpower policy (model/plan/reasoning logic),
+    /// held here so every helper that takes `&TuiSession` can route
+    /// provider-neutrally without a separate parameter thread.
+    policy: Arc<dyn vesper_provider::SuperpowerPolicy>,
     /// Pure dispatch state (plan, overrides, transcript, status).
     state: SessionState,
     /// In-progress input line being typed by the driver.
@@ -748,6 +759,7 @@ async fn drive_loop(
     auth: Option<AuthProvider>,
     registry_commands: &CommandRegistry,
     surface: &ProviderSuperpowerSurface,
+    policy: &dyn vesper_provider::SuperpowerPolicy,
     session: &mut TuiSession,
     supervisor: &vesper_runtime::RuntimeSupervisor,
     runtime_session_id: &SessionId,
@@ -1076,6 +1088,7 @@ async fn drive_loop(
                     &intent,
                     registry_commands,
                     surface,
+                    policy,
                     provider_id,
                     &mut session.state,
                 );
@@ -1586,8 +1599,13 @@ fn refresh_command_menu(
         return;
     }
 
-    session.command_matches =
-        command_palette_candidates(&session.input, registry, surface, &session.state);
+    session.command_matches = command_palette_candidates(
+        &session.input,
+        registry,
+        surface,
+        &*session.policy,
+        &session.state,
+    );
     if session.command_matches.is_empty() {
         session.command_selected = 0;
     } else {
@@ -1605,6 +1623,7 @@ fn command_palette_candidates(
     input: &str,
     registry: &CommandRegistry,
     surface: &ProviderSuperpowerSurface,
+    policy: &dyn vesper_provider::SuperpowerPolicy,
     state: &SessionState,
 ) -> Vec<(String, String)> {
     let trimmed = input.trim_start();
@@ -1635,25 +1654,26 @@ fn command_palette_candidates(
         return Vec::new();
     };
     let query = argument.trim().to_ascii_lowercase();
-    let is_glm = surface.provider_id().as_str() == "zai";
-    let active_model =
-        active_superpower_choice(state, surface, "model").unwrap_or_else(|| "glm-5.2".into());
-    descriptor
-        .allowed_values
+    // Provider-routed default + filtering: the active provider's SuperpowerPolicy
+    // decides which advertised values are valid for the current session state.
+    // No hardcoded provider match arm, no concrete-catalog call.
+    let default_model = surface
+        .by_alias("model")
+        .and_then(|d| match &d.default_value {
+            SuperpowerValue::Choice { value } => Some(value.as_str().to_string()),
+            _ => None,
+        })
+        .unwrap_or_default();
+    let active_model = active_superpower_choice(state, surface, "model").unwrap_or(default_model);
+    policy
+        .valid_choices(
+            alias,
+            &descriptor.allowed_values,
+            &state.controls.endpoint_plan,
+            &active_model,
+        )
         .iter()
         .map(superpower_value_text)
-        .filter(|value| {
-            (!is_glm
-                || alias != "model"
-                || vesper_provider_glm::GlmCatalog::supports_plan(
-                    value,
-                    selected_glm_plan(&state.controls.endpoint_plan),
-                ))
-                && (!is_glm
-                    || alias != "thinking"
-                    || active_model == "glm-5.2"
-                    || matches!(value.as_str(), "disabled" | "enabled"))
-        })
         .filter(|value| query.is_empty() || value.to_ascii_lowercase().starts_with(&query))
         .map(|value| {
             (
@@ -2794,10 +2814,14 @@ fn apply_keybinding_action(
         }
         "clear_transcript" => session.state.transcript.clear(),
         "show_help" => {
+            // `/help` does not touch superpowers, so a permissive policy
+            // suffices here (no provider-specific behavior is consulted).
+            let permissive = vesper_provider::PermissiveSuperpowerPolicy;
             let _ = dispatch(
                 &CommandIntent::parse("/help"),
                 registry,
                 surface,
+                &permissive,
                 provider_id,
                 &mut session.state,
             );
@@ -8089,8 +8113,13 @@ mod tests {
     #[test]
     fn palette_starts_in_oracle_order_and_exposes_every_command() {
         let registry = CommandRegistry::stage_11b();
-        let choices =
-            command_palette_candidates("/", &registry, &palette_surface(), &SessionState::new());
+        let choices = command_palette_candidates(
+            "/",
+            &registry,
+            &palette_surface(),
+            &vesper_provider_glm::GlmSuperpowerPolicy,
+            &SessionState::new(),
+        );
         assert_eq!(choices.len(), registry.names().len());
         assert_eq!(choices[0].0, "/plan");
         assert_eq!(
@@ -8104,19 +8133,46 @@ mod tests {
         let registry = CommandRegistry::stage_11b();
         let surface = palette_surface();
         let state = SessionState::new();
-        let thinking = command_palette_candidates("/thinking ", &registry, &surface, &state);
+        let thinking = command_palette_candidates(
+            "/thinking ",
+            &registry,
+            &surface,
+            &vesper_provider_glm::GlmSuperpowerPolicy,
+            &state,
+        );
         assert_eq!(thinking.len(), 4);
         assert_eq!(thinking[0].0, "/thinking disabled");
         assert_eq!(
-            command_palette_candidates("/thinking h", &registry, &surface, &state)[0].0,
+            command_palette_candidates(
+                "/thinking h",
+                &registry,
+                &surface,
+                &vesper_provider_glm::GlmSuperpowerPolicy,
+                &state
+            )[0]
+            .0,
             "/thinking high"
         );
         assert_eq!(
-            command_palette_candidates("/reasoning m", &registry, &surface, &state)[0].0,
+            command_palette_candidates(
+                "/reasoning m",
+                &registry,
+                &surface,
+                &vesper_provider_glm::GlmSuperpowerPolicy,
+                &state
+            )[0]
+            .0,
             "/reasoning max"
         );
         assert_eq!(
-            command_palette_candidates("/model glm-5-t", &registry, &surface, &state)[0].0,
+            command_palette_candidates(
+                "/model glm-5-t",
+                &registry,
+                &surface,
+                &vesper_provider_glm::GlmSuperpowerPolicy,
+                &state
+            )[0]
+            .0,
             "/model glm-5-turbo"
         );
     }
@@ -8126,7 +8182,13 @@ mod tests {
         let registry = CommandRegistry::stage_11b();
         let surface = palette_surface();
         let state = SessionState::new();
-        let permission = command_palette_candidates("/permission ", &registry, &surface, &state);
+        let permission = command_palette_candidates(
+            "/permission ",
+            &registry,
+            &surface,
+            &vesper_provider_glm::GlmSuperpowerPolicy,
+            &state,
+        );
         assert_eq!(
             permission
                 .iter()
@@ -8134,7 +8196,13 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["/permission ask", "/permission read", "/permission bypass"]
         );
-        let settings = command_palette_candidates("/settings ", &registry, &surface, &state);
+        let settings = command_palette_candidates(
+            "/settings ",
+            &registry,
+            &surface,
+            &vesper_provider_glm::GlmSuperpowerPolicy,
+            &state,
+        );
         assert!(settings.iter().any(|choice| choice.0 == "/model"));
         assert!(settings.iter().any(|choice| choice.0 == "/permission"));
         assert!(command_expands_to_argument("/permission", &surface));
@@ -8146,12 +8214,24 @@ mod tests {
         let registry = CommandRegistry::stage_11b();
         let surface = palette_surface();
         let mut state = SessionState::new();
-        let coding = command_palette_candidates("/model ", &registry, &surface, &state);
+        let coding = command_palette_candidates(
+            "/model ",
+            &registry,
+            &surface,
+            &vesper_provider_glm::GlmSuperpowerPolicy,
+            &state,
+        );
         assert_eq!(coding.len(), 3);
         assert!(coding.iter().all(|choice| !choice.0.contains("glm-5v")));
 
         state.controls.endpoint_plan = "standard".into();
-        let standard = command_palette_candidates("/model ", &registry, &surface, &state);
+        let standard = command_palette_candidates(
+            "/model ",
+            &registry,
+            &surface,
+            &vesper_provider_glm::GlmSuperpowerPolicy,
+            &state,
+        );
         assert_eq!(standard.len(), 6);
 
         let model = surface.by_alias("model").unwrap();
@@ -8161,7 +8241,13 @@ mod tests {
                 value: BoundedString::new("glm-5-turbo").unwrap(),
             },
         );
-        let thinking = command_palette_candidates("/thinking ", &registry, &surface, &state);
+        let thinking = command_palette_candidates(
+            "/thinking ",
+            &registry,
+            &surface,
+            &vesper_provider_glm::GlmSuperpowerPolicy,
+            &state,
+        );
         assert_eq!(
             thinking
                 .iter()
@@ -8456,6 +8542,7 @@ mod tests {
         // task panicked), the drain must clear the in-flight flag and surface
         // an abort notice instead of wedging the UI on WORKING... forever.
         let mut session = TuiSession {
+            policy: std::sync::Arc::new(vesper_provider::PermissiveSuperpowerPolicy),
             state: SessionState::new(),
             input: String::new(),
             conversation: Vec::new(),
@@ -8502,6 +8589,7 @@ mod tests {
         // While the channel is still empty (the task is still running), the
         // drain must NOT clear the in-flight flag — the WORKING banner stays.
         let mut session = TuiSession {
+            policy: std::sync::Arc::new(vesper_provider::PermissiveSuperpowerPolicy),
             state: SessionState::new(),
             input: String::new(),
             conversation: Vec::new(),
@@ -8546,6 +8634,7 @@ mod tests {
         // which `ViewModel.reasoning` / `ViewModel.live_response` clone each
         // frame for the Conversation and Reasoning panels.
         let mut session = TuiSession {
+            policy: std::sync::Arc::new(vesper_provider::PermissiveSuperpowerPolicy),
             state: SessionState::new(),
             input: String::new(),
             conversation: Vec::new(),
