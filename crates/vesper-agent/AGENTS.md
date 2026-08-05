@@ -46,18 +46,28 @@ the multi-turn, tool-executing layer above it.
   turn: when an executor returns `ToolResult.injected_tools`, the loop
   merges them (deduplicated by `ToolId` or `harness_name`) into the
   advertised pool so the next iteration advertises them to the model.
-- `src/vro/mod.rs` — Vesper Reasoning Orchestrator (VRO) Phase VRO-1
-  scaffolding. `VroOrchestrator` holds a `ReasoningConfig` (from
-  `vesper-domain`) and exposes `route(user_message, mode)` →
+- `src/vro/mod.rs` — Vesper Reasoning Orchestrator (VRO) scaffolding.
+  `VroOrchestrator` holds a `ReasoningConfig` (from `vesper-domain`) and a
+  `TaskProfiler`, and exposes `route(user_message, mode)` →
   `VroRoutingDecision`, the single seam the composition boundary consults
-  before dispatching a turn. **VRO-1: `route` always returns `Direct`**
-  (PRD §21 exit criterion "No behavior regression when disabled") — no
-  orchestration logic is wired yet, so the existing `agent_loop.rs` direct
-  execution path is taken unchanged regardless of the `enabled` flag. This
-  module performs no I/O, holds no provider handles, and never touches
+  before dispatching a turn. **When `enabled` is `false` (the shipped default),
+  `route` returns `Direct` immediately without profiling — zero behavior
+  regression (PRD §21 VRO-1 exit criterion).** When `enabled` is `true`,
+  VRO-2.1 runs the [`TaskProfiler`](crate::vro::profiler::TaskProfiler) to build
+  a `TaskProfile` but **still returns `Direct`** because no strategy executor
+  is wired yet; VRO-2.2+ will dispatch the selected strategy. This module
+  performs no I/O, holds no provider handles, and never touches
   `AgentLoopConfig`, `AgentLoop`, the tool registry, or the permission gate.
-  Future phases (VRO-2+) replace the body of `route` with a real routing
-  decision.
+- `src/vro/profiler.rs` — VRO-2.1 deterministic `TaskProfiler`: converts a
+  user prompt (or `ReasoningRequest`) into a `TaskProfile` using pure
+  keyword/substring heuristics (**no LLM call**, no `regex` dependency — the
+  workspace `regex` lacks `unicode-perl`, so `\b`/`\w` reject; keyword
+  detection uses case-insensitive `str::contains`). Pipeline: chat bypass
+  (short + no code + no action verb → `chat`/`Direct`) → domain mapping
+  (mutation verbs > math > planning > research > code indicators > chat) →
+  risk (`delete`/`commit`/`production` → `High`) → grounding + verifiers
+  (`.rs` → `cargo_check`/`cargo_test`/`clippy`) → complexity/ambiguity →
+  §12 strategy ladder. `profile_request` honors a caller `risk_hint` override.
 
 ## Local Contracts
 

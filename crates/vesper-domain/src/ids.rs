@@ -116,6 +116,8 @@ opaque_id!(ProviderRequestId, "provider-request ID");
 opaque_id!(ProviderResponseId, "provider-response ID");
 opaque_id!(CommandId, "command ID");
 opaque_id!(CorrelationId, "correlation ID");
+opaque_id!(RequestId, "reasoning-request ID");
+opaque_id!(CandidateId, "reasoning-candidate ID");
 
 /// Model identity qualified by its provider to prevent cross-provider ambiguity.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

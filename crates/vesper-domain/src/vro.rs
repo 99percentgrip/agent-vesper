@@ -479,6 +479,250 @@ impl ReasoningConfig {
 }
 
 // ---------------------------------------------------------------------------
+// Section 14 data contracts (PRD §14.1, §14.3, §14.4, §14.5)
+//
+// VRO-2.1 ships the §14 wire contracts. Fields whose underlying types are not
+// yet defined use documented placeholders (String aliases or
+// `serde_json::Value`) per the directive; each is marked and deferred to a
+// later phase. Real domain types are reused where they already exist
+// (`SessionId`, `RequestId`, `CandidateId`, `RiskLevel`, `ReasoningBudget`,
+// `ReasoningMode`). Structs containing `f32` (`VerificationResult.confidence`)
+// or `serde_json::Value` derive `PartialEq` only, not `Eq`.
+// ---------------------------------------------------------------------------
+
+use crate::{CandidateId, RequestId, SessionId};
+
+/// Privacy boundary for a reasoning request (PRD §14.1, §17).
+///
+/// Controls how far a request and its artifacts may travel. Defaults to
+/// `Private` (the conservative posture: no cross-provider, no persistence of
+/// private deliberation).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PrivacyMode {
+    /// In-process only; no cross-provider dispatch, no private-artifact persistence.
+    #[default]
+    Private,
+    /// Within a single provider boundary.
+    Internal,
+    /// Cross-provider verification allowed (subject to
+    /// `ReasoningConfig.allow_cross_provider_verification`).
+    Public,
+}
+
+/// Reference to conversation or workspace context (PRD §14.1).
+///
+/// **Placeholder**: a free-form string such as `"file:src/main.rs"` or
+/// `"msg:42"`. A structured `ContextRef` type replaces this in a later phase.
+pub type ContextRef = String;
+
+/// A stated assumption (PRD §14.3).
+///
+/// **Placeholder**: the assumption text. A richer `Assumption` (statement +
+/// confidence + status) replaces this in a later phase.
+pub type Assumption = String;
+
+/// Reference to evidence backing a claim (PRD §14.3, §14.4, §10.8).
+///
+/// **Placeholder**: a free-form string such as `"file:tests/foo.rs:L42"`. A
+/// structured `EvidenceRef` replaces this in a later phase.
+pub type EvidenceRef = String;
+
+/// A single verification finding (PRD §10.8).
+///
+/// **Placeholder**: the finding text. A structured `VerificationFinding`
+/// replaces this in a later phase.
+pub type VerificationFinding = String;
+
+/// Provider-structured output payload (PRD §14.4, §14.5).
+///
+/// **Placeholder**: the raw provider-structured JSON. A typed
+/// `StructuredOutput` (content parts + schema-conformance metadata) replaces
+/// this in a later phase.
+pub type StructuredOutput = serde_json::Value;
+
+/// Verifier pass/fail status (PRD §10.8).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum VerificationStatus {
+    /// The verifier passed.
+    #[default]
+    Passed,
+    /// The verifier failed.
+    Failed,
+    /// The verifier was skipped (not applicable / unavailable).
+    Skipped,
+    /// The verifier could not reach a determination.
+    Inconclusive,
+}
+
+/// Terminal status of a reasoning outcome (PRD §14.5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum OutcomeStatus {
+    /// The turn produced a verified final answer.
+    #[default]
+    Succeeded,
+    /// The turn failed to produce a usable answer.
+    Failed,
+    /// The turn produced a partial answer with unresolved risks.
+    Partial,
+    /// The turn was cancelled.
+    Cancelled,
+    /// The budget was exhausted before completion.
+    BudgetExceeded,
+    /// Verification could not reach a determination.
+    Inconclusive,
+}
+
+/// A verifier response (PRD §10.8).
+///
+/// Field names follow §10.8 verbatim. Derives `PartialEq` but **not** `Eq`
+/// because `confidence: f32` is not `Eq`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct VerificationResult {
+    /// The verifier that produced this result (e.g. `"cargo_test"`).
+    pub verifier_id: VerifierId,
+    /// Pass/fail/inconclusive status.
+    pub status: VerificationStatus,
+    /// Verifier confidence in `[0.0, 1.0]`.
+    pub confidence: f32,
+    /// Human-readable findings.
+    pub findings: Vec<VerificationFinding>,
+    /// Evidence backing the result.
+    pub evidence_refs: Vec<EvidenceRef>,
+    /// Whether a failed check is repairable.
+    pub repairable: bool,
+}
+
+/// One step in a VRO workflow plan (PRD §10.5).
+///
+/// **Placeholder schema**: the field names follow PRD §10.5
+/// (`id`/`objective`/`depends_on`/`tools`/`verify_with`); the inner collections
+/// use `String`/`VerifierId` until the richer planner types land in a later
+/// phase. This is distinct from `crate::PlanStep` (the TUI plan-display step).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkflowPlanStep {
+    /// Stable step identifier.
+    pub id: String,
+    /// What this step accomplishes.
+    pub objective: String,
+    /// Step IDs that must complete first.
+    pub depends_on: Vec<String>,
+    /// Tool names this step may invoke.
+    pub tools: Vec<String>,
+    /// Verifiers to run on this step's output.
+    pub verify_with: Vec<VerifierId>,
+}
+
+/// Placeholder cost accounting (PRD §14 references `InferenceCost`).
+///
+/// Minimal observable accounting surface; the concrete schema is deferred to a
+/// later phase. Integer-only ⇒ derives `Eq`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct InferenceCost {
+    /// Provider model calls issued.
+    pub model_calls: u32,
+    /// Total tokens consumed.
+    pub total_tokens: u64,
+}
+
+/// Placeholder verification roll-up (PRD §14 references `VerificationSummary`).
+///
+/// Minimal aggregate; the concrete schema is deferred to a later phase.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct VerificationSummary {
+    /// Number of verifiers that passed.
+    pub passed: u32,
+    /// Number of verifiers that failed.
+    pub failed: u32,
+    /// Overall verification status.
+    pub overall: VerificationStatus,
+}
+
+/// A reasoning request entering the orchestrator (PRD §14.1).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReasoningRequest {
+    /// Stable request identity.
+    pub request_id: RequestId,
+    /// Owning session identity.
+    pub session_id: SessionId,
+    /// The user's raw message text.
+    pub user_message: String,
+    /// References to conversation/workspace context.
+    pub context_refs: Vec<ContextRef>,
+    /// Requested reasoning mode.
+    pub mode: ReasoningMode,
+    /// Caller-supplied risk hint, overriding the profiler when present.
+    pub risk_hint: Option<RiskLevel>,
+    /// Caller-supplied budget override.
+    pub budget_override: Option<ReasoningBudget>,
+    /// Privacy boundary for this request.
+    pub privacy_mode: PrivacyMode,
+}
+
+/// A concise operational deliberation record (PRD §14.3).
+///
+/// This is **not** raw chain-of-thought (PRD §6.7): it is a structured,
+/// bounded, auditable artifact.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct DeliberationArtifact {
+    /// The distilled objective.
+    pub objective: String,
+    /// Hard constraints the solution must satisfy.
+    pub constraints: Vec<String>,
+    /// Assumptions made (each is a placeholder `Assumption` string).
+    pub assumptions: Vec<Assumption>,
+    /// The structured plan (placeholder `WorkflowPlanStep`s).
+    pub plan: Vec<WorkflowPlanStep>,
+    /// Evidence gathered.
+    pub evidence: Vec<EvidenceRef>,
+    /// Open questions that could not be resolved.
+    pub unresolved_questions: Vec<String>,
+}
+
+/// One generated candidate answer (PRD §14.4).
+///
+/// Derives `PartialEq` but **not** `Eq` because it contains
+/// [`StructuredOutput`] (`serde_json::Value`, not `Eq`) and
+/// [`VerificationResult`] (`confidence: f32`, not `Eq`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Candidate {
+    /// Candidate identity.
+    pub candidate_id: CandidateId,
+    /// Strategy variant that produced this candidate.
+    pub strategy_variant: String,
+    /// The structured output payload (placeholder `serde_json::Value`).
+    pub output: StructuredOutput,
+    /// Evidence supporting this candidate.
+    pub evidence: Vec<EvidenceRef>,
+    /// Verification results for this candidate.
+    pub verification: Vec<VerificationResult>,
+    /// Cost consumed producing this candidate.
+    pub cost: InferenceCost,
+}
+
+/// Terminal outcome of a reasoning turn (PRD §14.5).
+///
+/// Derives `PartialEq` but **not** `Eq` because `final_output` is
+/// [`StructuredOutput`] (`serde_json::Value`, not `Eq`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ReasoningOutcome {
+    /// Terminal status.
+    pub status: OutcomeStatus,
+    /// The final answer, when one was produced.
+    pub final_output: Option<StructuredOutput>,
+    /// The selected candidate, when one was chosen.
+    pub selected_candidate: Option<CandidateId>,
+    /// Verification roll-up.
+    pub verification_summary: VerificationSummary,
+    /// Risks that remain unresolved.
+    pub unresolved_risks: Vec<String>,
+    /// Total cost consumed by the turn.
+    pub cost: InferenceCost,
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -782,5 +1026,156 @@ mod tests {
         // Defaults.
         assert_eq!(Complexity::default(), Complexity::Medium);
         assert_eq!(RiskLevel::default(), RiskLevel::Medium);
+    }
+
+    // --- §14 data contracts ---
+
+    #[test]
+    fn reasoning_request_round_trips_and_uses_real_ids() {
+        let req = ReasoningRequest {
+            request_id: RequestId::new("req-1").unwrap(),
+            session_id: SessionId::new("sess-1").unwrap(),
+            user_message: "refactor src/main.rs".into(),
+            context_refs: vec!["file:src/main.rs".into()],
+            mode: ReasoningMode::Auto,
+            risk_hint: Some(RiskLevel::Medium),
+            budget_override: Some(ReasoningBudget::balanced()),
+            privacy_mode: PrivacyMode::Private,
+        };
+        let encoded = serde_json::to_string(&req).unwrap();
+        let decoded: ReasoningRequest = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(decoded, req);
+        // Real domain IDs survive serialization as strings.
+        assert!(encoded.contains("\"request_id\":\"req-1\""));
+        assert!(encoded.contains("\"session_id\":\"sess-1\""));
+    }
+
+    #[test]
+    fn privacy_mode_default_is_private_and_round_trips() {
+        assert_eq!(PrivacyMode::default(), PrivacyMode::Private);
+        for mode in [
+            PrivacyMode::Private,
+            PrivacyMode::Internal,
+            PrivacyMode::Public,
+        ] {
+            let encoded = serde_json::to_string(&mode).unwrap();
+            let decoded: PrivacyMode = serde_json::from_str(&encoded).unwrap();
+            assert_eq!(decoded, mode);
+        }
+    }
+
+    #[test]
+    fn verification_result_round_trips_and_is_not_eq_due_to_f32() {
+        let vr = VerificationResult {
+            verifier_id: VerifierId::new("cargo_test").unwrap(),
+            status: VerificationStatus::Failed,
+            confidence: 0.12,
+            findings: vec!["test foo::bar failed".into()],
+            evidence_refs: vec!["file:tests/foo.rs:L7".into()],
+            repairable: true,
+        };
+        let encoded = serde_json::to_string(&vr).unwrap();
+        let decoded: VerificationResult = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(decoded, vr);
+        assert!((decoded.confidence - 0.12_f32).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn candidate_round_trips_with_structured_output_placeholder() {
+        let candidate = Candidate {
+            candidate_id: CandidateId::new("cand-1").unwrap(),
+            strategy_variant: "generate_verify_repair".into(),
+            output: serde_json::json!({"answer": "42"}),
+            evidence: vec!["file:src/lib.rs:L10".into()],
+            verification: vec![VerificationResult {
+                verifier_id: VerifierId::new("schema").unwrap(),
+                status: VerificationStatus::Passed,
+                confidence: 1.0,
+                findings: vec![],
+                evidence_refs: vec![],
+                repairable: false,
+            }],
+            cost: InferenceCost {
+                model_calls: 2,
+                total_tokens: 1024,
+            },
+        };
+        let encoded = serde_json::to_string(&candidate).unwrap();
+        let decoded: Candidate = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(decoded, candidate);
+    }
+
+    #[test]
+    fn deliberation_artifact_default_is_empty_and_round_trips() {
+        let empty = DeliberationArtifact::default();
+        assert!(empty.objective.is_empty());
+        assert!(empty.constraints.is_empty());
+        assert!(empty.plan.is_empty());
+
+        let artifact = DeliberationArtifact {
+            objective: "Migrate the session writer".into(),
+            constraints: vec!["no behavior regression".into()],
+            assumptions: vec!["tests cover the happy path".into()],
+            plan: vec![WorkflowPlanStep {
+                id: "step-1".into(),
+                objective: "Audit the current writer".into(),
+                depends_on: vec![],
+                tools: vec!["read_file".into()],
+                verify_with: vec![VerifierId::new("cargo_test").unwrap()],
+            }],
+            evidence: vec!["file:src/sessions/writer.rs".into()],
+            unresolved_questions: vec!["Is SQLite required?".into()],
+        };
+        let encoded = serde_json::to_string(&artifact).unwrap();
+        let decoded: DeliberationArtifact = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(decoded, artifact);
+    }
+
+    #[test]
+    fn reasoning_outcome_round_trips() {
+        let outcome = ReasoningOutcome {
+            status: OutcomeStatus::Succeeded,
+            final_output: Some(serde_json::json!({"summary": "done"})),
+            selected_candidate: Some(CandidateId::new("cand-1").unwrap()),
+            verification_summary: VerificationSummary {
+                passed: 3,
+                failed: 0,
+                overall: VerificationStatus::Passed,
+            },
+            unresolved_risks: vec![],
+            cost: InferenceCost {
+                model_calls: 4,
+                total_tokens: 8192,
+            },
+        };
+        let encoded = serde_json::to_string(&outcome).unwrap();
+        let decoded: ReasoningOutcome = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(decoded, outcome);
+    }
+
+    #[test]
+    fn outcome_and_verification_status_enums_round_trip() {
+        for status in [
+            OutcomeStatus::Succeeded,
+            OutcomeStatus::Failed,
+            OutcomeStatus::Partial,
+            OutcomeStatus::Cancelled,
+            OutcomeStatus::BudgetExceeded,
+            OutcomeStatus::Inconclusive,
+        ] {
+            let encoded = serde_json::to_string(&status).unwrap();
+            let decoded: OutcomeStatus = serde_json::from_str(&encoded).unwrap();
+            assert_eq!(decoded, status);
+        }
+        for status in [
+            VerificationStatus::Passed,
+            VerificationStatus::Failed,
+            VerificationStatus::Skipped,
+            VerificationStatus::Inconclusive,
+        ] {
+            let encoded = serde_json::to_string(&status).unwrap();
+            let decoded: VerificationStatus = serde_json::from_str(&encoded).unwrap();
+            assert_eq!(decoded, status);
+        }
     }
 }
