@@ -48,4 +48,4 @@ pub use references::{
     ReferenceError, expand_references,
 };
 pub use registry::ToolRegistry;
-pub use vro::{VroOrchestrator, VroRoutingDecision};
+pub use vro::{TaskProfiler, VroOrchestrator, VroRoutingDecision};

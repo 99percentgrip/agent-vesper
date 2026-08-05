@@ -43,9 +43,10 @@ pub use event::{
 pub use finish::FinishOutcome;
 pub use goal::{Goal, GoalStatus};
 pub use ids::{
-    CheckpointRef, CommandId, CorrelationId, EndpointId, EventId, GoalId, IdError, MessageId,
-    ModelId, PlanId, ProviderId, ProviderRequestId, ProviderResponseId, QualifiedModelId, Revision,
-    SessionId, ToolCallId, ToolId, ToolResultId, TurnId, WorkerId,
+    CandidateId, CheckpointRef, CommandId, CorrelationId, EndpointId, EventId, GoalId, IdError,
+    MessageId, ModelId, PlanId, ProviderId, ProviderRequestId, ProviderResponseId,
+    QualifiedModelId, RequestId, Revision, SessionId, ToolCallId, ToolId, ToolResultId, TurnId,
+    WorkerId,
 };
 pub use message::{ConversationMessage, MessageRole, SystemInstruction};
 pub use metadata::{ExtensionError, ExtensionMap, ExtensionNamespace};
@@ -68,6 +69,9 @@ pub use version::{
     EventSchemaVersion, SchemaVersion, VersionCompatibilityError, VersionedExtensionEnvelope,
 };
 pub use vro::{
-    Complexity, ReasoningBudget, ReasoningConfig, ReasoningMode, ReasoningStrategy, RiskLevel,
-    TaskDomain, TaskProfile, VerifierId, WorkflowMemoryConfig,
+    Assumption, Candidate, Complexity, ContextRef, DeliberationArtifact, EvidenceRef,
+    InferenceCost, OutcomeStatus, PrivacyMode, ReasoningBudget, ReasoningConfig, ReasoningMode,
+    ReasoningOutcome, ReasoningRequest, ReasoningStrategy, RiskLevel, StructuredOutput, TaskDomain,
+    TaskProfile, VerificationFinding, VerificationResult, VerificationStatus, VerificationSummary,
+    VerifierId, WorkflowMemoryConfig, WorkflowPlanStep,
 };
