@@ -659,6 +659,53 @@ pub struct InferenceCost {
     pub total_tokens: u64,
 }
 
+/// Observed capabilities of a provider/model combination (PRD §10.2, VRO-3.1).
+///
+/// Each field is a boolean capability flag (the directive's "boolean flags"
+/// for `supports_native_tools` / `supports_structured_output` /
+/// `supports_system_prompts`, plus the additional boolean capability axes from
+/// PRD §10.2). Capabilities are **observed**, not assumed from a model family
+/// name (PRD §10.2: "declare observed capabilities rather than relying only on
+/// model family names"). [`ModelCapabilities::local_server_defaults`] returns a
+/// reasonable baseline for a typical locally-served model; a real adapter
+/// overrides fields from an empirical capability probe.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct ModelCapabilities {
+    /// Native tool-call support in the chat template.
+    pub supports_native_tools: bool,
+    /// Tool calls emulated via prompt scaffolding (when native is absent).
+    pub supports_emulated_tools: bool,
+    /// Structured (JSON-mode / schema-constrained) output support.
+    pub supports_structured_output: bool,
+    /// System-prompt role support in the chat template.
+    pub supports_system_prompts: bool,
+    /// SSE/streaming response support.
+    pub supports_streaming: bool,
+    /// In-flight request cancellation support.
+    pub supports_cancellation: bool,
+    /// Multimodal vision input support.
+    pub supports_vision: bool,
+}
+
+impl ModelCapabilities {
+    /// Reasonable defaults for a typical model served by a local model server:
+    /// system prompts and streaming are universally supported; structured
+    /// output and cancellation are usually available; native tool calls and
+    /// vision default off until probed.
+    #[must_use]
+    pub const fn local_server_defaults() -> Self {
+        Self {
+            supports_native_tools: false,
+            supports_emulated_tools: true,
+            supports_structured_output: true,
+            supports_system_prompts: true,
+            supports_streaming: true,
+            supports_cancellation: true,
+            supports_vision: false,
+        }
+    }
+}
+
 /// Placeholder verification roll-up (PRD §14 references `VerificationSummary`).
 ///
 /// Minimal aggregate; the concrete schema is deferred to a later phase.
@@ -1259,5 +1306,33 @@ mod tests {
             assert_eq!(decoded, sev);
         }
         assert_eq!(VerificationSeverity::default(), VerificationSeverity::Info);
+    }
+
+    #[test]
+    fn model_capabilities_round_trips_and_local_defaults_are_sensible() {
+        let caps = ModelCapabilities::local_server_defaults();
+        // A typical local model server supports these.
+        assert!(caps.supports_system_prompts);
+        assert!(caps.supports_streaming);
+        assert!(caps.supports_structured_output);
+        // Native tool calls / vision must be probed, not assumed.
+        assert!(!caps.supports_native_tools);
+        assert!(!caps.supports_vision);
+        // Serde round-trip stability.
+        let encoded = serde_json::to_string(&caps).unwrap();
+        let decoded: ModelCapabilities = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(decoded, caps);
+        assert_eq!(
+            ModelCapabilities::default(),
+            ModelCapabilities {
+                supports_native_tools: false,
+                supports_emulated_tools: false,
+                supports_structured_output: false,
+                supports_system_prompts: false,
+                supports_streaming: false,
+                supports_cancellation: false,
+                supports_vision: false,
+            }
+        );
     }
 }

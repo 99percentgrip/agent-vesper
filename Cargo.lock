@@ -3559,6 +3559,7 @@ dependencies = [
  "futures-util",
  "glob",
  "regex",
+ "serde",
  "serde_json",
  "tempfile",
  "thiserror",

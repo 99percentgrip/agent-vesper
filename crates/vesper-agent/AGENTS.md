@@ -93,6 +93,24 @@ the multi-turn, tool-executing layer above it.
   Compiler/test failures are `repairable: true`; a verifier that cannot run
   (cargo missing, crash) returns `VerificationStatus::Error` (distinct from
   `Failed`). No new dependencies.
+- `src/providers/mod.rs` — VRO-3.1 provider adapters that implement the
+  `vesper-agent`-owned [`CandidateGenerator`](crate::vro::CandidateGenerator)
+  seam. Lives in `vesper-agent` (not a `vesper-provider-*` crate) because the
+  generation seam is a `vesper-agent` trait; a provider implementing it would
+  otherwise invert the crate dependency direction.
+- `src/providers/lmstudio/` — VRO-3.1 LM Studio local/LAN model-server adapter
+  (PRD §13). `config.rs` (`LmStudioConfig`: `api_base_url` + an opaque
+  `LmStudioApiKey` newtype + optional model; the key is `#[serde(skip)]` and
+  wrapped to satisfy the secret-shape xtask guard); `client.rs` (pure HTTP
+  request builders — `build_models_request` / `build_chat_request` — plus the
+  async `LmStudioTransport` trait port, mockable in tests; NO HTTP client crate
+  imported — the real transport is the composition-boundary concern);
+  `discovery.rs` (`/models` discovery + `probe_capabilities` +
+  `CapabilityRegistry`); `generator.rs` (`LmStudioCandidateGenerator`
+  implementing `CandidateGenerator`, mapping `(prompt, corrections)` → chat
+  messages with the failed verifiers' findings fed back as a corrections
+  message, bearer-auth injected). No live LM Studio integration in VRO-3.1 (per
+  execution constraints).
 
 ## Local Contracts
 
