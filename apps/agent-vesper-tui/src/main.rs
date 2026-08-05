@@ -128,6 +128,20 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
     // The active provider's superpower policy (model/plan/reasoning logic),
     // routed provider-neutrally — the harness never names a concrete provider.
     let policy = registry.superpower_policy(&provider_id).await;
+    // VRO orchestrator: opt-in via AGENT_VESPER_VRO_ENABLED=1. When disabled
+    // (the default), every turn routes through the direct AgentLoop — zero
+    // behavior change. When enabled, non-Direct profiles go through VRO.
+    let vro = if std::env::var("AGENT_VESPER_VRO_ENABLED")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+    {
+        vesper_agent::VroOrchestrator::new(vesper_domain::ReasoningConfig {
+            enabled: true,
+            ..Default::default()
+        })
+    } else {
+        vesper_agent::VroOrchestrator::disabled()
+    };
 
     // Runtime supervisor owns the live session state. Building it, creating a
     // session, and applying reasoning overrides are all credential-free: the
@@ -247,6 +261,7 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
         &registry_commands,
         &surface,
         &*policy,
+        &vro,
         &mut session,
         &supervisor,
         &runtime_session_id,
@@ -813,6 +828,7 @@ async fn drive_loop(
     registry_commands: &CommandRegistry,
     surface: &ProviderSuperpowerSurface,
     policy: &dyn vesper_provider::SuperpowerPolicy,
+    vro: &vesper_agent::VroOrchestrator,
     session: &mut TuiSession,
     supervisor: &vesper_runtime::RuntimeSupervisor,
     runtime_session_id: &SessionId,
@@ -1397,7 +1413,18 @@ async fn drive_loop(
                         std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
                     match vesper_agent::expand_references(&root, &text) {
                         Ok(expanded) => {
-                            if let Err(error) = spawn_agent_turn(
+                            // VRO dispatch: if enabled and profiled as
+                            // non-Direct, use the VRO orchestrator instead
+                            // of the direct AgentLoop. Otherwise, the direct
+                            // path is unchanged.
+                            let should_vro = vro.enabled()
+                                && vro.route(&expanded, vesper_domain::ReasoningMode::Auto)
+                                    == vesper_agent::VroRoutingDecision::Orchestrate;
+                            if should_vro {
+                                if let Err(error) = spawn_vro_turn(vro, agent, expanded, session) {
+                                    session.state.status = Some(error);
+                                }
+                            } else if let Err(error) = spawn_agent_turn(
                                 agent,
                                 expanded,
                                 session,
@@ -3539,6 +3566,162 @@ fn spawn_agent_turn(
     session.last_report.clear();
     session.pending_images.clear();
     session.state.status = Some("WORKING... (agent loop running)".into());
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// VRO dispatch bridge: wires the VRO orchestrator into the live TUI.
+// ---------------------------------------------------------------------------
+
+/// Bridges the AgentLoop into a [`CandidateGenerator`] for VRO. Each generate
+/// step runs one agent turn with the corrections appended as repair feedback.
+struct AgentCandidateGenerator {
+    agent: Arc<AgentLoop>,
+}
+
+impl AgentCandidateGenerator {
+    fn new(agent: Arc<AgentLoop>) -> Self {
+        Self { agent }
+    }
+}
+
+impl vesper_agent::vro::CandidateGenerator for AgentCandidateGenerator {
+    fn generate<'a>(
+        &'a self,
+        prompt: &'a str,
+        corrections: &'a [vesper_domain::VerificationFinding],
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = vesper_agent::vro::GeneratedCandidate> + Send + 'a>,
+    > {
+        use vesper_domain::{
+            ContentPart, ContentText, ConversationMessage, InferenceCost, MessageId, MessageRole,
+            SessionOperatingMode, SessionPermissionMode,
+        };
+
+        Box::pin(async move {
+            let mut full_prompt = prompt.to_string();
+            if !corrections.is_empty() {
+                full_prompt.push_str("\n\nYour previous attempt failed verification. Fix these:\n");
+                for (i, finding) in corrections.iter().enumerate() {
+                    let loc = finding
+                        .location
+                        .as_deref()
+                        .map(|l| format!(" ({l})"))
+                        .unwrap_or_default();
+                    full_prompt.push_str(&format!(
+                        "{}. [{}] {}{loc}\n",
+                        i + 1,
+                        match finding.severity {
+                            vesper_domain::VerificationSeverity::Critical => "critical",
+                            vesper_domain::VerificationSeverity::Error => "error",
+                            vesper_domain::VerificationSeverity::Warning => "warning",
+                            vesper_domain::VerificationSeverity::Info => "info",
+                        },
+                        finding.message
+                    ));
+                }
+            }
+
+            let message = ConversationMessage {
+                id: MessageId::new("vro-generate").expect("valid"),
+                role: MessageRole::User,
+                content: vec![ContentPart::Text(
+                    ContentText::new(full_prompt)
+                        .unwrap_or_else(|_| ContentText::new("(error)").expect("bounded")),
+                )],
+                extensions: vesper_domain::ExtensionMap::default(),
+            };
+            let outcome = self
+                .agent
+                .run_prompt(
+                    message,
+                    SessionOperatingMode::Code,
+                    SessionPermissionMode::Ask,
+                )
+                .await;
+
+            match outcome {
+                Ok(vesper_agent::AgentTurnOutcome::Completed {
+                    assistant_content, ..
+                }) => {
+                    let text: String = assistant_content
+                        .iter()
+                        .filter_map(|p| match p {
+                            ContentPart::Text(t) => Some(t.as_str().to_string()),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>()
+                        .join("");
+                    vesper_agent::vro::GeneratedCandidate {
+                        output: serde_json::json!({"content": text}),
+                        cost: InferenceCost::default(),
+                    }
+                }
+                _ => vesper_agent::vro::GeneratedCandidate {
+                    output: serde_json::json!({"error": "generation failed"}),
+                    cost: InferenceCost::default(),
+                },
+            }
+        })
+    }
+}
+
+/// Spawns a VRO turn in the background (mirrors `spawn_agent_turn`).
+fn spawn_vro_turn(
+    vro: &vesper_agent::VroOrchestrator,
+    agent: &Arc<AgentLoop>,
+    user_text: String,
+    session: &mut TuiSession,
+) -> Result<(), String> {
+    let (tx, rx) = mpsc::unbounded_channel::<AgentEvent>();
+    let agent = Arc::clone(agent);
+    let vro = vro.clone();
+    let root = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+
+    tokio::spawn(async move {
+        let generator = AgentCandidateGenerator::new(agent);
+        let request = vesper_domain::ReasoningRequest {
+            request_id: vesper_domain::RequestId::new(uuid::Uuid::new_v4().to_string())
+                .expect("valid request id"),
+            session_id: vesper_domain::SessionId::new("live-tui").expect("valid"),
+            user_message: user_text.clone(),
+            context_refs: vec![],
+            mode: vesper_domain::ReasoningMode::Auto,
+            risk_hint: None,
+            budget_override: None,
+            privacy_mode: vesper_domain::PrivacyMode::Private,
+        };
+
+        let outcome = vro.execute(&request, &generator, &root).await;
+        let content = outcome
+            .final_output
+            .as_ref()
+            .and_then(|v| v.get("content").and_then(|c| c.as_str()).map(String::from))
+            .unwrap_or_else(|| match outcome.status {
+                vesper_domain::OutcomeStatus::Succeeded => "(VRO: empty output)".into(),
+                vesper_domain::OutcomeStatus::Failed => {
+                    format!("VRO failed: {}", outcome.unresolved_risks.join("; "))
+                }
+                vesper_domain::OutcomeStatus::BudgetExceeded => "VRO: budget exhausted".into(),
+                other => format!("VRO: {other:?}"),
+            });
+
+        let text = vesper_domain::ContentText::new(content)
+            .unwrap_or_else(|_| vesper_domain::ContentText::new("(error)").expect("bounded"));
+        let _ = tx.send(AgentEvent::Completed {
+            outcome: vesper_agent::AgentTurnOutcome::Completed {
+                assistant_content: vec![vesper_domain::ContentPart::Text(text)],
+                iterations: 1,
+                tool_results: vec![],
+                plan: None,
+            },
+            history: vec![],
+        });
+    });
+
+    session.agent_rx = Some(rx);
+    session.agent_running = true;
+    session.state.status = Some("WORKING... (VRO orchestrating)".into());
     Ok(())
 }
 
