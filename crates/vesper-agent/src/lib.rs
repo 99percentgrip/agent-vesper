@@ -28,6 +28,7 @@ pub mod project_context;
 pub mod references;
 pub mod registry;
 pub mod tools;
+pub mod vro;
 
 pub use agent_loop::{
     AgentLoop, AgentLoopConfig, AgentLoopError, AgentProgressEvent, AgentProgressPort,
@@ -47,3 +48,4 @@ pub use references::{
     ReferenceError, expand_references,
 };
 pub use registry::ToolRegistry;
+pub use vro::{VroOrchestrator, VroRoutingDecision};
