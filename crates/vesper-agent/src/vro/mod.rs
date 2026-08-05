@@ -165,14 +165,8 @@ mod tests {
     #[test]
     fn preset_for_delegates_to_config() {
         let vro = VroOrchestrator::default();
-        assert_eq!(
-            vro.preset_for(ReasoningMode::Fast),
-            vro.config().fast
-        );
-        assert_eq!(
-            vro.preset_for(ReasoningMode::Deep),
-            vro.config().deep
-        );
+        assert_eq!(vro.preset_for(ReasoningMode::Fast), vro.config().fast);
+        assert_eq!(vro.preset_for(ReasoningMode::Deep), vro.config().deep);
         assert_eq!(
             vro.preset_for(ReasoningMode::Maximum),
             ReasoningBudget::maximum()

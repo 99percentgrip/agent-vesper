@@ -501,19 +501,28 @@ mod tests {
         ] {
             let encoded = serde_json::to_string(&mode).unwrap();
             let decoded: ReasoningMode = serde_json::from_str(&encoded).unwrap();
-            assert_eq!(decoded, mode, "mode {mode:?} did not round-trip via {encoded}");
+            assert_eq!(
+                decoded, mode,
+                "mode {mode:?} did not round-trip via {encoded}"
+            );
         }
     }
 
     #[test]
     fn reasoning_mode_serializes_kebab_case() {
         // PRD §8.1 names; serde rename_all = "kebab-case".
-        assert_eq!(serde_json::to_string(&ReasoningMode::Auto).unwrap(), "\"auto\"");
+        assert_eq!(
+            serde_json::to_string(&ReasoningMode::Auto).unwrap(),
+            "\"auto\""
+        );
         assert_eq!(
             serde_json::to_string(&ReasoningMode::Maximum).unwrap(),
             "\"maximum\""
         );
-        assert_eq!(serde_json::to_string(&ReasoningMode::Off).unwrap(), "\"off\"");
+        assert_eq!(
+            serde_json::to_string(&ReasoningMode::Off).unwrap(),
+            "\"off\""
+        );
     }
 
     // --- ReasoningStrategy ---
@@ -750,7 +759,10 @@ mod tests {
         assert_eq!(cfg.preset_for(ReasoningMode::Fast), cfg.fast);
         assert_eq!(cfg.preset_for(ReasoningMode::Balanced), cfg.balanced);
         assert_eq!(cfg.preset_for(ReasoningMode::Deep), cfg.deep);
-        assert_eq!(cfg.preset_for(ReasoningMode::Maximum), ReasoningBudget::maximum());
+        assert_eq!(
+            cfg.preset_for(ReasoningMode::Maximum),
+            ReasoningBudget::maximum()
+        );
         // Auto falls back to balanced.
         assert_eq!(cfg.preset_for(ReasoningMode::Auto), cfg.balanced);
     }
@@ -759,8 +771,14 @@ mod tests {
 
     #[test]
     fn complexity_and_risk_serialize_lowercase() {
-        assert_eq!(serde_json::to_string(&Complexity::High).unwrap(), "\"high\"");
-        assert_eq!(serde_json::to_string(&RiskLevel::Medium).unwrap(), "\"medium\"");
+        assert_eq!(
+            serde_json::to_string(&Complexity::High).unwrap(),
+            "\"high\""
+        );
+        assert_eq!(
+            serde_json::to_string(&RiskLevel::Medium).unwrap(),
+            "\"medium\""
+        );
         // Defaults.
         assert_eq!(Complexity::default(), Complexity::Medium);
         assert_eq!(RiskLevel::default(), RiskLevel::Medium);
