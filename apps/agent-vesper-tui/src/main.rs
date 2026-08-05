@@ -362,7 +362,33 @@ fn reasoning_seq() -> u64 {
 const _: Option<Revision> = None;
 
 fn provider_name_from_env() -> String {
-    std::env::var("AGENT_VESPER_PROVIDER").unwrap_or_else(|_| DEFAULT_PROVIDER.to_string())
+    // 1. Persisted preference (from /provider command).
+    let pref_path = std::env::var("AGENT_VESPER_HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::path::PathBuf::from(".agent-vesper"))
+        .join("provider");
+    if let Ok(text) = std::fs::read_to_string(&pref_path) {
+        let trimmed = text.trim();
+        if !trimmed.is_empty() {
+            return trimmed.to_string();
+        }
+    }
+    // 2. Env var override.
+    if let Ok(env) = std::env::var("AGENT_VESPER_PROVIDER") {
+        return env;
+    }
+    // 3. Default.
+    DEFAULT_PROVIDER.to_string()
+}
+
+/// Saves the provider preference so the next TUI launch uses it.
+fn save_provider_preference(provider: &str) -> Result<(), String> {
+    let dir = std::env::var("AGENT_VESPER_HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::path::PathBuf::from(".agent-vesper"));
+    std::fs::create_dir_all(&dir).map_err(|e| format!("create provider dir: {e}"))?;
+    let path = dir.join("provider");
+    std::fs::write(&path, provider).map_err(|e| format!("write provider preference: {e}"))
 }
 
 async fn register_default_providers(
@@ -1108,6 +1134,56 @@ async fn drive_loop(
                     CommandIntent::Prompt(text) => Some(text.clone()),
                     _ => None,
                 };
+                // /provider switcher: list or save the provider preference.
+                // Production-grade: persists the choice; restart applies it
+                // (many tools work this way for provider/engine switches).
+                if session.input.trim_start().starts_with("/provider") {
+                    let parts: Vec<&str> = session.input.trim().splitn(2, ' ').collect();
+                    if parts.len() == 1 || parts[1].trim().is_empty() {
+                        let providers = registry.provider_ids().await;
+                        let names: Vec<&str> = providers.iter().map(|p| p.as_str()).collect();
+                        session.state.transcript.push(format!(
+                            "Available providers: {} (current: {})",
+                            names.join(", "),
+                            provider_id.as_str()
+                        ));
+                        session.state.status = Some(format!(
+                            "Current: {}. Usage: /provider <name>",
+                            provider_id.as_str()
+                        ));
+                    } else {
+                        let target = parts[1].trim();
+                        let target_id = match ProviderId::new(target) {
+                            Ok(id) => id,
+                            Err(_) => {
+                                session.state.status =
+                                    Some(format!("Invalid provider id: {target}"));
+                                session.input.clear();
+                                session.command_matches.clear();
+                                continue;
+                            }
+                        };
+                        if registry.contains(&target_id).await {
+                            match save_provider_preference(target) {
+                                Ok(()) => {
+                                    session.state.transcript.push(format!(
+                                        "Provider set to {target}. Restart the TUI to apply."
+                                    ));
+                                    session.state.status = Some(format!(
+                                        "Provider saved: {target}. Restart to apply."
+                                    ));
+                                }
+                                Err(e) => session.state.status = Some(format!("Save failed: {e}")),
+                            }
+                        } else {
+                            session.state.status = Some(format!("Unknown provider: {target}"));
+                        }
+                    }
+                    session.input.clear();
+                    session.command_matches.clear();
+                    session.command_selected = 0;
+                    continue;
+                }
                 // Single integration point with the pure dispatch surface:
                 // resolve the intent and mutate session state in place. The
                 // Quit decision short-circuits the loop.
