@@ -244,7 +244,12 @@ impl CargoCheckVerifier {
                     let file = span.get("file_name")?.as_str()?;
                     let line_no = span.get("line_start").and_then(|l| l.as_u64())?;
                     Some(format!("{file}:{line_no}"))
-                });
+                })
+                // Normalize to forward slashes so the location contract is
+                // deterministic cross-platform: cargo emits `src\lib.rs:1` on
+                // Windows and `src/lib.rs:1` elsewhere. Downstream consumers
+                // (repair controller, evidence refs) get one shape.
+                .map(|loc| loc.replace('\\', "/"));
             findings.push(VerificationFinding {
                 message: text,
                 severity,
@@ -350,7 +355,8 @@ impl CargoTestVerifier {
                 });
             } else if let Some(rest) = line.strip_prefix("panicked at ") {
                 // "panicked at 'msg', src/lib.rs:5:5" — best-effort location.
-                let location = rest.rsplit(", ").next().map(|s| s.to_string());
+                // Normalize backslashes (Windows) to forward slashes.
+                let location = rest.rsplit(", ").next().map(|s| s.replace('\\', "/"));
                 findings.push(VerificationFinding {
                     message: format!("panicked at {rest}"),
                     severity: VerificationSeverity::Error,
@@ -458,6 +464,25 @@ mod tests {
     fn parse_findings_handles_empty_and_non_json_lines() {
         let findings = CargoCheckVerifier::parse_findings("\n  \nnot json at all\n");
         assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn parse_findings_normalizes_backslash_locations_to_forward_slash() {
+        // Regression: on Windows cargo emits `src\lib.rs` in file_name. The
+        // location contract must be deterministic (forward slashes) everywhere
+        // so downstream consumers and cross-platform tests see one shape.
+        let json = concat!(
+            r#"{"reason":"compiler-message","message":{"level":"error","#,
+            r#""message":"unclosed delimiter","#,
+            r#""spans":[{"file_name":"src\\lib.rs","line_start":1}]}}"#,
+        );
+        let findings = CargoCheckVerifier::parse_findings(json);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(
+            findings[0].location.as_deref(),
+            Some("src/lib.rs:1"),
+            "backslash must be normalized to forward slash"
+        );
     }
 
     #[test]
