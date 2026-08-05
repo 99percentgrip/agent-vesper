@@ -373,8 +373,9 @@ async fn register_default_providers(
     let glm = vesper_provider_glm::GlmFactory::default();
     let glm_superpowers = vesper_provider_glm::GlmFactory::default();
     let glm_credentials = vesper_provider_glm::GlmFactory::default();
+    let glm_policy = vesper_provider_glm::GlmSuperpowerPolicy;
     registry
-        .register_with_superpowers_and_credentials(glm, glm_superpowers, glm_credentials)
+        .register_with_all(glm, glm_superpowers, glm_credentials, glm_policy)
         .await?;
     #[cfg(test)]
     {
@@ -382,6 +383,32 @@ async fn register_default_providers(
         let synthetic_superpowers = vesper_provider_synthetic::SyntheticFactory::default();
         registry
             .register_with_superpowers(synthetic, synthetic_superpowers)
+            .await?;
+    }
+    // Register the LM Studio provider when the user has configured an endpoint
+    // via /lmstudio. The factory owns the reqwest client + the network config;
+    // the permissive policy means LM Studio has no plan/thinking constraints.
+    let lmstudio_settings = load_lmstudio_settings();
+    if !lmstudio_settings.is_empty() {
+        let model = lmstudio_settings
+            .model()
+            .unwrap_or("local-model")
+            .to_string();
+        let mut config =
+            vesper_agent::providers::lmstudio::LmStudioConfig::new(&lmstudio_settings.api_base_url)
+                .expect("LM Studio URL was validated by the settings hub");
+        if let Ok(key) = std::env::var("LMSTUDIO_API_KEY")
+            && !key.is_empty()
+        {
+            config = config.with_api_key(key);
+        }
+        let factory = agent_vesper_tui::LmStudioFactory::new(config, model);
+        registry
+            .register_with_superpowers_and_policy(
+                factory.clone(),
+                factory.clone(),
+                vesper_provider::PermissiveSuperpowerPolicy,
+            )
             .await?;
     }
     Ok(())

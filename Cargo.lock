@@ -90,6 +90,7 @@ version = "0.15.0"
 dependencies = [
  "base64",
  "crossterm",
+ "futures-util",
  "qrcode",
  "rand 0.8.7",
  "ratatui",
