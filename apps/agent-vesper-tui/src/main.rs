@@ -455,7 +455,8 @@ async fn register_default_providers(
     }
     let factory = agent_vesper_tui::LmStudioFactory::new(lmstudio_config, lmstudio_model);
     registry
-        .register_with_superpowers_and_policy(
+        .register_with_all(
+            factory.clone(),
             factory.clone(),
             factory.clone(),
             vesper_provider::PermissiveSuperpowerPolicy,
