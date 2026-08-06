@@ -432,32 +432,35 @@ async fn register_default_providers(
             .register_with_superpowers(synthetic, synthetic_superpowers)
             .await?;
     }
-    // Register the LM Studio provider when the user has configured an endpoint
-    // via /lmstudio. The factory owns the reqwest client + the network config;
-    // the permissive policy means LM Studio has no plan/thinking constraints.
+    // Register the LM Studio provider ALWAYS (even without a configured
+    // endpoint). It appears in the provider list by default. If no endpoint
+    // is configured, the default is localhost:1234 (LM Studio's default port);
+    // the user adjusts it via /lmstudio.
     let lmstudio_settings = load_lmstudio_settings();
-    if !lmstudio_settings.is_empty() {
-        let model = lmstudio_settings
-            .model()
-            .unwrap_or("local-model")
-            .to_string();
-        let mut config =
-            vesper_agent::providers::lmstudio::LmStudioConfig::new(&lmstudio_settings.api_base_url)
-                .expect("LM Studio URL was validated by the settings hub");
-        if let Ok(key) = std::env::var("LMSTUDIO_API_KEY")
-            && !key.is_empty()
-        {
-            config = config.with_api_key(key);
-        }
-        let factory = agent_vesper_tui::LmStudioFactory::new(config, model);
-        registry
-            .register_with_superpowers_and_policy(
-                factory.clone(),
-                factory.clone(),
-                vesper_provider::PermissiveSuperpowerPolicy,
-            )
-            .await?;
+    let lmstudio_url = if lmstudio_settings.api_base_url.trim().is_empty() {
+        "http://localhost:1234/v1".to_string()
+    } else {
+        lmstudio_settings.api_base_url.clone()
+    };
+    let lmstudio_model = lmstudio_settings
+        .model()
+        .unwrap_or("local-model")
+        .to_string();
+    let mut lmstudio_config = vesper_agent::providers::lmstudio::LmStudioConfig::new(&lmstudio_url)
+        .expect("LM Studio URL default is valid");
+    if let Ok(key) = std::env::var("LMSTUDIO_API_KEY")
+        && !key.is_empty()
+    {
+        lmstudio_config = lmstudio_config.with_api_key(key);
     }
+    let factory = agent_vesper_tui::LmStudioFactory::new(lmstudio_config, lmstudio_model);
+    registry
+        .register_with_superpowers_and_policy(
+            factory.clone(),
+            factory.clone(),
+            vesper_provider::PermissiveSuperpowerPolicy,
+        )
+        .await?;
     Ok(())
 }
 

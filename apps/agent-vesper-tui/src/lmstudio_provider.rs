@@ -376,10 +376,16 @@ impl ProviderSuperpowers for LmStudioFactory {
 
 impl ProviderCredentialPort for LmStudioFactory {
     fn credential_present(&self) -> Result<bool, CredentialError> {
-        Ok(std::env::var("LMSTUDIO_API_KEY").is_ok())
+        // LM Studio's API key is OPTIONAL — the server may run without auth.
+        // Always report the credential as present so the TUI never blocks the
+        // user with an authentication screen. The optional key (from
+        // LMSTUDIO_API_KEY env var or the config) is injected per-request by
+        // the transport if it is set.
+        Ok(true)
     }
     fn store_credential(&self, _secret: &str) -> Result<(), CredentialError> {
-        Err(CredentialError::Unavailable)
+        // No-op: LM Studio keys are env/config-only, not OS credential store.
+        Ok(())
     }
 }
 
