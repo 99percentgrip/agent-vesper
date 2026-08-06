@@ -15,16 +15,16 @@ tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 serde_json.workspace = true
-vesper-acp = { path = "../../crates/vesper-acp", version = "=0.20.0" }
-vesper-agent = { path = "../../crates/vesper-agent", version = "=0.20.0" }
-vesper-config = { path = "../../crates/vesper-config", version = "=0.20.0" }
-vesper-domain = { path = "../../crates/vesper-domain", version = "=0.20.0" }
-vesper-harness = { path = "../../crates/vesper-harness", version = "=0.20.0" }
-vesper-provider = { path = "../../crates/vesper-provider", version = "=0.20.0" }
-vesper-provider-glm = { path = "../../crates/vesper-provider-glm", version = "=0.20.0" }
-vesper-provider-synthetic = { path = "../../crates/vesper-provider-synthetic", version = "=0.20.0", optional = true }
-vesper-runtime = { path = "../../crates/vesper-runtime", version = "=0.20.0" }
-vesper-sessions = { path = "../../crates/vesper-sessions", version = "=0.20.0" }
+vesper-acp = { path = "../../crates/vesper-acp", version = "=0.20.1" }
+vesper-agent = { path = "../../crates/vesper-agent", version = "=0.20.1" }
+vesper-config = { path = "../../crates/vesper-config", version = "=0.20.1" }
+vesper-domain = { path = "../../crates/vesper-domain", version = "=0.20.1" }
+vesper-harness = { path = "../../crates/vesper-harness", version = "=0.20.1" }
+vesper-provider = { path = "../../crates/vesper-provider", version = "=0.20.1" }
+vesper-provider-glm = { path = "../../crates/vesper-provider-glm", version = "=0.20.1" }
+vesper-provider-synthetic = { path = "../../crates/vesper-provider-synthetic", version = "=0.20.1", optional = true }
+vesper-runtime = { path = "../../crates/vesper-runtime", version = "=0.20.1" }
+vesper-sessions = { path = "../../crates/vesper-sessions", version = "=0.20.1" }
 
 [dev-dependencies]
 sha2.workspace = true
