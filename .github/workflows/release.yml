@@ -14,18 +14,12 @@ on:
 permissions:
   contents: write
 
-# Resolve the published release tag once for the whole workflow:
-# workflow_dispatch provides it via the `tag` input; tag-push gets it from
-# GITHUB_REF_NAME.
-env:
-  RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
-
 # Cancel any stuck prior release run (e.g. a runner-image Service Unavailable
 # failure that left the workflow in a phantom queued state) when a new release
 # tag is pushed. Without this, GitHub Actions will block new release runs
 # behind the stuck one indefinitely.
 concurrency:
-  group: release-${{ env.RELEASE_TAG }}
+  group: release-pipeline
   cancel-in-progress: true
 
 jobs:
@@ -69,6 +63,10 @@ jobs:
         run: rustup toolchain install 1.95.0 --profile minimal --target "${{ matrix.target }}"
       - name: Validate release metadata
         shell: bash
+        env:
+          # workflow_dispatch provides the tag via inputs.tag;
+          # tag-push gets it from GITHUB_REF_NAME.
+          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
           workspace_version="$(awk -F '\"' '/^version = \"/ { print $2; exit }' Cargo.toml)"
           registry_version="$(awk -F '\"' '/^[[:space:]]*\"version\":/ { print $4; exit }' registry/agent.json)"
@@ -123,6 +121,8 @@ jobs:
           merge-multiple: true
       - name: Validate release metadata
         shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
           workspace_version="$(awk -F '\"' '/^version = \"/ { print $2; exit }' Cargo.toml)"
           registry_version="$(awk -F '\"' '/^[[:space:]]*\"version\":/ { print $4; exit }' registry/agent.json)"
@@ -133,6 +133,7 @@ jobs:
       - name: Create or update GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
           if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release create "$RELEASE_TAG" \
