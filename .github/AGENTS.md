@@ -29,6 +29,14 @@ platform assumptions on hosts unavailable locally.
   bounded timeouts; Linux-only RSS evidence must not be generalized.
 - CI validates Stage 5 coverage, read-only session/testkit conformance, and
   writer/SQLite architecture gates on all five target families.
+- `release.yml` declares a single concurrency group `release-pipeline` with
+  `cancel-in-progress: true` so a new tag-push (or `workflow_dispatch` with
+  a `tag` input) cancels any stuck prior run (e.g. a phantom-queued run
+  left behind by a runner-image `Service Unavailable` failure). Without
+  this guard, GitHub Actions blocks all subsequent release runs behind the
+  stuck one indefinitely. `workflow_dispatch` is the manual recovery path
+  when a tag is already pushed but no run fired: `gh workflow run
+  release.yml --ref <tag> -f tag=<tag>`.
 
 ## Verification
 
