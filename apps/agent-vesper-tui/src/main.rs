@@ -201,9 +201,14 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
     ));
     let (approval_port, approval_rx) = vesper_agent::ApprovalBroker::channel();
     let agent = Arc::new(
-        build_agent_loop(Arc::clone(&registry), &provider_id, agent_tools)
-            .map_err(|error| format!("agent loop construction failed: {error}"))?
-            .with_permission_port(approval_port),
+        build_agent_loop(
+            Arc::clone(&registry),
+            &provider_id,
+            agent_tools,
+            cognition_bundle.engine.is_some(),
+        )
+        .map_err(|error| format!("agent loop construction failed: {error}"))?
+        .with_permission_port(approval_port),
     );
 
     let mut session = TuiSession {
@@ -3445,18 +3450,60 @@ fn render_last_image(protocol: Option<&str>, session: &mut TuiSession) -> Result
 ///
 /// Returns `Err` for an unknown provider id so a misconfigured
 /// `AGENT_VESPER_PROVIDER` fails fast at startup instead of mid-prompt.
+///
+/// When `cognition_enabled` is `true`, a cognitive-memory capability
+/// instruction is appended to the system instructions so the model knows
+/// it has memory (prevents the "I don't have memory" disavowal even when
+/// no memories happen to match a given prompt).
 fn build_agent_loop(
     registry: Arc<vesper_runtime::ProviderRegistry>,
     provider_id: &ProviderId,
     tool_service: Arc<dyn vesper_agent::ToolService>,
+    cognition_enabled: bool,
 ) -> Result<AgentLoop, String> {
     let mut config = build_agent_config(provider_id)?;
     config.system_instructions = vesper_agent::project_instructions(&config.workspace_roots);
+    if cognition_enabled {
+        config
+            .system_instructions
+            .push(cognitive_capability_instruction());
+    }
     Ok(AgentLoop::new(
         registry,
         ToolRegistry::parity_default().with_service(tool_service),
         config,
     ))
+}
+
+/// A static system-prompt instruction describing the harness's cognitive
+/// memory capability. The actual recalled memories are appended to the
+/// user message dynamically per turn (`cognitive_context_for_prompt`); this
+/// instruction is what lets the model know that capability exists, so it
+/// can reference memory rather than disavowing it.
+///
+/// Kept short and explicit: the model should NEVER tell the user it lacks
+/// memory — it has a local SQLite-backed cognitive memory that auto-recalls
+/// relevant facts before each reply.
+fn cognitive_capability_instruction() -> SystemInstruction {
+    let body = "### Cognitive Memory\n\
+You are running inside the Agent Vesper harness, which provides a local SQLite-backed \
+cognitive memory system. The harness silently recalls relevant memories from past \
+conversations and appends them to your context before each reply. \
+Therefore:\n\
+- NEVER claim you have no memory, do not retain information, or are stateless — your \
+harness gives you long-term memory across sessions.\n\
+- If recalled memories appear under 'Relevant context from cognitive memory', treat \
+them as authoritative facts about the user and prior work.\n\
+- If no memories appear for a given prompt, do NOT announce that you lack memory — \
+simply answer normally; memories are only injected when relevant to the current turn.\n\
+- The user can manage memory explicitly via /remember, /recall, and /forget commands.";
+    SystemInstruction {
+        content: vec![ContentPart::Text(
+            ContentText::new(body).expect("bounded system instruction"),
+        )],
+        cache_stable: true,
+        extensions: vesper_domain::ExtensionMap::default(),
+    }
 }
 
 /// Builds the agent-loop configuration for one provider. Pure: no registry,
@@ -5025,9 +5072,22 @@ struct CognitionBundle {
 impl CognitionBundle {
     /// Opens the cognitive-memory SQLite database at
     /// `AGENT_VESPER_COGNITION_ROOT` (falling back to
-    /// `.agent-vesper/cognition/`). Returns a bundle with `engine = None`
-    /// when either the credential is missing or the database cannot be
-    /// opened — the TUI keeps running with cognitive-memory disabled.
+    /// `.agent-vesper/cognition/`).
+    ///
+    /// **Provider-neutral (multi-provider harness):** the engine opens
+    /// regardless of which provider is active. Embeddings always use the
+    /// zero-network `LocalHashEmbedder` (the only embedder that requires no
+    /// provider credential). Extraction is routed to the best available
+    /// provider, in priority order:
+    ///   1. Z.ai (if `ZAI_API_KEY` / OS credential is present) → `ZaiExtractionAdapter`
+    ///   2. LM Studio (if persisted settings exist) → `LmStudioExtractionAdapter`
+    ///   3. Otherwise → `NoOpExtractionAdapter` (always errors, forcing the
+    ///      graceful raw-text fallback in `drain_cognition_op`)
+    ///
+    /// Returns `engine = None` only when the SQLite database cannot be
+    /// opened. The slash-command surface degrades to raw-text storage
+    /// (`/remember "raw text"` still persists) when no extractor is
+    /// available, so cognitive memory works for LM Studio-only deployments.
     fn open_default(credential_source: Arc<dyn vesper_provider_glm::GlmCredentialSource>) -> Self {
         let root = match std::env::var("AGENT_VESPER_COGNITION_ROOT") {
             Ok(value) => std::path::PathBuf::from(value),
@@ -5040,37 +5100,41 @@ impl CognitionBundle {
         let db_path = root.join("cognition.db");
         let root_display = root.display().to_string();
 
-        // Probe the credential once at startup; if it's missing we keep the
-        // engine disabled without making per-turn network calls.
-        if vesper_provider_glm::resolve_credential(credential_source.as_ref()).is_err() {
-            return Self {
-                engine: None,
-                root_display,
-            };
-        }
         let config = vesper_cognition::CognitiveConfig::default();
-        let ports = vesper_cognition::CognitionPorts {
-            // Default: neural embeddings via BigModel CN with JWT auth when
-            // credential is available. Falls back to local hash embedder
-            // (zero network) only when explicitly requested via env var
-            // AGENT_VESPER_COGNITION_EMBEDDING_API=local.
-            embedder: match std::env::var("AGENT_VESPER_COGNITION_EMBEDDING_API")
-                .unwrap_or_default()
-                .as_str()
+
+        // Embeddings: always LocalHashEmbedder (zero-network). Neural
+        // embedding via BigModel CN is opt-in only when an explicit env var
+        // AND a Zai credential are present.
+        let embedder: Arc<dyn vesper_cognition::EmbeddingPort> =
+            if std::env::var("AGENT_VESPER_COGNITION_EMBEDDING_API").as_deref() == Ok("bigmodel")
+                && vesper_provider_glm::resolve_credential(credential_source.as_ref()).is_ok()
             {
-                // Neural embeddings via BigModel CN (requires separate BigModel account + JWT auth).
-                "bigmodel" => Arc::new(BigModelEmbeddingAdapter::new(Arc::clone(
+                Arc::new(BigModelEmbeddingAdapter::new(Arc::clone(
                     &credential_source,
-                ))),
-                // Default: local hash embedder. The Zai platform does NOT offer
-                // embedding models — only chat models (confirmed via the /models
-                // endpoint). The local hash embedder produces consistent vectors
-                // for cosine similarity with zero network overhead.
-                _ => Arc::new(vesper_cognition::LocalHashEmbedder::new(
+                )))
+            } else {
+                Arc::new(vesper_cognition::LocalHashEmbedder::new(
                     config.embedding_dim,
-                )),
-            },
-            extractor: Arc::new(ZaiExtractionAdapter::new(Arc::clone(&credential_source))),
+                ))
+            };
+
+        // Extraction: best-available provider routing.
+        // (1) Zai credential present → ZaiExtractionAdapter.
+        // (2) LM Studio settings present → LmStudioExtractionAdapter.
+        // (3) Otherwise → NoOpExtractionAdapter (always errors → raw-text
+        //     fallback in drain_cognition_op).
+        let extractor: Arc<dyn vesper_cognition::ExtractionLlmPort> =
+            if vesper_provider_glm::resolve_credential(credential_source.as_ref()).is_ok() {
+                Arc::new(ZaiExtractionAdapter::new(Arc::clone(&credential_source)))
+            } else if let Some(lm) = LmStudioExtractionAdapter::from_persisted_settings() {
+                Arc::new(lm)
+            } else {
+                Arc::new(NoOpExtractionAdapter)
+            };
+
+        let ports = vesper_cognition::CognitionPorts {
+            embedder,
+            extractor,
             entity_nlp: Arc::new(ZaiEntityExtractor),
         };
 
@@ -5081,6 +5145,107 @@ impl CognitionBundle {
             engine,
             root_display,
         }
+    }
+}
+
+/// Extraction-LLM port that calls a configured LM Studio server's
+/// `/chat/completions` endpoint. Used as the auto-recall + `/remember`
+/// extraction backend when no Z.ai credential is present (LM Studio is the
+/// only configured provider). Mirrors [`ZaiExtractionAdapter`] but targets
+/// the local/LAN endpoint with optional `LMSTUDIO_API_KEY`.
+struct LmStudioExtractionAdapter {
+    endpoint_url: String,
+    api_key: Option<String>,
+    model: String,
+    client: reqwest::blocking::Client,
+}
+
+impl LmStudioExtractionAdapter {
+    /// Builds an adapter from the persisted LM Studio settings
+    /// (`.agent-vesper/lmstudio/settings.json`). Returns `None` when no
+    /// endpoint is configured.
+    #[must_use]
+    fn from_persisted_settings() -> Option<Self> {
+        let settings = load_lmstudio_settings();
+        if settings.api_base_url.trim().is_empty() {
+            return None;
+        }
+        let base = settings.api_base_url.trim_end_matches('/');
+        let endpoint_url = format!("{base}/chat/completions");
+        let model = settings
+            .model()
+            .map(str::to_string)
+            .or_else(|| std::env::var("AGENT_VESPER_COGNITION_MODEL").ok())
+            .unwrap_or_else(|| String::from("local-model"));
+        Some(Self {
+            endpoint_url,
+            api_key: std::env::var("LMSTUDIO_API_KEY").ok(),
+            model,
+            client: reqwest::blocking::Client::builder()
+                .timeout(std::time::Duration::from_secs(120))
+                .build()
+                .expect("reqwest blocking client"),
+        })
+    }
+}
+
+impl vesper_cognition::ExtractionLlmPort for LmStudioExtractionAdapter {
+    fn extract(
+        &self,
+        system_prompt: &str,
+        user_prompt: &str,
+    ) -> Result<String, vesper_cognition::CognitionError> {
+        let body = serde_json::json!({
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "response_format": {"type": "json_object"},
+        });
+        let mut request = self.client.post(&self.endpoint_url).json(&body);
+        if let Some(key) = &self.api_key {
+            request = request.bearer_auth(key);
+        }
+        let response = request.send().map_err(|e| {
+            vesper_cognition::CognitionError::Extraction(format!("HTTP send failed: {e}"))
+        })?;
+        if !response.status().is_success() {
+            let status = response.status();
+            let body_text = response.text().unwrap_or_else(|_| "(no body)".into());
+            return Err(vesper_cognition::CognitionError::Extraction(format!(
+                "HTTP {status} - {body_text}"
+            )));
+        }
+        let parsed: serde_json::Value = response.json().map_err(|e| {
+            vesper_cognition::CognitionError::Extraction(format!("JSON parse failed: {e}"))
+        })?;
+        parsed["choices"][0]["message"]["content"]
+            .as_str()
+            .map(str::to_string)
+            .ok_or_else(|| {
+                vesper_cognition::CognitionError::Extraction(format!(
+                    "missing choices[0].message.content in response: {parsed}"
+                ))
+            })
+    }
+}
+
+/// Fallback extractor that always errors. This forces the graceful
+/// raw-text fallback in `drain_cognition_op` so the engine stays open and
+/// searchable via BM25 + entity boost — memory still works, just without
+/// LLM type/priority/scene classification.
+struct NoOpExtractionAdapter;
+
+impl vesper_cognition::ExtractionLlmPort for NoOpExtractionAdapter {
+    fn extract(
+        &self,
+        _system_prompt: &str,
+        _user_prompt: &str,
+    ) -> Result<String, vesper_cognition::CognitionError> {
+        Err(vesper_cognition::CognitionError::Extraction(
+            "no extractor available (no Z.ai credential, no LM Studio settings)".into(),
+        ))
     }
 }
 
@@ -8198,7 +8363,7 @@ fn drain_cognition_op(
     use agent_vesper_tui::commands::CognitionOp;
     let Some(engine) = bundle.engine.as_ref() else {
         state.transcript.push(format!(
-            "cognition: engine unavailable (no Zai credential or root {} could not be opened)",
+            "cognition: engine unavailable (root {} could not be opened)",
             bundle.root_display
         ));
         state.status = Some("cognitive memory is disabled.".into());
@@ -8712,7 +8877,7 @@ mod tests {
             mcp_root_path(),
             None,
         ));
-        let agent = build_agent_loop(registry, &provider, tools).unwrap();
+        let agent = build_agent_loop(registry, &provider, tools, false).unwrap();
         let surface = palette_surface();
         let mut state = SessionState::new();
         let model = surface.by_alias("model").unwrap();
@@ -8852,9 +9017,67 @@ mod tests {
                 mcp_root_path(),
                 None,
             ));
-            let _agent = build_agent_loop(registry, &provider_id, service)
+            let _agent = build_agent_loop(registry, &provider_id, service, false)
                 .unwrap_or_else(|error| panic!("build_agent_loop({id_str}) failed: {error}"));
         }
+    }
+
+    #[test]
+    fn build_agent_loop_appends_cognitive_capability_instruction_when_enabled() {
+        let provider = ProviderId::new("zai").unwrap();
+        let registry = Arc::new(vesper_runtime::ProviderRegistry::new());
+        let tools = Arc::new(TuiToolService::new(
+            Arc::new(MemoryStores::open_default()),
+            checkpoint_root_path(),
+            mcp_root_path(),
+            None,
+        ));
+        // With cognition disabled, the instruction must NOT appear.
+        let agent_off = build_agent_loop(
+            Arc::clone(&registry),
+            &provider,
+            Arc::clone(&tools) as Arc<dyn vesper_agent::ToolService>,
+            false,
+        )
+        .expect("cognition-disabled build");
+        let off_text = extract_system_prompt_text(&agent_off);
+        assert!(
+            !off_text.contains("Cognitive Memory"),
+            "cognitive instruction must not be appended when disabled"
+        );
+        // With cognition enabled, the instruction MUST appear.
+        let agent_on = build_agent_loop(
+            registry,
+            &provider,
+            tools as Arc<dyn vesper_agent::ToolService>,
+            true,
+        )
+        .expect("cognition-enabled build");
+        let on_text = extract_system_prompt_text(&agent_on);
+        assert!(
+            on_text.contains("Cognitive Memory"),
+            "cognitive instruction must be appended when enabled"
+        );
+        assert!(
+            on_text.contains("NEVER claim you have no memory"),
+            "instruction must forbid memory disavowal"
+        );
+    }
+
+    /// Helper: extracts the concatenated system-prompt text from an agent loop
+    /// so tests can assert on the cognitive-memory instruction.
+    fn extract_system_prompt_text(agent: &AgentLoop) -> String {
+        agent
+            .configuration()
+            .system_instructions
+            .iter()
+            .flat_map(|instruction| instruction.content.iter())
+            .filter_map(|part| match part {
+                ContentPart::Text(text) => Some(text.as_str().to_string()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     #[test]

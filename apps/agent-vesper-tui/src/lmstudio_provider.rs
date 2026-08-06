@@ -255,6 +255,14 @@ impl ProviderSession for LmStudioSession {
 }
 
 /// Parses one SSE chunk into a `ProviderStreamEvent`.
+///
+/// LM Studio streams OpenAI-compatible Server-Sent Events. For
+/// reasoning-capable local models (Qwen3, DeepSeek-R1, etc.), the thinking
+/// telemetry rides on `delta.reasoning_content` — the same field name GLM
+/// uses. Some servers emit `delta.reasoning` instead, so we accept both. We
+/// emit a `ReasoningDelta` BEFORE any `ContentDelta` from the same chunk so
+/// the TUI Reasoning panel renders thinking first and the Conversation panel
+/// renders the answer second, mirroring the GLM ordering.
 fn parse_sse_chunk(chunk: &str, stream_id: &BoundedString<128>) -> Option<ProviderStreamEvent> {
     for line in chunk.lines() {
         if let Some(data) = line.strip_prefix("data: ") {
@@ -265,14 +273,39 @@ fn parse_sse_chunk(chunk: &str, stream_id: &BoundedString<128>) -> Option<Provid
                     metadata: ExtensionMap::default(),
                 });
             }
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(data)
-                && let Some(content) = json
-                    .get("choices")
-                    .and_then(|c| c.get(0))
-                    .and_then(|c| c.get("delta"))
-                    .and_then(|d| d.get("content"))
-                    .and_then(|c| c.as_str())
-                && !content.is_empty()
+            let Ok(json) = serde_json::from_str::<serde_json::Value>(data) else {
+                continue;
+            };
+            let Some(delta) = json
+                .get("choices")
+                .and_then(|c| c.get(0))
+                .and_then(|c| c.get("delta"))
+            else {
+                continue;
+            };
+            // Reasoning / thinking telemetry. Reasoning models emit the chain
+            // of thought on `delta.reasoning_content` (OpenAI-compat /
+            // Qwen3 / DeepSeek-R1 convention); some servers use
+            // `delta.reasoning`. We check both, prefer the canonical name.
+            if let Some(reasoning) = delta
+                .get("reasoning_content")
+                .or_else(|| delta.get("reasoning"))
+                .and_then(serde_json::Value::as_str)
+                .filter(|value| !value.is_empty())
+            {
+                let text = ContentText::new(reasoning.to_string())
+                    .unwrap_or_else(|_| ContentText::new("(error)").expect("bounded"));
+                return Some(ProviderStreamEvent::ReasoningDelta {
+                    stream_id: BoundedString::new("reasoning").expect("bounded stream id"),
+                    text,
+                    kind: vesper_domain::ReasoningKind::ProviderVisible,
+                    retention: vesper_domain::ReasoningRetention::SessionOnly,
+                });
+            }
+            if let Some(content) = delta
+                .get("content")
+                .and_then(serde_json::Value::as_str)
+                .filter(|value| !value.is_empty())
             {
                 let text = ContentText::new(content.to_string())
                     .unwrap_or_else(|_| ContentText::new("(error)").expect("bounded"));
@@ -454,4 +487,67 @@ fn extract_text(parts: &[ContentPart]) -> String {
         })
         .collect::<Vec<_>>()
         .join("")
+}
+
+#[cfg(test)]
+mod tests {
+    #![forbid(unsafe_code)]
+    use super::*;
+
+    fn stream_id() -> BoundedString<128> {
+        BoundedString::new("content").expect("bounded stream id")
+    }
+
+    #[test]
+    fn parse_sse_chunk_emits_reasoning_delta_from_reasoning_content() {
+        // LM Studio / Qwen3 / DeepSeek-R1 stream the chain of thought on
+        // `delta.reasoning_content` — the same field name GLM uses.
+        let chunk =
+            r#"data: {"choices":[{"delta":{"reasoning_content":"thinking about the user"}}]}"#;
+        let event = parse_sse_chunk(chunk, &stream_id()).expect("must emit");
+        match event {
+            ProviderStreamEvent::ReasoningDelta { text, kind, .. } => {
+                assert_eq!(text.as_str(), "thinking about the user");
+                assert_eq!(kind, vesper_domain::ReasoningKind::ProviderVisible);
+            }
+            other => panic!("expected ReasoningDelta, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_sse_chunk_emits_reasoning_delta_from_legacy_reasoning_field() {
+        // Some servers use the bare `delta.reasoning` field name.
+        let chunk = r#"data: {"choices":[{"delta":{"reasoning":"alt field"}}]}"#;
+        let event = parse_sse_chunk(chunk, &stream_id()).expect("must emit");
+        assert!(matches!(event, ProviderStreamEvent::ReasoningDelta { .. }));
+    }
+
+    #[test]
+    fn parse_sse_chunk_emits_content_delta_for_plain_answer() {
+        let chunk = r#"data: {"choices":[{"delta":{"content":"answer"}}]}"#;
+        let event = parse_sse_chunk(chunk, &stream_id()).expect("must emit");
+        match event {
+            ProviderStreamEvent::ContentDelta { .. } => {}
+            other => panic!("expected ContentDelta, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_sse_chunk_emits_completed_on_done_marker() {
+        let chunk = "data: [DONE]";
+        let event = parse_sse_chunk(chunk, &stream_id()).expect("must emit");
+        assert!(matches!(event, ProviderStreamEvent::Completed { .. }));
+    }
+
+    #[test]
+    fn parse_sse_chunk_skips_empty_deltas() {
+        let chunk = r#"data: {"choices":[{"delta":{}}]}"#;
+        assert!(parse_sse_chunk(chunk, &stream_id()).is_none());
+    }
+
+    #[test]
+    fn parse_sse_chunk_skips_malformed_json() {
+        let chunk = "data: not-json-at-all";
+        assert!(parse_sse_chunk(chunk, &stream_id()).is_none());
+    }
 }
