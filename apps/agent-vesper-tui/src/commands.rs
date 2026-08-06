@@ -1522,6 +1522,8 @@ const ORACLE_COMMAND_SURFACE: &[OracleCommandEntry] = &[
     OracleCommandEntry { name: "approve",           description: "Finalize the reviewed plan and start execution (Vesper-native)" },
     OracleCommandEntry { name: "cancel",            description: "Abort the in-flight plan (Vesper-native)" },
     OracleCommandEntry { name: "auth",              description: "Re-authenticate or rotate the active provider's credential (Vesper-native, provider-routed)" },
+    OracleCommandEntry { name: "lmstudio",          description: "Configure the LM Studio LAN/localhost endpoint (Vesper-native)" },
+    OracleCommandEntry { name: "provider",          description: "Switch the active provider (Vesper-native, arrow-key picker)" },
     OracleCommandEntry { name: "quit",              description: "Exit the TUI (Vesper-native; oracle uses Ctrl+X)" },
 ];
 
@@ -1982,12 +1984,20 @@ mod tests {
         // Genuinely unknown commands are still unknown.
         assert!(!registry.contains("frobnicate"));
         // The full surface count: 80 oracle command names (including the
-        // distinct `/export last` route) + 7 Vesper-native (approve, cancel,
-        // quit, auth, remember, recall, forget) = 87 total.
+        // distinct `/export last` route) + 9 Vesper-native (approve, cancel,
+        // quit, auth, lmstudio, provider, remember, recall, forget) = 89 total.
         assert!(registry.contains("export last"));
         assert!(
             registry.contains("auth"),
             "Vesper-native /auth must be registered"
+        );
+        assert!(
+            registry.contains("lmstudio"),
+            "Vesper-native /lmstudio must be registered"
+        );
+        assert!(
+            registry.contains("provider"),
+            "Vesper-native /provider must be registered"
         );
         assert!(
             registry.contains("remember"),
@@ -2003,8 +2013,8 @@ mod tests {
         );
         assert_eq!(
             registry.names().len(),
-            87,
-            "Phase 7 parity: 80 oracle commands + 7 Vesper-native = 87 total"
+            89,
+            "Phase 7 parity: 80 oracle commands + 9 Vesper-native = 89 total"
         );
     }
 
