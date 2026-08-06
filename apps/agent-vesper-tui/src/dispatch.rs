@@ -121,6 +121,8 @@ pub struct SessionState {
     /// Whether the binary should open the LM Studio provider settings screen
     /// (`/lmstudio`) so the user can adjust the LAN/localhost endpoint.
     pub pending_lmstudio_settings: bool,
+    /// Whether the binary should open the provider selection modal.
+    pub pending_provider_switch: bool,
     /// Manual conversation scroll expressed as **lines up from the bottom**.
     /// `None` = auto-follow (stick to bottom, the default); `Some(n)` = the
     /// user pressed PageUp/Home and is reading history `n` lines above the
@@ -357,6 +359,7 @@ fn apply_outcome(
         pending_code_block,
         pending_reauth,
         pending_lmstudio_settings,
+        pending_provider_switch,
         conversation_manual_scroll: _,
         permission_modal_focus: _,
     } = state;
@@ -576,6 +579,10 @@ fn apply_outcome(
             UiAction::OpenLmStudioSettings => {
                 *pending_lmstudio_settings = true;
                 *status = Some("Opening LM Studio settings…".into());
+            }
+            UiAction::OpenProviderSwitcher => {
+                *pending_provider_switch = true;
+                *status = Some("Opening provider selection…".into());
             }
             UiAction::ToggleReasoning => {
                 panels.reasoning = !panels.reasoning;
