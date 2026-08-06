@@ -4,9 +4,29 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to publish (must already exist)"
+        required: true
+        type: string
 
 permissions:
   contents: write
+
+# Resolve the published release tag once for the whole workflow:
+# workflow_dispatch provides it via the `tag` input; tag-push gets it from
+# GITHUB_REF_NAME.
+env:
+  RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+# Cancel any stuck prior release run (e.g. a runner-image Service Unavailable
+# failure that left the workflow in a phantom queued state) when a new release
+# tag is pushed. Without this, GitHub Actions will block new release runs
+# behind the stuck one indefinitely.
+concurrency:
+  group: release-${{ env.RELEASE_TAG }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -52,7 +72,8 @@ jobs:
         run: |
           workspace_version="$(awk -F '\"' '/^version = \"/ { print $2; exit }' Cargo.toml)"
           registry_version="$(awk -F '\"' '/^[[:space:]]*\"version\":/ { print $4; exit }' registry/agent.json)"
-          test "$GITHUB_REF_NAME" = "v$workspace_version"
+          echo "Release tag: $RELEASE_TAG"
+          test "$RELEASE_TAG" = "v$workspace_version"
           test "$registry_version" = "$workspace_version"
       - name: Build ACP and TUI binaries
         shell: bash
@@ -105,19 +126,20 @@ jobs:
         run: |
           workspace_version="$(awk -F '\"' '/^version = \"/ { print $2; exit }' Cargo.toml)"
           registry_version="$(awk -F '\"' '/^[[:space:]]*\"version\":/ { print $4; exit }' registry/agent.json)"
-          test "$GITHUB_REF_NAME" = "v$workspace_version"
+          echo "Release tag: $RELEASE_TAG"
+          test "$RELEASE_TAG" = "v$workspace_version"
           test "$registry_version" = "$workspace_version"
           test "$(find dist -maxdepth 1 -type f -name '*.sha256' | wc -l)" -eq 5
       - name: Create or update GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if ! gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create "$GITHUB_REF_NAME" \
+          if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" \
               --repo "$GITHUB_REPOSITORY" \
-              --title "Agent Vesper $GITHUB_REF_NAME" \
+              --title "Agent Vesper $RELEASE_TAG" \
               --generate-notes
           fi
-          gh release upload "$GITHUB_REF_NAME" dist/* \
+          gh release upload "$RELEASE_TAG" dist/* \
             --repo "$GITHUB_REPOSITORY" \
             --clobber

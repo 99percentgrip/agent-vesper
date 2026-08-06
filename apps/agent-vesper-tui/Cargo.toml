@@ -23,25 +23,25 @@ tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 uuid.workspace = true
-vesper-agent = { path = "../../crates/vesper-agent", version = "=0.20.6" }
-vesper-auth = { path = "../../crates/vesper-auth", version = "=0.20.6" }
-vesper-checkpoints = { path = "../../crates/vesper-checkpoints", version = "=0.20.6" }
-vesper-cognition = { path = "../../crates/vesper-cognition", version = "=0.20.6" }
-vesper-domain = { path = "../../crates/vesper-domain", version = "=0.20.6" }
-vesper-harness = { path = "../../crates/vesper-harness", version = "=0.20.6" }
-vesper-mcp = { path = "../../crates/vesper-mcp", version = "=0.20.6" }
-vesper-memory = { path = "../../crates/vesper-memory", version = "=0.20.6" }
-vesper-observability = { path = "../../crates/vesper-observability", version = "=0.20.6" }
-vesper-provider = { path = "../../crates/vesper-provider", version = "=0.20.6" }
-vesper-provider-glm = { path = "../../crates/vesper-provider-glm", version = "=0.20.6" }
-vesper-runtime = { path = "../../crates/vesper-runtime", version = "=0.20.6" }
-vesper-sessions = { path = "../../crates/vesper-sessions", version = "=0.20.6" }
+vesper-agent = { path = "../../crates/vesper-agent", version = "=0.20.7" }
+vesper-auth = { path = "../../crates/vesper-auth", version = "=0.20.7" }
+vesper-checkpoints = { path = "../../crates/vesper-checkpoints", version = "=0.20.7" }
+vesper-cognition = { path = "../../crates/vesper-cognition", version = "=0.20.7" }
+vesper-domain = { path = "../../crates/vesper-domain", version = "=0.20.7" }
+vesper-harness = { path = "../../crates/vesper-harness", version = "=0.20.7" }
+vesper-mcp = { path = "../../crates/vesper-mcp", version = "=0.20.7" }
+vesper-memory = { path = "../../crates/vesper-memory", version = "=0.20.7" }
+vesper-observability = { path = "../../crates/vesper-observability", version = "=0.20.7" }
+vesper-provider = { path = "../../crates/vesper-provider", version = "=0.20.7" }
+vesper-provider-glm = { path = "../../crates/vesper-provider-glm", version = "=0.20.7" }
+vesper-runtime = { path = "../../crates/vesper-runtime", version = "=0.20.7" }
+vesper-sessions = { path = "../../crates/vesper-sessions", version = "=0.20.7" }
 zeroize.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
 tempfile.workspace = true
-vesper-provider-synthetic = { path = "../../crates/vesper-provider-synthetic", version = "=0.20.6" }
+vesper-provider-synthetic = { path = "../../crates/vesper-provider-synthetic", version = "=0.20.7" }
 
 [lints]
 workspace = true
