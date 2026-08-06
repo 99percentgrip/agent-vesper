@@ -258,8 +258,15 @@ impl SuperpowerPolicy for PermissiveSuperpowerPolicy {
         PlanChangeReaction::none()
     }
 
-    fn reasoning_mode(&self, _reasoning_value: &SuperpowerValue) -> Option<BoundedString<64>> {
-        None
+    fn reasoning_mode(&self, reasoning_value: &SuperpowerValue) -> Option<BoundedString<64>> {
+        // Permissive: accept any Choice value as a reasoning mode label. This
+        // makes /thinking work for providers that advertise a reasoning
+        // superpower but don't need a custom mode-mapping (e.g. LM Studio
+        // passes the label straight through to the model's API).
+        match reasoning_value {
+            SuperpowerValue::Choice { value } => BoundedString::new(value.as_str()).ok(),
+            _ => None,
+        }
     }
 }
 

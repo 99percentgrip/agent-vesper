@@ -1288,11 +1288,79 @@ async fn drive_loop(
                     session.state.pending_provider_switch = false;
                     match open_provider_switcher(&mut terminal, registry, provider_id).await {
                         Ok(Some(target)) => {
-                            session.state.transcript.push(format!(
-                                "Provider set to {target}. Restart the TUI to apply."
-                            ));
-                            session.state.status =
-                                Some(format!("Provider saved: {target}. Restart to apply."));
+                            // If switching TO LM Studio and the endpoint is the
+                            // default (localhost:1234), prompt for the server URL
+                            // before saving the preference — same flow as Hermes.
+                            if target == "lmstudio" {
+                                let settings = load_lmstudio_settings();
+                                let is_default = settings.api_base_url.trim().is_empty()
+                                    || settings.api_base_url == "http://localhost:1234/v1";
+                                if is_default {
+                                    session.state.status =
+                                        Some("Configuring LM Studio endpoint…".into());
+                                    drop(terminal.draw(|frame| {
+                                        use ratatui::style::{Color, Modifier, Style};
+                                        use ratatui::text::{Line, Span};
+                                        use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
+                                        let area = frame.area();
+                                        let modal = ratatui::layout::Rect {
+                                            x: area.x + area.width.saturating_sub(60) / 2,
+                                            y: area.y + area.height.saturating_sub(7) / 2,
+                                            width: area.width.min(60),
+                                            height: 7,
+                                        };
+                                        frame.render_widget(ratatui::widgets::Clear, modal);
+                                        frame.render_widget(
+                                            Paragraph::new(vec![Line::from(Span::styled(
+                                                "Opening LM Studio settings…",
+                                                Style::default()
+                                                    .fg(Color::Cyan)
+                                                    .add_modifier(Modifier::BOLD),
+                                            ))])
+                                            .block(
+                                                Block::default()
+                                                    .borders(Borders::ALL)
+                                                    .border_style(Style::default().fg(Color::Cyan))
+                                                    .title(" LM Studio Setup "),
+                                            )
+                                            .wrap(Wrap { trim: true }),
+                                            modal,
+                                        );
+                                    }));
+                                    match open_lmstudio_settings(&mut terminal).await {
+                                        Ok(s) if !s.is_empty() => {
+                                            session.state.transcript.push(format!(
+                                                "LM Studio configured: {}. Provider set to {target}.",
+                                                s.api_base_url
+                                            ));
+                                            session.state.status = Some(format!(
+                                                "Provider saved: {target}. Restart to apply."
+                                            ));
+                                        }
+                                        _ => {
+                                            session.state.status = Some(
+                                                "LM Studio setup cancelled. Provider not saved."
+                                                    .into(),
+                                            );
+                                            // Don't save the preference — no endpoint configured.
+                                            continue;
+                                        }
+                                    }
+                                } else {
+                                    session.state.transcript.push(format!(
+                                        "Provider set to {target}. Restart the TUI to apply."
+                                    ));
+                                    session.state.status = Some(format!(
+                                        "Provider saved: {target}. Restart to apply."
+                                    ));
+                                }
+                            } else {
+                                session.state.transcript.push(format!(
+                                    "Provider set to {target}. Restart the TUI to apply."
+                                ));
+                                session.state.status =
+                                    Some(format!("Provider saved: {target}. Restart to apply."));
+                            }
                         }
                         Ok(None) => {
                             session.state.status = Some("Provider selection cancelled.".into());

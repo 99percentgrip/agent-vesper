@@ -350,23 +350,47 @@ impl ModelCatalog for LmStudioFactory {
 
 impl ProviderSuperpowers for LmStudioFactory {
     fn superpowers(&self) -> Vec<SuperpowerDescriptor> {
-        vec![SuperpowerDescriptor {
-            id: BoundedString::new("lmstudio:model").expect("bounded"),
-            provider_id: self.id.clone(),
-            display_name: BoundedString::new("Model").expect("bounded"),
-            kind: SuperpowerKind::Choice,
-            scope: SuperpowerScope::Session,
-            default_value: SuperpowerValue::Choice {
-                value: BoundedString::new(&self.model).expect("bounded"),
+        vec![
+            SuperpowerDescriptor {
+                id: BoundedString::new("lmstudio:model").expect("bounded"),
+                provider_id: self.id.clone(),
+                display_name: BoundedString::new("Model").expect("bounded"),
+                kind: SuperpowerKind::Choice,
+                scope: SuperpowerScope::Session,
+                default_value: SuperpowerValue::Choice {
+                    value: BoundedString::new(&self.model).expect("bounded"),
+                },
+                allowed_values: vec![SuperpowerValue::Choice {
+                    value: BoundedString::new(&self.model).expect("bounded"),
+                }],
+                command_alias: Some(BoundedString::new("model").expect("bounded")),
+                help: Some(
+                    BoundedString::new("The model loaded on the LM Studio server.")
+                        .expect("bounded"),
+                ),
             },
-            allowed_values: vec![SuperpowerValue::Choice {
-                value: BoundedString::new(&self.model).expect("bounded"),
-            }],
-            command_alias: Some(BoundedString::new("model").expect("bounded")),
-            help: Some(
-                BoundedString::new("The model loaded on the LM Studio server.").expect("bounded"),
-            ),
-        }]
+            SuperpowerDescriptor {
+                id: BoundedString::new("lmstudio:reasoning").expect("bounded"),
+                provider_id: self.id.clone(),
+                display_name: BoundedString::new("Thinking").expect("bounded"),
+                kind: SuperpowerKind::Choice,
+                scope: SuperpowerScope::Session,
+                default_value: SuperpowerValue::Choice {
+                    value: BoundedString::new("disabled").expect("bounded"),
+                },
+                allowed_values: ["disabled", "enabled", "high"]
+                    .into_iter()
+                    .map(|v| SuperpowerValue::Choice {
+                        value: BoundedString::new(v).expect("bounded"),
+                    })
+                    .collect(),
+                command_alias: Some(BoundedString::new("thinking").expect("bounded")),
+                help: Some(
+                    BoundedString::new("Toggle reasoning/thinking mode for the loaded model.")
+                        .expect("bounded"),
+                ),
+            },
+        ]
     }
 }
 
