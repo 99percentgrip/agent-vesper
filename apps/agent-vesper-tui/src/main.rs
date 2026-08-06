@@ -893,6 +893,8 @@ async fn drive_loop(
             working_tree_lines: session.working_tree_lines.clone(),
             preferences: session.state.preferences.clone(),
             conversation_manual_scroll: session.state.conversation_manual_scroll,
+            reasoning_manual_scroll: session.state.reasoning_manual_scroll,
+            reasoning_panel_focused: session.state.reasoning_panel_focused,
             pending_permission: session
                 .pending_approval
                 .as_ref()
@@ -1094,37 +1096,91 @@ async fn drive_loop(
                 if session.command_matches.is_empty() =>
             {
                 let page = page_size_for_scroll(terminal.size().map(|s| s.height).unwrap_or(20));
-                let current_up = session.state.conversation_manual_scroll.unwrap_or(0);
-                match code {
-                    KeyCode::PageUp => {
-                        let next = current_up.saturating_add(page);
-                        session.state.conversation_manual_scroll = Some(next);
-                        session.state.status = Some(format!(
-                            "Scrolled up {next} lines from bottom. End = follow."
-                        ));
+                // Route to whichever scrollable panel is focused. Default =
+                // Conversation; Tab (handled below) toggles to Reasoning.
+                if session.state.reasoning_panel_focused {
+                    let current_up = session.state.reasoning_manual_scroll.unwrap_or(0);
+                    match code {
+                        KeyCode::PageUp => {
+                            let next = current_up.saturating_add(page);
+                            session.state.reasoning_manual_scroll = Some(next);
+                            session.state.status = Some(format!(
+                                "Reasoning: scrolled up {next} lines from bottom. End = follow."
+                            ));
+                        }
+                        KeyCode::PageDown => {
+                            let next_up = current_up.saturating_sub(page);
+                            session.state.reasoning_manual_scroll =
+                                (next_up > 0).then_some(next_up);
+                            session.state.status = if next_up > 0 {
+                                Some(format!(
+                                    "Reasoning: {next_up} lines from bottom. End = follow."
+                                ))
+                            } else {
+                                Some("Reasoning: following latest output.".into())
+                            };
+                        }
+                        KeyCode::Home => {
+                            session.state.reasoning_manual_scroll = Some(u16::MAX);
+                            session.state.status =
+                                Some("Reasoning: jumped to top. End = follow.".into());
+                        }
+                        KeyCode::End => {
+                            session.state.reasoning_manual_scroll = None;
+                            session.state.status =
+                                Some("Reasoning: following latest output.".into());
+                        }
+                        _ => {}
                     }
-                    KeyCode::PageDown => {
-                        let next_up = current_up.saturating_sub(page);
-                        session.state.conversation_manual_scroll = (next_up > 0).then_some(next_up);
-                        session.state.status = if next_up > 0 {
-                            Some(format!("{next_up} lines from bottom. End = follow."))
-                        } else {
-                            Some("Following latest output.".into())
-                        };
+                } else {
+                    let current_up = session.state.conversation_manual_scroll.unwrap_or(0);
+                    match code {
+                        KeyCode::PageUp => {
+                            let next = current_up.saturating_add(page);
+                            session.state.conversation_manual_scroll = Some(next);
+                            session.state.status = Some(format!(
+                                "Scrolled up {next} lines from bottom. End = follow."
+                            ));
+                        }
+                        KeyCode::PageDown => {
+                            let next_up = current_up.saturating_sub(page);
+                            session.state.conversation_manual_scroll =
+                                (next_up > 0).then_some(next_up);
+                            session.state.status = if next_up > 0 {
+                                Some(format!("{next_up} lines from bottom. End = follow."))
+                            } else {
+                                Some("Following latest output.".into())
+                            };
+                        }
+                        // Home jumps to the very top. We use u16::MAX as a
+                        // sentinel meaning "as far up as possible" — the renderer
+                        // clamps to `max_scroll`.
+                        KeyCode::Home => {
+                            session.state.conversation_manual_scroll = Some(u16::MAX);
+                            session.state.status = Some("Jumped to top. End = follow.".into());
+                        }
+                        KeyCode::End => {
+                            session.state.conversation_manual_scroll = None;
+                            session.state.status = Some("Following latest output.".into());
+                        }
+                        _ => {}
                     }
-                    // Home jumps to the very top. We use u16::MAX as a
-                    // sentinel meaning "as far up as possible" — the renderer
-                    // clamps to `max_scroll`.
-                    KeyCode::Home => {
-                        session.state.conversation_manual_scroll = Some(u16::MAX);
-                        session.state.status = Some("Jumped to top. End = follow.".into());
-                    }
-                    KeyCode::End => {
-                        session.state.conversation_manual_scroll = None;
-                        session.state.status = Some("Following latest output.".into());
-                    }
-                    _ => {}
                 }
+                continue;
+            }
+            // Tab with an EMPTY composer toggles between Conversation and
+            // Reasoning panel focus. With non-empty composer, Tab inserts a
+            // tab character into the prompt (composer default behavior).
+            KeyCode::Tab if session.command_matches.is_empty() && session.input.is_empty() => {
+                session.state.reasoning_panel_focused = !session.state.reasoning_panel_focused;
+                session.state.status = if session.state.reasoning_panel_focused {
+                    Some("Focused Reasoning panel. PgUp/PgDn/Home/End scroll it. Tab to switch back.".into())
+                } else {
+                    Some(
+                        "Focused Conversation panel. PgUp/PgDn/Home/End scroll it. Tab to switch."
+                            .into(),
+                    )
+                };
                 continue;
             }
             KeyCode::Char('p') if ctrl => {
@@ -9078,6 +9134,82 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("\n")
+    }
+
+    #[test]
+    fn cognition_engine_works_with_noop_extractor_and_local_hash_embedder() {
+        // PROOF: cognitive memory works end-to-end with the LM Studio-only
+        // path (NoOp extractor always errors → graceful raw-text fallback;
+        // LocalHashEmbedder produces deterministic vectors with no network).
+        // This is the configuration an LM Studio-only deployment uses when
+        // no Z.ai credential is present and no LmStudio settings exist.
+        // It must add a memory, recall it by exact match, and never require
+        // any provider credential.
+        use std::sync::Arc;
+        let tmp = std::env::temp_dir().join(format!(
+            "vesper-cognition-noop-test-{}.db",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let config = vesper_cognition::CognitiveConfig::default();
+        let ports = vesper_cognition::CognitionPorts {
+            embedder: Arc::new(vesper_cognition::LocalHashEmbedder::new(
+                config.embedding_dim,
+            )),
+            extractor: Arc::new(NoOpExtractionAdapter),
+            entity_nlp: Arc::new(ZaiEntityExtractor),
+        };
+        let engine = vesper_cognition::open(&tmp, ports, config).expect("engine opens");
+        let scope = vesper_cognition::Scope {
+            user_id: Some("test-user".into()),
+            ..Default::default()
+        };
+        // Add a raw-text memory (NoOp extractor → infer=false fallback).
+        let msg = vesper_cognition::Message::user(
+            "The user's name is Alex and they work on Agent Vesper.",
+        );
+        let req = vesper_cognition::AddRequest {
+            messages: std::slice::from_ref(&msg),
+            scope: &scope,
+            extras: None,
+            expiration_date: None,
+            infer: false,
+            custom_instructions: None,
+            observation_date: None,
+        };
+        let events = engine.add(req).expect("add must succeed");
+        assert!(
+            !events.is_empty(),
+            "the engine must persist the memory even with NoOp extractor"
+        );
+        // Search for it — must surface the stored memory.
+        let req = vesper_cognition::SearchRequest {
+            query: "Who is the user?",
+            scope: &scope,
+            filters: None,
+            top_k: 5,
+            threshold: 0.0,
+            explain: false,
+            show_expired: false,
+        };
+        let hits = engine.search(req).expect("search must succeed");
+        assert!(
+            !hits.is_empty(),
+            "the engine must recall the memory just stored; got 0 hits"
+        );
+        let combined: String = hits
+            .iter()
+            .map(|h| h.memory.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(
+            combined.to_lowercase().contains("alex")
+                || combined.to_lowercase().contains("agent vesper"),
+            "the recalled memory must mention the stored facts; got: {combined}"
+        );
+        let _ = std::fs::remove_file(&tmp);
     }
 
     #[test]

@@ -134,6 +134,11 @@ pub struct SessionState {
     /// `Paragraph::scroll` call uses. Reset to `None` by `End`, a new prompt
     /// submission, or PageDown/ScrollDown reaching the bottom.
     pub conversation_manual_scroll: Option<u16>,
+    /// Manual reasoning-panel scroll (mirrors `conversation_manual_scroll`).
+    pub reasoning_manual_scroll: Option<u16>,
+    /// Which panel receives PageUp/PgDn/Home/End: `false` = Conversation,
+    /// `true` = Reasoning. Toggled by Tab when the composer is empty.
+    pub reasoning_panel_focused: bool,
     /// Currently focused action button in the tool-permission modal. Defaults
     /// to `Allow` (the conservative pick); Tab/Left/Right toggles between
     /// `Deny` and `Allow`. Mirrored into the renderer's
@@ -361,6 +366,8 @@ fn apply_outcome(
         pending_lmstudio_settings,
         pending_provider_switch,
         conversation_manual_scroll: _,
+        reasoning_manual_scroll: _,
+        reasoning_panel_focused: _,
         permission_modal_focus: _,
     } = state;
     match outcome {

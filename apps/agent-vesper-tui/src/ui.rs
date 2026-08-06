@@ -115,6 +115,16 @@ pub struct ViewModel {
     /// `position = max_scroll.saturating_sub(n)` — the same value passed to
     /// `Paragraph::scroll` — so the thumb position is always truthful.
     pub conversation_manual_scroll: Option<u16>,
+    /// Manual reasoning-panel scroll expressed as **lines up from the
+    /// bottom**, mirroring [`Self::conversation_manual_scroll`]. `None` =
+    /// auto-follow the latest thinking; `Some(n)` = `n` lines above the
+    /// newest reasoning line.
+    pub reasoning_manual_scroll: Option<u16>,
+    /// Which scrollable panel receives PageUp/PageDown/Home/End events.
+    /// `false` (default) = Conversation panel; `true` = Reasoning panel.
+    /// Toggled by the user pressing Tab when the composer is empty (so Tab
+    /// inside a non-empty prompt still composes a tab character).
+    pub reasoning_panel_focused: bool,
     /// Pending tool-permission modal. `Some` whenever the agent loop has
     /// emitted a one-time approval request that has not been resolved; the
     /// renderer overlays a centered `Clear` + bordered dialog over the
@@ -325,18 +335,46 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
         } else {
             crate::markdown::render_markdown(&model.reasoning)
         };
-        frame.render_widget(
-            Paragraph::new(reasoning_lines)
-                .wrap(Wrap { trim: false })
-                .style(Style::default().fg(Color::Rgb(159, 122, 234)))
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .border_type(BorderType::Rounded)
-                        .border_style(Style::default().fg(CHROME_BORDER))
-                        .title(" Reasoning "),
-                ),
-            conversation_chunks[1],
+        let reasoning_area = conversation_chunks[1];
+        let title = if model.reasoning_panel_focused {
+            " Reasoning (focused — Tab to switch, PgUp/PgDn/Home/End scroll) "
+        } else {
+            " Reasoning "
+        };
+        let paragraph = Paragraph::new(reasoning_lines.clone())
+            .wrap(Wrap { trim: false })
+            .style(Style::default().fg(Color::Rgb(159, 122, 234)))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .border_style(if model.reasoning_panel_focused {
+                        Style::default().fg(Color::Rgb(159, 122, 234))
+                    } else {
+                        Style::default().fg(CHROME_BORDER)
+                    })
+                    .title(title),
+            );
+        let visible_lines = usize::from(reasoning_area.height.saturating_sub(2));
+        let inner_width = usize::from(reasoning_area.width.saturating_sub(2));
+        let wrapped_lines = estimated_wrapped_lines(&reasoning_lines, inner_width);
+        let max_scroll = wrapped_lines
+            .saturating_sub(visible_lines)
+            .min(u16::MAX as usize) as u16;
+        let manual = model.reasoning_manual_scroll.unwrap_or(0).min(max_scroll);
+        let effective_scroll = max_scroll.saturating_sub(manual);
+        frame.render_widget(paragraph.scroll((effective_scroll, 0)), reasoning_area);
+
+        // Vertical scrollbar mirroring the Conversation panel's pattern.
+        let mut scrollbar_state = ScrollbarState::new(wrapped_lines.min(u16::MAX as usize))
+            .position(usize::from(effective_scroll))
+            .viewport_content_length(visible_lines);
+        frame.render_stateful_widget(
+            Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .thumb_style(Style::default().fg(Color::Rgb(159, 122, 234)))
+                .track_style(Style::default().fg(Color::Rgb(60, 50, 85))),
+            reasoning_area,
+            &mut scrollbar_state,
         );
     }
     if activity_height > 0 {
