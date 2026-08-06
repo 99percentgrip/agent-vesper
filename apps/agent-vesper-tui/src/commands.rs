@@ -217,6 +217,8 @@ pub enum UiAction {
     OpenAuth,
     /// Open the LM Studio provider settings screen (adjust LAN/localhost URL + model).
     OpenLmStudioSettings,
+    /// Open the provider selection modal (arrow-key picker).
+    OpenProviderSwitcher,
     ToggleReasoning,
     ToggleTasks,
     ToggleSidebar,
@@ -680,6 +682,7 @@ impl CommandRegistry {
             "settings" => CommandOutcome::Ui(UiAction::OpenSettings),
             "auth" => CommandOutcome::Ui(UiAction::OpenAuth),
             "lmstudio" => CommandOutcome::Ui(UiAction::OpenLmStudioSettings),
+            "provider" => CommandOutcome::Ui(UiAction::OpenProviderSwitcher),
             "reasoning-panel" | "toggle-thinking" => CommandOutcome::Ui(UiAction::ToggleReasoning),
             "statusline" => CommandOutcome::Ui(UiAction::ToggleSidebar),
             "theme" => resolve_session_choice(

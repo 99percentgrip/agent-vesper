@@ -1157,56 +1157,6 @@ async fn drive_loop(
                     CommandIntent::Prompt(text) => Some(text.clone()),
                     _ => None,
                 };
-                // /provider switcher: list or save the provider preference.
-                // Production-grade: persists the choice; restart applies it
-                // (many tools work this way for provider/engine switches).
-                if session.input.trim_start().starts_with("/provider") {
-                    let parts: Vec<&str> = session.input.trim().splitn(2, ' ').collect();
-                    if parts.len() == 1 || parts[1].trim().is_empty() {
-                        let providers = registry.provider_ids().await;
-                        let names: Vec<&str> = providers.iter().map(|p| p.as_str()).collect();
-                        session.state.transcript.push(format!(
-                            "Available providers: {} (current: {})",
-                            names.join(", "),
-                            provider_id.as_str()
-                        ));
-                        session.state.status = Some(format!(
-                            "Current: {}. Usage: /provider <name>",
-                            provider_id.as_str()
-                        ));
-                    } else {
-                        let target = parts[1].trim();
-                        let target_id = match ProviderId::new(target) {
-                            Ok(id) => id,
-                            Err(_) => {
-                                session.state.status =
-                                    Some(format!("Invalid provider id: {target}"));
-                                session.input.clear();
-                                session.command_matches.clear();
-                                continue;
-                            }
-                        };
-                        if registry.contains(&target_id).await {
-                            match save_provider_preference(target) {
-                                Ok(()) => {
-                                    session.state.transcript.push(format!(
-                                        "Provider set to {target}. Restart the TUI to apply."
-                                    ));
-                                    session.state.status = Some(format!(
-                                        "Provider saved: {target}. Restart to apply."
-                                    ));
-                                }
-                                Err(e) => session.state.status = Some(format!("Save failed: {e}")),
-                            }
-                        } else {
-                            session.state.status = Some(format!("Unknown provider: {target}"));
-                        }
-                    }
-                    session.input.clear();
-                    session.command_matches.clear();
-                    session.command_selected = 0;
-                    continue;
-                }
                 // Single integration point with the pure dispatch surface:
                 // resolve the intent and mutate session state in place. The
                 // Quit decision short-circuits the loop.
@@ -1326,6 +1276,25 @@ async fn drive_loop(
                         }
                         Err(error) => {
                             session.state.status = Some(format!("lmstudio: {error}"));
+                        }
+                    }
+                }
+                // Provider switcher modal (arrow-key picker).
+                if session.state.pending_provider_switch {
+                    session.state.pending_provider_switch = false;
+                    match open_provider_switcher(&mut terminal, registry, provider_id).await {
+                        Ok(Some(target)) => {
+                            session.state.transcript.push(format!(
+                                "Provider set to {target}. Restart the TUI to apply."
+                            ));
+                            session.state.status =
+                                Some(format!("Provider saved: {target}. Restart to apply."));
+                        }
+                        Ok(None) => {
+                            session.state.status = Some("Provider selection cancelled.".into());
+                        }
+                        Err(error) => {
+                            session.state.status = Some(format!("provider: {error}"));
                         }
                     }
                 }
@@ -1545,6 +1514,91 @@ async fn drive_loop(
 ///
 /// Returns the settings that are now in effect (the saved ones, or the
 /// pre-existing ones if the user cancelled).
+/// Opens a provider selection modal. Lists registered providers with
+/// arrow-key navigation; Enter saves the choice; Esc cancels.
+/// Mirrors the `ensure_provider_authenticated` modal pattern.
+async fn open_provider_switcher(
+    terminal: &mut Terminal<Backend>,
+    registry: &vesper_runtime::ProviderRegistry,
+    current: &ProviderId,
+) -> Result<Option<String>, String> {
+    use ratatui::widgets::{List, ListItem, ListState};
+
+    let providers = registry.provider_ids().await;
+    if providers.is_empty() {
+        return Err("No providers are registered.".into());
+    }
+    let current_idx = providers.iter().position(|p| p == current).unwrap_or(0);
+    let mut selected = current_idx;
+
+    loop {
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                frame.render_widget(ratatui::widgets::Clear, area);
+                let modal = ratatui::layout::Rect {
+                    x: area.x + area.width.saturating_sub(50) / 2,
+                    y: area.y + area.height.saturating_sub(9) / 2,
+                    width: area.width.min(50),
+                    height: area.height.min(9),
+                };
+                let block = ratatui::widgets::Block::default()
+                    .borders(ratatui::widgets::Borders::ALL)
+                    .border_style(ratatui::style::Style::default().fg(ratatui::style::Color::Cyan))
+                    .title(ratatui::text::Span::styled(
+                        " Select Provider ",
+                        ratatui::style::Style::default()
+                            .fg(ratatui::style::Color::White)
+                            .add_modifier(ratatui::style::Modifier::BOLD),
+                    ));
+                let items: Vec<ListItem> = providers
+                    .iter()
+                    .map(|p| {
+                        let label = if p == current {
+                            format!("  {} (current)", p.as_str())
+                        } else {
+                            format!("  {}", p.as_str())
+                        };
+                        ListItem::new(label)
+                    })
+                    .collect();
+                let mut list_state = ListState::default().with_selected(Some(selected));
+                let list = List::new(items)
+                    .block(block)
+                    .highlight_symbol("▶")
+                    .highlight_style(
+                        ratatui::style::Style::default()
+                            .bg(ratatui::style::Color::Rgb(17, 49, 75))
+                            .add_modifier(ratatui::style::Modifier::BOLD),
+                    );
+                frame.render_widget(ratatui::widgets::Clear, modal);
+                frame.render_stateful_widget(list, modal, &mut list_state);
+            })
+            .map_err(|e| format!("provider switcher redraw: {e}"))?;
+
+        let event = event::read().map_err(|e| format!("provider switcher input: {e}"))?;
+        if let Event::Key(KeyEvent {
+            code,
+            kind: KeyEventKind::Press,
+            ..
+        }) = event
+        {
+            match code {
+                KeyCode::Char('c') if code == KeyCode::Char('c') => return Ok(None),
+                KeyCode::Up => selected = selected.saturating_sub(1),
+                KeyCode::Down => selected = (selected + 1).min(providers.len() - 1),
+                KeyCode::Enter => {
+                    let target = providers[selected].as_str().to_string();
+                    save_provider_preference(&target).map_err(|e| format!("Save failed: {e}"))?;
+                    return Ok(Some(target));
+                }
+                KeyCode::Esc => return Ok(None),
+                _ => {}
+            }
+        }
+    }
+}
+
 async fn open_lmstudio_settings(
     terminal: &mut Terminal<Backend>,
 ) -> Result<LmStudioSettings, String> {
