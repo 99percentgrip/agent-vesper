@@ -20,3 +20,6 @@ Thumbs.db
 # These churn every session and are owned by the running agent, not the repo.
 .agent-vesper/
 .glm-acp/
+
+# Screenshot cache from the ACP image-share protocol
+.glm-acp-images/
