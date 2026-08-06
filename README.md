@@ -47,7 +47,7 @@ curl -fsSL https://github.com/99percentgrip/agent-vesper/raw/main/scripts/instal
 Or pin a version:
 
 ```sh
-AGENT_VESPER_VERSION=0.20.3 sh scripts/install.sh
+AGENT_VESPER_VERSION=0.20.4 sh scripts/install.sh
 ```
 
 ### Windows (PowerShell)
