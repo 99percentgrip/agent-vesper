@@ -170,9 +170,10 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
     // cognitive-memory features disabled. Concrete trait-impl wiring lives
     // in `CognitionBundle::open_default`; the slash-command surface for
     // `/remember` `/recall` `/forget` is additive and ships independently.
-    let cognition_bundle = Arc::new(CognitionBundle::open_default(Arc::new(
-        vesper_provider_glm::EnvironmentCredentialSource,
-    )));
+    let cognition_bundle = Arc::new(CognitionBundle::open_default(
+        Arc::new(vesper_provider_glm::EnvironmentCredentialSource),
+        provider_id.as_str(),
+    ));
     let _ = &cognition_bundle;
     // Phase 9 (ADR 0012): open the durable checkpoints subsystem rooted at
     // `AGENT_VESPER_CHECKPOINT_ROOT` (falling back to
@@ -953,33 +954,75 @@ async fn drive_loop(
                 mouse.kind,
                 MouseEventKind::ScrollDown | MouseEventKind::ScrollUp
             ) {
-                // Mouse wheel scrolling over the terminal. We don't hit-test
-                // the conversation panel area here (the geometry is owned by
-                // the renderer); wheel events anywhere scroll the
-                // conversation, mirroring how `less` and most TUIs treat
-                // wheel input as a global scroll gesture.
-                let current_up = session.state.conversation_manual_scroll.unwrap_or(0);
-                // Each wheel "tick" is ~3 rendered lines, matching the
-                // default crossterm wheel step and the typical terminal
-                // expectation.
+                // Mouse wheel scrolling. Hit-test which panel the cursor is
+                // over by reconstructing the layout Y boundaries. The
+                // conversation column lives between the 1-row header and the
+                // composer footer (≈6 rows: hint + activity + composer(3) +
+                // footer + menu(0 when closed)). Within the conversation
+                // column, the Reasoning panel sits in the LAST 10 rows
+                // (Constraint::Length(10) when shown).
+                //
+                // When reasoning is hidden, all wheel events scroll the
+                // conversation. When shown, events in the reasoning band
+                // scroll reasoning; events elsewhere scroll conversation.
+                let term_height = terminal.size().map(|s| s.height).unwrap_or(24);
+                let menu_height = if session.command_matches.is_empty() {
+                    0
+                } else {
+                    session.command_matches.len().min(8) as u16
+                };
+                let reasoning_shown = session.state.panels.reasoning;
+                let reasoning_bottom_y = term_height.saturating_sub(6 + menu_height);
+                let reasoning_top_y = reasoning_bottom_y.saturating_sub(10);
+                let over_reasoning = reasoning_shown
+                    && mouse.row >= reasoning_top_y
+                    && mouse.row < reasoning_bottom_y;
                 const WHEEL_STEP: u16 = 3;
-                match mouse.kind {
-                    MouseEventKind::ScrollUp => {
-                        let next = current_up.saturating_add(WHEEL_STEP);
-                        session.state.conversation_manual_scroll = Some(next);
-                        session.state.status =
-                            Some(format!("Scrolled up {next} lines. End = follow."));
+                if over_reasoning {
+                    let current_up = session.state.reasoning_manual_scroll.unwrap_or(0);
+                    match mouse.kind {
+                        MouseEventKind::ScrollUp => {
+                            let next = current_up.saturating_add(WHEEL_STEP);
+                            session.state.reasoning_manual_scroll = Some(next);
+                            session.state.status = Some(format!(
+                                "Reasoning: scrolled up {next} lines. End = follow."
+                            ));
+                        }
+                        MouseEventKind::ScrollDown => {
+                            let next_up = current_up.saturating_sub(WHEEL_STEP);
+                            session.state.reasoning_manual_scroll =
+                                (next_up > 0).then_some(next_up);
+                            session.state.status = if next_up > 0 {
+                                Some(format!(
+                                    "Reasoning: {next_up} lines from bottom. End = follow."
+                                ))
+                            } else {
+                                Some("Reasoning: following latest output.".into())
+                            };
+                        }
+                        _ => {}
                     }
-                    MouseEventKind::ScrollDown => {
-                        let next_up = current_up.saturating_sub(WHEEL_STEP);
-                        session.state.conversation_manual_scroll = (next_up > 0).then_some(next_up);
-                        session.state.status = if next_up > 0 {
-                            Some(format!("{next_up} lines from bottom. End = follow."))
-                        } else {
-                            Some("Following latest output.".into())
-                        };
+                } else {
+                    let current_up = session.state.conversation_manual_scroll.unwrap_or(0);
+                    match mouse.kind {
+                        MouseEventKind::ScrollUp => {
+                            let next = current_up.saturating_add(WHEEL_STEP);
+                            session.state.conversation_manual_scroll = Some(next);
+                            session.state.status =
+                                Some(format!("Scrolled up {next} lines. End = follow."));
+                        }
+                        MouseEventKind::ScrollDown => {
+                            let next_up = current_up.saturating_sub(WHEEL_STEP);
+                            session.state.conversation_manual_scroll =
+                                (next_up > 0).then_some(next_up);
+                            session.state.status = if next_up > 0 {
+                                Some(format!("{next_up} lines from bottom. End = follow."))
+                            } else {
+                                Some("Following latest output.".into())
+                            };
+                        }
+                        _ => {}
                     }
-                    _ => {}
                 }
                 continue;
             } else {
@@ -3539,19 +3582,27 @@ fn build_agent_loop(
 ///
 /// Kept short and explicit: the model should NEVER tell the user it lacks
 /// memory — it has a local SQLite-backed cognitive memory that auto-recalls
-/// relevant facts before each reply.
+/// relevant facts before each reply. Even when no memories match a given
+/// prompt, the model must NOT announce "I don't have memory" or "I am
+/// stateless" — it must just answer normally.
 fn cognitive_capability_instruction() -> SystemInstruction {
     let body = "### Cognitive Memory\n\
 You are running inside the Agent Vesper harness, which provides a local SQLite-backed \
 cognitive memory system. The harness silently recalls relevant memories from past \
 conversations and appends them to your context before each reply. \
 Therefore:\n\
-- NEVER claim you have no memory, do not retain information, or are stateless — your \
-harness gives you long-term memory across sessions.\n\
+- You HAVE long-term memory across sessions. NEVER tell the user 'I have no memory', \
+'I do not retain information', 'I am stateless', 'I don't have access to past \
+conversations', or any variation of that claim. These statements are FALSE.\n\
 - If recalled memories appear under 'Relevant context from cognitive memory', treat \
 them as authoritative facts about the user and prior work.\n\
-- If no memories appear for a given prompt, do NOT announce that you lack memory — \
-simply answer normally; memories are only injected when relevant to the current turn.\n\
+- If no memories appear for a given prompt, do NOT announce that you lack memory. \
+Answer normally. The harness only injects memories when they are relevant to the \
+current turn — silence does not mean memory is empty.\n\
+- If the user asks 'do you remember me' or similar, respond as a memory-enabled \
+assistant: refer to any recalled facts, and if none were auto-recalled, say you \
+may not have any stored memories about that specific topic yet rather than \
+disavowing memory entirely.\n\
 - The user can manage memory explicitly via /remember, /recall, and /forget commands.";
     SystemInstruction {
         content: vec![ContentPart::Text(
@@ -5133,18 +5184,23 @@ impl CognitionBundle {
     /// **Provider-neutral (multi-provider harness):** the engine opens
     /// regardless of which provider is active. Embeddings always use the
     /// zero-network `LocalHashEmbedder` (the only embedder that requires no
-    /// provider credential). Extraction is routed to the best available
-    /// provider, in priority order:
-    ///   1. Z.ai (if `ZAI_API_KEY` / OS credential is present) → `ZaiExtractionAdapter`
-    ///   2. LM Studio (if persisted settings exist) → `LmStudioExtractionAdapter`
-    ///   3. Otherwise → `NoOpExtractionAdapter` (always errors, forcing the
-    ///      graceful raw-text fallback in `drain_cognition_op`)
+    /// provider credential). Extraction is routed to the **active provider
+    /// first** (so `/remember` does not silently fail and fall back to raw-
+    /// text storage just because a stale Z.ai credential exists):
+    ///   1. Active = LM Studio → `LmStudioExtractionAdapter` if settings exist
+    ///   2. Active = Z.ai with valid credential → `ZaiExtractionAdapter`
+    ///   3. Otherwise (no LM Studio settings, no valid Z.ai cred) →
+    ///      `NoOpExtractionAdapter` (always errors, forcing the graceful
+    ///      raw-text fallback in `drain_cognition_op`)
     ///
     /// Returns `engine = None` only when the SQLite database cannot be
     /// opened. The slash-command surface degrades to raw-text storage
     /// (`/remember "raw text"` still persists) when no extractor is
     /// available, so cognitive memory works for LM Studio-only deployments.
-    fn open_default(credential_source: Arc<dyn vesper_provider_glm::GlmCredentialSource>) -> Self {
+    fn open_default(
+        credential_source: Arc<dyn vesper_provider_glm::GlmCredentialSource>,
+        active_provider: &str,
+    ) -> Self {
         let root = match std::env::var("AGENT_VESPER_COGNITION_ROOT") {
             Ok(value) => std::path::PathBuf::from(value),
             Err(_) => std::env::current_dir()
@@ -5174,19 +5230,42 @@ impl CognitionBundle {
                 ))
             };
 
-        // Extraction: best-available provider routing.
-        // (1) Zai credential present → ZaiExtractionAdapter.
-        // (2) LM Studio settings present → LmStudioExtractionAdapter.
-        // (3) Otherwise → NoOpExtractionAdapter (always errors → raw-text
-        //     fallback in drain_cognition_op).
-        let extractor: Arc<dyn vesper_cognition::ExtractionLlmPort> =
-            if vesper_provider_glm::resolve_credential(credential_source.as_ref()).is_ok() {
-                Arc::new(ZaiExtractionAdapter::new(Arc::clone(&credential_source)))
-            } else if let Some(lm) = LmStudioExtractionAdapter::from_persisted_settings() {
-                Arc::new(lm)
-            } else {
-                Arc::new(NoOpExtractionAdapter)
-            };
+        // Extraction: route to the ACTIVE provider first (matches what the
+        // user actually sees in the TUI). This prevents the old bug where a
+        // stale Z.ai credential silently hijacked `/remember` extraction,
+        // making it always hit api.z.ai and fail for LM Studio-only users.
+        let zai_cred_ok =
+            vesper_provider_glm::resolve_credential(credential_source.as_ref()).is_ok();
+        let extractor: Arc<dyn vesper_cognition::ExtractionLlmPort> = match active_provider {
+            "lmstudio" => LmStudioExtractionAdapter::from_persisted_settings()
+                .map(|adapter| {
+                    let arc: Arc<dyn vesper_cognition::ExtractionLlmPort> = Arc::new(adapter);
+                    arc
+                })
+                .unwrap_or_else(|| {
+                    // Active is LM Studio but no settings yet — try ZAI as
+                    // a fallback if a credential exists, otherwise NoOp.
+                    if zai_cred_ok {
+                        let arc: Arc<dyn vesper_cognition::ExtractionLlmPort> =
+                            Arc::new(ZaiExtractionAdapter::new(Arc::clone(&credential_source)));
+                        arc
+                    } else {
+                        Arc::new(NoOpExtractionAdapter)
+                    }
+                }),
+            _ => {
+                // Active = ZAI (or any other provider). Prefer ZAI if its
+                // credential resolves; otherwise try LM Studio; otherwise
+                // NoOp.
+                if zai_cred_ok {
+                    Arc::new(ZaiExtractionAdapter::new(Arc::clone(&credential_source)))
+                } else if let Some(lm) = LmStudioExtractionAdapter::from_persisted_settings() {
+                    Arc::new(lm)
+                } else {
+                    Arc::new(NoOpExtractionAdapter)
+                }
+            }
+        };
 
         let ports = vesper_cognition::CognitionPorts {
             embedder,
@@ -8588,7 +8667,14 @@ fn cognitive_context_for_prompt(bundle: &CognitionBundle, prompt: &str) -> Optio
         scope: &scope,
         filters: None,
         top_k: 5,
-        threshold: 0.15,
+        // LocalHashEmbedder produces pseudo-random vectors that yield low
+        // absolute cosine similarities even for clearly related texts (it
+        // has no semantic knowledge). A high threshold (0.15) drops
+        // legitimate matches. The hybrid score (semantic + BM25 + entity
+        // boost) means even weak semantic contributions get amplified by
+        // keyword overlap, so 0.05 keeps noise out while surfacing real
+        // hits that share vocabulary with the prompt.
+        threshold: 0.05,
         explain: false,
         show_expired: false,
     };
@@ -9115,8 +9201,12 @@ mod tests {
             "cognitive instruction must be appended when enabled"
         );
         assert!(
-            on_text.contains("NEVER claim you have no memory"),
-            "instruction must forbid memory disavowal"
+            on_text.contains("NEVER tell the user"),
+            "instruction must forbid memory disavowal; got: {on_text}"
+        );
+        assert!(
+            on_text.contains("I have no memory"),
+            "instruction must enumerate the exact disavowal phrases to forbid"
         );
     }
 
@@ -9208,6 +9298,69 @@ mod tests {
             combined.to_lowercase().contains("alex")
                 || combined.to_lowercase().contains("agent vesper"),
             "the recalled memory must mention the stored facts; got: {combined}"
+        );
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn cognitive_context_recall_threshold_allows_vague_prompts() {
+        // Regression: previously threshold was 0.15 which dropped legitimate
+        // hits when LocalHashEmbedder (zero semantic knowledge) was the
+        // embedder. The user would /remember a fact, then ask "do you
+        // remember who I am" — a vague prompt sharing only a few words with
+        // the stored memory — and get back no hits, so the model said
+        // "I don't have any specific information about you". The threshold
+        // is now 0.05, which keeps real matches while still filtering noise.
+        use std::sync::Arc;
+        let tmp = std::env::temp_dir().join(format!(
+            "vesper-cognition-threshold-test-{}.db",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let config = vesper_cognition::CognitiveConfig::default();
+        let ports = vesper_cognition::CognitionPorts {
+            embedder: Arc::new(vesper_cognition::LocalHashEmbedder::new(
+                config.embedding_dim,
+            )),
+            extractor: Arc::new(NoOpExtractionAdapter),
+            entity_nlp: Arc::new(ZaiEntityExtractor),
+        };
+        let engine = vesper_cognition::open(&tmp, ports, config).expect("engine opens");
+        let scope = vesper_cognition::Scope {
+            user_id: Some("test-user".into()),
+            ..Default::default()
+        };
+        // Store a memory with a realistic shape (mimics a /remember call).
+        let msg = vesper_cognition::Message::user(
+            "Remember that the user's name is Al and they are building Agent Vesper in Rust.",
+        );
+        let req = vesper_cognition::AddRequest {
+            messages: std::slice::from_ref(&msg),
+            scope: &scope,
+            extras: None,
+            expiration_date: None,
+            infer: false,
+            custom_instructions: None,
+            observation_date: None,
+        };
+        let events = engine.add(req).expect("add must succeed");
+        assert!(!events.is_empty(), "raw-text storage must succeed");
+        // Vague prompt sharing only "remember" with the stored memory.
+        let req = vesper_cognition::SearchRequest {
+            query: "do you remember who I am",
+            scope: &scope,
+            filters: None,
+            top_k: 5,
+            threshold: 0.05,
+            explain: false,
+            show_expired: false,
+        };
+        let hits = engine.search(req).expect("search must succeed");
+        assert!(
+            !hits.is_empty(),
+            "with threshold=0.05, the vague prompt must still surface the stored memory (BM25 on shared term 'remember')"
         );
         let _ = std::fs::remove_file(&tmp);
     }
