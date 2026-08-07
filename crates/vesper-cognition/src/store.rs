@@ -606,6 +606,24 @@ impl CognitiveStore {
 
     // ----- history -----------------------------------------------------
 
+    /// Returns the embedding dimension of the first stored memory (by
+    /// `created_at ASC`), or `None` if no memories are stored. Used by the
+    /// composition boundary to detect when the active embedder swapped and
+    /// existing embeddings need migration.
+    pub fn first_stored_embedding_dimension(&self) -> Result<Option<usize>> {
+        let conn = self.lock();
+        let mut stmt =
+            conn.prepare("SELECT embedding FROM memories ORDER BY created_at ASC LIMIT 1")?;
+        let mut rows = stmt.query([])?;
+        if let Some(row) = rows.next()? {
+            let blob: Vec<u8> = row.get(0)?;
+            let dim = blob.len() / std::mem::size_of::<f32>();
+            Ok(if dim == 0 { None } else { Some(dim) })
+        } else {
+            Ok(None)
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn add_history(
         &self,

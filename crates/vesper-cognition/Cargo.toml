@@ -22,8 +22,8 @@ md-5           = { workspace = true }
 regex          = { version = "1", default-features = false, features = ["std", "unicode-perl"] }
 rusqlite       = { workspace = true }
 rust-stemmers  = { workspace = true }
-vesper-domain  = { path = "../vesper-domain",   version = "=0.20.10" }
-vesper-security = { path = "../vesper-security", version = "=0.20.10" }
+vesper-domain  = { path = "../vesper-domain",   version = "=0.20.11" }
+vesper-security = { path = "../vesper-security", version = "=0.20.11" }
 
 [dev-dependencies]
 tempfile = { workspace = true }

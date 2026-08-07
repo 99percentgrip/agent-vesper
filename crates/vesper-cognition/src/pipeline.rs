@@ -602,6 +602,54 @@ impl CognitiveMemory {
         self.store.history(memory_id)
     }
 
+    /// Returns the embedding dimension of the first stored memory, or `None`
+    /// if no memories are stored. Used by the composition boundary to detect
+    /// embedder swaps (e.g. switching from `LocalHashEmbedder` to a neural
+    /// embedder) so existing embeddings can be migrated.
+    pub fn stored_embedding_dimension(&self) -> Result<Option<usize>> {
+        self.store.first_stored_embedding_dimension()
+    }
+
+    /// Re-embeds every stored memory using the currently-wired embedder.
+    /// Returns the number of memories re-embedded. Used after an embedder
+    /// swap (e.g. `LocalHashEmbedder` → `LmStudioEmbedder`) so cosine
+    /// similarity continues to work across the boundary.
+    ///
+    /// Reads each memory's `data` text, embeds it, and writes the new vector
+    /// back. The hash + lemmatized text are recomputed too so FTS5 stays
+    /// consistent. No history rows are added (this is a structural migration,
+    /// not a user-initiated edit).
+    pub fn reembed_all(&self) -> Result<usize> {
+        // No scope filter — re-embed every memory regardless of owner.
+        let scope = Scope {
+            user_id: None,
+            agent_id: None,
+            run_id: None,
+        };
+        let all = self.store.list_memories(&scope, None, 10_000, false)?;
+        let now = chrono::Utc::now().to_rfc3339();
+        let mut count = 0;
+        for record in all {
+            let new_embedding = self
+                .ports
+                .embedder
+                .embed(&record.data, EmbedAction::Update)?;
+            let new_lemmatized = lemmatize_for_bm25(&record.data);
+            let new_hash = md5_hex(&record.data);
+            self.store.update_memory_text(
+                &record.id,
+                &record.data,
+                &new_lemmatized,
+                &new_hash,
+                &new_embedding,
+                &now,
+                None,
+            )?;
+            count += 1;
+        }
+        Ok(count)
+    }
+
     /// Procedural-memory compaction. Mirrors `_create_procedural_memory`.
     pub fn add_procedural(
         &self,

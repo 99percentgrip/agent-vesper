@@ -5212,23 +5212,56 @@ impl CognitionBundle {
         let db_path = root.join("cognition.db");
         let root_display = root.display().to_string();
 
-        let config = vesper_cognition::CognitiveConfig::default();
-
-        // Embeddings: always LocalHashEmbedder (zero-network). Neural
-        // embedding via BigModel CN is opt-in only when an explicit env var
-        // AND a Zai credential are present.
-        let embedder: Arc<dyn vesper_cognition::EmbeddingPort> =
-            if std::env::var("AGENT_VESPER_COGNITION_EMBEDDING_API").as_deref() == Ok("bigmodel")
-                && vesper_provider_glm::resolve_credential(credential_source.as_ref()).is_ok()
+        let config = if active_provider == "lmstudio"
+            && LmStudioEmbedder::from_persisted_settings().is_some()
+        {
+            // Probe LM Studio's embedding endpoint to learn the model's true
+            // dimension. Fall back to the default 1024 if the probe fails
+            // (server offline at startup) — the embedder itself will keep
+            // trying on first use.
+            let mut cfg = vesper_cognition::CognitiveConfig::default();
+            if let Some(adapter) = LmStudioEmbedder::from_persisted_settings()
+                && let Ok(dim) = adapter.probe_dimension()
             {
-                Arc::new(BigModelEmbeddingAdapter::new(Arc::clone(
-                    &credential_source,
-                )))
-            } else {
-                Arc::new(vesper_cognition::LocalHashEmbedder::new(
+                cfg.embedding_dim = dim;
+            }
+            cfg
+        } else {
+            vesper_cognition::CognitiveConfig::default()
+        };
+
+        // Embedder selection — provider-routed (true neural search when
+        // possible, zero-network hash fallback otherwise):
+        //   - Active = LM Studio + settings exist → LmStudioEmbedder (REAL
+        //     neural embeddings via /v1/embeddings). True semantic cosine:
+        //     "do you remember me" ↔ "user's name is Alex" matches.
+        //   - Explicit bigmodel override + ZAI cred → BigModelEmbeddingAdapter.
+        //   - Otherwise → LocalHashEmbedder (bag-of-words, zero network).
+        let embedder: Arc<dyn vesper_cognition::EmbeddingPort> = match active_provider {
+            "lmstudio" => match LmStudioEmbedder::from_persisted_settings() {
+                Some(adapter) => {
+                    let arc: Arc<dyn vesper_cognition::EmbeddingPort> = Arc::new(adapter);
+                    arc
+                }
+                None => Arc::new(vesper_cognition::LocalHashEmbedder::new(
                     config.embedding_dim,
-                ))
-            };
+                )),
+            },
+            _ => {
+                if std::env::var("AGENT_VESPER_COGNITION_EMBEDDING_API").as_deref()
+                    == Ok("bigmodel")
+                    && vesper_provider_glm::resolve_credential(credential_source.as_ref()).is_ok()
+                {
+                    Arc::new(BigModelEmbeddingAdapter::new(Arc::clone(
+                        &credential_source,
+                    )))
+                } else {
+                    Arc::new(vesper_cognition::LocalHashEmbedder::new(
+                        config.embedding_dim,
+                    ))
+                }
+            }
+        };
 
         // Extraction: route to the ACTIVE provider first (matches what the
         // user actually sees in the TUI). This prevents the old bug where a
@@ -5276,6 +5309,39 @@ impl CognitionBundle {
         let engine = vesper_cognition::open(&db_path, ports, config)
             .ok()
             .map(Arc::new);
+        // Embedder migration: if the active embedder's dimension differs
+        // from the dimension stored in existing memory rows (e.g. switched
+        // from LocalHashEmbedder 1024-d to a neural 768-d LM Studio
+        // embedding), re-embed every stored memory so cosine similarity
+        // continues to work. This is a one-time migration on each startup
+        // until dimensions stabilize; cheap when nothing changes.
+        let engine = (|| {
+            let engine = engine?;
+            let active_dim = match active_provider {
+                "lmstudio" => LmStudioEmbedder::from_persisted_settings()
+                    .and_then(|a| a.probe_dimension().ok()),
+                _ => Some(vesper_cognition::CognitiveConfig::default().embedding_dim),
+            };
+            let stored_dim = engine.stored_embedding_dimension().ok().flatten();
+            if let (Some(active), Some(stored)) = (active_dim, stored_dim)
+                && active != stored
+            {
+                // Dimensions differ → re-embed everything.
+                match engine.reembed_all() {
+                    Ok(count) if count > 0 => {
+                        eprintln!(
+                            "cognition: re-embedded {count} memor{} from {stored}-d to {active}-d",
+                            if count == 1 { "y" } else { "ies" }
+                        );
+                    }
+                    Ok(_) => {}
+                    Err(err) => {
+                        eprintln!("cognition: re-embed migration failed: {err}");
+                    }
+                }
+            }
+            Some(engine)
+        })();
         Self {
             engine,
             root_display,
@@ -5381,6 +5447,121 @@ impl vesper_cognition::ExtractionLlmPort for NoOpExtractionAdapter {
         Err(vesper_cognition::CognitionError::Extraction(
             "no extractor available (no Z.ai credential, no LM Studio settings)".into(),
         ))
+    }
+}
+
+/// Neural embedding port backed by LM Studio's OpenAI-compatible
+/// `/v1/embeddings` endpoint. Replaces `LocalHashEmbedder` when LM Studio is
+/// the active provider so cognitive memory gets TRUE semantic search:
+/// "do you remember me" → high cosine with "the user's name is Alex" because
+/// the underlying text-embedding model captures meaning, not just tokens.
+///
+/// **Dimension probe:** the embedding dimension is model-specific (768 for
+/// BERT-base, 1024+ for many large models, etc.). On first call the adapter
+/// probes the endpoint with a tiny test string and caches the returned
+/// dimension. The composition boundary uses this to detect a swap from
+/// `LocalHashEmbedder` and trigger `reembed_all` migration.
+struct LmStudioEmbedder {
+    endpoint_url: String,
+    api_key: Option<String>,
+    model: String,
+    client: reqwest::blocking::Client,
+    /// Cached dimension (filled on first call). `None` until probed.
+    dim: std::sync::OnceLock<usize>,
+}
+
+impl LmStudioEmbedder {
+    /// Builds an adapter from persisted LM Studio settings. Returns `None`
+    /// when no endpoint is configured (the composition boundary falls back
+    /// to `LocalHashEmbedder`).
+    #[must_use]
+    fn from_persisted_settings() -> Option<Self> {
+        let settings = load_lmstudio_settings();
+        if settings.api_base_url.trim().is_empty() {
+            return None;
+        }
+        let base = settings.api_base_url.trim_end_matches('/');
+        let endpoint_url = format!("{base}/embeddings");
+        // Prefer an explicit embedding model override; otherwise fall back to
+        // the chat model; otherwise let LM Studio pick a default.
+        let model = std::env::var("AGENT_VESPER_COGNITION_EMBEDDING_MODEL")
+            .ok()
+            .or_else(|| settings.model().map(str::to_string))
+            .unwrap_or_else(|| "text-embedding-nomic-embed-text-v1.5".into());
+        Some(Self {
+            endpoint_url,
+            api_key: std::env::var("LMSTUDIO_API_KEY").ok(),
+            model,
+            client: reqwest::blocking::Client::builder()
+                .timeout(std::time::Duration::from_secs(60))
+                .build()
+                .expect("reqwest blocking client"),
+            dim: std::sync::OnceLock::new(),
+        })
+    }
+
+    /// Probes the endpoint with a short test string and returns the
+    /// embedding dimension. Cached after the first call. Returns `Err` if
+    /// the endpoint is unreachable (server offline, wrong URL, auth issue).
+    fn probe_dimension(&self) -> Result<usize, vesper_cognition::CognitionError> {
+        if let Some(&dim) = self.dim.get() {
+            return Ok(dim);
+        }
+        let sample = self.embed_one("dimension probe")?;
+        let _ = self.dim.set(sample.len());
+        Ok(sample.len())
+    }
+}
+
+impl vesper_cognition::EmbeddingPort for LmStudioEmbedder {
+    fn embed(
+        &self,
+        text: &str,
+        _action: vesper_cognition::EmbedAction,
+    ) -> Result<Vec<f32>, vesper_cognition::CognitionError> {
+        self.embed_one(text)
+    }
+}
+
+impl LmStudioEmbedder {
+    fn embed_one(&self, text: &str) -> Result<Vec<f32>, vesper_cognition::CognitionError> {
+        let body = serde_json::json!({
+            "model": self.model,
+            "input": text,
+        });
+        let mut request = self.client.post(&self.endpoint_url).json(&body);
+        if let Some(key) = &self.api_key {
+            request = request.bearer_auth(key);
+        }
+        let response = request.send().map_err(|e| {
+            vesper_cognition::CognitionError::Embedding(format!("HTTP send failed: {e}"))
+        })?;
+        if !response.status().is_success() {
+            let status = response.status();
+            let body_text = response.text().unwrap_or_else(|_| "(no body)".into());
+            return Err(vesper_cognition::CognitionError::Embedding(format!(
+                "HTTP {status} - {body_text}"
+            )));
+        }
+        let parsed: serde_json::Value = response.json().map_err(|e| {
+            vesper_cognition::CognitionError::Embedding(format!("JSON parse failed: {e}"))
+        })?;
+        let vec = parsed["data"][0]["embedding"]
+            .as_array()
+            .ok_or_else(|| {
+                vesper_cognition::CognitionError::Embedding(format!(
+                    "missing data[0].embedding in response: {parsed}"
+                ))
+            })?
+            .iter()
+            .filter_map(|v| v.as_f64().map(|f| f as f32))
+            .collect::<Vec<f32>>();
+        if vec.is_empty() {
+            return Err(vesper_cognition::CognitionError::Embedding(
+                "embedding endpoint returned empty vector".into(),
+            ));
+        }
+        Ok(vec)
     }
 }
 
@@ -8669,12 +8850,12 @@ fn cognitive_context_for_prompt(bundle: &CognitionBundle, prompt: &str) -> Optio
         top_k: 5,
         // LocalHashEmbedder produces pseudo-random vectors that yield low
         // absolute cosine similarities even for clearly related texts (it
-        // has no semantic knowledge). A high threshold (0.15) drops
-        // legitimate matches. The hybrid score (semantic + BM25 + entity
-        // boost) means even weak semantic contributions get amplified by
-        // keyword overlap, so 0.05 keeps noise out while surfacing real
-        // hits that share vocabulary with the prompt.
-        threshold: 0.05,
+        // has no semantic knowledge). With LmStudioEmbedder (real neural
+        // embeddings) the semantic signal dominates and 0.02 still filters
+        // pure noise. With LocalHashEmbedder the BM25 component dominates
+        // and any shared word clears 0.02 — so vague prompts that share
+        // even one term with a stored memory get surfaced.
+        threshold: 0.02,
         explain: false,
         show_expired: false,
     };
@@ -9353,15 +9534,81 @@ mod tests {
             scope: &scope,
             filters: None,
             top_k: 5,
-            threshold: 0.05,
+            threshold: 0.02,
             explain: false,
             show_expired: false,
         };
         let hits = engine.search(req).expect("search must succeed");
         assert!(
             !hits.is_empty(),
-            "with threshold=0.05, the vague prompt must still surface the stored memory (BM25 on shared term 'remember')"
+            "with threshold=0.02, the vague prompt must still surface the stored memory (BM25 on shared term 'remember')"
         );
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn cognition_engine_reports_stored_embedding_dimension_and_can_reembed() {
+        // Proves the migration primitives exist and work: after storing a
+        // memory, the engine reports the stored dimension; after calling
+        // reembed_all, the count is correct and the dimension is unchanged
+        // (because we re-embed with the same embedder). Used by the
+        // composition boundary to detect embedder swaps.
+        use std::sync::Arc;
+        let tmp = std::env::temp_dir().join(format!(
+            "vesper-cognition-reembed-test-{}.db",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let config = vesper_cognition::CognitiveConfig::default();
+        let ports = vesper_cognition::CognitionPorts {
+            embedder: Arc::new(vesper_cognition::LocalHashEmbedder::new(
+                config.embedding_dim,
+            )),
+            extractor: Arc::new(NoOpExtractionAdapter),
+            entity_nlp: Arc::new(ZaiEntityExtractor),
+        };
+        let engine = vesper_cognition::open(&tmp, ports, config).expect("engine opens");
+        // No memories → dimension is None.
+        assert_eq!(
+            engine.stored_embedding_dimension().unwrap(),
+            None,
+            "empty engine has no stored dimension"
+        );
+        let scope = vesper_cognition::Scope {
+            user_id: Some("test-user".into()),
+            ..Default::default()
+        };
+        let msg = vesper_cognition::Message::user("First memory for re-embed test.");
+        let req = vesper_cognition::AddRequest {
+            messages: std::slice::from_ref(&msg),
+            scope: &scope,
+            extras: None,
+            expiration_date: None,
+            infer: false,
+            custom_instructions: None,
+            observation_date: None,
+        };
+        engine.add(req).expect("add must succeed");
+        // One memory → dimension is the configured value.
+        let dim = engine
+            .stored_embedding_dimension()
+            .unwrap()
+            .expect("dimension must be Some after one add");
+        assert_eq!(
+            dim,
+            vesper_cognition::CognitiveConfig::default().embedding_dim
+        );
+        // Re-embed → returns 1 (one memory migrated).
+        let count = engine.reembed_all().expect("reembed must succeed");
+        assert_eq!(count, 1, "exactly one memory was re-embedded");
+        // Dimension unchanged after re-embed with the same embedder.
+        let dim_after = engine
+            .stored_embedding_dimension()
+            .unwrap()
+            .expect("dimension must still be Some");
+        assert_eq!(dim, dim_after);
         let _ = std::fs::remove_file(&tmp);
     }
 
