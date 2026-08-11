@@ -34,6 +34,7 @@ Built as a native port of the [Native GLM ACP](https://github.com/99percentgrip/
 <tr><td><b>📊 Priority + Heat Tracking</b></td><td>Every memory gets a type (<code>persona</code>/<code>episodic</code>/<code>instruction</code>), priority (0-100), and scene label. Frequently-recalled memories accumulate heat and float to the top.</td></tr>
 <tr><td><b>🛡️ Secret-Safe</b></td><td>All error messages are sanitized. No file contents, API keys, paths, or memory text leak through <code>CognitionError</code>. <code>#![forbid(unsafe_code)]</code> enforced workspace-wide.</td></tr>
 <tr><td><b>🎙️ Push-to-Talk Voice</b></td><td>Press <code>F5</code> to record from the microphone, <code>F5</code> again to transcribe speech-to-text straight into the composer (Linux + macOS). Auto-discovers any existing <code>faster-whisper</code> venv, or <b>self-bootstraps</b> a harness-owned one via the installer-bundled <code>uv</code> on first use — no separate Python setup. A long-lived sidecar loads the Whisper model once per session for instant subsequent transcriptions.</td></tr>
+<tr><td><b>🧩 Reasoning Orchestrator</b></td><td>Strategy-driven orchestration (VRO): profile-driven routing across <code>Direct</code>, <code>GenerateVerifyRepair</code>, <code>ParallelCandidatesConsensus</code>, <code>ParallelCandidatesJudge</code>, and more. VRO-4 ships <b>parallel candidate branches</b> with strict isolation, deterministic ordering, budget-capped fan-out, and either quorum-based consensus (§11.4) or position-bias-shuffled judge arbitration (§11.5). Triggered automatically for trade-off and verification prompts.</td></tr>
 </table>
 
 ## Install
@@ -47,7 +48,7 @@ curl -fsSL https://github.com/99percentgrip/agent-vesper/raw/main/scripts/instal
 Or pin a version:
 
 ```sh
-AGENT_VESPER_VERSION=0.20.15 sh scripts/install.sh
+AGENT_VESPER_VERSION=0.20.16 sh scripts/install.sh
 ```
 
 ### Windows (PowerShell)
@@ -279,7 +280,7 @@ User says something
 ## Local Verification
 
 ```sh
-cargo xtask verify          # fmt + clippy -D warnings + 704 tests + architecture
+cargo xtask verify          # fmt + clippy -D warnings + 880 tests + architecture
 cargo xtask architecture    # dependency-boundary validation (22 packages)
 cargo xtask msrv            # Rust 1.88 compatibility check
 ```
