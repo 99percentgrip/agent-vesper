@@ -47,7 +47,7 @@ curl -fsSL https://github.com/99percentgrip/agent-vesper/raw/main/scripts/instal
 Or pin a version:
 
 ```sh
-AGENT_VESPER_VERSION=0.20.14 sh scripts/install.sh
+AGENT_VESPER_VERSION=0.20.15 sh scripts/install.sh
 ```
 
 ### Windows (PowerShell)
@@ -177,7 +177,7 @@ The cognitive memory engine picks its embedder from the **active chat provider**
 
 **Automatic migration**: when the active embedder changes (e.g. switching providers), the engine compares the new model name against the `embedding_model` row in `cognition_meta` and re-embeds every memory + entity in chunks of 256 if they differ. The startup log shows `"cognition: re-embedded N memories and M entities to model \"...\" (768-d)."` confirming the migration ran.
 
-### Provider-Independent Embedding Layer (ADR 0016, v0.20.14)
+### Provider-Independent Embedding Layer (ADR 0016, v0.20.14 + v0.20.15)
 
 **The fundamental cross-provider gap is eliminated.** Write `.agent-vesper/cognition/embedding.json` to decouple the embedding source from the active chat provider entirely:
 
@@ -198,6 +198,14 @@ With this file in place, switching chat providers (ZAI ↔ LM Studio ↔ future 
 |---|---|---|---|---|---|
 | `Hybrid` | Called | ✅ | ✅ | ✅ | ❌ (auto-degrades) |
 | `BM25Only` | Skipped | ❌ | ✅ | ❌ | ❌ (never) |
+
+**v0.20.15 follow-ups (three v0.20.14 deferrals closed):**
+1. **BigModel source path resolves correctly** — `source: "bigmodel"` constructs `BigModelEmbeddingAdapter` (JWT auth resolved per call from the ZAI credential) instead of falling back to `LocalHashEmbedder`.
+2. **Background-thread startup probe** — TUI loads instantly. The engine starts in `BM25Only`; a background `std::thread::spawn` issues a one-shot `embed()` call and flips to `Hybrid` on success. If a memory search runs before the probe completes, `search()` honors `BM25Only` and returns keyword-only results — graceful fallback, no UI stall.
+3. **`/embedding` slash command (UX parity)** — registered in the Vesper-native surface:
+   - `/embedding` → render live config + active search mode + model name
+   - `/embedding set source=lmstudio endpoint=... model=... api_key=... dimension=...` → parse, validate, persist `embedding.json`, hot-reload with another background probe
+   - `/embedding clear` → delete `embedding.json` (revert on next restart)
 
 See [ADR 0016](docs/adr/0016-provider-independent-embedding-layer.md) for the full design.
 
@@ -271,7 +279,7 @@ User says something
 ## Local Verification
 
 ```sh
-cargo xtask verify          # fmt + clippy -D warnings + 680 tests + architecture
+cargo xtask verify          # fmt + clippy -D warnings + 704 tests + architecture
 cargo xtask architecture    # dependency-boundary validation (22 packages)
 cargo xtask msrv            # Rust 1.88 compatibility check
 ```
