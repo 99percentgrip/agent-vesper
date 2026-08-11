@@ -5326,16 +5326,23 @@ impl CognitionBundle {
             if let (Some(active), Some(stored)) = (active_dim, stored_dim)
                 && active != stored
             {
-                // Dimensions differ → re-embed everything.
-                match engine.reembed_all() {
-                    Ok(count) if count > 0 => {
+                // Dimensions differ → re-embed everything (memories AND
+                // entities — Gap 7: entities have their own embedding column
+                // used by `entity_boosts`; failing to migrate them silently
+                // zeroes every entity boost after a swap).
+                match engine.reembed_everything() {
+                    Ok((mem_count, ent_count)) if mem_count > 0 || ent_count > 0 => {
                         eprintln!(
-                            "cognition: re-embedded {count} memor{} from {stored}-d to {active}-d",
-                            if count == 1 { "y" } else { "ies" }
+                            "cognition: re-embedded {mem_count} memor{} and {ent_count} \
+                             entit{} from {stored}-d to {active}-d",
+                            if mem_count == 1 { "y" } else { "ies" },
+                            if ent_count == 1 { "y" } else { "ies" }
                         );
                     }
                     Ok(_) => {}
                     Err(err) => {
+                        // Gap 6: reembed_all/reembed_all_entities already
+                        // logged the partial-migration state with counts.
                         eprintln!("cognition: re-embed migration failed: {err}");
                     }
                 }
@@ -8859,7 +8866,23 @@ fn cognitive_context_for_prompt(bundle: &CognitionBundle, prompt: &str) -> Optio
         explain: false,
         show_expired: false,
     };
-    let hits = engine.search(req).ok()?;
+    let hits = match engine.search(req) {
+        Ok(hits) => hits,
+        Err(err) => {
+            // Gap 12: previously `.ok()?` silently returned None on any
+            // embedder failure (e.g. LM Studio offline at search time even
+            // though settings existed at startup). The user experienced
+            // "the AI forgot everything" with no log signal. Surface the
+            // failure to stderr so it is diagnosable. Auto-recall is
+            // disabled for this turn only — the next prompt will retry.
+            eprintln!(
+                "cognition: auto-recall skipped this turn — search failed: {err}. \
+                 (The configured embedder endpoint may be unreachable. BM25 fallback is \
+                 a future enhancement — for now no context is injected.)"
+            );
+            return None;
+        }
+    };
     if hits.is_empty() {
         return None;
     }
@@ -9491,7 +9514,7 @@ mod tests {
         // remember who I am" — a vague prompt sharing only a few words with
         // the stored memory — and get back no hits, so the model said
         // "I don't have any specific information about you". The threshold
-        // is now 0.05, which keeps real matches while still filtering noise.
+        // is now 0.02, which keeps real matches while still filtering noise.
         use std::sync::Arc;
         let tmp = std::env::temp_dir().join(format!(
             "vesper-cognition-threshold-test-{}.db",

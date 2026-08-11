@@ -79,6 +79,26 @@ or types.
   constructor is reserved for tests that do not exercise keyword search.
 - Entity-linking failures are non-fatal (mirrors the oracle's swallow-at-
   warning rule); they never break the primary ADD path.
+- **Embedder-swap migration surface** (`v0.20.12`+): when the active
+  embedder's dimension changes (e.g. `LocalHashEmbedder` 1024-d → neural
+  768-d), the composition boundary calls `reembed_everything()` which
+  delegates to `reembed_all()` (memories) + `reembed_all_entities()`
+  (entities). Both pull from `all_memory_reembed_targets` /
+  `all_entity_reembed_targets` — full-table scans with NO 10k LIMIT and NO
+  expiry filter, closing the silent-truncation (Gap 2) and silent-skip
+  (Gap 1) bugs. Entities have their own embedding column used by
+  `entity_boosts`; leaving them on the old dimension silently zeroes every
+  boost after a swap (Gap 7 — fixed). On per-row failure the migration
+  aborts with a partial-state log (Gap 6 — fixed).
+- **`search()` scope contract**: search callers MUST set `user_id`. A
+  `debug_assert!` enforces it because `scope_match_field(None, _)` returns
+  `true` for any stored value — a latent cross-user leak (Gap 13).
+  `reembed_all` legitimately uses `Scope { all None }` but goes through
+  `all_memory_reembed_targets`, never through `search`.
+- **Dimension-drift diagnostic** (`v0.20.12`+): when `query_embedding.len()
+  != stored_embedding.len()`, `cosine()` returns 0.0 silently — `search()`
+  now logs ONCE per process via a `static AtomicBool` so the user sees the
+  drift instead of experiencing "the AI forgot everything".
 
 ## Verification
 
@@ -88,7 +108,8 @@ or types.
   active signals (1.0 / 1.5 / 2.0 / 2.5), entity-boost bounds (≤0.5;
   memory-count-weight curve), Filter DSL operators, rolling 10-message
   window eviction, procedural-memory compaction, cosine similarity, FTS5
-  BM25 round-trip.
+  BM25 round-trip, embedder-swap migration (Gaps 1/2/7/13 regression
+  suite).
 - `cargo xtask architecture` — confirms the new crate satisfies the
   production dependency allowlist (with the per-crate `rusqlite` exception),
   the source-tree unsafe ban, and the source-scanner forbidden-reference

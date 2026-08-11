@@ -624,6 +624,47 @@ impl CognitiveStore {
         }
     }
 
+    /// Returns `(id, data)` for EVERY stored memory regardless of scope,
+    /// expiry, or limit. Used by `reembed_all` so migration never silently
+    /// skips expired rows (Gap 1) or truncates past a hard cap (Gap 2).
+    pub(crate) fn all_memory_reembed_targets(&self) -> Result<Vec<(String, String)>> {
+        let conn = self.lock();
+        let mut stmt = conn.prepare("SELECT id, data FROM memories")?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
+    }
+
+    /// Returns `(id, data)` for EVERY stored entity regardless of scope or
+    /// limit. Used by `reembed_all_entities` so the entity-boost path keeps
+    /// working after an embedder swap (Gap 7 — entities have their own
+    /// embedding column used by `entity_boosts`).
+    pub(crate) fn all_entity_reembed_targets(&self) -> Result<Vec<(String, String)>> {
+        let conn = self.lock();
+        let mut stmt = conn.prepare("SELECT id, data FROM entities")?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
+    }
+
+    /// Overwrite the embedding blob of a single entity row. Used by
+    /// `reembed_all_entities` (Gap 7).
+    pub(crate) fn update_entity_embedding(&self, entity_id: &str, embedding: &[f32]) -> Result<()> {
+        let conn = self.lock();
+        let blob = embed_to_blob(embedding);
+        conn.execute(
+            "UPDATE entities SET embedding = ?1 WHERE id = ?2",
+            params![blob, entity_id],
+        )?;
+        Ok(())
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn add_history(
         &self,

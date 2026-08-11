@@ -13,8 +13,8 @@ serde_json.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
-vesper-config = { path = "../vesper-config", version = "=0.20.11" }
-vesper-domain = { path = "../vesper-domain", version = "=0.20.11" }
+vesper-config = { path = "../vesper-config", version = "=0.20.12" }
+vesper-domain = { path = "../vesper-domain", version = "=0.20.12" }
 
 [lints]
 workspace = true
