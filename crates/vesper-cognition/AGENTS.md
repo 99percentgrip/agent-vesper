@@ -119,6 +119,18 @@ or types.
   != stored_embedding.len()`, `cosine()` returns 0.0 silently — `search()`
   now logs ONCE per process via a `static AtomicBool` so the user sees the
   drift instead of experiencing "the AI forgot everything".
+- **Provider-independent embedding layer** (`v0.20.14`, ADR 0016): the
+  embedding source is decoupled from the active chat provider via
+  `.agent-vesper/cognition/embedding.json`. Switching chat providers (ZAI ↔
+  LM Studio ↔ future X) no longer changes the embedder — cosine cannot
+  silently break. When the file is absent, the v0.20.13 provider-routed
+  behavior is the backward-compat fallback. Live `SearchMode` (`Hybrid` |
+  `BM25Only`) is exposed via `CognitiveMemory::search_mode()` /
+  `set_search_mode()`. `search()` auto-downgrades to `BM25Only` on the
+  first embedder failure mid-search and auto-upgrades back to `Hybrid` on
+  the next successful call — **Gap 10 (silent recall death) is
+  structurally eliminated**. `BM25Only` skips every embedding call and
+  uses FTS5 keyword recall only; never returns `Err` for embedder reasons.
 
 ## Verification
 

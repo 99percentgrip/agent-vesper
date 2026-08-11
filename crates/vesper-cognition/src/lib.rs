@@ -62,7 +62,7 @@ pub use error::{CognitionError, Result};
 pub use extract::{ExtractedMemory, extract_json, parse_extraction_response, remove_code_blocks};
 pub use filters::{FieldOp, FilterDsl};
 pub use nlp::{EntityCandidate, EntityType, extract_entities, lemmatize_for_bm25};
-pub use pipeline::{AddRequest, CognitiveMemory, SearchRequest};
+pub use pipeline::{AddRequest, CognitiveMemory, SearchMode, SearchRequest};
 pub use ports::{
     CognitionPorts, EmbedAction, EmbeddingPort, EntityExtractorPort, ExtractionLlmPort,
 };

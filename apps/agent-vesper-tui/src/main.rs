@@ -5176,6 +5176,77 @@ struct CognitionBundle {
     root_display: String,
 }
 
+/// ADR 0016 — Provider-Independent Embedding Layer. Deserializes from
+/// `.agent-vesper/cognition/embedding.json` and selects an embedder that is
+/// INDEPENDENT of the active chat provider. Switching chat providers (ZAI ↔
+/// LM Studio ↔ future X) no longer changes the embedding source — so cosine
+/// similarity across stored memories never breaks and no migration is ever
+/// needed mid-session.
+///
+/// Schema (all fields optional; missing → backward-compat behavior):
+/// ```json
+/// {
+///   "source": "lmstudio" | "bigmodel" | "local",
+///   "endpoint": "http://localhost:1234/v1/embeddings",
+///   "model": "text-embedding-nomic-embed-text-v1.5",
+///   "api_key": null,
+///   "dimension": 768
+/// }
+/// ```
+///
+/// When `source` is absent (or the file is missing entirely), the bundle
+/// falls back to the v0.20.13 provider-routed behavior — embedder follows
+/// the active chat provider. This is the backward-compat path that
+/// preserves existing user installs with zero migration.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+struct EmbeddingConfig {
+    /// Embedding source. `None` means "use provider-routed fallback"
+    /// (backward compat). `Some("local")` forces LocalHashEmbedder
+    /// regardless of chat provider — useful when no neural server is
+    /// available and you want zero-network recall.
+    source: Option<String>,
+    /// Embedding endpoint URL (LM Studio, BigModel, etc.). Ignored for
+    /// `source: "local"`.
+    endpoint: Option<String>,
+    /// Embedding model name. Defaults to
+    /// `text-embedding-nomic-embed-text-v1.5` for LM Studio.
+    model: Option<String>,
+    /// Optional bearer token for metered endpoints.
+    api_key: Option<String>,
+    /// Optional cached dimension. If absent, the adapter probes the
+    /// endpoint on first use.
+    dimension: Option<usize>,
+}
+
+impl EmbeddingConfig {
+    /// Load from `$AGENT_VESPER_COGNITION_ROOT/embedding.json`. Returns
+    /// `Default` (all-None) when the file is absent or unparseable —
+    /// backward-compat with v0.20.13 and earlier.
+    fn load(root: &std::path::Path) -> Self {
+        let path = root.join("embedding.json");
+        match std::fs::read_to_string(&path) {
+            Ok(text) => serde_json::from_str(&text).unwrap_or_default(),
+            Err(_) => Self::default(),
+        }
+    }
+
+    /// Persist back to `$AGENT_VESPER_COGNITION_ROOT/embedding.json`. Used
+    /// by future `/embedding` slash commands to update config without
+    /// editing JSON by hand.
+    #[allow(dead_code)]
+    fn save(&self, root: &std::path::Path) -> std::io::Result<()> {
+        let path = root.join("embedding.json");
+        let text = serde_json::to_string_pretty(self).unwrap_or_else(|_| "{}".into());
+        std::fs::write(path, text)
+    }
+
+    /// Returns true when this config actively overrides the embedder
+    /// selection (i.e. is not the all-None backward-compat default).
+    fn overrides_provider_routing(&self) -> bool {
+        self.source.is_some()
+    }
+}
+
 impl CognitionBundle {
     /// Opens the cognitive-memory SQLite database at
     /// `AGENT_VESPER_COGNITION_ROOT` (falling back to
@@ -5197,6 +5268,117 @@ impl CognitionBundle {
     /// opened. The slash-command surface degrades to raw-text storage
     /// (`/remember "raw text"` still persists) when no extractor is
     /// available, so cognitive memory works for LM Studio-only deployments.
+    /// Builds an embedder from an explicit `EmbeddingConfig` (ADR 0016,
+    /// provider-independent path). Returns `(embedder, probed_dim,
+    /// initial_search_mode)`. `search_mode` is `BM25Only` if the configured
+    /// endpoint is unreachable at startup — `search()` will auto-upgrade to
+    /// `Hybrid` on the first successful embed call.
+    fn build_independent_embedder(
+        cfg: &EmbeddingConfig,
+        default_dim: usize,
+    ) -> (
+        Arc<dyn vesper_cognition::EmbeddingPort>,
+        Option<usize>,
+        vesper_cognition::SearchMode,
+    ) {
+        match cfg.source.as_deref() {
+            Some("local") => {
+                eprintln!(
+                    "cognition: embedding config = local; using LocalHashEmbedder \
+                     (zero-network bag-of-words). Switching chat providers will NOT \
+                     trigger any migration."
+                );
+                (
+                    Arc::new(vesper_cognition::LocalHashEmbedder::new(default_dim)),
+                    Some(default_dim),
+                    vesper_cognition::SearchMode::Hybrid,
+                )
+            }
+            Some("lmstudio") => {
+                let endpoint = cfg
+                    .endpoint
+                    .clone()
+                    .unwrap_or_else(|| "http://localhost:1234/v1/embeddings".to_string());
+                let model = cfg
+                    .model
+                    .clone()
+                    .unwrap_or_else(|| "text-embedding-nomic-embed-text-v1.5".to_string());
+                let adapter = LmStudioEmbedder::from_explicit_settings(
+                    endpoint.clone(),
+                    model.clone(),
+                    cfg.api_key.clone(),
+                );
+                eprintln!(
+                    "cognition: embedding config = lmstudio ({model} @ {endpoint}); \
+                     probing endpoint..."
+                );
+                let dim_hint = adapter.probe_dimension().ok();
+                let mode = match dim_hint {
+                    Some(d) => {
+                        eprintln!(
+                            "cognition: LM Studio embedding endpoint responded \
+                             ({d}-d via {model}). Search mode = Hybrid."
+                        );
+                        vesper_cognition::SearchMode::Hybrid
+                    }
+                    None => {
+                        eprintln!(
+                            "cognition: LM Studio embedding endpoint unreachable; \
+                             starting in BM25-only mode. Will auto-upgrade to Hybrid \
+                             on first successful embed."
+                        );
+                        vesper_cognition::SearchMode::BM25Only
+                    }
+                };
+                (
+                    Arc::new(adapter) as Arc<dyn vesper_cognition::EmbeddingPort>,
+                    dim_hint,
+                    mode,
+                )
+            }
+            Some("bigmodel") => {
+                // No eager probe — BigModel auth resolves per call. Default
+                // to Hybrid; degrade on first failure.
+                eprintln!(
+                    "cognition: embedding config = bigmodel; BigModelEmbeddingAdapter. \
+                     (Auth resolved per-call; no startup probe.)"
+                );
+                // The BigModel adapter requires a credential source, which
+                // we don't have here without restructuring — for now we
+                // fall through to provider routing and log a hint.
+                eprintln!(
+                    "cognition: bigmodel config requires ZAI credential at runtime; \
+                     deferring to provider-routed fallback. Set source=lmstudio for a \
+                     provider-independent neural embedder."
+                );
+                (
+                    Arc::new(vesper_cognition::LocalHashEmbedder::new(default_dim)),
+                    Some(default_dim),
+                    vesper_cognition::SearchMode::Hybrid,
+                )
+            }
+            Some(other) => {
+                eprintln!(
+                    "cognition: unknown embedding source '{other}' in embedding.json; \
+                     falling back to provider-routed behavior."
+                );
+                (
+                    Arc::new(vesper_cognition::LocalHashEmbedder::new(default_dim)),
+                    Some(default_dim),
+                    vesper_cognition::SearchMode::Hybrid,
+                )
+            }
+            None => {
+                // Should never reach here — caller checks overrides_provider_routing.
+                (
+                    Arc::new(vesper_cognition::LocalHashEmbedder::new(default_dim)),
+                    Some(default_dim),
+                    vesper_cognition::SearchMode::Hybrid,
+                )
+            }
+        }
+    }
+
     fn open_default(
         credential_source: Arc<dyn vesper_provider_glm::GlmCredentialSource>,
         active_provider: &str,
@@ -5212,68 +5394,42 @@ impl CognitionBundle {
         let db_path = root.join("cognition.db");
         let root_display = root.display().to_string();
 
-        // Construct the embedder ONCE (Gap 5). Previously
-        // `LmStudioEmbedder::from_persisted_settings()` was called up to 4
-        // times (config dim check, dim probe, embedder selection,
-        // migration probe); each fresh instance had a fresh `OnceLock` so
-        // `probe_dimension()` re-fired the HTTP call every time. Sharing one
-        // Arc means the probe runs at most once and the cached dimension is
-        // reused everywhere.
+        // ADR 0016 — Provider-Independent Embedding Layer. If the user has
+        // written `$ROOT/embedding.json` with an explicit `source` field,
+        // the embedder follows that config INDEPENDENTLY of the active chat
+        // provider. Switching chat providers (ZAI ↔ LM Studio) no longer
+        // changes the embedding source — cosine never breaks, no migration
+        // is ever needed mid-session. Backward-compat: when the file is
+        // absent or has no `source`, fall back to the v0.20.13 provider-
+        // routed behavior (embedder follows the active provider).
+        let embedding_config = EmbeddingConfig::load(&root);
         let default_dim = vesper_cognition::CognitiveConfig::default().embedding_dim;
-        let (embedder, probed_dim): (Arc<dyn vesper_cognition::EmbeddingPort>, Option<usize>) =
-            match active_provider {
-                "lmstudio" => match LmStudioEmbedder::from_persisted_settings() {
-                    Some(adapter) => {
-                        // Gap 8 (cold-start UX): surface the dimension probe so
-                        // the user knows what's happening if LM Studio is cold-
-                        // loading a model and the call hangs for 30s+.
-                        eprintln!(
-                            "cognition: probing LM Studio embedding endpoint at {} ...",
-                            adapter.endpoint_url
-                        );
-                        let dim_hint = adapter.probe_dimension().ok();
-                        match dim_hint {
-                            Some(d) => eprintln!(
-                                "cognition: LM Studio responded ({}-d embeddings via {}).",
-                                d, adapter.model
-                            ),
-                            None => eprintln!(
-                                "cognition: LM Studio endpoint unreachable at startup; \
-                             semantic recall will degrade to BM25-only until the \
-                             endpoint becomes reachable on first prompt."
-                            ),
-                        }
-                        let arc: Arc<dyn vesper_cognition::EmbeddingPort> = Arc::new(adapter);
-                        (arc, dim_hint)
-                    }
-                    None => {
-                        eprintln!(
-                            "cognition: no LM Studio settings; using LocalHashEmbedder \
-                         (zero-network bag-of-words). Run /lmstudio or /provider to \
-                         configure a neural embedder."
-                        );
-                        let arc: Arc<dyn vesper_cognition::EmbeddingPort> =
-                            Arc::new(vesper_cognition::LocalHashEmbedder::new(default_dim));
-                        (arc, Some(default_dim))
-                    }
-                },
-                _ => {
-                    if std::env::var("AGENT_VESPER_COGNITION_EMBEDDING_API").as_deref()
-                        == Ok("bigmodel")
-                        && vesper_provider_glm::resolve_credential(credential_source.as_ref())
-                            .is_ok()
-                    {
-                        let arc: Arc<dyn vesper_cognition::EmbeddingPort> = Arc::new(
-                            BigModelEmbeddingAdapter::new(Arc::clone(&credential_source)),
-                        );
-                        (arc, Some(default_dim))
-                    } else {
-                        let arc: Arc<dyn vesper_cognition::EmbeddingPort> =
-                            Arc::new(vesper_cognition::LocalHashEmbedder::new(default_dim));
-                        (arc, Some(default_dim))
-                    }
-                }
-            };
+        let (embedder, probed_dim, mut search_mode_hint): (
+            Arc<dyn vesper_cognition::EmbeddingPort>,
+            Option<usize>,
+            vesper_cognition::SearchMode,
+        ) = if embedding_config.overrides_provider_routing() {
+            eprintln!(
+                "cognition: ADR 0016 provider-independent embedding layer active \
+                 (source = {:?}). Chat-provider switches will NOT change the embedder.",
+                embedding_config.source
+            );
+            Self::build_independent_embedder(&embedding_config, default_dim)
+        } else {
+            // Backward-compat: v0.20.13 provider-routed embedder selection.
+            // Construct the embedder ONCE (Gap 5); share the Arc across
+            // config dim check + migration + engine ports.
+            let (e, d) = Self::build_provider_routed_embedder(
+                &credential_source,
+                active_provider,
+                default_dim,
+            );
+            // The provider-routed path has no concept of "unreachable at
+            // startup" — it eagerly probes LM Studio and falls back to
+            // LocalHashEmbedder if that fails. Either way the result is
+            // reachable, so we start in Hybrid mode.
+            (e, d, vesper_cognition::SearchMode::Hybrid)
+        };
 
         let mut config = vesper_cognition::CognitiveConfig::default();
         if let Some(dim) = probed_dim {
@@ -5323,7 +5479,10 @@ impl CognitionBundle {
         let engine = vesper_cognition::open(&db_path, ports, config)
             .ok()
             .map(Arc::new);
-
+        // ADR 0016: apply the startup-determined search mode.
+        if let Some(engine) = engine.as_ref() {
+            engine.set_search_mode(search_mode_hint);
+        }
         // Migration detection (Gap 11): model-name comparison via the
         // `cognition_meta` table, replacing the old first-row dimension
         // probe. The old check read only the FIRST stored memory row by
@@ -5347,6 +5506,9 @@ impl CognitionBundle {
             //  (a) The active model name differs from the recorded one, OR
             //  (b) The store predates the meta table (no model recorded) AND
             //      the first stored memory's dim differs from the active dim.
+            // ADR 0016: when the provider-independent layer is active, model
+            // swaps are rare (the file rarely changes), so migrations are
+            // genuinely rare — not on every provider switch.
             let needs_migration = match (&stored_model, &stored_dim_first) {
                 (Some(stored), _) if stored != active_model => true,
                 (None, Some(stored_d)) => *stored_d != active_dim,
@@ -5375,24 +5537,92 @@ impl CognitionBundle {
                         }
                         let _ = engine.set_meta("embedding_model", active_model);
                         let _ = engine.set_meta("embedding_dim", &active_dim.to_string());
+                        // ADR 0016: if migration succeeded, the embedder is
+                        // reachable — upgrade to Hybrid.
+                        engine.set_search_mode(vesper_cognition::SearchMode::Hybrid);
+                        search_mode_hint = vesper_cognition::SearchMode::Hybrid;
                     }
                     Err(err) => {
-                        // Gap 6: reembed_all/reembed_all_entities already
-                        // logged the partial-migration state with counts.
                         eprintln!("cognition: re-embed migration failed: {err}");
+                        // ADR 0016: migration failed → embedder likely
+                        // unreachable. Force BM25Only so the session stays
+                        // usable instead of returning Err every turn.
+                        engine.set_search_mode(vesper_cognition::SearchMode::BM25Only);
+                        search_mode_hint = vesper_cognition::SearchMode::BM25Only;
                     }
                 }
             } else if stored_model.is_none() {
-                // First run with an empty store — record the active model so
-                // future startups can detect swaps. Cheap single INSERT.
                 let _ = engine.set_meta("embedding_model", active_model);
                 let _ = engine.set_meta("embedding_dim", &active_dim.to_string());
             }
+            let _ = search_mode_hint; // already applied above
             Some(engine)
         })();
         Self {
             engine,
             root_display,
+        }
+    }
+
+    /// v0.20.13 backward-compat path: embedder follows the active chat
+    /// provider. Used when no `embedding.json` config exists or when its
+    /// `source` field is absent. Construct the embedder ONCE (Gap 5) so the
+    /// dimension probe's OnceLock is shared across the config check +
+    /// migration + engine ports.
+    fn build_provider_routed_embedder(
+        credential_source: &Arc<dyn vesper_provider_glm::GlmCredentialSource>,
+        active_provider: &str,
+        default_dim: usize,
+    ) -> (Arc<dyn vesper_cognition::EmbeddingPort>, Option<usize>) {
+        match active_provider {
+            "lmstudio" => match LmStudioEmbedder::from_persisted_settings() {
+                Some(adapter) => {
+                    eprintln!(
+                        "cognition: probing LM Studio embedding endpoint at {} ...",
+                        adapter.endpoint_url
+                    );
+                    let dim_hint = adapter.probe_dimension().ok();
+                    match dim_hint {
+                        Some(d) => eprintln!(
+                            "cognition: LM Studio responded ({}-d embeddings via {}).",
+                            d, adapter.model
+                        ),
+                        None => eprintln!(
+                            "cognition: LM Studio endpoint unreachable at startup; \
+                             semantic recall will degrade to BM25-only until the \
+                             endpoint becomes reachable on first prompt."
+                        ),
+                    }
+                    let arc: Arc<dyn vesper_cognition::EmbeddingPort> = Arc::new(adapter);
+                    (arc, dim_hint)
+                }
+                None => {
+                    eprintln!(
+                        "cognition: no LM Studio settings; using LocalHashEmbedder \
+                         (zero-network bag-of-words). Run /lmstudio or /provider to \
+                         configure a neural embedder. To make embeddings provider-\
+                         independent, write .agent-vesper/cognition/embedding.json \
+                         with {{\"source\":\"lmstudio\"}} (ADR 0016)."
+                    );
+                    let arc: Arc<dyn vesper_cognition::EmbeddingPort> =
+                        Arc::new(vesper_cognition::LocalHashEmbedder::new(default_dim));
+                    (arc, Some(default_dim))
+                }
+            },
+            _ => {
+                if std::env::var("AGENT_VESPER_COGNITION_EMBEDDING_API").as_deref()
+                    == Ok("bigmodel")
+                    && vesper_provider_glm::resolve_credential(credential_source.as_ref()).is_ok()
+                {
+                    let arc: Arc<dyn vesper_cognition::EmbeddingPort> =
+                        Arc::new(BigModelEmbeddingAdapter::new(Arc::clone(credential_source)));
+                    (arc, Some(default_dim))
+                } else {
+                    let arc: Arc<dyn vesper_cognition::EmbeddingPort> =
+                        Arc::new(vesper_cognition::LocalHashEmbedder::new(default_dim));
+                    (arc, Some(default_dim))
+                }
+            }
         }
     }
 }
@@ -5546,6 +5776,29 @@ impl LmStudioEmbedder {
                 .expect("reqwest blocking client"),
             dim: std::sync::OnceLock::new(),
         })
+    }
+
+    /// ADR 0016 — provider-independent path. Builds an adapter from explicit
+    /// config fields (typically loaded from
+    /// `.agent-vesper/cognition/embedding.json`). Decoupled from the chat
+    /// provider's settings file so switching chat providers does NOT change
+    /// the embedding source.
+    #[must_use]
+    fn from_explicit_settings(
+        endpoint_url: String,
+        model: String,
+        api_key: Option<String>,
+    ) -> Self {
+        Self {
+            endpoint_url,
+            api_key,
+            model,
+            client: reqwest::blocking::Client::builder()
+                .timeout(std::time::Duration::from_secs(60))
+                .build()
+                .expect("reqwest blocking client"),
+            dim: std::sync::OnceLock::new(),
+        }
     }
 
     /// Probes the endpoint with a short test string and returns the

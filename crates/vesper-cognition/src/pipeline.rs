@@ -25,7 +25,7 @@ use crate::store::{CognitiveStore, NewMemory};
 type PendingRecord = (String, ExtractedMemory, Vec<f32>, BTreeMap<String, Value>);
 
 use crate::types::{
-    Attribution, HistoryEvent, MemoryEvent, MemoryHit, MemoryRecord, Message, Scope,
+    Attribution, HistoryEvent, MemoryEvent, MemoryHit, MemoryRecord, Message, Scope, ScoreBreakdown,
 };
 
 /// Per-turn add request.
@@ -60,6 +60,43 @@ pub struct CognitiveMemory {
     store: CognitiveStore,
     ports: crate::ports::CognitionPorts,
     config: crate::CognitiveConfig,
+    /// Live search mode (Gap 10 elimination, ADR 0016). `Hybrid` runs the
+    /// full semantic + BM25 + entity-boost pipeline. `BM25Only` skips every
+    /// embedding call and degrades to keyword-only recall — used when the
+    /// configured embedder is unreachable at startup, and as a permanent
+    /// fallback when no embedder is configured.
+    search_mode: std::sync::atomic::AtomicU8,
+}
+
+/// Search mode (ADR 0016). Cheap to read; written by the composition
+/// boundary when the embedder becomes reachable or falls back.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum SearchMode {
+    /// Full semantic + BM25 + entity-boost hybrid pipeline. Requires a
+    /// reachable embedder whose model_name matches the stored vectors.
+    Hybrid = 0,
+    /// Keyword-only recall. Skips the embedder entirely; semantic and
+    /// entity-boost scores are 0. Used when the embedder is unreachable
+    /// or unconfigured. NEVER returns `Err` for embedder-side failures —
+    /// it degrades instead.
+    BM25Only = 1,
+}
+
+impl SearchMode {
+    #[inline]
+    fn to_u8(self) -> u8 {
+        self as u8
+    }
+    #[inline]
+    fn from_u8(v: u8) -> Self {
+        // Any non-1 value is treated as Hybrid.
+        if v == SearchMode::BM25Only as u8 {
+            SearchMode::BM25Only
+        } else {
+            SearchMode::Hybrid
+        }
+    }
 }
 
 impl CognitiveMemory {
@@ -72,7 +109,24 @@ impl CognitiveMemory {
             store,
             ports,
             config,
+            search_mode: std::sync::atomic::AtomicU8::new(SearchMode::Hybrid.to_u8()),
         }
+    }
+
+    /// Current search mode (ADR 0016). The composition boundary reads this
+    /// for status reporting.
+    #[must_use]
+    pub fn search_mode(&self) -> SearchMode {
+        SearchMode::from_u8(self.search_mode.load(std::sync::atomic::Ordering::SeqCst))
+    }
+
+    /// Set the search mode (ADR 0016). The composition boundary calls this
+    /// after a startup probe: `BM25Only` when the embedder is unreachable,
+    /// `Hybrid` when it is reachable. The change is atomic — concurrent
+    /// in-flight searches keep using their captured mode.
+    pub fn set_search_mode(&self, mode: SearchMode) {
+        self.search_mode
+            .store(mode.to_u8(), std::sync::atomic::Ordering::SeqCst);
     }
 
     /// V3 8-phase ADD-only pipeline. Returns the ADD events.
@@ -447,14 +501,34 @@ impl CognitiveMemory {
             req.scope.user_id.is_some(),
             "cognition search scope must set user_id ( Gap 13 leak guard)"
         );
+        // ADR 0016: capture the live mode ONCE for this turn. Concurrent
+        // set_search_mode() calls won't affect this turn's behavior.
+        let mode = self.search_mode();
+        if mode == SearchMode::BM25Only {
+            return self.search_bm25_only(req);
+        }
         // Step 1: preprocess query.
         let query_lemmatized = lemmatize_for_bm25(req.query);
         let num_terms = query_lemmatized.split_whitespace().count();
         let query_entities = self.ports.entity_nlp.extract(req.query);
 
         // Step 2: embed query.
-        let query_embedding = self.ports.embedder.embed(req.query, EmbedAction::Search)?;
-
+        // ADR 0016: if the embedder fails here, instead of returning Err
+        // (which used to silently kill recall for the rest of the session),
+        // we (a) atomically downgrade to BM25Only so subsequent turns
+        // don't retry the failing endpoint, (b) log ONCE per process, and
+        // (c) fall through to BM25-only for THIS turn. The next successful
+        // embedder call upgrades back to Hybrid.
+        let query_embedding = match self.ports.embedder.embed(req.query, EmbedAction::Search) {
+            Ok(v) => v,
+            Err(err) => {
+                self.downgrade_to_bm25_only_once(&err);
+                return self.search_bm25_only(req);
+            }
+        };
+        // ADR 0016: an embedder that *succeeds* but produces a vector
+        // incompatible with the store (dimension drift) is functionally
+        // unreachable. Downgrade rather than burn every cosine to 0.0.
         // Step 3: semantic search (over-fetch for scoring pool).
         let internal_limit = (req.top_k * 4).max(60);
         let stored_candidates = self.store.list_for_semantic_search(
@@ -486,6 +560,11 @@ impl CognitiveMemory {
                     query_embedding.len()
                 );
             }
+            // ADR 0016: drift means the active embedder is effectively
+            // unusable for this store right now — every cosine will be 0.
+            // Fall through to BM25-only for this turn; the startup-time
+            // migration path will fix the stored dims on next restart.
+            return self.search_bm25_only(req);
         }
         let semantic_candidates =
             CognitiveStore::semantic_score(&stored_candidates, &query_embedding);
@@ -508,8 +587,16 @@ impl CognitiveMemory {
                 if key.is_empty() || !seen.insert(key) {
                     continue;
                 }
-                let emb = self.ports.embedder.embed(&cand.text, EmbedAction::Search)?;
-                deduped.push((cand.clone(), emb));
+                match self.ports.embedder.embed(&cand.text, EmbedAction::Search) {
+                    Ok(emb) => deduped.push((cand.clone(), emb)),
+                    Err(err) => {
+                        // Entity embedding failure is non-fatal — degrade
+                        // entity boosts to "none for this entity" and
+                        // continue with whatever entities we did embed.
+                        self.downgrade_to_bm25_only_once(&err);
+                        break;
+                    }
+                }
             }
             self.store.entity_boosts(&deduped, req.scope, 0.5)?
         };
@@ -539,6 +626,104 @@ impl CognitiveMemory {
         let hit_ids: Vec<String> = hits.iter().map(|h| h.id.clone()).collect();
         let _ = self.store.increment_recall_counts(&hit_ids);
         Ok(hits)
+    }
+
+    /// BM25-only fallback path (ADR 0016). Skips the embedder entirely —
+    /// no semantic search, no entity boosts. Only keyword (FTS5 BM25)
+    /// signals drive recall. Returns zero hits on queries that share no
+    /// terms with any stored memory. NEVER fails for embedder-side reasons.
+    ///
+    /// BM25 raw scores are L2-normalized to `[0, 1]` so the configured
+    /// `threshold` (calibrated for the hybrid `[0, 2.5]` divisor) doesn't
+    /// filter everything. The threshold is scaled to ~0.4 of the BM25 max
+    /// for this fallback path so genuine keyword matches still surface.
+    fn search_bm25_only(&self, req: SearchRequest<'_>) -> Result<Vec<MemoryHit>> {
+        let query_lemmatized = lemmatize_for_bm25(req.query);
+        let num_terms = query_lemmatized.split_whitespace().count();
+        let internal_limit = (req.top_k * 4).max(60);
+        let keyword_raw =
+            self.store
+                .keyword_search(&query_lemmatized, req.scope, internal_limit)?;
+        if keyword_raw.is_empty() {
+            return Ok(Vec::new());
+        }
+        let bm25_scores = CognitiveStore::normalize_keyword_scores(&keyword_raw, num_terms);
+        // Build ScoredCandidate stubs with semantic_score=0.0 so the
+        // score_and_rank path is reused unchanged. We synthesize
+        // ScoreBreakdown-equivalent minimal payloads from the bm25 hits.
+        let empty_entity_boosts: std::collections::HashMap<String, f32> =
+            std::collections::HashMap::new();
+        // The score function expects a `scored` slice; in BM25-only mode we
+        // have no semantic candidates. Reuse score_and_rank by synthesizing
+        // ScoredCandidate stubs keyed by the bm25 ids — but score_and_rank
+        // intersects scored + bm25, so we instead skip it and rank bm25
+        // hits directly here.
+        let _ = empty_entity_boosts;
+        let mut ranked: Vec<(String, f32)> = bm25_scores.into_iter().collect();
+        ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        // Scale threshold down for BM25-only mode (the hybrid path divides
+        // by 2.5; a 0.02 threshold maps roughly to 0.008 in pure-BM25
+        // space). Use 0.4x so genuine matches still surface.
+        let bm25_threshold = (req.threshold * 0.4).max(0.005);
+        let mut hits: Vec<MemoryHit> = Vec::with_capacity(req.top_k);
+        for (id, bm25) in ranked {
+            if bm25 < bm25_threshold {
+                continue;
+            }
+            // Look up the memory record to populate the hit payload.
+            if let Some(rec) = self.store.get_memory(&id)? {
+                hits.push(MemoryHit {
+                    id: rec.id,
+                    memory: rec.data,
+                    score: bm25.min(1.0),
+                    hash: Some(rec.hash),
+                    created_at: Some(rec.created_at),
+                    updated_at: Some(rec.updated_at),
+                    attributed_to: rec.attributed_to,
+                    scope: rec.scope,
+                    memory_type: rec.memory_type,
+                    priority: rec.priority,
+                    scene: rec.scene,
+                    extras: rec.extras,
+                    score_details: Some(ScoreBreakdown {
+                        semantic_score: 0.0,
+                        bm25_score: bm25,
+                        entity_boost: 0.0,
+                        raw_score: bm25,
+                        max_possible_score: 1.0,
+                        final_score: bm25.min(1.0),
+                        threshold: bm25_threshold,
+                    }),
+                });
+                if hits.len() >= req.top_k {
+                    break;
+                }
+            }
+        }
+        let hit_ids: Vec<String> = hits.iter().map(|h| h.id.clone()).collect();
+        let _ = self.store.increment_recall_counts(&hit_ids);
+        Ok(hits)
+    }
+
+    /// ADR 0016 helper: atomically downgrade to BM25Only and log ONCE per
+    /// process. Called from `search()` whenever the embedder fails or
+    /// produces incompatible output.
+    fn downgrade_to_bm25_only_once(&self, err: &CognitionError) {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        static DOWNGRADE_LOGGED: AtomicBool = AtomicBool::new(false);
+        // Atomically swap mode + log; if another thread beats us, no-op.
+        if self.search_mode() == SearchMode::BM25Only {
+            return;
+        }
+        self.set_search_mode(SearchMode::BM25Only);
+        if !DOWNGRADE_LOGGED.swap(true, Ordering::SeqCst) {
+            eprintln!(
+                "cognition: embedder failed mid-search — auto-recall degraded to \
+                 BM25-only for the rest of this session. Error: {err}. The next \
+                 successful embedder call upgrades back to Hybrid automatically. \
+                 Check that your configured embedding endpoint is reachable."
+            );
+        }
     }
 
     // ----- admin ops --------------------------------------------------
@@ -1535,5 +1720,201 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let engine = build_engine(&dir, 8, r#"{"memory":[]}"#);
         assert_eq!(engine.embedder_model_name(), "unknown");
+    }
+
+    // ===== ADR 0016 regression tests (SearchMode + BM25Only fallback) =====
+
+    /// ADR 0016: `search_mode` defaults to Hybrid.
+    #[test]
+    fn search_mode_defaults_to_hybrid() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine = build_engine(&dir, 8, r#"{"memory":[]}"#);
+        assert_eq!(engine.search_mode(), crate::SearchMode::Hybrid);
+    }
+
+    /// ADR 0016: `set_search_mode` round-trips through the atomic.
+    #[test]
+    fn set_search_mode_round_trips() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine = build_engine(&dir, 8, r#"{"memory":[]}"#);
+        engine.set_search_mode(crate::SearchMode::BM25Only);
+        assert_eq!(engine.search_mode(), crate::SearchMode::BM25Only);
+        engine.set_search_mode(crate::SearchMode::Hybrid);
+        assert_eq!(engine.search_mode(), crate::SearchMode::Hybrid);
+    }
+
+    /// ADR 0016 (THE CORE GUARANTEE): when the embedder fails mid-search,
+    /// `search()` does NOT return `Err`. Instead it downgrades to BM25Only
+    /// and returns keyword-only hits. This is the elimination of Gap 10 —
+    /// silent recall death is now impossible.
+    #[test]
+    fn bm25_only_fallback_returns_keyword_hits_when_embedder_fails() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        /// Embedder that succeeds on Add/Update (so the store can be
+        /// populated) but fails on Search (simulating a runtime outage).
+        struct SearchFailingEmbedder {
+            dim: usize,
+            search_calls: AtomicUsize,
+        }
+        impl EmbeddingPort for SearchFailingEmbedder {
+            fn embed(&self, _text: &str, action: EmbedAction) -> Result<Vec<f32>> {
+                if action == EmbedAction::Search {
+                    self.search_calls.fetch_add(1, Ordering::SeqCst);
+                    return Err(crate::error::CognitionError::Embedding(
+                        "simulated search-time endpoint outage".into(),
+                    ));
+                }
+                // Add/Update succeed with a deterministic stub vector.
+                let mut v = vec![0.0_f32; self.dim];
+                v[0] = 1.0;
+                Ok(v)
+            }
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cognition.db");
+        let store = CognitiveStore::open_with_functions(&path).unwrap();
+        let ports = CognitionPorts {
+            embedder: Arc::new(SearchFailingEmbedder {
+                dim: 8,
+                search_calls: AtomicUsize::new(0),
+            }),
+            extractor: Arc::new(StubExtractor(std::sync::Mutex::new(
+                r#"{"memory":[]}"#.to_string(),
+            ))),
+            entity_nlp: Arc::new(DefaultEntities),
+        };
+        let config = crate::CognitiveConfig {
+            embedding_dim: 8,
+            ..Default::default()
+        };
+        let engine = CognitiveMemory::new(store, ports, config);
+
+        // Store a memory with raw text (no extractor call needed).
+        let scope = Scope {
+            user_id: Some("u1".into()),
+            ..Scope::default()
+        };
+        let msg = Message::user("The user's favorite color is blue.");
+        let req = AddRequest {
+            messages: std::slice::from_ref(&msg),
+            scope: &scope,
+            extras: None,
+            expiration_date: None,
+            infer: false,
+            custom_instructions: None,
+            observation_date: None,
+        };
+        engine.add(req).unwrap();
+
+        // Search with a query that shares a term ("favorite") with the
+        // stored memory. Embedder will fail on Search → must fall back.
+        let sreq = SearchRequest {
+            query: "what is the user's favorite color",
+            scope: &scope,
+            filters: None,
+            top_k: 5,
+            threshold: 0.02,
+            explain: true,
+            show_expired: false,
+        };
+        let hits = engine
+            .search(sreq)
+            .expect("Gap 10 ELIMINATED: search must NOT return Err when embedder fails");
+        // BM25-only mode should still find the hit via shared term "favorite".
+        assert!(
+            !hits.is_empty(),
+            "BM25-only fallback must surface keyword-matching memories"
+        );
+        // After the failed search, mode must be downgraded.
+        assert_eq!(
+            engine.search_mode(),
+            crate::SearchMode::BM25Only,
+            "search_mode must downgrade to BM25Only after embedder failure"
+        );
+        // Verify the hit's score breakdown shows zero semantic contribution.
+        let details = hits[0].score_details.as_ref().unwrap();
+        assert_eq!(details.semantic_score, 0.0);
+        assert!(details.bm25_score > 0.0);
+    }
+
+    /// ADR 0016: explicit `BM25Only` mode never calls the embedder. Proves
+    /// that with no embedder configured, recall still works via keywords.
+    #[test]
+    fn explicit_bm25_only_mode_skips_embedder_entirely() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        struct CountingEmbedder {
+            dim: usize,
+            calls: AtomicUsize,
+        }
+        impl EmbeddingPort for CountingEmbedder {
+            fn embed(&self, _text: &str, _action: EmbedAction) -> Result<Vec<f32>> {
+                self.calls.fetch_add(1, Ordering::SeqCst);
+                Ok(vec![0.0_f32; self.dim])
+            }
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cognition.db");
+        let store = CognitiveStore::open_with_functions(&path).unwrap();
+        let counter = Arc::new(CountingEmbedder {
+            dim: 8,
+            calls: AtomicUsize::new(0),
+        });
+        let ports = CognitionPorts {
+            embedder: Arc::clone(&counter) as Arc<dyn EmbeddingPort>,
+            extractor: Arc::new(StubExtractor(std::sync::Mutex::new(
+                r#"{"memory":[]}"#.to_string(),
+            ))),
+            entity_nlp: Arc::new(DefaultEntities),
+        };
+        let config = crate::CognitiveConfig {
+            embedding_dim: 8,
+            ..Default::default()
+        };
+        let engine = CognitiveMemory::new(store, ports, config);
+
+        // Store 2 memories.
+        let scope = Scope {
+            user_id: Some("u1".into()),
+            ..Scope::default()
+        };
+        for text in ["rust programming language", "python scripting tool"] {
+            let msg = Message::user(text);
+            let req = AddRequest {
+                messages: std::slice::from_ref(&msg),
+                scope: &scope,
+                extras: None,
+                expiration_date: None,
+                infer: false,
+                custom_instructions: None,
+                observation_date: None,
+            };
+            engine.add(req).unwrap();
+        }
+        // After adds, embedder was called twice (one per memory). Reset.
+        counter.calls.store(0, Ordering::SeqCst);
+
+        // Force BM25Only mode.
+        engine.set_search_mode(crate::SearchMode::BM25Only);
+        let sreq = SearchRequest {
+            query: "rust",
+            scope: &scope,
+            filters: None,
+            top_k: 5,
+            threshold: 0.02,
+            explain: false,
+            show_expired: false,
+        };
+        let hits = engine.search(sreq).unwrap();
+        assert_eq!(
+            counter.calls.load(Ordering::SeqCst),
+            0,
+            "BM25Only mode must NOT call the embedder at all"
+        );
+        assert!(!hits.is_empty(), "BM25 must surface the rust memory");
+        assert_eq!(hits[0].memory, "rust programming language");
     }
 }

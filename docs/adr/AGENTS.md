@@ -13,6 +13,10 @@ Own accepted, durable architecture and compatibility decisions for Agent Vesper.
   The blanket Stage-5 SQLite prohibition is superseded by a per-crate
   allowlist exception in `cargo xtask architecture` (only `vesper-cognition`
   may declare `rusqlite`).
+- ADR 0016 introduces the provider-independent embedding layer. The active
+  chat provider no longer determines the embedding source — that decision is
+  owned by `.agent-vesper/cognition/embedding.json`. Cosine similarity
+  cannot silently fail (Gap 10 eliminated structurally).
 
 ## Verification
 
