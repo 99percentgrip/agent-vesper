@@ -173,6 +173,12 @@ pub enum CommandOutcome {
     /// execute against the durable [`vesper_cognition::CognitiveMemory`].
     Cognition(CognitionOp),
 
+    /// ADR 0016 — `/embedding` command. Resolved to a structured
+    /// [`EmbeddingOp`] that the binary drains against the
+    /// `CognitionBundle` (write `embedding.json`, hot-reload the embedder,
+    /// or render the live status block).
+    Embedding(EmbeddingOp),
+
     /// Quit/exit requested.
     Quit,
     /// Unknown command or invalid argument; the message is shown to the user.
@@ -466,6 +472,116 @@ impl CognitionOp {
             Self::Recall { .. } => "recall",
             Self::Forget { .. } => "forget",
         }
+    }
+}
+
+/// ADR 0016 — `/embedding` slash command. The command lives in the
+/// Vesper-native surface (next to `/auth`, `/provider`, `/lmstudio`) and
+/// lets the user inspect or mutate
+/// `.agent-vesper/cognition/embedding.json` from the composer. Mutations
+/// trigger a hot-reload of the embedder at drain time.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EmbeddingOp {
+    /// `/embedding` (no arg) — show the current config + live engine mode.
+    Status,
+    /// `/embedding set source=lmstudio endpoint=... model=... api_key=...
+    /// dimension=...` — merge the parsed key=value pairs into the
+    /// persisted `embedding.json`. Unknown keys are rejected up front.
+    Set { pairs: EmbeddingPairs },
+    /// `/embedding clear` — delete `embedding.json` so the bundle reverts
+    /// to provider-routed behavior on next startup.
+    Clear,
+}
+
+/// Parsed `key=value` pairs from `/embedding set ...`. Every field is
+/// optional; the user typically updates only the fields they care about
+/// (e.g. `/embedding set source=lmstudio model=nomic-embed-text-v1.5`).
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct EmbeddingPairs {
+    pub source: Option<String>,
+    pub endpoint: Option<String>,
+    pub model: Option<String>,
+    pub api_key: Option<String>,
+    pub dimension: Option<usize>,
+}
+
+impl EmbeddingPairs {
+    /// Parses a `/embedding set <body>` argument into structured pairs.
+    /// Returns `Err` with a list of the rejected tokens so the user can
+    /// fix typos (e.g. `source` vs `sauce`). Empty body returns an empty
+    /// `EmbeddingPairs` (the drain step surfaces a clear error).
+    ///
+    /// Accepted keys: `source`, `endpoint`, `model`, `api_key`, `dimension`.
+    /// `source` must be one of `local`, `lmstudio`, `bigmodel` (case-
+    /// insensitive). `dimension` must parse as a positive integer.
+    pub fn parse(body: &str) -> Result<Self, String> {
+        let mut out = Self::default();
+        let mut errors: Vec<String> = Vec::new();
+        for raw in body.split_whitespace() {
+            let Some((key, value)) = raw.split_once('=') else {
+                errors.push(format!("'{raw}' is not key=value"));
+                continue;
+            };
+            match key {
+                "source" => {
+                    let lower = value.to_ascii_lowercase();
+                    if matches!(lower.as_str(), "local" | "lmstudio" | "bigmodel") {
+                        out.source = Some(lower);
+                    } else {
+                        errors.push(format!(
+                            "source must be one of: local, lmstudio, bigmodel (got '{value}')"
+                        ));
+                    }
+                }
+                "endpoint" => {
+                    if value.is_empty() {
+                        errors.push("endpoint cannot be empty".into());
+                    } else {
+                        out.endpoint = Some(value.to_string());
+                    }
+                }
+                "model" => {
+                    if value.is_empty() {
+                        errors.push("model cannot be empty".into());
+                    } else {
+                        out.model = Some(value.to_string());
+                    }
+                }
+                "api_key" => {
+                    // Allow explicit `null` / `none` to clear the field.
+                    let normalized = match value.to_ascii_lowercase().as_str() {
+                        "null" | "none" => None,
+                        _ => Some(value.to_string()),
+                    };
+                    out.api_key = normalized;
+                }
+                "dimension" => match value.parse::<usize>() {
+                    Ok(d) if d > 0 => out.dimension = Some(d),
+                    Ok(_) => errors.push("dimension must be > 0".into()),
+                    Err(_) => errors.push(format!("dimension must be an integer (got '{value}')")),
+                },
+                other => {
+                    errors.push(format!(
+                        "unknown key '{other}' (allowed: source, endpoint, model, api_key, dimension)"
+                    ));
+                }
+            }
+        }
+        if errors.is_empty() {
+            Ok(out)
+        } else {
+            Err(errors.join("; "))
+        }
+    }
+
+    /// Returns true when at least one field is set.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.source.is_none()
+            && self.endpoint.is_none()
+            && self.model.is_none()
+            && self.api_key.is_none()
+            && self.dimension.is_none()
     }
 }
 
@@ -1099,6 +1215,43 @@ impl CommandRegistry {
                 }
             }
 
+            // === ADR 0016 — provider-independent embedding layer command ===
+            // `/embedding`              → status (config + live engine mode)
+            // `/embedding set k=v ...`  → merge into embedding.json + hot reload
+            // `/embedding clear`        → delete embedding.json (revert on restart)
+            "embedding" => {
+                let body = argument.trim();
+                if body.is_empty() {
+                    CommandOutcome::Embedding(EmbeddingOp::Status)
+                } else if let Some(set_body) = body.strip_prefix("set") {
+                    let set_body = set_body.trim();
+                    if set_body.is_empty() {
+                        CommandOutcome::Error(
+                            "Usage: /embedding set source=<local|lmstudio|bigmodel> \
+                             [endpoint=...] [model=...] [api_key=...] [dimension=...]"
+                                .into(),
+                        )
+                    } else {
+                        match EmbeddingPairs::parse(set_body) {
+                            Ok(pairs) if pairs.is_empty() => CommandOutcome::Error(
+                                "Usage: /embedding set <key=value> [key=value ...]".into(),
+                            ),
+                            Ok(pairs) => CommandOutcome::Embedding(EmbeddingOp::Set { pairs }),
+                            Err(err) => {
+                                CommandOutcome::Error(format!("/embedding set rejected: {err}"))
+                            }
+                        }
+                    }
+                } else if body == "clear" {
+                    CommandOutcome::Embedding(EmbeddingOp::Clear)
+                } else {
+                    CommandOutcome::Error(format!(
+                        "Unknown /embedding subcommand: {body:?}. Available: set, clear, \
+                         (no arg → status)."
+                    ))
+                }
+            }
+
             // A registered command without a concrete route is a parity bug,
             // not a user-visible feature state. Fail closed so tests and the
             // audit surface expose the missing implementation immediately.
@@ -1524,6 +1677,7 @@ const ORACLE_COMMAND_SURFACE: &[OracleCommandEntry] = &[
     OracleCommandEntry { name: "auth",              description: "Re-authenticate or rotate the active provider's credential (Vesper-native, provider-routed)" },
     OracleCommandEntry { name: "lmstudio",          description: "Configure the LM Studio LAN/localhost endpoint (Vesper-native)" },
     OracleCommandEntry { name: "provider",          description: "Switch the active provider (Vesper-native, arrow-key picker)" },
+    OracleCommandEntry { name: "embedding",         description: "View or set the cognitive-memory embedding source (ADR 0016, Vesper-native)" },
     OracleCommandEntry { name: "quit",              description: "Exit the TUI (Vesper-native; oracle uses Ctrl+X)" },
 ];
 
@@ -2013,8 +2167,10 @@ mod tests {
         );
         assert_eq!(
             registry.names().len(),
-            89,
-            "Phase 7 parity: 80 oracle commands + 9 Vesper-native = 89 total"
+            90,
+            "Phase 7 parity: 80 oracle commands + 10 Vesper-native = 90 total \
+             (Vesper-native: approve, cancel, auth, lmstudio, provider, embedding, \
+             quit, remember, recall, forget)"
         );
     }
 
@@ -2617,4 +2773,253 @@ mod tests {
 
     // Compile-time guard so the test module name does not get pruned.
     const _: PlanPhase = PlanPhase::Normal;
+
+    // === ADR 0016 — `/embedding` slash-command tests ===
+    // Directive 4: prove the parse + dispatch + BigModel resolution paths
+    // work without needing the TUI binary or any network round-trip.
+
+    #[test]
+    fn embedding_pairs_parse_accepts_source_only() {
+        let pairs = EmbeddingPairs::parse("source=lmstudio").unwrap();
+        assert_eq!(pairs.source.as_deref(), Some("lmstudio"));
+        assert!(pairs.endpoint.is_none());
+        assert!(pairs.model.is_none());
+        assert!(pairs.api_key.is_none());
+        assert!(pairs.dimension.is_none());
+        assert!(!pairs.is_empty());
+    }
+
+    #[test]
+    fn embedding_pairs_parse_accepts_full_lmstudio_set() {
+        let pairs = EmbeddingPairs::parse(
+            "source=lmstudio endpoint=http://localhost:1234/v1/embeddings \
+             model=text-embedding-nomic-embed-text-v1.5 dimension=768",
+        )
+        .unwrap();
+        assert_eq!(pairs.source.as_deref(), Some("lmstudio"));
+        assert_eq!(
+            pairs.endpoint.as_deref(),
+            Some("http://localhost:1234/v1/embeddings")
+        );
+        assert_eq!(
+            pairs.model.as_deref(),
+            Some("text-embedding-nomic-embed-text-v1.5")
+        );
+        assert_eq!(pairs.dimension, Some(768));
+    }
+
+    #[test]
+    fn embedding_pairs_parse_normalizes_source_to_lowercase() {
+        // Source is case-insensitive — "LMStudio" and "BigModel" must both
+        // normalize so the engine's match arm finds them.
+        let pairs = EmbeddingPairs::parse("source=LMStudio").unwrap();
+        assert_eq!(pairs.source.as_deref(), Some("lmstudio"));
+        let pairs = EmbeddingPairs::parse("source=BigModel").unwrap();
+        assert_eq!(pairs.source.as_deref(), Some("bigmodel"));
+        let pairs = EmbeddingPairs::parse("source=LOCAL").unwrap();
+        assert_eq!(pairs.source.as_deref(), Some("local"));
+    }
+
+    #[test]
+    fn embedding_pairs_parse_rejects_invalid_source() {
+        let err = EmbeddingPairs::parse("source=openai").unwrap_err();
+        assert!(
+            err.contains("source must be one of"),
+            "expected source-validation error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn embedding_pairs_parse_rejects_unknown_key() {
+        let err = EmbeddingPairs::parse("source=lmstudio batch_size=64").unwrap_err();
+        assert!(
+            err.contains("unknown key 'batch_size'"),
+            "expected unknown-key error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn embedding_pairs_parse_rejects_non_integer_dimension() {
+        let err = EmbeddingPairs::parse("dimension=foo").unwrap_err();
+        assert!(
+            err.contains("dimension must be an integer"),
+            "expected dimension parse error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn embedding_pairs_parse_rejects_zero_dimension() {
+        let err = EmbeddingPairs::parse("dimension=0").unwrap_err();
+        assert!(
+            err.contains("dimension must be > 0"),
+            "expected positive-dimension error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn embedding_pairs_parse_clears_api_key_with_null_or_none() {
+        // `api_key=null` and `api_key=none` normalize to None so users can
+        // explicitly unset a metered token via the slash command.
+        let pairs = EmbeddingPairs::parse("api_key=null").unwrap();
+        assert_eq!(pairs.api_key, None);
+        let pairs = EmbeddingPairs::parse("api_key=none").unwrap();
+        assert_eq!(pairs.api_key, None);
+        let pairs = EmbeddingPairs::parse("api_key=sk-abc123").unwrap();
+        assert_eq!(pairs.api_key.as_deref(), Some("sk-abc123"));
+    }
+
+    #[test]
+    fn embedding_pairs_parse_empty_body_is_empty() {
+        let pairs = EmbeddingPairs::parse("").unwrap();
+        assert!(pairs.is_empty());
+    }
+
+    #[test]
+    fn embedding_command_is_registered() {
+        let registry = CommandRegistry::stage_11b();
+        assert!(
+            registry.contains("embedding"),
+            "/embedding must be registered in the command surface"
+        );
+    }
+
+    #[test]
+    fn embedding_command_no_arg_resolves_to_status() {
+        let registry = CommandRegistry::stage_11b();
+        let plan_state = PlanState::default();
+        let provider = provider();
+        let outcome = registry.resolve(
+            &CommandIntent::Slash {
+                name: "embedding".into(),
+                argument: String::new(),
+            },
+            &plan_state,
+            &provider,
+            &[],
+        );
+        assert_eq!(outcome, CommandOutcome::Embedding(EmbeddingOp::Status));
+    }
+
+    #[test]
+    fn embedding_command_set_resolves_with_parsed_pairs() {
+        let registry = CommandRegistry::stage_11b();
+        let plan_state = PlanState::default();
+        let provider = provider();
+        let outcome = registry.resolve(
+            &CommandIntent::Slash {
+                name: "embedding".into(),
+                argument: "set source=lmstudio dimension=768".into(),
+            },
+            &plan_state,
+            &provider,
+            &[],
+        );
+        match outcome {
+            CommandOutcome::Embedding(EmbeddingOp::Set { pairs }) => {
+                assert_eq!(pairs.source.as_deref(), Some("lmstudio"));
+                assert_eq!(pairs.dimension, Some(768));
+            }
+            other => panic!("expected Embedding::Set, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn embedding_command_set_with_invalid_source_errors() {
+        let registry = CommandRegistry::stage_11b();
+        let plan_state = PlanState::default();
+        let provider = provider();
+        let outcome = registry.resolve(
+            &CommandIntent::Slash {
+                name: "embedding".into(),
+                argument: "set source=openai".into(),
+            },
+            &plan_state,
+            &provider,
+            &[],
+        );
+        match outcome {
+            CommandOutcome::Error(msg) => assert!(
+                msg.contains("source must be one of"),
+                "expected source-validation error, got: {msg}"
+            ),
+            other => panic!("expected Error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn embedding_command_set_with_empty_body_errors_usage() {
+        let registry = CommandRegistry::stage_11b();
+        let plan_state = PlanState::default();
+        let provider = provider();
+        let outcome = registry.resolve(
+            &CommandIntent::Slash {
+                name: "embedding".into(),
+                argument: "set".into(),
+            },
+            &plan_state,
+            &provider,
+            &[],
+        );
+        match outcome {
+            CommandOutcome::Error(msg) => assert!(
+                msg.contains("Usage: /embedding set"),
+                "expected usage error, got: {msg}"
+            ),
+            other => panic!("expected Error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn embedding_command_clear_resolves_to_clear_op() {
+        let registry = CommandRegistry::stage_11b();
+        let plan_state = PlanState::default();
+        let provider = provider();
+        let outcome = registry.resolve(
+            &CommandIntent::Slash {
+                name: "embedding".into(),
+                argument: "clear".into(),
+            },
+            &plan_state,
+            &provider,
+            &[],
+        );
+        assert_eq!(outcome, CommandOutcome::Embedding(EmbeddingOp::Clear));
+    }
+
+    #[test]
+    fn embedding_command_unknown_subcommand_errors() {
+        let registry = CommandRegistry::stage_11b();
+        let plan_state = PlanState::default();
+        let provider = provider();
+        let outcome = registry.resolve(
+            &CommandIntent::Slash {
+                name: "embedding".into(),
+                argument: "frobnicate".into(),
+            },
+            &plan_state,
+            &provider,
+            &[],
+        );
+        match outcome {
+            CommandOutcome::Error(msg) => assert!(
+                msg.contains("Unknown /embedding subcommand"),
+                "expected unknown-subcommand error, got: {msg}"
+            ),
+            other => panic!("expected Error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn embedding_command_help_text_lists_set_and_clear() {
+        // The help text in CommandRegistry::help_text() is human-curated;
+        // the registry surface must keep /embedding discoverable.
+        let registry = CommandRegistry::stage_11b();
+        assert!(registry.contains("embedding"));
+        // Stage 11b registry surfaces the entry in completion_candidates.
+        let candidates = registry.completion_candidates("/embed");
+        assert!(
+            candidates.iter().any(|(name, _)| name == "/embedding"),
+            "expected /embedding in completion candidates, got {candidates:?}"
+        );
+    }
 }

@@ -1285,6 +1285,7 @@ fn allowed_dependencies() -> BTreeMap<&'static str, BTreeSet<&'static str>> {
                 "vesper-provider-glm",
                 "vesper-provider-synthetic",
                 "vesper-runtime",
+                "vesper-security",
                 "vesper-sessions",
             ]),
         ),

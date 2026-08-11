@@ -83,6 +83,10 @@ pub struct SessionState {
     /// Phase 11 (ADR 0015 — Stage 16): a cognitive-memory command
     /// resolved to a structured [`crate::commands::CognitionOp`].
     pub pending_cognition_op: Option<crate::commands::CognitionOp>,
+    /// ADR 0016 — `/embedding` command. The binary drains this against the
+    /// `CognitionBundle` to write `embedding.json` and hot-reload the
+    /// embedder (or render the live status block).
+    pub pending_embedding_op: Option<crate::commands::EmbeddingOp>,
     /// Live execution controls used by both the picker UI and every agent turn.
     pub controls: SessionControls,
     /// Pending runtime mode synchronization after `/permission` or `/mode`.
@@ -346,6 +350,7 @@ fn apply_outcome(
         pending_checkpoint_op,
         pending_mcp_op,
         pending_cognition_op,
+        pending_embedding_op,
         controls,
         pending_mode_update,
         task_plan: _,
@@ -811,10 +816,34 @@ fn apply_outcome(
             ));
         }
 
+        // === ADR 0016 — `/embedding` command ===
+        // Same drain pattern as the other durable subsystems. The binary
+        // owns the CognitionBundle (root path + active embedder) and
+        // executes the op after dispatch: write embedding.json, hot-reload
+        // the embedder (probe + swap + migration), or render the live
+        // status block to the transcript.
+        CommandOutcome::Embedding(op) => {
+            transcript.push(format!(
+                "embedding: /embedding {} accepted (executing against the embedding config)",
+                op_label(&op)
+            ));
+            *pending_embedding_op = Some(op);
+            *status = Some("/embedding: updating the embedding layer...".into());
+        }
+
         CommandOutcome::Quit => {}
     }
 }
 
+/// Short human label for the `/embedding` dispatch transcript line.
+fn op_label(op: &crate::commands::EmbeddingOp) -> &'static str {
+    use crate::commands::EmbeddingOp;
+    match op {
+        EmbeddingOp::Status => "status",
+        EmbeddingOp::Set { .. } => "set",
+        EmbeddingOp::Clear => "clear",
+    }
+}
 /// Replaces the TODO projection from the bounded markdown emitted by
 /// `update_plan`. Malformed lines are ignored rather than displayed as tasks.
 pub fn apply_task_plan(state: &mut SessionState, markdown: &str) {

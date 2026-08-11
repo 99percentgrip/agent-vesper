@@ -118,13 +118,28 @@ keyword matches surface even when the embedding endpoint is completely down.
 
 ## Future Work
 
-- A `/embedding set source lmstudio endpoint http://... model ...` slash
-  command for in-TUI configuration. Currently the file is hand-edited.
-- BigModel auth passing through `EmbeddingConfig` (the current bigmodel path
-  still falls back to provider routing because BigModel auth resolves
-  per-call from the ZAI credential).
-- A background-thread embedder probe so startup is non-blocking (currently
-  the probe runs eagerly with a status log).
+- All three v0.20.14 deferrals are closed in v0.20.15:
+  - **Directive 1 — BigModel source path**: `build_independent_embedder`
+    takes a `credential_source` argument; `source: "bigmodel"` now constructs
+    `BigModelEmbeddingAdapter` (resolves JWT per call from the ZAI
+    credential) instead of falling back to `LocalHashEmbedder`. The test
+    `embedding_bigmodel_source_path_constructs_bigmodel_adapter` proves the
+    embedder is NOT `local-hash-embedder`.
+  - **Directive 2 — Background-thread embedder probe**: `open_default` no
+    longer performs an eager blocking HTTP probe. The engine starts in
+    `BM25Only` (or `Hybrid` for `source: "local"` / ZAI-routed BigModel),
+    and a `std::thread::spawn` background task issues a one-shot `embed()`
+    call; on success it flips the engine to `Hybrid`. TUI startup is now
+    instant regardless of LM Studio availability.
+  - **Directive 3 — `/embedding` slash command**: registered in the
+    Vesper-native surface (alongside `/auth`, `/provider`, `/lmstudio`).
+    `/embedding` shows live status; `/embedding set source=... endpoint=...
+    model=... api_key=... dimension=...` parses, validates, persists to
+    `embedding.json`, and triggers a hot-reload that probes the new endpoint
+    in a background thread; `/embedding clear` deletes the file. The parser
+    is pure and unit-tested (`EmbeddingPairs::parse`).
+- The `/embedding set` hot-reload probes the new endpoint in a background
+  thread — same pattern as the startup probe.
 
 ## References
 
@@ -133,3 +148,5 @@ keyword matches surface even when the embedding endpoint is completely down.
 - v0.20.12 release — closed gaps 1, 2, 6, 7, 9, 10 (mitigation), 12 (mitigation), 13
 - v0.20.13 release — closed gaps 3, 4, 5, 8, 11
 - v0.20.14 release — ADR 0016 implementation
+- v0.20.15 release — Directive 1 (BigModel), Directive 2 (background probe),
+  Directive 3 (`/embedding` slash command)

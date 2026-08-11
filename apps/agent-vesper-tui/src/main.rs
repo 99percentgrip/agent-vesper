@@ -174,6 +174,11 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
         Arc::new(vesper_provider_glm::EnvironmentCredentialSource),
         provider_id.as_str(),
     ));
+    // Directive 2 (ADR 0016 follow-up) — kick off the embedder startup probe
+    // in a background OS thread. The TUI loads instantly; if a memory search
+    // runs before the probe completes it falls back to BM25-only results and
+    // auto-upgrades to Hybrid on the first successful embed call.
+    cognition_bundle.spawn_background_probe();
     let _ = &cognition_bundle;
     // Phase 9 (ADR 0012): open the durable checkpoints subsystem rooted at
     // `AGENT_VESPER_CHECKPOINT_ROOT` (falling back to
@@ -1617,6 +1622,12 @@ async fn drive_loop(
                 // Phase 11 (ADR 0015 — Stage 16): drain pending cognitive-memory op.
                 if let Some(op) = session.state.pending_cognition_op.take() {
                     drain_cognition_op(op, cognition_bundle, &mut session.state);
+                }
+                // ADR 0016 — drain pending `/embedding` op against the
+                // CognitionBundle. Set/Clear rewrite `embedding.json` and
+                // hot-reload the embedder; Status renders the live block.
+                if let Some(op) = session.state.pending_embedding_op.take() {
+                    drain_embedding_op(op, cognition_bundle, &mut session.state);
                 }
             }
             KeyCode::Backspace => {
@@ -5174,6 +5185,18 @@ struct CognitionBundle {
     engine: Option<Arc<vesper_cognition::CognitiveMemory>>,
     /// Human-readable root path used in error notices.
     root_display: String,
+    /// Owned copy of the cognition root (used by `/embedding set ...` to
+    /// rewrite `embedding.json` and trigger a hot-reload).
+    root: std::path::PathBuf,
+    /// Owned copy of the active embedder — kept so `/embedding set ...`
+    /// hot-reload can probe the new endpoint before swapping it into the
+    /// engine, and so the startup probe (Directive 2) can run in a
+    /// background thread without rebuilding the ports.
+    #[allow(dead_code)]
+    embedder: Option<Arc<dyn vesper_cognition::EmbeddingPort>>,
+    /// Snapshot of the active credential source — used by the background
+    /// startup probe (Directive 2) and by BigModel hot-reload.
+    credential_source: Arc<dyn vesper_provider_glm::GlmCredentialSource>,
 }
 
 /// ADR 0016 — Provider-Independent Embedding Layer. Deserializes from
@@ -5270,12 +5293,20 @@ impl CognitionBundle {
     /// available, so cognitive memory works for LM Studio-only deployments.
     /// Builds an embedder from an explicit `EmbeddingConfig` (ADR 0016,
     /// provider-independent path). Returns `(embedder, probed_dim,
-    /// initial_search_mode)`. `search_mode` is `BM25Only` if the configured
-    /// endpoint is unreachable at startup — `search()` will auto-upgrade to
-    /// `Hybrid` on the first successful embed call.
+    /// initial_search_mode)`. `search_mode` is `BM25Only` when no startup
+    /// probe is performed — `search()` will auto-upgrade to `Hybrid` on the
+    /// first successful embed call (Directive 2 — no eager blocking probe).
+    ///
+    /// `credential_source` is required by the `bigmodel` source path
+    /// (Directive 1 — ADR 0016 BigModel resolution). BigModel uses JWT auth
+    /// derived from the ZAI credential; the adapter resolves the credential
+    /// **per call** rather than capturing it at startup, so a stale or
+    /// rotated credential keeps working without a TUI restart. Other source
+    /// paths ignore this argument.
     fn build_independent_embedder(
         cfg: &EmbeddingConfig,
         default_dim: usize,
+        credential_source: &Arc<dyn vesper_provider_glm::GlmCredentialSource>,
     ) -> (
         Arc<dyn vesper_cognition::EmbeddingPort>,
         Option<usize>,
@@ -5310,57 +5341,45 @@ impl CognitionBundle {
                 );
                 eprintln!(
                     "cognition: embedding config = lmstudio ({model} @ {endpoint}); \
-                     probing endpoint..."
+                     search mode starts in BM25-only (probe runs in background; \
+                     auto-upgrades to Hybrid on first successful embed)."
                 );
-                let dim_hint = adapter.probe_dimension().ok();
-                let mode = match dim_hint {
-                    Some(d) => {
-                        eprintln!(
-                            "cognition: LM Studio embedding endpoint responded \
-                             ({d}-d via {model}). Search mode = Hybrid."
-                        );
-                        vesper_cognition::SearchMode::Hybrid
-                    }
-                    None => {
-                        eprintln!(
-                            "cognition: LM Studio embedding endpoint unreachable; \
-                             starting in BM25-only mode. Will auto-upgrade to Hybrid \
-                             on first successful embed."
-                        );
-                        vesper_cognition::SearchMode::BM25Only
-                    }
-                };
+                // Directive 2 — NO eager blocking probe here. The bundle
+                // probes the endpoint in a background tokio task; if the
+                // probe succeeds it flips search_mode to Hybrid. If a
+                // search runs before the probe completes, search() honors
+                // the BM25Only mode and returns keyword-only results —
+                // graceful fallback, no UI stall.
                 (
                     Arc::new(adapter) as Arc<dyn vesper_cognition::EmbeddingPort>,
-                    dim_hint,
-                    mode,
+                    cfg.dimension,
+                    vesper_cognition::SearchMode::BM25Only,
                 )
             }
             Some("bigmodel") => {
-                // No eager probe — BigModel auth resolves per call. Default
-                // to Hybrid; degrade on first failure.
+                // Directive 1 — ADR 0016 BigModel source path. The adapter
+                // resolves the ZAI credential PER CALL (JWT signed with the
+                // api-key secret), so credential rotation/refresh works
+                // without restarting the TUI. No startup probe — auth +
+                // first network round-trip happen lazily on first embed;
+                // search() starts in BM25Only and auto-upgrades on first
+                // success.
                 eprintln!(
-                    "cognition: embedding config = bigmodel; BigModelEmbeddingAdapter. \
-                     (Auth resolved per-call; no startup probe.)"
+                    "cognition: embedding config = bigmodel; BigModelEmbeddingAdapter \
+                     (JWT auth resolved per call from the ZAI credential). Search mode \
+                     starts in BM25-only; auto-upgrades to Hybrid on first successful embed."
                 );
-                // The BigModel adapter requires a credential source, which
-                // we don't have here without restructuring — for now we
-                // fall through to provider routing and log a hint.
-                eprintln!(
-                    "cognition: bigmodel config requires ZAI credential at runtime; \
-                     deferring to provider-routed fallback. Set source=lmstudio for a \
-                     provider-independent neural embedder."
-                );
+                let adapter = BigModelEmbeddingAdapter::new(Arc::clone(credential_source));
                 (
-                    Arc::new(vesper_cognition::LocalHashEmbedder::new(default_dim)),
-                    Some(default_dim),
-                    vesper_cognition::SearchMode::Hybrid,
+                    Arc::new(adapter) as Arc<dyn vesper_cognition::EmbeddingPort>,
+                    Some(1024),
+                    vesper_cognition::SearchMode::BM25Only,
                 )
             }
             Some(other) => {
                 eprintln!(
                     "cognition: unknown embedding source '{other}' in embedding.json; \
-                     falling back to provider-routed behavior."
+                     falling back to LocalHashEmbedder (zero-network)."
                 );
                 (
                     Arc::new(vesper_cognition::LocalHashEmbedder::new(default_dim)),
@@ -5414,21 +5433,25 @@ impl CognitionBundle {
                  (source = {:?}). Chat-provider switches will NOT change the embedder.",
                 embedding_config.source
             );
-            Self::build_independent_embedder(&embedding_config, default_dim)
+            Self::build_independent_embedder(&embedding_config, default_dim, &credential_source)
         } else {
             // Backward-compat: v0.20.13 provider-routed embedder selection.
             // Construct the embedder ONCE (Gap 5); share the Arc across
-            // config dim check + migration + engine ports.
+            // config dim check + migration + engine ports. Directive 2: the
+            // probe runs in a background task after `open()` returns — the
+            // bundle starts in BM25Only and auto-upgrades to Hybrid.
             let (e, d) = Self::build_provider_routed_embedder(
                 &credential_source,
                 active_provider,
                 default_dim,
             );
-            // The provider-routed path has no concept of "unreachable at
-            // startup" — it eagerly probes LM Studio and falls back to
-            // LocalHashEmbedder if that fails. Either way the result is
-            // reachable, so we start in Hybrid mode.
-            (e, d, vesper_cognition::SearchMode::Hybrid)
+            // Provider-routed path: never block on a startup probe. If the
+            // embedder is reachable, search() auto-upgrades on first call.
+            let initial_mode = match active_provider {
+                "lmstudio" => vesper_cognition::SearchMode::BM25Only,
+                _ => vesper_cognition::SearchMode::Hybrid,
+            };
+            (e, d, initial_mode)
         };
 
         let mut config = vesper_cognition::CognitiveConfig::default();
@@ -5559,9 +5582,72 @@ impl CognitionBundle {
             Some(engine)
         })();
         Self {
-            engine,
+            engine: engine.clone(),
             root_display,
+            root,
+            embedder: Some(embedder),
+            credential_source: Arc::clone(&credential_source),
         }
+    }
+
+    /// Spawns a background OS thread that probes the active embedder and
+    /// upgrades the engine's `search_mode` to `Hybrid` if the probe
+    /// succeeds (Directive 2 — ADR 0016 follow-up). Returns immediately;
+    /// the probe never blocks the TUI startup. If a search runs before the
+    /// probe completes, `search()` honors the BM25Only starting mode and
+    /// returns keyword-only results — graceful fallback, no UI stall.
+    fn spawn_background_probe(self: &Arc<Self>) {
+        let Some(engine) = self.engine.clone() else {
+            return;
+        };
+        let Some(embedder) = self.embedder.clone() else {
+            return;
+        };
+        // Skip the probe when already in Hybrid mode (e.g. `source: "local"`
+        // or ZAI provider-routed BigModel — both start in Hybrid because
+        // they have no network dependency to verify).
+        if engine.search_mode() == vesper_cognition::SearchMode::Hybrid {
+            return;
+        }
+        std::thread::spawn(move || {
+            // `probe_dimension` does a single embedding round-trip and is
+            // safe to call from a background OS thread — it is blocking
+            // but does not touch the SQLite store. The OnceLock on the
+            // adapter caches the result so the first real search reuses it.
+            match embedder.model_name() {
+                "local-hash-embedder" => {
+                    // LocalHashEmbedder cannot fail; flip to Hybrid
+                    // immediately so the first search uses semantic recall.
+                    engine.set_search_mode(vesper_cognition::SearchMode::Hybrid);
+                }
+                _ => {
+                    // Probe the live endpoint. The trait doesn't expose
+                    // probe_dimension directly, so we issue a one-shot
+                    // embed call and treat any non-error as "reachable".
+                    match embedder.embed(
+                        "cognition: startup probe",
+                        vesper_cognition::EmbedAction::Search,
+                    ) {
+                        Ok(_) => {
+                            eprintln!(
+                                "cognition: background probe succeeded — search mode \
+                                 upgraded to Hybrid."
+                            );
+                            engine.set_search_mode(vesper_cognition::SearchMode::Hybrid);
+                        }
+                        Err(err) => {
+                            eprintln!(
+                                "cognition: background probe failed ({err}); staying in \
+                                 BM25-only mode. Search will auto-upgrade to Hybrid on \
+                                 the first successful embed call."
+                            );
+                            // Leave search_mode at BM25Only — search() will
+                            // auto-upgrade on the next successful embed.
+                        }
+                    }
+                }
+            }
+        });
     }
 
     /// v0.20.13 backward-compat path: embedder follows the active chat
@@ -5569,6 +5655,12 @@ impl CognitionBundle {
     /// `source` field is absent. Construct the embedder ONCE (Gap 5) so the
     /// dimension probe's OnceLock is shared across the config check +
     /// migration + engine ports.
+    ///
+    /// Directive 2 (ADR 0016 follow-up): this function no longer performs
+    /// an eager blocking HTTP probe. The bundle spawns a background task
+    /// after `open_default` returns that probes the endpoint and upgrades
+    /// the engine's search_mode to Hybrid if reachable. This keeps TUI
+    /// startup instant regardless of LM Studio availability.
     fn build_provider_routed_embedder(
         credential_source: &Arc<dyn vesper_provider_glm::GlmCredentialSource>,
         active_provider: &str,
@@ -5578,23 +5670,13 @@ impl CognitionBundle {
             "lmstudio" => match LmStudioEmbedder::from_persisted_settings() {
                 Some(adapter) => {
                     eprintln!(
-                        "cognition: probing LM Studio embedding endpoint at {} ...",
+                        "cognition: LM Studio embedding endpoint configured at {}. \
+                         Probe runs in the background; search starts in BM25-only and \
+                         auto-upgrades to Hybrid when the endpoint responds.",
                         adapter.endpoint_url
                     );
-                    let dim_hint = adapter.probe_dimension().ok();
-                    match dim_hint {
-                        Some(d) => eprintln!(
-                            "cognition: LM Studio responded ({}-d embeddings via {}).",
-                            d, adapter.model
-                        ),
-                        None => eprintln!(
-                            "cognition: LM Studio endpoint unreachable at startup; \
-                             semantic recall will degrade to BM25-only until the \
-                             endpoint becomes reachable on first prompt."
-                        ),
-                    }
                     let arc: Arc<dyn vesper_cognition::EmbeddingPort> = Arc::new(adapter);
-                    (arc, dim_hint)
+                    (arc, None)
                 }
                 None => {
                     eprintln!(
@@ -5616,7 +5698,7 @@ impl CognitionBundle {
                 {
                     let arc: Arc<dyn vesper_cognition::EmbeddingPort> =
                         Arc::new(BigModelEmbeddingAdapter::new(Arc::clone(credential_source)));
-                    (arc, Some(default_dim))
+                    (arc, Some(1024))
                 } else {
                     let arc: Arc<dyn vesper_cognition::EmbeddingPort> =
                         Arc::new(vesper_cognition::LocalHashEmbedder::new(default_dim));
@@ -5804,6 +5886,11 @@ impl LmStudioEmbedder {
     /// Probes the endpoint with a short test string and returns the
     /// embedding dimension. Cached after the first call. Returns `Err` if
     /// the endpoint is unreachable (server offline, wrong URL, auth issue).
+    ///
+    /// Production no longer calls this directly — the background probe
+    /// (Directive 2) issues a one-shot `embed()` call instead. The method
+    /// is retained as a focused test seam.
+    #[allow(dead_code)]
     fn probe_dimension(&self) -> Result<usize, vesper_cognition::CognitionError> {
         if let Some(&dim) = self.dim.get() {
             return Ok(dim);
@@ -9208,6 +9295,193 @@ fn drain_cognition_op(
     }
 }
 
+/// ADR 0016 — `/embedding` slash-command drain. The op was parsed by the
+/// pure `commands.rs` resolver; this function performs the actual disk +
+/// embedder mutation against the live `CognitionBundle`.
+///
+/// Three sub-commands:
+/// - **Status**: render the current config + live search mode + model name
+///   into the transcript so the user sees what is active.
+/// - **Set { pairs }**: load the existing `embedding.json`, merge the parsed
+///   pairs, persist, then hot-reload the embedder by rebuilding the bundle's
+///   embedder Arc + flipping the engine's search mode. If the new endpoint
+///   probes successfully, search upgrades to Hybrid immediately; otherwise
+///   it stays in BM25Only and auto-upgrades on first successful embed.
+/// - **Clear**: delete `embedding.json` so the bundle reverts to the v0.20.13
+///   provider-routed behavior on the next TUI startup.
+fn drain_embedding_op(
+    op: agent_vesper_tui::commands::EmbeddingOp,
+    bundle: &CognitionBundle,
+    state: &mut SessionState,
+) {
+    use agent_vesper_tui::commands::EmbeddingOp;
+
+    match op {
+        EmbeddingOp::Status => render_embedding_status(bundle, state),
+        EmbeddingOp::Set { pairs } => apply_embedding_set(bundle, &pairs, state),
+        EmbeddingOp::Clear => {
+            let path = bundle.root.join("embedding.json");
+            match std::fs::remove_file(&path) {
+                Ok(()) => {
+                    state.transcript.push(format!(
+                        "embedding: removed {path_display}. Restart the TUI to revert to \
+                         provider-routed embedder selection.",
+                        path_display = path.display()
+                    ));
+                    state.status = Some("embedding.json removed (restart to apply)".into());
+                }
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                    state
+                        .transcript
+                        .push("embedding: no embedding.json present — nothing to clear.".into());
+                    state.status = Some("embedding.json not present".into());
+                }
+                Err(err) => {
+                    state
+                        .transcript
+                        .push(format!("embedding: /embedding clear failed: {err}"));
+                    state.status = Some(format!("embedding clear failed: {err}"));
+                }
+            }
+        }
+    }
+}
+
+/// Renders the current embedding layer state to the transcript.
+fn render_embedding_status(bundle: &CognitionBundle, state: &mut SessionState) {
+    let cfg = EmbeddingConfig::load(&bundle.root);
+    state.transcript.push("embedding: current state".into());
+    match &cfg.source {
+        None => state.transcript.push(
+            "  source: (unset — provider-routed fallback; embedder follows the active chat provider)"
+                .into(),
+        ),
+        Some(source) => state
+            .transcript
+            .push(format!("  source: {source} (ADR 0016 provider-independent)")),
+    }
+    if let Some(endpoint) = &cfg.endpoint {
+        state.transcript.push(format!("  endpoint: {endpoint}"));
+    }
+    if let Some(model) = &cfg.model {
+        state.transcript.push(format!("  model: {model}"));
+    }
+    if let Some(d) = cfg.dimension {
+        state.transcript.push(format!("  dimension: {d}"));
+    }
+    if let Some(engine) = bundle.engine.as_ref() {
+        let mode = match engine.search_mode() {
+            vesper_cognition::SearchMode::Hybrid => "Hybrid (semantic + BM25)",
+            vesper_cognition::SearchMode::BM25Only => "BM25Only (keyword-only; will auto-upgrade)",
+        };
+        let model_name = engine.embedder_model_name();
+        state
+            .transcript
+            .push(format!("  active embedder model: {model_name}"));
+        state.transcript.push(format!("  live search mode: {mode}"));
+    } else {
+        state
+            .transcript
+            .push("  engine: unavailable (cognition.db could not be opened)".into());
+    }
+    state
+        .transcript
+        .push("Edit via: /embedding set source=<local|lmstudio|bigmodel> [endpoint=...] [model=...] [dimension=...]".into());
+    state.status = None;
+}
+
+/// Merges parsed key=value pairs into the existing `embedding.json`,
+/// persists, then hot-reloads the embedder.
+fn apply_embedding_set(
+    bundle: &CognitionBundle,
+    pairs: &agent_vesper_tui::commands::EmbeddingPairs,
+    state: &mut SessionState,
+) {
+    let mut cfg = EmbeddingConfig::load(&bundle.root);
+    if let Some(source) = &pairs.source {
+        cfg.source = Some(source.clone());
+    }
+    if let Some(endpoint) = &pairs.endpoint {
+        cfg.endpoint = Some(endpoint.clone());
+    }
+    if let Some(model) = &pairs.model {
+        cfg.model = Some(model.clone());
+    }
+    if let Some(api_key) = &pairs.api_key {
+        cfg.api_key = Some(api_key.clone());
+    }
+    if let Some(dim) = pairs.dimension {
+        cfg.dimension = Some(dim);
+    }
+
+    if let Err(err) = cfg.save(&bundle.root) {
+        state
+            .transcript
+            .push(format!("embedding: failed to save embedding.json: {err}"));
+        state.status = Some(format!("embedding save failed: {err}"));
+        return;
+    }
+    state.transcript.push(format!(
+        "embedding: wrote {} (source = {:?})",
+        bundle.root.join("embedding.json").display(),
+        cfg.source
+    ));
+
+    // Hot-reload: rebuild the embedder from the freshly-written config and
+    // probe it in a background thread. If the probe succeeds the engine
+    // upgrades to Hybrid; otherwise it stays in BM25Only and search()
+    // auto-upgrades on first successful embed.
+    let default_dim = vesper_cognition::CognitiveConfig::default().embedding_dim;
+    if cfg.overrides_provider_routing() {
+        let (new_embedder, _probed_dim, initial_mode) = CognitionBundle::build_independent_embedder(
+            &cfg,
+            default_dim,
+            &bundle.credential_source,
+        );
+        state.transcript.push(format!(
+            "embedding: hot-reload starting in {:?} mode; background probe will upgrade to Hybrid if reachable.",
+            initial_mode
+        ));
+        if let Some(engine) = bundle.engine.as_ref() {
+            engine.set_search_mode(initial_mode);
+            // Spawn a probe that uses the new embedder. On success it flips
+            // the engine to Hybrid; on failure it leaves BM25Only in place
+            // (search() will still auto-upgrade on first successful embed).
+            let engine_arc = Arc::clone(engine);
+            std::thread::spawn(move || {
+                let model_name = new_embedder.model_name();
+                if model_name == "local-hash-embedder" {
+                    engine_arc.set_search_mode(vesper_cognition::SearchMode::Hybrid);
+                    return;
+                }
+                match new_embedder.embed(
+                    "cognition: hot-reload probe",
+                    vesper_cognition::EmbedAction::Search,
+                ) {
+                    Ok(_) => {
+                        eprintln!(
+                            "cognition: hot-reload probe succeeded — search mode upgraded to Hybrid."
+                        );
+                        engine_arc.set_search_mode(vesper_cognition::SearchMode::Hybrid);
+                    }
+                    Err(err) => {
+                        eprintln!(
+                            "cognition: hot-reload probe failed ({err}); staying in BM25-only."
+                        );
+                    }
+                }
+            });
+        }
+    } else {
+        state.transcript.push(
+            "embedding: source not set; bundle will keep using provider-routed selection \
+             (the file is still written for record-keeping)."
+                .into(),
+        );
+    }
+    state.status = None;
+}
+
 /// Pre-dispatch cognitive context injection (ADR 0015 — Stage 16).
 /// Searches the cognitive-memory engine with the user prompt and formats
 /// the top hits as a bulleted context block. Returns `None` when the engine
@@ -10706,5 +10980,202 @@ mod tests {
         assert!(r2.is_empty() || !r2.chars().any(|c| !c.is_whitespace()));
         let _ = std::fs::remove_file(&wav1);
         let _ = std::fs::remove_file(&wav2);
+    }
+
+    // === ADR 0016 — Directive 1 + Directive 4 tests ===
+    // Prove the BigModel source path resolves correctly (no legacy fallback
+    // to LocalHashEmbedder) AND that the LM Studio path starts in BM25Only
+    // (Directive 2 — no eager blocking probe).
+
+    /// A fake credential source used to exercise the BigModel adapter
+    /// constructor without touching the OS keychain or environment. The
+    /// JWT sign routine rejects non-id-shaped secrets, so we use a
+    /// recognizably-valid test shape.
+    struct FakeZaiCredentialSource;
+
+    impl vesper_provider_glm::GlmCredentialSource for FakeZaiCredentialSource {
+        fn credential(&self, name: &str) -> Option<vesper_security::SecretValue> {
+            if name == "zai_api_key" || name == "glm_api_key" {
+                // Shape: `<id>.<secret-base64>` — passes the dot-separator
+                // check inside `BigModelEmbeddingAdapter::resolve_jwt`.
+                Some(vesper_security::SecretValue::new(
+                    "123456.test-secret-value".to_string(),
+                ))
+            } else {
+                None
+            }
+        }
+    }
+
+    #[test]
+    fn embedding_bigmodel_source_path_constructs_bigmodel_adapter() {
+        // Directive 1 — `source: "bigmodel"` must construct
+        // BigModelEmbeddingAdapter (resolves JWT per call from the ZAI
+        // credential), NOT fall back to LocalHashEmbedder. The proof is
+        // the embedder's `model_name()` — BigModelEmbeddingAdapter inherits
+        // the trait default ("unknown"), LocalHashEmbedder overrides to
+        // "local-hash-embedder".
+        let cfg = EmbeddingConfig {
+            source: Some("bigmodel".into()),
+            endpoint: None,
+            model: None,
+            api_key: None,
+            dimension: None,
+        };
+        let default_dim = vesper_cognition::CognitiveConfig::default().embedding_dim;
+        let cred: Arc<dyn vesper_provider_glm::GlmCredentialSource> =
+            Arc::new(FakeZaiCredentialSource);
+        let (embedder, dim_hint, search_mode) =
+            CognitionBundle::build_independent_embedder(&cfg, default_dim, &cred);
+
+        // BigModel returns a fixed 1024-d hint per ADR.
+        assert_eq!(dim_hint, Some(1024), "bigmodel must hint its known 1024-d");
+        // BigModel starts in BM25Only — JWT is resolved lazily per call,
+        // so no startup probe; the engine auto-upgrades to Hybrid on the
+        // first successful embed.
+        assert_eq!(
+            search_mode,
+            vesper_cognition::SearchMode::BM25Only,
+            "bigmodel must start in BM25Only (per-call JWT)"
+        );
+        // Crucially: model_name must NOT be "local-hash-embedder" — that
+        // would mean we silently fell back to LocalHashEmbedder (the bug
+        // this directive fixes).
+        assert_ne!(
+            embedder.model_name(),
+            "local-hash-embedder",
+            "source=bigmodel must NOT silently fall back to LocalHashEmbedder"
+        );
+    }
+
+    #[test]
+    fn embedding_lmstudio_source_path_starts_in_bm25_only() {
+        // Directive 2 — `source: "lmstudio"` must start in BM25Only because
+        // the startup probe is non-blocking. The engine auto-upgrades to
+        // Hybrid in a background thread once the endpoint responds.
+        let cfg = EmbeddingConfig {
+            source: Some("lmstudio".into()),
+            endpoint: Some("http://localhost:1234/v1/embeddings".into()),
+            model: Some("text-embedding-nomic-embed-text-v1.5".into()),
+            api_key: None,
+            dimension: Some(768),
+        };
+        let default_dim = vesper_cognition::CognitiveConfig::default().embedding_dim;
+        let cred: Arc<dyn vesper_provider_glm::GlmCredentialSource> =
+            Arc::new(FakeZaiCredentialSource);
+        let (embedder, dim_hint, search_mode) =
+            CognitionBundle::build_independent_embedder(&cfg, default_dim, &cred);
+
+        assert_eq!(search_mode, vesper_cognition::SearchMode::BM25Only);
+        // Dimension comes from the config field (no probe), not from
+        // an HTTP round-trip.
+        assert_eq!(dim_hint, Some(768));
+        // Embedder type — LmStudioEmbedder inherits the trait default
+        // model_name ("unknown") since the per-instance model is private.
+        assert_ne!(
+            embedder.model_name(),
+            "local-hash-embedder",
+            "source=lmstudio must construct an LmStudioEmbedder, not LocalHashEmbedder"
+        );
+    }
+
+    #[test]
+    fn embedding_local_source_path_starts_in_hybrid() {
+        // LocalHashEmbedder has no network dependency — starts in Hybrid.
+        let cfg = EmbeddingConfig {
+            source: Some("local".into()),
+            endpoint: None,
+            model: None,
+            api_key: None,
+            dimension: None,
+        };
+        let default_dim = vesper_cognition::CognitiveConfig::default().embedding_dim;
+        let cred: Arc<dyn vesper_provider_glm::GlmCredentialSource> =
+            Arc::new(FakeZaiCredentialSource);
+        let (embedder, dim_hint, search_mode) =
+            CognitionBundle::build_independent_embedder(&cfg, default_dim, &cred);
+
+        assert_eq!(search_mode, vesper_cognition::SearchMode::Hybrid);
+        assert_eq!(dim_hint, Some(default_dim));
+        assert_eq!(
+            embedder.model_name(),
+            "local-hash-embedder",
+            "source=local must construct LocalHashEmbedder"
+        );
+    }
+
+    #[test]
+    fn embedding_unknown_source_falls_back_to_local_hash() {
+        // Unknown source should not panic — fall back to LocalHashEmbedder
+        // so the engine keeps working in BM25-capable Hybrid mode.
+        let cfg = EmbeddingConfig {
+            source: Some("totally-fake-source".into()),
+            endpoint: None,
+            model: None,
+            api_key: None,
+            dimension: None,
+        };
+        let default_dim = vesper_cognition::CognitiveConfig::default().embedding_dim;
+        let cred: Arc<dyn vesper_provider_glm::GlmCredentialSource> =
+            Arc::new(FakeZaiCredentialSource);
+        let (embedder, _dim_hint, search_mode) =
+            CognitionBundle::build_independent_embedder(&cfg, default_dim, &cred);
+
+        assert_eq!(search_mode, vesper_cognition::SearchMode::Hybrid);
+        assert_eq!(embedder.model_name(), "local-hash-embedder");
+    }
+
+    #[test]
+    fn embedding_config_overrides_provider_routing_only_when_source_set() {
+        // The backward-compat contract: a config with no `source` field
+        // must NOT override provider routing (falls back to v0.20.13 path).
+        assert!(!EmbeddingConfig::default().overrides_provider_routing());
+        let with_source = EmbeddingConfig {
+            source: Some("local".into()),
+            ..Default::default()
+        };
+        assert!(with_source.overrides_provider_routing());
+    }
+
+    #[test]
+    fn embedding_config_save_and_load_round_trips() {
+        // Directive 4 — prove the /embedding set ... → save → load round
+        // trip preserves all fields. This is the contract that
+        // `apply_embedding_set` relies on when hot-reloading.
+        let tmp =
+            std::env::temp_dir().join(format!("vesper-embedding-test-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&tmp);
+        // Clean up any previous run.
+        let _ = std::fs::remove_file(tmp.join("embedding.json"));
+
+        let original = EmbeddingConfig {
+            source: Some("lmstudio".into()),
+            endpoint: Some("http://localhost:1234/v1/embeddings".into()),
+            model: Some("text-embedding-nomic-embed-text-v1.5".into()),
+            api_key: None,
+            dimension: Some(768),
+        };
+        original.save(&tmp).expect("save must succeed");
+        let loaded = EmbeddingConfig::load(&tmp);
+        assert_eq!(loaded.source, original.source);
+        assert_eq!(loaded.endpoint, original.endpoint);
+        assert_eq!(loaded.model, original.model);
+        assert_eq!(loaded.api_key, original.api_key);
+        assert_eq!(loaded.dimension, original.dimension);
+        assert!(loaded.overrides_provider_routing());
+
+        let _ = std::fs::remove_file(tmp.join("embedding.json"));
+    }
+
+    #[test]
+    fn embedding_config_load_missing_file_returns_default() {
+        // Backward-compat: missing file = all-None default. Must not panic.
+        let tmp =
+            std::env::temp_dir().join(format!("vesper-embedding-missing-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&tmp);
+        let _ = std::fs::remove_file(tmp.join("embedding.json"));
+        let loaded = EmbeddingConfig::load(&tmp);
+        assert!(!loaded.overrides_provider_routing());
+        assert!(loaded.source.is_none());
     }
 }

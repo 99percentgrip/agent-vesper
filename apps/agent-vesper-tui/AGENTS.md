@@ -30,10 +30,15 @@ business logic.
 - `src/commands.rs` — slash-command parsing, registry, and resolution
   against the active provider's superpowers. Tier C Phase 7 (ADR 0010): the
   registry now covers the **entire** Python oracle `LOCAL_COMMANDS` surface
-  (80 distinct oracle command names, including `/export last`, + 3
-  Vesper-native = 83 commands). The
+  (80 distinct oracle command names, including `/export last`, + 10
+  Vesper-native = 90 commands; Vesper-native = approve, cancel, auth,
+  lmstudio, provider, embedding, quit, remember, recall, forget). The
   `ORACLE_COMMAND_SURFACE` const table is the single source of truth for the
-  migration matrix.
+  migration matrix. ADR 0016 follow-up: `/embedding` (Status/Set/Clear) is
+  the most recent Vesper-native addition; it parses
+  `key=value` pairs via `EmbeddingPairs::parse` and drains through
+  `pending_embedding_op` → `drain_embedding_op` (write `embedding.json` +
+  hot-reload + background probe of the new endpoint).
 - `src/dispatch.rs` — pure, terminal-free event-loop dispatch: the bridge
   between the command registry, the Plan Mode state machine, and the
   `SuperpowerOverrides` store. Owns `SessionState`, `DispatchOutcome`, and
