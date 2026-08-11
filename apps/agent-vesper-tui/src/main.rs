@@ -5212,56 +5212,74 @@ impl CognitionBundle {
         let db_path = root.join("cognition.db");
         let root_display = root.display().to_string();
 
-        let config = if active_provider == "lmstudio"
-            && LmStudioEmbedder::from_persisted_settings().is_some()
-        {
-            // Probe LM Studio's embedding endpoint to learn the model's true
-            // dimension. Fall back to the default 1024 if the probe fails
-            // (server offline at startup) — the embedder itself will keep
-            // trying on first use.
-            let mut cfg = vesper_cognition::CognitiveConfig::default();
-            if let Some(adapter) = LmStudioEmbedder::from_persisted_settings()
-                && let Ok(dim) = adapter.probe_dimension()
-            {
-                cfg.embedding_dim = dim;
-            }
-            cfg
-        } else {
-            vesper_cognition::CognitiveConfig::default()
-        };
-
-        // Embedder selection — provider-routed (true neural search when
-        // possible, zero-network hash fallback otherwise):
-        //   - Active = LM Studio + settings exist → LmStudioEmbedder (REAL
-        //     neural embeddings via /v1/embeddings). True semantic cosine:
-        //     "do you remember me" ↔ "user's name is Alex" matches.
-        //   - Explicit bigmodel override + ZAI cred → BigModelEmbeddingAdapter.
-        //   - Otherwise → LocalHashEmbedder (bag-of-words, zero network).
-        let embedder: Arc<dyn vesper_cognition::EmbeddingPort> = match active_provider {
+        // Construct the embedder ONCE (Gap 5). Previously
+        // `LmStudioEmbedder::from_persisted_settings()` was called up to 4
+        // times (config dim check, dim probe, embedder selection,
+        // migration probe); each fresh instance had a fresh `OnceLock` so
+        // `probe_dimension()` re-fired the HTTP call every time. Sharing one
+        // Arc means the probe runs at most once and the cached dimension is
+        // reused everywhere.
+        let default_dim = vesper_cognition::CognitiveConfig::default().embedding_dim;
+        let (embedder, probed_dim): (
+            Arc<dyn vesper_cognition::EmbeddingPort>,
+            Option<usize>,
+        ) = match active_provider {
             "lmstudio" => match LmStudioEmbedder::from_persisted_settings() {
                 Some(adapter) => {
+                    // Gap 8 (cold-start UX): surface the dimension probe so
+                    // the user knows what's happening if LM Studio is cold-
+                    // loading a model and the call hangs for 30s+.
+                    eprintln!(
+                        "cognition: probing LM Studio embedding endpoint at {} ...",
+                        adapter.endpoint_url
+                    );
+                    let dim_hint = adapter.probe_dimension().ok();
+                    match dim_hint {
+                        Some(d) => eprintln!(
+                            "cognition: LM Studio responded ({}-d embeddings via {}).",
+                            d,
+                            adapter.model
+                        ),
+                        None => eprintln!(
+                            "cognition: LM Studio endpoint unreachable at startup; \
+                             semantic recall will degrade to BM25-only until the \
+                             endpoint becomes reachable on first prompt."
+                        ),
+                    }
                     let arc: Arc<dyn vesper_cognition::EmbeddingPort> = Arc::new(adapter);
-                    arc
+                    (arc, dim_hint)
                 }
-                None => Arc::new(vesper_cognition::LocalHashEmbedder::new(
-                    config.embedding_dim,
-                )),
+                None => {
+                    eprintln!(
+                        "cognition: no LM Studio settings; using LocalHashEmbedder \
+                         (zero-network bag-of-words). Run /lmstudio or /provider to \
+                         configure a neural embedder."
+                    );
+                    let arc: Arc<dyn vesper_cognition::EmbeddingPort> =
+                        Arc::new(vesper_cognition::LocalHashEmbedder::new(default_dim));
+                    (arc, Some(default_dim))
+                }
             },
             _ => {
                 if std::env::var("AGENT_VESPER_COGNITION_EMBEDDING_API").as_deref()
                     == Ok("bigmodel")
                     && vesper_provider_glm::resolve_credential(credential_source.as_ref()).is_ok()
                 {
-                    Arc::new(BigModelEmbeddingAdapter::new(Arc::clone(
-                        &credential_source,
-                    )))
+                    let arc: Arc<dyn vesper_cognition::EmbeddingPort> =
+                        Arc::new(BigModelEmbeddingAdapter::new(Arc::clone(&credential_source)));
+                    (arc, Some(default_dim))
                 } else {
-                    Arc::new(vesper_cognition::LocalHashEmbedder::new(
-                        config.embedding_dim,
-                    ))
+                    let arc: Arc<dyn vesper_cognition::EmbeddingPort> =
+                        Arc::new(vesper_cognition::LocalHashEmbedder::new(default_dim));
+                    (arc, Some(default_dim))
                 }
             }
         };
+
+        let mut config = vesper_cognition::CognitiveConfig::default();
+        if let Some(dim) = probed_dim {
+            config.embedding_dim = dim;
+        }
 
         // Extraction: route to the ACTIVE provider first (matches what the
         // user actually sees in the TUI). This prevents the old bug where a
@@ -5276,8 +5294,6 @@ impl CognitionBundle {
                     arc
                 })
                 .unwrap_or_else(|| {
-                    // Active is LM Studio but no settings yet — try ZAI as
-                    // a fallback if a credential exists, otherwise NoOp.
                     if zai_cred_ok {
                         let arc: Arc<dyn vesper_cognition::ExtractionLlmPort> =
                             Arc::new(ZaiExtractionAdapter::new(Arc::clone(&credential_source)));
@@ -5287,9 +5303,6 @@ impl CognitionBundle {
                     }
                 }),
             _ => {
-                // Active = ZAI (or any other provider). Prefer ZAI if its
-                // credential resolves; otherwise try LM Studio; otherwise
-                // NoOp.
                 if zai_cred_ok {
                     Arc::new(ZaiExtractionAdapter::new(Arc::clone(&credential_source)))
                 } else if let Some(lm) = LmStudioExtractionAdapter::from_persisted_settings() {
@@ -5300,8 +5313,10 @@ impl CognitionBundle {
             }
         };
 
+        // Reuse the SAME embedder Arc — single OnceLock across config check
+        // + migration check + engine ports (Gap 5).
         let ports = vesper_cognition::CognitionPorts {
-            embedder,
+            embedder: Arc::clone(&embedder),
             extractor,
             entity_nlp: Arc::new(ZaiEntityExtractor),
         };
@@ -5309,43 +5324,70 @@ impl CognitionBundle {
         let engine = vesper_cognition::open(&db_path, ports, config)
             .ok()
             .map(Arc::new);
-        // Embedder migration: if the active embedder's dimension differs
-        // from the dimension stored in existing memory rows (e.g. switched
-        // from LocalHashEmbedder 1024-d to a neural 768-d LM Studio
-        // embedding), re-embed every stored memory so cosine similarity
-        // continues to work. This is a one-time migration on each startup
-        // until dimensions stabilize; cheap when nothing changes.
+
+        // Migration detection (Gap 11): model-name comparison via the
+        // `cognition_meta` table, replacing the old first-row dimension
+        // probe. The old check read only the FIRST stored memory row by
+        // `created_at ASC`, which could give a false "match" if the oldest
+        // row happened to share the new dimension, or false "mismatch" if
+        // a recent row had been migrated but the oldest hadn't. Storing the
+        // model name in meta gives accurate, deterministic detection.
         let engine = (|| {
             let engine = engine?;
-            let active_dim = match active_provider {
-                "lmstudio" => LmStudioEmbedder::from_persisted_settings()
-                    .and_then(|a| a.probe_dimension().ok()),
-                _ => Some(vesper_cognition::CognitiveConfig::default().embedding_dim),
+            let active_model = engine.embedder_model_name();
+            let stored_model = engine.get_meta("embedding_model").ok().flatten();
+            let stored_dim_meta = engine
+                .get_meta("embedding_dim")
+                .ok()
+                .flatten()
+                .and_then(|s| s.parse::<usize>().ok());
+            let stored_dim_first = engine.stored_embedding_dimension().ok().flatten();
+            let active_dim = probed_dim.or(stored_dim_meta).unwrap_or(default_dim);
+
+            // Migration is needed when:
+            //  (a) The active model name differs from the recorded one, OR
+            //  (b) The store predates the meta table (no model recorded) AND
+            //      the first stored memory's dim differs from the active dim.
+            let needs_migration = match (&stored_model, &stored_dim_first) {
+                (Some(stored), _) if stored != active_model => true,
+                (None, Some(stored_d)) => *stored_d != active_dim,
+                (None, None) => false, // empty store; just record the model
+                _ => false,
             };
-            let stored_dim = engine.stored_embedding_dimension().ok().flatten();
-            if let (Some(active), Some(stored)) = (active_dim, stored_dim)
-                && active != stored
-            {
-                // Dimensions differ → re-embed everything (memories AND
-                // entities — Gap 7: entities have their own embedding column
-                // used by `entity_boosts`; failing to migrate them silently
-                // zeroes every entity boost after a swap).
+
+            if needs_migration {
+                eprintln!(
+                    "cognition: embedder model changed ({} → {}); re-embedding \
+                     memories and entities. This may take a few seconds for \
+                     large stores...",
+                    stored_model.as_deref().unwrap_or("(none)"),
+                    active_model
+                );
                 match engine.reembed_everything() {
-                    Ok((mem_count, ent_count)) if mem_count > 0 || ent_count > 0 => {
-                        eprintln!(
-                            "cognition: re-embedded {mem_count} memor{} and {ent_count} \
-                             entit{} from {stored}-d to {active}-d",
-                            if mem_count == 1 { "y" } else { "ies" },
-                            if ent_count == 1 { "y" } else { "ies" }
-                        );
+                    Ok((mem_count, ent_count)) => {
+                        if mem_count > 0 || ent_count > 0 {
+                            eprintln!(
+                                "cognition: re-embedded {mem_count} memor{} and {ent_count} \
+                                 entit{} to model \"{}\" ({active_dim}-d).",
+                                if mem_count == 1 { "y" } else { "ies" },
+                                if ent_count == 1 { "y" } else { "ies" },
+                                active_model
+                            );
+                        }
+                        let _ = engine.set_meta("embedding_model", active_model);
+                        let _ = engine.set_meta("embedding_dim", &active_dim.to_string());
                     }
-                    Ok(_) => {}
                     Err(err) => {
                         // Gap 6: reembed_all/reembed_all_entities already
                         // logged the partial-migration state with counts.
                         eprintln!("cognition: re-embed migration failed: {err}");
                     }
                 }
+            } else if stored_model.is_none() {
+                // First run with an empty store — record the active model so
+                // future startups can detect swaps. Cheap single INSERT.
+                let _ = engine.set_meta("embedding_model", active_model);
+                let _ = engine.set_meta("embedding_dim", &active_dim.to_string());
             }
             Some(engine)
         })();
@@ -5527,6 +5569,89 @@ impl vesper_cognition::EmbeddingPort for LmStudioEmbedder {
         _action: vesper_cognition::EmbedAction,
     ) -> Result<Vec<f32>, vesper_cognition::CognitionError> {
         self.embed_one(text)
+    }
+
+    /// Override `embed_batch` to use LM Studio's native batch endpoint
+    /// (Gap 3 — `input` accepts an array). Avoids the default trait impl
+    /// which calls `embed()` once per text.
+    fn embed_batch(
+        &self,
+        texts: &[&str],
+        _action: vesper_cognition::EmbedAction,
+    ) -> Result<Vec<Vec<f32>>, vesper_cognition::CognitionError> {
+        if texts.is_empty() {
+            return Ok(Vec::new());
+        }
+        let body = serde_json::json!({
+            "model": self.model,
+            "input": texts,
+        });
+        let mut request = self.client.post(&self.endpoint_url).json(&body);
+        if let Some(key) = &self.api_key {
+            request = request.bearer_auth(key);
+        }
+        let response = request
+            .send()
+            .map_err(|e| vesper_cognition::CognitionError::Embedding(e.to_string()))?;
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().unwrap_or_default();
+            return Err(vesper_cognition::CognitionError::Embedding(format!(
+                "LM Studio /v1/embeddings batch returned {status}: {body}"
+            )));
+        }
+        let parsed: serde_json::Value = response
+            .json()
+            .map_err(|e| vesper_cognition::CognitionError::Embedding(e.to_string()))?;
+        let data = parsed
+            .get("data")
+            .ok_or_else(|| {
+                vesper_cognition::CognitionError::Embedding(
+                    "missing 'data' field in embeddings response".into(),
+                )
+            })?
+            .as_array()
+            .ok_or_else(|| {
+                vesper_cognition::CognitionError::Embedding(
+                    "'data' field is not an array".into(),
+                )
+            })?;
+        // LM Studio returns data sorted by index. Sort defensively in case.
+        let mut indexed: Vec<(usize, Vec<f32>)> = Vec::with_capacity(data.len());
+        for entry in data {
+            let idx = entry
+                .get("index")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0) as usize;
+            let vec = entry
+                .get("embedding")
+                .and_then(|v| v.as_array())
+                .ok_or_else(|| {
+                    vesper_cognition::CognitionError::Embedding(
+                        "entry missing 'embedding' array".into(),
+                    )
+                })?;
+            let floats: Vec<f32> = vec
+                .iter()
+                .map(|v| v.as_f64().unwrap_or(0.0) as f32)
+                .collect();
+            indexed.push((idx, floats));
+        }
+        indexed.sort_by_key(|(i, _)| *i);
+        let out: Vec<Vec<f32>> = indexed.into_iter().map(|(_, v)| v).collect();
+        // Cache dimension from first batched embedding.
+        if let Some(first) = out.first()
+            && self.dim.get().is_none()
+        {
+            let _ = self.dim.set(first.len());
+        }
+        Ok(out)
+    }
+
+    /// Distinct model name (Gap 11) so the composition boundary detects a
+    /// swap to/from this neural embedder via `cognition_meta.embedding_model`.
+    fn model_name(&self) -> &str {
+        &self.model
     }
 }
 

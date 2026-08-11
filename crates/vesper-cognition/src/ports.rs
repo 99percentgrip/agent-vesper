@@ -31,6 +31,17 @@ pub trait EmbeddingPort: Send + Sync {
     fn embed_batch(&self, texts: &[&str], action: EmbedAction) -> Result<Vec<Vec<f32>>> {
         texts.iter().map(|t| self.embed(t, action)).collect()
     }
+
+    /// The model identifier used by this embedder (e.g. `"nomic-embed-text-v1.5"`).
+    /// Used by the composition boundary to detect embedder swaps via the
+    /// `cognition_meta` table (Gap 11) — model-name comparison is more
+    /// accurate than dimension-only comparison because two distinct models
+    /// may share a dimension. Default returns `"unknown"` for embedders that
+    /// do not override (e.g. in-process `LocalHashEmbedder`).
+    #[must_use]
+    fn model_name(&self) -> &str {
+        "unknown"
+    }
 }
 
 /// Single LLM call returning the raw extraction response.

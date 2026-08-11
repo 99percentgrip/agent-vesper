@@ -82,6 +82,14 @@ impl EmbeddingPort for LocalHashEmbedder {
         }
         Ok(vec)
     }
+
+    /// Distinct model name (Gap 11) so the composition boundary detects a
+    /// swap from this in-process embedder to a neural one via the
+    /// `cognition_meta.embedding_model` key — not just by dimension (which
+    /// two distinct embedders can happen to share).
+    fn model_name(&self) -> &str {
+        "local-hash-embedder"
+    }
 }
 
 #[cfg(test)]

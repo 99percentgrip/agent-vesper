@@ -90,6 +90,26 @@ or types.
   `entity_boosts`; leaving them on the old dimension silently zeroes every
   boost after a swap (Gap 7 — fixed). On per-row failure the migration
   aborts with a partial-state log (Gap 6 — fixed).
+- **Batched embedding in migration** (`v0.20.13`, Gap 3): `reembed_all`
+  and `reembed_all_entities` use `embed_batch` in chunks of 256 instead of
+  per-item `embed()`. N memories → ceil(N/256) HTTP round-trips. The
+  `EmbeddingPort` trait exposes `embed_batch` (default falls back to
+  per-item); concrete adapters override for native batch APIs
+  (`LmStudioEmbedder` posts the full `input` array in one request).
+- **Model-aware migration detection** (`v0.20.13`, Gap 11): the
+  `cognition_meta` table stores `embedding_model` + `embedding_dim`. The
+  composition boundary compares the active embedder's `model_name()`
+  against the stored value, eliminating false-positive migrations between
+  two models that happen to share a dimension, and false-negative
+  migrations when the first stored row happened to match. `EmbeddingPort`
+  exposes `model_name() -> &str` (default `"unknown"`); `LocalHashEmbedder`
+  overrides with `"local-hash-embedder"`; `LmStudioEmbedder` returns its
+  configured model. `CognitiveMemory::get_meta` / `set_meta` /
+  `embedder_model_name` expose the surface to the binary.
+- **Batched recall-count UPDATE** (`v0.20.13`, Gap 4):
+  `increment_recall_counts` issues a single `UPDATE memories SET
+  recall_count = recall_count + 1 WHERE id IN (?, ?, ...)` instead of N
+  individual UPDATEs (top_k=5 → 5 statements → 1).
 - **`search()` scope contract**: search callers MUST set `user_id`. A
   `debug_assert!` enforces it because `scope_match_field(None, _)` returns
   `true` for any stored value — a latent cross-user leak (Gap 13).

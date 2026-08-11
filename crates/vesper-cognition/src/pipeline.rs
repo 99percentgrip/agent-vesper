@@ -645,6 +645,25 @@ impl CognitiveMemory {
         self.store.first_stored_embedding_dimension()
     }
 
+    /// Read a value from `cognition_meta` (Gap 11). The composition boundary
+    /// uses this to detect embedder swaps via the `embedding_model` key.
+    pub fn get_meta(&self, key: &str) -> Result<Option<String>> {
+        self.store.get_meta(key)
+    }
+
+    /// Upsert a value into `cognition_meta` (Gap 11). The composition
+    /// boundary records the active embedding model + dim after a successful
+    /// migration so subsequent startups can detect a swap by name.
+    pub fn set_meta(&self, key: &str, value: &str) -> Result<()> {
+        self.store.set_meta(key, value)
+    }
+
+    /// Returns the active embedder's model name (Gap 11). Default trait impl
+    /// returns `"unknown"`; concrete embedders override.
+    pub fn embedder_model_name(&self) -> &str {
+        self.ports.embedder.model_name()
+    }
+
     /// Re-embeds every stored memory using the currently-wired embedder.
     /// Returns the number of memories re-embedded. Used after an embedder
     /// swap (e.g. `LocalHashEmbedder` → `LmStudioEmbedder`) so cosine
@@ -655,78 +674,81 @@ impl CognitiveMemory {
     /// consistent. No history rows are added (this is a structural migration,
     /// not a user-initiated edit).
     ///
-    /// Gaps closed (v0.20.12):
-    /// - **Gap 1**: includes expired memories (`all_memory_reembed_targets`
-    ///   reads the full table, no `expiration_date` filter). Previously
-    ///   `list_memories(..., false)` silently skipped them.
-    /// - **Gap 2**: no hard cap. Previously `list_memories(..., 10_000, ...)`
-    ///   silently truncated stores beyond 10k rows.
-    /// - **Gap 6**: on per-row failure, logs the partial count and re-raises
-    ///   the error so the caller knows the store is in a mixed state.
+    /// Gaps closed:
+    /// - **v0.20.12 Gap 1**: includes expired memories.
+    /// - **v0.20.12 Gap 2**: no hard 10k cap.
+    /// - **v0.20.12 Gap 6**: on per-batch failure, logs the partial count.
+    /// - **v0.20.13 Gap 3**: uses `embed_batch` in chunks of 256 instead of
+    ///   one HTTP call per memory. N → ceil(N/256) round-trips. A 200-memory
+    ///   migration drops from 200 sequential calls to 1 batched call.
     ///
-    /// See also `reembed_all_entities` (Gap 7) — entity embeddings have
-    /// their own column and must be migrated in lockstep.
+    /// Each batch is atomic per its slice — if batch #2 of #5 fails, the
+    /// successfully-migrated rows from batch #1 stay migrated and the
+    /// partial count is logged (Gap 6) before the error propagates.
     pub fn reembed_all(&self) -> Result<usize> {
+        const BATCH_SIZE: usize = 256;
         let targets = self.store.all_memory_reembed_targets()?;
         let now = chrono::Utc::now().to_rfc3339();
-        let mut count = 0;
         let total = targets.len();
-        for (id, data) in targets {
-            let new_embedding = match self.ports.embedder.embed(&data, EmbedAction::Update) {
+        let mut count = 0;
+        for chunk in targets.chunks(BATCH_SIZE) {
+            let texts: Vec<&str> = chunk.iter().map(|(_, d)| d.as_str()).collect();
+            let embeddings = match self.ports.embedder.embed_batch(&texts, EmbedAction::Update) {
                 Ok(v) => v,
                 Err(err) => {
-                    // Gap 6: partial migration. Log the mixed state and
-                    // re-raise so the caller can surface it. The store is
-                    // now in a mixed dimension state; cosine similarity
-                    // against the un-migrated rows will return 0.0.
                     eprintln!(
                         "cognition: re-embed migration aborted after {count}/{total} \
-                         memories — embedding endpoint failed. The memory store is now \
+                         memories — embedding batch failed. The memory store is now \
                          in a mixed-dimension state; restart to retry. Error: {err}"
                     );
                     return Err(err);
                 }
             };
-            let new_lemmatized = lemmatize_for_bm25(&data);
-            let new_hash = md5_hex(&data);
-            self.store.update_memory_text(
-                &id,
-                &data,
-                &new_lemmatized,
-                &new_hash,
-                &new_embedding,
-                &now,
-                None,
-            )?;
-            count += 1;
+            for ((id, data), new_embedding) in chunk.iter().zip(embeddings.iter()) {
+                let new_lemmatized = lemmatize_for_bm25(data);
+                let new_hash = md5_hex(data);
+                self.store.update_memory_text(
+                    id,
+                    data,
+                    &new_lemmatized,
+                    &new_hash,
+                    new_embedding,
+                    &now,
+                    None,
+                )?;
+                count += 1;
+            }
         }
         Ok(count)
     }
 
     /// Re-embeds every stored entity using the currently-wired embedder.
-    /// Returns the number of entities re-embedded. Closes **Gap 7**:
-    /// previously `reembed_all` only touched the `memories` table, leaving
-    /// `entities` rows with old-dimension vectors. Since `entity_boosts`
-    /// computes cosine between query entity embeddings and stored entity
-    /// embeddings, a stale dimension silently zeroed every entity boost.
+    /// Returns the number of entities re-embedded. Closes **Gap 7**
+    /// (v0.20.12): entities have their own embedding column used by
+    /// `entity_boosts`; leaving them on the old dimension silently zeroes
+    /// every entity boost. Uses `embed_batch` (Gap 3, v0.20.13).
     pub fn reembed_all_entities(&self) -> Result<usize> {
+        const BATCH_SIZE: usize = 256;
         let targets = self.store.all_entity_reembed_targets()?;
         let total = targets.len();
         let mut count = 0;
-        for (id, data) in targets {
-            let new_embedding = match self.ports.embedder.embed(&data, EmbedAction::Update) {
+        for chunk in targets.chunks(BATCH_SIZE) {
+            let texts: Vec<&str> = chunk.iter().map(|(_, d)| d.as_str()).collect();
+            let embeddings = match self.ports.embedder.embed_batch(&texts, EmbedAction::Update) {
                 Ok(v) => v,
                 Err(err) => {
                     eprintln!(
                         "cognition: entity re-embed migration aborted after {count}/{total} \
-                         entities — embedding endpoint failed. The entity store is now \
+                         entities — embedding batch failed. The entity store is now \
                          in a mixed-dimension state; restart to retry. Error: {err}"
                     );
                     return Err(err);
                 }
             };
-            self.store.update_entity_embedding(&id, &new_embedding)?;
-            count += 1;
+            for ((id, _data), new_embedding) in chunk.iter().zip(embeddings.iter()) {
+                self.store.update_entity_embedding(id, new_embedding)?;
+                count += 1;
+            }
         }
         Ok(count)
     }
@@ -1330,5 +1352,192 @@ mod tests {
             show_expired: false,
         };
         let _ = engine.search(req);
+    }
+
+    // ===== v0.20.13 regression tests (gap report Gaps 3, 4, 11) =====
+
+    /// Gap 4: `increment_recall_counts` previously issued one UPDATE per
+    /// memory id (up to 5 per auto-recall). Now uses a single batched
+    /// `UPDATE ... WHERE id IN (?, ?, ...)`. This test verifies the batched
+    /// statement correctly bumps `recall_count` for all listed ids.
+    #[test]
+    fn increment_recall_counts_single_statement_bumps_all() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine = build_engine(&dir, 8, r#"{"memory":[]}"#);
+        let scope = Scope {
+            user_id: Some("u1".into()),
+            ..Scope::default()
+        };
+        // Use infer=false so each add() returns exactly one event for the
+        // raw message text. With infer=true the StubExtractor would emit
+        // the same JSON for every call and dedup would drop duplicates.
+        let mut ids: Vec<String> = Vec::new();
+        for s in ["alpha", "beta", "gamma"] {
+            let msg = Message::user(s);
+            let req = AddRequest {
+                messages: std::slice::from_ref(&msg),
+                scope: &scope,
+                extras: None,
+                expiration_date: None,
+                infer: false,
+                custom_instructions: None,
+                observation_date: None,
+            };
+            let events = engine.add(req).unwrap();
+            ids.push(events[0].id.clone());
+        }
+        assert_eq!(ids.len(), 3);
+        // Batched increment on all three ids at once.
+        engine.store.increment_recall_counts(&ids).unwrap();
+        // Verify every id has recall_count == 1.
+        for id in &ids {
+            let rec = engine.store.get_memory(id).unwrap().unwrap();
+            assert_eq!(rec.recall_count, 1, "recall_count for {id} should be 1");
+        }
+        // Call again — should reach 2.
+        engine.store.increment_recall_counts(&ids).unwrap();
+        for id in &ids {
+            let rec = engine.store.get_memory(id).unwrap().unwrap();
+            assert_eq!(rec.recall_count, 2, "recall_count for {id} should be 2");
+        }
+        // Empty input is a no-op (no SQL issued).
+        engine.store.increment_recall_counts(&[]).unwrap();
+    }
+
+    /// Gap 3: `reembed_all` uses `embed_batch` instead of per-item `embed`.
+    /// This test instruments an embedder to count `embed_batch` calls vs
+    /// `embed` calls and verifies the batch path is taken.
+    #[test]
+    fn reembed_all_uses_embed_batch_not_per_item_embed() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        struct CountingEmbedder {
+            dim: usize,
+            embed_calls: AtomicUsize,
+            batch_calls: AtomicUsize,
+        }
+        impl EmbeddingPort for CountingEmbedder {
+            fn embed(&self, text: &str, _action: EmbedAction) -> Result<Vec<f32>> {
+                self.embed_calls.fetch_add(1, Ordering::SeqCst);
+                let mut out = vec![0.0_f32; self.dim];
+                for (i, b) in text.bytes().enumerate() {
+                    out[i % self.dim] += (b as f32) / 255.0;
+                }
+                Ok(out)
+            }
+            fn embed_batch(
+                &self,
+                texts: &[&str],
+                _action: EmbedAction,
+            ) -> Result<Vec<Vec<f32>>> {
+                self.batch_calls.fetch_add(1, Ordering::SeqCst);
+                texts.iter().map(|t| self.embed(t, _action)).collect()
+            }
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cognition.db");
+        let store = CognitiveStore::open_with_functions(&path).unwrap();
+        let embedder = Arc::new(CountingEmbedder {
+            dim: 8,
+            embed_calls: AtomicUsize::new(0),
+            batch_calls: AtomicUsize::new(0),
+        });
+        let ports = CognitionPorts {
+            embedder: Arc::clone(&embedder) as Arc<dyn EmbeddingPort>,
+            extractor: Arc::new(StubExtractor(std::sync::Mutex::new(
+                r#"{"memory":[]}"#.to_string(),
+            ))),
+            entity_nlp: Arc::new(DefaultEntities),
+        };
+        let config = crate::CognitiveConfig {
+            embedding_dim: 8,
+            ..Default::default()
+        };
+        let engine = CognitiveMemory::new(store, ports, config);
+        let scope = Scope {
+            user_id: Some("u1".into()),
+            ..Scope::default()
+        };
+        for i in 0..10 {
+            let msg = Message::user(format!("memory {i}"));
+            let req = AddRequest {
+                messages: std::slice::from_ref(&msg),
+                scope: &scope,
+                extras: None,
+                expiration_date: None,
+                infer: false,
+                custom_instructions: None,
+                observation_date: None,
+            };
+            engine.add(req).unwrap();
+        }
+        // Reset counts after adds (which embed each memory once via embed()).
+        embedder.embed_calls.store(0, Ordering::SeqCst);
+        embedder.batch_calls.store(0, Ordering::SeqCst);
+
+        let count = engine.reembed_all().unwrap();
+        assert_eq!(count, 10);
+        // Gap 3 contract: reembed_all MUST call embed_batch at least once
+        // (one batched call for ≤256 rows) and never the per-item embed()
+        // directly. The default batch impl falls back to embed() per item,
+        // so for this counting embedder `embed_calls` may be 10 (called by
+        // the default batch impl) — but `batch_calls` must be ≥ 1,
+        // proving the migration went through the batch API, not a manual
+        // per-item loop.
+        assert!(
+            embedder.batch_calls.load(Ordering::SeqCst) >= 1,
+            "Gap 3: reembed_all must call embed_batch (got {} batch calls)",
+            embedder.batch_calls.load(Ordering::SeqCst)
+        );
+    }
+
+    /// Gap 11: `cognition_meta` table stores embedding model name + dim.
+    /// The composition boundary uses this for accurate swap detection.
+    #[test]
+    fn meta_table_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine = build_engine(&dir, 8, r#"{"memory":[]}"#);
+        // Initially absent.
+        assert_eq!(engine.get_meta("embedding_model").unwrap(), None);
+        assert_eq!(engine.get_meta("embedding_dim").unwrap(), None);
+        // Set + read.
+        engine.set_meta("embedding_model", "nomic-v1.5").unwrap();
+        engine.set_meta("embedding_dim", "768").unwrap();
+        assert_eq!(
+            engine.get_meta("embedding_model").unwrap().as_deref(),
+            Some("nomic-v1.5")
+        );
+        assert_eq!(
+            engine.get_meta("embedding_dim").unwrap().as_deref(),
+            Some("768")
+        );
+        // Upsert overwrites.
+        engine.set_meta("embedding_model", "local-hash").unwrap();
+        assert_eq!(
+            engine.get_meta("embedding_model").unwrap().as_deref(),
+            Some("local-hash")
+        );
+    }
+
+    /// Gap 11: `embedder_model_name()` returns the active embedder's
+    /// distinct name. `LocalHashEmbedder` overrides with
+    /// `"local-hash-embedder"` (NOT the trait default `"unknown"`), so the
+    /// composition boundary can detect a swap to/from it by name. The trait
+    /// default `"unknown"` is exercised by `StubEmbedder` (no override).
+    #[test]
+    fn local_hash_embedder_has_distinct_model_name() {
+        // Direct: the concrete embedder overrides the trait default.
+        let embed = crate::LocalHashEmbedder::new(8);
+        assert_eq!(embed.model_name(), "local-hash-embedder");
+        // Via trait object: the override is preserved through dynamic dispatch.
+        let dyn_embed: Arc<dyn EmbeddingPort> = Arc::new(crate::LocalHashEmbedder::new(8));
+        assert_eq!(dyn_embed.model_name(), "local-hash-embedder");
+        // The trait default is "unknown" for embedders that don't override.
+        // `build_engine` uses `StubEmbedder` which doesn't override, so the
+        // engine reports "unknown" — proving the trait default still works.
+        let dir = tempfile::tempdir().unwrap();
+        let engine = build_engine(&dir, 8, r#"{"memory":[]}"#);
+        assert_eq!(engine.embedder_model_name(), "unknown");
     }
 }

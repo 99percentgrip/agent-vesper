@@ -197,6 +197,17 @@ impl CognitiveStore {
             );
             CREATE INDEX IF NOT EXISTS idx_eml_entity ON entity_memory_links(entity_id);
             CREATE INDEX IF NOT EXISTS idx_eml_memory ON entity_memory_links(memory_id);
+
+            -- v0.20.13: model-aware migration detection (Gap 11).
+            -- Stores the embedding model name + dimension so the composition
+            -- boundary can detect a swap by model name (not just by
+            -- dimension), eliminating false-positive migrations between two
+            -- models that happen to share a dimension, and false-negative
+            -- migrations when the first stored row happens to match.
+            CREATE TABLE IF NOT EXISTS cognition_meta (
+                key   TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
             ",
         )?;
         Self::migrate_columns(conn)?;
@@ -316,17 +327,51 @@ impl CognitiveStore {
     }
 
     /// Increment the recall_count for the given memory IDs (heat tracking).
+    ///
+    /// v0.20.13 (Gap 4): previously issued one UPDATE per id (up to 5 per
+    /// auto-recall turn). Now uses a single batched `UPDATE ... WHERE id IN
+    /// (?, ?, ...)` statement. SQLite handles up to 999 bound params by
+    /// default; `top_k=5` keeps us far below that ceiling.
     pub(crate) fn increment_recall_counts(&self, memory_ids: &[String]) -> Result<()> {
         if memory_ids.is_empty() {
             return Ok(());
         }
         let conn = self.lock();
-        for id in memory_ids {
-            let _ = conn.execute(
-                "UPDATE memories SET recall_count = recall_count + 1 WHERE id = ?1",
-                params![id],
-            );
+        let placeholders: Vec<String> =
+            (1..=memory_ids.len()).map(|i| format!("?{i}")).collect();
+        let sql = format!(
+            "UPDATE memories SET recall_count = recall_count + 1 WHERE id IN ({})",
+            placeholders.join(", ")
+        );
+        let bindings: Vec<&str> = memory_ids.iter().map(String::as_str).collect();
+        conn.execute(&sql, rusqlite::params_from_iter(bindings))?;
+        Ok(())
+    }
+
+    /// Read a value from the `cognition_meta` table. Returns `None` if the
+    /// key is absent. Used by the composition boundary to detect embedder
+    /// swaps via model name (Gap 11).
+    pub fn get_meta(&self, key: &str) -> Result<Option<String>> {
+        let conn = self.lock();
+        let mut stmt = conn.prepare("SELECT value FROM cognition_meta WHERE key = ?1")?;
+        let mut rows = stmt.query(params![key])?;
+        if let Some(row) = rows.next()? {
+            Ok(Some(row.get(0)?))
+        } else {
+            Ok(None)
         }
+    }
+
+    /// Upsert a value into the `cognition_meta` table. Used by the
+    /// composition boundary to record the active embedding model + dim after
+    /// a successful migration (Gap 11).
+    pub fn set_meta(&self, key: &str, value: &str) -> Result<()> {
+        let conn = self.lock();
+        conn.execute(
+            "INSERT INTO cognition_meta (key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![key, value],
+        )?;
         Ok(())
     }
 
