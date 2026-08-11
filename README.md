@@ -47,7 +47,7 @@ curl -fsSL https://github.com/99percentgrip/agent-vesper/raw/main/scripts/instal
 Or pin a version:
 
 ```sh
-AGENT_VESPER_VERSION=0.20.13 sh scripts/install.sh
+AGENT_VESPER_VERSION=0.20.14 sh scripts/install.sh
 ```
 
 ### Windows (PowerShell)
@@ -177,6 +177,30 @@ The cognitive memory engine picks its embedder from the **active chat provider**
 
 **Automatic migration**: when the active embedder changes (e.g. switching providers), the engine compares the new model name against the `embedding_model` row in `cognition_meta` and re-embeds every memory + entity in chunks of 256 if they differ. The startup log shows `"cognition: re-embedded N memories and M entities to model \"...\" (768-d)."` confirming the migration ran.
 
+### Provider-Independent Embedding Layer (ADR 0016, v0.20.14)
+
+**The fundamental cross-provider gap is eliminated.** Write `.agent-vesper/cognition/embedding.json` to decouple the embedding source from the active chat provider entirely:
+
+```json
+{
+  "source": "lmstudio",
+  "endpoint": "http://localhost:1234/v1/embeddings",
+  "model": "text-embedding-nomic-embed-text-v1.5",
+  "dimension": 768
+}
+```
+
+With this file in place, switching chat providers (ZAI ↔ LM Studio ↔ future X) **does not change the embedder** — cosine similarity cannot silently break, and no migration is ever needed mid-session. When the file is absent (or `source` is unset), the engine falls back to the provider-routed behavior described above (zero migration cost for existing installs).
+
+**Live search mode** (`SearchMode::Hybrid` vs `SearchMode::BM25Only`) backs an atomic, never-silent recall contract: if the embedder fails mid-search, the engine atomically degrades to **BM25-only keyword recall** instead of returning an error or an empty result. The user sees keyword matches even when the embedding endpoint is completely down. The next successful embed call auto-upgrades back to hybrid mode.
+
+| `SearchMode` | Embedder | Semantic | BM25 | Entity boost | `Err` on embedder failure? |
+|---|---|---|---|---|---|
+| `Hybrid` | Called | ✅ | ✅ | ✅ | ❌ (auto-degrades) |
+| `BM25Only` | Skipped | ❌ | ✅ | ❌ | ❌ (never) |
+
+See [ADR 0016](docs/adr/0016-provider-independent-embedding-layer.md) for the full design.
+
 ### Push-to-Talk Voice Configuration
 
 Voice works out-of-the-box on Linux and macOS — press **F5** to record, **F5** to transcribe. On first use with no existing `faster-whisper` install, the binary auto-creates a harness-owned venv via the installer-bundled `uv` and pip-installs `faster-whisper` (one-time, needs network). All optional — discovery finds existing venvs first.
@@ -247,7 +271,7 @@ User says something
 ## Local Verification
 
 ```sh
-cargo xtask verify          # fmt + clippy -D warnings + 676 tests + architecture
+cargo xtask verify          # fmt + clippy -D warnings + 680 tests + architecture
 cargo xtask architecture    # dependency-boundary validation (22 packages)
 cargo xtask msrv            # Rust 1.88 compatibility check
 ```
