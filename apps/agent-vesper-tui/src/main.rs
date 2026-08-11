@@ -5220,61 +5220,60 @@ impl CognitionBundle {
         // Arc means the probe runs at most once and the cached dimension is
         // reused everywhere.
         let default_dim = vesper_cognition::CognitiveConfig::default().embedding_dim;
-        let (embedder, probed_dim): (
-            Arc<dyn vesper_cognition::EmbeddingPort>,
-            Option<usize>,
-        ) = match active_provider {
-            "lmstudio" => match LmStudioEmbedder::from_persisted_settings() {
-                Some(adapter) => {
-                    // Gap 8 (cold-start UX): surface the dimension probe so
-                    // the user knows what's happening if LM Studio is cold-
-                    // loading a model and the call hangs for 30s+.
-                    eprintln!(
-                        "cognition: probing LM Studio embedding endpoint at {} ...",
-                        adapter.endpoint_url
-                    );
-                    let dim_hint = adapter.probe_dimension().ok();
-                    match dim_hint {
-                        Some(d) => eprintln!(
-                            "cognition: LM Studio responded ({}-d embeddings via {}).",
-                            d,
-                            adapter.model
-                        ),
-                        None => eprintln!(
-                            "cognition: LM Studio endpoint unreachable at startup; \
+        let (embedder, probed_dim): (Arc<dyn vesper_cognition::EmbeddingPort>, Option<usize>) =
+            match active_provider {
+                "lmstudio" => match LmStudioEmbedder::from_persisted_settings() {
+                    Some(adapter) => {
+                        // Gap 8 (cold-start UX): surface the dimension probe so
+                        // the user knows what's happening if LM Studio is cold-
+                        // loading a model and the call hangs for 30s+.
+                        eprintln!(
+                            "cognition: probing LM Studio embedding endpoint at {} ...",
+                            adapter.endpoint_url
+                        );
+                        let dim_hint = adapter.probe_dimension().ok();
+                        match dim_hint {
+                            Some(d) => eprintln!(
+                                "cognition: LM Studio responded ({}-d embeddings via {}).",
+                                d, adapter.model
+                            ),
+                            None => eprintln!(
+                                "cognition: LM Studio endpoint unreachable at startup; \
                              semantic recall will degrade to BM25-only until the \
                              endpoint becomes reachable on first prompt."
-                        ),
+                            ),
+                        }
+                        let arc: Arc<dyn vesper_cognition::EmbeddingPort> = Arc::new(adapter);
+                        (arc, dim_hint)
                     }
-                    let arc: Arc<dyn vesper_cognition::EmbeddingPort> = Arc::new(adapter);
-                    (arc, dim_hint)
-                }
-                None => {
-                    eprintln!(
-                        "cognition: no LM Studio settings; using LocalHashEmbedder \
+                    None => {
+                        eprintln!(
+                            "cognition: no LM Studio settings; using LocalHashEmbedder \
                          (zero-network bag-of-words). Run /lmstudio or /provider to \
                          configure a neural embedder."
-                    );
-                    let arc: Arc<dyn vesper_cognition::EmbeddingPort> =
-                        Arc::new(vesper_cognition::LocalHashEmbedder::new(default_dim));
-                    (arc, Some(default_dim))
+                        );
+                        let arc: Arc<dyn vesper_cognition::EmbeddingPort> =
+                            Arc::new(vesper_cognition::LocalHashEmbedder::new(default_dim));
+                        (arc, Some(default_dim))
+                    }
+                },
+                _ => {
+                    if std::env::var("AGENT_VESPER_COGNITION_EMBEDDING_API").as_deref()
+                        == Ok("bigmodel")
+                        && vesper_provider_glm::resolve_credential(credential_source.as_ref())
+                            .is_ok()
+                    {
+                        let arc: Arc<dyn vesper_cognition::EmbeddingPort> = Arc::new(
+                            BigModelEmbeddingAdapter::new(Arc::clone(&credential_source)),
+                        );
+                        (arc, Some(default_dim))
+                    } else {
+                        let arc: Arc<dyn vesper_cognition::EmbeddingPort> =
+                            Arc::new(vesper_cognition::LocalHashEmbedder::new(default_dim));
+                        (arc, Some(default_dim))
+                    }
                 }
-            },
-            _ => {
-                if std::env::var("AGENT_VESPER_COGNITION_EMBEDDING_API").as_deref()
-                    == Ok("bigmodel")
-                    && vesper_provider_glm::resolve_credential(credential_source.as_ref()).is_ok()
-                {
-                    let arc: Arc<dyn vesper_cognition::EmbeddingPort> =
-                        Arc::new(BigModelEmbeddingAdapter::new(Arc::clone(&credential_source)));
-                    (arc, Some(default_dim))
-                } else {
-                    let arc: Arc<dyn vesper_cognition::EmbeddingPort> =
-                        Arc::new(vesper_cognition::LocalHashEmbedder::new(default_dim));
-                    (arc, Some(default_dim))
-                }
-            }
-        };
+            };
 
         let mut config = vesper_cognition::CognitiveConfig::default();
         if let Some(dim) = probed_dim {
@@ -5612,17 +5611,12 @@ impl vesper_cognition::EmbeddingPort for LmStudioEmbedder {
             })?
             .as_array()
             .ok_or_else(|| {
-                vesper_cognition::CognitionError::Embedding(
-                    "'data' field is not an array".into(),
-                )
+                vesper_cognition::CognitionError::Embedding("'data' field is not an array".into())
             })?;
         // LM Studio returns data sorted by index. Sort defensively in case.
         let mut indexed: Vec<(usize, Vec<f32>)> = Vec::with_capacity(data.len());
         for entry in data {
-            let idx = entry
-                .get("index")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0) as usize;
+            let idx = entry.get("index").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
             let vec = entry
                 .get("embedding")
                 .and_then(|v| v.as_array())

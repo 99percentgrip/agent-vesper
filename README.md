@@ -8,7 +8,7 @@
 [![Release](https://img.shields.io/github/v/release/99percentgrip/agent-vesper)](https://github.com/99percentgrip/agent-vesper/releases)
 [![MSRV](https://img.shields.io/badge/MSRV-1.88-orange.svg)](https://blog.rust-lang.org/2025/06/23/Rust-1.88.0.html)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Crates](https://img.shields.io/badge/workspace-19%20crates-FF6B35.svg)](#architecture)
+[![Crates](https://img.shields.io/badge/workspace-22%20packages-FF6B35.svg)](#architecture)
 
 **[Install](#install)** · **[Features](#features)** · **[Quick Start](#quick-start)** · **[Commands](#slash-commands)** · **[Architecture](#architecture)**
 
@@ -47,7 +47,7 @@ curl -fsSL https://github.com/99percentgrip/agent-vesper/raw/main/scripts/instal
 Or pin a version:
 
 ```sh
-AGENT_VESPER_VERSION=0.20.4 sh scripts/install.sh
+AGENT_VESPER_VERSION=0.20.13 sh scripts/install.sh
 ```
 
 ### Windows (PowerShell)
@@ -161,7 +161,21 @@ All configurable from the TUI — no restart needed:
 | `AGENT_VESPER_COGNITION_ROOT` | `.agent-vesper/cognition/` | SQLite database location |
 | `AGENT_VESPER_COGNITION_USER_ID` | `local` | Scope identifier for memory partitioning |
 | `AGENT_VESPER_COGNITION_MODEL` | `glm-4.6` | Extraction LLM model |
-| `AGENT_VESPER_COGNITION_EMBEDDING_API` | (local hash) | Set to `bigmodel` for neural embeddings (requires BigModel CN JWT auth) |
+| `AGENT_VESPER_COGNITION_EMBEDDING_API` | (local hash) | Set to `bigmodel` for BigModel neural embeddings (requires BigModel CN JWT auth) |
+| `AGENT_VESPER_COGNITION_EMBEDDING_MODEL` | `text-embedding-nomic-embed-text-v1.5` | LM Studio embedding model name (used when LM Studio is the active provider) |
+| `LMSTUDIO_API_KEY` | (none) | Optional bearer token for a metered LM Studio embedding endpoint |
+
+### Multi-Provider Embedding Strategy
+
+The cognitive memory engine picks its embedder from the **active chat provider**, not the project default:
+
+| Active provider | Embedder | Behavior |
+|---|---|---|
+| **LM Studio** + settings | `LmStudioEmbedder` | **Real neural embeddings** via LM Studio's `/v1/embeddings` endpoint. True semantic cosine: "do you remember me" ↔ "user's name is Alex" matches because the underlying text-embedding model captures meaning. |
+| ZAI + `AGENT_VESPER_COGNITION_EMBEDDING_API=bigmodel` | `BigModelEmbeddingAdapter` | BigModel CN neural embeddings (requires JWT auth) |
+| ZAI (default) or no provider | `LocalHashEmbedder` | Zero-network bag-of-words fallback. Cosine only fires on lexical overlap. |
+
+**Automatic migration**: when the active embedder changes (e.g. switching providers), the engine compares the new model name against the `embedding_model` row in `cognition_meta` and re-embeds every memory + entity in chunks of 256 if they differ. The startup log shows `"cognition: re-embedded N memories and M entities to model \"...\" (768-d)."` confirming the migration ran.
 
 ### Push-to-Talk Voice Configuration
 
@@ -176,7 +190,7 @@ Voice works out-of-the-box on Linux and macOS — press **F5** to record, **F5**
 
 ## Architecture
 
-Agent Vesper is a **19-crate Rust workspace** with strict dependency boundaries enforced by `cargo xtask architecture`:
+Agent Vesper is a **22-package Rust workspace** with strict dependency boundaries enforced by `cargo xtask architecture`:
 
 ```
 apps/
@@ -184,7 +198,7 @@ apps/
 ├── agent-vesper-tui/     Interactive terminal UI (ratatui + crossterm)
 
 crates/
-├── vesper-cognition/     cognitive memory engine (SQLite + FTS5 + entity graph)
+├── vesper-cognition/     cognitive memory engine (SQLite + FTS5 + entity graph + neural embeddings)
 ├── vesper-memory/        Durable memory graph, skills, profile, awareness ledger
 ├── vesper-agent/         Multi-turn tool-executing agent loop (Tier C)
 ├── vesper-runtime/       Provider-neutral session actors + reasoning dial
@@ -233,7 +247,7 @@ User says something
 ## Local Verification
 
 ```sh
-cargo xtask verify          # fmt + clippy -D warnings + 655 tests + architecture
+cargo xtask verify          # fmt + clippy -D warnings + 676 tests + architecture
 cargo xtask architecture    # dependency-boundary validation (22 packages)
 cargo xtask msrv            # Rust 1.88 compatibility check
 ```

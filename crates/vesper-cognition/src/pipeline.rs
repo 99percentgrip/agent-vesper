@@ -1425,11 +1425,7 @@ mod tests {
                 }
                 Ok(out)
             }
-            fn embed_batch(
-                &self,
-                texts: &[&str],
-                _action: EmbedAction,
-            ) -> Result<Vec<Vec<f32>>> {
+            fn embed_batch(&self, texts: &[&str], _action: EmbedAction) -> Result<Vec<Vec<f32>>> {
                 self.batch_calls.fetch_add(1, Ordering::SeqCst);
                 texts.iter().map(|t| self.embed(t, _action)).collect()
             }

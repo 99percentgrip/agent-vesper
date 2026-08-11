@@ -337,8 +337,7 @@ impl CognitiveStore {
             return Ok(());
         }
         let conn = self.lock();
-        let placeholders: Vec<String> =
-            (1..=memory_ids.len()).map(|i| format!("?{i}")).collect();
+        let placeholders: Vec<String> = (1..=memory_ids.len()).map(|i| format!("?{i}")).collect();
         let sql = format!(
             "UPDATE memories SET recall_count = recall_count + 1 WHERE id IN ({})",
             placeholders.join(", ")
