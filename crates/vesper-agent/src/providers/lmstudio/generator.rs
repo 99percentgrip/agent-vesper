@@ -25,6 +25,7 @@ use super::config::LmStudioConfig;
 const SYSTEM_PROMPT: &str = "You are a precise assistant. Produce output that satisfies the stated constraints and passes automated verification.";
 
 /// An LM Studio-backed [`CandidateGenerator`].
+#[derive(Clone)]
 pub struct LmStudioCandidateGenerator {
     config: LmStudioConfig,
     model: String,
@@ -145,6 +146,15 @@ impl CandidateGenerator for LmStudioCandidateGenerator {
                 Err(err) => degenerate_candidate(&err.to_string()),
             }
         })
+    }
+
+    fn boxed_clone(&self) -> Box<dyn CandidateGenerator> {
+        // LmStudioCandidateGenerator derives Clone: the `transport` is an
+        // `Arc` (cheap clone), the rest is plain data. Each VRO-4 parallel
+        // branch therefore gets its own generator that shares the same
+        // connection Arc — but no per-branch state can leak because the
+        // generator itself is stateless.
+        Box::new(self.clone())
     }
 }
 

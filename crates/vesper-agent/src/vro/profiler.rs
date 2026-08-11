@@ -77,6 +77,16 @@ impl TaskProfiler {
             return chat_profile();
         }
 
+        // VRO-4 explicit parallel-strategy triggers (PRD §11.4 + §11.5 +
+        // §12). Detect BEFORE the domain ladder so a design-trade-off prompt
+        // routes to ParallelCandidatesJudge even if it also touches code or
+        // requires grounding. Returns None when no parallel signal is present
+        // — the §12 ladder then runs unchanged (zero impact on existing
+        // profile behavior).
+        if let Some(strategy) = detect_parallel_strategy(&lower) {
+            return self.parallel_profile(&lower, strategy, char_count);
+        }
+
         // 2. Domain detection (priority: coding > math > planning > research).
         let domain = detect_domain(&lower);
         let requires_mutation = has_code_block
@@ -196,6 +206,100 @@ fn chat_profile() -> TaskProfile {
         requires_mutation: false,
         available_verifiers: vec![],
         recommended_strategy: ReasoningStrategy::Direct,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// VRO-4 parallel-strategy triggers (PRD §11.4 + §11.5 + §12)
+// ---------------------------------------------------------------------------
+
+/// Prompts that signal "several plausible designs require trade-off
+/// analysis" (PRD §11.5) → route to `ParallelCandidatesJudge`. Detected
+/// case-insensitively as substrings (matches the rest of the profiler's
+/// keyword style — no regex, no `unicode-perl`).
+const PARALLEL_JUDGE_KEYWORDS: &[&str] = &[
+    "compare options",
+    "compare designs",
+    "trade-off",
+    "tradeoffs",
+    "trade-offs",
+    "evaluate options",
+    "evaluate alternatives",
+    "weigh the pros and cons",
+    "which approach is better",
+    "which design is better",
+    "which is better:",
+    "design alternatives",
+    "pick the best architecture",
+];
+
+/// Prompts that signal "the answer is expected to converge and no perfect
+/// verifier exists" (PRD §11.4) → route to `ParallelCandidatesConsensus`.
+const PARALLEL_CONSENSUS_KEYWORDS: &[&str] = &[
+    "is the answer",
+    "is this correct?",
+    "is this right?",
+    "verify this claim",
+    "double-check this",
+    "sanity check this",
+    "second opinion on",
+    "independent verification of",
+];
+
+/// Returns `Some(strategy)` when the prompt contains a parallel-strategy
+/// keyword signal. The Judge signal takes precedence over the Consensus
+/// signal because design-trade-off prompts are higher-value (PRD §11.5).
+/// Returns `None` when no signal is present — the §12 ladder then runs
+/// unchanged (zero impact on existing profile behavior).
+fn detect_parallel_strategy(lower: &str) -> Option<ReasoningStrategy> {
+    if contains_any(lower, PARALLEL_JUDGE_KEYWORDS) {
+        return Some(ReasoningStrategy::ParallelCandidatesJudge);
+    }
+    if contains_any(lower, PARALLEL_CONSENSUS_KEYWORDS) {
+        return Some(ReasoningStrategy::ParallelCandidatesConsensus);
+    }
+    None
+}
+
+impl TaskProfiler {
+    /// Builds a `TaskProfile` for an explicitly-detected parallel strategy
+    /// (VRO-4). The profile is marked `requires_mutation = false` (these are
+    /// analysis/verification prompts, not code-mutation prompts) and
+    /// `complexity = High` (parallel strategies are reserved for high-value
+    /// tasks per PRD §11.4 + §11.5).
+    fn parallel_profile(
+        &self,
+        lower: &str,
+        strategy: ReasoningStrategy,
+        char_count: usize,
+    ) -> TaskProfile {
+        let (_requires_grounding, verifiers) = detect_grounding(lower);
+        let domain = detect_domain(lower);
+        let mut risk = detect_risk(lower);
+        // Parallel-strategy prompts are inherently high-stakes (the user is
+        // asking for cross-branch agreement or judge arbitration); floor at
+        // Medium so the orchestrator allocates a real budget.
+        if risk == RiskLevel::Low {
+            risk = RiskLevel::Medium;
+        }
+        TaskProfile {
+            domain: TaskDomain::new(domain.label()).unwrap_or_else(|_| {
+                TaskDomain::new("research").expect("research is a valid bounded domain label")
+            }),
+            complexity: if char_count > 200 {
+                Complexity::High
+            } else {
+                Complexity::Medium
+            },
+            risk,
+            // Parallel-strategy prompts are inherently ambiguous — that's WHY
+            // the user is asking for multiple branches.
+            ambiguity: 0.7,
+            requires_grounding: false,
+            requires_mutation: false,
+            available_verifiers: verifiers,
+            recommended_strategy: strategy,
+        }
     }
 }
 
@@ -788,5 +892,88 @@ mod tests {
         let p = TaskProfiler::new().profile_request(&req);
         // Caller forced High risk despite no high-risk keyword in the prompt.
         assert_eq!(p.risk, RiskLevel::High);
+    }
+
+    // === VRO-4 — parallel-strategy profiler triggers (PRD §11.4 + §11.5) ===
+
+    #[test]
+    fn profiler_routes_trade_off_prompts_to_parallel_candidates_judge() {
+        // PRD §11.5: "several plausible designs require trade-off analysis".
+        let p = profile_of(
+            "Compare options for the new auth module and weigh the pros and cons of each design.",
+        );
+        assert_eq!(
+            p.recommended_strategy,
+            ReasoningStrategy::ParallelCandidatesJudge,
+            "trade-off prompts must route to ParallelCandidatesJudge"
+        );
+        assert!(!p.requires_mutation, "judge prompts do not mutate code");
+        assert!(
+            p.risk != RiskLevel::Low,
+            "parallel-strategy risk floor is at least Medium"
+        );
+    }
+
+    #[test]
+    fn profiler_routes_alternatives_prompts_to_parallel_candidates_judge() {
+        let p = profile_of(
+            "Evaluate alternatives for the persistence layer: SQLite vs sled vs redb. Which is better?",
+        );
+        assert_eq!(
+            p.recommended_strategy,
+            ReasoningStrategy::ParallelCandidatesJudge
+        );
+    }
+
+    #[test]
+    fn profiler_routes_verify_claim_prompts_to_parallel_candidates_consensus() {
+        // PRD §11.4: "the answer is expected to converge and no perfect
+        // verifier exists".
+        let p = profile_of(
+            "Is this correct? I think the SHA-256 of the empty string is e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855.",
+        );
+        assert_eq!(
+            p.recommended_strategy,
+            ReasoningStrategy::ParallelCandidatesConsensus,
+            "verify-this prompts must route to ParallelCandidatesConsensus"
+        );
+    }
+
+    #[test]
+    fn profiler_routes_second_opinion_prompts_to_parallel_candidates_consensus() {
+        // Long enough to bypass the chat shortcut (CHAT_BYPASS_MAX_CHARS = 60).
+        let p = profile_of(
+            "Second opinion on whether the database migration is safe to ship to production now.",
+        );
+        assert_eq!(
+            p.recommended_strategy,
+            ReasoningStrategy::ParallelCandidatesConsensus
+        );
+    }
+
+    #[test]
+    fn profiler_judge_signal_takes_precedence_over_consensus_when_both_present() {
+        // A prompt with both signals routes to Judge (higher value per PRD §11.5).
+        let p = profile_of(
+            "Is this correct? Also compare options for the fix and weigh the pros and cons.",
+        );
+        assert_eq!(
+            p.recommended_strategy,
+            ReasoningStrategy::ParallelCandidatesJudge
+        );
+    }
+
+    #[test]
+    fn profiler_no_parallel_signal_falls_through_to_normal_ladder() {
+        // Existing behavior preserved — prompts without parallel signals route
+        // through the §12 ladder unchanged.
+        let p = profile_of("refactor src/main.rs to use async/await");
+        assert_eq!(
+            p.recommended_strategy,
+            ReasoningStrategy::PlanExecuteVerify,
+            "no parallel signal means normal ladder runs"
+        );
+        let p = profile_of("hello world");
+        assert_eq!(p.recommended_strategy, ReasoningStrategy::Direct);
     }
 }

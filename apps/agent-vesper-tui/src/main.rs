@@ -3974,6 +3974,16 @@ impl vesper_agent::vro::CandidateGenerator for AgentCandidateGenerator {
             }
         })
     }
+
+    fn boxed_clone(&self) -> Box<dyn vesper_agent::vro::CandidateGenerator> {
+        // AgentCandidateGenerator holds an `Arc<AgentLoop>` — cloning is cheap
+        // (Arc bump) and each VRO-4 parallel branch gets its own generator
+        // handle that shares the same loop. The loop itself is stateless
+        // between turns, so no per-branch state can leak.
+        Box::new(Self {
+            agent: Arc::clone(&self.agent),
+        })
+    }
 }
 
 /// Spawns a VRO turn in the background (mirrors `spawn_agent_turn`).

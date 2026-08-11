@@ -66,6 +66,11 @@ pub struct GeneratedCandidate {
 /// attempts so the generator can produce a *targeted* repair (PRD §10.9:
 /// "include exact failure evidence"). The trait is async + object-safe via a
 /// boxed `Send` future (the workspace has no `async_trait` dependency).
+///
+/// `boxed_clone` is required because VRO-4's parallel executor (PRD §10.6)
+/// spawns each branch on its own `tokio::task::spawn`, which needs an owned
+/// `'static` generator handle. Concrete impls that hold non-`Clone` resources
+/// (sockets, etc.) should wrap them in `Arc` so `Clone` is cheap.
 pub trait CandidateGenerator: Send + Sync {
     /// Produces a candidate for `prompt`, optionally informed by prior
     /// verifier `corrections`.
@@ -74,6 +79,10 @@ pub trait CandidateGenerator: Send + Sync {
         prompt: &'a str,
         corrections: &'a [VerificationFinding],
     ) -> Pin<Box<dyn Future<Output = GeneratedCandidate> + Send + 'a>>;
+
+    /// Boxes a clone of this generator. Used by the VRO-4 parallel executor
+    /// to give each `tokio::task::spawn` branch an owned `'static` handle.
+    fn boxed_clone(&self) -> Box<dyn CandidateGenerator>;
 }
 
 // ---------------------------------------------------------------------------
@@ -343,6 +352,21 @@ mod tests {
                         total_tokens: 100,
                     },
                 }
+            })
+        }
+
+        fn boxed_clone(&self) -> Box<dyn CandidateGenerator> {
+            // FakeGenerator holds `Mutex`-wrapped state, so cloning shares the
+            // same underlying observations. This is fine for VRO-2.3 tests
+            // which run a single generator sequentially; VRO-4's parallel
+            // executor uses its own ScriptedGenerator-style fakes that DO
+            // produce independent clones.
+            Box::new(Self {
+                outputs: Mutex::new(self.outputs.lock().expect("poisoned").clone()),
+                call_count: Mutex::new(*self.call_count.lock().expect("poisoned")),
+                corrections_seen: Mutex::new(
+                    self.corrections_seen.lock().expect("poisoned").clone(),
+                ),
             })
         }
     }

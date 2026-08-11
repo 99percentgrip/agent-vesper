@@ -56,12 +56,23 @@ the multi-turn, tool-executing layer above it.
   unchanged `agent_loop.rs` direct path. `execute(request, generator,
   workspace_root)` runs the strategy loop via a caller-supplied
   [`CandidateGenerator`](crate::vro::orchestrator::CandidateGenerator) (the
-  provider seam — the orchestrator never makes a provider call itself). This
-  module performs no I/O, holds no provider handles, and never touches
-  `AgentLoopConfig`, `AgentLoop`, the tool registry, or the permission gate.
+  provider seam — the orchestrator never makes a provider call itself).
+  `execute_with_judge(request, generator, workspace_root, judge, seed)` is the
+  VRO-4 extension that supplies an optional `CandidateJudge` plus a
+  deterministic shuffle `seed` for `ParallelCandidatesJudge`. Dispatch:
+  `GenerateVerifyRepair` → `run_generate_verify_repair` (VRO-2.3),
+  `ParallelCandidatesConsensus` → `run_parallel_candidates_consensus` (VRO-4),
+  `ParallelCandidatesJudge` → `run_parallel_candidates_judge` (VRO-4) or
+  degrades to consensus when no judge is supplied. Other non-`Direct`
+  strategies fall back to a single generate-and-verify pass until their
+  dedicated executors land. This module performs no I/O, holds no provider
+  handles, and never touches `AgentLoopConfig`, `AgentLoop`, the tool registry,
+  or the permission gate.
 - `src/vro/orchestrator.rs` — VRO-2.3 Generate-Verify-Repair loop (PRD §11.3,
   §10.9). `CandidateGenerator` trait (async object-safe via boxed `Send`
-  future), `GeneratedCandidate`, and `run_generate_verify_repair(...)`: generate
+  future; **`boxed_clone` is required** so VRO-4's parallel executor can give
+  each `tokio::task::spawn` branch an owned `'static` generator handle),
+  `GeneratedCandidate`, and `run_generate_verify_repair(...)`: generate
   → verify all mandatory verifiers → halt on all-pass (`Succeeded`) / any
   `VerificationStatus::Error` (`Inconclusive`) / `max_repairs` exhausted
   (`Failed`) / `max_model_calls` safety bound (`BudgetExceeded`) / non-repairable
@@ -69,6 +80,31 @@ the multi-turn, tool-executing layer above it.
   verifiers' findings back to the generator as corrections, and re-generate.
   Tested with fakes (no real provider / no real cargo) for deterministic
   halt-condition coverage.
+- `src/vro/executor.rs` — VRO-4 Parallel Candidate Executor (PRD §10.6 +
+  §11.4/§11.5). `CandidateExecutor::fan_out(generator, prompt, requested,
+  budget)` spawns N concurrent `tokio::task::spawn` branches, each receiving a
+  deeply-cloned isolated `BranchContext` (mutations in one branch never leak
+  into siblings), assigns deterministic monotonic `CandidateId`s
+  (`cand-0000`, `cand-0001`, …), and returns the aggregated outcomes sorted by
+  ID. The requested branch count is **capped** at `budget.max_parallel_branches`
+  (zero-cap errors clearly). `XorShiftRng` is a tiny deterministic seedable
+  PRNG (xorshift32) used by the Judge strategy to shuffle candidates without
+  adding a `rand` dependency on `vesper-agent`. Zero-breakage: this module is
+  only invoked by the parallel-strategy handlers; `Direct` and
+  `GenerateVerifyRepair` paths never reach it.
+- `src/vro/strategies.rs` — VRO-4 strategy handlers (PRD §11.4 + §11.5).
+  `normalize_output` strips whitespace + sorts JSON keys for canonical
+  comparison (PRD §11.4: "compare normalized final answers and supporting
+  evidence, not just wording similarity"). `quorum_threshold(n) = n.div_ceil(2)`.
+  `run_parallel_candidates_consensus(...)` fans out → consensus_winner → on
+  quorum `Succeeded`, else `Inconclusive` with the disagreement surfaced as
+  an unresolved risk (PRD §18). `CandidateJudge` trait (async object-safe) is
+  the model-based judge seam. `run_parallel_candidates_judge(...)` fans out →
+  **shuffles** the candidates via `XorShiftRng` (PRD §11.5: "candidates in
+  randomized order to reduce position bias") → asks the judge for a pick in
+  the SHUFFLED view → maps the shuffled index back to the original
+  `CandidateId` → returns `Succeeded`. The seed is exposed so tests can
+  reproduce an exact shuffle.
 - `src/vro/profiler.rs` — VRO-2.1 deterministic `TaskProfiler`: converts a
   user prompt (or `ReasoningRequest`) into a `TaskProfile` using pure
   keyword/substring heuristics (**no LLM call**, no `regex` dependency — the
