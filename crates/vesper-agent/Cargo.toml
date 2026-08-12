@@ -10,20 +10,26 @@ publish = false
 [dependencies]
 futures-util.workspace = true
 glob.workspace = true
-regex.workspace = true
+# VRO-7 (Verified Workflow Learning) — SecretScrubber uses \b/\s/\w word
+# boundaries for secret-shape detection. The workspace pins regex with
+# default-features=false (ASCII-only) to keep foundational crates lean; we
+# override per-crate to enable unicode-perl so the scrubber patterns compile.
+# This does NOT leak to other crates — they keep using `regex.workspace`.
+regex = { version = "1", default-features = false, features = ["std", "unicode-perl"] }
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
-vesper-domain = { path = "../vesper-domain", version = "=0.20.22" }
-vesper-provider = { path = "../vesper-provider", version = "=0.20.22" }
-vesper-runtime = { path = "../vesper-runtime", version = "=0.20.22" }
+vesper-domain = { path = "../vesper-domain", version = "=0.20.23" }
+vesper-provider = { path = "../vesper-provider", version = "=0.20.23" }
+vesper-runtime = { path = "../vesper-runtime", version = "=0.20.23" }
 
 [dev-dependencies]
 serde_json.workspace = true
 tempfile.workspace = true
-vesper-testkit = { path = "../vesper-testkit", version = "=0.20.22" }
+vesper-testkit = { path = "../vesper-testkit", version = "=0.20.23" }
 
 [lints]
 workspace = true

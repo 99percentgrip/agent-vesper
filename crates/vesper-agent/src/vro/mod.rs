@@ -27,6 +27,7 @@
 //! See `crates/vesper-agent/AGENTS.md` for ownership and contract scope.
 
 pub mod executor;
+pub mod learning;
 pub mod orchestrator;
 pub mod profiler;
 pub mod react;
@@ -34,13 +35,19 @@ pub mod strategies;
 pub mod verifiers;
 
 pub use executor::{BranchContext, BranchOutcome, CandidateExecutor, ExecutorError, XorShiftRng};
+pub use learning::{
+    LearningError, ProceduralMemory, ProceduralMemorySink, ProceduralStep, SecretScrubber,
+    WorkflowExtractor, cost_summary, distinct_actions, is_learning_eligible,
+};
 pub use orchestrator::{CandidateGenerator, GeneratedCandidate, run_generate_verify_repair};
 pub use profiler::TaskProfiler;
 pub use react::{
     ReactAgent, ReactDecision, RegistryToolInvoker, ToolInvocationError, ToolInvoker,
-    TrajectoryEntry, run_tool_grounded_react,
+    TrajectoryEntry, run_tool_grounded_react, run_tool_grounded_react_with_trajectory,
 };
+use std::future::Future;
 use std::path::Path;
+use std::pin::Pin;
 use std::sync::Arc;
 pub use strategies::{
     Adjudicator, CandidateCritic, CandidateJudge, normalize_output, quorum_threshold,
@@ -52,8 +59,8 @@ pub use verifiers::{
 };
 use vesper_domain::{
     InferenceCost, OutcomeStatus, ReasoningBudget, ReasoningConfig, ReasoningMode,
-    ReasoningOutcome, ReasoningRequest, ReasoningStrategy, TaskProfile, VerificationStatus,
-    VerificationSummary,
+    ReasoningOutcome, ReasoningRequest, ReasoningStrategy, TaskProfile, ToolExecutionClass,
+    VerificationStatus, VerificationSummary,
 };
 
 /// The routing decision a host consumes before dispatching a turn.
@@ -485,6 +492,243 @@ impl VroOrchestrator {
             criteria,
         )
         .await
+    }
+
+    /// Executes a turn AND, when it succeeds with a complex strategy,
+    /// extracts a sanitized procedural memory and persists it through the
+    /// supplied [`ProceduralMemorySink`] (VRO-7, PRD §11.9 — Verified
+    /// Workflow Learning).
+    ///
+    /// ## Wiring
+    ///
+    /// This is a single composition-boundary entry point that handles every
+    /// strategy:
+    ///
+    /// - [`ToolGroundedReact`](ReasoningStrategy) ⇒ calls
+    ///   [`run_tool_grounded_react_with_trajectory`] so the trajectory is
+    ///   available for [`WorkflowExtractor::extract_from_trajectory`].
+    /// - [`ProposerCriticAdjudicator`](ReasoningStrategy) ⇒ calls
+    ///   [`Self::execute_with_critic_adjudicator`] (the canonical PCA path).
+    /// - Every other strategy ⇒ calls [`Self::execute_with_judge`].
+    ///
+    /// After the underlying turn, if the outcome is `Succeeded` AND the
+    /// profiled strategy is [`is_learning_eligible`], the orchestrator
+    /// runs the [`WorkflowExtractor`] on the (scrubbed) objective + outcome
+    /// (+ trajectory for ReAct) and persists the result via the sink.
+    ///
+    /// ## Zero-breakage guarantee
+    ///
+    /// - When `sink == None`: extraction still runs (so the result is
+    ///   observable in tests via the returned `unresolved_risks` note), but
+    ///   persistence is skipped.
+    /// - When extraction fails: the original outcome is returned with ONE
+    ///   additional `unresolved_risks` entry (`"workflow-learning skipped:
+    ///   <reason>"`). The turn itself is unaffected.
+    /// - When persistence fails: the original outcome is returned with ONE
+    ///   additional `unresolved_risks` entry (`"workflow-learning
+    ///   persistence skipped: <reason>"`).
+    /// - The orchestrator never panics from a learning error.
+    ///
+    /// `extracted_at` is caller-supplied (RFC3339 timestamp) so tests can
+    /// pin it deterministically; production callers should pass
+    /// `chrono::Utc::now().to_rfc3339()`.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "VRO-7 wiring fan-in: every optional strategy seam is needed for a single drop-in entry point"
+    )]
+    pub async fn execute_with_learning(
+        &self,
+        request: &ReasoningRequest,
+        generator: &dyn CandidateGenerator,
+        workspace_root: &Path,
+        judge: Option<&dyn CandidateJudge>,
+        critic: Option<&dyn CandidateCritic>,
+        adjudicator: Option<&dyn Adjudicator>,
+        agent: Option<&dyn ReactAgent>,
+        invoker: Option<&dyn ToolInvoker>,
+        seed: u64,
+        criteria: &[String],
+        sink: Option<&dyn ProceduralMemorySink>,
+        extractor: &WorkflowExtractor,
+        extracted_at: &str,
+    ) -> ReasoningOutcome {
+        let profile = self.profiler.profile_request(request);
+        let strategy = profile.recommended_strategy;
+
+        // --- Dispatch to the strategy-appropriate underlying executor and
+        // capture the ReAct trajectory when applicable. ---
+        let (outcome, trajectory): (ReasoningOutcome, Vec<TrajectoryEntry>) =
+            if strategy == ReasoningStrategy::ToolGroundedReact {
+                let (Some(agent), Some(invoker)) = (agent, invoker) else {
+                    // Missing seam: fall through to execute_react, which
+                    // itself returns Failed with a clear "missing seam"
+                    // message (mirrors the existing execute_with_judge
+                    // guard). No trajectory is captured.
+                    let failed = self
+                        .execute_react(
+                            request,
+                            agent.unwrap_or(&NullReactAgent),
+                            invoker.unwrap_or(&NullInvoker),
+                            workspace_root,
+                        )
+                        .await;
+                    return finalize_outcome(
+                        failed,
+                        Vec::new(),
+                        strategy,
+                        request,
+                        sink,
+                        extractor,
+                        extracted_at,
+                    )
+                    .await;
+                };
+                let budget = request
+                    .budget_override
+                    .unwrap_or_else(|| self.config.preset_for(request.mode));
+                let (outcome, trajectory) = run_tool_grounded_react_with_trajectory(
+                    &request.user_message,
+                    agent,
+                    invoker,
+                    budget,
+                    profile.requires_grounding,
+                )
+                .await;
+                (outcome, trajectory)
+            } else if strategy == ReasoningStrategy::ProposerCriticAdjudicator {
+                let outcome = self
+                    .execute_with_critic_adjudicator(
+                        request,
+                        generator,
+                        workspace_root,
+                        judge,
+                        critic,
+                        adjudicator,
+                        seed,
+                        criteria,
+                    )
+                    .await;
+                (outcome, Vec::new())
+            } else {
+                let outcome = self
+                    .execute_with_judge(request, generator, workspace_root, judge, seed)
+                    .await;
+                (outcome, Vec::new())
+            };
+
+        // --- Layer VRO-7 on top of the underlying outcome. ---
+        finalize_outcome(
+            outcome,
+            trajectory,
+            strategy,
+            request,
+            sink,
+            extractor,
+            extracted_at,
+        )
+        .await
+    }
+}
+
+/// Worker: takes the underlying outcome + (possibly empty) trajectory and
+/// runs VRO-7 extraction + persistence with the documented zero-breakage
+/// guarantees. Kept as a free async fn so the call sites above stay readable.
+async fn finalize_outcome(
+    mut outcome: ReasoningOutcome,
+    trajectory: Vec<TrajectoryEntry>,
+    strategy: ReasoningStrategy,
+    request: &ReasoningRequest,
+    sink: Option<&dyn ProceduralMemorySink>,
+    extractor: &WorkflowExtractor,
+    extracted_at: &str,
+) -> ReasoningOutcome {
+    // Only successful complex-strategy turns are eligible for learning.
+    if outcome.status != OutcomeStatus::Succeeded || !is_learning_eligible(strategy) {
+        return outcome;
+    }
+
+    // Extract (sanitizes every byte of the source material). Errors are
+    // non-fatal — surface as a risk note and return the original outcome.
+    let procedure = if strategy == ReasoningStrategy::ToolGroundedReact {
+        extractor.extract_from_trajectory(request, &outcome, &trajectory, strategy, extracted_at)
+    } else {
+        extractor.extract_from_outcome(request, &outcome, strategy, extracted_at)
+    };
+    let procedure = match procedure {
+        Ok(proc) => proc,
+        Err(err) => {
+            outcome
+                .unresolved_risks
+                .push(format!("workflow-learning skipped: {err}"));
+            return outcome;
+        }
+    };
+
+    // Persist through the sink (if supplied). Errors are non-fatal — surface
+    // as a risk note. When no sink is supplied, still record that extraction
+    // succeeded (useful for tests and hosts that have not wired cognition).
+    if let Some(sink) = sink {
+        match sink.save_procedure(&procedure).await {
+            Ok(_id) => {
+                outcome.unresolved_risks.push(format!(
+                    "workflow-learning persisted: `{}` ({} steps, {} model calls)",
+                    procedure.title,
+                    procedure.steps.len(),
+                    procedure.model_calls,
+                ));
+            }
+            Err(err) => {
+                outcome
+                    .unresolved_risks
+                    .push(format!("workflow-learning persistence skipped: {err}"));
+            }
+        }
+    } else {
+        outcome.unresolved_risks.push(format!(
+            "workflow-learning extracted (no sink): `{}` ({} steps)",
+            procedure.title,
+            procedure.steps.len(),
+        ));
+    }
+
+    outcome
+}
+
+/// Sentinel `ReactAgent` used only when `execute_with_learning` is called
+/// with `agent = None` for a `ToolGroundedReact` profile (a misconfiguration
+/// at the composition boundary). It produces an immediate `Finish` so the
+/// orchestrator returns `Succeeded` with empty output, which then fails
+/// extraction (`NoStepsToExtract`) — the documented zero-breakage path.
+struct NullReactAgent;
+
+impl ReactAgent for NullReactAgent {
+    fn next_action<'a>(
+        &'a self,
+        _prompt: &'a str,
+        _trajectory: &'a [TrajectoryEntry],
+    ) -> Pin<Box<dyn Future<Output = ReactDecision> + Send + 'a>> {
+        Box::pin(async {
+            ReactDecision::Finish {
+                output: serde_json::Value::Null,
+            }
+        })
+    }
+}
+
+/// Sentinel `ToolInvoker` paired with [`NullReactAgent`]. Never invoked
+/// because the null agent always finishes immediately.
+struct NullInvoker;
+impl ToolInvoker for NullInvoker {
+    fn class_of(&self, _name: &str) -> Option<ToolExecutionClass> {
+        None
+    }
+    fn invoke<'a>(
+        &'a self,
+        name: &'a str,
+        _arguments: &'a serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<String, ToolInvocationError>> + Send + 'a>> {
+        let name = name.to_string();
+        Box::pin(async move { Err(ToolInvocationError::UnknownTool(name)) })
     }
 }
 
@@ -1166,4 +1410,406 @@ mod tests {
     // dispatch tests don't reference it directly.
     #[allow(dead_code)]
     fn _verification_status_marker(_: VerificationStatus) {}
+
+    // === VRO-7 — Verified Workflow Learning orchestrator wiring tests ===
+    //
+    // These prove execute_with_learning actually:
+    //   (1) dispatches to the right underlying executor (ReAct vs PCA vs
+    //       judge) AND layers VRO-7 on top when status==Succeeded,
+    //   (2) skips learning when the strategy is Direct or the outcome is
+    //       not Succeeded,
+    //   (3) survives a failing sink (zero-breakage) without panicking,
+    //   (4) survives a sink=None call (extraction noted but not persisted).
+
+    use super::learning::{LearningError, RecordingSink, SecretScrubber, WorkflowExtractor};
+    use std::sync::atomic::Ordering;
+
+    /// A ReAct agent that calls one read-only tool then finishes. Drives
+    /// the ReAct path far enough to produce a non-empty trajectory.
+    struct ReadThenFinishAgent {
+        output: StructuredOutput,
+        call_count: Arc<Mutex<u32>>,
+    }
+    impl ReactAgent for ReadThenFinishAgent {
+        fn next_action<'a>(
+            &'a self,
+            _prompt: &'a str,
+            trajectory: &'a [super::react::TrajectoryEntry],
+        ) -> Pin<Box<dyn Future<Output = ReactDecision> + Send + 'a>> {
+            let count = Arc::clone(&self.call_count);
+            let output = self.output.clone();
+            Box::pin(async move {
+                *count.lock().expect("poisoned") += 1;
+                if trajectory.is_empty() {
+                    ReactDecision::CallTool {
+                        name: "read_file".to_string(),
+                        arguments: serde_json::json!({"path": "src/lib.rs"}),
+                    }
+                } else {
+                    ReactDecision::Finish { output }
+                }
+            })
+        }
+    }
+
+    /// Read-only invoker that returns a canned observation.
+    struct ReadOnlyInvoker {
+        text: String,
+    }
+    impl ToolInvoker for ReadOnlyInvoker {
+        fn class_of(&self, name: &str) -> Option<ToolExecutionClass> {
+            if name == "read_file" {
+                Some(ToolExecutionClass::ReadOnly)
+            } else {
+                None
+            }
+        }
+        fn invoke<'a>(
+            &'a self,
+            name: &'a str,
+            _arguments: &'a serde_json::Value,
+        ) -> Pin<Box<dyn Future<Output = Result<String, ToolInvocationError>> + Send + 'a>>
+        {
+            let text = self.text.clone();
+            Box::pin(async move {
+                if name == "read_file" {
+                    Ok(text)
+                } else {
+                    Err(ToolInvocationError::UnknownTool(name.to_string()))
+                }
+            })
+        }
+    }
+
+    fn learning_react_request() -> ReasoningRequest {
+        ReasoningRequest {
+            request_id: RequestId::new("req-vro7-react").unwrap(),
+            session_id: SessionId::new("sess-vro7-react").unwrap(),
+            user_message: "What does the main.rs file do?".to_string(),
+            context_refs: Vec::new(),
+            mode: ReasoningMode::Balanced,
+            risk_hint: None,
+            budget_override: Some(ReasoningBudget {
+                max_model_calls: 5,
+                max_tool_calls: 5,
+                ..ReasoningBudget::balanced()
+            }),
+            privacy_mode: PrivacyMode::Private,
+        }
+    }
+
+    #[tokio::test]
+    async fn execute_with_learning_extracts_and_persists_procedure_on_react_success() {
+        // End-to-end: ToolGroundedReact turn succeeds -> extractor produces a
+        // procedure -> sink records it -> outcome carries a "persisted" risk.
+        let vro = enabled_orchestrator();
+        let generator = SingleAnswerGenerator {
+            call_count: Arc::new(Mutex::new(0)),
+            output: serde_json::json!({"v": 1}),
+        };
+        let agent = ReadThenFinishAgent {
+            output: serde_json::json!({"answer": "main.rs is the entry point"}),
+            call_count: Arc::new(Mutex::new(0)),
+        };
+        let invoker = ReadOnlyInvoker {
+            text: "fn main() {}".to_string(),
+        };
+        let sink = Arc::new(RecordingSink::new());
+        let extractor = WorkflowExtractor::new();
+        let outcome = vro
+            .execute_with_learning(
+                &learning_react_request(),
+                &generator,
+                std::path::Path::new("/tmp"),
+                None,
+                None,
+                None,
+                Some(&agent),
+                Some(&invoker),
+                0,
+                &[],
+                Some(sink.as_ref()),
+                &extractor,
+                "2026-01-01T00:00:00Z",
+            )
+            .await;
+        // Underlying turn succeeded.
+        assert_eq!(outcome.status, OutcomeStatus::Succeeded);
+        // The sink recorded exactly one procedure.
+        assert_eq!(
+            sink.saved.lock().expect("poisoned").len(),
+            1,
+            "sink must record exactly one procedure on ReAct success"
+        );
+        // The outcome carries a "persisted" risk note.
+        assert!(
+            outcome
+                .unresolved_risks
+                .iter()
+                .any(|r| r.contains("workflow-learning persisted")),
+            "outcome must carry a persisted note: {:?}",
+            outcome.unresolved_risks
+        );
+        // The procedure has at least one step (the read_file action).
+        let saved = sink.saved.lock().expect("poisoned");
+        let proc = &saved[0];
+        assert!(
+            proc.steps.iter().any(|s| s.action == "read_file"),
+            "procedure must include the read_file step"
+        );
+        assert_eq!(proc.source_strategy, "tool_grounded_react");
+    }
+
+    #[tokio::test]
+    async fn execute_with_learning_skips_persistence_when_sink_is_none_but_records_extraction() {
+        // When sink is None, extraction still runs and a "extracted (no
+        // sink)" risk note is added so the host sees the gap.
+        let vro = enabled_orchestrator();
+        let generator = SingleAnswerGenerator {
+            call_count: Arc::new(Mutex::new(0)),
+            output: serde_json::json!({"v": 1}),
+        };
+        let agent = ReadThenFinishAgent {
+            output: serde_json::json!({"answer": "x"}),
+            call_count: Arc::new(Mutex::new(0)),
+        };
+        let invoker = ReadOnlyInvoker {
+            text: "fn main() {}".to_string(),
+        };
+        let extractor = WorkflowExtractor::new();
+        let outcome = vro
+            .execute_with_learning(
+                &learning_react_request(),
+                &generator,
+                std::path::Path::new("/tmp"),
+                None,
+                None,
+                None,
+                Some(&agent),
+                Some(&invoker),
+                0,
+                &[],
+                None, // no sink
+                &extractor,
+                "2026-01-01T00:00:00Z",
+            )
+            .await;
+        assert_eq!(outcome.status, OutcomeStatus::Succeeded);
+        assert!(
+            outcome
+                .unresolved_risks
+                .iter()
+                .any(|r| r.contains("workflow-learning extracted (no sink)")),
+            "expected extracted-no-sink note: {:?}",
+            outcome.unresolved_risks
+        );
+    }
+
+    #[tokio::test]
+    async fn execute_with_learning_survives_sink_failure_without_panicking() {
+        // Zero-breakage: a sink that always returns Err must NOT crash the
+        // turn. The outcome stays Succeeded with a "persistence skipped"
+        // risk note.
+        let vro = enabled_orchestrator();
+        let generator = SingleAnswerGenerator {
+            call_count: Arc::new(Mutex::new(0)),
+            output: serde_json::json!({"v": 1}),
+        };
+        let agent = ReadThenFinishAgent {
+            output: serde_json::json!({"answer": "x"}),
+            call_count: Arc::new(Mutex::new(0)),
+        };
+        let invoker = ReadOnlyInvoker {
+            text: "fn main() {}".to_string(),
+        };
+        let sink = Arc::new(RecordingSink::new());
+        sink.fail_next.store(true, Ordering::SeqCst);
+        let extractor = WorkflowExtractor::new();
+        let outcome = vro
+            .execute_with_learning(
+                &learning_react_request(),
+                &generator,
+                std::path::Path::new("/tmp"),
+                None,
+                None,
+                None,
+                Some(&agent),
+                Some(&invoker),
+                0,
+                &[],
+                Some(sink.as_ref()),
+                &extractor,
+                "2026-01-01T00:00:00Z",
+            )
+            .await;
+        // Outcome still Succeeded (the underlying turn was fine).
+        assert_eq!(outcome.status, OutcomeStatus::Succeeded);
+        // Risk note records the persistence skip.
+        assert!(
+            outcome
+                .unresolved_risks
+                .iter()
+                .any(|r| r.contains("workflow-learning persistence skipped")),
+            "expected persistence-skipped note: {:?}",
+            outcome.unresolved_risks
+        );
+        // The sink did not record anything (the save failed).
+        assert!(sink.saved.lock().expect("poisoned").is_empty());
+    }
+
+    #[tokio::test]
+    async fn execute_with_learning_skips_learning_for_non_succeeded_outcome() {
+        // When the underlying turn fails, VRO-7 must not even attempt
+        // extraction. Use a ReAct budget of zero model calls so the loop
+        // halts immediately with BudgetExceeded.
+        let vro = enabled_orchestrator();
+        let generator = SingleAnswerGenerator {
+            call_count: Arc::new(Mutex::new(0)),
+            output: serde_json::json!({"v": 1}),
+        };
+        let agent = ReadThenFinishAgent {
+            output: serde_json::json!({"answer": "x"}),
+            call_count: Arc::new(Mutex::new(0)),
+        };
+        let invoker = ReadOnlyInvoker {
+            text: "fn main() {}".to_string(),
+        };
+        let sink = Arc::new(RecordingSink::new());
+        let extractor = WorkflowExtractor::new();
+        // Budget of 0 model calls -> loop halts on first iteration with
+        // BudgetExceeded before the agent can finish.
+        let request = ReasoningRequest {
+            budget_override: Some(ReasoningBudget {
+                max_model_calls: 0,
+                max_tool_calls: 0,
+                ..ReasoningBudget::balanced()
+            }),
+            ..learning_react_request()
+        };
+        let outcome = vro
+            .execute_with_learning(
+                &request,
+                &generator,
+                std::path::Path::new("/tmp"),
+                None,
+                None,
+                None,
+                Some(&agent),
+                Some(&invoker),
+                0,
+                &[],
+                Some(sink.as_ref()),
+                &extractor,
+                "2026-01-01T00:00:00Z",
+            )
+            .await;
+        // Outcome was NOT Succeeded.
+        assert_ne!(outcome.status, OutcomeStatus::Succeeded);
+        // No learning risk note was added.
+        assert!(
+            !outcome
+                .unresolved_risks
+                .iter()
+                .any(|r| r.contains("workflow-learning")),
+            "non-succeeded outcome must not trigger learning: {:?}",
+            outcome.unresolved_risks
+        );
+        // Sink recorded nothing.
+        assert!(sink.saved.lock().expect("poisoned").is_empty());
+    }
+
+    #[tokio::test]
+    async fn execute_with_learning_persists_procedure_on_consensus_success() {
+        // Non-ReAct path: ParallelCandidatesConsensus success → extractor
+        // synthesizes a generate step → sink records it.
+        let vro = enabled_orchestrator();
+        let generator = SingleAnswerGenerator {
+            call_count: Arc::new(Mutex::new(0)),
+            output: serde_json::json!({"answer": "yes"}),
+        };
+        let sink = Arc::new(RecordingSink::new());
+        let extractor = WorkflowExtractor::new();
+        let req = request_for("Is this correct? The Rust borrow checker prevents data races.");
+        let outcome = vro
+            .execute_with_learning(
+                &req,
+                &generator,
+                std::path::Path::new("/tmp"),
+                None,
+                None,
+                None,
+                None,
+                None,
+                0,
+                &[],
+                Some(sink.as_ref()),
+                &extractor,
+                "2026-01-01T00:00:00Z",
+            )
+            .await;
+        assert_eq!(outcome.status, OutcomeStatus::Succeeded);
+        // Sink recorded one procedure with at least a generate step.
+        assert_eq!(sink.saved.lock().expect("poisoned").len(), 1);
+        let saved = sink.saved.lock().expect("poisoned");
+        let proc = &saved[0];
+        assert!(
+            proc.steps.iter().any(|s| s.action == "generate"),
+            "non-ReAct procedure must include a generate step"
+        );
+        assert_eq!(proc.source_strategy, "parallel_candidates_consensus");
+    }
+
+    #[tokio::test]
+    async fn execute_with_learning_with_missing_react_seams_falls_back_gracefully() {
+        // A ToolGroundedReact profile called WITHOUT agent/invoker seams:
+        // the orchestrator's NullReactAgent finishes immediately, extraction
+        // produces NoStepsToExtract, and the outcome carries the
+        // "workflow-learning skipped" risk note. The turn does not crash.
+        let vro = enabled_orchestrator();
+        let generator = SingleAnswerGenerator {
+            call_count: Arc::new(Mutex::new(0)),
+            output: serde_json::json!({"v": 1}),
+        };
+        let sink = Arc::new(RecordingSink::new());
+        let extractor = WorkflowExtractor::new();
+        let outcome = vro
+            .execute_with_learning(
+                &learning_react_request(),
+                &generator,
+                std::path::Path::new("/tmp"),
+                None,
+                None,
+                None,
+                None, // missing agent
+                None, // missing invoker
+                0,
+                &[],
+                Some(sink.as_ref()),
+                &extractor,
+                "2026-01-01T00:00:00Z",
+            )
+            .await;
+        // The NullReactAgent finishes with empty output → Succeeded.
+        assert_eq!(outcome.status, OutcomeStatus::Succeeded);
+        // Extraction produced NoStepsToExtract → skipped note.
+        assert!(
+            outcome
+                .unresolved_risks
+                .iter()
+                .any(|r| r.contains("workflow-learning skipped")
+                    && r.contains("no extractable steps")),
+            "expected skipped-NoStepsToExtract note: {:?}",
+            outcome.unresolved_risks
+        );
+        // Sink recorded nothing.
+        assert!(sink.saved.lock().expect("poisoned").is_empty());
+    }
+
+    #[test]
+    fn learning_marker_for_unused_learningerror_import() {
+        // Ensure LearningError stays imported even when an assertion path
+        // does not construct it directly.
+        let _ = LearningError::NoStepsToExtract;
+        let _ = SecretScrubber::new();
+    }
 }

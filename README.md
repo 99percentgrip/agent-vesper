@@ -34,7 +34,7 @@ Built as a native port of the [Native GLM ACP](https://github.com/99percentgrip/
 <tr><td><b>📊 Priority + Heat Tracking</b></td><td>Every memory gets a type (<code>persona</code>/<code>episodic</code>/<code>instruction</code>), priority (0-100), and scene label. Frequently-recalled memories accumulate heat and float to the top.</td></tr>
 <tr><td><b>🛡️ Secret-Safe</b></td><td>All error messages are sanitized. No file contents, API keys, paths, or memory text leak through <code>CognitionError</code>. <code>#![forbid(unsafe_code)]</code> enforced workspace-wide.</td></tr>
 <tr><td><b>🎙️ Push-to-Talk Voice</b></td><td>Press <code>F5</code> to record from the microphone, <code>F5</code> again to transcribe speech-to-text straight into the composer (Linux + macOS). Auto-discovers any existing <code>faster-whisper</code> venv, or <b>self-bootstraps</b> a harness-owned one via the installer-bundled <code>uv</code> on first use — no separate Python setup. A long-lived sidecar loads the Whisper model once per session for instant subsequent transcriptions.</td></tr>
-<tr><td><b>🧩 Reasoning Orchestrator</b></td><td>Strategy-driven orchestration (VRO): profile-driven routing across <code>Direct</code>, <code>GenerateVerifyRepair</code>, <code>ParallelCandidatesConsensus</code>, <code>ParallelCandidatesJudge</code>, <code>ToolGroundedReact</code>, <code>BoundedTreeSearch</code>, and <code>ProposerCriticAdjudicator</code>. VRO-4 ships <b>parallel candidate branches</b> with strict isolation, deterministic ordering, budget-capped fan-out, and either quorum-based consensus (§11.4) or position-bias-shuffled judge arbitration (§11.5). VRO-5 ships a <b>tool-grounded ReAct loop</b> (§11.6) with Read-Before-Write policy enforcement, structured failure observations, and a production LM Studio <code>ReactAgent</code> adapter. VRO-6 ships <b>bounded tree search</b> (§11.7) — depth/branching-limited expansion with aggressive verifier-based pruning and early-stop on the first passing leaf — and the <b>Proposer / Critic / Adjudicator</b> workflow (§11.8) with strict three-role separation: fan-out proposals → per-candidate objective critiques → criteria-anchored adjudication (not persuasive prose). Triggered automatically for root-cause, migration-sequence, and high-consequence architectural prompts.</td></tr>
+<tr><td><b>🧩 Reasoning Orchestrator</b></td><td>Strategy-driven orchestration (VRO): profile-driven routing across <code>Direct</code>, <code>GenerateVerifyRepair</code>, <code>ParallelCandidatesConsensus</code>, <code>ParallelCandidatesJudge</code>, <code>ToolGroundedReact</code>, <code>BoundedTreeSearch</code>, and <code>ProposerCriticAdjudicator</code>. VRO-4 ships <b>parallel candidate branches</b> with strict isolation, deterministic ordering, budget-capped fan-out, and either quorum-based consensus (§11.4) or position-bias-shuffled judge arbitration (§11.5). VRO-5 ships a <b>tool-grounded ReAct loop</b> (§11.6) with Read-Before-Write policy enforcement, structured failure observations, and a production LM Studio <code>ReactAgent</code> adapter. VRO-6 ships <b>bounded tree search</b> (§11.7) — depth/branching-limited expansion with aggressive verifier-based pruning and early-stop on the first passing leaf — and the <b>Proposer / Critic / Adjudicator</b> workflow (§11.8) with strict three-role separation: fan-out proposals → per-candidate objective critiques → criteria-anchored adjudication (not persuasive prose). VRO-7 ships <b>Verified Workflow Learning</b> (§11.9): successful complex-strategy turns are summarized into sanitized, generalized <code>ProceduralMemory</code> recipes by a <code>SecretScrubber</code>-guarded <code>WorkflowExtractor</code> (AWS keys, JWTs, bearer tokens, IPs, and high-entropy strings are redacted to <code>[REDACTED:&lt;KIND&gt;]</code> placeholders before any byte is persisted), then saved to cognitive memory through a pluggable <code>ProceduralMemorySink</code>. Learning is non-blocking — extraction and sink errors surface as <code>unresolved_risks</code> notes and never affect the underlying turn outcome.</td></tr>
 </table>
 
 ## Install
@@ -48,7 +48,7 @@ curl -fsSL https://github.com/99percentgrip/agent-vesper/raw/main/scripts/instal
 Or pin a version:
 
 ```sh
-AGENT_VESPER_VERSION=0.20.22 sh scripts/install.sh
+AGENT_VESPER_VERSION=0.20.23 sh scripts/install.sh
 ```
 
 ### Windows (PowerShell)
@@ -280,7 +280,7 @@ User says something
 ## Local Verification
 
 ```sh
-cargo xtask verify          # fmt + clippy -D warnings + 826 tests + architecture
+cargo xtask verify          # fmt + clippy -D warnings + 861 tests + architecture
 cargo xtask architecture    # dependency-boundary validation (22 packages)
 cargo xtask msrv            # Rust 1.88 compatibility check
 ```

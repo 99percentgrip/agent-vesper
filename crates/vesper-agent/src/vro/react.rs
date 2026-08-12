@@ -349,27 +349,19 @@ impl ToolInvoker for RegistryToolInvoker {
 /// mutating tools are rejected until at least one `ReadOnly` observation has
 /// been recorded.
 ///
+/// This is a thin wrapper around
+/// [`run_tool_grounded_react_with_trajectory`] that discards the trajectory
+/// (kept for callers that do not need VRO-7 workflow learning). Hosts that
+/// want Verified Workflow Learning (VRO-7) should call
+/// [`run_tool_grounded_react_with_trajectory`] directly so the trajectory is
+/// available for the [`WorkflowExtractor`](super::learning::WorkflowExtractor).
+///
 /// ## Halt conditions
 ///
 /// - [`ReactDecision::Finish`] ⇒ [`OutcomeStatus::Succeeded`] (PRD §11.6).
 /// - `max_model_calls` exhausted ⇒ [`OutcomeStatus::BudgetExceeded`].
 /// - `max_tool_calls` exhausted when the model still wants to call tools ⇒
 ///   [`OutcomeStatus::BudgetExceeded`].
-///
-/// ## Tool errors
-///
-/// Any [`ToolInvocationError`] (unknown tool, malformed args, permission
-/// denial, executor failure) is converted to a structured failure
-/// observation and appended to the trajectory — the loop continues and the
-/// model can correct itself.
-///
-/// ## Read-Before-Write
-///
-/// When `requires_grounding` is `true` and the model attempts a mutating
-/// tool before any `ReadOnly` tool has produced an observation, the loop
-/// synthesizes a structured rejection observation and continues (it does
-/// **not** consume a `max_tool_calls` unit for the rejected attempt — only
-/// successful dispatches count).
 pub async fn run_tool_grounded_react(
     prompt: &str,
     agent: &dyn ReactAgent,
@@ -377,6 +369,31 @@ pub async fn run_tool_grounded_react(
     budget: ReasoningBudget,
     requires_grounding: bool,
 ) -> ReasoningOutcome {
+    run_tool_grounded_react_with_trajectory(prompt, agent, invoker, budget, requires_grounding)
+        .await
+        .0
+}
+
+/// Like [`run_tool_grounded_react`] but ALSO returns the accumulated
+/// [`TrajectoryEntry`] sequence (VRO-7, PRD §11.9).
+///
+/// The trajectory is returned on **every** terminal path (Succeeded,
+/// BudgetExceeded), so the VRO-7 learning extractor can summarize whatever
+/// progress was made even when the loop did not reach `Finish`. The
+/// extractor itself filters on
+/// [`OutcomeStatus::Succeeded`](vesper_domain::OutcomeStatus::Succeeded), so
+/// partial trajectories from budget-exhausted turns are not persisted as
+/// "successful" procedures.
+///
+/// See [`run_tool_grounded_react`] for the full halt-condition and policy
+/// documentation.
+pub async fn run_tool_grounded_react_with_trajectory(
+    prompt: &str,
+    agent: &dyn ReactAgent,
+    invoker: &dyn ToolInvoker,
+    budget: ReasoningBudget,
+    requires_grounding: bool,
+) -> (ReasoningOutcome, Vec<TrajectoryEntry>) {
     let mut trajectory: Vec<TrajectoryEntry> = Vec::new();
     let mut model_calls = 0u32;
     let mut tool_calls = 0u32;
@@ -392,7 +409,10 @@ pub async fn run_tool_grounded_react(
             unresolved_risks.push(format!(
                 "max_model_calls exhausted ({max_model_calls}) before the agent emitted Finish"
             ));
-            return build_budget_exceeded(model_calls, tool_calls, unresolved_risks);
+            return (
+                build_budget_exceeded(model_calls, tool_calls, unresolved_risks),
+                std::mem::take(&mut trajectory),
+            );
         }
 
         // --- THINK: ask the agent for the next action. ---
@@ -401,7 +421,10 @@ pub async fn run_tool_grounded_react(
 
         match decision {
             ReactDecision::Finish { output } => {
-                return build_succeeded(model_calls, tool_calls, output, &trajectory);
+                return (
+                    build_succeeded(model_calls, tool_calls, output, &trajectory),
+                    std::mem::take(&mut trajectory),
+                );
             }
             ReactDecision::CallTool { name, arguments } => {
                 // --- Halt: tool-call safety budget exhausted. ---
@@ -412,7 +435,10 @@ pub async fn run_tool_grounded_react(
                     unresolved_risks.push(format!(
                         "max_tool_calls exhausted ({max_tool_calls}); agent wanted to call `{name}`"
                     ));
-                    return build_budget_exceeded(model_calls, tool_calls, unresolved_risks);
+                    return (
+                        build_budget_exceeded(model_calls, tool_calls, unresolved_risks),
+                        std::mem::take(&mut trajectory),
+                    );
                 }
 
                 // --- Read-Before-Write policy (directive 3). ---

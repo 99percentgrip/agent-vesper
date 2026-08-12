@@ -79,7 +79,23 @@ the multi-turn, tool-executing layer above it.
   `ProposerCriticAdjudicator` → `run_proposer_critic_adjudicator` (VRO-6) or
   degrades to consensus when no critic + adjudicator is supplied (via
   `execute_with_judge`) / when critic or adjudicator is `None` (via
-  `execute_with_critic_adjudicator`). **VRO-5.1 dispatch guard:** `execute` and
+  `execute_with_critic_adjudicator`). **VRO-7 entry point:**
+  `execute_with_learning(request, generator, workspace_root, judge, critic,
+  adjudicator, agent, invoker, seed, criteria, sink, extractor,
+  extracted_at)` is the single composition-boundary method that fans in
+  every optional strategy seam AND layers Verified Workflow Learning
+  (PRD §11.9) on top. It dispatches to `run_tool_grounded_react_with_trajectory`
+  for `ToolGroundedReact`, to `execute_with_critic_adjudicator` for PCA, or
+  to `execute_with_judge` for everything else; on `Succeeded` AND a
+  learning-eligible strategy it runs the `WorkflowExtractor` and persists
+  the resulting `ProceduralMemory` through the optional
+  `ProceduralMemorySink`. **Zero-breakage guarantee:** extraction errors
+  surface as one extra `unresolved_risks` entry ("workflow-learning
+  skipped: …"); sink errors surface as "workflow-learning persistence
+  skipped: …"; `sink == None` still records the extraction ("workflow-
+  learning extracted (no sink): …"). The orchestrator never panics from a
+  learning error and never modifies the underlying turn outcome.
+  **VRO-5.1 dispatch guard:** `execute` and
   `execute_with_judge` deliberately return `Failed` (with a clear "use
   `execute_react`" risk message) when the profiled strategy is
   `ToolGroundedReact`, so callers cannot silently run a tool-grounded prompt
@@ -99,20 +115,28 @@ the multi-turn, tool-executing layer above it.
   + `check_tool_permission` + `PermissionPort` as
   `AgentLoop::gate_and_execute`, so operating mode and one-time approval are
   honored identically to the direct path. `run_tool_grounded_react(prompt,
-  agent, invoker, budget, requires_grounding)` drives the loop: THINK (ask
-  agent for next action) → ACT (route through invoker) → OBSERVE (append
-  result text or structured failure). Halts on `Finish` (Succeeded),
-  `max_model_calls` exhausted (BudgetExceeded), or `max_tool_calls` exhausted
-  when the agent still wants tools (BudgetExceeded). **Read-Before-Write
-  policy:** when `requires_grounding == true` and the agent attempts a
-  mutating tool before any `ReadOnly` observation exists, the loop synthesizes
-  a rejection observation and continues — the rejected attempt does NOT
-  consume a `max_tool_calls` unit (it never reached the executor). **Tool
-  errors become observations:** `ToolInvocationError` variants (UnknownTool,
+  agent, invoker, budget, requires_grounding)` is the canonical entry point;
+  `run_tool_grounded_react_with_trajectory(...)` (added VRO-7) is the
+  sibling that ALSO returns the accumulated `TrajectoryEntry` sequence on
+  every terminal path (Succeeded AND BudgetExceeded), so the
+  `WorkflowExtractor` can summarize whatever progress was made. The
+  canonical `run_tool_grounded_react` is a thin wrapper that discards the
+  trajectory for callers that do not need VRO-7 learning. Both functions
+  drive the loop: THINK (ask agent for next action) → ACT (route through
+  invoker) → OBSERVE (append result text or structured failure). Halts on
+  `Finish` (Succeeded), `max_model_calls` exhausted (BudgetExceeded), or
+  `max_tool_calls` exhausted when the agent still wants tools
+  (BudgetExceeded). **Read-Before-Write policy:** when
+  `requires_grounding == true` and the agent attempts a mutating tool before
+  any `ReadOnly` observation exists, the loop synthesizes a rejection
+  observation and continues — the rejected attempt does NOT consume a
+  `max_tool_calls` unit (it never reached the executor). **Tool errors
+  become observations:** `ToolInvocationError` variants (UnknownTool,
   InvalidArguments, PermissionDenied, ExecutionFailed) are converted to
   structured failure text and fed back to the model so the loop can
-  self-correct. Zero-breakage: only invoked via `execute_react`; `Direct`,
-  `GenerateVerifyRepair`, and parallel paths never reach this code.
+  self-correct. Zero-breakage: only invoked via `execute_react` /
+  `execute_with_learning`; `Direct`, `GenerateVerifyRepair`, and parallel
+  paths never reach this code.
 - `src/vro/orchestrator.rs` — VRO-2.3 Generate-Verify-Repair loop (PRD §11.3,
   §10.9). `CandidateGenerator` trait (async object-safe via boxed `Send`
   future; **`boxed_clone` is required** so VRO-4's parallel executor can give
@@ -203,6 +227,57 @@ the multi-turn, tool-executing layer above it.
   Compiler/test failures are `repairable: true`; a verifier that cannot run
   (cargo missing, crash) returns `VerificationStatus::Error` (distinct from
   `Failed`). No new dependencies.
+- `src/vro/learning.rs` — VRO-7 Verified Workflow Learning (PRD §11.9).
+  Pure extraction + sanitization logic — no `vesper-cognition` dependency,
+  no SQLite, no network I/O. (The architecture rule that `vesper-agent`
+  depends only on domain/provider/runtime means cognition is a peer crate;
+  persistence is delegated to a trait port supplied at the composition
+  boundary, mirroring the VRO-4/5.1/6 pattern of `CandidateJudge` /
+  `ToolInvoker` / `CandidateCritic`.) Public types:
+  - `SecretScrubber` — compiles a priority-ordered pattern set ONCE at
+    construction and reuses it across calls. Detects (1) AWS access keys
+    (`AKIA[0-9A-Z]{16}`), (2) JWTs (three base64url segments starting with
+    `eyJ`), (3) bearer tokens (`[Bb]earer\s+<token>`), (4) generic
+    credential assignments
+    (`(api[_-]?key|apikey|token|secret|password|passwd|auth_token|access_key)\s*[=:]\s*['"]?<value>`),
+    (5) AWS secret access keys (40-char base64 after an `aws_secret` hint),
+    (6) IPv4 addresses, and (7) high-entropy 32+ char base64/url-safe
+    strings (Shannon entropy > 4.0 bits/char). Each match becomes a
+    deterministic `[REDACTED:<KIND>]` placeholder. The high-entropy pass
+    runs LAST so the deterministic placeholders (which contain only `[`, `]`,
+    `:`, letters, underscore) cannot themselves trip the entropy threshold.
+    `scrub_json` recursively redacts string values in `serde_json::Value`
+    trees. **Pitfall** (VRO-7): the workspace `regex` dep is
+    `default-features = false` (no `unicode-perl`), so `\b`/`\s`/`\w`
+    REJECT with NFA-build errors. This crate declares a per-crate override
+    `regex = { version = "1", default-features = false, features = ["std",
+    "unicode-perl"] }` so the scrubber patterns compile; the rest of the
+    workspace stays ASCII-only via `regex.workspace = true`.
+  - `ProceduralMemory` + `ProceduralStep` — the persisted artifact. Each
+    step is a *generalized* observation (`Invoke tool \`read_file\` with
+    sanitized arguments.`, plus a sanitized JSON argument excerpt and a
+    bounded 240-char observation excerpt). The `id` is a deterministic
+    SHA-256 over the normalized `(objective, strategy, steps)` triple so
+    two trajectories that generalize to the same procedure produce the
+    same id (cognitive-memory dedupe). Round-trips through `serde_json`.
+  - `WorkflowExtractor` — two entry points:
+    `extract_from_trajectory(request, outcome, trajectory, strategy,
+    extracted_at)` (ReAct path — walks each `Action`/`Observation` pair) and
+    `extract_from_outcome(request, outcome, strategy, extracted_at)` (non-
+    ReAct path — synthesizes a `generate` step from `final_output`, plus a
+    `verify` step when verifiers ran). Both reject non-`Succeeded` outcomes,
+    empty objectives, and empty trajectories with `LearningError`.
+  - `ProceduralMemorySink` — async object-safe persistence port
+    (`save_procedure(&ProceduralMemory) -> Result<String, LearningError>`).
+    The composition boundary supplies the cognition-backed impl (which
+    forwards to `vesper_cognition::pipeline::CognitiveMemory::add_procedural`
+    behind the scenes). Tests use a `RecordingSink` fake.
+  - `LearningError` — non-fatal error variants: `OutcomeNotSucceeded`,
+    `NoStepsToExtract`, `EmptyObjective`, `SinkRejected`. The orchestrator
+    converts every variant into one `unresolved_risks` entry; the turn
+    itself never fails because of a learning error.
+  - `is_learning_eligible(strategy)` — true for every complex strategy
+    except `Direct` (no procedure to memorize for plain chat).
 - `src/providers/mod.rs` — VRO-3.1 provider adapters that implement the
   `vesper-agent`-owned [`CandidateGenerator`](crate::vro::CandidateGenerator)
   seam. Lives in `vesper-agent` (not a `vesper-provider-*` crate) because the
@@ -250,8 +325,14 @@ the multi-turn, tool-executing layer above it.
   most `MAX_CONTEXT_MESSAGES` messages while the host retains the returned
   transcript.
 - Depends on `vesper-domain`, `vesper-provider`, `vesper-runtime` (+ `glob`,
-  `regex` for search; `tempfile` dev-only). Must NOT depend on `vesper-acp`,
-  `vesper-sessions`, SQLite, MCP, frontends, or any disposable spike.
+  `regex` for search; `sha2` for VRO-7 deterministic procedure IDs; `tempfile`
+  dev-only). Must NOT depend on `vesper-acp`, `vesper-sessions`, SQLite, MCP,
+  frontends, or any disposable spike. **VRO-7 per-crate `regex` override:**
+  `crates/vesper-agent/Cargo.toml` declares
+  `regex = { version = "1", default-features = false, features = ["std",
+  "unicode-perl"] }` (NOT `regex.workspace = true`) so the `SecretScrubber`'s
+  `\b`/`\s`/`\w` patterns compile; this does NOT leak to other crates, which
+  keep using the workspace's ASCII-only regex.
 - Every path-bearing tool routes its argument through `confinement::confine`
   against the session's primary workspace root before any I/O. `run_command`
   runs in the workspace root via the platform shell (`sh -c` / `cmd /C`) with a
