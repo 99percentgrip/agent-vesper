@@ -101,7 +101,10 @@ the multi-turn, tool-executing layer above it.
   InvalidArguments, PermissionDenied, ExecutionFailed) are converted to
   structured failure text and fed back to the model so the loop can
   self-correct. Zero-breakage: only invoked via `execute_react`; `Direct`,
-  `GenerateVerifyRepair`, and parallel paths never reach this code.
+  `GenerateVerifyRepair`, and parallel paths never reach this code. The
+  production `ReactAgent` impl (provider-backed, e.g. LM Studio) is deferred
+  to a follow-up phase, mirroring how `LmStudioCandidateGenerator` (VRO-3.1)
+  followed `CandidateGenerator` (VRO-2.3).
 - `src/vro/orchestrator.rs` — VRO-2.3 Generate-Verify-Repair loop (PRD §11.3,
   §10.9). `CandidateGenerator` trait (async object-safe via boxed `Send`
   future; **`boxed_clone` is required** so VRO-4's parallel executor can give

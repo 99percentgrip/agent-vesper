@@ -931,6 +931,87 @@ mod tests {
         assert_eq!(outcome.cost.model_calls, 2);
     }
 
+    #[tokio::test]
+    async fn failed_read_does_not_unlock_writes_under_read_before_write() {
+        // Audit gap fix: a read-only tool that ERRORS must NOT count as
+        // evidence. Otherwise a model whose first read fails (e.g. file not
+        // found) could immediately mutate based on absence of evidence rather
+        // than retrying with a different read tool. The model MUST produce at
+        // least one SUCCESSFUL ReadOnly observation before mutating.
+        let mut invoker = FakeInvoker::new();
+        invoker.register(
+            "read_file",
+            ToolExecutionClass::ReadOnly,
+            Err(ToolInvocationError::ExecutionFailed("no such file".into())),
+        );
+        invoker.register(
+            "write_file",
+            ToolExecutionClass::Mutating,
+            Ok("written".into()),
+        );
+        let agent = ScriptedAgent::new(vec![
+            // Failed read attempt — does NOT unlock writes.
+            ReactDecision::CallTool {
+                name: "read_file".to_string(),
+                arguments: serde_json::json!({"path": "missing.rs"}),
+            },
+            // Mutation attempt — still blocked because no successful read.
+            ReactDecision::CallTool {
+                name: "write_file".to_string(),
+                arguments: serde_json::json!({"path": "a.txt", "content": "x"}),
+            },
+            // Give up and finish without mutating.
+            ReactDecision::Finish {
+                output: serde_json::json!({"answer": "could not gather evidence"}),
+            },
+        ]);
+        let outcome =
+            run_tool_grounded_react("Edit a.txt", &agent, &invoker, budget(10, 10), true).await;
+        assert_eq!(outcome.status, OutcomeStatus::Succeeded);
+        // model_calls: 1 (failed read) + 1 (write reject) + 1 (Finish) = 3.
+        assert_eq!(outcome.cost.model_calls, 3);
+        // tool_calls: only the FAILED read dispatched (1). The write was
+        // rejected by R/B/W and never reached the executor.
+        assert_eq!(
+            outcome.cost.total_tokens,
+            3 + 1 + 2,
+            "model_calls (3) + tool_calls (1: failed read) + observations (2: \
+             failed-read observation + R/B/W rejection)"
+        );
+    }
+
+    #[tokio::test]
+    async fn max_tool_calls_zero_halts_on_first_call_tool_attempt() {
+        // Audit gap fix: a degenerate budget of max_tool_calls=0 must halt
+        // with BudgetExceeded the moment the agent wants a tool — there is
+        // no budget for even one dispatch. The model still got one
+        // next_action call (the ceiling is checked against tool_calls, not
+        // before the model call), so model_calls=1.
+        let agent = ScriptedAgent::new(vec![ReactDecision::CallTool {
+            name: "read_file".to_string(),
+            arguments: serde_json::json!({"path": "a"}),
+        }]);
+        let invoker = FakeInvoker::with_read("read_file", "ok");
+        let outcome = run_tool_grounded_react("Read a", &agent, &invoker, budget(5, 0), true).await;
+        assert_eq!(outcome.status, OutcomeStatus::BudgetExceeded);
+        assert_eq!(
+            outcome.cost.model_calls, 1,
+            "one model call before the halt"
+        );
+        assert_eq!(
+            outcome.cost.total_tokens, 1,
+            "model_calls (1) + tool_calls (0)"
+        );
+        assert!(
+            outcome
+                .unresolved_risks
+                .iter()
+                .any(|r| r.contains("max_tool_calls exhausted (0)")),
+            "risk must name the zero budget: {:?}",
+            outcome.unresolved_risks
+        );
+    }
+
     // -----------------------------------------------------------------------
     // Directive 4 — task profiler routing (also exercised in profiler.rs
     // tests, but re-asserted here so the React contract is self-documenting)
