@@ -16,14 +16,14 @@ serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
-vesper-domain = { path = "../vesper-domain", version = "=0.20.19" }
-vesper-provider = { path = "../vesper-provider", version = "=0.20.19" }
-vesper-runtime = { path = "../vesper-runtime", version = "=0.20.19" }
+vesper-domain = { path = "../vesper-domain", version = "=0.20.20" }
+vesper-provider = { path = "../vesper-provider", version = "=0.20.20" }
+vesper-runtime = { path = "../vesper-runtime", version = "=0.20.20" }
 
 [dev-dependencies]
 serde_json.workspace = true
 tempfile.workspace = true
-vesper-testkit = { path = "../vesper-testkit", version = "=0.20.19" }
+vesper-testkit = { path = "../vesper-testkit", version = "=0.20.20" }
 
 [lints]
 workspace = true

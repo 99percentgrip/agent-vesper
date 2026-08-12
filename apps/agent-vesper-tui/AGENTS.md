@@ -78,6 +78,21 @@ business logic.
   advertised phone-reachable URLs.
 - `src/lib.rs` — public re-exports and `query_startup_view`, the single
   integration point between the TUI and the runtime registry.
+- `src/lmstudio_provider.rs` — LM Studio runtime provider adapter
+  (composition boundary, VRO-3.x): the `LmStudioFactory` /
+  `LmStudioSession` wires the local/LAN model server as a real runtime
+  provider (`ProviderFactory`, `ModelCatalog`, `ProviderSuperpowers`,
+  `ProviderCredentialPort`), so it appears in `/provider` selection,
+  `/model` lists the server's loaded model, and chat dispatches through the
+  standard `AgentLoop` (SSE streaming with reasoning-content telemetry for
+  Qwen3/DeepSeek-R1-style local reasoning models). The binary owns the
+  `reqwest::Client`; no foundational crate imports HTTP.
+  VRO-5.3 also ships [`ReqwestLmStudioTransport`] — a `reqwest::Client`-backed
+  implementation of the `LmStudioTransport` trait port that the VRO
+  `LmStudioReactAgent` uses for `next_action` calls. This is the
+  composition-boundary HTTP seam for the Tool-Grounded ReAct loop; it
+  mirrors the existing `LmStudioSession` request path (same 120s timeout,
+  same header-map helper) and is constructed credential-free.
 - `src/main.rs` — binary entry point; crossterm raw-mode + alternate-screen
   lifecycle and the interactive event loop. Delegates every transition to
   `dispatch::dispatch` so it owns no Plan Mode discipline itself. Owns the
@@ -119,6 +134,38 @@ business logic.
   The No-Leak Guarantee lives entirely in `vesper-mcp`
   (`#[cfg(debug_assertions)]` gates `load_unsigned_debug`; release builds
   structurally erase the method).
+  VRO-5.3 (PRD §11.6): wires the Tool-Grounded ReAct loop into the
+  composition boundary. The dispatch block in `drive_loop` profiles each
+  prompt; when the strategy is `ToolGroundedReact` AND a real
+  `LmStudioReactAgent` bundle is available (LM Studio settings configured),
+  it routes through `spawn_vro_react_turn` → `VroOrchestrator::execute_react`
+  (live tool-grounded loop) instead of `spawn_vro_turn` → `execute` (the
+  GVR baseline). The decision is factored into the pure
+  `react_dispatch_for(strategy, react_available)` helper for
+  unit-testability. `build_vro_react_bundle` constructs the
+  `LmStudioReactAgent` (from persisted LM Studio settings +
+  `LMSTUDIO_API_KEY` env) and a `RegistryToolInvoker` over a fresh
+  `ToolRegistry::parity_default()` (sharing the same `TuiToolService` Arc
+  as the direct path) plus the same shared `ApprovalBroker` Arc, so the
+  React path honors the same hosted-tool surface and one-time approval
+  semantics as the direct `AgentLoop`. The agent_tools + approval_port Arcs
+  are cloned in `run()` BEFORE they are moved into the AgentLoop and passed
+  to `drive_loop` for this purpose.
+  Live trajectory rendering (directive 3): both the `ReactAgent` and the
+  `ToolInvoker` are wrapped in `TrajectoryCapturingReactAgent` /
+  `TrajectoryCapturingInvoker` decorators that share one
+  `mpsc::UnboundedSender<String>` and stream each Action/Observation/Finish
+  as a pre-formatted markdown line. The event loop drains the receiver via
+  `drain_trajectory(session)` each iteration (alongside
+  `drain_agent_event`) and appends to `session.reasoning`, which the
+  existing markdown renderer surfaces live in the Reasoning panel as the
+  loop runs. The per-entry formatters (`format_react_action_entry` /
+  `format_react_observation_entry` / `format_react_finish_entry`) are the
+  live path; `format_react_trajectory` is the canonical bulk-render utility
+  (exercised by tests, reserved for future bulk-render use cases).
+  Zero-breakage: when LM Studio is NOT configured or the strategy is
+  anything other than `ToolGroundedReact`, the existing direct / GVR /
+  parallel-candidates paths are completely unchanged.
 
 ## Local Contracts
 

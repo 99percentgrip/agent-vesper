@@ -206,6 +206,16 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
         Some(worker_factory),
     ));
     let (approval_port, approval_rx) = vesper_agent::ApprovalBroker::channel();
+    // VRO-5.3: keep clones of the shared tool service + permission broker so
+    // the `RegistryToolInvoker` for the Tool-Grounded ReAct path uses the
+    // SAME hosted-tool surface and the SAME one-time approval channel as the
+    // direct AgentLoop. Without this, mutating ReAct tools would either miss
+    // the user's `/approve` slash command or run against a different tool
+    // registry than the direct path.
+    let agent_tools_for_react: Arc<dyn vesper_agent::ToolService> =
+        Arc::clone(&agent_tools) as Arc<dyn vesper_agent::ToolService>;
+    let approval_port_for_react: Arc<dyn vesper_agent::PermissionPort> =
+        Arc::clone(&approval_port) as Arc<dyn vesper_agent::PermissionPort>;
     let agent = Arc::new(
         build_agent_loop(
             Arc::clone(&registry),
@@ -234,6 +244,7 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
         input: String::new(),
         conversation: Vec::new(),
         agent_rx: None,
+        trajectory_rx: None,
         agent_task: None,
         agent_running: false,
         approval_rx,
@@ -283,6 +294,8 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
         &supervisor,
         &runtime_session_id,
         &agent,
+        &agent_tools_for_react,
+        approval_port_for_react,
         &memory_stores,
         &cognition_bundle,
         &mut checkpoint_stores,
@@ -503,6 +516,14 @@ struct TuiSession {
     /// `try_recv` each iteration so the UI stays responsive while the model
     /// thinks and tools execute.
     agent_rx: Option<mpsc::UnboundedReceiver<AgentEvent>>,
+    /// VRO-5.3 (PRD §11.6): receiver for live ReAct trajectory entries
+    /// streamed by [`TrajectoryCapturingReactAgent`] and
+    /// [`TrajectoryCapturingInvoker`]. `Some` while a `tokio::spawn`-ed
+    /// `execute_react` turn is running; the event loop drains it via
+    /// `try_recv` each iteration and appends formatted entries to
+    /// `reasoning` so the Reasoning panel renders the Action/Observation
+    /// cycle live as the ReAct loop runs.
+    trajectory_rx: Option<mpsc::UnboundedReceiver<String>>,
     /// Abort handle for the in-flight provider/tool task.
     agent_task: Option<tokio::task::JoinHandle<()>>,
     /// `true` while an agent turn is in flight — drives the "WORKING..."
@@ -855,6 +876,8 @@ async fn drive_loop(
     supervisor: &vesper_runtime::RuntimeSupervisor,
     runtime_session_id: &SessionId,
     agent: &Arc<AgentLoop>,
+    agent_tools: &Arc<dyn vesper_agent::ToolService>,
+    approval_port_for_react: Arc<dyn vesper_agent::PermissionPort>,
     memory_stores: &MemoryStores,
     cognition_bundle: &CognitionBundle,
     checkpoint_stores: &mut CheckpointStores,
@@ -872,6 +895,11 @@ async fn drive_loop(
         // is non-blocking (`try_recv`); if the turn is still running we just
         // fall through and render the in-flight banner.
         drain_agent_event(session);
+        // VRO-5.3 (PRD §11.6): drain any live ReAct trajectory entries from
+        // the in-flight `execute_react` turn so the Reasoning panel renders
+        // the Action/Observation cycle as it happens. Mirrors the
+        // `drain_agent_event` non-blocking pattern.
+        drain_trajectory(session);
         drain_permission_request(session);
         drain_mobile_decision(session);
         refresh_command_menu(session, registry_commands, surface);
@@ -1574,12 +1602,57 @@ async fn drive_loop(
                             // non-Direct, use the VRO orchestrator instead
                             // of the direct AgentLoop. Otherwise, the direct
                             // path is unchanged.
+                            //
+                            // VRO-5.3: when the profiled strategy is
+                            // `ToolGroundedReact` AND a real `LmStudioReactAgent`
+                            // bundle is available (LM Studio settings are
+                            // configured), route to `execute_react` (the live
+                            // tool-grounded ReAct loop) instead of the GVR
+                            // baseline. The decision is factored into
+                            // `react_dispatch_for` for unit-testability.
                             let should_vro = vro.enabled()
                                 && vro.route(&expanded, vesper_domain::ReasoningMode::Auto)
                                     == vesper_agent::VroRoutingDecision::Orchestrate;
                             if should_vro {
-                                if let Err(error) = spawn_vro_turn(vro, agent, expanded, session) {
-                                    session.state.status = Some(error);
+                                let profile = vro.profile(&expanded);
+                                let react_available = !load_lmstudio_settings().is_empty();
+                                match react_dispatch_for(
+                                    profile.recommended_strategy,
+                                    react_available,
+                                ) {
+                                    ReactDispatchDecision::React => {
+                                        if let Err(error) = spawn_vro_react_turn(
+                                            vro,
+                                            agent,
+                                            agent_tools,
+                                            Arc::clone(&approval_port_for_react),
+                                            expanded,
+                                            session,
+                                        ) {
+                                            session.state.status = Some(error);
+                                        }
+                                    }
+                                    ReactDispatchDecision::Orchestrate => {
+                                        if let Err(error) =
+                                            spawn_vro_turn(vro, agent, expanded, session)
+                                        {
+                                            session.state.status = Some(error);
+                                        }
+                                    }
+                                    ReactDispatchDecision::Direct => {
+                                        // Profiled as Direct despite routing to
+                                        // Orchestrate — fall through to the
+                                        // direct AgentLoop path.
+                                        if let Err(error) = spawn_agent_turn(
+                                            agent,
+                                            expanded,
+                                            session,
+                                            surface,
+                                            cognition_bundle,
+                                        ) {
+                                            session.state.status = Some(error);
+                                        }
+                                    }
                                 }
                             } else if let Err(error) = spawn_agent_turn(
                                 agent,
@@ -4045,6 +4118,447 @@ fn spawn_vro_turn(
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// VRO-5.3 Tool-Grounded ReAct dispatch wiring
+// (PRD §11.6 — composition-boundary ReactAgent + RegistryToolInvoker)
+// ---------------------------------------------------------------------------
+
+/// Which VRO turn to spawn for a profiled strategy.
+///
+/// Pure decision factored out of `drive_loop` so it is unit-testable without
+/// spawning a background task or constructing an LM Studio connection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ReactDispatchDecision {
+    /// `ToolGroundedReact` profiled AND a real `LmStudioReactAgent` bundle is
+    /// available → call `execute_react`.
+    React,
+    /// Non-`Direct` profile (`GenerateVerifyRepair`, parallel candidates, or
+    /// `ToolGroundedReact` without a configured ReactAgent) → call `execute`.
+    Orchestrate,
+    /// `Direct` profile → unchanged direct `AgentLoop` path.
+    Direct,
+}
+
+/// Pure decision: given the profiled strategy and whether a real
+/// `LmStudioReactAgent` bundle is available, decide which VRO turn to spawn.
+///
+/// Behavior:
+/// - `ToolGroundedReact` + react available → [`ReactDispatchDecision::React`]
+///   (calls `execute_react`, the live tool-grounded ReAct loop).
+/// - `ToolGroundedReact` + react NOT available → falls back to
+///   [`ReactDispatchDecision::Orchestrate`] (the GVR baseline) so the user
+///   still gets a useful response; the dispatch path surfaces the
+///   degrading reason in the status line.
+/// - `Direct` → [`ReactDispatchDecision::Direct`] (unchanged direct loop).
+/// - Any other non-`Direct` strategy → [`ReactDispatchDecision::Orchestrate`].
+#[must_use]
+pub(crate) fn react_dispatch_for(
+    strategy: vesper_domain::ReasoningStrategy,
+    react_available: bool,
+) -> ReactDispatchDecision {
+    use vesper_domain::ReasoningStrategy::*;
+    match strategy {
+        ToolGroundedReact if react_available => ReactDispatchDecision::React,
+        ToolGroundedReact => ReactDispatchDecision::Orchestrate,
+        Direct => ReactDispatchDecision::Direct,
+        _ => ReactDispatchDecision::Orchestrate,
+    }
+}
+
+/// Renders the ReAct trajectory as a markdown-renderable string for the
+/// Reasoning panel (directive 3).
+///
+/// Each [`TrajectoryEntry::Action`] becomes a bold **▶ ACTION** line tagged
+/// with the tool name and JSON arguments; each
+/// [`TrajectoryEntry::Observation`] becomes a *↳ OBSERVATION* (success) or
+/// *✗ ERROR* (failure) line. The same label convention the Reasoning panel
+/// already understands (the markdown renderer supports bold, italics, and
+/// inline code).
+///
+/// This bulk formatter is built on the per-entry formatters
+/// [`format_react_action_entry`] / [`format_react_observation_entry`] /
+/// [`format_react_finish_entry`] so the live-streaming path
+/// ([`TrajectoryCapturingReactAgent`] / [`TrajectoryCapturingInvoker`]) and
+/// the bulk-display path share one rendering convention.
+///
+/// # Why `#[allow(dead_code)]`?
+///
+/// Production streams trajectory entries one-at-a-time through the capturing
+/// wrappers (the per-entry formatters are the live path). This bulk
+/// formatter is exercised by unit tests and reserved for future bulk-render
+/// use cases (CLI tools, replay summaries, debug dumps). Kept here so any
+/// future caller gets the same rendering convention without re-implementing
+/// it.
+#[must_use]
+#[allow(dead_code)] // exercised by tests; reserved for future bulk-render use cases
+pub(crate) fn format_react_trajectory(
+    trajectory: &[vesper_agent::vro::react::TrajectoryEntry],
+) -> String {
+    use vesper_agent::vro::react::TrajectoryEntry;
+    let mut out = String::new();
+    for entry in trajectory {
+        match entry {
+            TrajectoryEntry::Action { name, arguments } => {
+                if !out.is_empty() {
+                    out.push('\n');
+                }
+                out.push_str(&format_react_action_entry(name, arguments));
+            }
+            TrajectoryEntry::Observation { text, success } => {
+                out.push('\n');
+                out.push_str(&format_react_observation_entry(text, *success));
+            }
+        }
+    }
+    out
+}
+
+/// Renders one ReAct **Action** decision as a single markdown line.
+///
+/// Used both by [`format_react_trajectory`] (bulk) and by
+/// [`TrajectoryCapturingReactAgent`] (live stream).
+#[must_use]
+pub(crate) fn format_react_action_entry(name: &str, arguments: &serde_json::Value) -> String {
+    // Empty-object arguments are omitted to reduce noise.
+    let args_str = if arguments.as_object().is_some_and(|map| !map.is_empty()) {
+        format!(" {arguments}")
+    } else {
+        String::new()
+    };
+    format!("**▶ ACTION** `{name}`{args_str}")
+}
+
+/// Renders one ReAct **Observation** as a single markdown line.
+///
+/// `success == true` → *↳ OBSERVATION*; `success == false` → *✗ ERROR*.
+/// Used both by [`format_react_trajectory`] (bulk) and by
+/// [`TrajectoryCapturingInvoker`] (live stream).
+#[must_use]
+pub(crate) fn format_react_observation_entry(text: &str, success: bool) -> String {
+    let label = if success {
+        "↳ OBSERVATION"
+    } else {
+        "✗ ERROR"
+    };
+    format!("*{label}* {text}")
+}
+
+/// Renders one ReAct **Finish** decision as a single markdown line.
+///
+/// Used by [`TrajectoryCapturingReactAgent`] when the model emits
+/// `ReactDecision::Finish`. Non-string outputs are stringified.
+#[must_use]
+pub(crate) fn format_react_finish_entry(output: &serde_json::Value) -> String {
+    let text = match output {
+        serde_json::Value::String(s) => s.clone(),
+        other => other.to_string(),
+    };
+    format!("**✓ FINISH** {text}")
+}
+
+// ---------------------------------------------------------------------------
+// VRO-5.3 directive 3 — live trajectory streaming via capturing wrappers
+// ---------------------------------------------------------------------------
+
+/// Wraps a [`ReactAgent`] so each `next_action` decision is mirrored into a
+/// shared unbounded channel as a formatted markdown line. The event loop
+/// drains the receiver into `session.reasoning`, so the Reasoning panel
+/// renders the model's Actions (and the final Finish) **live** as the ReAct
+/// loop runs.
+///
+/// Mirrors the trajectory-rendering contract of directive 3 without
+/// modifying `vesper-domain`'s `ReasoningOutcome`: the trajectory stays
+/// local to `run_tool_grounded_react`, but its visible side effects (the
+/// decision stream) reach the panel through the standard event channel.
+pub(crate) struct TrajectoryCapturingReactAgent<A> {
+    inner: A,
+    tx: mpsc::UnboundedSender<String>,
+}
+
+impl<A> TrajectoryCapturingReactAgent<A> {
+    /// Wraps `inner` so every `next_action` decision is also sent to `tx`.
+    #[must_use]
+    pub(crate) fn new(inner: A, tx: mpsc::UnboundedSender<String>) -> Self {
+        Self { inner, tx }
+    }
+}
+
+impl<A> vesper_agent::vro::react::ReactAgent for TrajectoryCapturingReactAgent<A>
+where
+    A: vesper_agent::vro::react::ReactAgent,
+{
+    fn next_action<'a>(
+        &'a self,
+        prompt: &'a str,
+        trajectory: &'a [vesper_agent::vro::react::TrajectoryEntry],
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = vesper_agent::vro::react::ReactDecision> + Send + 'a>,
+    > {
+        let tx = &self.tx;
+        let inner = &self.inner;
+        Box::pin(async move {
+            let decision = inner.next_action(prompt, trajectory).await;
+            // Stream the decision (Action or Finish) to the panel.
+            let entry = match &decision {
+                vesper_agent::vro::react::ReactDecision::CallTool { name, arguments } => {
+                    format_react_action_entry(name, arguments)
+                }
+                vesper_agent::vro::react::ReactDecision::Finish { output } => {
+                    format_react_finish_entry(output)
+                }
+            };
+            let _ = tx.send(entry);
+            decision
+        })
+    }
+}
+
+/// Wraps a [`ToolInvoker`] so every invocation result is mirrored into a
+/// shared unbounded channel as a formatted markdown line. The event loop
+/// drains the receiver into `session.reasoning`, so the Reasoning panel
+/// renders the environment's Observations (successes and errors) **live**
+/// as the ReAct loop runs.
+///
+/// Pairs with [`TrajectoryCapturingReactAgent`] so both Actions and
+/// Observations appear in the panel in source order.
+pub(crate) struct TrajectoryCapturingInvoker<I> {
+    inner: I,
+    tx: mpsc::UnboundedSender<String>,
+}
+
+impl<I> TrajectoryCapturingInvoker<I> {
+    /// Wraps `inner` so every `invoke` result is also sent to `tx`.
+    #[must_use]
+    pub(crate) fn new(inner: I, tx: mpsc::UnboundedSender<String>) -> Self {
+        Self { inner, tx }
+    }
+}
+
+impl<I> vesper_agent::vro::react::ToolInvoker for TrajectoryCapturingInvoker<I>
+where
+    I: vesper_agent::vro::react::ToolInvoker,
+{
+    fn class_of(&self, name: &str) -> Option<vesper_domain::ToolExecutionClass> {
+        self.inner.class_of(name)
+    }
+    fn invoke<'a>(
+        &'a self,
+        name: &'a str,
+        arguments: &'a serde_json::Value,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Result<String, vesper_agent::vro::react::ToolInvocationError>,
+                > + Send
+                + 'a,
+        >,
+    > {
+        let tx = &self.tx;
+        let inner = &self.inner;
+        Box::pin(async move {
+            let result = inner.invoke(name, arguments).await;
+            // Stream the observation (success or failure) to the panel.
+            let entry = match &result {
+                Ok(text) => format_react_observation_entry(text, true),
+                Err(err) => format_react_observation_entry(&err.to_string(), false),
+            };
+            let _ = tx.send(entry);
+            result
+        })
+    }
+}
+
+/// A constructed pair of (LmStudioReactAgent, RegistryToolInvoker) ready to
+/// drive a `VroOrchestrator::execute_react` turn. Built once per dispatch
+/// from the persisted LM Studio settings + the shared `ApprovalBroker` +
+/// the agent loop's tool surface.
+pub(crate) struct VroReactBundle {
+    /// The LM Studio-backed ReAct model seam.
+    pub agent: vesper_agent::providers::lmstudio::LmStudioReactAgent,
+    /// The production ToolInvoker wrapping the shared tool surface.
+    pub invoker: vesper_agent::vro::react::RegistryToolInvoker,
+}
+
+/// Builds a fresh `VroReactBundle` for one ReAct turn.
+///
+/// Reads the persisted LM Studio settings (URL + optional pinned model) and
+/// the `LMSTUDIO_API_KEY` env var, constructs an `LmStudioReactAgent`, and
+/// constructs a `RegistryToolInvoker` over a fresh `ToolRegistry::parity_default()`
+/// (with the same `TuiToolService` that backs the direct `AgentLoop`) plus the
+/// shared `ApprovalBroker` plus the agent's workspace context.
+///
+/// Returns `None` when LM Studio is not configured (empty settings). The
+/// dispatch path then degrades to the GVR baseline.
+///
+/// Construction is non-blocking and credential-free. The HTTP call only
+/// happens when `execute_react` runs.
+fn build_vro_react_bundle(
+    agent: &Arc<AgentLoop>,
+    agent_tools: &Arc<dyn vesper_agent::ToolService>,
+    approval_port: Arc<dyn vesper_agent::PermissionPort>,
+) -> Option<VroReactBundle> {
+    use vesper_agent::executor::uncancellable_context;
+    use vesper_agent::providers::lmstudio::{LmStudioConfig, LmStudioReactAgent};
+    use vesper_domain::{SessionOperatingMode, SessionPermissionMode};
+
+    // Read the persisted LM Studio settings. Empty/unconfigured → degrade.
+    let settings = load_lmstudio_settings();
+    let api_base_url = settings.api_base_url.trim();
+    if api_base_url.is_empty() {
+        return None;
+    }
+    let mut config = LmStudioConfig::new(api_base_url).ok()?;
+    // Optional API key from the env (kept out of the persisted settings on
+    // purpose — see lmstation_hub.rs).
+    if let Ok(key) = std::env::var("LMSTUDIO_API_KEY") {
+        let key = key.trim();
+        if !key.is_empty() {
+            config = config.with_api_key(key);
+        }
+    }
+    // Model: prefer the pinned setting; fall back to a placeholder the LM
+    // Studio server will reject with a clear error if the user never pinned
+    // one (this is the same fallback the runtime provider uses).
+    let model = settings
+        .model()
+        .map(str::to_owned)
+        .unwrap_or_else(|| "auto".to_owned());
+
+    let transport = Arc::new(agent_vesper_tui::lmstudio_provider::ReqwestLmStudioTransport::new());
+    let react_agent = LmStudioReactAgent::new(
+        config,
+        model,
+        vesper_domain::ModelCapabilities::local_server_defaults(),
+        transport,
+    );
+
+    // The invoker shares the agent loop's tool surface and permission broker.
+    // A fresh `ToolRegistry::parity_default()` is built so the invoker does
+    // not mutate the live `AgentLoop`'s registry (which would race with the
+    // direct path). The same `ToolService` Arc is shared so model-facing
+    // hosted tools work identically on both paths.
+    let registry = ToolRegistry::parity_default().with_service(Arc::clone(agent_tools));
+    let agent_config = agent.configuration();
+    let context = uncancellable_context(
+        agent_config.workspace_roots.clone(),
+        SessionOperatingMode::Code,
+        SessionPermissionMode::Ask,
+    );
+    let invoker =
+        vesper_agent::vro::react::RegistryToolInvoker::new(registry, approval_port, context);
+
+    Some(VroReactBundle {
+        agent: react_agent,
+        invoker,
+    })
+}
+
+/// Spawns a VRO Tool-Grounded ReAct turn in the background (mirrors
+/// `spawn_vro_turn` but calls `execute_react` instead of `execute`).
+///
+/// The trajectory produced by the loop is rendered through
+/// [`format_react_trajectory`] and surfaced as the reasoning text so the
+/// Reasoning panel shows the Action/Observation cycle live. The final answer
+/// is routed through the same `AgentEvent::Completed` channel as the direct
+/// and GVR paths so the conversation transcript stays uniform.
+fn spawn_vro_react_turn(
+    vro: &vesper_agent::VroOrchestrator,
+    agent: &Arc<AgentLoop>,
+    agent_tools: &Arc<dyn vesper_agent::ToolService>,
+    approval_port: Arc<dyn vesper_agent::PermissionPort>,
+    user_text: String,
+    session: &mut TuiSession,
+) -> Result<(), String> {
+    let bundle = build_vro_react_bundle(agent, agent_tools, approval_port).ok_or_else(|| {
+        "VRO Tool-Grounded ReAct requires LM Studio settings \
+         (open /lmstudio to configure api_base_url)"
+            .to_owned()
+    })?;
+    let (tx, rx) = mpsc::unbounded_channel::<AgentEvent>();
+    // VRO-5.3 directive 3: live trajectory channel. Both wrappers below
+    // share this sender; the event loop drains the receiver into
+    // `session.reasoning` so the Reasoning panel renders the
+    // Action/Observation cycle live as the loop runs.
+    let (traj_tx, traj_rx) = mpsc::unbounded_channel::<String>();
+    let capturing_agent = TrajectoryCapturingReactAgent::new(bundle.agent, traj_tx.clone());
+    let capturing_invoker = TrajectoryCapturingInvoker::new(bundle.invoker, traj_tx);
+    let vro = vro.clone();
+    let root = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+
+    tokio::spawn(async move {
+        let request = vesper_domain::ReasoningRequest {
+            request_id: vesper_domain::RequestId::new(uuid::Uuid::new_v4().to_string())
+                .expect("valid request id"),
+            session_id: vesper_domain::SessionId::new("live-tui").expect("valid"),
+            user_message: user_text.clone(),
+            context_refs: vec![],
+            mode: vesper_domain::ReasoningMode::Auto,
+            risk_hint: None,
+            budget_override: None,
+            privacy_mode: vesper_domain::PrivacyMode::Private,
+        };
+
+        let outcome = vro
+            .execute_react(&request, &capturing_agent, &capturing_invoker, &root)
+            .await;
+
+        // Map the VRO outcome to the same agent-event shape the direct and
+        // GVR paths use. Tool results land in `tool_results` so the
+        // transcript can surface them; the trajectory itself is already
+        // streaming through `traj_tx` to the Reasoning panel.
+        let content = outcome
+            .final_output
+            .as_ref()
+            .and_then(|v| v.as_str().map(String::from))
+            .or_else(|| {
+                outcome
+                    .final_output
+                    .as_ref()
+                    .and_then(|v| v.get("content").and_then(|c| c.as_str()).map(String::from))
+            })
+            .unwrap_or_else(|| match outcome.status {
+                vesper_domain::OutcomeStatus::Succeeded => "(VRO ReAct: empty output)".into(),
+                vesper_domain::OutcomeStatus::Failed => {
+                    format!("VRO ReAct failed: {}", outcome.unresolved_risks.join("; "))
+                }
+                vesper_domain::OutcomeStatus::BudgetExceeded => {
+                    "VRO ReAct: budget exhausted".into()
+                }
+                other => format!("VRO ReAct: {other:?}"),
+            });
+
+        let text = vesper_domain::ContentText::new(content)
+            .unwrap_or_else(|_| vesper_domain::ContentText::new("(error)").expect("bounded"));
+        // Surface the per-step ReAct budget as the plan-summary text so the
+        // run-report shows how many model/tool calls the loop consumed. The
+        // Action/Observation cycle itself streams through the trajectory
+        // channel for the live Reasoning panel.
+        let reasoning_summary = format!(
+            "ReAct — model calls: {}, tokens: {}",
+            outcome.cost.model_calls, outcome.cost.total_tokens
+        );
+
+        let _ = tx.send(AgentEvent::Completed {
+            outcome: vesper_agent::AgentTurnOutcome::Completed {
+                assistant_content: vec![vesper_domain::ContentPart::Text(text)],
+                iterations: outcome.cost.model_calls.max(1),
+                tool_results: vec![],
+                plan: Some(reasoning_summary),
+            },
+            history: vec![],
+        });
+    });
+
+    session.agent_rx = Some(rx);
+    session.trajectory_rx = Some(traj_rx);
+    session.agent_running = true;
+    // Clear the reasoning buffer at turn start so the live trajectory starts
+    // fresh — the existing direct/GVR paths also clear this on turn start.
+    session.reasoning.clear();
+    session.state.status = Some("WORKING... (VRO ReAct grounding)".into());
+    Ok(())
+}
+
 /// Produces the same conservative context estimate as the frozen Python
 /// oracle: 3.5 characters per token, four tokens of structural overhead per
 /// message, and 1,024 tokens for each image block.
@@ -4551,6 +5065,43 @@ fn drain_agent_event(session: &mut TuiSession) {
                     .state
                     .transcript
                     .push("agent: task aborted (sender dropped).".into());
+                return;
+            }
+        }
+    }
+}
+
+/// Drains pending VRO ReAct trajectory entries non-blockingly (VRO-5.3,
+/// directive 3).
+///
+/// Called at the top of every event-loop iteration alongside
+/// [`drain_agent_event`]. Each entry is a pre-formatted markdown line
+/// (Action / Observation / Finish) emitted by
+/// [`TrajectoryCapturingReactAgent`] or [`TrajectoryCapturingInvoker`]. The
+/// entries are appended to `session.reasoning` so the existing markdown
+/// renderer surfaces them in the Reasoning panel live as the ReAct loop
+/// runs. The buffer is bounded at 32 KiB by [`append_bounded`] so a long
+/// loop cannot grow it without limit.
+fn drain_trajectory(session: &mut TuiSession) {
+    let Some(rx) = session.trajectory_rx.as_mut() else {
+        return;
+    };
+    // Drain a bounded batch per frame so a fast loop does not starve the
+    // render thread. Mirrors drain_agent_event's 256-event batch.
+    for _ in 0..256 {
+        match rx.try_recv() {
+            Ok(entry) => {
+                if !session.reasoning.is_empty() {
+                    append_bounded(&mut session.reasoning, "\n", 32 * 1024);
+                }
+                append_bounded(&mut session.reasoning, &entry, 32 * 1024);
+            }
+            Err(mpsc::error::TryRecvError::Empty) => return,
+            // Disconnected: the spawn_vro_react_turn task ended (the senders
+            // inside the wrappers were dropped). Clear the receiver so a
+            // future turn can stash a fresh one.
+            Err(mpsc::error::TryRecvError::Disconnected) => {
+                session.trajectory_rx = None;
                 return;
             }
         }
@@ -10427,6 +10978,7 @@ mod tests {
             input: String::new(),
             conversation: Vec::new(),
             agent_rx: None,
+            trajectory_rx: None,
             agent_task: None,
             agent_running: true,
             approval_rx: mpsc::unbounded_channel().1,
@@ -10475,6 +11027,7 @@ mod tests {
             input: String::new(),
             conversation: Vec::new(),
             agent_rx: None,
+            trajectory_rx: None,
             agent_task: None,
             agent_running: true,
             approval_rx: mpsc::unbounded_channel().1,
@@ -10521,6 +11074,7 @@ mod tests {
             input: String::new(),
             conversation: Vec::new(),
             agent_rx: None,
+            trajectory_rx: None,
             agent_task: None,
             agent_running: true,
             approval_rx: mpsc::unbounded_channel().1,
@@ -11187,5 +11741,496 @@ mod tests {
         let loaded = EmbeddingConfig::load(&tmp);
         assert!(!loaded.overrides_provider_routing());
         assert!(loaded.source.is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // VRO-5.3 — composition-boundary React wiring
+    // -----------------------------------------------------------------------
+    //
+    // The dispatch block in `drive_loop` decides which VRO turn to spawn
+    // based on the profiled strategy + whether a real `LmStudioReactAgent`
+    // bundle is available. The decision is factored into `react_dispatch_for`
+    // so it is unit-testable without spawning a background task or building
+    // an LM Studio connection.
+
+    #[test]
+    fn react_dispatch_routes_tool_grounded_react_to_react_when_available() {
+        // Directive 4: a request profiled as ToolGroundedReact, with a real
+        // ReactAgent bundle available, MUST route to execute_react (the live
+        // tool-grounded ReAct loop) rather than the baseline execute (GVR).
+        let decision = react_dispatch_for(
+            vesper_domain::ReasoningStrategy::ToolGroundedReact,
+            true, // react_available
+        );
+        assert_eq!(
+            decision,
+            ReactDispatchDecision::React,
+            "ToolGroundedReact + react_available must route to React (execute_react)"
+        );
+    }
+
+    #[test]
+    fn react_dispatch_degrades_tool_grounded_react_to_orchestrate_when_unavailable() {
+        // Without a configured ReactAgent (LM Studio not configured), the
+        // profiled ToolGroundedReact strategy must fall back to the GVR
+        // baseline rather than failing — the user still gets a response.
+        let decision = react_dispatch_for(
+            vesper_domain::ReasoningStrategy::ToolGroundedReact,
+            false, // react_available
+        );
+        assert_eq!(
+            decision,
+            ReactDispatchDecision::Orchestrate,
+            "ToolGroundedReact without react_available must degrade to Orchestrate"
+        );
+    }
+
+    #[test]
+    fn react_dispatch_routes_direct_strategy_to_direct_path() {
+        // Zero-breakage: Direct profiles never reach any VRO orchestrator
+        // path — the unchanged direct AgentLoop runs.
+        let decision = react_dispatch_for(
+            vesper_domain::ReasoningStrategy::Direct,
+            true, // react_available should NOT matter for Direct
+        );
+        assert_eq!(decision, ReactDispatchDecision::Direct);
+    }
+
+    #[test]
+    fn react_dispatch_routes_other_strategies_to_orchestrate() {
+        // All non-Direct, non-ToolGroundedReact strategies route through the
+        // existing GVR/parallel-candidates path.
+        for strategy in [
+            vesper_domain::ReasoningStrategy::GenerateVerifyRepair,
+            vesper_domain::ReasoningStrategy::ParallelCandidatesConsensus,
+            vesper_domain::ReasoningStrategy::ParallelCandidatesJudge,
+            vesper_domain::ReasoningStrategy::PlanExecuteVerify,
+        ] {
+            assert_eq!(
+                react_dispatch_for(strategy, true),
+                ReactDispatchDecision::Orchestrate,
+                "{strategy:?} must route to Orchestrate",
+            );
+        }
+    }
+
+    #[test]
+    fn task_profiler_routes_grounded_prompt_to_tool_grounded_react() {
+        // Directive 4 (end-to-end): prove that the deterministic TaskProfiler
+        // actually returns ToolGroundedReact for a real grounding prompt, so
+        // the dispatch block above reaches the React branch in production.
+        // "what does the main.rs file do?" requires reading a file →
+        // requires_grounding=true → routes to ToolGroundedReact per VRO-5.1.
+        let profile =
+            vesper_agent::vro::TaskProfiler::new().profile("what does the main.rs file do?");
+        assert!(
+            profile.requires_grounding,
+            "the profiler must mark this prompt as requiring grounding"
+        );
+        assert_eq!(
+            profile.recommended_strategy,
+            vesper_domain::ReasoningStrategy::ToolGroundedReact,
+            "the profiler must route grounded prompts to ToolGroundedReact"
+        );
+
+        // Composition-boundary decision: with a react bundle available, the
+        // dispatch routes to React; without it, it degrades to Orchestrate.
+        assert_eq!(
+            react_dispatch_for(profile.recommended_strategy, true),
+            ReactDispatchDecision::React,
+        );
+        assert_eq!(
+            react_dispatch_for(profile.recommended_strategy, false),
+            ReactDispatchDecision::Orchestrate,
+        );
+    }
+
+    #[test]
+    fn format_react_trajectory_renders_action_then_observation() {
+        // Directive 3: the trajectory's Action/Observation cycle must render
+        // as readable markdown the Reasoning panel can display.
+        use vesper_agent::vro::react::TrajectoryEntry;
+        let trajectory = vec![
+            TrajectoryEntry::Action {
+                name: "read_file".to_string(),
+                arguments: serde_json::json!({"path": "src/main.rs"}),
+            },
+            TrajectoryEntry::Observation {
+                text: "fn main() {}".to_string(),
+                success: true,
+            },
+        ];
+        let rendered = format_react_trajectory(&trajectory);
+        assert!(
+            rendered.contains("**▶ ACTION** `read_file`"),
+            "action must render with the tool name in inline code: {rendered}"
+        );
+        assert!(
+            rendered.contains("\"path\":\"src/main.rs\""),
+            "action arguments must render inline (serde_json omits key/value space): {rendered}"
+        );
+        assert!(
+            rendered.contains("*↳ OBSERVATION* fn main()"),
+            "successful observation must render with the OBSERVATION label: {rendered}"
+        );
+        // Order: the action comes before its observation.
+        let action_pos = rendered.find("**▶ ACTION**").unwrap();
+        let obs_pos = rendered.find("*↳ OBSERVATION*").unwrap();
+        assert!(
+            action_pos < obs_pos,
+            "action must precede its observation in the rendered string"
+        );
+    }
+
+    #[test]
+    fn format_react_trajectory_renders_failure_observation_as_error() {
+        // Directive 3: failed observations (tool errors, R/B/W rejections)
+        // must render with the ERROR label so the user can see the model
+        // self-corrected.
+        use vesper_agent::vro::react::TrajectoryEntry;
+        let trajectory = vec![TrajectoryEntry::Observation {
+            text: "no such file: missing.rs".to_string(),
+            success: false,
+        }];
+        let rendered = format_react_trajectory(&trajectory);
+        assert!(
+            rendered.contains("*✗ ERROR* no such file"),
+            "failed observation must render with the ERROR label: {rendered}"
+        );
+    }
+
+    #[test]
+    fn format_react_trajectory_omits_empty_arguments() {
+        // Empty-object arguments are omitted to reduce noise in the panel.
+        use vesper_agent::vro::react::TrajectoryEntry;
+        let trajectory = vec![TrajectoryEntry::Action {
+            name: "list_directory".to_string(),
+            arguments: serde_json::json!({}),
+        }];
+        let rendered = format_react_trajectory(&trajectory);
+        assert!(
+            rendered.contains("**▶ ACTION** `list_directory`\n")
+                || rendered.ends_with("**▶ ACTION** `list_directory`"),
+            "empty args must be omitted: {rendered}"
+        );
+        assert!(
+            !rendered.contains("{}"),
+            "empty object must NOT appear in the rendered action: {rendered}"
+        );
+    }
+
+    #[test]
+    fn format_react_trajectory_renders_empty_trajectory_as_empty_string() {
+        // An empty trajectory (e.g., model finished without any tool call)
+        // must render as the empty string, not as null or a stray marker.
+        let rendered = format_react_trajectory(&[]);
+        assert_eq!(rendered, "");
+    }
+
+    #[test]
+    fn format_react_trajectory_renders_multi_step_trajectory_in_order() {
+        // A multi-step trajectory must preserve order so the user can follow
+        // the model's reasoning: ACTION, OBSERVATION, ACTION, OBSERVATION.
+        use vesper_agent::vro::react::TrajectoryEntry;
+        let trajectory = vec![
+            TrajectoryEntry::Action {
+                name: "read_file".to_string(),
+                arguments: serde_json::json!({"path": "a"}),
+            },
+            TrajectoryEntry::Observation {
+                text: "contents a".to_string(),
+                success: true,
+            },
+            TrajectoryEntry::Action {
+                name: "grep".to_string(),
+                arguments: serde_json::json!({"pattern": "fn"}),
+            },
+            TrajectoryEntry::Observation {
+                text: "no match".to_string(),
+                success: false,
+            },
+        ];
+        let rendered = format_react_trajectory(&trajectory);
+        // Both actions and both observations appear in source order.
+        let pos_a1 = rendered.find("`read_file`").unwrap();
+        let pos_o1 = rendered.find("*↳ OBSERVATION*").unwrap();
+        let pos_a2 = rendered.find("`grep`").unwrap();
+        let pos_o2 = rendered.rfind("*✗ ERROR*").unwrap();
+        assert!(pos_a1 < pos_o1);
+        assert!(pos_o1 < pos_a2);
+        assert!(pos_a2 < pos_o2);
+    }
+
+    // -----------------------------------------------------------------------
+    // VRO-5.3 directive 3 — capturing wrappers stream trajectory entries
+    // -----------------------------------------------------------------------
+
+    /// A scripted ReactAgent that always returns the same decision — used to
+    /// prove the capturing wrapper forwards each decision to the channel.
+    struct ScriptedReactAgent {
+        decision: vesper_agent::vro::react::ReactDecision,
+    }
+    impl vesper_agent::vro::react::ReactAgent for ScriptedReactAgent {
+        fn next_action<'a>(
+            &'a self,
+            _prompt: &'a str,
+            _trajectory: &'a [vesper_agent::vro::react::TrajectoryEntry],
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<Output = vesper_agent::vro::react::ReactDecision>
+                    + Send
+                    + 'a,
+            >,
+        > {
+            let decision = self.decision.clone();
+            Box::pin(async move { decision })
+        }
+    }
+
+    /// A scripted ToolInvoker that always returns the same result.
+    struct ScriptedInvoker {
+        result: Result<String, vesper_agent::vro::react::ToolInvocationError>,
+        class: Option<vesper_domain::ToolExecutionClass>,
+    }
+    impl vesper_agent::vro::react::ToolInvoker for ScriptedInvoker {
+        fn class_of(&self, _name: &str) -> Option<vesper_domain::ToolExecutionClass> {
+            self.class
+        }
+        fn invoke<'a>(
+            &'a self,
+            _name: &'a str,
+            _arguments: &'a serde_json::Value,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<
+                        Output = Result<String, vesper_agent::vro::react::ToolInvocationError>,
+                    > + Send
+                    + 'a,
+            >,
+        > {
+            let result = self.result.clone();
+            Box::pin(async move { result })
+        }
+    }
+
+    #[tokio::test]
+    async fn trajectory_capturing_react_agent_streams_action_decision_to_channel() {
+        // Directive 3: the ReactAgent wrapper must mirror each decision into
+        // the shared channel as a formatted markdown line, so the event loop
+        // can drain it into the Reasoning panel live.
+        use vesper_agent::vro::react::ReactAgent;
+        let (tx, mut rx) = mpsc::unbounded_channel::<String>();
+        let inner = ScriptedReactAgent {
+            decision: vesper_agent::vro::react::ReactDecision::CallTool {
+                name: "read_file".to_string(),
+                arguments: serde_json::json!({"path": "a.rs"}),
+            },
+        };
+        let wrapper = TrajectoryCapturingReactAgent::new(inner, tx);
+
+        // Calling next_action must NOT change the decision the inner agent
+        // returned — the wrapper is purely observational.
+        let decision = wrapper.next_action("hi", &[]).await;
+        match decision {
+            vesper_agent::vro::react::ReactDecision::CallTool { name, arguments } => {
+                assert_eq!(name, "read_file");
+                assert_eq!(arguments["path"], "a.rs");
+            }
+            other => panic!("wrapper must pass the decision through: {other:?}"),
+        }
+
+        // The wrapper must also have emitted one formatted Action line.
+        let streamed = rx.try_recv().expect("wrapper must emit one entry");
+        assert!(
+            streamed.contains("**▶ ACTION** `read_file`"),
+            "action must be formatted: {streamed}"
+        );
+        assert!(
+            streamed.contains("\"path\":\"a.rs\""),
+            "action arguments must appear: {streamed}"
+        );
+        // No further entries were emitted (exactly one decision = one entry).
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn trajectory_capturing_react_agent_streams_finish_decision_with_finish_label() {
+        // A Finish decision must use the **✓ FINISH** label so the panel
+        // visibly marks the loop's termination.
+        use vesper_agent::vro::react::ReactAgent;
+        let (tx, mut rx) = mpsc::unbounded_channel::<String>();
+        let inner = ScriptedReactAgent {
+            decision: vesper_agent::vro::react::ReactDecision::Finish {
+                output: serde_json::Value::String("the answer is 42".into()),
+            },
+        };
+        let wrapper = TrajectoryCapturingReactAgent::new(inner, tx);
+        let _ = wrapper.next_action("hi", &[]).await;
+        let streamed = rx.try_recv().expect("wrapper must emit the finish entry");
+        assert!(
+            streamed.contains("**✓ FINISH** the answer is 42"),
+            "finish must be labelled FINISH with the answer: {streamed}"
+        );
+    }
+
+    #[tokio::test]
+    async fn trajectory_capturing_invoker_streams_success_observation() {
+        // Directive 3: the ToolInvoker wrapper must mirror each successful
+        // invocation as a *↳ OBSERVATION* entry.
+        use vesper_agent::vro::react::ToolInvoker;
+        let (tx, mut rx) = mpsc::unbounded_channel::<String>();
+        let inner = ScriptedInvoker {
+            result: Ok("file contents".to_string()),
+            class: Some(vesper_domain::ToolExecutionClass::ReadOnly),
+        };
+        let wrapper = TrajectoryCapturingInvoker::new(inner, tx);
+
+        // class_of must pass through unchanged.
+        assert_eq!(
+            wrapper.class_of("read_file"),
+            Some(vesper_domain::ToolExecutionClass::ReadOnly)
+        );
+
+        // invoke must return the inner result unchanged.
+        let result = wrapper
+            .invoke("read_file", &serde_json::json!({"path": "a"}))
+            .await;
+        assert_eq!(result.as_deref(), Ok("file contents"));
+
+        // The wrapper must have emitted one *↳ OBSERVATION* line.
+        let streamed = rx.try_recv().expect("wrapper must emit one entry");
+        assert!(
+            streamed.contains("*↳ OBSERVATION* file contents"),
+            "success observation must be labelled OBSERVATION: {streamed}"
+        );
+    }
+
+    #[tokio::test]
+    async fn trajectory_capturing_invoker_streams_failure_observation_as_error() {
+        // Directive 3: a failed invocation must stream as *✗ ERROR* so the
+        // user sees the model self-corrected after a tool failure.
+        use vesper_agent::vro::react::ToolInvoker;
+        let (tx, mut rx) = mpsc::unbounded_channel::<String>();
+        let inner = ScriptedInvoker {
+            result: Err(
+                vesper_agent::vro::react::ToolInvocationError::ExecutionFailed(
+                    "no such file".into(),
+                ),
+            ),
+            class: None,
+        };
+        let wrapper = TrajectoryCapturingInvoker::new(inner, tx);
+        let result = wrapper.invoke("read_file", &serde_json::json!({})).await;
+        assert!(result.is_err());
+
+        let streamed = rx.try_recv().expect("wrapper must emit one entry");
+        assert!(
+            streamed.contains("*✗ ERROR*"),
+            "failure must be labelled ERROR: {streamed}"
+        );
+        assert!(
+            streamed.contains("no such file"),
+            "failure text must appear: {streamed}"
+        );
+    }
+
+    #[tokio::test]
+    async fn drain_trajectory_appends_streamed_entries_into_reasoning_buffer() {
+        // Directive 3 end-to-end: the event loop's `drain_trajectory` must
+        // consume whatever the capturing wrappers sent and append it to
+        // `session.reasoning` so the existing markdown renderer surfaces it
+        // in the Reasoning panel.
+        let mut session = fresh_tui_session_for_trajectory_tests();
+        let (tx, rx) = mpsc::unbounded_channel::<String>();
+        let _ = tx.send("**▶ ACTION** `read_file` {\"path\":\"a\"}".to_string());
+        let _ = tx.send("*↳ OBSERVATION* contents".to_string());
+        session.trajectory_rx = Some(rx);
+
+        // Sanity: empty before drain.
+        assert!(session.reasoning.is_empty());
+
+        drain_trajectory(&mut session);
+
+        // Both entries were appended in order, separated by a newline so the
+        // markdown renderer treats them as separate lines.
+        assert!(
+            session.reasoning.contains("**▶ ACTION** `read_file`"),
+            "action must be in reasoning buffer: {}",
+            session.reasoning
+        );
+        assert!(
+            session.reasoning.contains("*↳ OBSERVATION* contents"),
+            "observation must be in reasoning buffer: {}",
+            session.reasoning
+        );
+        // Order preserved: action before observation.
+        let pos_a = session.reasoning.find("ACTION").unwrap();
+        let pos_o = session.reasoning.find("OBSERVATION").unwrap();
+        assert!(pos_a < pos_o);
+
+        // A second drain with no new entries leaves the buffer unchanged.
+        let len_before = session.reasoning.len();
+        drain_trajectory(&mut session);
+        assert_eq!(session.reasoning.len(), len_before);
+    }
+
+    #[tokio::test]
+    async fn drain_trajectory_handles_disconnected_receiver_without_panicking() {
+        // When the spawn task ends (sender dropped), the receiver reports
+        // Disconnected. drain_trajectory must clear the field and return —
+        // NOT panic — so the next turn can stash a fresh receiver.
+        let mut session = fresh_tui_session_for_trajectory_tests();
+        let (tx, rx) = mpsc::unbounded_channel::<String>();
+        drop(tx); // simulate the spawn task ending
+        session.trajectory_rx = Some(rx);
+        drain_trajectory(&mut session);
+        assert!(
+            session.trajectory_rx.is_none(),
+            "disconnected receiver must be cleared"
+        );
+    }
+
+    /// Builds a minimal TuiSession for the trajectory-drain tests. We don't
+    /// need a real provider registry / approval broker — only the
+    /// `trajectory_rx` and `reasoning` fields are exercised.
+    fn fresh_tui_session_for_trajectory_tests() -> TuiSession {
+        use vesper_agent::ApprovalBroker;
+        let (_approval_port, approval_rx) = ApprovalBroker::channel();
+        // A permissive no-op policy satisfies the trait-object field without
+        // re-implementing all 5 trait methods.
+        TuiSession {
+            policy: Arc::new(vesper_provider::PermissiveSuperpowerPolicy)
+                as Arc<dyn vesper_provider::SuperpowerPolicy>,
+            provider_ids: Vec::new(),
+            state: SessionState::new(),
+            input: String::new(),
+            conversation: Vec::new(),
+            agent_rx: None,
+            trajectory_rx: None,
+            agent_task: None,
+            agent_running: false,
+            approval_rx,
+            pending_approval: None,
+            mobile_server: None,
+            mobile_approval_id: None,
+            keybindings: load_keybindings(),
+            command_matches: Vec::new(),
+            command_selected: 0,
+            session_id: "test".to_owned(),
+            telemetry: Arc::new(trajectory_recorder()),
+            activity: Vec::new(),
+            reasoning: String::new(),
+            live_response: String::new(),
+            turn_started: None,
+            last_report: Vec::new(),
+            pending_images: Vec::new(),
+            last_image: None,
+            working_tree_view: None,
+            working_tree_lines: Vec::new(),
+            voice_recording: None,
+            voice_sidecar: None,
+            selection_anchor: None,
+            selected_text: String::new(),
+        }
     }
 }

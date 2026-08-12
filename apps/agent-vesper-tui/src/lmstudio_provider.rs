@@ -13,7 +13,9 @@ use futures_util;
 use futures_util::StreamExt;
 use std::task::Context;
 use vesper_agent::providers::lmstudio::{
-    ChatMessage, LmStudioConfig, build_chat_request, build_models_request, parse_models_response,
+    ChatMessage, HttpMethod, LmStudioConfig, LmStudioError, LmStudioHttpRequest,
+    LmStudioHttpResponse, LmStudioTransport, build_chat_request, build_models_request,
+    parse_models_response,
 };
 use vesper_domain::{
     BoundedString, ContentPart, ContentText, ErrorCategory, ErrorInfo, ExtensionMap, FinishOutcome,
@@ -549,5 +551,83 @@ mod tests {
     fn parse_sse_chunk_skips_malformed_json() {
         let chunk = "data: not-json-at-all";
         assert!(parse_sse_chunk(chunk, &stream_id()).is_none());
+    }
+}
+
+// ---------------------------------------------------------------------------
+// VRO-5.3 React transport: reqwest-backed LmStudioTransport
+// ---------------------------------------------------------------------------
+
+/// Production HTTP-backed transport for the VRO `LmStudioReactAgent`
+/// (VRO-5.3, PRD §11.6 + §13.1).
+///
+/// Wraps a `reqwest::Client` so the agent's `next_action` calls reach the live
+/// LM Studio server. This is the composition-boundary concern: no foundational
+/// crate (vesper-domain / vesper-agent) imports `reqwest`. Mirrors the existing
+/// `LmStudioSession` request path (same client builder, same header-map helper).
+///
+/// Construction is non-blocking and credential-free — it just builds a client.
+/// The HTTP call happens only when `LmStudioTransport::send` is awaited, which
+/// the orchestrator does inside its `execute_react` call.
+#[derive(Clone)]
+pub struct ReqwestLmStudioTransport {
+    client: reqwest::Client,
+}
+
+impl ReqwestLmStudioTransport {
+    /// Creates a transport with a 120-second timeout (matches the existing
+    /// `LmStudioSession` client).
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            client: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(120))
+                .build()
+                .unwrap_or_default(),
+        }
+    }
+}
+
+impl Default for ReqwestLmStudioTransport {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl LmStudioTransport for ReqwestLmStudioTransport {
+    fn send<'a>(
+        &'a self,
+        req: &'a LmStudioHttpRequest,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Result<LmStudioHttpResponse, LmStudioError>>
+                + Send
+                + 'a,
+        >,
+    > {
+        let client = self.client.clone();
+        Box::pin(async move {
+            let builder = match req.method {
+                HttpMethod::Get => client.get(&req.url),
+                HttpMethod::Post => {
+                    let body = req.body.clone().unwrap_or_default();
+                    client.post(&req.url).body(body)
+                }
+            };
+            let builder = builder.headers(reqwest_header_map(&req.headers));
+            let resp = builder
+                .send()
+                .await
+                .map_err(|e| LmStudioError::Transport(format!("HTTP send: {e}")))?;
+            let status = resp.status().as_u16();
+            let body: serde_json::Value = resp
+                .json()
+                .await
+                .map_err(|e| LmStudioError::Parse(format!("HTTP body: {e}")))?;
+            if status >= 400 {
+                return Err(LmStudioError::HttpStatus { status });
+            }
+            Ok(LmStudioHttpResponse { status, body })
+        })
     }
 }
