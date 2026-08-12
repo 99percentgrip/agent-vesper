@@ -547,15 +547,16 @@ pub async fn run_bounded_tree_search(
                             }
                             // PRD §10.6 "beam-style pruning" + §11.7
                             // "aggressive pruning": a definitive verifier
-                            // failure (Failed = ran and found problems, or
-                            // Error = could not run) PRUNES the branch — it
-                            // is abandoned, not refined. Non-definitive
-                            // outcomes (Inconclusive, Skipped) keep the
-                            // branch alive for further refinement.
-                            if matches!(
-                                r.status,
-                                VerificationStatus::Failed | VerificationStatus::Error
-                            ) {
+                            // FAILURE (Failed = ran and found problems)
+                            // PRUNES the branch — it is abandoned, not
+                            // refined. Per PRD §10.8, `Error` (verifier
+                            // itself could not run — cargo missing, crash)
+                            // is DISTINCT from `Failed` and does NOT prune:
+                            // the candidate might be fine, we just couldn't
+                            // check it. Non-definitive outcomes (Error,
+                            // Inconclusive, Skipped) keep the branch alive
+                            // for further refinement.
+                            if r.status == VerificationStatus::Failed {
                                 any_definitive_failure = true;
                             }
                             if r.status == VerificationStatus::Passed {
@@ -566,10 +567,16 @@ pub async fn run_bounded_tree_search(
                             results.push(r);
                         }
                         None => {
+                            // Unregistered verifier = `Error` (could not
+                            // run), NOT `Failed` (ran and found problems).
+                            // Per PRD §10.8 this must NOT prune the branch
+                            // — treating it as a definitive failure would
+                            // cause every candidate to be pruned whenever
+                            // the profile lists a verifier the registry
+                            // doesn't have (e.g. `clippy` is emitted by the
+                            // profiler but not registered by default_cargo).
                             all_passed = false;
-                            any_definitive_failure = true;
                             results.push(unregistered_verifier_result(vid));
-                            verifiers_failed += 1;
                         }
                     }
                 }
@@ -587,13 +594,15 @@ pub async fn run_bounded_tree_search(
                         best_passing_depth = depth;
                     }
                 } else if any_definitive_failure {
-                    // PRUNE: a deterministic verifier failed (or could not
-                    // run). The branch is abandoned (PRD §11.7: "aggressive
-                    // pruning"; directive: "abandoning a branch if a
-                    // deterministic verifier fails early"). Track as a
-                    // fallback partial leaf ONLY when we've hit max_depth
-                    // (so the outcome still carries SOMETHING if every
-                    // branch was pruned at the deepest level).
+                    // PRUNE: a deterministic verifier returned `Failed` (ran
+                    // and found problems). The branch is abandoned (PRD
+                    // §11.7: "aggressive pruning"; directive: "abandoning a
+                    // branch if a deterministic verifier fails early"). An
+                    // `Error` (verifier could not run) does NOT prune — the
+                    // candidate might be fine, we just couldn't verify it.
+                    // Track as a fallback partial leaf ONLY when we've hit
+                    // max_depth (so the outcome still carries SOMETHING if
+                    // every branch was pruned at the deepest level).
                     if depth >= max_depth && best_partial_leaf.is_none() {
                         best_partial_leaf = Some(candidate.clone());
                     }
@@ -905,13 +914,6 @@ fn unregistered_verifier_result(id: &VerifierId) -> VerificationResult {
         evidence_refs: vec![],
         repairable: false,
     }
-}
-
-/// Returns the count of verifier IDs that should be tried (always the full
-/// slice — used to keep the strategy module self-documenting).
-#[allow(dead_code)]
-fn verifier_count(ids: &[VerifierId]) -> usize {
-    ids.len()
 }
 
 // ---------------------------------------------------------------------------
@@ -1510,6 +1512,94 @@ mod tests {
             outcome.status,
             OutcomeStatus::BudgetExceeded,
             "must halt when max_model_calls is exhausted"
+        );
+        assert_eq!(outcome.cost.model_calls, 2);
+    }
+
+    /// Audit fix: `VerificationStatus::Error` (verifier could not run) must
+    /// NOT cause pruning. Only `Failed` (ran and found problems) prunes.
+    /// This is critical when the profile lists verifiers the registry
+    /// doesn't have (e.g. `clippy` is emitted by the profiler but not
+    /// registered by `default_cargo()`) — Error on every call must not
+    /// collapse the entire search to Failed.
+    #[tokio::test]
+    async fn bounded_tree_search_does_not_prune_on_verifier_error() {
+        // Verifier returns Error (could not run) for every call. The search
+        // must NOT prune — it should expand to max_depth and return Partial
+        // (no passing leaf, but no pruning either).
+        let error_result = VerificationResult {
+            verifier_id: VerifierId::new(BT_VID).unwrap(),
+            status: VerificationStatus::Error,
+            confidence: 0.0,
+            findings: vec![VerificationFinding {
+                message: "cargo not found".to_string(),
+                severity: VerificationSeverity::Error,
+                location: None,
+            }],
+            evidence_refs: vec![],
+            repairable: false,
+        };
+        let registry = bt_registry(vec![Box::new(ScriptedVerifier::new(
+            BT_VID,
+            vec![error_result],
+        ))]);
+        let generator = ScriptedGenerator::new(vec![
+            serde_json::json!({"d": 1}),
+            serde_json::json!({"d": 2}),
+        ]);
+        let outcome = run_bounded_tree_search(
+            &generator,
+            &[VerifierId::new(BT_VID).unwrap()],
+            &registry,
+            Path::new("/tmp/ws"),
+            "find the root cause",
+            // max_depth=2, branching=1, max_model_calls=10
+            bt_budget(2, 1, 10),
+        )
+        .await;
+
+        // Error is NOT Failed → branches expanded, not pruned. The search
+        // reaches max_depth=2 and returns Partial (no passing leaf found).
+        assert_eq!(
+            outcome.status,
+            OutcomeStatus::Partial,
+            "Error must not prune — search should reach max_depth and return Partial"
+        );
+        // Both depth levels explored (not pruned at depth 1).
+        assert_eq!(
+            outcome.cost.model_calls, 2,
+            "Error must not prune — both depth levels must be explored"
+        );
+    }
+
+    /// Audit fix: an unregistered verifier (None from registry.run) is
+    /// treated as Error, NOT as Failed. The branch must not be pruned.
+    #[tokio::test]
+    async fn bounded_tree_search_unregistered_verifier_does_not_prune() {
+        // Registry is EMPTY — the verifier_id "cargo_check" is not
+        // registered. Every registry.run returns None → unregistered result
+        // → must be treated as Error (not Failed) → no pruning.
+        let registry = bt_registry(vec![]); // no verifiers registered
+        let generator = ScriptedGenerator::new(vec![
+            serde_json::json!({"v": 1}),
+            serde_json::json!({"v": 2}),
+        ]);
+        let outcome = run_bounded_tree_search(
+            &generator,
+            &[VerifierId::new(BT_VID).unwrap()],
+            &registry,
+            Path::new("/tmp/ws"),
+            "find the root cause",
+            bt_budget(2, 1, 10),
+        )
+        .await;
+
+        // Unregistered verifier → Error → not pruned → search reaches
+        // max_depth → Partial.
+        assert_eq!(
+            outcome.status,
+            OutcomeStatus::Partial,
+            "unregistered verifier must not prune"
         );
         assert_eq!(outcome.cost.model_calls, 2);
     }

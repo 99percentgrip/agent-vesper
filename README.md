@@ -48,7 +48,7 @@ curl -fsSL https://github.com/99percentgrip/agent-vesper/raw/main/scripts/instal
 Or pin a version:
 
 ```sh
-AGENT_VESPER_VERSION=0.20.21 sh scripts/install.sh
+AGENT_VESPER_VERSION=0.20.22 sh scripts/install.sh
 ```
 
 ### Windows (PowerShell)
@@ -280,7 +280,7 @@ User says something
 ## Local Verification
 
 ```sh
-cargo xtask verify          # fmt + clippy -D warnings + 821 tests + architecture
+cargo xtask verify          # fmt + clippy -D warnings + 826 tests + architecture
 cargo xtask architecture    # dependency-boundary validation (22 packages)
 cargo xtask msrv            # Rust 1.88 compatibility check
 ```

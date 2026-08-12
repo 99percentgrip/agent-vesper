@@ -12,8 +12,8 @@ publish = false
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-vesper-domain = { path = "../vesper-domain", version = "=0.20.21" }
-vesper-security = { path = "../vesper-security", version = "=0.20.21" }
+vesper-domain = { path = "../vesper-domain", version = "=0.20.22" }
+vesper-security = { path = "../vesper-security", version = "=0.20.22" }
 
 [lints]
 workspace = true

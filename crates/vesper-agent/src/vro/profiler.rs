@@ -341,7 +341,7 @@ impl TaskProfiler {
         strategy: ReasoningStrategy,
         char_count: usize,
     ) -> TaskProfile {
-        let (_requires_grounding, verifiers) = detect_grounding(lower);
+        let (detected_grounding, verifiers) = detect_grounding(lower);
         let domain = detect_domain(lower);
         let heuristic_risk = detect_risk(lower);
         // PCA is reserved for high-consequence tasks (PRD §11.8); force a
@@ -361,6 +361,15 @@ impl TaskProfiler {
             ReasoningStrategy::BoundedTreeSearch => 0.8,
             _ => 0.7,
         };
+        // BTS uses the profile's verifiers to prune branches, so grounding
+        // is semantically relevant (root-cause debug of src/main.rs DOES
+        // require environment evidence). PCA uses model-based critic +
+        // adjudicator — deterministic grounding is intentionally not its
+        // signal (PRD §11.8: "objective verification is weak").
+        let requires_grounding = match strategy {
+            ReasoningStrategy::BoundedTreeSearch => detected_grounding,
+            _ => false,
+        };
         TaskProfile {
             domain: TaskDomain::new(domain.label()).unwrap_or_else(|_| {
                 TaskDomain::new("research").expect("research is a valid bounded domain label")
@@ -372,10 +381,7 @@ impl TaskProfiler {
             },
             risk,
             ambiguity,
-            // Neither VRO-6 strategy mutates code; both are analysis /
-            // evaluation passes. Grounding may still be set (root-cause
-            // debug reads the codebase) but mutation never is.
-            requires_grounding: false,
+            requires_grounding,
             requires_mutation: false,
             available_verifiers: verifiers,
             recommended_strategy: strategy,
@@ -1328,6 +1334,69 @@ mod tests {
         assert_eq!(
             p.recommended_strategy,
             ReasoningStrategy::ParallelCandidatesJudge
+        );
+    }
+
+    // === Audit fix: BTS profile propagates requires_grounding ===
+    //
+    // A root-cause prompt that references a .rs file should set
+    // requires_grounding=true (since the search uses verifiers that come
+    // from grounding detection). The verifiers (cargo_check, cargo_test,
+    // clippy) must be populated so the BTS strategy can actually verify
+    // candidates.
+
+    #[test]
+    fn profiler_bts_with_file_reference_sets_grounding_and_verifiers() {
+        let p = profile_of("find the root cause of the bug in src/parser.rs");
+        assert_eq!(p.recommended_strategy, ReasoningStrategy::BoundedTreeSearch);
+        // Grounding IS set (the search uses the verifiers for pruning).
+        assert!(
+            p.requires_grounding,
+            "BTS prompt with a .rs file must set requires_grounding=true"
+        );
+        // Verifiers are populated (the search uses them).
+        let vnames: Vec<&str> = p.available_verifiers.iter().map(|v| v.as_str()).collect();
+        assert!(
+            vnames.contains(&"cargo_check"),
+            "cargo_check must be in verifiers"
+        );
+        assert!(
+            vnames.contains(&"cargo_test"),
+            "cargo_test must be in verifiers"
+        );
+    }
+
+    #[test]
+    fn profiler_bts_without_file_reference_does_not_set_grounding() {
+        // A BTS prompt with NO file reference and NO grounding verb should
+        // not set grounding. "migration sequence" triggers BTS without any
+        // grounding signal (no "find"/"check"/"read" verb, no file path).
+        let p = profile_of(
+            "the migration sequence from SQLite to PostgreSQL requires careful planning",
+        );
+        assert_eq!(p.recommended_strategy, ReasoningStrategy::BoundedTreeSearch);
+        assert!(
+            !p.requires_grounding,
+            "BTS prompt without a file reference or grounding verb must not set grounding"
+        );
+        assert!(
+            p.available_verifiers.is_empty(),
+            "no file reference → no verifiers"
+        );
+    }
+
+    #[test]
+    fn profiler_pca_never_sets_grounding() {
+        // PCA uses model-based critic + adjudicator, not deterministic
+        // verifiers. Grounding is intentionally not its signal.
+        let p = profile_of("adjudicate the high-consequence architecture for src/main.rs");
+        assert_eq!(
+            p.recommended_strategy,
+            ReasoningStrategy::ProposerCriticAdjudicator
+        );
+        assert!(
+            !p.requires_grounding,
+            "PCA must never set requires_grounding (uses model-based evaluation)"
         );
     }
 }

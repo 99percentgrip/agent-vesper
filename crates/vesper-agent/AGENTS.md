@@ -150,11 +150,15 @@ the multi-turn, tool-executing layer above it.
   `budget.max_search_depth`, fanning out `budget.max_parallel_branches`
   children per node. Each node is verified against the profile's mandatory
   verifiers: a **passing** node is a candidate best leaf (early-stop the
-  entire search — PRD §10.6); a **definitive failure** (Failed/Error) is
-  **pruned** (PRD §11.7 "aggressive pruning" + directive "abandoning a
-  branch if a deterministic verifier fails early"); a **non-definitive**
-  outcome (Inconclusive/Skipped) at depth < max_depth is **expanded further**
-  (refined prompt carries the parent's output forward). The total candidate
+  entire search — PRD §10.6); a **Failed** verifier result (ran and found
+  problems) is **pruned** (PRD §11.7 "aggressive pruning" + directive
+  "abandoning a branch if a deterministic verifier fails early"); an
+  **Error** result (verifier could not run — cargo missing, crash, or
+  unregistered verifier like `clippy`) does NOT prune (PRD §10.8: Error is
+  distinct from Failed — the candidate might be fine, we just couldn't
+  check it); a **non-definitive** outcome (Error/Inconclusive/Skipped) at
+  depth < max_depth is **expanded further** (refined prompt carries the
+  parent's output forward). The total candidate
   count is bounded by `budget.max_model_calls` (PRD §22.3: no infinite
   search loop). `CandidateCritic` + `Adjudicator` traits (async
   object-safe) are the VRO-6 model-based seams;
