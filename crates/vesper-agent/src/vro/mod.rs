@@ -29,12 +29,17 @@
 pub mod executor;
 pub mod orchestrator;
 pub mod profiler;
+pub mod react;
 pub mod strategies;
 pub mod verifiers;
 
 pub use executor::{BranchContext, BranchOutcome, CandidateExecutor, ExecutorError, XorShiftRng};
 pub use orchestrator::{CandidateGenerator, GeneratedCandidate, run_generate_verify_repair};
 pub use profiler::TaskProfiler;
+pub use react::{
+    ReactAgent, ReactDecision, RegistryToolInvoker, ToolInvocationError, ToolInvoker,
+    TrajectoryEntry, run_tool_grounded_react,
+};
 use std::path::Path;
 use std::sync::Arc;
 pub use strategies::{
@@ -45,8 +50,9 @@ pub use verifiers::{
     CargoCheckVerifier, CargoTestVerifier, VerificationContext, Verifier, VerifierRegistry,
 };
 use vesper_domain::{
-    ReasoningBudget, ReasoningConfig, ReasoningMode, ReasoningOutcome, ReasoningRequest,
-    ReasoningStrategy, TaskProfile,
+    InferenceCost, OutcomeStatus, ReasoningBudget, ReasoningConfig, ReasoningMode,
+    ReasoningOutcome, ReasoningRequest, ReasoningStrategy, TaskProfile, VerificationStatus,
+    VerificationSummary,
 };
 
 /// The routing decision a host consumes before dispatching a turn.
@@ -219,6 +225,16 @@ impl VroOrchestrator {
     /// deterministic `seed` controlling the position-bias shuffle. The seed
     /// is exposed so tests can reproduce an exact shuffle; production callers
     /// should derive it from the request id.
+    ///
+    /// **VRO-5.1 dispatch guard:** when the profiled strategy is
+    /// [`ToolGroundedReact`](ReasoningStrategy), this method returns a
+    /// [`Failed`](OutcomeStatus::Failed) outcome with a clear "use
+    /// [`execute_react`](Self::execute_react)" message instead of silently
+    /// falling through to the GenerateVerifyRepair single-pass baseline.
+    /// [`ToolGroundedReact`](ReasoningStrategy) requires the
+    /// [`ReactAgent`] + [`ToolInvoker`] seams that this method's signature
+    /// does not accept; the composition boundary must call
+    /// [`execute_react`](Self::execute_react) instead.
     pub async fn execute_with_judge(
         &self,
         request: &ReasoningRequest,
@@ -232,6 +248,26 @@ impl VroOrchestrator {
             .budget_override
             .unwrap_or_else(|| self.config.preset_for(request.mode));
         match profile.recommended_strategy {
+            // VRO-5.1 — ToolGroundedReact requires the ReactAgent +
+            // ToolInvoker seams; refuse to silently fall through to a
+            // single-pass GenerateVerifyRepair (which would lie about what
+            // happened). The composition boundary must call execute_react.
+            ReasoningStrategy::ToolGroundedReact => ReasoningOutcome {
+                status: OutcomeStatus::Failed,
+                final_output: None,
+                selected_candidate: None,
+                verification_summary: VerificationSummary {
+                    passed: 0,
+                    failed: 0,
+                    overall: VerificationStatus::Skipped,
+                },
+                unresolved_risks: vec![
+                    "ToolGroundedReact requires the ReactAgent + ToolInvoker seams; \
+                     call VroOrchestrator::execute_react instead of execute / execute_with_judge"
+                        .to_string(),
+                ],
+                cost: InferenceCost::default(),
+            },
             // VRO-4 — ParallelCandidatesConsensus (PRD §11.4).
             ReasoningStrategy::ParallelCandidatesConsensus => {
                 run_parallel_candidates_consensus(
@@ -288,6 +324,50 @@ impl VroOrchestrator {
                 .await
             }
         }
+    }
+
+    /// Executes a turn through the Tool-Grounded ReAct loop (VRO-5.1, PRD
+    /// §11.6).
+    ///
+    /// Profiles the request, resolves the budget (caller override or the
+    /// mode preset), and dispatches to [`run_tool_grounded_react`].
+    /// `agent` is the provider-backed [`ReactAgent`] seam that decides each
+    /// action; `invoker` is the [`ToolInvoker`] seam that runs tools
+    /// through the existing permission sandbox (production impl:
+    /// [`RegistryToolInvoker`]).
+    ///
+    /// This is the **only** entry point that accepts the ReactAgent +
+    /// ToolInvoker seams. [`execute`](Self::execute) and
+    /// [`execute_with_judge`](Self::execute_with_judge) deliberately reject
+    /// [`ToolGroundedReact`](ReasoningStrategy) (they return `Failed`) so
+    /// callers cannot accidentally run a tool-grounded prompt through the
+    /// GenerateVerifyRepair baseline.
+    ///
+    /// **Read-Before-Write:** when the profile requires grounding,
+    /// [`run_tool_grounded_react`] rejects mutating tools until at least one
+    /// read-only tool has produced an observation (directive 3).
+    pub async fn execute_react(
+        &self,
+        request: &ReasoningRequest,
+        agent: &dyn ReactAgent,
+        invoker: &dyn ToolInvoker,
+        _workspace_root: &Path,
+    ) -> ReasoningOutcome {
+        let profile = self.profiler.profile_request(request);
+        let budget = request
+            .budget_override
+            .unwrap_or_else(|| self.config.preset_for(request.mode));
+        // The profile's `requires_grounding` flag drives the Read-Before-Write
+        // policy. The orchestrator remains agnostic of HOW grounding is
+        // detected — that lives in the deterministic TaskProfiler.
+        run_tool_grounded_react(
+            &request.user_message,
+            agent,
+            invoker,
+            budget,
+            profile.requires_grounding,
+        )
+        .await
     }
 }
 
@@ -621,6 +701,139 @@ mod tests {
             *generator.call_count.lock().expect("poisoned"),
             3,
             "degrade-to-consensus still fans out 3 branches"
+        );
+    }
+
+    // === VRO-5.1 — Tool-Grounded ReAct dispatch tests ===
+    //
+    // The orchestrator's execute_react is the canonical entry point for
+    // ToolGroundedReact. execute / execute_with_judge must refuse that
+    // strategy so callers cannot silently fall through to a single-pass
+    // GenerateVerifyRepair baseline.
+
+    use super::react::{ReactAgent, ReactDecision, ToolInvocationError, ToolInvoker};
+    use vesper_domain::ToolExecutionClass;
+
+    /// Always-Finish agent: returns the same final answer on the first
+    /// next_action call. Used to assert the orchestrator's execute_react
+    /// actually drives the ReactAgent.
+    struct ImmediateFinishAgent {
+        call_count: Arc<Mutex<u32>>,
+        output: StructuredOutput,
+    }
+    impl ReactAgent for ImmediateFinishAgent {
+        fn next_action<'a>(
+            &'a self,
+            _prompt: &'a str,
+            _trajectory: &'a [super::react::TrajectoryEntry],
+        ) -> Pin<Box<dyn Future<Output = ReactDecision> + Send + 'a>> {
+            let count = Arc::clone(&self.call_count);
+            let output = self.output.clone();
+            Box::pin(async move {
+                *count.lock().expect("poisoned") += 1;
+                ReactDecision::Finish { output }
+            })
+        }
+    }
+
+    /// No-op invoker: registers nothing, so any call surfaces UnknownTool.
+    /// Sufficient for the ImmediateFinishAgent tests because the agent never
+    /// actually calls a tool.
+    struct NullInvoker;
+    impl ToolInvoker for NullInvoker {
+        fn class_of(&self, _name: &str) -> Option<ToolExecutionClass> {
+            None
+        }
+        fn invoke<'a>(
+            &'a self,
+            name: &'a str,
+            _arguments: &'a serde_json::Value,
+        ) -> Pin<Box<dyn Future<Output = Result<String, ToolInvocationError>> + Send + 'a>>
+        {
+            let name = name.to_string();
+            Box::pin(async move { Err(ToolInvocationError::UnknownTool(name)) })
+        }
+    }
+
+    /// A request whose user_message profiles to ToolGroundedReact.
+    /// "What does the main.rs file do?" is the directive's example — a
+    /// short prompt with a file extension that triggers grounding.
+    fn react_request() -> ReasoningRequest {
+        ReasoningRequest {
+            request_id: RequestId::new("req-react").unwrap(),
+            session_id: SessionId::new("sess-react").unwrap(),
+            user_message: "What does the main.rs file do?".to_string(),
+            context_refs: Vec::new(),
+            mode: ReasoningMode::Balanced,
+            risk_hint: None,
+            budget_override: Some(ReasoningBudget {
+                max_model_calls: 5,
+                max_tool_calls: 5,
+                ..ReasoningBudget::balanced()
+            }),
+            privacy_mode: PrivacyMode::Private,
+        }
+    }
+
+    #[tokio::test]
+    async fn execute_react_dispatches_to_run_tool_grounded_react() {
+        // End-to-end: a "what does main.rs do?" prompt profiles to
+        // ToolGroundedReact → execute_react drives the ReactAgent → the
+        // agent Finishes → outcome is Succeeded.
+        let vro = enabled_orchestrator();
+        let agent = ImmediateFinishAgent {
+            call_count: Arc::new(Mutex::new(0)),
+            output: serde_json::json!({"answer": "main.rs is the entry point"}),
+        };
+        let invoker = NullInvoker;
+        let outcome = vro
+            .execute_react(
+                &react_request(),
+                &agent,
+                &invoker,
+                std::path::Path::new("/tmp"),
+            )
+            .await;
+        assert_eq!(outcome.status, OutcomeStatus::Succeeded);
+        assert_eq!(*agent.call_count.lock().expect("poisoned"), 1);
+        assert_eq!(
+            outcome.final_output,
+            Some(serde_json::json!({"answer": "main.rs is the entry point"}))
+        );
+    }
+
+    #[tokio::test]
+    async fn execute_with_judge_refuses_tool_grounded_react_strategy() {
+        // Guard: the non-react entry points must NOT silently fall through
+        // to GenerateVerifyRepair for ToolGroundedReact prompts. They return
+        // Failed with a clear "use execute_react" message.
+        let vro = enabled_orchestrator();
+        let generator = SingleAnswerGenerator {
+            call_count: Arc::new(Mutex::new(0)),
+            output: serde_json::json!({"v": 1}),
+        };
+        let outcome = vro
+            .execute(&react_request(), &generator, std::path::Path::new("/tmp"))
+            .await;
+        assert_eq!(
+            outcome.status,
+            OutcomeStatus::Failed,
+            "execute() must refuse ToolGroundedReact (not silently fall through)"
+        );
+        assert!(
+            outcome
+                .unresolved_risks
+                .iter()
+                .any(|r| r.contains("execute_react")),
+            "risk message must direct the caller to execute_react: {:?}",
+            outcome.unresolved_risks
+        );
+        // The generator was never called — the dispatch guard fires before
+        // the GenerateVerifyRepair baseline.
+        assert_eq!(
+            *generator.call_count.lock().expect("poisoned"),
+            0,
+            "guard must short-circuit before invoking the generator"
         );
     }
 }

@@ -63,11 +63,45 @@ the multi-turn, tool-executing layer above it.
   `GenerateVerifyRepair` → `run_generate_verify_repair` (VRO-2.3),
   `ParallelCandidatesConsensus` → `run_parallel_candidates_consensus` (VRO-4),
   `ParallelCandidatesJudge` → `run_parallel_candidates_judge` (VRO-4) or
-  degrades to consensus when no judge is supplied. Other non-`Direct`
+  degrades to consensus when no judge is supplied.
+  `execute_react(request, agent, invoker, workspace_root)` is the VRO-5.1
+  entry point for `ToolGroundedReact` (PRD §11.6); it is the only public
+  method that supplies the `ReactAgent` + `ToolInvoker` seams. Other non-`Direct`
   strategies fall back to a single generate-and-verify pass until their
-  dedicated executors land. This module performs no I/O, holds no provider
-  handles, and never touches `AgentLoopConfig`, `AgentLoop`, the tool registry,
-  or the permission gate.
+  dedicated executors land. **VRO-5.1 dispatch guard:** `execute` and
+  `execute_with_judge` deliberately return `Failed` (with a clear "use
+  `execute_react`" risk message) when the profiled strategy is
+  `ToolGroundedReact`, so callers cannot silently run a tool-grounded prompt
+  through the GenerateVerifyRepair baseline. This module performs no I/O,
+  holds no provider handles, and never touches `AgentLoopConfig`,
+  `AgentLoop`, the tool registry, or the permission gate.
+- `src/vro/react.rs` — VRO-5.1 Tool-Grounded ReAct loop (PRD §11.6).
+  `ReactAgent` trait (async object-safe via boxed `Send` future — single
+  branch, no `boxed_clone` needed) is the provider seam: `next_action(prompt,
+  trajectory)` returns either `CallTool { name, arguments }` or `Finish {
+  output }`. `TrajectoryEntry` (Action | Observation) is the append-only
+  per-turn transcript the agent consults. `ToolInvoker` trait (async
+  object-safe) is the executor + permission seam: `class_of(name)` returns
+  the `ToolExecutionClass` for Read-Before-Write, and `invoke(name, args)`
+  routes through the existing permission gate and executor.
+  `RegistryToolInvoker` is the production impl — wraps the same `ToolRegistry`
+  + `check_tool_permission` + `PermissionPort` as
+  `AgentLoop::gate_and_execute`, so operating mode and one-time approval are
+  honored identically to the direct path. `run_tool_grounded_react(prompt,
+  agent, invoker, budget, requires_grounding)` drives the loop: THINK (ask
+  agent for next action) → ACT (route through invoker) → OBSERVE (append
+  result text or structured failure). Halts on `Finish` (Succeeded),
+  `max_model_calls` exhausted (BudgetExceeded), or `max_tool_calls` exhausted
+  when the agent still wants tools (BudgetExceeded). **Read-Before-Write
+  policy:** when `requires_grounding == true` and the agent attempts a
+  mutating tool before any `ReadOnly` observation exists, the loop synthesizes
+  a rejection observation and continues — the rejected attempt does NOT
+  consume a `max_tool_calls` unit (it never reached the executor). **Tool
+  errors become observations:** `ToolInvocationError` variants (UnknownTool,
+  InvalidArguments, PermissionDenied, ExecutionFailed) are converted to
+  structured failure text and fed back to the model so the loop can
+  self-correct. Zero-breakage: only invoked via `execute_react`; `Direct`,
+  `GenerateVerifyRepair`, and parallel paths never reach this code.
 - `src/vro/orchestrator.rs` — VRO-2.3 Generate-Verify-Repair loop (PRD §11.3,
   §10.9). `CandidateGenerator` trait (async object-safe via boxed `Send`
   future; **`boxed_clone` is required** so VRO-4's parallel executor can give
@@ -110,11 +144,16 @@ the multi-turn, tool-executing layer above it.
   keyword/substring heuristics (**no LLM call**, no `regex` dependency — the
   workspace `regex` lacks `unicode-perl`, so `\b`/`\w` reject; keyword
   detection uses case-insensitive `str::contains`). Pipeline: chat bypass
-  (short + no code + no action verb → `chat`/`Direct`) → domain mapping
-  (mutation verbs > math > planning > research > code indicators > chat) →
-  risk (`delete`/`commit`/`production` → `High`) → grounding + verifiers
+  (short + no code + no action verb + **no grounding signal** → `chat`/`Direct`;
+  VRO-5.1 added the grounding-signal guard so prompts like "what does the
+  main.rs file do?" no longer bypass to Direct) → domain mapping (mutation
+  verbs > math > planning > research > code indicators > chat) → risk
+  (`delete`/`commit`/`production` → `High`) → grounding + verifiers
   (`.rs` → `cargo_check`/`cargo_test`/`clippy`) → complexity/ambiguity →
-  §12 strategy ladder. `profile_request` honors a caller `risk_hint` override.
+  §12 strategy ladder (**VRO-5.1:** the Low/Low → Direct shortcut now yields
+  when `requires_grounding == true`, so grounded non-mutation prompts route
+  to `ToolGroundedReact`). `profile_request` honors a caller `risk_hint`
+  override.
 - `src/vro/verifiers.rs` — VRO-2.2 deterministic verifier registry (PRD §10.8).
   Async object-safe `Verifier` trait (boxed `Send` future — the workspace has
   no `async_trait`/`trait-variant` dep, so the trait returns

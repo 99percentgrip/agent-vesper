@@ -72,7 +72,11 @@ impl TaskProfiler {
         let char_count = lower.chars().count();
         let has_code_block = lower.contains("```");
 
-        // 1. Chat bypass — short, no code, no action verb.
+        // 1. Chat bypass — short, no code, no action verb, no grounding
+        // signal. VRO-5.1: a prompt that references a file extension or path
+        // (e.g. "what does the main.rs file do?") requires environment
+        // evidence and must NOT be classified as Direct chat — otherwise it
+        // would never reach the ToolGroundedReact strategy (directive 4).
         if is_chat_bypass(&lower, char_count, has_code_block) {
             return chat_profile();
         }
@@ -193,7 +197,27 @@ fn detect_domain(lower: &str) -> TaskDomainKind {
 // ---------------------------------------------------------------------------
 
 fn is_chat_bypass(lower: &str, char_count: usize, has_code_block: bool) -> bool {
-    char_count < CHAT_BYPASS_MAX_CHARS && !has_code_block && !contains_any(lower, ACTION_VERBS)
+    char_count < CHAT_BYPASS_MAX_CHARS
+        && !has_code_block
+        && !contains_any(lower, ACTION_VERBS)
+        // VRO-5.1: prompts that reference a file extension, a path, or a
+        // grounding verb require environment evidence and must NOT be
+        // short-circuited to Direct chat. Without this guard, prompts like
+        // "what does the main.rs file do?" would route to Direct (the §12
+        // ladder would otherwise never see requires_grounding=true).
+        && !has_grounding_signal(lower)
+}
+
+/// True when the prompt carries any environment-grounding signal: a code
+/// file extension, an explicit path separator, a `src` reference, or a
+/// grounding verb. Mirrors the conditions `detect_grounding` uses to set
+/// `requires_grounding = true`, restricted to cheap substring checks that
+/// are safe to evaluate inside the chat-bypass gate.
+fn has_grounding_signal(lower: &str) -> bool {
+    has_code_extension(lower)
+        || lower.contains('/')
+        || lower.contains("src")
+        || contains_any(lower, GROUNDING_VERBS)
 }
 
 fn chat_profile() -> TaskProfile {
@@ -430,7 +454,12 @@ fn select_strategy(
     verifiers: &[VerifierId],
 ) -> ReasoningStrategy {
     // §12: IF task is simple AND risk is low -> direct.
-    if complexity == Complexity::Low && risk == RiskLevel::Low {
+    // VRO-5.1: a task that requires environment grounding is by definition
+    // NOT simple chat, even if its keyword complexity comes out Low — a
+    // prompt like "what does the main.rs file do?" must route to
+    // ToolGroundedReact so the ReAct loop can gather the evidence it asks
+    // for (directive 4).
+    if complexity == Complexity::Low && risk == RiskLevel::Low && !requires_grounding {
         return ReasoningStrategy::Direct;
     }
 
@@ -975,5 +1004,70 @@ mod tests {
         );
         let p = profile_of("hello world");
         assert_eq!(p.recommended_strategy, ReasoningStrategy::Direct);
+    }
+
+    // === VRO-5.1 — ToolGroundedReact routing (directive 4) ===
+    //
+    // The directive's example: "What does the main.rs file do?" must route to
+    // ToolGroundedReact because it (a) references a real file (requires
+    // environment grounding) and (b) does not mutate code. Two profiler fixes
+    // were needed:
+    //   1. The chat bypass must NOT fire for prompts that carry a file
+    //      extension or path (otherwise the §12 ladder never runs).
+    //   2. The §12 ladder's "Low/Low -> Direct" shortcut must yield when
+    //      requires_grounding is true.
+
+    #[test]
+    fn profiler_routes_environment_evidence_prompt_to_tool_grounded_react() {
+        // The directive's example prompt.
+        let p = profile_of("What does the main.rs file do?");
+        assert_eq!(p.domain.as_str(), "chat");
+        assert!(p.requires_grounding, "file extension => grounding");
+        assert!(
+            !p.requires_mutation,
+            "no mutation verb => not a mutation task"
+        );
+        assert_eq!(
+            p.recommended_strategy,
+            ReasoningStrategy::ToolGroundedReact,
+            "grounding-required non-mutation prompts MUST route to ToolGroundedReact"
+        );
+    }
+
+    #[test]
+    fn profiler_routes_read_verb_on_specific_file_to_tool_grounded_react() {
+        // "read" is a grounding verb; the explicit file path makes this an
+        // evidence-gathering task, not a chat answer.
+        let p = profile_of("read src/lib.rs and check what it exports");
+        assert!(p.requires_grounding);
+        assert_eq!(p.recommended_strategy, ReasoningStrategy::ToolGroundedReact);
+    }
+
+    #[test]
+    fn profiler_chat_bypass_still_fires_for_pure_chat_without_file_reference() {
+        // The grounding-signal guard on the chat bypass must NOT over-fire:
+        // a pure chat prompt with no file/path/verb stays Direct.
+        let p = profile_of("hello there friend");
+        assert_eq!(p.recommended_strategy, ReasoningStrategy::Direct);
+        assert!(!p.requires_grounding);
+    }
+
+    #[test]
+    fn profiler_chat_bypass_still_fires_for_short_math_question() {
+        // "what is 2 plus 2?" — short, no action verb, no file/path/verb.
+        // Bypass fires -> Direct (unchanged from VRO-2.1).
+        let p = profile_of("what is 2 plus 2?");
+        assert_eq!(p.recommended_strategy, ReasoningStrategy::Direct);
+    }
+
+    #[test]
+    fn profiler_mutation_with_grounding_still_routes_to_plan_execute_verify() {
+        // Grounded code-mutation prompts keep their existing route
+        // (PlanExecuteVerify). The VRO-5.1 fix only re-routes NON-mutation
+        // grounded prompts to ToolGroundedReact.
+        let p = profile_of("refactor src/main.rs");
+        assert!(p.requires_grounding);
+        assert!(p.requires_mutation);
+        assert_eq!(p.recommended_strategy, ReasoningStrategy::PlanExecuteVerify);
     }
 }
