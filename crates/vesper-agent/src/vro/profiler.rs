@@ -87,6 +87,13 @@ impl TaskProfiler {
         // requires grounding. Returns None when no parallel signal is present
         // — the §12 ladder then runs unchanged (zero impact on existing
         // profile behavior).
+        //
+        // VRO-6: the bounded-tree-search + proposer-critic-adjudicator signals
+        // are detected FIRST (they are higher-value strategies reserved for
+        // harder tasks per PRD §11.7 / §11.8), then the VRO-4 parallel signals.
+        if let Some(strategy) = detect_search_or_adjudication_strategy(&lower) {
+            return self.search_or_adjudication_profile(&lower, strategy, char_count);
+        }
         if let Some(strategy) = detect_parallel_strategy(&lower) {
             return self.parallel_profile(&lower, strategy, char_count);
         }
@@ -230,6 +237,149 @@ fn chat_profile() -> TaskProfile {
         requires_mutation: false,
         available_verifiers: vec![],
         recommended_strategy: ReasoningStrategy::Direct,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// VRO-6 bounded-tree-search + proposer-critic-adjudicator triggers
+// (PRD §11.7 + §11.8 + §12)
+// ---------------------------------------------------------------------------
+
+/// Prompts that signal "exploring strategic branches is worth the cost" (PRD
+/// §11.7: "Difficult debugging with several competing root-cause
+/// hypotheses", "Architecture choices with irreversible consequences",
+/// "Constraint-heavy planning", "Multi-step puzzles", "Complex migration
+/// sequencing"). Detected case-insensitively as substrings (matches the rest
+/// of the profiler's keyword style — no regex, no `unicode-perl`).
+const BOUNDED_TREE_SEARCH_KEYWORDS: &[&str] = &[
+    "root cause",
+    "root-cause",
+    "debug complex",
+    "migration sequence",
+    "complex migration",
+    "migration sequencing",
+    "competing hypotheses",
+    "competing root cause",
+    "competing root-cause",
+    "several competing",
+    "irreversible consequences",
+    "constraint-heavy",
+    "constraint heavy",
+    "multi-step puzzle",
+    "multistep puzzle",
+    "strategic branches",
+    "strategic branch",
+    "tree search",
+    "beam search",
+    "multi-hypothesis",
+    "branching strategy",
+    "investigate all possible causes",
+];
+
+/// Prompts that signal "objective verification is weak but failure cost
+/// justifies additional model calls" (PRD §11.8). These are high-consequence
+/// architectural tasks where the proposal should be evaluated by an
+/// independent critic + adjudicator rather than a single generation pass.
+const PROPOSER_CRITIC_ADJUDICATOR_KEYWORDS: &[&str] = &[
+    "high-consequence",
+    "high consequence",
+    "high-stakes architecture",
+    "high-stakes design",
+    "weak verifiers",
+    "verifiers are weak",
+    "verification is weak",
+    "objective verification is weak",
+    "no deterministic verifier",
+    "adjudicate",
+    "propose and critique",
+    "propose, then critique",
+    "critic-evaluate",
+    "critic evaluate",
+    "independent critic",
+    "second opinion on the architecture",
+    "second opinion on the design",
+];
+
+/// Returns `Some(strategy)` when the prompt contains a VRO-6 advanced-strategy
+/// keyword signal. The BoundedTreeSearch signal takes precedence over the
+/// ProposerCriticAdjudicator signal because tree search handles the
+/// irreducible class of "multiple competing hypotheses require exploration"
+/// (PRD §11.7) — a more specific signal than the broad "high-consequence"
+/// PCA trigger.
+///
+/// Returns `None` when no signal is present — the VRO-4 parallel detector and
+/// the §12 ladder then run unchanged (zero impact on existing profile
+/// behavior).
+fn detect_search_or_adjudication_strategy(lower: &str) -> Option<ReasoningStrategy> {
+    if contains_any(lower, BOUNDED_TREE_SEARCH_KEYWORDS) {
+        return Some(ReasoningStrategy::BoundedTreeSearch);
+    }
+    if contains_any(lower, PROPOSER_CRITIC_ADJUDICATOR_KEYWORDS) {
+        return Some(ReasoningStrategy::ProposerCriticAdjudicator);
+    }
+    None
+}
+
+impl TaskProfiler {
+    /// Builds a `TaskProfile` for an explicitly-detected VRO-6 strategy (PRD
+    /// §11.7 + §11.8). Mirrors the VRO-4 [`parallel_profile`] shape but
+    /// tunes the risk floor + ambiguity per strategy:
+    ///
+    /// - **BoundedTreeSearch**: risk floor `Medium`, ambiguity `0.8`
+    ///   (multiple competing hypotheses are inherently ambiguous — that's
+    ///   WHY the user is asking for tree search). Verifiers come from
+    ///   `detect_grounding` so a `.rs`-bearing prompt still surfaces
+    ///   `cargo_check` / `cargo_test` for the search to verify leaves.
+    /// - **ProposerCriticAdjudicator**: risk floor `High` (PRD §11.8:
+    ///   "high-consequence … failure cost justifies additional model calls"),
+    ///   ambiguity `0.7`. Verifiers come from `detect_grounding` but are
+    ///   typically empty — the strategy is reserved for tasks where
+    ///   deterministic verification is weak.
+    fn search_or_adjudication_profile(
+        &self,
+        lower: &str,
+        strategy: ReasoningStrategy,
+        char_count: usize,
+    ) -> TaskProfile {
+        let (_requires_grounding, verifiers) = detect_grounding(lower);
+        let domain = detect_domain(lower);
+        let heuristic_risk = detect_risk(lower);
+        // PCA is reserved for high-consequence tasks (PRD §11.8); force a
+        // High risk floor regardless of the keyword-based risk detector so
+        // the orchestrator allocates a Deep/Maximum-style budget.
+        let risk = match strategy {
+            ReasoningStrategy::ProposerCriticAdjudicator => RiskLevel::High,
+            _ => {
+                if heuristic_risk == RiskLevel::Low {
+                    RiskLevel::Medium
+                } else {
+                    heuristic_risk
+                }
+            }
+        };
+        let ambiguity = match strategy {
+            ReasoningStrategy::BoundedTreeSearch => 0.8,
+            _ => 0.7,
+        };
+        TaskProfile {
+            domain: TaskDomain::new(domain.label()).unwrap_or_else(|_| {
+                TaskDomain::new("research").expect("research is a valid bounded domain label")
+            }),
+            complexity: if char_count > 200 {
+                Complexity::High
+            } else {
+                Complexity::Medium
+            },
+            risk,
+            ambiguity,
+            // Neither VRO-6 strategy mutates code; both are analysis /
+            // evaluation passes. Grounding may still be set (root-cause
+            // debug reads the codebase) but mutation never is.
+            requires_grounding: false,
+            requires_mutation: false,
+            available_verifiers: verifiers,
+            recommended_strategy: strategy,
+        }
     }
 }
 
@@ -1069,5 +1219,115 @@ mod tests {
         assert!(p.requires_grounding);
         assert!(p.requires_mutation);
         assert_eq!(p.recommended_strategy, ReasoningStrategy::PlanExecuteVerify);
+    }
+
+    // === VRO-6 — BoundedTreeSearch + ProposerCriticAdjudicator routing ===
+    //
+    // Directive 3: route "root cause", "debug complex", "migration sequence"
+    // to BoundedTreeSearch. Route high-consequence architectural tasks where
+    // verifiers are weak to ProposerCriticAdjudicator.
+
+    #[test]
+    fn profiler_routes_root_cause_to_bounded_tree_search() {
+        let p = profile_of("find the root cause of the intermittent test failure");
+        assert_eq!(
+            p.recommended_strategy,
+            ReasoningStrategy::BoundedTreeSearch,
+            "'root cause' must route to BoundedTreeSearch"
+        );
+        // VRO-6 strategies are analysis passes, not mutations.
+        assert!(!p.requires_mutation);
+        // Risk floor is at least Medium for tree-search tasks.
+        assert!(p.risk != RiskLevel::Low);
+    }
+
+    #[test]
+    fn profiler_routes_debug_complex_to_bounded_tree_search() {
+        let p = profile_of("debug complex race condition in the async runtime");
+        assert_eq!(p.recommended_strategy, ReasoningStrategy::BoundedTreeSearch);
+    }
+
+    #[test]
+    fn profiler_routes_migration_sequence_to_bounded_tree_search() {
+        let p = profile_of("plan the migration sequence from SQLite to PostgreSQL");
+        assert_eq!(p.recommended_strategy, ReasoningStrategy::BoundedTreeSearch);
+    }
+
+    #[test]
+    fn profiler_routes_competing_hypotheses_to_bounded_tree_search() {
+        let p = profile_of(
+            "investigate several competing hypotheses for the memory leak before committing to a fix",
+        );
+        assert_eq!(p.recommended_strategy, ReasoningStrategy::BoundedTreeSearch);
+    }
+
+    #[test]
+    fn profiler_routes_irreversible_consequences_to_bounded_tree_search() {
+        let p = profile_of(
+            "evaluate the architecture choices with irreversible consequences before we commit",
+        );
+        assert_eq!(p.recommended_strategy, ReasoningStrategy::BoundedTreeSearch);
+    }
+
+    #[test]
+    fn profiler_routes_high_consequence_to_proposer_critic_adjudicator() {
+        let p = profile_of(
+            "review this high-consequence architectural decision before we ship to production",
+        );
+        assert_eq!(
+            p.recommended_strategy,
+            ReasoningStrategy::ProposerCriticAdjudicator,
+            "'high-consequence' must route to ProposerCriticAdjudicator"
+        );
+        // PCA is forced to High risk (PRD §11.8: failure cost justifies extra
+        // model calls).
+        assert_eq!(p.risk, RiskLevel::High);
+        assert!(!p.requires_mutation);
+    }
+
+    #[test]
+    fn profiler_routes_weak_verifiers_to_proposer_critic_adjudicator() {
+        let p = profile_of(
+            "evaluate the high-stakes architecture where verifiers are weak and the failure cost is high",
+        );
+        assert_eq!(
+            p.recommended_strategy,
+            ReasoningStrategy::ProposerCriticAdjudicator
+        );
+    }
+
+    #[test]
+    fn profiler_routes_adjudicate_to_proposer_critic_adjudicator() {
+        let p = profile_of("adjudicate between the three proposed designs for the auth system");
+        assert_eq!(
+            p.recommended_strategy,
+            ReasoningStrategy::ProposerCriticAdjudicator
+        );
+    }
+
+    #[test]
+    fn profiler_bounded_tree_search_takes_precedence_over_parallel_signals() {
+        // A prompt with both a tree-search signal AND a parallel signal must
+        // route to the tree-search strategy (higher value per PRD §11.7).
+        let p = profile_of(
+            "find the root cause, then compare options for the fix and weigh the pros and cons",
+        );
+        assert_eq!(p.recommended_strategy, ReasoningStrategy::BoundedTreeSearch);
+    }
+
+    #[test]
+    fn profiler_no_vro6_signal_falls_through_to_normal_ladder() {
+        // Existing behavior preserved — prompts without VRO-6 signals route
+        // through the §12 ladder unchanged.
+        let p = profile_of("refactor src/main.rs to use async/await");
+        assert_eq!(p.recommended_strategy, ReasoningStrategy::PlanExecuteVerify);
+        let p = profile_of("hello world");
+        assert_eq!(p.recommended_strategy, ReasoningStrategy::Direct);
+        // VRO-4 parallel signals still work (not displaced by VRO-6).
+        let p = profile_of("compare options for the cache layer and weigh the pros and cons");
+        assert_eq!(
+            p.recommended_strategy,
+            ReasoningStrategy::ParallelCandidatesJudge
+        );
     }
 }

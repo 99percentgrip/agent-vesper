@@ -66,9 +66,20 @@ the multi-turn, tool-executing layer above it.
   degrades to consensus when no judge is supplied.
   `execute_react(request, agent, invoker, workspace_root)` is the VRO-5.1
   entry point for `ToolGroundedReact` (PRD §11.6); it is the only public
-  method that supplies the `ReactAgent` + `ToolInvoker` seams. Other non-`Direct`
-  strategies fall back to a single generate-and-verify pass until their
-  dedicated executors land. **VRO-5.1 dispatch guard:** `execute` and
+  method that supplies the `ReactAgent` + `ToolInvoker` seams.
+  `execute_with_critic_adjudicator(request, generator, workspace_root, judge,
+  critic, adjudicator, seed, criteria)` is the VRO-6 entry point for
+  `ProposerCriticAdjudicator` (PRD §11.8); it is the only public method that
+  supplies the `CandidateCritic` + `Adjudicator` seams. Dispatch:
+  `GenerateVerifyRepair` → `run_generate_verify_repair` (VRO-2.3),
+  `ParallelCandidatesConsensus` → `run_parallel_candidates_consensus` (VRO-4),
+  `ParallelCandidatesJudge` → `run_parallel_candidates_judge` (VRO-4) or
+  degrades to consensus when no judge is supplied,
+  `BoundedTreeSearch` → `run_bounded_tree_search` (VRO-6),
+  `ProposerCriticAdjudicator` → `run_proposer_critic_adjudicator` (VRO-6) or
+  degrades to consensus when no critic + adjudicator is supplied (via
+  `execute_with_judge`) / when critic or adjudicator is `None` (via
+  `execute_with_critic_adjudicator`). **VRO-5.1 dispatch guard:** `execute` and
   `execute_with_judge` deliberately return `Failed` (with a clear "use
   `execute_react`" risk message) when the profiled strategy is
   `ToolGroundedReact`, so callers cannot silently run a tool-grounded prompt
@@ -126,19 +137,35 @@ the multi-turn, tool-executing layer above it.
   adding a `rand` dependency on `vesper-agent`. Zero-breakage: this module is
   only invoked by the parallel-strategy handlers; `Direct` and
   `GenerateVerifyRepair` paths never reach it.
-- `src/vro/strategies.rs` — VRO-4 strategy handlers (PRD §11.4 + §11.5).
-  `normalize_output` strips whitespace + sorts JSON keys for canonical
-  comparison (PRD §11.4: "compare normalized final answers and supporting
-  evidence, not just wording similarity"). `quorum_threshold(n) = n.div_ceil(2)`.
-  `run_parallel_candidates_consensus(...)` fans out → consensus_winner → on
-  quorum `Succeeded`, else `Inconclusive` with the disagreement surfaced as
-  an unresolved risk (PRD §18). `CandidateJudge` trait (async object-safe) is
-  the model-based judge seam. `run_parallel_candidates_judge(...)` fans out →
-  **shuffles** the candidates via `XorShiftRng` (PRD §11.5: "candidates in
-  randomized order to reduce position bias") → asks the judge for a pick in
-  the SHUFFLED view → maps the shuffled index back to the original
-  `CandidateId` → returns `Succeeded`. The seed is exposed so tests can
-  reproduce an exact shuffle.
+- `src/vro/strategies.rs` — VRO-4 + VRO-6 strategy handlers (PRD §11.4 +
+  §11.5 + §11.7 + §11.8). `normalize_output` strips whitespace + sorts JSON
+  keys for canonical comparison (PRD §11.4). `quorum_threshold(n) =
+  n.div_ceil(2)`. `run_parallel_candidates_consensus(...)` (VRO-4) fans out
+  → consensus_winner → on quorum `Succeeded`, else `Inconclusive`.
+  `CandidateJudge` trait (async object-safe) is the model-based judge seam;
+  `run_parallel_candidates_judge(...)` (VRO-4) fans out → **shuffles** via
+  `XorShiftRng` → asks the judge for a shuffled-index pick → maps back to the
+  original `CandidateId`. `run_bounded_tree_search(...)` (VRO-6, PRD §11.7)
+  expands a level-by-level tree of partial candidates up to
+  `budget.max_search_depth`, fanning out `budget.max_parallel_branches`
+  children per node. Each node is verified against the profile's mandatory
+  verifiers: a **passing** node is a candidate best leaf (early-stop the
+  entire search — PRD §10.6); a **definitive failure** (Failed/Error) is
+  **pruned** (PRD §11.7 "aggressive pruning" + directive "abandoning a
+  branch if a deterministic verifier fails early"); a **non-definitive**
+  outcome (Inconclusive/Skipped) at depth < max_depth is **expanded further**
+  (refined prompt carries the parent's output forward). The total candidate
+  count is bounded by `budget.max_model_calls` (PRD §22.3: no infinite
+  search loop). `CandidateCritic` + `Adjudicator` traits (async
+  object-safe) are the VRO-6 model-based seams;
+  `run_proposer_critic_adjudicator(...)` (VRO-6, PRD §11.8) enforces strict
+  role separation: **propose** (fan out via VRO-4 executor) → **critique**
+  (per-candidate objective critique from `CandidateCritic`, anchored to
+  explicit criteria) → **adjudicate** (`Adjudicator` selects from the
+  (candidate, critique, criteria) triple, NOT from persuasive prose — PRD
+  §11.8: "The adjudicator must evaluate explicit criteria, not select the
+  most persuasive prose"). Zero-breakage: only invoked when the profiled
+  strategy is `BoundedTreeSearch` or `ProposerCriticAdjudicator`.
 - `src/vro/profiler.rs` — VRO-2.1 deterministic `TaskProfiler`: converts a
   user prompt (or `ReasoningRequest`) into a `TaskProfile` using pure
   keyword/substring heuristics (**no LLM call**, no `regex` dependency — the
@@ -146,14 +173,18 @@ the multi-turn, tool-executing layer above it.
   detection uses case-insensitive `str::contains`). Pipeline: chat bypass
   (short + no code + no action verb + **no grounding signal** → `chat`/`Direct`;
   VRO-5.1 added the grounding-signal guard so prompts like "what does the
-  main.rs file do?" no longer bypass to Direct) → domain mapping (mutation
-  verbs > math > planning > research > code indicators > chat) → risk
-  (`delete`/`commit`/`production` → `High`) → grounding + verifiers
-  (`.rs` → `cargo_check`/`cargo_test`/`clippy`) → complexity/ambiguity →
-  §12 strategy ladder (**VRO-5.1:** the Low/Low → Direct shortcut now yields
-  when `requires_grounding == true`, so grounded non-mutation prompts route
-  to `ToolGroundedReact`). `profile_request` honors a caller `risk_hint`
-  override.
+  main.rs file do?" no longer bypass to Direct) → **VRO-6 advanced-strategy
+  detection** (BoundedTreeSearch keywords: "root cause", "debug complex",
+  "migration sequence", "competing hypotheses", "irreversible consequences",
+  "constraint-heavy", "tree/beam search", etc. → `BoundedTreeSearch`;
+  ProposerCriticAdjudicator keywords: "high-consequence", "weak verifiers",
+  "adjudicate", "high-stakes architecture/design", etc. →
+  `ProposerCriticAdjudicator` with forced `High` risk floor) → **VRO-4
+  parallel-strategy detection** (trade-off/alternatives → Judge; verify-claim
+  → Consensus) → domain mapping → risk → grounding + verifiers →
+  complexity/ambiguity → §12 strategy ladder (**VRO-5.1:** the Low/Low →
+  Direct shortcut now yields when `requires_grounding == true`).
+  `profile_request` honors a caller `risk_hint` override.
 - `src/vro/verifiers.rs` — VRO-2.2 deterministic verifier registry (PRD §10.8).
   Async object-safe `Verifier` trait (boxed `Send` future — the workspace has
   no `async_trait`/`trait-variant` dep, so the trait returns
