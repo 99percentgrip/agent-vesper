@@ -927,7 +927,10 @@ mod tests {
                 max_parallel_branches: 3,
                 ..ReasoningBudget::balanced()
             }),
-            privacy_mode: PrivacyMode::Private,
+            // Internal: shared by VRO-4 (no learning) and VRO-7 (learning)
+            // tests. The VRO-7 tests need an eligible privacy mode so the
+            // extractor actually runs; VRO-4 tests are unaffected.
+            privacy_mode: PrivacyMode::Internal,
         }
     }
 
@@ -1494,7 +1497,10 @@ mod tests {
                 max_tool_calls: 5,
                 ..ReasoningBudget::balanced()
             }),
-            privacy_mode: PrivacyMode::Private,
+            // Internal: these tests assert learning actually runs, so the
+            // extractor must accept the request. Private is rejected per
+            // PRD §17 — see execute_with_learning_skips_learning_for_private_request.
+            privacy_mode: PrivacyMode::Internal,
         }
     }
 
@@ -1712,6 +1718,57 @@ mod tests {
                 .iter()
                 .any(|r| r.contains("workflow-learning")),
             "non-succeeded outcome must not trigger learning: {:?}",
+            outcome.unresolved_risks
+        );
+        // Sink recorded nothing.
+        assert!(sink.saved.lock().expect("poisoned").is_empty());
+    }
+
+    #[tokio::test]
+    async fn execute_with_learning_skips_learning_for_private_request() {
+        // PRD §17: PrivacyMode::Private requests must NOT be persisted to
+        // cognitive memory. Even on a Succeeded turn with a learning-eligible
+        // strategy, the extractor refuses BEFORE doing any work, so no
+        // scrubbed-but-still-private bytes can leak through a future sink bug.
+        // The outcome still succeeds — privacy only blocks learning, not
+        // the underlying turn.
+        let vro = enabled_orchestrator();
+        let generator = SingleAnswerGenerator {
+            call_count: Arc::new(Mutex::new(0)),
+            output: serde_json::json!({"answer": "yes"}),
+        };
+        let sink = Arc::new(RecordingSink::new());
+        let extractor = WorkflowExtractor::new();
+        // A consensus prompt that would normally trigger learning.
+        let mut req = request_for("Is this correct? The Rust borrow checker prevents data races.");
+        req.privacy_mode = PrivacyMode::Private;
+        let outcome = vro
+            .execute_with_learning(
+                &req,
+                &generator,
+                std::path::Path::new("/tmp"),
+                None,
+                None,
+                None,
+                None,
+                None,
+                0,
+                &[],
+                Some(sink.as_ref()),
+                &extractor,
+                "2026-01-01T00:00:00Z",
+            )
+            .await;
+        // The underlying turn still succeeded — privacy only blocks learning.
+        assert_eq!(outcome.status, OutcomeStatus::Succeeded);
+        // Learning was skipped with a Private-rejection risk note.
+        assert!(
+            outcome
+                .unresolved_risks
+                .iter()
+                .any(|r| r.contains("workflow-learning skipped")
+                    && r.contains("PrivacyMode::Private")),
+            "expected skipped-PrivateRequestRejected note: {:?}",
             outcome.unresolved_risks
         );
         // Sink recorded nothing.

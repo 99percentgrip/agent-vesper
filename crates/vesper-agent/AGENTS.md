@@ -273,6 +273,9 @@ the multi-turn, tool-executing layer above it.
     forwards to `vesper_cognition::pipeline::CognitiveMemory::add_procedural`
     behind the scenes). Tests use a `RecordingSink` fake.
   - `LearningError` — non-fatal error variants: `OutcomeNotSucceeded`,
+    `PrivateRequestRejected` (PRD §17: PrivacyMode::Private requests must
+    NOT be persisted; the extractor refuses BEFORE building the procedure so
+    no scrubbed-but-still-private bytes can leak through a future sink bug),
     `NoStepsToExtract`, `EmptyObjective`, `SinkRejected`. The orchestrator
     converts every variant into one `unresolved_risks` entry; the turn
     itself never fails because of a learning error.

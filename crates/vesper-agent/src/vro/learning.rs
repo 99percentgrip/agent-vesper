@@ -55,8 +55,8 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use vesper_domain::{
-    InferenceCost, OutcomeStatus, ReasoningOutcome, ReasoningRequest, ReasoningStrategy,
-    VerificationStatus,
+    InferenceCost, OutcomeStatus, PrivacyMode, ReasoningOutcome, ReasoningRequest,
+    ReasoningStrategy, VerificationStatus,
 };
 
 use super::react::TrajectoryEntry;
@@ -75,6 +75,14 @@ pub enum LearningError {
     /// extract.
     #[error("cannot extract a workflow from a non-succeeded outcome ({0:?})")]
     OutcomeNotSucceeded(OutcomeStatus),
+    /// The request was marked [`PrivacyMode::Private`] (PRD §17). Private
+    /// requests must NOT be persisted to cognitive memory — the extractor
+    /// refuses to produce a procedure rather than risk leaking private
+    /// deliberation. Internal / Public requests are eligible.
+    ///
+    /// [`PrivacyMode::Private`]: vesper_domain::PrivacyMode::Private
+    #[error("request is PrivacyMode::Private — private requests are not persisted")]
+    PrivateRequestRejected,
     /// The trajectory / outcome contained no usable steps to generalize.
     #[error("no extractable steps found in the trajectory")]
     NoStepsToExtract,
@@ -145,6 +153,11 @@ pub struct SecretScrubber {
     /// (so a `JWT` redacted to `[REDACTED:JWT]` is invisible to the
     /// high-entropy scanner, which has no `[`/`]` characters in its class).
     patterns: Vec<(regex::Regex, &'static str)>,
+    /// High-entropy token matcher. Compiled ONCE at construction (matches
+    /// the public doc claim "compiled once at construction and reused across
+    /// calls"); previously this was recompiled per `scrub()` call, which
+    /// contradicted the docs and was wasteful at high call volume.
+    entropy_re: regex::Regex,
 }
 
 impl Default for SecretScrubber {
@@ -204,7 +217,12 @@ impl SecretScrubber {
                 (re, *kind)
             })
             .collect();
-        Self { patterns }
+        let entropy_re =
+            regex::Regex::new(r"[A-Za-z0-9+/=_\-]{32,}").expect("entropy token regex must compile");
+        Self {
+            patterns,
+            entropy_re,
+        }
     }
 
     /// Scrub every secret-shaped substring from `input`, returning a new
@@ -222,7 +240,7 @@ impl SecretScrubber {
         // High-entropy pass runs last so the deterministic placeholders above
         // (which contain only `[`, `]`, `:`, letters, underscore) cannot
         // trip the entropy threshold.
-        scrub_high_entropy(&current)
+        scrub_high_entropy(&self.entropy_re, &current)
     }
 
     /// Scrub a JSON value in place. Strings in the value are scrubbed;
@@ -260,12 +278,10 @@ impl SecretScrubber {
 /// below 4.0 for longer multi-word phrases (which have repetition). A 32-char
 /// English phrase with > 4.0 bits/char is overwhelmingly likely to be
 /// machine-generated (a key, hash, or token), not natural prose.
-fn scrub_high_entropy(input: &str) -> String {
-    let token_re =
-        regex::Regex::new(r"[A-Za-z0-9+/=_\-]{32,}").expect("entropy token regex must compile");
+fn scrub_high_entropy(entropy_re: &regex::Regex, input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     let mut last_end = 0;
-    for m in token_re.find_iter(input) {
+    for m in entropy_re.find_iter(input) {
         // Preserve everything before this match.
         out.push_str(&input[last_end..m.start()]);
         let token = m.as_str();
@@ -430,6 +446,13 @@ impl WorkflowExtractor {
         source_strategy: ReasoningStrategy,
         extracted_at: &str,
     ) -> Result<ProceduralMemory, LearningError> {
+        // PRD §17: PrivacyMode::Private means "no private-artifact
+        // persistence". Refusing here is the safest place — the procedure
+        // is never built, so no scrubbed-but-still-private bytes can leak
+        // through a future sink bug.
+        if request.privacy_mode == PrivacyMode::Private {
+            return Err(LearningError::PrivateRequestRejected);
+        }
         if outcome.status != OutcomeStatus::Succeeded {
             return Err(LearningError::OutcomeNotSucceeded(outcome.status));
         }
@@ -529,6 +552,11 @@ impl WorkflowExtractor {
         source_strategy: ReasoningStrategy,
         extracted_at: &str,
     ) -> Result<ProceduralMemory, LearningError> {
+        // PRD §17: PrivacyMode::Private means "no private-artifact
+        // persistence". See extract_from_trajectory for rationale.
+        if request.privacy_mode == PrivacyMode::Private {
+            return Err(LearningError::PrivateRequestRejected);
+        }
         if outcome.status != OutcomeStatus::Succeeded {
             return Err(LearningError::OutcomeNotSucceeded(outcome.status));
         }
@@ -912,6 +940,31 @@ mod tests {
     }
 
     #[test]
+    fn scrubber_redacts_orphan_high_entropy_string_without_keyword_prefix() {
+        // Entropy-only fallback path: an opaque string with NO `key=` /
+        // `token=` / `secret=` prefix must still be redacted by the entropy
+        // scanner alone. This is the "machine-generated credential that no
+        // pattern caught" case from the SecretScrubber docs.
+        let s = SecretScrubber::new();
+        let opaque = "Z9hK4mP7vQ3rT1wX8yB2nL5cJ6dF0gH4sA7eR8tU";
+        // No keyword prefix — the only thing that can catch this is the
+        // entropy scanner.
+        let input = format!("pipeline-output: {opaque} (run-id 42)");
+        let out = s.scrub(&input);
+        assert!(
+            !out.contains(opaque),
+            "orphan high-entropy string must be redacted, got: {out}"
+        );
+        assert!(
+            out.contains("[REDACTED:HIGH_ENTROPY]"),
+            "expected HIGH_ENTROPY placeholder, got: {out}"
+        );
+        // Surrounding text is preserved.
+        assert!(out.contains("pipeline-output:"));
+        assert!(out.contains("(run-id 42)"));
+    }
+
+    #[test]
     fn scrubber_preserves_natural_language_prose() {
         // Natural English with words shorter than 32 chars and well below
         // 4.0 bits/char entropy should pass through unchanged.
@@ -980,7 +1033,10 @@ mod tests {
             mode: vesper_domain::ReasoningMode::Balanced,
             risk_hint: None,
             budget_override: Some(ReasoningBudget::balanced()),
-            privacy_mode: PrivacyMode::Private,
+            // Internal: tests want extraction to actually run. The default
+            // (Private) is rejected by the extractor per PRD §17 — see
+            // extractor_rejects_private_request below for that path.
+            privacy_mode: PrivacyMode::Internal,
         }
     }
 
@@ -1131,6 +1187,78 @@ mod tests {
             )
             .expect_err("empty trajectory must error");
         assert!(matches!(err, LearningError::NoStepsToExtract));
+    }
+
+    #[test]
+    fn extractor_from_trajectory_rejects_private_request_per_prd_17() {
+        // PRD §17: PrivacyMode::Private means "no private-artifact
+        // persistence". The extractor must refuse BEFORE doing any work so
+        // no scrubbed-but-still-private bytes can leak through a future sink
+        // bug. The privacy check runs even before the status check.
+        let ext = WorkflowExtractor::new();
+        let mut req = sample_request("do the work");
+        req.privacy_mode = PrivacyMode::Private;
+        let outcome = succeeded_outcome(InferenceCost::default(), 0);
+        let trajectory = vec![TrajectoryEntry::Action {
+            name: "read_file".to_string(),
+            arguments: serde_json::json!({"path": "a.rs"}),
+        }];
+        let err = ext
+            .extract_from_trajectory(
+                &req,
+                &outcome,
+                &trajectory,
+                ReasoningStrategy::ToolGroundedReact,
+                "2026-01-01T00:00:00Z",
+            )
+            .expect_err("Private request must be rejected");
+        assert!(matches!(err, LearningError::PrivateRequestRejected));
+    }
+
+    #[test]
+    fn extractor_from_outcome_rejects_private_request_per_prd_17() {
+        // Same privacy guard, non-ReAct path. Must reject regardless of
+        // outcome status / verifiers.
+        let ext = WorkflowExtractor::new();
+        let mut req = sample_request("compare options");
+        req.privacy_mode = PrivacyMode::Private;
+        let outcome = succeeded_outcome(InferenceCost::default(), 2);
+        let err = ext
+            .extract_from_outcome(
+                &req,
+                &outcome,
+                ReasoningStrategy::ParallelCandidatesConsensus,
+                "2026-01-01T00:00:00Z",
+            )
+            .expect_err("Private request must be rejected");
+        assert!(matches!(err, LearningError::PrivateRequestRejected));
+    }
+
+    #[test]
+    fn extractor_accepts_internal_and_public_privacy_modes() {
+        // PRD §17: Internal (within a single provider boundary) and Public
+        // (cross-provider verification allowed) ARE eligible for cognitive-
+        // memory persistence. The check rejects ONLY Private.
+        let ext = WorkflowExtractor::new();
+        let outcome = succeeded_outcome(InferenceCost::default(), 0);
+        let trajectory = vec![TrajectoryEntry::Action {
+            name: "read_file".to_string(),
+            arguments: serde_json::json!({"path": "a.rs"}),
+        }];
+        for mode in [PrivacyMode::Internal, PrivacyMode::Public] {
+            let mut req = sample_request("do the work");
+            req.privacy_mode = mode;
+            let proc = ext
+                .extract_from_trajectory(
+                    &req,
+                    &outcome,
+                    &trajectory,
+                    ReasoningStrategy::ToolGroundedReact,
+                    "2026-01-01T00:00:00Z",
+                )
+                .unwrap_or_else(|e| panic!("mode {mode:?} must be eligible: {e:?}"));
+            assert_eq!(proc.steps.len(), 1);
+        }
     }
 
     #[test]
