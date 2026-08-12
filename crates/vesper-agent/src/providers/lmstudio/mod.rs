@@ -27,6 +27,7 @@ pub mod client;
 pub mod config;
 pub mod discovery;
 pub mod generator;
+pub mod react;
 
 pub use client::{
     ChatMessage, HttpMethod, LmStudioError, LmStudioHttpRequest, LmStudioHttpResponse,
@@ -39,3 +40,6 @@ pub use discovery::{
     discover_models, parse_models_response, probe_capabilities, probe_health,
 };
 pub use generator::LmStudioCandidateGenerator;
+pub use react::{
+    LmStudioReactAgent, MALFORMED_TOOL_NAME, REACT_SYSTEM_PROMPT, parse_react_decision,
+};

@@ -101,10 +101,7 @@ the multi-turn, tool-executing layer above it.
   InvalidArguments, PermissionDenied, ExecutionFailed) are converted to
   structured failure text and fed back to the model so the loop can
   self-correct. Zero-breakage: only invoked via `execute_react`; `Direct`,
-  `GenerateVerifyRepair`, and parallel paths never reach this code. The
-  production `ReactAgent` impl (provider-backed, e.g. LM Studio) is deferred
-  to a follow-up phase, mirroring how `LmStudioCandidateGenerator` (VRO-3.1)
-  followed `CandidateGenerator` (VRO-2.3).
+  `GenerateVerifyRepair`, and parallel paths never reach this code.
 - `src/vro/orchestrator.rs` — VRO-2.3 Generate-Verify-Repair loop (PRD §11.3,
   §10.9). `CandidateGenerator` trait (async object-safe via boxed `Send`
   future; **`boxed_clone` is required** so VRO-4's parallel executor can give
@@ -187,8 +184,21 @@ the multi-turn, tool-executing layer above it.
   `CapabilityRegistry`); `generator.rs` (`LmStudioCandidateGenerator`
   implementing `CandidateGenerator`, mapping `(prompt, corrections)` → chat
   messages with the failed verifiers' findings fed back as a corrections
-  message, bearer-auth injected). No live LM Studio integration in VRO-3.1 (per
-  execution constraints).
+  message, bearer-auth injected). `react.rs` (VRO-5.2
+  `LmStudioReactAgent` implementing the VRO-5.1 `ReactAgent` seam —
+  `next_action(prompt, trajectory)` builds the ReAct prompting contract
+  [`REACT_SYSTEM_PROMPT`] + user prompt + trajectory replayed as
+  `assistant`/`user` message pairs, sends `/chat/completions` via the shared
+  `LmStudioTransport`, and parses the response with the infallible
+  `parse_react_decision`. The parser uses precedence: `action.tool` JSON →
+  `CallTool`, `answer`/`final_answer`/`final` JSON → `Finish`, prose without
+  JSON → `Finish` (graceful exit), JSON-shaped text that fails to parse or has
+  an unrecognized shape → a synthesized `CallTool` with the sentinel
+  `MALFORMED_TOOL_NAME` so the loop's `ToolInvoker` returns `UnknownTool` and
+  feeds the failure back to the model as an observation for self-correction.
+  The transport is `Arc<dyn LmStudioTransport>` (shared, cheap clone) so the
+  agent mirrors `LmStudioCandidateGenerator`'s shape exactly). No live LM
+  Studio integration in VRO-3.1 (per execution constraints).
 
 ## Local Contracts
 
