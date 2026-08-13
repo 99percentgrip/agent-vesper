@@ -48,7 +48,7 @@ curl -fsSL https://github.com/99percentgrip/agent-vesper/raw/main/scripts/instal
 Or pin a version:
 
 ```sh
-AGENT_VESPER_VERSION=0.20.25 sh scripts/install.sh
+AGENT_VESPER_VERSION=0.20.26 sh scripts/install.sh
 ```
 
 ### Windows (PowerShell)
@@ -145,6 +145,97 @@ The agent silently recalls relevant memories before every reply. You don't need 
 
 **87 commands total** — type `/help` in the TUI for the complete list.
 
+## Reasoning Orchestrator (VRO)
+
+The Vesper Reasoning Orchestrator (VRO) is the multi-strategy reasoning layer that sits above the raw provider dispatch. Every prompt is profiled by a deterministic **TaskProfiler** (no LLM call), routed to one of ten **ReasoningStrategies**, and bounded by a **ReasoningBudget** preset. The TUI surfaces every step of this decision through the **Reasoning Panel** header so you always know what's happening and why.
+
+### The Six Reasoning Modes (PRD §8.1)
+
+| Mode | Behavior | Default budget |
+|---|---|---|
+| `auto` (default) | The profiler profiles and selects — the recommended starting point | varies by strategy |
+| `fast` | Single pass; strict latency ceiling (30s wall clock, 1 model call) | minimal: 1/0/30000 |
+| `balanced` | Decomposition + one verify/repair cycle when needed | 4/1/2 (PRD §24) |
+| `deep` | Multiple candidates, stronger verification, bounded search | 10/2/3/3 (PRD §24) |
+| `maximum` | Highest configured test-time budget for hard / high-value work | 16/3/4 |
+| `off` | Bypass VRO entirely — use the provider's direct response path | (none) |
+
+**Budget tuple**: `(max_model_calls, max_repairs, max_parallel_branches, max_search_depth)` — `fast`/`balanced` omit unpinned fields per PRD §24.
+
+### The Ten Reasoning Strategies (PRD §10.3)
+
+The profiler maps each prompt onto one of:
+
+| Strategy | When it fires | PRD reference |
+|---|---|---|
+| `direct` | Trivial / low-risk tasks (chat, simple Q&A) | §11.1 |
+| `plan_then_answer` | Decomposition helps but execution is unnecessary | §11.2 |
+| `plan_execute_verify` | Plan, execute, then verify | §10.3 |
+| `generate_verify_repair` | Generate → verify → targeted repair loop | §11.3 |
+| `parallel_candidates_consensus` | Fan-out parallel candidates + quorum vote | §11.4 |
+| `parallel_candidates_judge` | Parallel candidates adjudicated by a verifier | §11.5 |
+| `tool_grounded_react` | Environment-grounded ReAct loop with live tool calls | §11.6 |
+| `bounded_tree_search` | Depth/breadth-limited search with verifier pruning | §11.7 |
+| `proposer_critic_adjudicator` | Three-role workflow: propose → critique → judge | §11.8 |
+| `workflow_replay_with_verification` | Reuse a learned workflow + re-verify | §10.3 |
+
+### The Reasoning Panel Header (VRO-8)
+
+Every VRO turn now opens with a structured diagnostic header at the top of the Reasoning Panel, rendered through the same markdown pipeline as the streamed thinking:
+
+```
+Strategy: bounded_tree_search | Mode: deep (override) | Risk: high ⚠ RISK ESCALATION
+        | Depth: 3 | Branches: 3 | Models: 10 | Repairs: 2
+──────────────────────────────────────────────────────────────────────
+(streamed chain-of-thought continues below…)
+```
+
+- **`Strategy`** — the exact variant chosen (snake_case, matches the wire format)
+- **`Mode`** — the active reasoning mode; `*(override)*` marks when the user forced it via `/reasoning set mode=…`
+- **`Risk`** — the profiler's consequence assessment (`low`/`medium`/`high`)
+- **⚠ RISK ESCALATION** — prominently surfaced when the profiler escalated a task to `high` risk (e.g. mutating shell commands, deletions)
+- **Depth / Branches / Models / Repairs** — the budget envelope from the active preset
+
+### `/reasoning` — Manual Override (VRO-8)
+
+Override the profiler for the duration of the session:
+
+```text
+/reasoning set mode=deep      # force Deep until cleared
+/reasoning set mode=fast      # force Fast
+/reasoning set mode=auto      # return to profiler defaults
+/reasoning clear              # alias for set mode=auto
+/reasoning                    # show the current override
+```
+
+The override **persists for the entire conversation** (mirrors how superpower overrides work). The next prompt will run under the forced mode regardless of what the profiler would recommend — `/reasoning set mode=off` will bypass VRO entirely for every subsequent turn.
+
+### `/thinking` vs `/reasoning` — they are different things
+
+| Surface | Scope | Affects | Example |
+|---|---|---|---|
+| `/thinking <level>` | Provider superpower | The model's chain-of-thought depth (GLM: `disabled`/`enabled`/`high`/`max`) | `/thinking max` |
+| `/reasoning set mode=<X>` | VRO orchestrator | Which strategy + budget the orchestrator uses (PRD §8.1) | `/reasoning set mode=deep` |
+
+`/reasoning <level>` (e.g. `/reasoning high`) still resolves to the GLM `thinking` superpower for backward compatibility — the VRO-8 behavior is gated by the `set mode=` / `clear` / no-argument patterns.
+
+### ✓ LEARNED — Verified Workflow Learning (VRO-7, PRD §11.9)
+
+After a successful complex-strategy turn (ReAct, GVR, parallel candidates, tree search, or PCA), the orchestrator summarizes the trajectory into a sanitized, generalized `ProceduralMemory` recipe and pushes a **✓ LEARNED** notice through the Reasoning Panel:
+
+```
+✓ LEARNED Workflow extracted (3 step(s), strategy=`tool_grounded_react`)
+        and saved to cognitive memory.
+```
+
+The extraction runs through a `SecretScrubber` first — AWS keys, JWTs, bearer tokens, IPs, and high-entropy strings are redacted to `[REDACTED:<KIND>]` placeholders **before** any byte is persisted. Extraction errors never affect the underlying turn; they surface as `unresolved_risks` notes. `PrivacyMode::Private` requests are rejected entirely (no procedure is built or persisted).
+
+### How VRO interacts with the live tool surface
+
+- The `tool_grounded_react` strategy (VRO-5) routes through a real LM Studio `ReactAgent` bundle when configured — `Actions` and `Observations` stream live into the Reasoning Panel as `▶ ACTION` / `↳ OBSERVATION` / `✗ ERROR` / `✓ FINISH` lines, alongside the diagnostic header above.
+- The other nine strategies execute in the background; only the LEARNED notice and the final answer land in the panel.
+- VRO is **off by default** (PRD §21 — zero behavior regression when disabled). It activates only when `[reasoning] enabled = true` is set in the runtime config OR a `/reasoning set mode=<X>` override is in force.
+
 ## Configuration
 
 All configurable from the TUI — no restart needed:
@@ -152,7 +243,8 @@ All configurable from the TUI — no restart needed:
 | Option | Values | Description |
 |---|---|---|
 | **Model** | GLM-5.2, GLM-5-Turbo, GLM-4.7, GLM-4.6 (+ vision models) | Model list syncs to the selected API plan |
-| **Reasoning** | Off, Enabled, High, Max | Session-scoped reasoning depth |
+| **Reasoning Depth** | Off, Enabled, High, Max | Session-scoped GLM thinking depth (provider superpower; `/thinking`) |
+| **Reasoning Mode (VRO)** | Auto, Fast, Balanced, Deep, Maximum, Off | VRO orchestrator mode override (`/reasoning set mode=…`); see [Reasoning Orchestrator](#reasoning-orchestrator-vro) |
 | **API Plan** | Coding, Standard, BigModel (CN) | Switch endpoints |
 | **Permissions** | Ask, Read Only, Bypass | Gate destructive tools |
 | **Generation** | Balanced, Precise, Exploratory | Temperature / sampling strategy |
@@ -235,7 +327,7 @@ apps/
 crates/
 ├── vesper-cognition/     cognitive memory engine (SQLite + FTS5 + entity graph + neural embeddings)
 ├── vesper-memory/        Durable memory graph, skills, profile, awareness ledger
-├── vesper-agent/         Multi-turn tool-executing agent loop (Tier C)
+├── vesper-agent/         Multi-turn agent loop + Vesper Reasoning Orchestrator (VRO)
 ├── vesper-runtime/       Provider-neutral session actors + reasoning dial
 ├── vesper-provider-glm/  Z.ai GLM provider adapter (auth, catalog, SSE, retry)
 ├── vesper-mcp/           MCP stdio client + Ed25519-signed plugin loader

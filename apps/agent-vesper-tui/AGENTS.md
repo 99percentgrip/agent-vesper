@@ -207,8 +207,11 @@ business logic.
   exact PRD §10.3 / §8.1 / §14.2 wire labels so the panel header matches the
   JSON shape byte-for-byte. (3) `format_learning_extraction_notice` renders
   the **✓ LEARNED** notice pushed through the trajectory channel after a
-  successful ReAct turn (directive 3) — it is purely presentational; the
-  actual VRO-7 procedural-memory persistence happens in
+  successful VRO turn — **symmetric across both spawn paths** (audit fix):
+  `spawn_vro_react_turn` (ReAct) and `spawn_vro_turn` (GVR / parallel
+  candidates / tree search / PCA) both emit it when the outcome status is
+  `Succeeded` and at least one model call was issued. It is purely
+  presentational; the actual VRO-7 procedural-memory persistence happens in
   `VroOrchestrator::execute_with_learning`, which is unchanged. The override
   is honored in three wiring sites: the `should_vro` route check uses
   `effective_reasoning_mode()` (so `Off` routes through the direct

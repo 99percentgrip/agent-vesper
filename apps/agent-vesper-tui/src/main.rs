@@ -4101,6 +4101,14 @@ fn spawn_vro_turn(
     session: &mut TuiSession,
 ) -> Result<(), String> {
     let (tx, rx) = mpsc::unbounded_channel::<AgentEvent>();
+    // VRO-7 (directive 3, audit fix): give the non-ReAct VRO path a
+    // trajectory channel too, so the **✓ LEARNED** notice can flow into
+    // the Reasoning Panel after a successful GVR / parallel-candidates /
+    // bounded-tree-search / PCA turn. Before this fix, only the ReAct
+    // path (`spawn_vro_react_turn`) emitted the notice — an asymmetry the
+    // VRO-8 final audit caught. The channel is otherwise unused (no live
+    // Action/Observation streaming), so it is purely a notice channel.
+    let (traj_tx, traj_rx) = mpsc::unbounded_channel::<String>();
     let agent = Arc::clone(agent);
     let vro = vro.clone();
     let root = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
@@ -4138,6 +4146,21 @@ fn spawn_vro_turn(
 
         let text = vesper_domain::ContentText::new(content)
             .unwrap_or_else(|_| vesper_domain::ContentText::new("(error)").expect("bounded"));
+
+        // VRO-7 (PRD §11.9, directive 3): emit the LEARNED notice after a
+        // successful GVR/PCA/tree-search turn — symmetric with the ReAct
+        // path's notice. `model_calls` is the same step-count proxy used
+        // in `spawn_vro_react_turn`. Purely presentational; the actual
+        // procedural-memory persistence happens in
+        // `VroOrchestrator::execute_with_learning` (unchanged).
+        if outcome.status == vesper_domain::OutcomeStatus::Succeeded && outcome.cost.model_calls > 0
+        {
+            let _ = traj_tx.send(format_learning_extraction_notice(
+                "generate_verify_repair",
+                outcome.cost.model_calls as usize,
+            ));
+        }
+
         let _ = tx.send(AgentEvent::Completed {
             outcome: vesper_agent::AgentTurnOutcome::Completed {
                 assistant_content: vec![vesper_domain::ContentPart::Text(text)],
@@ -4150,6 +4173,7 @@ fn spawn_vro_turn(
     });
 
     session.agent_rx = Some(rx);
+    session.trajectory_rx = Some(traj_rx);
     session.agent_running = true;
     session.state.status = Some("WORKING... (VRO orchestrating)".into());
     Ok(())
