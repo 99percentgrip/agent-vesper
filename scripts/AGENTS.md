@@ -5,7 +5,9 @@
 Own the cross-platform installers and uninstallers that download one verified
 release archive, install or remove both `agent-vesper-acp` and
 `agent-vesper-tui` on the user's PATH, and produce the same first-run UX as the
-original Python `native-glm-acp` installer.
+original Python `native-glm-acp` installer. Also owns the ACP Registry PR
+submission payload used to sync the published `agent-vesper` registry entry
+with each release.
 
 ## Ownership
 
@@ -27,6 +29,13 @@ original Python `native-glm-acp` installer.
   exact shell-profile PATH marker owned by `install.sh`.
 - `uninstall.ps1` — Windows uninstaller. Removes only the launcher, bundle,
   and exact user PATH entry owned by `install.ps1`.
+- `acp_pr_439.md` — VRO-9 manual submission payload for the public ACP
+  Registry PR #439 (`agentclientprotocol/registry`). Data-only scaffolding:
+  contains the manifest JSON (mirroring `registry/agent.json`), the PR title,
+  the PR body, and the asset-URL audit table. Not executed; the local
+  installer (`install.sh` / `install.ps1`) consumes `registry/agent.json`
+  from the repo root, NOT this file. Bumped to v0.20.26 by the VRO-9 release
+  to sync the previously-stale `v0.1.0` URLs and reflect VRO capabilities.
 
 ## Local Contracts
 

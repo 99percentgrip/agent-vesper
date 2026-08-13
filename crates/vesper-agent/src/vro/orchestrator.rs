@@ -108,10 +108,29 @@ pub async fn run_generate_verify_repair(
     let mut remaining_repairs = u32::from(budget.max_repairs);
     let mut corrections: Vec<VerificationFinding> = Vec::new();
     let mut cost = InferenceCost::default();
-    let mut last_output: Option<StructuredOutput>;
+    let mut last_output: Option<StructuredOutput> = None;
     let mut attempts = 0u32;
+    // PRD §10.4 ("Budget Manager") — wall-clock enforcement. Captured at
+    // loop entry so the FIRST iteration's elapsed time is the baseline; the
+    // check before every Generate ensures we never start a fresh model call
+    // past the soft ceiling.
+    let started_at = std::time::Instant::now();
 
     loop {
+        // --- Halt (pre-Generate): wall-clock budget exhausted (PRD §10.4) ---
+        // Checked BEFORE each Generate so a long-running repair cannot silently
+        // exceed the user-facing latency ceiling.
+        let elapsed_ms = u64::try_from(started_at.elapsed().as_millis()).unwrap_or(u64::MAX);
+        if elapsed_ms >= budget.max_wall_time_ms {
+            return build_outcome(
+                OutcomeStatus::BudgetExceeded,
+                last_output.clone(),
+                &[],
+                cost,
+                &["max_wall_time_ms exhausted before next generate".to_string()],
+            );
+        }
+
         // --- Generate ---
         attempts += 1;
         let candidate = generator.generate(prompt, &corrections).await;
@@ -120,6 +139,20 @@ pub async fn run_generate_verify_repair(
             .total_tokens
             .saturating_add(candidate.cost.total_tokens);
         last_output = Some(candidate.output.clone());
+
+        // --- Halt (post-Generate): total-token budget exhausted (PRD §10.4) ---
+        // PRD §10.4: "Prevent retries from silently exceeding user limits."
+        // Triggered after the cumulative token count crosses the configured
+        // ceiling so a runaway repair loop cannot quietly overspend.
+        if cost.total_tokens >= budget.max_total_output_tokens {
+            return build_outcome(
+                OutcomeStatus::BudgetExceeded,
+                last_output,
+                &[],
+                cost,
+                &["max_total_output_tokens exhausted before convergence".to_string()],
+            );
+        }
 
         // --- Verify all mandatory verifiers ---
         let ctx = VerificationContext::new(workspace_root.to_path_buf());
@@ -695,5 +728,203 @@ mod tests {
 
         assert_eq!(outcome.status, OutcomeStatus::BudgetExceeded);
         assert_eq!(generator.call_count(), 2);
+    }
+
+    // ======================================================================
+    // Directive 2 — strict budget enforcement (VRO-9, PRD §10.4
+    // "Budget Manager")
+    //
+    // The GVR loop must enforce ALL THREE budget ceilings — model-call,
+    // total-token, wall-clock — and trigger OutcomeStatus::BudgetExceeded on
+    // breach. The existing tests above cover model-call; the two below cover
+    // total-token and wall-clock.
+    // ======================================================================
+
+    /// Generator that emits a fixed large `total_tokens` per call so a tight
+    /// `max_total_output_tokens` budget trips on the second iteration.
+    struct HeavyTokenGenerator {
+        outputs: Mutex<Vec<StructuredOutput>>,
+        call_count: Mutex<u32>,
+    }
+    impl HeavyTokenGenerator {
+        fn new(outputs: Vec<StructuredOutput>) -> Self {
+            Self {
+                outputs: Mutex::new(outputs),
+                call_count: Mutex::new(0),
+            }
+        }
+        fn call_count(&self) -> u32 {
+            *self.call_count.lock().expect("poisoned")
+        }
+    }
+    impl CandidateGenerator for HeavyTokenGenerator {
+        fn generate<'a>(
+            &'a self,
+            _prompt: &'a str,
+            _corrections: &'a [VerificationFinding],
+        ) -> Pin<Box<dyn Future<Output = GeneratedCandidate> + Send + 'a>> {
+            Box::pin(async move {
+                *self.call_count.lock().expect("poisoned") += 1;
+                let output = {
+                    let mut outputs = self.outputs.lock().expect("poisoned");
+                    if outputs.len() == 1 {
+                        outputs[0].clone()
+                    } else {
+                        outputs.remove(0)
+                    }
+                };
+                GeneratedCandidate {
+                    output,
+                    cost: InferenceCost {
+                        model_calls: 1,
+                        // Each call burns 1_000 tokens. With
+                        // max_total_output_tokens = 1_500, the loop trips on
+                        // the SECOND iteration (cumulative 2_000 > 1_500)
+                        // BEFORE max_model_calls=10 would.
+                        total_tokens: 1_000,
+                    },
+                }
+            })
+        }
+        fn boxed_clone(&self) -> Box<dyn CandidateGenerator> {
+            Box::new(Self {
+                outputs: Mutex::new(self.outputs.lock().expect("poisoned").clone()),
+                call_count: Mutex::new(*self.call_count.lock().expect("poisoned")),
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn loop_halts_budget_exceeded_when_max_total_output_tokens_exhausted() {
+        // The verifier always fails repairable; the generator emits 1_000
+        // tokens per call. With max_total_output_tokens=1_500, the loop
+        // runs: generate (1_000) -> fail -> generate (2_000 > 1_500) ->
+        // HALT BudgetExceeded. So exactly 2 generations, even though
+        // max_model_calls=10 and max_repairs=10 would allow more.
+        let registry = registry_with(vec![Box::new(FakeVerifier::new(
+            VID,
+            vec![failed_repairable(VID, "broken")],
+        ))]);
+        let generator = HeavyTokenGenerator::new(vec![serde_json::json!({"answer": "x"})]);
+
+        let outcome = run_generate_verify_repair(
+            "fix the bug",
+            &[VerifierId::new(VID).unwrap()],
+            &registry,
+            &generator,
+            Path::new("/tmp/workspace"),
+            ReasoningBudget {
+                max_repairs: 10,
+                max_model_calls: 10,
+                max_total_output_tokens: 1_500,
+                // Generous wall-clock so only the token ceiling trips here.
+                max_wall_time_ms: 60_000,
+                ..ReasoningBudget::balanced()
+            },
+        )
+        .await;
+
+        assert_eq!(
+            outcome.status,
+            OutcomeStatus::BudgetExceeded,
+            "max_total_output_tokens breach must trigger BudgetExceeded"
+        );
+        // Two generations: 1_000 + 1_000 = 2_000 > 1_500 ceiling.
+        assert_eq!(generator.call_count(), 2);
+        // The risk message identifies the breached ceiling.
+        assert!(
+            outcome
+                .unresolved_risks
+                .iter()
+                .any(|r| r.contains("max_total_output_tokens")),
+            "risk must name the breached budget: {:?}",
+            outcome.unresolved_risks
+        );
+        // Cost reflects the overspend: cumulative tokens crossed 1_500.
+        assert!(outcome.cost.total_tokens >= 1_500);
+    }
+
+    #[tokio::test]
+    async fn loop_halts_budget_exceeded_when_max_wall_time_ms_exhausted() {
+        // max_wall_time_ms = 0 — the strict-edge posture: ANY elapsed time
+        // (even 0 ns on the first pre-Generate check) trips the ceiling. The
+        // wall-clock check fires BEFORE the first Generate, returning
+        // BudgetExceeded with zero model calls. The generator must never be
+        // invoked.
+        //
+        // Note: `started_at` is captured INSIDE run_generate_verify_repair,
+        // so a pre-call sleep in the test body does not advance the elapsed
+        // clock — only a zero-or-negative ceiling reliably trips on the very
+        // first iteration. This test deliberately exercises the strict-edge
+        // posture (max_wall_time_ms = 0); production presets ship ≥ 30 s.
+        let registry = registry_with(vec![Box::new(FakeVerifier::new(
+            VID,
+            vec![failed_repairable(VID, "broken")],
+        ))]);
+        let generator = HeavyTokenGenerator::new(vec![serde_json::json!({"answer": "x"})]);
+
+        let outcome = run_generate_verify_repair(
+            "fix the bug",
+            &[VerifierId::new(VID).unwrap()],
+            &registry,
+            &generator,
+            Path::new("/tmp/workspace"),
+            ReasoningBudget {
+                max_repairs: 10,
+                max_model_calls: 10,
+                max_total_output_tokens: 100_000,
+                // Strict-edge wall-clock so only this ceiling trips here.
+                max_wall_time_ms: 0,
+                ..ReasoningBudget::balanced()
+            },
+        )
+        .await;
+
+        assert_eq!(
+            outcome.status,
+            OutcomeStatus::BudgetExceeded,
+            "max_wall_time_ms breach must trigger BudgetExceeded"
+        );
+        // The generator was never called — the pre-Generate wall-clock
+        // check tripped first.
+        assert_eq!(
+            generator.call_count(),
+            0,
+            "wall-clock halt must fire before any Generate"
+        );
+        // The risk message identifies the breached ceiling.
+        assert!(
+            outcome
+                .unresolved_risks
+                .iter()
+                .any(|r| r.contains("max_wall_time_ms")),
+            "risk must name the breached budget: {:?}",
+            outcome.unresolved_risks
+        );
+    }
+
+    #[tokio::test]
+    async fn loop_with_high_token_budget_does_not_trip_on_small_workload() {
+        // Sanity: a normal workload (one short successful generation) under
+        // the calibrated Balanced preset (24_576 tokens / 180 s wall) must
+        // NOT trip the new budget enforcement. This is the regression guard:
+        // the calibrated defaults must absorb ordinary turns.
+        let registry = registry_with(vec![Box::new(FakeVerifier::new(VID, vec![passed(VID)]))]);
+        let generator = FakeGenerator::new(vec![serde_json::json!({"answer": "ok"})]);
+
+        let outcome = run_generate_verify_repair(
+            "fix the bug",
+            &[VerifierId::new(VID).unwrap()],
+            &registry,
+            &generator,
+            Path::new("/tmp/workspace"),
+            ReasoningBudget::balanced(),
+        )
+        .await;
+
+        assert_eq!(outcome.status, OutcomeStatus::Succeeded);
+        assert_eq!(generator.call_count(), 1);
+        // The FakeGenerator emits 100 tokens — well under 24_576.
+        assert_eq!(outcome.cost.total_tokens, 100);
     }
 }

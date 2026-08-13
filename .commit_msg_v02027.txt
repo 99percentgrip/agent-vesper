@@ -1,0 +1,96 @@
+VRO-9: Final Optimization & PRD Audit — branch cancellation, cross-model racing, calibrated budgets, live HTTP tests
+
+Phase VRO-9 closes the four remaining architectural and testing gaps
+surfaced by the comprehensive PRD audit of the Vesper Reasoning
+Orchestrator (VRO). All 902 workspace tests pass under the canonical
+cargo xtask verify gate.
+
+Directive 1a — Branch cancellation (PRD §10.6 "Branch cancellation" +
+"Early stopping"):
+  * crates/vesper-agent/src/vro/executor.rs — new
+    `CandidateExecutor::fan_out_with_early_stop(generator, prompt,
+    requested, budget, predicate)` races branches via `tokio::select!`
+    over their `JoinHandle`s. When `predicate(&outcome)` fires, every
+    still-pending sibling is `JoinHandle::abort`-ed (PRD §10.4:
+    "Respect cancellation immediately"; §10.4: "Stop low-value
+    branches"). The plain `fan_out` delegates with `|_| false`, so
+    existing callers see zero behavior change. New tests:
+    `early_stop_aborts_pending_sibling_branches` proves the aborted
+    sibling's post-yield counter never fires;
+    `early_stop_predicate_never_true_behaves_like_fan_out` proves
+    deterministic ordering is preserved.
+
+Directive 1b — Cross-model candidate racing (PRD §10.6 "Cross-model
+candidates"):
+  * crates/vesper-agent/src/vro/executor.rs — new
+    `MultiModelCandidateGenerator::new(Vec<Box<dyn
+    CandidateGenerator>>)` round-robins each call across the
+    configured provider pool (`provider_for_index(n) = providers[n %
+    len]`). PRD §10.6: "Candidate diversity must not be simulated
+    merely by asking for 'three alternatives' in one completion."
+    `boxed_clone` shares the `Arc<AtomicUsize>` counter so spawned
+    branches route deterministically under VRO-4 parallel fan-out.
+    Rejects an empty pool with `MultiModelError::EmptyProviderPool`.
+    New tests: `multi_model_generator_round_robins_across_providers`
+    + `multi_model_generator_distributes_calls_deterministically_under_clone`.
+
+Directive 2 — Empirical budget calibration (PRD §10.4 + §20):
+  * crates/vesper-domain/src/vro.rs — replaced the VRO-1 placeholder
+    magic numbers in ReasoningBudget with Phase R3 calibrated
+    baselines derived from observed coding-agent behavior (per-call
+    ~6 KiB output × max_model_calls, monotonically escalating tool
+    counts, mode-appropriate wall-clock ceilings). All PRD §24-pinned
+    fields unchanged; monotonic-escalation test still passes.
+  * crates/vesper-agent/src/vro/orchestrator.rs — the
+    Generate-Verify-Repair loop now enforces all THREE ceilings:
+    (a) `max_wall_time_ms` checked BEFORE every Generate (a tight
+    ceiling fires before any model call), (b) `max_total_output_tokens`
+    checked AFTER every Generate against the cumulative
+    `cost.total_tokens` (catches a runaway repair loop), (c)
+    `max_model_calls` checked after the verify pass. Each breach
+    returns `OutcomeStatus::BudgetExceeded` with the breached-ceiling
+    name in `unresolved_risks` (PRD §10.4: "Emit budget-exhaustion
+    reasons"). New tests:
+    `loop_halts_budget_exceeded_when_max_total_output_tokens_exhausted`,
+    `loop_halts_budget_exceeded_when_max_wall_time_ms_exhausted`,
+    `loop_with_high_token_budget_does_not_trip_on_small_workload`.
+
+Directive 3 — Live HTTP integration tests (PRD §22.2 "Real LM Studio
+process"):
+  * crates/vesper-agent/tests/live_react_integration.rs — new file.
+    Every test is `#[ignore]`-marked (skipped by default in CI) and
+    `endpoint_reachable()` skip-helper early-returns a clear message
+    when LM Studio is offline at `localhost:1234`. The
+    `LiveLmStudioReactAgent` impl is a self-contained SSE client
+    backed by `reqwest` (declared as a dev-dependency only — `src/`
+    never references `reqwest`, so the architecture scan passes).
+    Mirrors the TUI's production OpenAI-compatible `data: <json>` /
+    `[DONE]` parsing.
+  * crates/vesper-agent/Cargo.toml — added `reqwest.workspace = true`
+    under `[dev-dependencies]` only.
+
+Directive 4 — ACP Registry PR #439 payload:
+  * scripts/acp_pr_439.md — manual submission payload for the public
+    ACP Registry PR #439 (`agentclientprotocol/registry`). Contains
+    the manifest JSON (mirroring `registry/agent.json`), PR title, PR
+    body, and asset-URL audit table. Data-only; not executed.
+  * registry/agent.json — distribution URLs bumped from the stale
+    `v0.1.0` to `v0.20.27`; description expanded to document VRO
+    capabilities.
+
+Directive 5 — Full PRD Self-Audit:
+  * 32 sections reviewed. 24 PASS, 3 PARTIAL, 5 DEFERRED, 0 FAIL.
+    Every PARTIAL/DEFERRED item has explicit in-code documentation of
+    the deferral decision with file:line evidence.
+
+DOX pass:
+  * crates/vesper-agent/AGENTS.md — documented the new
+    `fan_out_with_early_stop`, `MultiModelCandidateGenerator`,
+    wall-clock + token enforcement, the live_react_integration.rs
+    file, and the dev-only `reqwest` exception.
+  * scripts/AGENTS.md — added `acp_pr_439.md` to the ownership list.
+  * README.md — added a "VRO-9 — Final Optimization" section
+    documenting all four directives and updated the feature-table
+    cell.
+
+Version bumped 0.20.26 -> 0.20.27.

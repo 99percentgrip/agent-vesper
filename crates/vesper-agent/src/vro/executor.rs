@@ -24,8 +24,10 @@
 //! and [`GenerateVerifyRepair`](vesper_domain::ReasoningStrategy) paths are
 //! completely unaffected.
 
+use std::future::Future;
+use std::pin::Pin;
 use tokio::task::JoinHandle;
-use vesper_domain::{Candidate, CandidateId, ReasoningBudget};
+use vesper_domain::{Candidate, CandidateId, ReasoningBudget, VerificationFinding};
 
 use super::orchestrator::{CandidateGenerator, GeneratedCandidate};
 
@@ -174,6 +176,13 @@ impl CandidateExecutor {
     /// `budget.max_parallel_branches`) and returns the aggregated candidates
     /// sorted by their deterministic [`CandidateId`].
     ///
+    /// Equivalent to [`fan_out_with_early_stop`](Self::fan_out_with_early_stop)
+    /// with a predicate that never stops early (every branch is awaited). Used
+    /// by the [`ParallelCandidatesConsensus`] /
+    /// [`ParallelCandidatesJudge`] strategies where the verifier only runs
+    /// AFTER every candidate is in hand (PRD §11.4 / §11.5: "compare N
+    /// candidates").
+    ///
     /// Each branch runs on its own `tokio::task::spawn` and receives a deep
     /// clone of the per-branch [`BranchContext`]. Branches that panic are
     /// dropped (the strategy still proceeds with whatever survived); if every
@@ -190,7 +199,49 @@ impl CandidateExecutor {
         requested: usize,
         budget: ReasoningBudget,
     ) -> Result<Vec<BranchOutcome>, ExecutorError> {
+        self.fan_out_with_early_stop(generator, prompt, requested, budget, |_| false)
+            .await
+    }
+
+    /// Race-aware fan-out (PRD §10.6 "Branch cancellation" + "Early stopping
+    /// when a verifier establishes success").
+    ///
+    /// Identical spawn/isolation/ordering contract as
+    /// [`fan_out`](Self::fan_out), with one addition: branches are polled
+    /// concurrently with `tokio::select!` over their `JoinHandle`s. As soon
+    /// as a branch completes, `early_stop(&outcome)` is consulted. If it
+    /// returns `true` the executor **immediately** [`abort`](JoinHandle::abort)s
+    /// every still-pending sibling and returns the outcomes collected so far
+    /// (including the triggering outcome). PRD §10.6: "Respect cancellation
+    /// immediately"; PRD §10.4: "Stop low-value branches".
+    ///
+    /// `early_stop` is the verifier hook: the caller supplies a closure that
+    /// returns `true` when the candidate is **definitively** verified-success
+    /// (e.g. a structured-output field matches the expected schema AND the
+    /// associated verifier passed). The executor never interprets candidate
+    /// contents — that decision is the strategy layer's responsibility.
+    ///
+    /// **Determinism:** when no early-stop fires, behavior is byte-identical
+    /// to [`fan_out`](Self::fan_out). When early-stop fires, the returned
+    /// vector is still sorted by `CandidateId` (lexical = spawn order), so
+    /// the deterministic-ordering contract holds for the subset that ran.
+    ///
+    /// **Zero-breakage:** existing callers use [`fan_out`](Self::fan_out),
+    /// which delegates here with `|_| false` (never stop early). The new
+    /// surface is opt-in.
+    pub async fn fan_out_with_early_stop<F>(
+        &self,
+        generator: &dyn CandidateGenerator,
+        prompt: &str,
+        requested: usize,
+        budget: ReasoningBudget,
+        early_stop: F,
+    ) -> Result<Vec<BranchOutcome>, ExecutorError>
+    where
+        F: Fn(&BranchOutcome) -> bool + Send + Sync,
+    {
         let branch_count = self.capped_branch_count(requested, &budget)?;
+        let early_stop = std::sync::Arc::new(early_stop);
 
         // Build one isolated context per branch up front. Each branch task
         // receives its own clone_of-clone so even if the task mutates its
@@ -205,14 +256,8 @@ impl CandidateExecutor {
         // requires `'static + Send`).
         let mut handles: Vec<JoinHandle<Option<BranchOutcome>>> = Vec::new();
         for (index, context) in contexts.iter().enumerate() {
-            // Deep-clone the context FOR THIS BRANCH. The branch's mutation
-            // surface is `&mut BranchContext` on its own allocation.
             let mut branch_context = context.clone_for_branch();
             let prompt_owned = prompt.to_string();
-            // Strategy variant tag: lets a future VRO phase diversify prompts
-            // per branch (PRD §10.6 "diverse sampling"). For VRO-4 every
-            // branch uses the same prompt; the variant tag is still recorded
-            // so the candidate is self-describing.
             let strategy_variant = format!("parallel-branch-{index}");
             let generator_clone = generator.boxed_clone();
             let handle = tokio::spawn(async move {
@@ -220,8 +265,6 @@ impl CandidateExecutor {
                     .generate(&prompt_owned, &[])
                     .await
                     .into_candidate(candidate_id_for(index), &strategy_variant);
-                // Record a scratch note in the branch-local context so tests
-                // can assert that sibling branches do NOT see this note.
                 branch_context.record_note(format!(
                     "branch-{index}-completed (output-len={})",
                     candidate.output.to_string().len()
@@ -234,14 +277,71 @@ impl CandidateExecutor {
             handles.push(handle);
         }
 
-        // Await every branch. Branches that panicked return `Err` from
-        // `JoinHandle::await`; we drop those and proceed with the survivors
-        // (PRD §18: degrade gracefully instead of hard-failing one bad
-        // branch).
+        // Race-aware aggregation: poll every handle concurrently. As soon as
+        // one completes, check the early-stop predicate; if it fires, abort
+        // the remaining siblings and return what we have.
         let mut outcomes: Vec<BranchOutcome> = Vec::with_capacity(handles.len());
-        for handle in handles {
-            match handle.await {
-                Ok(Some(outcome)) => outcomes.push(outcome),
+        while !handles.is_empty() {
+            // Poll all pending handles concurrently; resolve one per loop
+            // iteration. tokio::select! over a slice requires a manual loop
+            // (no variadic macro on dynamic counts), so we use futures::join
+            // semantics via `tokio::select!` on each handle's await in turn.
+            // Cheaper approach: `tokio::task::yield_now` then check which
+            // handles have completed via `is_finished()` (no I/O blocking).
+            //
+            // We instead use a portable pattern: poll handles in order with
+            // `tokio::select!` race over a single batched future built from
+            // the live handles. To keep the implementation allocation-free
+            // and dependency-light (no futures::stream), we drive each handle
+            // with `tokio::select!` against a `tokio::time::sleep(0)` poll
+            // tick; this is O(N) per resolution and bounded by branch_count
+            // (≤ max_parallel_branches ≤ max_global_parallel_branches = 4).
+            let mut resolved_index = None;
+            for (slot, handle) in handles.iter_mut().enumerate() {
+                // tokio::select! races `handle.await` against an instant
+                // wakeup; whichever is ready first wins. The instant branch
+                // never wins unless `handle.await` is pending AND nothing
+                // else wakes the task — making this effectively a non-
+                // blocking poll. When the handle is ready, we capture its
+                // slot and break.
+                tokio::select! {
+                    biased;
+                    joined = handle => {
+                        resolved_index = Some((slot, joined));
+                        break;
+                    }
+                    _ = tokio::task::yield_now() => {}
+                }
+            }
+
+            let Some((slot, joined)) = resolved_index else {
+                // No handle resolved this pass; yield once and retry. This
+                // cannot loop forever because at least one spawned task will
+                // eventually complete (every generator future resolves).
+                tokio::task::yield_now().await;
+                continue;
+            };
+
+            // Remove the resolved handle from the live set.
+            handles.remove(slot);
+            match joined {
+                Ok(Some(outcome)) => {
+                    if early_stop.as_ref()(&outcome) {
+                        // Cancellation: abort every still-pending sibling.
+                        for pending in &handles {
+                            pending.abort();
+                        }
+                        // Drain remaining (aborted) handles so JoinHandle
+                        // resources are reclaimed and panics are silenced.
+                        for pending in handles.drain(..) {
+                            // JoinError from abort is expected; ignore it.
+                            let _ = pending.await;
+                        }
+                        outcomes.push(outcome);
+                        break;
+                    }
+                    outcomes.push(outcome);
+                }
                 Ok(None) => {} // generator returned a poison sentinel (none today)
                 Err(_join_err) => {} // branch task panicked — skip
             }
@@ -252,7 +352,9 @@ impl CandidateExecutor {
         }
 
         // Deterministic ordering: sort by candidate_id. The IDs are monotonic
-        // and zero-padded so lexical sort matches spawn order.
+        // and zero-padded so lexical sort matches spawn order. Early-stop
+        // outcomes are a strict subset of all outcomes, but the sort still
+        // applies (and is stable w.r.t. spawn order).
         outcomes.sort_by(|a, b| {
             a.candidate
                 .candidate_id
@@ -260,6 +362,110 @@ impl CandidateExecutor {
                 .cmp(b.candidate.candidate_id.as_str())
         });
         Ok(outcomes)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Multi-model candidate generator (PRD §10.6 "Cross-model candidates")
+// ---------------------------------------------------------------------------
+
+/// A [`CandidateGenerator`] that fans out a single request across **multiple
+/// heterogeneous providers** (PRD §10.6: "Cross-model candidates").
+///
+/// Each branch index N is routed to the provider at slot `N % providers.len()`
+/// (round-robin diversity). This ensures reasoning diversity even when every
+/// provider receives the identical prompt — the directive's "separate inference
+/// calls with controlled variation in … model" (PRD §10.6: "Candidate diversity
+/// must not be simulated merely by asking for 'three alternatives' in one
+/// completion").
+///
+/// `boxed_clone` returns a deep clone holding one `boxed_clone` of every
+/// underlying provider — so the VRO-4 executor can give each spawned branch
+/// an owned `'static` handle while preserving the round-robin routing.
+///
+/// Construction is fallible: an empty provider list is rejected (no branches
+/// could ever run).
+pub struct MultiModelCandidateGenerator {
+    /// Round-robin provider pool. The first call uses index 0, the second
+    /// index 1, etc. Wraps modulo `providers.len()`.
+    providers: Vec<Box<dyn CandidateGenerator>>,
+    /// Monotonic call counter (atomic so concurrent `boxed_clone`s and
+    /// invocations route deterministically under spawn).
+    counter: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl std::fmt::Debug for MultiModelCandidateGenerator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MultiModelCandidateGenerator")
+            .field("provider_count", &self.providers.len())
+            .field(
+                "next_call_index",
+                &self.counter.load(std::sync::atomic::Ordering::Relaxed),
+            )
+            .finish()
+    }
+}
+
+impl MultiModelCandidateGenerator {
+    /// Builds a multi-model generator over `providers`. Returns `Err` if the
+    /// pool is empty (no branches could ever run — a misconfiguration the
+    /// composition boundary should catch).
+    pub fn new(providers: Vec<Box<dyn CandidateGenerator>>) -> Result<Self, MultiModelError> {
+        if providers.is_empty() {
+            return Err(MultiModelError::EmptyProviderPool);
+        }
+        Ok(Self {
+            providers,
+            counter: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        })
+    }
+
+    /// Number of providers in the round-robin pool.
+    #[must_use]
+    pub fn provider_count(&self) -> usize {
+        self.providers.len()
+    }
+
+    /// Picks the provider for call index `n` (round-robin).
+    fn provider_for_index(&self, n: usize) -> &dyn CandidateGenerator {
+        self.providers[n % self.providers.len()].as_ref()
+    }
+}
+
+/// Errors raised by [`MultiModelCandidateGenerator`] construction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum MultiModelError {
+    /// `MultiModelCandidateGenerator::new` was called with an empty pool.
+    #[error("multi-model generator requires at least one provider")]
+    EmptyProviderPool,
+}
+
+impl CandidateGenerator for MultiModelCandidateGenerator {
+    fn generate<'a>(
+        &'a self,
+        prompt: &'a str,
+        corrections: &'a [VerificationFinding],
+    ) -> Pin<Box<dyn Future<Output = GeneratedCandidate> + Send + 'a>> {
+        // Allocate the call index UP FRONT so each invocation gets a
+        // monotonically increasing, deterministic routing slot.
+        let call_index = self
+            .counter
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let provider = self.provider_for_index(call_index);
+        provider.generate(prompt, corrections)
+    }
+
+    fn boxed_clone(&self) -> Box<dyn CandidateGenerator> {
+        // Deep-clone every underlying provider so the VRO-4 executor can
+        // hand each spawned branch an owned, fully-isolated `'static`
+        // handle. The counter is shared (Arc) so all clones observe the
+        // same monotonically increasing call stream.
+        let cloned_providers: Vec<Box<dyn CandidateGenerator>> =
+            self.providers.iter().map(|p| p.boxed_clone()).collect();
+        Box::new(Self {
+            providers: cloned_providers,
+            counter: std::sync::Arc::clone(&self.counter),
+        })
     }
 }
 
@@ -678,5 +884,350 @@ mod tests {
         assert_eq!(seen, vec!["the-prompt-text".to_string(); 2]);
         // Silence unused-warning when request_with is referenced elsewhere.
         let _ = request_with("unused");
+    }
+
+    // ======================================================================
+    // Directive 1a — race-aware fan-out with early-stop + cancellation
+    // (VRO-9, PRD §10.6 "Branch cancellation" + "Early stopping")
+    // ======================================================================
+
+    /// Generator that yields N times then returns. Used to prove the
+    /// executor's `tokio::select!` race actually cancels still-pending
+    /// siblings when early-stop fires.
+    struct CountingSleepyGenerator {
+        label: String,
+        yields: usize,
+        output: StructuredOutput,
+        ran_to_completion: Arc<AtomicUsize>,
+    }
+
+    impl CountingSleepyGenerator {
+        fn new(label: impl Into<String>, yields: usize, output: StructuredOutput) -> Self {
+            Self {
+                label: label.into(),
+                yields,
+                output,
+                ran_to_completion: Arc::new(AtomicUsize::new(0)),
+            }
+        }
+    }
+
+    impl CandidateGenerator for CountingSleepyGenerator {
+        fn generate<'a>(
+            &'a self,
+            _prompt: &'a str,
+            _corrections: &'a [vesper_domain::VerificationFinding],
+        ) -> Pin<Box<dyn Future<Output = GeneratedCandidate> + Send + 'a>> {
+            let output = self.output.clone();
+            let label = self.label.clone();
+            let yields = self.yields;
+            let counter = Arc::clone(&self.ran_to_completion);
+            Box::pin(async move {
+                // Yield several times so the executor races branches
+                // concurrently (otherwise a no-op generator resolves before
+                // any sibling is even spawned).
+                for _ in 0..yields {
+                    tokio::task::yield_now().await;
+                }
+                counter.fetch_add(1, Ordering::SeqCst);
+                GeneratedCandidate {
+                    output: serde_json::json!({
+                        "label": label,
+                        "wrapped": output,
+                    }),
+                    cost: InferenceCost {
+                        model_calls: 1,
+                        total_tokens: 10,
+                    },
+                }
+            })
+        }
+
+        fn boxed_clone(&self) -> Box<dyn CandidateGenerator> {
+            Box::new(Self {
+                label: self.label.clone(),
+                yields: self.yields,
+                output: self.output.clone(),
+                ran_to_completion: Arc::clone(&self.ran_to_completion),
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn early_stop_aborts_pending_sibling_branches() {
+        // Two branches. Branch 0 completes first (0 yields) and matches the
+        // early-stop predicate. Branch 1 would have completed later (many
+        // yields) but MUST be aborted and never reach its post-yield
+        // counter increment.
+        let fast = CountingSleepyGenerator::new("fast", 0, serde_json::json!({"v": 1}));
+        let slow = CountingSleepyGenerator::new("slow", 50, serde_json::json!({"v": 2}));
+        let counter_slow = Arc::clone(&slow.ran_to_completion);
+
+        let multi = MultiModelCandidateGenerator::new(vec![Box::new(fast), Box::new(slow)])
+            .expect("two providers");
+        let executor = CandidateExecutor::new();
+        let outcomes = executor
+            .fan_out_with_early_stop(
+                &multi,
+                "compute",
+                2,
+                ReasoningBudget::balanced(),
+                |outcome| {
+                    // Early-stop fires when the candidate's JSON `label`
+                    // equals "fast" (the branch we expect to finish first).
+                    outcome
+                        .candidate
+                        .output
+                        .get("label")
+                        .and_then(|v| v.as_str())
+                        == Some("fast")
+                },
+            )
+            .await
+            .expect("early-stop fan_out must succeed");
+
+        // We got back at least one outcome (the fast branch).
+        assert!(!outcomes.is_empty());
+        // The slow branch was aborted BEFORE its generator finished — the
+        // post-yield counter increment must NOT have fired.
+        assert_eq!(
+            counter_slow.load(Ordering::SeqCst),
+            0,
+            "aborted sibling must NOT reach its completion counter"
+        );
+        // At least one outcome carries the fast label (the early-stop trigger).
+        assert!(
+            outcomes.iter().any(|o| {
+                o.candidate.output.get("label").and_then(|v| v.as_str()) == Some("fast")
+            }),
+            "early-stop outcomes must include the triggering branch"
+        );
+    }
+
+    #[tokio::test]
+    async fn early_stop_predicate_never_true_behaves_like_fan_out() {
+        // With an always-false predicate, fan_out_with_early_stop must
+        // produce identical results to fan_out: every branch completes, the
+        // deterministic ordering holds, and the count matches.
+        let generator = ConcurrencyCountingGenerator::new(vec![
+            serde_json::json!({"a": 1}),
+            serde_json::json!({"a": 2}),
+            serde_json::json!({"a": 3}),
+        ]);
+        let executor = CandidateExecutor::new();
+        let outcomes = executor
+            .fan_out_with_early_stop(
+                &generator,
+                "compute",
+                3,
+                budget(3),
+                |_| false, // never early-stop
+            )
+            .await
+            .expect("never-stop fan_out must succeed");
+        assert_eq!(outcomes.len(), 3, "no early-stop must await all 3 branches");
+        let ids: Vec<&str> = outcomes
+            .iter()
+            .map(|o| o.candidate.candidate_id.as_str())
+            .collect();
+        assert_eq!(
+            ids,
+            vec!["cand-0000", "cand-0001", "cand-0002"],
+            "deterministic ordering must hold when no early-stop fires"
+        );
+    }
+
+    #[tokio::test]
+    async fn fan_out_delegates_to_early_stop_with_never_predicate() {
+        // fan_out is a thin shim over fan_out_with_early_stop; this sanity
+        // check proves the delegation is wired correctly.
+        let generator = ConcurrencyCountingGenerator::new(vec![serde_json::json!({"v": 1})]);
+        let executor = CandidateExecutor::new();
+        let outcomes = executor
+            .fan_out(&generator, "compute", 1, budget(1))
+            .await
+            .expect("fan_out must succeed");
+        assert_eq!(outcomes.len(), 1);
+        assert_eq!(outcomes[0].candidate.candidate_id.as_str(), "cand-0000");
+    }
+
+    // ======================================================================
+    // Directive 1b — MultiModelCandidateGenerator (VRO-9, PRD §10.6
+    // "Cross-model candidates")
+    // ======================================================================
+
+    /// Records which provider handled each call so tests can assert
+    /// round-robin routing. Each clone gets its own call log shared via
+    /// Arc<Mutex> across boxed_clones so the parent instance observes
+    /// calls made by spawned branches.
+    struct LabeledProvider {
+        label: String,
+        calls: Arc<Mutex<Vec<String>>>,
+    }
+    impl LabeledProvider {
+        fn new(label: impl Into<String>) -> Self {
+            Self {
+                label: label.into(),
+                calls: Arc::new(Mutex::new(Vec::new())),
+            }
+        }
+        fn observed_labels(&self) -> Vec<String> {
+            self.calls.lock().expect("poisoned").clone()
+        }
+    }
+    impl CandidateGenerator for LabeledProvider {
+        fn generate<'a>(
+            &'a self,
+            _prompt: &'a str,
+            _corrections: &'a [vesper_domain::VerificationFinding],
+        ) -> Pin<Box<dyn Future<Output = GeneratedCandidate> + Send + 'a>> {
+            let label = self.label.clone();
+            let calls = Arc::clone(&self.calls);
+            Box::pin(async move {
+                calls.lock().expect("poisoned").push(label.clone());
+                GeneratedCandidate {
+                    output: serde_json::json!({"provider": label}),
+                    cost: InferenceCost {
+                        model_calls: 1,
+                        total_tokens: 5,
+                    },
+                }
+            })
+        }
+        fn boxed_clone(&self) -> Box<dyn CandidateGenerator> {
+            Box::new(Self {
+                label: self.label.clone(),
+                calls: Arc::clone(&self.calls),
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn multi_model_generator_round_robins_across_providers() {
+        // Three providers; fan out 6 branches. Each branch's call should
+        // route round-robin: branch 0 -> provider 0, branch 1 -> provider 1,
+        // branch 2 -> provider 2, branch 3 -> provider 0, …
+        let p0 = Arc::new(LabeledProvider::new("lmstudio"));
+        let p1 = Arc::new(LabeledProvider::new("openai-compat"));
+        let p2 = Arc::new(LabeledProvider::new("remote-api"));
+        let multi = MultiModelCandidateGenerator::new(vec![
+            Box::new(LabeledProviderProxy(Arc::clone(&p0))),
+            Box::new(LabeledProviderProxy(Arc::clone(&p1))),
+            Box::new(LabeledProviderProxy(Arc::clone(&p2))),
+        ])
+        .expect("three providers");
+        assert_eq!(multi.provider_count(), 3);
+
+        let executor = CandidateExecutor::new();
+        let outcomes = executor
+            .fan_out(&multi, "compute", 6, budget(6))
+            .await
+            .expect("fan_out must succeed");
+        assert_eq!(outcomes.len(), 6);
+
+        // Collect the per-branch provider label.
+        let routed: Vec<&str> = outcomes
+            .iter()
+            .map(|o| {
+                o.candidate
+                    .output
+                    .get("provider")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("?")
+            })
+            .collect();
+        // Each provider handled exactly 2 calls (6 / 3 round-robin).
+        // The exact interleaving order is not deterministic across
+        // `tokio::spawn` finish order, so we assert the COUNT per provider
+        // rather than the precise sequence. Sorted by branch index inside
+        // the executor's deterministic ordering, the assignment of branch
+        // indices to providers IS round-robin: branch_index % 3.
+        let mut lmstudio = 0;
+        let mut openai = 0;
+        let mut remote = 0;
+        for label in &routed {
+            match *label {
+                "lmstudio" => lmstudio += 1,
+                "openai-compat" => openai += 1,
+                "remote-api" => remote += 1,
+                _ => {}
+            }
+        }
+        assert_eq!(lmstation_label_call_count(&p0, &p1, &p2), (2, 2, 2));
+        assert_eq!((lmstudio, openai, remote), (2, 2, 2));
+
+        // Round-robin routing evidence: branch 0 routed to lmstudio, branch
+        // 1 to openai-compat, branch 2 to remote-api, branch 3 back to
+        // lmstudio, etc. We can assert this by inspecting the per-branch
+        // candidate output in spawn-order (which the executor sorts back
+        // into by candidate_id).
+        assert_eq!(routed[0], "lmstudio");
+        assert_eq!(routed[1], "openai-compat");
+        assert_eq!(routed[2], "remote-api");
+        assert_eq!(routed[3], "lmstudio");
+        assert_eq!(routed[4], "openai-compat");
+        assert_eq!(routed[5], "remote-api");
+    }
+
+    /// Helper: returns (lmstudio, openai, remote) call counts.
+    fn lmstation_label_call_count(
+        p0: &Arc<LabeledProvider>,
+        p1: &Arc<LabeledProvider>,
+        p2: &Arc<LabeledProvider>,
+    ) -> (usize, usize, usize) {
+        (
+            p0.observed_labels().len(),
+            p1.observed_labels().len(),
+            p2.observed_labels().len(),
+        )
+    }
+
+    /// Thin proxy so we can construct `Box<dyn CandidateGenerator>` from an
+    /// `Arc<LabeledProvider>` (the trait impl is on LabeledProvider directly;
+    /// this lets the test share observation state across the multi-model
+    /// generator and the test assertions).
+    struct LabeledProviderProxy(Arc<LabeledProvider>);
+    impl CandidateGenerator for LabeledProviderProxy {
+        fn generate<'a>(
+            &'a self,
+            prompt: &'a str,
+            corrections: &'a [vesper_domain::VerificationFinding],
+        ) -> Pin<Box<dyn Future<Output = GeneratedCandidate> + Send + 'a>> {
+            self.0.generate(prompt, corrections)
+        }
+        fn boxed_clone(&self) -> Box<dyn CandidateGenerator> {
+            Box::new(LabeledProviderProxy(Arc::clone(&self.0)))
+        }
+    }
+
+    #[test]
+    fn multi_model_generator_rejects_empty_pool() {
+        let err = MultiModelCandidateGenerator::new(Vec::new()).expect_err("empty pool must error");
+        assert_eq!(err, MultiModelError::EmptyProviderPool);
+    }
+
+    #[tokio::test]
+    async fn multi_model_generator_distributes_calls_deterministically_under_clone() {
+        // boxed_clone must preserve the round-robin counter so two clones
+        // observing independent calls see globally-monotonic routing.
+        let p0 = Arc::new(LabeledProvider::new("a"));
+        let p1 = Arc::new(LabeledProvider::new("b"));
+        let multi = MultiModelCandidateGenerator::new(vec![
+            Box::new(LabeledProviderProxy(Arc::clone(&p0))),
+            Box::new(LabeledProviderProxy(Arc::clone(&p1))),
+        ])
+        .expect("two providers");
+
+        let clone = multi.boxed_clone();
+        // Two calls on the original, then two on the clone — counter is
+        // shared, so the routing is a:0, b:1, a:2, b:3 across both.
+        let _ = multi.generate("p", &[]).await;
+        let _ = multi.generate("p", &[]).await;
+        let _ = clone.generate("p", &[]).await;
+        let _ = clone.generate("p", &[]).await;
+
+        // Provider "a" handled calls 0 and 2; provider "b" handled 1 and 3.
+        assert_eq!(p0.observed_labels().len(), 2);
+        assert_eq!(p1.observed_labels().len(), 2);
     }
 }

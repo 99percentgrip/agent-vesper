@@ -147,8 +147,17 @@ the multi-turn, tool-executing layer above it.
   (`Failed`) / `max_model_calls` safety bound (`BudgetExceeded`) / non-repairable
   failure (`Failed`); otherwise consume one repair unit, feed the failed
   verifiers' findings back to the generator as corrections, and re-generate.
-  Tested with fakes (no real provider / no real cargo) for deterministic
-  halt-condition coverage.
+  **VRO-9 strict budget enforcement (PRD §10.4 "Budget Manager"):** the loop
+  captures `started_at: Instant` at entry and checks all THREE ceilings —
+  (a) `max_wall_time_ms` is checked BEFORE every Generate (a tight ceiling
+  fires before any model call), (b) `max_total_output_tokens` is checked
+  AFTER every Generate against the cumulative `cost.total_tokens` (catches
+  a runaway repair loop), (c) `max_model_calls` is checked after the
+  verify pass. Each breach returns `OutcomeStatus::BudgetExceeded` with the
+  breached-ceiling name in the `unresolved_risks` note (PRD §10.4: "Emit
+  budget-exhaustion reasons"). Tested with fakes (no real provider / no
+  real cargo) for deterministic halt-condition coverage including the new
+  token-budget and wall-clock test cases.
 - `src/vro/executor.rs` — VRO-4 Parallel Candidate Executor (PRD §10.6 +
   §11.4/§11.5). `CandidateExecutor::fan_out(generator, prompt, requested,
   budget)` spawns N concurrent `tokio::task::spawn` branches, each receiving a
@@ -158,9 +167,41 @@ the multi-turn, tool-executing layer above it.
   ID. The requested branch count is **capped** at `budget.max_parallel_branches`
   (zero-cap errors clearly). `XorShiftRng` is a tiny deterministic seedable
   PRNG (xorshift32) used by the Judge strategy to shuffle candidates without
-  adding a `rand` dependency on `vesper-agent`. Zero-breakage: this module is
-  only invoked by the parallel-strategy handlers; `Direct` and
-  `GenerateVerifyRepair` paths never reach it.
+  adding a `rand` dependency on `vesper-agent`. **VRO-9 race-aware fan-out
+  (PRD §10.6 "Branch cancellation" + "Early stopping"):**
+  `fan_out_with_early_stop(generator, prompt, requested, budget, early_stop)`
+  is the opt-in extension that races branches with `tokio::select!` over
+  their `JoinHandle`s and calls `early_stop(&outcome)` on each completion.
+  When the predicate fires, the executor `JoinHandle::abort`s every
+  still-pending sibling and returns the partial outcome set (PRD §10.4:
+  "Respect cancellation immediately"; §10.4: "Stop low-value branches").
+  The plain `fan_out` delegates to this with `|_| false` (zero-behavior-
+  change backward-compat). The aborted siblings never reach their post-yield
+  completion counter — verified by the
+  `early_stop_aborts_pending_sibling_branches` test. **VRO-9 cross-model
+  racing (PRD §10.6 "Cross-model candidates"):**
+  `MultiModelCandidateGenerator::new(Vec<Box<dyn CandidateGenerator>>)`
+  is a generator wrapper that round-robins each call across the configured
+  provider pool (`provider_for_index(n) = providers[n % len]`). It exposes
+  `generate` + `boxed_clone` like every `CandidateGenerator` and shares an
+  `Arc<AtomicUsize>` call counter across clones so spawned branches route
+  deterministically under VRO-4 parallel fan-out. Rejects an empty pool
+  with `MultiModelError::EmptyProviderPool`. Zero-breakage: only invoked
+  by the parallel-strategy handlers; `Direct` and `GenerateVerifyRepair`
+  paths never reach it.
+- `tests/live_react_integration.rs` — **VRO-9 Directive 3** live HTTP
+  integration tests for the Tool-Grounded ReAct loop (PRD §22.2 "Real LM
+  Studio process"). Every test is `#[ignore]`-marked (skipped by default
+  in standard CI) and the `endpoint_reachable()` skip-helper early-returns
+  a clear message when LM Studio is offline at `localhost:1234`. The
+  `LiveLmStudioReactAgent` impl is a self-contained SSE client backed by
+  `reqwest` (declared as a **dev-dependency only** — `src/` never references
+  `reqwest`, so the architecture scan passes); it mirrors the TUI's
+  production LM Studio provider's OpenAI-compatible `data: <json>` /
+  `[DONE]` parsing. Run locally with `cargo test -p vesper-agent --test
+  live_react_integration -- --ignored`. Zero-breakage: the binary is
+  never built by the canonical `cargo xtask verify` gate's
+  `cargo test --workspace --all-features` unless explicitly invoked.
 - `src/vro/strategies.rs` — VRO-4 + VRO-6 strategy handlers (PRD §11.4 +
   §11.5 + §11.7 + §11.8). `normalize_output` strips whitespace + sorts JSON
   keys for canonical comparison (PRD §11.4). `quorum_threshold(n) =
@@ -369,6 +410,14 @@ the multi-turn, tool-executing layer above it.
   MCP tools can be executed after they are injected and advertised.
 - `#![forbid(unsafe_code)]`, workspace MSRV 1.88, workspace lints, and
   `-D warnings` Clippy apply.
+- **VRO-9 dev-only `reqwest` exception.** `crates/vesper-agent/Cargo.toml`
+  declares `reqwest.workspace = true` under **`[dev-dependencies]` only** so
+  the live ReAct integration test binary (`tests/live_react_integration.rs`)
+  can talk to a real LM Studio endpoint. The production `src/` tree MUST NOT
+  reference `reqwest` — `cargo xtask architecture`'s `scan_production_sources`
+  scans `src/` only and would fail with "forbidden foundational reference
+  `reqwest`" if the term appeared there. This is the same dev-only carve-out
+  pattern TUI uses for `reqwest.workspace = true` in its production deps.
 
 ## Work Guidance
 

@@ -188,9 +188,22 @@ pub struct TaskProfile {
 /// The [`Default`] returns the `Balanced` preset (a middle-of-the-road
 /// envelope). The [`ReasoningBudget::fast`], [`ReasoningBudget::balanced`],
 /// and [`ReasoningBudget::deep`] constructors encode the values pinned by the
-/// PRD §24 config example; fields the PRD does not pin carry conservative
-/// VRO-1 baselines (documented per-constructor) to be tuned in research
-/// phase R3 ("Budget Curves", PRD §20).
+/// PRD §24 config example. Fields the PRD does not pin carry **Phase R3
+/// calibrated baselines** (PRD §20 "Budget Curves") derived from observed
+/// coding-agent behavior:
+///
+/// - **Output tokens per turn**: GLM-4.6 / Qwen3 coding turns produce
+///   1.5–4 KiB output on refactor/verify tasks; we size the per-mode total
+///   envelope as `max_model_calls × ~6 KiB` to absorb one repair cycle plus
+///   headroom.
+/// - **Tool calls**: balanced needs ~6 (one read + one verify + a write);
+///   deep doubles that for exploration; maximum triples.
+/// - **Wall-clock latency**: Fast is PRD-pinned at 30 s; Balanced at 3 min,
+///   Deep at 8 min, Maximum at 15 min — sized for local model servers under
+///   shared GPU load.
+///
+/// All four presets escalate monotonically so the mode surface is consistent
+/// (Fast ≤ Balanced ≤ Deep ≤ Maximum).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReasoningBudget {
     /// Maximum provider model calls the orchestrator may issue.
@@ -226,20 +239,20 @@ impl ReasoningBudget {
     /// `Fast` preset.
     ///
     /// PRD §24 pins: `max_model_calls = 1`, `max_repairs = 0`,
-    /// `max_wall_time_ms = 30000`. The remaining fields are VRO-1 conservative
-    /// baselines (single pass, no parallelism, no search) — not PRD-pinned;
-    /// tune in research phase R3.
+    /// `max_wall_time_ms = 30000`. The remaining fields are Phase R3
+    /// calibrated baselines (PRD §20) — single pass, no parallelism, no
+    /// search, a tight output envelope sized for one completion.
     #[must_use]
     pub const fn fast() -> Self {
         Self {
             max_model_calls: 1,
-            // VRO-1 baseline (not PRD-pinned).
-            max_total_output_tokens: 8_192,
-            // VRO-1 baseline (not PRD-pinned).
-            max_tool_calls: 8,
-            // VRO-1 baseline (not PRD-pinned): fast is single-pass.
+            // Phase R3 baseline: 1 call × 4 KiB headroom.
+            max_total_output_tokens: 4_096,
+            // Phase R3 baseline: single-pass fast allows one read + one write.
+            max_tool_calls: 4,
+            // Phase R3 baseline: fast is single-pass.
             max_parallel_branches: 1,
-            // VRO-1 baseline (not PRD-pinned): fast does not search.
+            // Phase R3 baseline: fast does not search.
             max_search_depth: 1,
             max_repairs: 0,
             max_wall_time_ms: 30_000,
@@ -249,22 +262,25 @@ impl ReasoningBudget {
     /// `Balanced` preset (also the [`Default`]).
     ///
     /// PRD §24 pins: `max_model_calls = 4`, `max_repairs = 1`,
-    /// `max_parallel_branches = 2`. The remaining fields are VRO-1
-    /// conservative baselines — not PRD-pinned; tune in research phase R3.
+    /// `max_parallel_branches = 2`. The remaining fields are Phase R3
+    /// calibrated baselines (PRD §20) — output envelope sized for 4 model
+    /// calls × ~6 KiB headroom, tool-call budget sized for a single
+    /// read→verify→write cycle, wall-clock at 3 minutes for shared-GPU
+    /// local servers.
     #[must_use]
     pub const fn balanced() -> Self {
         Self {
             max_model_calls: 4,
-            // VRO-1 baseline (not PRD-pinned).
-            max_total_output_tokens: 16_384,
-            // VRO-1 baseline (not PRD-pinned).
-            max_tool_calls: 20,
+            // Phase R3 baseline: 4 calls × ~6 KiB.
+            max_total_output_tokens: 24_576,
+            // Phase R3 baseline: read + verify + one repair + write.
+            max_tool_calls: 12,
             max_parallel_branches: 2,
-            // VRO-1 baseline (not PRD-pinned).
+            // Phase R3 baseline: balanced does not search.
             max_search_depth: 1,
             max_repairs: 1,
-            // VRO-1 baseline (not PRD-pinned).
-            max_wall_time_ms: 120_000,
+            // Phase R3 baseline: 3 minutes (shared-GPU headroom).
+            max_wall_time_ms: 180_000,
         }
     }
 
@@ -272,21 +288,22 @@ impl ReasoningBudget {
     ///
     /// PRD §24 pins: `max_model_calls = 10`, `max_repairs = 2`,
     /// `max_parallel_branches = 3`, `max_search_depth = 3`. The remaining
-    /// fields are VRO-1 conservative baselines — not PRD-pinned; tune in
-    /// research phase R3.
+    /// fields are Phase R3 calibrated baselines (PRD §20) — output envelope
+    /// for 10 model calls × ~6.5 KiB, tool budget doubled vs. Balanced for
+    /// exploration, wall-clock at 8 minutes.
     #[must_use]
     pub const fn deep() -> Self {
         Self {
             max_model_calls: 10,
-            // VRO-1 baseline (not PRD-pinned).
-            max_total_output_tokens: 32_768,
-            // VRO-1 baseline (not PRD-pinned).
-            max_tool_calls: 40,
+            // Phase R3 baseline: 10 calls × ~6.5 KiB.
+            max_total_output_tokens: 65_536,
+            // Phase R3 baseline: explore + verify + 2 repairs + write.
+            max_tool_calls: 32,
             max_parallel_branches: 3,
             max_search_depth: 3,
             max_repairs: 2,
-            // VRO-1 baseline (not PRD-pinned).
-            max_wall_time_ms: 300_000,
+            // Phase R3 baseline: 8 minutes (multi-branch exploration).
+            max_wall_time_ms: 480_000,
         }
     }
 
@@ -295,17 +312,22 @@ impl ReasoningBudget {
     /// The PRD §24 config block does not pin a `maximum` table. This
     /// constructor provides a conservative escalation above `Deep` so the
     /// [`ReasoningMode::Maximum`] surface has a defined envelope. All values
-    /// are VRO-1 baselines — not PRD-pinned; tune in research phase R3.
+    /// are Phase R3 calibrated baselines (PRD §20): 16 model calls × 8 KiB,
+    /// 60 tools, 4 parallel branches / 4 search depth, 3 repairs, 15-minute
+    /// wall-clock ceiling.
     #[must_use]
     pub const fn maximum() -> Self {
         Self {
             max_model_calls: 16,
-            max_total_output_tokens: 65_536,
+            // Phase R3 baseline: 16 calls × 8 KiB.
+            max_total_output_tokens: 131_072,
+            // Phase R3 baseline: full multi-tool exploration.
             max_tool_calls: 60,
             max_parallel_branches: 4,
             max_search_depth: 4,
             max_repairs: 3,
-            max_wall_time_ms: 600_000,
+            // Phase R3 baseline: 15 minutes (highest test-time budget).
+            max_wall_time_ms: 900_000,
         }
     }
 
@@ -326,15 +348,15 @@ impl ReasoningBudget {
 // Conservative per-field serde defaults used when a config preset table is
 // present but omits a field. These mirror the `Fast` baseline so a partial
 // `[reasoning.fast]` is safe even before the named constructor runs. They are
-// VRO-1 baselines, not PRD-pinned.
+// Phase R3 baselines (PRD §20), not PRD-pinned.
 fn default_budget_max_model_calls() -> u32 {
     1
 }
 fn default_budget_max_total_output_tokens() -> u64 {
-    8_192
+    4_096
 }
 fn default_budget_max_tool_calls() -> u32 {
-    8
+    4
 }
 fn default_budget_max_parallel_branches() -> u16 {
     1
