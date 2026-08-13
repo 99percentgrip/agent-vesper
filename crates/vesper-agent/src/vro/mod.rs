@@ -30,21 +30,31 @@ pub mod executor;
 pub mod learning;
 pub mod orchestrator;
 pub mod profiler;
+pub mod rate_limit;
 pub mod react;
+pub mod repair;
 pub mod strategies;
 pub mod verifiers;
 
-pub use executor::{BranchContext, BranchOutcome, CandidateExecutor, ExecutorError, XorShiftRng};
+pub use executor::{
+    BranchContext, BranchDiversification, BranchOutcome, CandidateExecutor, ExecutorError,
+    XorShiftRng,
+};
 pub use learning::{
     LearningError, ProceduralMemory, ProceduralMemorySink, ProceduralStep, SecretScrubber,
     WorkflowExtractor, cost_summary, distinct_actions, is_learning_eligible,
 };
-pub use orchestrator::{CandidateGenerator, GeneratedCandidate, run_generate_verify_repair};
+pub use orchestrator::{
+    CandidateGenerator, GeneratedCandidate, run_generate_verify_repair,
+    run_generate_verify_repair_with_rate_limit,
+};
 pub use profiler::TaskProfiler;
+pub use rate_limit::{RateLimitStatus, RateLimitTracker, backoff_duration};
 pub use react::{
     ReactAgent, ReactDecision, RegistryToolInvoker, ToolInvocationError, ToolInvoker,
     TrajectoryEntry, run_tool_grounded_react, run_tool_grounded_react_with_trajectory,
 };
+pub use repair::{RepairController, RepairHeuristic, classify_finding, classify_findings};
 use std::future::Future;
 use std::path::Path;
 use std::pin::Pin;

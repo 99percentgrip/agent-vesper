@@ -99,6 +99,15 @@ pub struct ReasoningDiagnostics {
     pub max_model_calls: u32,
     /// Maximum verification→repair cycles (PRD §10.4).
     pub max_repairs: u16,
+    /// VRO-10 (PRD §8.2 "Status Surface") — the active phase label. The
+    /// orchestrator's phases (Understanding / Inspecting context / Building
+    /// plan / Exploring alternatives / Running tools / Validating result /
+    /// Repairing failed checks / Finalizing answer) are streamed through
+    /// this field so the Reasoning Panel renders **`Phase:` <label>** as
+    /// the turn progresses, rather than just the static strategy header.
+    /// Empty string hides the phase line (the default for `Direct` turns
+    /// where no orchestration phase applies).
+    pub phase: String,
 }
 
 impl ReasoningDiagnostics {
@@ -110,9 +119,19 @@ impl ReasoningDiagnostics {
     /// Pure: takes `&self`, returns a `String`. Tested in
     /// [`super::tests::reasoning_diagnostics_header_includes_strategy_and_budget`]
     /// and the `risk_escalation` variants.
+    ///
+    /// VRO-10 §8.2: when `phase` is non-empty the header prepends a
+    /// **`Phase:` `<label>`** segment so the panel surfaces the live
+    /// orchestrator phase rather than only the static strategy.
     #[must_use]
     pub fn render_header(&self) -> String {
         let mut out = String::new();
+        // VRO-10 §8.2: the live phase comes first so the driver sees the
+        // orchestrator's current activity at a glance.
+        if !self.phase.is_empty() {
+            out.push_str(&format!("**Phase:** `{}`", self.phase));
+            out.push_str(" | ");
+        }
         out.push_str(&format!("**Strategy:** `{}`", self.strategy));
         out.push_str(&format!(" | **Mode:** `{}`", self.mode));
         if self.override_active {
@@ -1834,6 +1853,7 @@ mod tests {
             max_parallel_branches: 2,
             max_model_calls: 10,
             max_repairs: 2,
+            phase: String::new(),
         };
         let header = diagnostics.render_header();
         assert!(
@@ -1868,6 +1888,7 @@ mod tests {
             max_parallel_branches: 3,
             max_model_calls: 10,
             max_repairs: 2,
+            phase: String::new(),
         };
         let header = diagnostics.render_header();
         assert!(
@@ -1891,6 +1912,7 @@ mod tests {
             max_parallel_branches: 3,
             max_model_calls: 10,
             max_repairs: 2,
+            phase: String::new(),
         };
         let header = diagnostics.render_header();
         assert!(header.contains("**Risk:** `high`"), "got: {header}");

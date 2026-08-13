@@ -37,18 +37,26 @@ Orchestrator (VRO) Phase VRO-1 domain contracts.
   upgraded `VerificationFinding` from a `String` placeholder to a real struct
   (`message`/`severity`/`location`) with a `VerificationSeverity` enum, and
   added `VerificationStatus::Error` (the verifier itself could not run, distinct
-  from `Failed`). VRO-3.1 added `ModelCapabilities` (PRD §10.2) — the generic,
-  provider-neutral observed-capability contract (boolean flags: native/emulated
-  tools, structured output, system prompts, streaming, cancellation, vision)
-  reused by any future real provider adapter. Provider names are FORBIDDEN in
-  this file (xtask architecture guard scans for them). Fields whose types are
-  not yet defined use documented placeholders (`String` aliases or
-  `serde_json::Value`); real domain IDs (`RequestId`/`CandidateId`/`SessionId`)
-  are reused. `Candidate` and `ReasoningOutcome` derive `PartialEq` only (they
-  carry `serde_json::Value`/`f32`). Budget preset values pinned by §24 are
-  sourced from the PRD; fields §24 does not pin carry documented VRO-1
-  conservative baselines deferred to research phase R3. No orchestration logic
-  lives here.
+  from `Failed`). VRO-3.1 added `ModelCapabilities` (PRD §10.2). VRO-10
+  (PRD §10.5 + §14.3 + §10.4) closes three final PARTIAL/DEFERRED gaps:
+  (1) `WorkflowPlanStep` now carries the five previously-missing §10.5
+  fields (`expected_output_schema`, `failure_policy: StepFailurePolicy`,
+  `max_attempts`, `parallel_allowed`, `requires_user_approval`) with
+  conservative serde defaults so legacy plans deserialize unchanged;
+  (2) the VRO-2.1 free-form `String` aliases `Assumption`, `EvidenceRef`,
+  `ContextRef` are promoted to **strict newtypes** (`Assumption` carries
+  `statement`/`confidence: Option<f32>`/`status: AssumptionStatus`;
+  `EvidenceRef` carries `kind: EvidenceKind` + `locator`; `ContextRef` carries
+  `kind: ContextKind` + `locator`) — `From<&str>`/`From<String>`/`AsRef<str>`
+  impls keep every existing call site compiling, so the type-level strictness
+  is gained without a use-site rewrite. `DeliberationArtifact` now derives
+  `PartialEq` only (not `Eq`) because `Assumption` carries `Option<f32>`;
+  (3) `OutcomeStatus` gains the `RateLimitExceeded` variant (PRD §10.4
+  "account for provider rate limits") so the orchestrator halts cleanly on an
+  HTTP 429 instead of crashing. Provider names are FORBIDDEN in this file
+  (xtask architecture guard scans for them). Budget preset values pinned by
+  §24 are sourced from the PRD; fields §24 does not pin carry documented
+  Phase R3 calibrated baselines. No orchestration logic lives here.
 
 ## Verification
 

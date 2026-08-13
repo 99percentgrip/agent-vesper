@@ -138,6 +138,72 @@ pub enum ExecutorError {
     ZeroParallelBranches,
 }
 
+/// Per-branch prompt diversification (VRO-10, PRD §10.6
+/// "Candidate-specific prompts").
+///
+/// The VRO-4 executor originally fed the **identical** prompt to every
+/// parallel branch. PRD §10.6 demands "separate inference calls with
+/// controlled variation in strategy, assumptions, or decoding" — diversity
+/// must NOT be simulated by asking for "three alternatives" in one
+/// completion. This enum captures the diversification strategy the executor
+/// applies to each branch's prompt.
+///
+/// Because the [`CandidateGenerator`](super::orchestrator::CandidateGenerator)
+/// trait's `generate(prompt, corrections)` signature has no temperature
+/// parameter, diversification is expressed as a per-branch **prompt prefix**
+/// that nudges the model toward a distinct reasoning stance. The prefix is
+/// prepended verbatim to the branch's prompt before `generate` is called.
+#[derive(Debug, Clone, Default)]
+pub enum BranchDiversification {
+    /// No diversification — every branch receives the identical prompt
+    /// (VRO-4 behavior). The default; the original `fan_out` /
+    /// `fan_out_with_early_stop` API preserves this.
+    #[default]
+    None,
+    /// Per-branch system-prompt variants. Branch `i` receives variant
+    /// `variants[i % variants.len()]` prepended to its prompt. The PRD
+    /// §10.6 directive's canonical example: `["Be conservative",
+    /// "Be balanced", "Be creative", "Be highly creative"]`.
+    SystemPromptVariants(Vec<String>),
+}
+
+impl BranchDiversification {
+    /// The PRD §10.6 directive's canonical 4-variant default: conservative →
+    /// balanced → creative → highly creative. Branches past index 3 wrap
+    /// around modulo 4.
+    ///
+    /// Used by [`CandidateExecutor::fan_out_diverse`] when no explicit
+    /// diversification is supplied.
+    #[must_use]
+    pub fn diverse_branches() -> Self {
+        Self::SystemPromptVariants(vec![
+            "Be conservative: prefer the smallest, safest, most conventional solution that satisfies the constraints."
+                .to_string(),
+            "Be balanced: weigh trade-offs explicitly and pick the solution with the best cost/benefit ratio."
+                .to_string(),
+            "Be creative: explore a non-obvious approach, but justify why it is sound."
+                .to_string(),
+            "Be highly creative: propose the most divergent viable approach, even if unconventional."
+                .to_string(),
+        ])
+    }
+    /// Returns the prompt prefix for branch `index`, or `None` when no
+    /// diversification is configured. The prefix is `"\n\n"`-separated from
+    /// the user prompt when applied.
+    #[must_use]
+    pub fn prompt_prefix_for(&self, index: usize) -> Option<&str> {
+        match self {
+            Self::None => None,
+            Self::SystemPromptVariants(variants) => {
+                if variants.is_empty() {
+                    return None;
+                }
+                Some(&variants[index % variants.len()])
+            }
+        }
+    }
+}
+
 /// The parallel candidate executor (PRD §10.6).
 ///
 /// Stateless and cheap to construct. Holds no provider handles and mutates no
@@ -240,8 +306,73 @@ impl CandidateExecutor {
     where
         F: Fn(&BranchOutcome) -> bool + Send + Sync,
     {
+        // VRO-4 behavior: no diversification. Each branch receives the
+        // identical prompt.
+        self.fan_out_impl(
+            generator,
+            prompt,
+            requested,
+            budget,
+            std::sync::Arc::new(early_stop),
+            BranchDiversification::None,
+        )
+        .await
+    }
+
+    /// VRO-10 (PRD §10.6 "Candidate-specific prompts") — fan-out where each
+    /// branch receives a **mathematically distinct prompt prefix** so the
+    /// parallel candidates follow heterogeneous reasoning paths instead of
+    /// collapsing onto the same answer.
+    ///
+    /// Behavior is identical to [`fan_out_with_early_stop`](Self::fan_out_with_early_stop)
+    /// except that `diversification.prompt_prefix_for(branch_index)` is
+    /// prepended to the per-branch prompt before `generate` is invoked. When
+    /// `diversification == BranchDiversification::None` this method is
+    /// byte-identical to `fan_out_with_early_stop` with a never-stop
+    /// predicate.
+    ///
+    /// PRD §10.6: "Candidate diversity must not be simulated merely by
+    /// asking for 'three alternatives' in one completion."
+    pub async fn fan_out_diverse<F>(
+        &self,
+        generator: &dyn CandidateGenerator,
+        prompt: &str,
+        requested: usize,
+        budget: ReasoningBudget,
+        diversification: BranchDiversification,
+        early_stop: F,
+    ) -> Result<Vec<BranchOutcome>, ExecutorError>
+    where
+        F: Fn(&BranchOutcome) -> bool + Send + Sync,
+    {
+        self.fan_out_impl(
+            generator,
+            prompt,
+            requested,
+            budget,
+            std::sync::Arc::new(early_stop),
+            diversification,
+        )
+        .await
+    }
+
+    /// Shared fan-out core used by [`fan_out`], [`fan_out_with_early_stop`],
+    /// and [`fan_out_diverse`]. The `diversification` parameter controls
+    /// per-branch prompt prefixes (VRO-10 §10.6); `BranchDiversification::None`
+    /// preserves the VRO-4 single-prompt behavior.
+    async fn fan_out_impl<F>(
+        &self,
+        generator: &dyn CandidateGenerator,
+        prompt: &str,
+        requested: usize,
+        budget: ReasoningBudget,
+        early_stop: std::sync::Arc<F>,
+        diversification: BranchDiversification,
+    ) -> Result<Vec<BranchOutcome>, ExecutorError>
+    where
+        F: Fn(&BranchOutcome) -> bool + Send + Sync,
+    {
         let branch_count = self.capped_branch_count(requested, &budget)?;
-        let early_stop = std::sync::Arc::new(early_stop);
 
         // Build one isolated context per branch up front. Each branch task
         // receives its own clone_of-clone so even if the task mutates its
@@ -257,12 +388,20 @@ impl CandidateExecutor {
         let mut handles: Vec<JoinHandle<Option<BranchOutcome>>> = Vec::new();
         for (index, context) in contexts.iter().enumerate() {
             let mut branch_context = context.clone_for_branch();
-            let prompt_owned = prompt.to_string();
+            // VRO-10 §10.6: prepend the per-branch diversification prefix
+            // (system-prompt variant) so each branch follows a distinct
+            // reasoning stance. When no diversification is configured, the
+            // prefix is empty and the prompt is byte-identical across
+            // branches (VRO-4 behavior).
+            let branch_prompt = match diversification.prompt_prefix_for(index) {
+                Some(prefix) => format!("{prefix}\n\n{prompt}"),
+                None => prompt.to_string(),
+            };
             let strategy_variant = format!("parallel-branch-{index}");
             let generator_clone = generator.boxed_clone();
             let handle = tokio::spawn(async move {
                 let candidate = generator_clone
-                    .generate(&prompt_owned, &[])
+                    .generate(&branch_prompt, &[])
                     .await
                     .into_candidate(candidate_id_for(index), &strategy_variant);
                 branch_context.record_note(format!(
@@ -1229,5 +1368,179 @@ mod tests {
         // Provider "a" handled calls 0 and 2; provider "b" handled 1 and 3.
         assert_eq!(p0.observed_labels().len(), 2);
         assert_eq!(p1.observed_labels().len(), 2);
+    }
+
+    // ======================================================================
+    // VRO-10 — candidate-specific branch prompts (§10.6).
+    //
+    // The directive: each parallel branch must receive a distinct prompt
+    // prefix so the candidates follow heterogeneous reasoning paths. The
+    // `BranchDiversification` enum captures the strategy;
+    // `fan_out_diverse` applies it.
+    // ======================================================================
+
+    #[test]
+    fn branch_diversification_default_is_none() {
+        let d = BranchDiversification::default();
+        assert!(matches!(d, BranchDiversification::None));
+        assert_eq!(d.prompt_prefix_for(0), None);
+        assert_eq!(d.prompt_prefix_for(7), None);
+    }
+
+    #[test]
+    fn branch_diversification_diverse_branches_has_four_variants() {
+        let d = BranchDiversification::diverse_branches();
+        // Each of the four canonical stances (conservative / balanced /
+        // creative / highly creative) is present.
+        let p0 = d.prompt_prefix_for(0).expect("branch 0 has a prefix");
+        let p1 = d.prompt_prefix_for(1).expect("branch 1 has a prefix");
+        let p2 = d.prompt_prefix_for(2).expect("branch 2 has a prefix");
+        let p3 = d.prompt_prefix_for(3).expect("branch 3 has a prefix");
+        assert!(p0.to_ascii_lowercase().contains("conservative"));
+        assert!(p1.to_ascii_lowercase().contains("balanced"));
+        assert!(p2.to_ascii_lowercase().contains("creative"));
+        assert!(p3.to_ascii_lowercase().contains("highly creative"));
+        // Index ≥ 4 wraps modulo 4 — branch 4 == branch 0's prefix.
+        assert_eq!(d.prompt_prefix_for(4), Some(p0));
+        assert_eq!(d.prompt_prefix_for(5), Some(p1));
+    }
+
+    #[test]
+    fn branch_diversification_empty_variants_returns_none() {
+        let d = BranchDiversification::SystemPromptVariants(Vec::new());
+        assert_eq!(d.prompt_prefix_for(0), None);
+    }
+
+    #[tokio::test]
+    async fn fan_out_diverse_injects_distinct_prompt_prefix_per_branch() {
+        // Each branch records the prompt it received into the shared seen
+        // log. fan_out_diverse with 4-variant diversification must produce
+        // 4 distinct prompts (one per branch), each prefixed with the
+        // corresponding variant.
+        struct RecordingGenerator {
+            seen: Arc<Mutex<Vec<String>>>,
+        }
+        impl CandidateGenerator for RecordingGenerator {
+            fn generate<'a>(
+                &'a self,
+                prompt: &'a str,
+                _corrections: &'a [vesper_domain::VerificationFinding],
+            ) -> Pin<Box<dyn Future<Output = GeneratedCandidate> + Send + 'a>> {
+                let seen = Arc::clone(&self.seen);
+                Box::pin(async move {
+                    seen.lock().expect("poisoned").push(prompt.to_string());
+                    GeneratedCandidate {
+                        output: serde_json::json!({"v": 1}),
+                        cost: InferenceCost::default(),
+                    }
+                })
+            }
+            fn boxed_clone(&self) -> Box<dyn CandidateGenerator> {
+                Box::new(Self {
+                    seen: Arc::clone(&self.seen),
+                })
+            }
+        }
+
+        let generator = RecordingGenerator {
+            seen: Arc::new(Mutex::new(Vec::new())),
+        };
+        let executor = CandidateExecutor::new();
+        let outcomes = executor
+            .fan_out_diverse(
+                &generator,
+                "the-base-prompt",
+                4,
+                ReasoningBudget {
+                    max_parallel_branches: 4,
+                    ..ReasoningBudget::balanced()
+                },
+                BranchDiversification::diverse_branches(),
+                |_| false,
+            )
+            .await
+            .expect("fan_out_diverse must succeed");
+
+        assert_eq!(outcomes.len(), 4);
+        let seen = generator.seen.lock().expect("poisoned").clone();
+        assert_eq!(seen.len(), 4, "exactly 4 prompts recorded");
+        // Every seen prompt contains the base prompt.
+        assert!(
+            seen.iter().all(|p| p.contains("the-base-prompt")),
+            "every prompt must include the base: {seen:?}"
+        );
+        // The four prompts are pairwise distinct (each carries a different
+        // variant prefix).
+        let mut sorted = seen.clone();
+        sorted.sort();
+        sorted.dedup();
+        assert_eq!(
+            sorted.len(),
+            4,
+            "all 4 branch prompts must be pairwise distinct: {seen:?}"
+        );
+        // Each variant prefix appears in exactly one branch's prompt.
+        let prefixes = ["conservative", "balanced", "creative", "highly creative"];
+        for prefix in prefixes {
+            assert!(
+                seen.iter().any(|p| p.to_ascii_lowercase().contains(prefix)),
+                "no branch received the `{prefix}` prefix: {seen:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn fan_out_diverse_with_no_diversification_is_byte_identical_to_fan_out() {
+        // Regression guard: when diversification is None, fan_out_diverse
+        // produces the same prompts as fan_out — every branch sees the
+        // identical base prompt.
+        struct EchoGenerator {
+            seen: Arc<Mutex<Vec<String>>>,
+        }
+        impl CandidateGenerator for EchoGenerator {
+            fn generate<'a>(
+                &'a self,
+                prompt: &'a str,
+                _corrections: &'a [vesper_domain::VerificationFinding],
+            ) -> Pin<Box<dyn Future<Output = GeneratedCandidate> + Send + 'a>> {
+                let seen = Arc::clone(&self.seen);
+                Box::pin(async move {
+                    seen.lock().expect("poisoned").push(prompt.to_string());
+                    GeneratedCandidate {
+                        output: serde_json::json!({"v": 1}),
+                        cost: InferenceCost::default(),
+                    }
+                })
+            }
+            fn boxed_clone(&self) -> Box<dyn CandidateGenerator> {
+                Box::new(Self {
+                    seen: Arc::clone(&self.seen),
+                })
+            }
+        }
+        let generator = EchoGenerator {
+            seen: Arc::new(Mutex::new(Vec::new())),
+        };
+        let executor = CandidateExecutor::new();
+        let _ = executor
+            .fan_out_diverse(
+                &generator,
+                "the-base-prompt",
+                3,
+                ReasoningBudget {
+                    max_parallel_branches: 3,
+                    ..ReasoningBudget::balanced()
+                },
+                BranchDiversification::None,
+                |_| false,
+            )
+            .await
+            .expect("fan_out_diverse must succeed");
+        let seen = generator.seen.lock().expect("poisoned").clone();
+        // Every branch saw the identical base prompt — no prefix injected.
+        assert!(
+            seen.iter().all(|p| p == "the-base-prompt"),
+            "with no diversification every prompt must equal the base: {seen:?}"
+        );
     }
 }

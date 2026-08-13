@@ -1,7 +1,7 @@
-# ACP Registry PR #439 — Agent Vesper v0.20.27 Submission Payload
+# ACP Registry PR #439 — Agent Vesper v0.20.28 Submission Payload
 
 This document is the **manual submission payload** for updating the public
-ACP Registry entry for Agent Vesper to v0.20.27. The previous registry entry
+ACP Registry entry for Agent Vesper to v0.20.28. The previous registry entry
 referenced binaries from `v0.1.0` (a placeholder); this submission syncs the
 published manifest with the current release line and reflects VRO (Vesper
 Reasoning Orchestrator) capabilities.
@@ -15,7 +15,7 @@ Reasoning Orchestrator) capabilities.
 > This file is data-only scaffolding for the manual PR — it is not executed
 > and does not alter the local binary install (the installer at
 > `scripts/install.sh` consumes `registry/agent.json` from this repo, which
-> was also bumped to v0.20.27 in the same VRO-9 commit).
+> was also bumped to v0.20.28 in the same VRO-9 commit).
 
 ---
 
@@ -27,7 +27,7 @@ Copy verbatim into `agents/agent-vesper/agent.json` in the registry repo:
 {
   "id": "agent-vesper",
   "name": "Agent Vesper",
-  "version": "0.20.27",
+  "version": "0.20.28",
   "description": "Agent Vesper — a Rust-native, provider-neutral ACP coding agent runtime featuring the Vesper Reasoning Orchestrator (VRO): 10 reasoning strategies (Direct, Plan-Then-Answer, Plan-Execute-Verify, Generate-Verify-Repair, Parallel Candidates Consensus/Judge, Tool-Grounded ReAct, Bounded Tree Search, Proposer-Critic-Adjudicator, Workflow-Replay-with-Verification), provider-routed auth, multi-model cross-provider candidate racing, calibrated Phase R3 budgets, and the mem0-equivalent cognitive memory engine. ACP-protocol-v1 stdio server for Z.ai GLM models and OpenAI-compatible local servers (LM Studio), installable as an ACP agent in Zed and other ACP-compatible editors.",
   "repository": "https://github.com/99percentgrip/agent-vesper",
   "website": "https://github.com/99percentgrip/agent-vesper",
@@ -38,23 +38,23 @@ Copy verbatim into `agents/agent-vesper/agent.json` in the registry repo:
   "distribution": {
     "binary": {
       "darwin-x86_64": {
-        "archive": "https://github.com/99percentgrip/agent-vesper/releases/download/v0.20.27/agent-vesper-acp-darwin-x86_64.tar.gz",
+        "archive": "https://github.com/99percentgrip/agent-vesper/releases/download/v0.20.28/agent-vesper-acp-darwin-x86_64.tar.gz",
         "cmd": "./agent-vesper-acp/agent-vesper-acp"
       },
       "darwin-aarch64": {
-        "archive": "https://github.com/99percentgrip/agent-vesper/releases/download/v0.20.27/agent-vesper-acp-darwin-aarch64.tar.gz",
+        "archive": "https://github.com/99percentgrip/agent-vesper/releases/download/v0.20.28/agent-vesper-acp-darwin-aarch64.tar.gz",
         "cmd": "./agent-vesper-acp/agent-vesper-acp"
       },
       "linux-x86_64": {
-        "archive": "https://github.com/99percentgrip/agent-vesper/releases/download/v0.20.27/agent-vesper-acp-linux-x86_64.tar.gz",
+        "archive": "https://github.com/99percentgrip/agent-vesper/releases/download/v0.20.28/agent-vesper-acp-linux-x86_64.tar.gz",
         "cmd": "./agent-vesper-acp/agent-vesper-acp"
       },
       "linux-aarch64": {
-        "archive": "https://github.com/99percentgrip/agent-vesper/releases/download/v0.20.27/agent-vesper-acp-linux-aarch64.tar.gz",
+        "archive": "https://github.com/99percentgrip/agent-vesper/releases/download/v0.20.28/agent-vesper-acp-linux-aarch64.tar.gz",
         "cmd": "./agent-vesper-acp/agent-vesper-acp"
       },
       "windows-x86_64": {
-        "archive": "https://github.com/99percentgrip/agent-vesper/releases/download/v0.20.27/agent-vesper-acp-windows-x86_64.zip",
+        "archive": "https://github.com/99percentgrip/agent-vesper/releases/download/v0.20.28/agent-vesper-acp-windows-x86_64.zip",
         "cmd": "./agent-vesper-acp/agent-vesper-acp.exe"
       }
     }
@@ -65,11 +65,11 @@ Copy verbatim into `agents/agent-vesper/agent.json` in the registry repo:
 ### Manifest validation checklist
 
 - [x] `jq . agents/agent-vesper/agent.json` parses (valid JSON).
-- [x] `version` (`0.20.27`) matches `Cargo.toml [workspace.package].version`
-      and the `v0.20.27` release tag.
+- [x] `version` (`0.20.28`) matches `Cargo.toml [workspace.package].version`
+      and the `v0.20.28` release tag.
 - [x] `id` (`agent-vesper`) is stable across releases.
 - [x] Every `distribution.binary.*.archive` URL points at the GitHub Release
-      artifact for `v0.20.27` produced by `.github/workflows/release.yml`
+      artifact for `v0.20.28` produced by `.github/workflows/release.yml`
       on tag push.
 - [x] `cmd` resolves inside the archive's `agent-vesper-acp/` bundle
       directory, matching `scripts/install.sh` / `scripts/install.ps1`.
@@ -82,7 +82,7 @@ Copy verbatim into `agents/agent-vesper/agent.json` in the registry repo:
 ## 2. PR Title
 
 ```
-Update agent-vesper to v0.20.27 (VRO multi-model + calibrated budgets)
+Update agent-vesper to v0.20.28 (VRO multi-model + calibrated budgets)
 ```
 
 ---
@@ -92,12 +92,12 @@ Update agent-vesper to v0.20.27 (VRO multi-model + calibrated budgets)
 ```markdown
 ## What
 
-Sync the `agent-vesper` registry entry to **v0.20.27**, the latest stable
+Sync the `agent-vesper` registry entry to **v0.20.28**, the latest stable
 release. The previous entry pointed at `v0.1.0` (a placeholder tag); this PR
-republishes against the v0.20.27 GitHub Release artifacts and updates the
+republishes against the v0.20.28 GitHub Release artifacts and updates the
 agent description to reflect the current VRO capabilities.
 
-## Why v0.20.27
+## Why v0.20.28
 
 This release closes the VRO-9 phase (Final Optimization & PRD Audit) of the
 Vesper Reasoning Orchestrator. Notable additions since the prior published
@@ -126,7 +126,7 @@ version:
 
 ## Verification
 
-- `cargo xtask verify` green on the v0.20.27 HEAD
+- `cargo xtask verify` green on the v0.20.28 HEAD
   (`05200ca8ffa68f659f7d85bf97dc7971ce91ab8d` + VRO-9 follow-up commit).
 - All four CI workflows (`ci.yml`, `msrv.yml`, `platform-foundation.yml`,
   `release.yml`) `success` on the tag HEAD.
@@ -148,16 +148,16 @@ version:
 
 ## 4. Asset URL audit
 
-Confirm each URL below returns HTTP 200 against the published `v0.20.27`
+Confirm each URL below returns HTTP 200 against the published `v0.20.28`
 Release before opening the PR:
 
 | Platform | Archive URL |
 |---|---|
-| `linux-x86_64` | https://github.com/99percentgrip/agent-vesper/releases/download/v0.20.27/agent-vesper-acp-linux-x86_64.tar.gz |
-| `linux-aarch64` | https://github.com/99percentgrip/agent-vesper/releases/download/v0.20.27/agent-vesper-acp-linux-aarch64.tar.gz |
-| `darwin-x86_64` | https://github.com/99percentgrip/agent-vesper/releases/download/v0.20.27/agent-vesper-acp-darwin-x86_64.tar.gz |
-| `darwin-aarch64` | https://github.com/99percentgrip/agent-vesper/releases/download/v0.20.27/agent-vesper-acp-darwin-aarch64.tar.gz |
-| `windows-x86_64` | https://github.com/99percentgrip/agent-vesper/releases/download/v0.20.27/agent-vesper-acp-windows-x86_64.zip |
+| `linux-x86_64` | https://github.com/99percentgrip/agent-vesper/releases/download/v0.20.28/agent-vesper-acp-linux-x86_64.tar.gz |
+| `linux-aarch64` | https://github.com/99percentgrip/agent-vesper/releases/download/v0.20.28/agent-vesper-acp-linux-aarch64.tar.gz |
+| `darwin-x86_64` | https://github.com/99percentgrip/agent-vesper/releases/download/v0.20.28/agent-vesper-acp-darwin-x86_64.tar.gz |
+| `darwin-aarch64` | https://github.com/99percentgrip/agent-vesper/releases/download/v0.20.28/agent-vesper-acp-darwin-aarch64.tar.gz |
+| `windows-x86_64` | https://github.com/99percentgrip/agent-vesper/releases/download/v0.20.28/agent-vesper-acp-windows-x86_64.zip |
 
 Each archive bundles **both** `agent-vesper-acp` (the ACP stdio binary this
 manifest launches) and `agent-vesper-tui` (the interactive TUI); the

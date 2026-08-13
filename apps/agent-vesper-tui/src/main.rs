@@ -4307,6 +4307,13 @@ pub(crate) fn format_learning_extraction_notice(strategy: &str, step_count: usiz
 /// provider. The override is taken from the session so a user-forced
 /// `/reasoning set mode=deep` is reflected in the panel **before** the
 /// next turn runs.
+///
+/// VRO-10 (PRD §8.2 "Status Surface"): the diagnostics now carry a `phase`
+/// label derived from the profiled strategy so the Reasoning Panel renders
+/// a live **`Phase:` `<label>`** segment alongside the static strategy
+/// header. The phase derivation maps each strategy to its canonical
+/// PRD §8.2 phase label (Understanding / Building plan / Exploring
+/// alternatives / Running tools / Validating result / Finalizing answer).
 #[must_use]
 pub(crate) fn compute_reasoning_diagnostics(
     vro: &vesper_agent::VroOrchestrator,
@@ -4331,6 +4338,46 @@ pub(crate) fn compute_reasoning_diagnostics(
         max_parallel_branches: budget.max_parallel_branches,
         max_model_calls: budget.max_model_calls,
         max_repairs: budget.max_repairs,
+        phase: phase_label_for_strategy(profile.recommended_strategy).to_string(),
+    }
+}
+
+/// VRO-10 (PRD §8.2 "Status Surface") — derives the live phase label for a
+/// given reasoning strategy. The labels follow the PRD §8.2 vocabulary
+/// verbatim:
+///
+/// - Understanding request (Direct / PlanThenAnswer entry)
+/// - Building plan (PlanThenAnswer / PlanExecuteVerify planning phase)
+/// - Exploring alternatives (ParallelCandidates* / BoundedTreeSearch / PCA)
+/// - Running tools (ToolGroundedReact)
+/// - Validating result (GenerateVerifyRepair verification phase)
+/// - Finalizing answer (WorkflowReplayWithVerification replay phase)
+///
+/// For `Direct` (no orchestration), the label is empty so the panel hides
+/// the phase line — Direct turns have no distinct orchestrator phase.
+#[must_use]
+pub(crate) fn phase_label_for_strategy(strategy: vesper_domain::ReasoningStrategy) -> &'static str {
+    use vesper_domain::ReasoningStrategy::*;
+    match strategy {
+        // Direct turns bypass the orchestrator — no phase line.
+        Direct => "",
+        // The profiler is about to select a workflow. Surface "Understanding"
+        // so the driver sees the orchestrator picked up the request.
+        PlanThenAnswer => "Understanding request",
+        // Plan-first strategies enter the planning phase.
+        PlanExecuteVerify => "Building plan",
+        // Generate-Verify-Repair is mid-validation.
+        GenerateVerifyRepair => "Validating result",
+        // Multi-candidate strategies explore alternatives.
+        ParallelCandidatesConsensus | ParallelCandidatesJudge => "Exploring alternatives",
+        // Tool-grounded ReAct is actively running tools.
+        ToolGroundedReact => "Running tools",
+        // Bounded tree search explores the search space.
+        BoundedTreeSearch => "Exploring alternatives",
+        // Proposer-Critic-Adjudicator compares competing proposals.
+        ProposerCriticAdjudicator => "Exploring alternatives",
+        // Workflow replay finalizes from a learned procedure.
+        WorkflowReplayWithVerification => "Finalizing answer",
     }
 }
 
@@ -12477,6 +12524,94 @@ mod tests {
             compute_reasoning_diagnostics(&vro, "hello", Some(vesper_domain::ReasoningMode::Off));
         assert_eq!(diagnostics.mode, "off");
         assert!(diagnostics.override_active);
+    }
+
+    // ======================================================================
+    // VRO-10 — §8.2 phase-level streaming strings.
+    //
+    // The Reasoning Panel must surface a live **`Phase:` `<label>`** segment
+    // in the diagnostics header so the driver sees which orchestrator phase
+    // is active (Building plan / Exploring alternatives / Running tools /
+    // Validating result / Finalizing answer), rather than only the static
+    // strategy header.
+    // ======================================================================
+
+    #[test]
+    fn vro10_phase_label_for_strategy_maps_each_strategy_to_a_prd_8_2_phase() {
+        use vesper_domain::ReasoningStrategy::*;
+        // Direct → empty (no orchestrator phase).
+        assert_eq!(phase_label_for_strategy(Direct), "");
+        // Each non-Direct strategy maps to one of the PRD §8.2 phase labels.
+        for strategy in [
+            PlanThenAnswer,
+            PlanExecuteVerify,
+            GenerateVerifyRepair,
+            ParallelCandidatesConsensus,
+            ParallelCandidatesJudge,
+            ToolGroundedReact,
+            BoundedTreeSearch,
+            ProposerCriticAdjudicator,
+            WorkflowReplayWithVerification,
+        ] {
+            let label = phase_label_for_strategy(strategy);
+            assert!(
+                !label.is_empty(),
+                "{strategy:?} must map to a non-empty phase label"
+            );
+            // The label must come from the PRD §8.2 vocabulary.
+            const PRD_8_2_PHASES: &[&str] = &[
+                "Understanding request",
+                "Inspecting context",
+                "Building plan",
+                "Exploring alternatives",
+                "Running tools",
+                "Validating result",
+                "Repairing failed checks",
+                "Finalizing answer",
+            ];
+            assert!(
+                PRD_8_2_PHASES.contains(&label),
+                "{strategy:?} phase label `{label}` must be a PRD §8.2 phase"
+            );
+        }
+    }
+
+    #[test]
+    fn vro10_compute_reasoning_diagnostics_carries_phase_for_non_direct_strategy() {
+        // A "what does main.rs do?" prompt profiles to ToolGroundedReact,
+        // so the diagnostics phase must be "Running tools" per PRD §8.2.
+        let vro = vesper_agent::VroOrchestrator::disabled();
+        let diagnostics =
+            compute_reasoning_diagnostics(&vro, "What does the main.rs file do?", None);
+        assert_eq!(diagnostics.strategy, "tool_grounded_react");
+        assert_eq!(diagnostics.phase, "Running tools");
+        // The rendered header must surface the phase as a leading segment.
+        let header = diagnostics.render_header();
+        assert!(
+            header.starts_with("**Phase:** `Running tools`"),
+            "phase must lead the header: {header}"
+        );
+    }
+
+    #[test]
+    fn vro10_compute_reasoning_diagnostics_omits_phase_for_direct_strategy() {
+        // A trivial "hello" prompt profiles to Direct — no orchestrator
+        // phase applies, so `phase` is empty AND the rendered header does
+        // not include a Phase segment.
+        let vro = vesper_agent::VroOrchestrator::disabled();
+        let diagnostics = compute_reasoning_diagnostics(&vro, "hello world", None);
+        assert_eq!(diagnostics.strategy, "direct");
+        assert!(diagnostics.phase.is_empty(), "Direct must have empty phase");
+        let header = diagnostics.render_header();
+        assert!(
+            !header.contains("Phase:"),
+            "Direct header must omit the Phase segment: {header}"
+        );
+        // The header still leads with the strategy segment.
+        assert!(
+            header.starts_with("**Strategy:** `direct`"),
+            "Direct header must lead with Strategy: {header}"
+        );
     }
 
     #[test]

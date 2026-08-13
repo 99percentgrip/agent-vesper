@@ -5,6 +5,7 @@ mod adapter;
 mod compat;
 mod engine;
 mod mapping;
+mod vro_events;
 
 pub use adapter::{AcpAdapter, AcpAdapterConfig};
 pub use compat::{ACP_SDK_VERSION, ACP_WIRE_PROTOCOL, prompt_response_value};
@@ -13,3 +14,7 @@ pub use engine::{
     AcpPromptFuture, AcpPromptRequest, AcpPromptResult,
 };
 pub use mapping::truthful_initialize_response;
+pub use vro_events::{
+    RecordingVroEventSink, VroEvent, VroEventSink, VroEventSinkError, sample_happy_path_sequence,
+    translate_vro_event_to_acp,
+};

@@ -532,23 +532,283 @@ pub enum PrivacyMode {
     Public,
 }
 
+// ---------------------------------------------------------------------------
+// Strict reference / assumption types (VRO-10, PRD §14.3)
+//
+// These replace the VRO-2.1 free-form `String` aliases with strict newtypes
+// so the type system enforces "you cannot pass an arbitrary String where an
+// Assumption / EvidenceRef / ContextRef is expected." Each newtype wraps a
+// `String` payload but is its own type — the wire shape is preserved via
+// `#[serde(transparent)]` so existing serialized artifacts continue to
+// deserialize. `From<&str>` / `From<String>` / `AsRef<str>` impls keep
+// ergonomic construction (`vec!["text".into()]`) working at every call
+// site without weakening the use-site type contract.
+// ---------------------------------------------------------------------------
+
+/// What kind of context a [`ContextRef`] points at (VRO-10, PRD §14.1).
+///
+/// Carries the discrete kind tag the VRO-2.1 free-form string could not
+/// express. `Other` retains forward compatibility for caller-defined kinds
+/// (e.g. `"db-row"`, `"external-url"`) the orchestrator does not yet name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ContextKind {
+    /// A workspace file path (e.g. `"src/main.rs"`).
+    #[default]
+    File,
+    /// A prior conversation message id.
+    Message,
+    /// A reasoning turn id within the session.
+    Turn,
+    /// A tool invocation result id.
+    ToolResult,
+    /// An external resource (URL, DB row, …) the orchestrator does not own.
+    Other,
+}
+
 /// Reference to conversation or workspace context (PRD §14.1).
 ///
-/// **Placeholder**: a free-form string such as `"file:src/main.rs"` or
-/// `"msg:42"`. A structured `ContextRef` type replaces this in a later phase.
-pub type ContextRef = String;
+/// VRO-10 promotes this from a `String` placeholder to a strict newtype
+/// carrying a [`ContextKind`] tag plus the locator string. Wire shape is
+/// unchanged for plain string contexts: a bare `"file:src/main.rs"` JSON
+/// string deserializes via [`ContextRef::from_locator`] semantics, while a
+/// structured `{"kind":"file","locator":"src/main.rs"}` object round-trips
+/// the new fields. Construction ergonomics are preserved via
+/// `From<&str>` / `From<String>` (which default to [`ContextKind::Other`]
+/// so the existing test fixtures keep working without modification).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+pub struct ContextRef {
+    /// Discrete kind tag (file / message / turn / tool_result / other).
+    #[serde(default)]
+    pub kind: ContextKind,
+    /// Locator payload (path, id, URL, …) — the former placeholder string.
+    pub locator: String,
+}
+
+impl ContextRef {
+    /// Builds a typed reference from an explicit kind + locator.
+    #[must_use]
+    pub fn new(kind: ContextKind, locator: impl Into<String>) -> Self {
+        Self {
+            kind,
+            locator: locator.into(),
+        }
+    }
+
+    /// Builds a reference from a locator only, defaulting the kind to
+    /// [`ContextKind::Other`] (the VRO-2.1 wire shape).
+    #[must_use]
+    pub fn from_locator(locator: impl Into<String>) -> Self {
+        Self {
+            kind: ContextKind::Other,
+            locator: locator.into(),
+        }
+    }
+
+    /// The locator payload as `&str`.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.locator
+    }
+}
+
+impl From<String> for ContextRef {
+    fn from(locator: String) -> Self {
+        Self::from_locator(locator)
+    }
+}
+
+impl From<&str> for ContextRef {
+    fn from(locator: &str) -> Self {
+        Self::from_locator(locator)
+    }
+}
+
+impl AsRef<str> for ContextRef {
+    fn as_ref(&self) -> &str {
+        &self.locator
+    }
+}
+
+impl std::fmt::Display for ContextRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.locator)
+    }
+}
+
+/// Status of a stated [`Assumption`] (VRO-10, PRD §14.3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AssumptionStatus {
+    /// Assumed at planning time, not yet verified.
+    #[default]
+    Open,
+    /// Confirmed by subsequent evidence.
+    Confirmed,
+    /// Contradicted by subsequent evidence.
+    Refuted,
+}
 
 /// A stated assumption (PRD §14.3).
 ///
-/// **Placeholder**: the assumption text. A richer `Assumption` (statement +
-/// confidence + status) replaces this in a later phase.
-pub type Assumption = String;
+/// VRO-10 promotes this from a `String` placeholder to a strict newtype
+/// carrying the assumption `statement`, an optional `confidence` in
+/// `[0.0, 1.0]`, and a tri-state [`AssumptionStatus`]. Wire shape is
+/// preserved via `From<&str>` / `From<String>` (which build an `Open`
+/// assumption with no confidence) so existing call sites and test fixtures
+/// keep compiling. Derives `PartialEq` but **not** `Eq` because
+/// `confidence: Option<f32>` is not `Eq`.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct Assumption {
+    /// The assumption text.
+    pub statement: String,
+    /// Optional confidence in `[0.0, 1.0]`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub confidence: Option<f32>,
+    /// Whether the assumption is still open, confirmed, or refuted.
+    #[serde(default)]
+    pub status: AssumptionStatus,
+}
+
+impl Assumption {
+    /// Builds an `Open` assumption from a statement (the VRO-2.1 shape).
+    #[must_use]
+    pub fn open(statement: impl Into<String>) -> Self {
+        Self {
+            statement: statement.into(),
+            confidence: None,
+            status: AssumptionStatus::Open,
+        }
+    }
+
+    /// Builds a fully-specified assumption.
+    #[must_use]
+    pub fn with_confidence(
+        statement: impl Into<String>,
+        confidence: f32,
+        status: AssumptionStatus,
+    ) -> Self {
+        Self {
+            statement: statement.into(),
+            confidence: Some(confidence),
+            status,
+        }
+    }
+
+    /// The assumption text as `&str`.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.statement
+    }
+}
+
+impl From<String> for Assumption {
+    fn from(statement: String) -> Self {
+        Self::open(statement)
+    }
+}
+
+impl From<&str> for Assumption {
+    fn from(statement: &str) -> Self {
+        Self::open(statement)
+    }
+}
+
+impl AsRef<str> for Assumption {
+    fn as_ref(&self) -> &str {
+        &self.statement
+    }
+}
+
+impl std::fmt::Display for Assumption {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.statement)
+    }
+}
+
+/// What kind of evidence an [`EvidenceRef`] points at (VRO-10, PRD §14.3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EvidenceKind {
+    /// Evidence captured from a workspace file.
+    #[default]
+    File,
+    /// Evidence from a tool execution result.
+    ToolResult,
+    /// Evidence from a deterministic verifier (cargo, schema, …).
+    Verifier,
+    /// Evidence from a model-based verifier / critic.
+    ModelVerifier,
+    /// Evidence from an external source (URL, DB row, …).
+    External,
+    /// Caller-defined evidence kind.
+    Other,
+}
 
 /// Reference to evidence backing a claim (PRD §14.3, §14.4, §10.8).
 ///
-/// **Placeholder**: a free-form string such as `"file:tests/foo.rs:L42"`. A
-/// structured `EvidenceRef` replaces this in a later phase.
-pub type EvidenceRef = String;
+/// VRO-10 promotes this from a `String` placeholder to a strict newtype
+/// carrying an [`EvidenceKind`] tag plus the locator string. Wire shape and
+/// construction ergonomics are preserved via `From<&str>` / `From<String>`
+/// (defaulting to [`EvidenceKind::Other`]).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+pub struct EvidenceRef {
+    /// Discrete evidence kind tag.
+    #[serde(default)]
+    pub kind: EvidenceKind,
+    /// Locator payload (e.g. `"tests/foo.rs:L42"`, `"cargo_test:passed"`).
+    pub locator: String,
+}
+
+impl EvidenceRef {
+    /// Builds a typed evidence reference.
+    #[must_use]
+    pub fn new(kind: EvidenceKind, locator: impl Into<String>) -> Self {
+        Self {
+            kind,
+            locator: locator.into(),
+        }
+    }
+
+    /// Builds an evidence reference from a locator only.
+    #[must_use]
+    pub fn from_locator(locator: impl Into<String>) -> Self {
+        Self {
+            kind: EvidenceKind::Other,
+            locator: locator.into(),
+        }
+    }
+
+    /// The locator payload as `&str`.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.locator
+    }
+}
+
+impl From<String> for EvidenceRef {
+    fn from(locator: String) -> Self {
+        Self::from_locator(locator)
+    }
+}
+
+impl From<&str> for EvidenceRef {
+    fn from(locator: &str) -> Self {
+        Self::from_locator(locator)
+    }
+}
+
+impl AsRef<str> for EvidenceRef {
+    fn as_ref(&self) -> &str {
+        &self.locator
+    }
+}
+
+impl std::fmt::Display for EvidenceRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.locator)
+    }
+}
 
 /// Severity of a single [`VerificationFinding`] (PRD §10.8).
 ///
@@ -625,6 +885,10 @@ pub enum OutcomeStatus {
     Cancelled,
     /// The budget was exhausted before completion.
     BudgetExceeded,
+    /// The provider returned a rate-limit (HTTP 429) signal and the
+    /// orchestrator halted rather than retrying into an unbounded busy loop
+    /// (VRO-10, PRD §10.4: "account for provider rate limits").
+    RateLimitExceeded,
     /// Verification could not reach a determination.
     Inconclusive,
 }
@@ -649,13 +913,33 @@ pub struct VerificationResult {
     pub repairable: bool,
 }
 
+/// What to do when a plan step's verification fails (VRO-10, PRD §10.5
+/// "Failure policy").
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StepFailurePolicy {
+    /// Retry the step in place up to `max_attempts` (default).
+    #[default]
+    RetryInPlace,
+    /// Skip the step and continue with the rest of the plan.
+    Skip,
+    /// Halt the entire plan and surface the failure upstream.
+    HaltPlan,
+    /// Escalate to a different reasoning strategy.
+    EscalateStrategy,
+}
+
 /// One step in a VRO workflow plan (PRD §10.5).
 ///
-/// **Placeholder schema**: the field names follow PRD §10.5
-/// (`id`/`objective`/`depends_on`/`tools`/`verify_with`); the inner collections
-/// use `String`/`VerifierId` until the richer planner types land in a later
-/// phase. This is distinct from `crate::PlanStep` (the TUI plan-display step).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// VRO-10 closes the §10.5 PARTIAL gap by adding the 5 fields the VRO-2.1
+/// placeholder schema omitted: `expected_output_schema`,
+/// `failure_policy`, `max_attempts`, `parallel_allowed`, and
+/// `requires_user_approval`. Each maps verbatim to a §10.5 "Each step must
+/// define" bullet. The 5 new fields carry conservative serde defaults so
+/// existing serialized plans (which omit them) deserialize unchanged.
+///
+/// This is distinct from `crate::PlanStep` (the TUI plan-display step).
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct WorkflowPlanStep {
     /// Stable step identifier.
     pub id: String,
@@ -667,6 +951,29 @@ pub struct WorkflowPlanStep {
     pub tools: Vec<String>,
     /// Verifiers to run on this step's output.
     pub verify_with: Vec<VerifierId>,
+    /// Expected output schema (PRD §10.5). Free-form descriptor (JSON-Schema
+    /// fragment, type name, or `""` when unconstrained). Defaults to empty.
+    #[serde(default)]
+    pub expected_output_schema: String,
+    /// Failure policy (PRD §10.5). Defaults to retry-in-place.
+    #[serde(default)]
+    pub failure_policy: StepFailurePolicy,
+    /// Maximum attempts before the failure policy engages (PRD §10.5).
+    /// Defaults to `1` (one shot, no automatic retry).
+    #[serde(default = "default_step_max_attempts")]
+    pub max_attempts: u16,
+    /// Whether this step may run in parallel with its siblings (PRD §10.5).
+    /// Defaults to `false` (sequential) for safety.
+    #[serde(default)]
+    pub parallel_allowed: bool,
+    /// Whether explicit user approval is required before this step executes
+    /// (PRD §10.5). Defaults to `false`.
+    #[serde(default)]
+    pub requires_user_approval: bool,
+}
+
+fn default_step_max_attempts() -> u16 {
+    1
 }
 
 /// Placeholder cost accounting (PRD §14 references `InferenceCost`).
@@ -766,7 +1073,10 @@ pub struct ReasoningRequest {
 ///
 /// This is **not** raw chain-of-thought (PRD §6.7): it is a structured,
 /// bounded, auditable artifact.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+///
+/// Derives `PartialEq` but **not** `Eq` because `assumptions: Vec<Assumption>`
+/// may carry `Option<f32>` confidence scores (VRO-10 strict Assumption type).
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct DeliberationArtifact {
     /// The distilled objective.
     pub objective: String,
@@ -1227,6 +1537,11 @@ mod tests {
                 depends_on: vec![],
                 tools: vec!["read_file".into()],
                 verify_with: vec![VerifierId::new("cargo_test").unwrap()],
+                expected_output_schema: "audit_report".into(),
+                failure_policy: super::StepFailurePolicy::RetryInPlace,
+                max_attempts: 2,
+                parallel_allowed: false,
+                requires_user_approval: false,
             }],
             evidence: vec!["file:src/sessions/writer.rs".into()],
             unresolved_questions: vec!["Is SQLite required?".into()],
@@ -1356,5 +1671,132 @@ mod tests {
                 supports_vision: false,
             }
         );
+    }
+
+    // ======================================================================
+    // VRO-10 — strict §14.3 aliases (Assumption / EvidenceRef / ContextRef),
+    // §10.5 planner fields, and §10.4 RateLimitExceeded outcome status.
+    // ======================================================================
+
+    #[test]
+    fn context_ref_round_trips_with_kind_and_locator() {
+        let ctx = ContextRef::new(ContextKind::File, "src/main.rs");
+        assert_eq!(ctx.kind, ContextKind::File);
+        assert_eq!(ctx.as_str(), "src/main.rs");
+        let encoded = serde_json::to_string(&ctx).unwrap();
+        let decoded: ContextRef = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(decoded, ctx);
+    }
+
+    #[test]
+    fn context_ref_from_string_defaults_to_other_kind() {
+        // Existing call sites that build ContextRef from a bare &str / String
+        // keep working — the kind defaults to Other.
+        let ctx: ContextRef = "file:src/main.rs".into();
+        assert_eq!(ctx.kind, ContextKind::Other);
+        assert_eq!(ctx.as_str(), "file:src/main.rs");
+    }
+
+    #[test]
+    fn assumption_round_trips_with_confidence_and_status() {
+        let a = Assumption::with_confidence("DB is SQLite", 0.8, AssumptionStatus::Open);
+        let encoded = serde_json::to_string(&a).unwrap();
+        let decoded: Assumption = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(decoded, a);
+        assert_eq!(decoded.status, AssumptionStatus::Open);
+        assert!((decoded.confidence.unwrap() - 0.8_f32).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn assumption_from_string_defaults_to_open_no_confidence() {
+        let a: Assumption = "tests cover happy path".into();
+        assert_eq!(a.status, AssumptionStatus::Open);
+        assert!(a.confidence.is_none());
+        assert_eq!(a.as_str(), "tests cover happy path");
+    }
+
+    #[test]
+    fn evidence_ref_round_trips_with_kind_and_locator() {
+        let er = EvidenceRef::new(EvidenceKind::Verifier, "cargo_test:passed");
+        assert_eq!(er.kind, EvidenceKind::Verifier);
+        let encoded = serde_json::to_string(&er).unwrap();
+        let decoded: EvidenceRef = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(decoded, er);
+    }
+
+    #[test]
+    fn evidence_ref_from_string_defaults_to_other_kind() {
+        let er: EvidenceRef = "file:tests/foo.rs:L42".into();
+        assert_eq!(er.kind, EvidenceKind::Other);
+        assert_eq!(er.as_str(), "file:tests/foo.rs:L42");
+    }
+
+    #[test]
+    fn workflow_plan_step_round_trips_with_five_new_planner_fields() {
+        // VRO-10 §10.5: every "Each step must define" bullet is now present.
+        let step = WorkflowPlanStep {
+            id: "implement".into(),
+            objective: "Apply the approved design".into(),
+            depends_on: vec!["design_change".into()],
+            tools: vec!["patch".into()],
+            verify_with: vec![VerifierId::new("cargo_test").unwrap()],
+            expected_output_schema: "diff_patch".into(),
+            failure_policy: StepFailurePolicy::RetryInPlace,
+            max_attempts: 3,
+            parallel_allowed: true,
+            requires_user_approval: false,
+        };
+        let encoded = serde_json::to_string(&step).unwrap();
+        let decoded: WorkflowPlanStep = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(decoded, step);
+        // The five new fields survive the round trip.
+        assert_eq!(decoded.expected_output_schema, "diff_patch");
+        assert_eq!(decoded.failure_policy, StepFailurePolicy::RetryInPlace);
+        assert_eq!(decoded.max_attempts, 3);
+        assert!(decoded.parallel_allowed);
+        assert!(!decoded.requires_user_approval);
+    }
+
+    #[test]
+    fn workflow_plan_step_deserializes_vro_2_1_payload_without_new_fields() {
+        // A serialized plan from the VRO-2.1 era (which omitted the 5 new
+        // fields) must deserialize with conservative defaults.
+        let legacy = r#"{
+            "id": "old-step",
+            "objective": "do something",
+            "depends_on": [],
+            "tools": [],
+            "verify_with": []
+        }"#;
+        let step: WorkflowPlanStep = serde_json::from_str(legacy).unwrap();
+        assert_eq!(step.id, "old-step");
+        assert_eq!(step.expected_output_schema, "");
+        assert_eq!(step.failure_policy, StepFailurePolicy::RetryInPlace);
+        assert_eq!(step.max_attempts, 1);
+        assert!(!step.parallel_allowed);
+        assert!(!step.requires_user_approval);
+    }
+
+    #[test]
+    fn outcome_status_includes_rate_limit_exceeded_variant() {
+        // VRO-10 §10.4: RateLimitExceeded is a distinct terminal status.
+        let encoded = serde_json::to_string(&OutcomeStatus::RateLimitExceeded).unwrap();
+        assert_eq!(encoded, "\"rate-limit-exceeded\"");
+        let decoded: OutcomeStatus = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(decoded, OutcomeStatus::RateLimitExceeded);
+        // All seven variants round-trip.
+        for status in [
+            OutcomeStatus::Succeeded,
+            OutcomeStatus::Failed,
+            OutcomeStatus::Partial,
+            OutcomeStatus::Cancelled,
+            OutcomeStatus::BudgetExceeded,
+            OutcomeStatus::RateLimitExceeded,
+            OutcomeStatus::Inconclusive,
+        ] {
+            let encoded = serde_json::to_string(&status).unwrap();
+            let decoded: OutcomeStatus = serde_json::from_str(&encoded).unwrap();
+            assert_eq!(decoded, status);
+        }
     }
 }

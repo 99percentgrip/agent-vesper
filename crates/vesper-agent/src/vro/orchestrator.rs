@@ -37,12 +37,15 @@
 use std::future::Future;
 use std::path::Path;
 use std::pin::Pin;
+use std::sync::Arc;
 
 use vesper_domain::{
     InferenceCost, OutcomeStatus, ReasoningBudget, ReasoningOutcome, StructuredOutput,
     VerificationFinding, VerificationResult, VerificationStatus, VerificationSummary, VerifierId,
 };
 
+use super::rate_limit::RateLimitTracker;
+use super::repair::RepairController;
 use super::verifiers::{VerificationContext, VerifierRegistry};
 
 // ---------------------------------------------------------------------------
@@ -96,6 +99,12 @@ pub trait CandidateGenerator: Send + Sync {
 /// consumes one unit of `budget.max_repairs` and feeds the failed verifiers'
 /// findings back to `generator` as corrections.
 ///
+/// This entry point uses an untracked rate-limit tracker and a fresh
+/// [`RepairController`]; behavior is byte-identical to VRO-9. Use
+/// [`run_generate_verify_repair_with_rate_limit`] to wire a real
+/// [`RateLimitTracker`] (VRO-10 §10.4) and a custom [`RepairController`]
+/// (VRO-10 §10.9).
+///
 /// See the [module docs](self) for the full halt-condition table.
 pub async fn run_generate_verify_repair(
     prompt: &str,
@@ -104,6 +113,47 @@ pub async fn run_generate_verify_repair(
     generator: &dyn CandidateGenerator,
     workspace_root: &Path,
     budget: ReasoningBudget,
+) -> ReasoningOutcome {
+    run_generate_verify_repair_with_rate_limit(
+        prompt,
+        verifier_ids,
+        registry,
+        generator,
+        workspace_root,
+        budget,
+        Arc::new(RateLimitTracker::untracked()),
+        RepairController::new(),
+    )
+    .await
+}
+
+/// VRO-10 entry point: like [`run_generate_verify_repair`] but accepts a
+/// shared [`RateLimitTracker`] (PRD §10.4) and a caller-owned
+/// [`RepairController`] (PRD §10.9).
+///
+/// The composition boundary typically constructs one `RateLimitTracker` per
+/// session, shares it via `Arc` between the provider adapter (which calls
+/// [`RateLimitTracker::record_429`] on HTTP 429) and the orchestrator (which
+/// consults [`RateLimitTracker::status`] before every Generate). When the
+/// tracker is blocked, the loop halts immediately with
+/// [`OutcomeStatus::RateLimitExceeded`] and a risk note carrying the
+/// remaining backoff window.
+///
+/// The [`RepairController`] augments the corrections fed to the next
+/// Generate with class-specific hints (JSON syntax / file-not-found / schema
+/// mismatch / compilation / test / constraint) and detects repeated
+/// identical attempts (PRD §10.9: "Avoid repeating an identical failed
+/// attempt").
+#[allow(clippy::too_many_arguments)]
+pub async fn run_generate_verify_repair_with_rate_limit(
+    prompt: &str,
+    verifier_ids: &[VerifierId],
+    registry: &VerifierRegistry,
+    generator: &dyn CandidateGenerator,
+    workspace_root: &Path,
+    budget: ReasoningBudget,
+    rate_limit: Arc<RateLimitTracker>,
+    mut repair: RepairController,
 ) -> ReasoningOutcome {
     let mut remaining_repairs = u32::from(budget.max_repairs);
     let mut corrections: Vec<VerificationFinding> = Vec::new();
@@ -117,6 +167,28 @@ pub async fn run_generate_verify_repair(
     let started_at = std::time::Instant::now();
 
     loop {
+        // --- Halt (pre-Generate): provider rate-limit exhausted (VRO-10,
+        // PRD §10.4: "account for provider rate limits"). The composition
+        // boundary's provider adapter called `rate_limit.record_429(...)`
+        // when an HTTP 429 was observed; we now halt with a specific
+        // RateLimitExceeded outcome instead of crashing on the next call.
+        let status = rate_limit.status();
+        if status.is_blocked() {
+            let retry_note = match status.retry_after_ms() {
+                Some(ms) => format!("provider rate-limited (HTTP 429): retry after {ms} ms"),
+                None => "provider rate-limited (HTTP 429): no Retry-After hint; \
+                         clear the tracker to retry"
+                    .to_string(),
+            };
+            return build_outcome(
+                OutcomeStatus::RateLimitExceeded,
+                last_output.clone(),
+                &[],
+                cost,
+                &[retry_note],
+            );
+        }
+
         // --- Halt (pre-Generate): wall-clock budget exhausted (PRD §10.4) ---
         // Checked BEFORE each Generate so a long-running repair cannot silently
         // exceed the user-facing latency ceiling.
@@ -232,15 +304,44 @@ pub async fn run_generate_verify_repair(
                 &["max_repairs exhausted while verifiers still failing".to_string()],
             );
         }
+
+        // --- Collect this attempt's failed findings (PRD §10.9: include
+        // exact failure evidence) ---
+        let attempt_findings: Vec<VerificationFinding> = results
+            .iter()
+            .filter(|r| r.status != VerificationStatus::Passed)
+            .flat_map(|r| r.findings.iter().cloned())
+            .collect();
+
+        // --- VRO-10 §10.9: repeated-attempt guard. If the failing
+        // findings are byte-identical to the previous attempt's, escalate
+        // to Failed with a clear risk note rather than re-issuing the same
+        // prompt (PRD §10.9: "Avoid repeating an identical failed attempt").
+        if repair.is_repeated_attempt(&attempt_findings) && attempts >= 2 {
+            return build_outcome(
+                OutcomeStatus::Failed,
+                last_output,
+                &results,
+                cost,
+                &["repeated identical verifier failure: escalating to avoid \
+                     an unbounded review loop (PRD §10.9)"
+                    .to_string()],
+            );
+        }
+
         // Consume one repair unit and feed every failed verifier's findings
         // back to the generator as corrections (PRD §10.9: exact failure
         // evidence).
         remaining_repairs -= 1;
-        for result in &results {
-            if result.status != VerificationStatus::Passed {
-                corrections.extend(result.findings.iter().cloned());
-            }
-        }
+        corrections.extend(attempt_findings.iter().cloned());
+
+        // --- VRO-10 §10.9: Repair Controller heuristics. For each failed
+        // finding, classify it (JSON parse / file-not-found / schema / etc.)
+        // and append a class-specific correction hint to the corrections
+        // vector. Generic findings inject no hint, preserving VRO-9 behavior
+        // for unclassifiable failures.
+        let _classes = repair.augment_corrections(&mut corrections, &attempt_findings);
+
         // Loop back to Generate.
     }
 }
@@ -572,20 +673,23 @@ mod tests {
         // Two generations: the initial attempt plus one repair.
         assert_eq!(generator.call_count(), 2);
         // The repair feedback reached the generator on the second call.
+        // VRO-10 §10.9: the second call sees the raw finding PLUS a
+        // class-specific correction hint (the "missing semicolon" finding
+        // has location `src/lib.rs:1`, severity Error → classified as
+        // CompilationError → injects a cargo-error hint). So the second
+        // call sees ≥ 2 corrections.
         let corrections_seen = generator.corrections_seen();
         assert_eq!(corrections_seen.len(), 2);
         assert!(
             corrections_seen[0].is_empty(),
             "first call has no prior failure"
         );
-        assert_eq!(
-            corrections_seen[1].len(),
-            1,
-            "second call receives the failed verifier's finding as a correction"
-        );
-        assert_eq!(
-            corrections_seen[1][0].message, "missing semicolon",
-            "the exact failure evidence is fed back (PRD §10.9)"
+        assert!(
+            corrections_seen[1]
+                .iter()
+                .any(|c| c.message == "missing semicolon"),
+            "second call receives the failed verifier's finding as a correction: {:?}",
+            corrections_seen[1]
         );
         assert_eq!(outcome.cost.model_calls, 2);
     }
@@ -594,12 +698,23 @@ mod tests {
 
     #[tokio::test]
     async fn loop_halts_failed_when_max_repairs_exhausted() {
-        // Always-fails repairable verifier. With max_repairs=2 the loop runs:
-        // generate -> fail -> repair(1) -> generate -> fail -> repair(2) ->
-        // generate -> fail -> exhausted -> Failed. That is 3 generations.
+        // Always-fails repairable verifier with DISTINCT findings per call
+        // so the VRO-10 §10.9 repetition guard does not pre-empt the
+        // max_repairs halt. With max_repairs=2 the loop runs:
+        //   generate -> fail (msg #1) -> repair(1)
+        //   generate -> fail (msg #2) -> repair(2)
+        //   generate -> fail (msg #3) -> exhausted -> Failed.
+        // That is 3 generations. (If the messages were identical, the §10.9
+        // repetition guard would correctly halt on iteration 2 instead —
+        // that behavior is covered separately by
+        // `repair_controller_escalates_on_repeated_identical_failure`.)
         let registry = registry_with(vec![Box::new(FakeVerifier::new(
             VID,
-            vec![failed_repairable(VID, "still broken")],
+            vec![
+                failed_repairable(VID, "still broken attempt 1"),
+                failed_repairable(VID, "still broken attempt 2"),
+                failed_repairable(VID, "still broken attempt 3"),
+            ],
         ))]);
         let generator = FakeGenerator::new(vec![serde_json::json!({"answer": "x"})]);
 
@@ -926,5 +1041,211 @@ mod tests {
         assert_eq!(generator.call_count(), 1);
         // The FakeGenerator emits 100 tokens — well under 24_576.
         assert_eq!(outcome.cost.total_tokens, 100);
+    }
+
+    // ======================================================================
+    // VRO-10 — provider rate-limit accounting (§10.4) and Repair Controller
+    // heuristics (§10.9). The rate-limit tracker + repair controller are
+    // wired through `run_generate_verify_repair_with_rate_limit`.
+    // ======================================================================
+
+    #[tokio::test]
+    async fn loop_halts_rate_limit_exceeded_when_tracker_blocks_before_first_generate() {
+        // The composition boundary observed an HTTP 429 and recorded it on
+        // the tracker. Before the FIRST Generate the loop consults the
+        // tracker and halts immediately with RateLimitExceeded — the
+        // generator is never invoked.
+        let registry = registry_with(vec![Box::new(FakeVerifier::new(VID, vec![passed(VID)]))]);
+        let generator = FakeGenerator::new(vec![serde_json::json!({"answer": "ok"})]);
+        let tracker = std::sync::Arc::new(super::super::rate_limit::RateLimitTracker::untracked());
+        tracker.record_429(Some(60_000)); // 60s backoff
+
+        let outcome = run_generate_verify_repair_with_rate_limit(
+            "fix the bug",
+            &[VerifierId::new(VID).unwrap()],
+            &registry,
+            &generator,
+            Path::new("/tmp/workspace"),
+            ReasoningBudget::balanced(),
+            std::sync::Arc::clone(&tracker),
+            super::super::repair::RepairController::new(),
+        )
+        .await;
+
+        assert_eq!(
+            outcome.status,
+            OutcomeStatus::RateLimitExceeded,
+            "blocked tracker must halt with RateLimitExceeded"
+        );
+        assert_eq!(
+            generator.call_count(),
+            0,
+            "generator must not be called when tracker blocks"
+        );
+        // The risk note names the rate-limit condition and the backoff window.
+        assert!(
+            outcome
+                .unresolved_risks
+                .iter()
+                .any(|r| r.contains("rate-limited") && r.contains("retry after")),
+            "risk must name the rate-limit condition: {:?}",
+            outcome.unresolved_risks
+        );
+    }
+
+    #[tokio::test]
+    async fn loop_halts_rate_limit_exceeded_with_no_retry_after_hint() {
+        // A 429 without Retry-After blocks indefinitely. The risk note must
+        // surface the absence so the operator knows to clear the tracker.
+        let registry = registry_with(vec![Box::new(FakeVerifier::new(VID, vec![passed(VID)]))]);
+        let generator = FakeGenerator::new(vec![serde_json::json!({"answer": "ok"})]);
+        let tracker = std::sync::Arc::new(super::super::rate_limit::RateLimitTracker::untracked());
+        tracker.record_429(None);
+
+        let outcome = run_generate_verify_repair_with_rate_limit(
+            "fix the bug",
+            &[VerifierId::new(VID).unwrap()],
+            &registry,
+            &generator,
+            Path::new("/tmp/workspace"),
+            ReasoningBudget::balanced(),
+            tracker,
+            super::super::repair::RepairController::new(),
+        )
+        .await;
+
+        assert_eq!(outcome.status, OutcomeStatus::RateLimitExceeded);
+        assert!(
+            outcome
+                .unresolved_risks
+                .iter()
+                .any(|r| r.contains("no Retry-After") && r.contains("clear the tracker")),
+            "risk must surface missing Retry-After: {:?}",
+            outcome.unresolved_risks
+        );
+    }
+
+    #[tokio::test]
+    async fn loop_with_unblocked_tracker_behaves_identically_to_vro_9() {
+        // Regression guard: the default untracked tracker must not change
+        // behavior. A first-pass-success run completes with Succeeded and
+        // one model call, identical to run_generate_verify_repair.
+        let registry = registry_with(vec![Box::new(FakeVerifier::new(VID, vec![passed(VID)]))]);
+        let generator = FakeGenerator::new(vec![serde_json::json!({"answer": "ok"})]);
+
+        let outcome = run_generate_verify_repair_with_rate_limit(
+            "fix the bug",
+            &[VerifierId::new(VID).unwrap()],
+            &registry,
+            &generator,
+            Path::new("/tmp/workspace"),
+            ReasoningBudget::balanced(),
+            std::sync::Arc::new(super::super::rate_limit::RateLimitTracker::untracked()),
+            super::super::repair::RepairController::new(),
+        )
+        .await;
+
+        assert_eq!(outcome.status, OutcomeStatus::Succeeded);
+        assert_eq!(generator.call_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn repair_controller_injects_class_specific_correction_hint_for_json_parse() {
+        // The first verifier failure is a JSON-parse error. The Repair
+        // Controller must classify it (RepairHeuristic::JsonParse) and inject
+        // a JSON-syntax correction hint into the corrections vector fed to
+        // the second Generate.
+        let registry = registry_with(vec![Box::new(FakeVerifier::new(
+            VID,
+            vec![
+                failed_repairable(VID, "invalid JSON: unexpected token"),
+                passed(VID),
+            ],
+        ))]);
+        let generator = FakeGenerator::new(vec![
+            serde_json::json!({"answer": "broken"}),
+            serde_json::json!({"answer": "fixed"}),
+        ]);
+
+        let outcome = run_generate_verify_repair_with_rate_limit(
+            "fix the bug",
+            &[VerifierId::new(VID).unwrap()],
+            &registry,
+            &generator,
+            Path::new("/tmp/workspace"),
+            ReasoningBudget::balanced(),
+            std::sync::Arc::new(super::super::rate_limit::RateLimitTracker::untracked()),
+            super::super::repair::RepairController::new(),
+        )
+        .await;
+
+        assert_eq!(outcome.status, OutcomeStatus::Succeeded);
+        // Two generations: initial + one repair.
+        assert_eq!(generator.call_count(), 2);
+        // The corrections seen on the second Generate include the original
+        // finding PLUS the injected JSON-syntax hint.
+        let corrections_seen = generator.corrections_seen();
+        assert_eq!(corrections_seen.len(), 2);
+        let second = &corrections_seen[1];
+        // At least two corrections: the raw finding + the JSON hint.
+        assert!(
+            second.len() >= 2,
+            "second Generate must see the raw finding + the JSON-syntax hint, got {second:?}"
+        );
+        assert!(
+            second.iter().any(|c| c.message.contains("JSON")),
+            "corrections must include the JSON-syntax hint: {second:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn repair_controller_escalates_on_repeated_identical_failure() {
+        // PRD §10.9: "Avoid repeating an identical failed attempt." When the
+        // same finding repeats on two consecutive repairs, the loop must
+        // halt with Failed (not loop forever burning the entire max_repairs
+        // budget) and surface an escalation risk note.
+        let registry = registry_with(vec![Box::new(FakeVerifier::new(
+            VID,
+            vec![failed_repairable(VID, "schema mismatch: missing field")],
+        ))]);
+        let generator = FakeGenerator::new(vec![serde_json::json!({"answer": "x"})]);
+
+        let outcome = run_generate_verify_repair_with_rate_limit(
+            "fix the bug",
+            &[VerifierId::new(VID).unwrap()],
+            &registry,
+            &generator,
+            Path::new("/tmp/workspace"),
+            ReasoningBudget {
+                max_repairs: 10, // generous: must trip the repetition guard FIRST
+                max_model_calls: 10,
+                ..ReasoningBudget::balanced()
+            },
+            std::sync::Arc::new(super::super::rate_limit::RateLimitTracker::untracked()),
+            super::super::repair::RepairController::new(),
+        )
+        .await;
+
+        assert_eq!(
+            outcome.status,
+            OutcomeStatus::Failed,
+            "repeated identical failure must escalate to Failed, not loop"
+        );
+        // The risk note names the repetition escalation.
+        assert!(
+            outcome
+                .unresolved_risks
+                .iter()
+                .any(|r| r.contains("repeated identical verifier failure")),
+            "risk must surface the escalation: {:?}",
+            outcome.unresolved_risks
+        );
+        // Two generations max (initial + first repair). The second repair's
+        // identical findings trigger the guard before a third Generate.
+        assert!(
+            generator.call_count() <= 3,
+            "repetition guard must halt before unbounded retries; got {}",
+            generator.call_count()
+        );
     }
 }

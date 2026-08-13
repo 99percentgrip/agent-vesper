@@ -188,7 +188,48 @@ the multi-turn, tool-executing layer above it.
   deterministically under VRO-4 parallel fan-out. Rejects an empty pool
   with `MultiModelError::EmptyProviderPool`. Zero-breakage: only invoked
   by the parallel-strategy handlers; `Direct` and `GenerateVerifyRepair`
-  paths never reach it.
+  paths never reach it. **VRO-10 candidate-specific branch prompts (PRD
+  §10.6 "Candidate-specific prompts"):** the new `BranchDiversification`
+  enum (`None` | `SystemPromptVariants(Vec<String>)`) is applied by
+  `fan_out_diverse(generator, prompt, requested, budget, diversification,
+  early_stop)`. Each branch receives `diversification.prompt_prefix_for(i)`
+  prepended to its prompt (the canonical `diverse_branches()` constructor
+  ships the four-variant conservative → balanced → creative → highly
+  creative stance ladder the directive names). `BranchDiversification::None`
+  preserves byte-identical VRO-4 behavior; the existing `fan_out` /
+  `fan_out_with_early_stop` are unchanged (zero-breakage). PRD §10.6:
+  "Candidate diversity must not be simulated merely by asking for 'three
+  alternatives' in one completion."
+- `src/vro/repair.rs` — **VRO-10 Repair Controller heuristics (PRD §10.9).**
+  Pure classification + hint surface: `classify_finding(&VerificationFinding)
+  -> RepairHeuristic` matches against the finding's `message`, `severity`,
+  and `location` to classify it as `JsonParse` / `SchemaMismatch` /
+  `FileNotFound` / `CompilationError` / `TestFailure` / `ConstraintViolation`
+  / `Generic`. Each non-Generic class carries a class-specific correction
+  hint (`RepairHeuristic::correction_hint()`) the orchestrator injects into
+  the next Generate's corrections vector. `RepairController::new()` holds
+  the previous repair attempt's finding-message signature so
+  `is_repeated_attempt(&[VerificationFinding])` can detect an identical
+  retry (PRD §10.9: "Avoid repeating an identical failed attempt") — the
+  orchestrator escalates to `Failed` rather than re-issuing the same
+  prompt. Stateless, allocation-only, no I/O. Zero-breakage: the GVR loop
+  consults the controller only when a repair is about to happen; a `Generic`
+  finding injects no hint, preserving VRO-9 behavior for unclassifiable
+  failures.
+- `src/vro/rate_limit.rs` — **VRO-10 provider rate-limit accounting (PRD
+  §10.4).** `RateLimitTracker` is a thread-safe atomic-backed accounting
+  struct (`Arc<RateLimitTracker>` is shared between the provider adapter
+  and the orchestrator). `record_429(retry_after_ms: Option<u64>)` is
+  called by the provider adapter on HTTP 429; `status()` returns
+  `Available` or `Blocked { retry_after_ms }` (auto-clearing past the
+  deadline). The default `untracked()` tracker never blocks, so the GVR
+  loop's behavior is byte-identical to VRO-9 when no tracker is wired.
+  The GVR loop's pre-Generate check halts with
+  `OutcomeStatus::RateLimitExceeded` when the tracker reports `Blocked`
+  (PRD §10.4: "account for provider rate limits"). PRD §10.9
+  "Avoid repeating an identical failed attempt" is enforced via the
+  controller's signature comparison; rate-limit halts are NOT a repair —
+  they are a hard stop until the operator clears the tracker.
 - `tests/live_react_integration.rs` — **VRO-9 Directive 3** live HTTP
   integration tests for the Tool-Grounded ReAct loop (PRD §22.2 "Real LM
   Studio process"). Every test is `#[ignore]`-marked (skipped by default
@@ -201,6 +242,17 @@ the multi-turn, tool-executing layer above it.
   `[DONE]` parsing. Run locally with `cargo test -p vesper-agent --test
   live_react_integration -- --ignored`. Zero-breakage: the binary is
   never built by the canonical `cargo xtask verify` gate's
+  `cargo test --workspace --all-features` unless explicitly invoked.
+- `tests/soak_test.rs` — **VRO-10 Directive §22.4** soak tests (PRD §22.4
+  "Long sessions / Repeated Deep-mode requests / Memory growth / Parallel
+  sessions"). Five `#[ignore]`-marked tests loop the orchestrator through
+  50+ back-to-back synthetic requests (in-process fakes, not network) to
+  prove memory safety, thread-leak prevention, repair-controller signature
+  boundedness, rate-limit-tracker atomic-counter integrity, and
+  cross-turn state non-corruption. Standard `cargo test` skips them;
+  developers run them with `cargo test -p vesper-agent --test soak_test
+  -- --ignored --nocapture`. Zero-breakage: the binary is never built by
+  the canonical `cargo xtask verify` gate's
   `cargo test --workspace --all-features` unless explicitly invoked.
 - `src/vro/strategies.rs` — VRO-4 + VRO-6 strategy handlers (PRD §11.4 +
   §11.5 + §11.7 + §11.8). `normalize_output` strips whitespace + sorts JSON
