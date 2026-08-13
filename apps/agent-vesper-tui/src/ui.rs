@@ -65,6 +65,74 @@ pub struct PermissionModal {
     pub focus: PermissionChoice,
 }
 
+/// VRO-8 (PRD §8.1) — diagnostic projection surfaced at the top of the
+/// Reasoning Panel. Computed by the binary from the active
+/// [`vesper_domain::TaskProfile`] + effective
+/// [`vesper_domain::ReasoningMode`] + [`vesper_domain::ReasoningBudget`].
+/// `None` on [`ViewModel`] when VRO is disabled or no turn has run yet.
+///
+/// The fields are pre-formatted **labels** (snake/kebab-case strings) rather
+/// than typed enums so the renderer never has to import domain strategy /
+/// risk enums (keeping `ui.rs` decoupled from VRO internals). All numeric
+/// budget fields are the PRD §10.4 wire types.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ReasoningDiagnostics {
+    /// Snake_case strategy label (e.g. `"bounded_tree_search"`).
+    pub strategy: String,
+    /// Kebab-case mode label (e.g. `"auto"`, `"deep"`).
+    pub mode: String,
+    /// `true` when the user has forced this mode via `/reasoning set mode=…`
+    /// (vs the profiler auto-selecting it). Surfaced as `*(override)*` in
+    /// the panel header.
+    pub override_active: bool,
+    /// Lowercase risk label (`"low"` / `"medium"` / `"high"`).
+    pub risk: String,
+    /// Prominent risk-escalation flag — only `true` when the TaskProfiler
+    /// escalated the task to `RiskLevel::High`. The renderer surfaces a
+    /// **⚠ RISK ESCALATION** warning next to the strategy line.
+    pub risk_escalation: bool,
+    /// Maximum search-tree depth for `BoundedTreeSearch` (PRD §10.4).
+    pub max_search_depth: u16,
+    /// Maximum parallel candidate/search branches (PRD §10.4).
+    pub max_parallel_branches: u16,
+    /// Maximum provider model calls across the turn (PRD §10.4).
+    pub max_model_calls: u32,
+    /// Maximum verification→repair cycles (PRD §10.4).
+    pub max_repairs: u16,
+}
+
+impl ReasoningDiagnostics {
+    /// Renders the diagnostic header as a single markdown line. The
+    /// renderer prepends this (followed by a horizontal rule) to the
+    /// streamed reasoning text so the strategy decision is visible at the
+    /// top of the panel.
+    ///
+    /// Pure: takes `&self`, returns a `String`. Tested in
+    /// [`super::tests::reasoning_diagnostics_header_includes_strategy_and_budget`]
+    /// and the `risk_escalation` variants.
+    #[must_use]
+    pub fn render_header(&self) -> String {
+        let mut out = String::new();
+        out.push_str(&format!("**Strategy:** `{}`", self.strategy));
+        out.push_str(&format!(" | **Mode:** `{}`", self.mode));
+        if self.override_active {
+            out.push_str(" *(override)*");
+        }
+        out.push_str(&format!(" | **Risk:** `{}`", self.risk));
+        if self.risk_escalation {
+            out.push_str(" **⚠ RISK ESCALATION**");
+        }
+        out.push_str(&format!(
+            " | Depth: {} | Branches: {} | Models: {} | Repairs: {}",
+            self.max_search_depth,
+            self.max_parallel_branches,
+            self.max_model_calls,
+            self.max_repairs
+        ));
+        out
+    }
+}
+
 /// Pure view model the renderer consumes every frame.
 #[derive(Debug, Clone, Default)]
 pub struct ViewModel {
@@ -97,6 +165,11 @@ pub struct ViewModel {
     pub activity: Vec<String>,
     /// Provider-visible reasoning streamed during the current turn.
     pub reasoning: String,
+    /// VRO-8 (PRD §8.1) — diagnostic projection rendered as a header at the
+    /// top of the Reasoning Panel. `None` (the default) hides the header.
+    /// The binary computes this from the active TaskProfile + effective
+    /// ReasoningMode + ReasoningBudget before each VRO turn.
+    pub reasoning_diagnostics: Option<ReasoningDiagnostics>,
     /// Assistant response accumulated during the current turn.
     pub live_response: String,
     /// Last structured turn-completion report.
@@ -330,10 +403,23 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
     );
 
     if reasoning_height > 0 {
-        let reasoning_lines: Vec<Line<'static>> = if model.reasoning.is_empty() {
+        // VRO-8 (PRD §8.1): when diagnostics are present, prepend a
+        // strategy/budget/risk header to the reasoning text. The header
+        // is rendered through the same markdown pipeline as the rest of
+        // the panel, so bold/italic/code spans style it consistently with
+        // the streamed thinking.
+        let reasoning_text = if let Some(diagnostics) = model.reasoning_diagnostics.as_ref() {
+            let mut text = diagnostics.render_header();
+            text.push_str("\n\n---\n\n");
+            text.push_str(&model.reasoning);
+            text
+        } else {
+            model.reasoning.clone()
+        };
+        let reasoning_lines: Vec<Line<'static>> = if reasoning_text.is_empty() {
             vec![Line::from("Waiting for provider-visible reasoning…")]
         } else {
-            crate::markdown::render_markdown(&model.reasoning)
+            crate::markdown::render_markdown(&reasoning_text)
         };
         let reasoning_area = conversation_chunks[1];
         let title = if model.reasoning_panel_focused {
@@ -1726,6 +1812,102 @@ mod tests {
         assert!(
             !wrapped.is_empty(),
             "wrapper must produce at least one line"
+        );
+    }
+
+    // ===================================================================
+    // VRO-8 (PRD §8.1) — ReasoningDiagnostics header rendering.
+    // ===================================================================
+
+    #[test]
+    fn reasoning_diagnostics_header_includes_strategy_and_budget() {
+        // Directive 1: the header must surface the chosen strategy, mode,
+        // and key budget fields so the driver sees the orchestrator's
+        // decision at a glance.
+        let diagnostics = ReasoningDiagnostics {
+            strategy: "bounded_tree_search".into(),
+            mode: "auto".into(),
+            override_active: false,
+            risk: "medium".into(),
+            risk_escalation: false,
+            max_search_depth: 3,
+            max_parallel_branches: 2,
+            max_model_calls: 10,
+            max_repairs: 2,
+        };
+        let header = diagnostics.render_header();
+        assert!(
+            header.contains("**Strategy:** `bounded_tree_search`"),
+            "got: {header}"
+        );
+        assert!(header.contains("**Mode:** `auto`"), "got: {header}");
+        assert!(header.contains("**Risk:** `medium`"), "got: {header}");
+        assert!(header.contains("Depth: 3"), "got: {header}");
+        assert!(header.contains("Branches: 2"), "got: {header}");
+        assert!(header.contains("Models: 10"), "got: {header}");
+        assert!(header.contains("Repairs: 2"), "got: {header}");
+        // No override flag for the auto path.
+        assert!(!header.contains("override"), "got: {header}");
+        assert!(
+            !header.contains("RISK ESCALATION"),
+            "no escalation marker for medium risk"
+        );
+    }
+
+    #[test]
+    fn reasoning_diagnostics_header_marks_active_override() {
+        // When the user forced a mode, the header surfaces *(override)* so
+        // it's clear the profiler is NOT in charge.
+        let diagnostics = ReasoningDiagnostics {
+            strategy: "tool_grounded_react".into(),
+            mode: "deep".into(),
+            override_active: true,
+            risk: "low".into(),
+            risk_escalation: false,
+            max_search_depth: 3,
+            max_parallel_branches: 3,
+            max_model_calls: 10,
+            max_repairs: 2,
+        };
+        let header = diagnostics.render_header();
+        assert!(
+            header.contains("**Mode:** `deep` *(override)*"),
+            "got: {header}"
+        );
+    }
+
+    #[test]
+    fn reasoning_diagnostics_header_prominently_warns_on_risk_escalation() {
+        // Directive 1: when the TaskProfiler escalated a task due to risk,
+        // prominently display a "Risk Escalation" warning. The renderer
+        // surfaces this as **⚠ RISK ESCALATION** next to the strategy line.
+        let diagnostics = ReasoningDiagnostics {
+            strategy: "proposer_critic_adjudicator".into(),
+            mode: "deep".into(),
+            override_active: false,
+            risk: "high".into(),
+            risk_escalation: true,
+            max_search_depth: 3,
+            max_parallel_branches: 3,
+            max_model_calls: 10,
+            max_repairs: 2,
+        };
+        let header = diagnostics.render_header();
+        assert!(header.contains("**Risk:** `high`"), "got: {header}");
+        assert!(header.contains("**⚠ RISK ESCALATION**"), "got: {header}");
+    }
+
+    #[test]
+    fn reasoning_diagnostics_default_is_all_empty_and_renders_safely() {
+        // The default (used when VRO is disabled or no turn has run) must
+        // render without panic and produce a well-formed header.
+        let diagnostics = ReasoningDiagnostics::default();
+        let header = diagnostics.render_header();
+        assert!(header.contains("**Strategy:** ``"), "got: {header}");
+        assert!(header.contains("Depth: 0"), "got: {header}");
+        assert!(
+            !header.contains("RISK ESCALATION"),
+            "default must not falsely claim escalation"
         );
     }
 }

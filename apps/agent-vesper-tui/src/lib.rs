@@ -51,8 +51,8 @@ pub use lmstudio_provider::LmStudioFactory;
 pub use plan_mode::{PendingQuestion, PlanModeError, PlanPhase, PlanState, PlanTransition};
 pub use superpowers::{ProviderSuperpowerSurface, SuperpowerOverrides};
 pub use ui::{
-    FOOTER_ACTIONS, PermissionChoice, PermissionModal, StubRenderer, TerminalRenderer, ViewModel,
-    command_menu_height, render_to_frame,
+    FOOTER_ACTIONS, PermissionChoice, PermissionModal, ReasoningDiagnostics, StubRenderer,
+    TerminalRenderer, ViewModel, command_menu_height, render_to_frame,
 };
 
 use vesper_domain::ProviderId;

@@ -179,6 +179,21 @@ pub enum CommandOutcome {
     /// or render the live status block).
     Embedding(EmbeddingOp),
 
+    /// VRO-8 (PRD §8.1) — `/reasoning set mode=<auto|fast|balanced|deep|
+    /// maximum|off>` overrides the TaskProfiler. The dispatch surface
+    /// records this on `SessionState.reasoning_mode_override`; the binary
+    /// computes the effective mode and routes the next VRO turn through it.
+    /// `mode == Auto` clears any prior override (returns to profiler
+    /// defaults).
+    ReasoningOverride {
+        /// The user-selected reasoning mode. `Auto` clears any prior override.
+        mode: vesper_domain::ReasoningMode,
+    },
+    /// VRO-8 — bare `/reasoning` with no argument. Surfaces the current
+    /// override (or "auto") in the status line; `dispatch` reads the live
+    /// `SessionState.reasoning_mode_override`.
+    ReasoningStatus,
+
     /// Quit/exit requested.
     Quit,
     /// Unknown command or invalid argument; the message is shown to the user.
@@ -707,7 +722,50 @@ impl CommandRegistry {
             "cancel" => CommandOutcome::PlanGesture(PlanGesture::Cancel),
 
             // === Superpowers (resolved dynamically against the active provider) ===
-            "thinking" | "reasoning" | "model" => self.resolve_superpower(
+            // VRO-8 (PRD §8.1): `/reasoning set mode=<X>` (and `/reasoning
+            // clear`) override the TaskProfiler; bare `/reasoning` surfaces
+            // the current override. Any other `/reasoning <level>` argument
+            // shape falls through to the existing thinking superpower alias
+            // (oracle convention). `/thinking` and `/model` always take the
+            // superpower path.
+            "reasoning" => {
+                let trimmed = argument.trim();
+                if trimmed.is_empty() {
+                    // Bare `/reasoning` → show current override in status.
+                    CommandOutcome::ReasoningStatus
+                } else if trimmed.eq_ignore_ascii_case("clear") {
+                    // `/reasoning clear` is an alias for `set mode=auto`.
+                    CommandOutcome::ReasoningOverride {
+                        mode: vesper_domain::ReasoningMode::Auto,
+                    }
+                } else if let Some(rest) = trimmed.strip_prefix("set ") {
+                    let rest = rest.trim();
+                    if let Some(mode_str) = rest.strip_prefix("mode=") {
+                        match parse_reasoning_mode(mode_str) {
+                            Some(mode) => CommandOutcome::ReasoningOverride { mode },
+                            None => CommandOutcome::Error(format!(
+                                "Unknown reasoning mode: {mode_str}. Allowed: \
+                                 auto, fast, balanced, deep, maximum, off."
+                            )),
+                        }
+                    } else {
+                        CommandOutcome::Error(
+                            "Usage: /reasoning set mode=<auto|fast|balanced|deep|maximum|off>"
+                                .into(),
+                        )
+                    }
+                } else {
+                    // Fall through to the thinking superpower alias
+                    // (preserves `/reasoning <level>` for backward compat).
+                    self.resolve_superpower(
+                        superpower_alias(name),
+                        argument,
+                        active_provider,
+                        superpowers,
+                    )
+                }
+            }
+            "thinking" | "model" => self.resolve_superpower(
                 superpower_alias(name),
                 argument,
                 active_provider,
@@ -1447,6 +1505,31 @@ fn superpower_alias(name: &str) -> &str {
     match name {
         "reasoning" => "thinking",
         other => other,
+    }
+}
+
+/// Parses a `/reasoning set mode=<value>` argument into a
+/// [`vesper_domain::ReasoningMode`] (VRO-8, PRD §8.1).
+///
+/// Accepts the six PRD §8.1 mode names (case-insensitive) plus the `max`
+/// shorthand for `Maximum`. Returns `None` for any other value so the
+/// caller surfaces a usage error rather than silently inventing a mode.
+///
+/// **Provider-neutrality**: this parser maps *only* the user's text to the
+/// PRD's six values; it never names a concrete provider or invents a new
+/// variant. The dispatched override flows through `SessionState` and the
+/// binary's VRO turn dispatcher; it never reaches a provider match arm.
+#[must_use]
+pub(crate) fn parse_reasoning_mode(value: &str) -> Option<vesper_domain::ReasoningMode> {
+    use vesper_domain::ReasoningMode;
+    match value.trim().to_ascii_lowercase().as_str() {
+        "auto" => Some(ReasoningMode::Auto),
+        "fast" => Some(ReasoningMode::Fast),
+        "balanced" => Some(ReasoningMode::Balanced),
+        "deep" => Some(ReasoningMode::Deep),
+        "maximum" | "max" => Some(ReasoningMode::Maximum),
+        "off" => Some(ReasoningMode::Off),
+        _ => None,
     }
 }
 
@@ -3021,5 +3104,184 @@ mod tests {
             candidates.iter().any(|(name, _)| name == "/embedding"),
             "expected /embedding in completion candidates, got {candidates:?}"
         );
+    }
+
+    // ===================================================================
+    // VRO-8 (PRD §8.1) — `/reasoning set mode=<X>` override + status.
+    // ===================================================================
+
+    #[test]
+    fn vro8_parse_reasoning_mode_accepts_six_prd_variants_and_max_shorthand() {
+        use vesper_domain::ReasoningMode;
+        // The six PRD §8.1 mode names must all parse (case-insensitive).
+        assert_eq!(parse_reasoning_mode("auto"), Some(ReasoningMode::Auto));
+        assert_eq!(parse_reasoning_mode("fast"), Some(ReasoningMode::Fast));
+        assert_eq!(
+            parse_reasoning_mode("balanced"),
+            Some(ReasoningMode::Balanced)
+        );
+        assert_eq!(parse_reasoning_mode("deep"), Some(ReasoningMode::Deep));
+        assert_eq!(
+            parse_reasoning_mode("maximum"),
+            Some(ReasoningMode::Maximum)
+        );
+        assert_eq!(parse_reasoning_mode("off"), Some(ReasoningMode::Off));
+        // `max` is an accepted shorthand for `Maximum` (matching the
+        // oracle's `/thinking max` convention).
+        assert_eq!(parse_reasoning_mode("max"), Some(ReasoningMode::Maximum));
+        // Case-insensitive.
+        assert_eq!(parse_reasoning_mode("DEEP"), Some(ReasoningMode::Deep));
+        assert_eq!(parse_reasoning_mode("  Auto  "), Some(ReasoningMode::Auto));
+    }
+
+    #[test]
+    fn vro8_parse_reasoning_mode_rejects_invented_modes() {
+        // Invented modes (e.g. `low`/`turbo`/`reasoning-3`) must NOT parse —
+        // the resolver surfaces a usage error instead of silently inventing
+        // a new variant. Defense in depth: PRD §8.1 is the authoritative
+        // mode list.
+        for bad in ["low", "turbo", "extreme", "", "ultra", "thinking"] {
+            assert_eq!(
+                parse_reasoning_mode(bad),
+                None,
+                "invented mode {bad:?} must not parse"
+            );
+        }
+    }
+
+    #[test]
+    fn vro8_reasoning_set_mode_resolves_to_override_outcome() {
+        // Directive 2: `/reasoning set mode=deep` must resolve to a
+        // CommandOutcome::ReasoningOverride carrying Deep. The dispatcher
+        // then mutates `SessionState.reasoning_mode_override`.
+        let registry = CommandRegistry::stage_11b();
+        let plan = crate::plan_mode::PlanState::default();
+        let intent = CommandIntent::parse("/reasoning set mode=deep");
+        let outcome = registry.resolve(&intent, &plan, &provider(), &[]);
+        match outcome {
+            CommandOutcome::ReasoningOverride { mode } => {
+                assert_eq!(mode, vesper_domain::ReasoningMode::Deep);
+            }
+            other => panic!("expected ReasoningOverride, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn vro8_reasoning_set_mode_auto_clears_via_resolver() {
+        // `set mode=auto` resolves to ReasoningOverride { Auto }; the
+        // dispatcher normalizes Auto to None.
+        let registry = CommandRegistry::stage_11b();
+        let plan = crate::plan_mode::PlanState::default();
+        let outcome = registry.resolve(
+            &CommandIntent::parse("/reasoning set mode=auto"),
+            &plan,
+            &provider(),
+            &[],
+        );
+        match outcome {
+            CommandOutcome::ReasoningOverride { mode } => {
+                assert_eq!(mode, vesper_domain::ReasoningMode::Auto);
+            }
+            other => panic!("expected ReasoningOverride, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn vro8_reasoning_clear_alias_resolves_to_auto_override() {
+        // `/reasoning clear` is an alias for `set mode=auto`.
+        let registry = CommandRegistry::stage_11b();
+        let plan = crate::plan_mode::PlanState::default();
+        let outcome = registry.resolve(
+            &CommandIntent::parse("/reasoning clear"),
+            &plan,
+            &provider(),
+            &[],
+        );
+        match outcome {
+            CommandOutcome::ReasoningOverride { mode } => {
+                assert_eq!(mode, vesper_domain::ReasoningMode::Auto);
+            }
+            other => panic!("expected ReasoningOverride, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn vro8_reasoning_no_arg_resolves_to_status() {
+        // Bare `/reasoning` surfaces the current override (read by dispatch
+        // from SessionState). The resolver returns the marker variant.
+        let registry = CommandRegistry::stage_11b();
+        let plan = crate::plan_mode::PlanState::default();
+        let outcome =
+            registry.resolve(&CommandIntent::parse("/reasoning"), &plan, &provider(), &[]);
+        assert!(matches!(outcome, CommandOutcome::ReasoningStatus));
+    }
+
+    #[test]
+    fn vro8_reasoning_set_mode_invalid_surfaces_usage_error() {
+        // An unknown mode value must surface a usage error listing the six
+        // PRD §8.1 modes (defense in depth against inventing a new variant).
+        let registry = CommandRegistry::stage_11b();
+        let plan = crate::plan_mode::PlanState::default();
+        let outcome = registry.resolve(
+            &CommandIntent::parse("/reasoning set mode=extreme"),
+            &plan,
+            &provider(),
+            &[],
+        );
+        match outcome {
+            CommandOutcome::Error(msg) => {
+                assert!(msg.contains("Unknown reasoning mode"), "got: {msg}");
+                // The usage hint must enumerate every PRD mode.
+                for allowed in ["auto", "fast", "balanced", "deep", "maximum", "off"] {
+                    assert!(msg.contains(allowed), "missing {allowed:?} in error: {msg}");
+                }
+            }
+            other => panic!("expected Error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn vro8_reasoning_set_without_mode_surfaces_usage_error() {
+        // `/reasoning set foo=bar` must reject the unknown key.
+        let registry = CommandRegistry::stage_11b();
+        let plan = crate::plan_mode::PlanState::default();
+        let outcome = registry.resolve(
+            &CommandIntent::parse("/reasoning set foo=bar"),
+            &plan,
+            &provider(),
+            &[],
+        );
+        match outcome {
+            CommandOutcome::Error(msg) => {
+                assert!(msg.contains("Usage: /reasoning set mode="), "got: {msg}")
+            }
+            other => panic!("expected Error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn vro8_reasoning_level_arg_falls_through_to_thinking_superpower() {
+        // Backward-compat: `/reasoning <level>` (where level is one of the
+        // oracle's thinking values) still routes to the thinking
+        // superpower, NOT the VRO override path. The registry advertises a
+        // `thinking` superpower so the alias resolves.
+        let registry = CommandRegistry::stage_11b();
+        let plan = crate::plan_mode::PlanState::default();
+        let descriptor = choice_descriptor("thinking", &["disabled", "enabled", "high", "max"]);
+        let outcome = registry.resolve(
+            &CommandIntent::parse("/reasoning high"),
+            &plan,
+            &provider(),
+            &[descriptor],
+        );
+        match outcome {
+            CommandOutcome::Superpower { value, .. } => {
+                assert!(matches!(
+                    value,
+                    SuperpowerValue::Choice { ref value } if value.as_str() == "high"
+                ));
+            }
+            other => panic!("expected Superpower fallback, got {other:?}"),
+        }
     }
 }

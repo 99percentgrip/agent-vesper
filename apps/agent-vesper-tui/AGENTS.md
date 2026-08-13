@@ -39,11 +39,30 @@ business logic.
   `key=value` pairs via `EmbeddingPairs::parse` and drains through
   `pending_embedding_op` → `drain_embedding_op` (write `embedding.json` +
   hot-reload + background probe of the new endpoint).
+  VRO-8 (PRD §8.1): `/reasoning set mode=<auto|fast|balanced|deep|maximum|`
+  off>` overrides the deterministic TaskProfiler; `/reasoning clear` and
+  `set mode=auto` clear it; bare `/reasoning` reports the current override.
+  The new arm is gated by `set mode=` / `clear` / empty-arg patterns so the
+  oracle's existing `/reasoning <level>` superpower alias (resolves to the
+  `thinking` descriptor) is fully preserved for any other argument shape.
+  Resolves to `CommandOutcome::ReasoningOverride { mode }` /
+  `CommandOutcome::ReasoningStatus`; `parse_reasoning_mode` is the
+  six-variant parser (PRD §8.1 authoritative list + `max` shorthand for
+  `Maximum`; rejects every invented mode with a usage error listing all
+  six).
 - `src/dispatch.rs` — pure, terminal-free event-loop dispatch: the bridge
   between the command registry, the Plan Mode state machine, and the
   `SuperpowerOverrides` store. Owns `SessionState`, `DispatchOutcome`, and
   `dispatch()`. The full Plan Mode lifecycle is unit-tested here under a
   `StubRenderer`; the binary owns only the crossterm input buffer.
+  VRO-8 (PRD §8.1): `SessionState.reasoning_mode_override` holds the
+  manual override; `SessionState::effective_reasoning_mode()` is the single
+  function the binary consults before routing a VRO turn (returns the
+  override, or `Auto` when none is set or when the override is itself
+  `Auto` — both mean "profiler decides"). The dispatcher's
+  `ReasoningOverride` arm normalizes `Auto` to `None` so the profiler is
+  back in charge; `ReasoningStatus` reads the live override and surfaces it
+  in the status line.
 - `src/superpowers.rs` — `ProviderSuperpowerSurface` and
   `SuperpowerOverrides`, the pure projection the TUI keeps of the active
   provider's advertised descriptors.
@@ -62,6 +81,15 @@ business logic.
   `ViewModel::pending_permission` is set; the binary's event loop intercepts
   Tab/Left/Right (toggle focus) and Enter/Esc (submit/dismiss) while the
   modal is up and resolves through `PermissionRequest::approve` / `reject`.
+  VRO-8 (PRD §8.1): `ReasoningDiagnostics` is a label-typed struct (snake_case
+  strategy + kebab-case mode + lowercase risk + numeric budget fields)
+  exposed via `lib.rs` and rendered as a markdown header at the top of the
+  Reasoning Panel via `render_header()`. The header surfaces **Strategy**,
+  **Mode** (with `*(override)*` when the user forced it), **Risk**, a
+  prominent **⚠ RISK ESCALATION** warning when risk escalated to `High`,
+  and the key budget fields (Depth / Branches / Models / Repairs). The
+  binary populates `ViewModel.reasoning_diagnostics` before each VRO turn;
+  `None` (the default) hides the header.
 - `src/markdown.rs` — self-contained, streaming-safe markdown → ratatui
   `Line` renderer. Re-parses the buffered assistant text every frame so
   partial syntax degrades gracefully: open inline markers (`**bold` with no
@@ -166,6 +194,28 @@ business logic.
   Zero-breakage: when LM Studio is NOT configured or the strategy is
   anything other than `ToolGroundedReact`, the existing direct / GVR /
   parallel-candidates paths are completely unchanged.
+  VRO-8 (PRD §8.1 — UX & Diagnostics): three pure helpers + the wiring
+  that surfaces VRO telemetry to the driver. (1) `compute_reasoning_diagnostics`
+  reads only `VroOrchestrator::profile` (deterministic, allocation-only) +
+  `ReasoningBudget::for_mode`; it never calls `execute*`, never mutates the
+  orchestrator, and never names a concrete provider. It honors
+  `SessionState.reasoning_mode_override` so a `/reasoning set mode=deep`
+  override is reflected in the panel header **before** the next turn runs.
+  The result is stashed on `TuiSession.reasoning_diagnostics` and projected
+  into `ViewModel.reasoning_diagnostics` each frame. (2) `strategy_snake_case` /
+  `mode_label_kebab` / `risk_label_lowercase` map the domain enums to the
+  exact PRD §10.3 / §8.1 / §14.2 wire labels so the panel header matches the
+  JSON shape byte-for-byte. (3) `format_learning_extraction_notice` renders
+  the **✓ LEARNED** notice pushed through the trajectory channel after a
+  successful ReAct turn (directive 3) — it is purely presentational; the
+  actual VRO-7 procedural-memory persistence happens in
+  `VroOrchestrator::execute_with_learning`, which is unchanged. The override
+  is honored in three wiring sites: the `should_vro` route check uses
+  `effective_reasoning_mode()` (so `Off` routes through the direct
+  `AgentLoop`); both VRO request constructors
+  (`spawn_vro_turn`, `spawn_vro_react_turn`) set `ReasoningRequest.mode` to
+  the effective mode so the orchestrator's budget preset matches the
+  user's choice.
 
 ## Local Contracts
 
@@ -354,6 +404,22 @@ business logic.
   factory (e.g. `glm_superpowers` in `vesper-provider-glm::factory`); the
   TUI surfaces it automatically once the provider is registered with
   `register_with_superpowers`.
+- VRO-8 (PRD §8.1 — UX & Diagnostics): the manual reasoning-mode override
+  + diagnostic telemetry layer. **Contract**: a manual
+  `/reasoning set mode=<X>` overrides the deterministic `TaskProfiler` for
+  every subsequent VRO turn; `/reasoning clear` or `set mode=auto` returns
+  to profiler defaults; bare `/reasoning` reports the current override in
+  the status line. **Zero orchestrator breakage**: the TUI computes its
+  own diagnostics projection (`compute_reasoning_diagnostics`) from
+  `VroOrchestrator::profile` + `ReasoningBudget::for_mode`; it never calls
+  `execute*`, never mutates the orchestrator, and never names a concrete
+  provider. **Wiring invariant**: every VRO turn dispatch site
+  (`should_vro` route check, `spawn_vro_turn`, `spawn_vro_react_turn`) must
+  consult `SessionState::effective_reasoning_mode()` so the override is
+  honored consistently across the direct path and both VRO paths. When a
+  new dispatch site is added, route its mode through the same helper. The
+  PRD §8.1 mode list is authoritative — `parse_reasoning_mode` rejects
+  every invented mode with a usage error listing all six.
 
 ## Verification
 

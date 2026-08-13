@@ -87,6 +87,16 @@ pub struct SessionState {
     /// `CognitionBundle` to write `embedding.json` and hot-reload the
     /// embedder (or render the live status block).
     pub pending_embedding_op: Option<crate::commands::EmbeddingOp>,
+    /// VRO-8 (PRD §8.1) — manual reasoning-mode override set by
+    /// `/reasoning set mode=<X>`. `None` (or `Some(Auto)`) means the
+    /// TaskProfiler decides; `Some(mode)` forces that mode for every
+    /// subsequent VRO turn until cleared with `/reasoning set mode=auto`
+    /// or `/reasoning clear`. The binary computes the effective mode via
+    /// [`SessionState::effective_reasoning_mode`] before routing a turn.
+    /// Stored on the session so the override persists for the duration of
+    /// the conversation, mirroring how the existing superpower overrides
+    /// work.
+    pub reasoning_mode_override: Option<vesper_domain::ReasoningMode>,
     /// Live execution controls used by both the picker UI and every agent turn.
     pub controls: SessionControls,
     /// Pending runtime mode synchronization after `/permission` or `/mode`.
@@ -257,6 +267,28 @@ impl SessionState {
     pub fn phase(&self) -> PlanPhase {
         self.plan.phase()
     }
+
+    /// VRO-8 (PRD §8.1) — the effective [`vesper_domain::ReasoningMode`] the
+    /// next VRO turn runs under. Returns the override when one is set;
+    /// otherwise returns [`ReasoningMode::Auto`] (the profiler decides).
+    ///
+    /// `Some(Auto)` stored in [`SessionState::reasoning_mode_override`] is
+    /// treated the same as `None` — both mean "profiler decides". This
+    /// mirrors the dispatcher's normalization in
+    /// [`apply_outcome`](fn@apply_outcome)'s `ReasoningOverride` arm, where
+    /// `set mode=auto` writes `None` rather than `Some(Auto)`.
+    ///
+    /// The binary consults this before calling
+    /// `VroOrchestrator::route`/`profile` so the user's manual override
+    /// forces the chosen mode regardless of what the deterministic
+    /// `TaskProfiler` would recommend for the prompt.
+    #[must_use]
+    pub fn effective_reasoning_mode(&self) -> vesper_domain::ReasoningMode {
+        match self.reasoning_mode_override {
+            Some(mode) if mode != vesper_domain::ReasoningMode::Auto => mode,
+            _ => vesper_domain::ReasoningMode::Auto,
+        }
+    }
 }
 
 /// What [`dispatch`] decided after applying one input line.
@@ -351,6 +383,7 @@ fn apply_outcome(
         pending_mcp_op,
         pending_cognition_op,
         pending_embedding_op,
+        reasoning_mode_override,
         controls,
         pending_mode_update,
         task_plan: _,
@@ -831,6 +864,41 @@ fn apply_outcome(
             *status = Some("/embedding: updating the embedding layer...".into());
         }
 
+        // === VRO-8 (PRD §8.1) — manual reasoning-mode override ===
+        // `/reasoning set mode=<X>` mutates the session's override; the
+        // binary computes the effective mode (override or Auto) before
+        // routing the next VRO turn. `Auto` clears any prior override so
+        // the TaskProfiler is back in charge. Bare `/reasoning` (no arg)
+        // surfaces the current override in the status line.
+        CommandOutcome::ReasoningOverride { mode } => {
+            use vesper_domain::ReasoningMode;
+            if mode == ReasoningMode::Auto {
+                *reasoning_mode_override = None;
+                transcript.push("reasoning: override cleared — profiler defaults restored.".into());
+                *status =
+                    Some("Reasoning override cleared. Future turns use profiler defaults.".into());
+            } else {
+                *reasoning_mode_override = Some(mode);
+                transcript.push(format!(
+                    "reasoning: override set to {mode_label} (forced for every future VRO turn).",
+                    mode_label = mode_label_kebab(mode)
+                ));
+                *status = Some(format!(
+                    "Reasoning override: {mode_label}. Use `/reasoning set mode=auto` to clear.",
+                    mode_label = mode_label_kebab(mode)
+                ));
+            }
+        }
+        CommandOutcome::ReasoningStatus => {
+            let label = match *reasoning_mode_override {
+                Some(mode) if mode != vesper_domain::ReasoningMode::Auto => {
+                    format!("Reasoning override: {} (forced).", mode_label_kebab(mode))
+                }
+                _ => "Reasoning mode: auto (profiler decides).".to_string(),
+            };
+            *status = Some(label);
+        }
+
         CommandOutcome::Quit => {}
     }
 }
@@ -842,6 +910,22 @@ fn op_label(op: &crate::commands::EmbeddingOp) -> &'static str {
         EmbeddingOp::Status => "status",
         EmbeddingOp::Set { .. } => "set",
         EmbeddingOp::Clear => "clear",
+    }
+}
+
+/// VRO-8 — kebab-case label for a [`vesper_domain::ReasoningMode`] matching
+/// the PRD §8.1 / `ReasoningConfig` serde rename. Used in dispatch
+/// transcript and status lines so user-facing text matches the JSON wire
+/// shape exactly (`auto`, `fast`, `balanced`, `deep`, `maximum`, `off`).
+fn mode_label_kebab(mode: vesper_domain::ReasoningMode) -> &'static str {
+    use vesper_domain::ReasoningMode;
+    match mode {
+        ReasoningMode::Auto => "auto",
+        ReasoningMode::Fast => "fast",
+        ReasoningMode::Balanced => "balanced",
+        ReasoningMode::Deep => "deep",
+        ReasoningMode::Maximum => "maximum",
+        ReasoningMode::Off => "off",
     }
 }
 /// Replaces the TODO projection from the bounded markdown emitted by
@@ -1780,5 +1864,221 @@ mod integration_tests {
         // Free text does not stash a workflow prompt (the binary treats it
         // as a free-text prompt directly).
         assert!(state.pending_prompt.is_none());
+    }
+
+    // ===================================================================
+    // VRO-8 (PRD §8.1) — `/reasoning set mode=<X>` override semantics.
+    // ===================================================================
+
+    #[test]
+    fn vro8_effective_reasoning_mode_defaults_to_auto_with_no_override() {
+        // Directive 4: with no override set, the effective mode is Auto
+        // (the profiler decides).
+        let state = SessionState::new();
+        assert_eq!(
+            state.effective_reasoning_mode(),
+            vesper_domain::ReasoningMode::Auto
+        );
+    }
+
+    #[test]
+    fn vro8_reasoning_set_mode_deep_stores_override_in_session_state() {
+        // Directive 2 + 4: `/reasoning set mode=deep` must (a) be accepted,
+        // (b) persist the override on SessionState, (c) make
+        // effective_reasoning_mode return Deep.
+        let registry = registry();
+        let surface = surface();
+        let mut state = SessionState::new();
+
+        assert!(state.reasoning_mode_override.is_none());
+        step(&mut state, &registry, &surface, "/reasoning set mode=deep");
+
+        assert_eq!(
+            state.reasoning_mode_override,
+            Some(vesper_domain::ReasoningMode::Deep)
+        );
+        assert_eq!(
+            state.effective_reasoning_mode(),
+            vesper_domain::ReasoningMode::Deep
+        );
+        // Status line confirms the override landed.
+        assert!(
+            state
+                .status
+                .as_ref()
+                .is_some_and(|s| s.contains("deep") && s.contains("override")),
+            "status must announce the override, got: {:?}",
+            state.status
+        );
+        // Transcript records the acceptance.
+        assert!(
+            state
+                .transcript
+                .iter()
+                .any(|line| line.contains("override set to deep")),
+            "transcript must record the override, got: {:?}",
+            state.transcript
+        );
+    }
+
+    #[test]
+    fn vro8_reasoning_set_mode_auto_clears_a_prior_override() {
+        // Directive 2: `/reasoning set mode=auto` (or `clear`) must clear
+        // any prior override so the profiler is back in charge.
+        let registry = registry();
+        let surface = surface();
+        let mut state = SessionState::new();
+
+        // Set, then clear.
+        step(
+            &mut state,
+            &registry,
+            &surface,
+            "/reasoning set mode=maximum",
+        );
+        assert_eq!(
+            state.effective_reasoning_mode(),
+            vesper_domain::ReasoningMode::Maximum
+        );
+        step(&mut state, &registry, &surface, "/reasoning set mode=auto");
+        assert!(
+            state.reasoning_mode_override.is_none(),
+            "set mode=auto must clear the override"
+        );
+        assert_eq!(
+            state.effective_reasoning_mode(),
+            vesper_domain::ReasoningMode::Auto
+        );
+        assert!(
+            state.status.as_ref().is_some_and(|s| s.contains("cleared")),
+            "status must announce the clear, got: {:?}",
+            state.status
+        );
+    }
+
+    #[test]
+    fn vro8_reasoning_clear_alias_clears_override() {
+        // `/reasoning clear` is the documented alias for `set mode=auto`.
+        let registry = registry();
+        let surface = surface();
+        let mut state = SessionState::new();
+
+        step(&mut state, &registry, &surface, "/reasoning set mode=fast");
+        assert_eq!(
+            state.effective_reasoning_mode(),
+            vesper_domain::ReasoningMode::Fast
+        );
+        step(&mut state, &registry, &surface, "/reasoning clear");
+        assert!(state.reasoning_mode_override.is_none());
+        assert_eq!(
+            state.effective_reasoning_mode(),
+            vesper_domain::ReasoningMode::Auto
+        );
+    }
+
+    #[test]
+    fn vro8_reasoning_status_reports_the_active_override() {
+        // Bare `/reasoning` reads the current override and surfaces it.
+        let registry = registry();
+        let surface = surface();
+        let mut state = SessionState::new();
+
+        // No override → status reports "auto".
+        step(&mut state, &registry, &surface, "/reasoning");
+        assert!(
+            state
+                .status
+                .as_ref()
+                .is_some_and(|s| s.contains("auto") && s.contains("profiler")),
+            "no-arg /reasoning must report auto, got: {:?}",
+            state.status
+        );
+
+        // With override → status reports the forced mode.
+        step(
+            &mut state,
+            &registry,
+            &surface,
+            "/reasoning set mode=balanced",
+        );
+        step(&mut state, &registry, &surface, "/reasoning");
+        assert!(
+            state
+                .status
+                .as_ref()
+                .is_some_and(|s| s.contains("balanced") && s.contains("forced")),
+            "no-arg /reasoning must report the active override, got: {:?}",
+            state.status
+        );
+    }
+
+    #[test]
+    fn vro8_override_persists_across_turns_within_a_session() {
+        // The override lives on the session, so it must persist for the
+        // duration of the conversation. Set it once, do unrelated work,
+        // verify it's still in effect.
+        let registry = registry();
+        let surface = surface();
+        let mut state = SessionState::new();
+
+        step(&mut state, &registry, &surface, "/reasoning set mode=off");
+        step(&mut state, &registry, &surface, "hello agent");
+        step(&mut state, &registry, &surface, "/status");
+        assert_eq!(
+            state.effective_reasoning_mode(),
+            vesper_domain::ReasoningMode::Off,
+            "override must persist across unrelated commands"
+        );
+    }
+
+    #[test]
+    fn vro8_dispatcher_forces_override_regardless_of_profiler_recommendation() {
+        // Directive 4 (decisive): when the session has an active override
+        // (e.g. Deep), the effective mode returned by
+        // `effective_reasoning_mode()` is the override — NOT the
+        // profiler's auto-recommendation. This is the function the binary's
+        // VRO turn dispatcher consults before calling
+        // `vro.route()` and constructing the `ReasoningRequest`.
+        //
+        // We prove the guarantee two ways: (a) the helper returns Deep for
+        // a session that just had `/reasoning set mode=deep` applied; (b)
+        // the same Deep mode is returned for a prompt that the deterministic
+        // TaskProfiler would profile as `Direct` (a trivial "hello"). The
+        // dispatcher never consults the profiler for the override decision
+        // — it consults `effective_reasoning_mode()` first.
+        let registry = registry();
+        let surface = surface();
+        let mut state = SessionState::new();
+
+        // Force Deep.
+        step(&mut state, &registry, &surface, "/reasoning set mode=deep");
+
+        // Verify the dispatcher-visible effective mode ignores the prompt.
+        // (The binary would now route a "hello" prompt through Deep's
+        // budget preset instead of the Auto/Direct path the profiler would
+        // pick for such a trivial message.)
+        for prompt in ["hello", "refactor src/main.rs", "what is 2+2"] {
+            assert_eq!(
+                state.effective_reasoning_mode(),
+                vesper_domain::ReasoningMode::Deep,
+                "override must dominate regardless of prompt: {prompt:?}"
+            );
+        }
+
+        // Cross-check: the deterministic TaskProfiler would auto-recommend
+        // `Direct` for "hello" — but `effective_reasoning_mode()` ignores
+        // the profiler and returns Deep. This is the load-bearing
+        // behavioral contract for directive 4.
+        let auto_profile = vesper_agent::TaskProfiler::new().profile("hello");
+        assert_eq!(
+            auto_profile.recommended_strategy,
+            vesper_domain::ReasoningStrategy::Direct,
+            "sanity: profiler picks Direct for trivial prompt"
+        );
+        assert_ne!(
+            state.effective_reasoning_mode(),
+            vesper_domain::ReasoningMode::Auto,
+            "the override must NOT have been silently cleared"
+        );
     }
 }

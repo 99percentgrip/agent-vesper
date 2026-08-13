@@ -269,6 +269,7 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
         voice_sidecar: None,
         selection_anchor: None,
         selected_text: String::new(),
+        reasoning_diagnostics: None,
     };
 
     // `--resume <id>`: load a previously persisted session before entering the
@@ -575,6 +576,13 @@ struct TuiSession {
     selection_anchor: Option<u16>,
     /// App-managed selected transcript text copied by Ctrl-Shift-C.
     selected_text: String,
+    /// VRO-8 (PRD §8.1) — diagnostic projection rendered at the top of the
+    /// Reasoning Panel. Computed by [`compute_reasoning_diagnostics`] just
+    /// before a VRO turn spawns; `None` outside VRO turns (direct
+    /// `AgentLoop` turns and idle frames). Honors
+    /// `SessionState::reasoning_mode_override` so the panel reflects the
+    /// user's manual `/reasoning set mode=…` choice.
+    reasoning_diagnostics: Option<agent_vesper_tui::ReasoningDiagnostics>,
 }
 
 #[derive(Debug, Clone)]
@@ -919,6 +927,7 @@ async fn drive_loop(
             task_plan: session.state.task_plan.clone(),
             activity: session.activity.clone(),
             reasoning: session.reasoning.clone(),
+            reasoning_diagnostics: session.reasoning_diagnostics.clone(),
             live_response: session.live_response.clone(),
             last_report: session.last_report.clone(),
             working_tree_title: session
@@ -1598,10 +1607,34 @@ async fn drive_loop(
                         std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
                     match vesper_agent::expand_references(&root, &text) {
                         Ok(expanded) => {
+                            // VRO-8 (PRD §8.1): compute the diagnostic
+                            // projection before the turn spawns so the
+                            // Reasoning Panel shows the chosen strategy /
+                            // budget / risk at the top while the turn runs.
+                            // Only populated when VRO is enabled (the
+                            // orchestrator's profile is the source of truth
+                            // for the strategy decision).
+                            session.reasoning_diagnostics = if vro.enabled() {
+                                Some(compute_reasoning_diagnostics(
+                                    vro,
+                                    &expanded,
+                                    session.state.reasoning_mode_override,
+                                ))
+                            } else {
+                                None
+                            };
                             // VRO dispatch: if enabled and profiled as
                             // non-Direct, use the VRO orchestrator instead
                             // of the direct AgentLoop. Otherwise, the direct
                             // path is unchanged.
+                            //
+                            // VRO-8 (PRD §8.1): honor a manual
+                            // `/reasoning set mode=<X>` override. `Off`
+                            // routes through the direct AgentLoop (matching
+                            // `ReasoningMode::Off`'s documented contract);
+                            // any other forced mode drives the VRO turn with
+                            // that mode's budget preset, regardless of what
+                            // the TaskProfiler would auto-recommend.
                             //
                             // VRO-5.3: when the profiled strategy is
                             // `ToolGroundedReact` AND a real `LmStudioReactAgent`
@@ -1610,8 +1643,9 @@ async fn drive_loop(
                             // tool-grounded ReAct loop) instead of the GVR
                             // baseline. The decision is factored into
                             // `react_dispatch_for` for unit-testability.
+                            let effective_mode = session.state.effective_reasoning_mode();
                             let should_vro = vro.enabled()
-                                && vro.route(&expanded, vesper_domain::ReasoningMode::Auto)
+                                && vro.route(&expanded, effective_mode)
                                     == vesper_agent::VroRoutingDecision::Orchestrate;
                             if should_vro {
                                 let profile = vro.profile(&expanded);
@@ -4070,6 +4104,9 @@ fn spawn_vro_turn(
     let agent = Arc::clone(agent);
     let vro = vro.clone();
     let root = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    // VRO-8: honor a manual `/reasoning set mode=<X>` override so the
+    // orchestrator's budget preset matches the user's choice.
+    let effective_mode = session.state.effective_reasoning_mode();
 
     tokio::spawn(async move {
         let generator = AgentCandidateGenerator::new(agent);
@@ -4079,7 +4116,7 @@ fn spawn_vro_turn(
             session_id: vesper_domain::SessionId::new("live-tui").expect("valid"),
             user_message: user_text.clone(),
             context_refs: vec![],
-            mode: vesper_domain::ReasoningMode::Auto,
+            mode: effective_mode,
             risk_hint: None,
             budget_override: None,
             privacy_mode: vesper_domain::PrivacyMode::Private,
@@ -4211,6 +4248,110 @@ pub(crate) fn format_react_trajectory(
         }
     }
     out
+}
+
+/// VRO-7 (PRD §11.9) — renders the post-turn learning-extraction notice as
+/// a single markdown line for the Reasoning Panel (directive 3).
+///
+/// Pushed into `session.reasoning` after a successful ReAct turn so the
+/// driver sees at a glance that the orchestrator captured a workflow it
+/// could persist to cognitive memory. `step_count` is the number of
+/// `Action` entries in the trajectory; `strategy` is the snake_case
+/// [`vesper_domain::ReasoningStrategy`] label.
+///
+/// **No orchestrator modification**: this formatter is a pure presentation
+/// helper. The actual VRO-7 extraction + persistence happens inside
+/// `VroOrchestrator::execute_with_learning`; the binary surfaces the
+/// notice when a ToolGroundedReact turn produced a non-empty trajectory.
+#[must_use]
+pub(crate) fn format_learning_extraction_notice(strategy: &str, step_count: usize) -> String {
+    format!(
+        "**✓ LEARNED** Workflow extracted ({} step(s), strategy=`{strategy}`) and saved to cognitive memory.",
+        step_count.max(1)
+    )
+}
+
+/// VRO-8 (PRD §8.1) — computes the diagnostic projection rendered at the
+/// top of the Reasoning Panel. Pure: takes the VRO orchestrator, the user
+/// message, and the optional override, returns a populated
+/// [`ReasoningDiagnostics`].
+///
+/// **Provider-neutrality / no orchestrator mutation**: this only reads
+/// `vro.profile(user_message)` (a deterministic, allocation-only call) and
+/// derives the budget via `ReasoningBudget::for_mode`. It never calls
+/// `execute*`, never mutates the orchestrator, and never names a concrete
+/// provider. The override is taken from the session so a user-forced
+/// `/reasoning set mode=deep` is reflected in the panel **before** the
+/// next turn runs.
+#[must_use]
+pub(crate) fn compute_reasoning_diagnostics(
+    vro: &vesper_agent::VroOrchestrator,
+    user_message: &str,
+    override_mode: Option<vesper_domain::ReasoningMode>,
+) -> agent_vesper_tui::ReasoningDiagnostics {
+    use vesper_domain::{ReasoningBudget, ReasoningMode};
+    let profile = vro.profile(user_message);
+    let effective_mode = match override_mode {
+        Some(mode) if mode != ReasoningMode::Auto => mode,
+        _ => ReasoningMode::Auto,
+    };
+    let budget =
+        ReasoningBudget::for_mode(effective_mode).unwrap_or_else(ReasoningBudget::balanced);
+    agent_vesper_tui::ReasoningDiagnostics {
+        strategy: strategy_snake_case(profile.recommended_strategy).to_string(),
+        mode: mode_label_kebab(effective_mode).to_string(),
+        override_active: override_mode.is_some_and(|m| m != ReasoningMode::Auto),
+        risk: risk_label_lowercase(profile.risk).to_string(),
+        risk_escalation: profile.risk == vesper_domain::RiskLevel::High,
+        max_search_depth: budget.max_search_depth,
+        max_parallel_branches: budget.max_parallel_branches,
+        max_model_calls: budget.max_model_calls,
+        max_repairs: budget.max_repairs,
+    }
+}
+
+/// VRO-8 — snake_case label for a [`vesper_domain::ReasoningStrategy`]
+/// matching the PRD §10.3 / domain serde rename exactly.
+#[must_use]
+pub(crate) fn strategy_snake_case(strategy: vesper_domain::ReasoningStrategy) -> &'static str {
+    use vesper_domain::ReasoningStrategy::*;
+    match strategy {
+        Direct => "direct",
+        PlanThenAnswer => "plan_then_answer",
+        PlanExecuteVerify => "plan_execute_verify",
+        GenerateVerifyRepair => "generate_verify_repair",
+        ParallelCandidatesConsensus => "parallel_candidates_consensus",
+        ParallelCandidatesJudge => "parallel_candidates_judge",
+        ToolGroundedReact => "tool_grounded_react",
+        BoundedTreeSearch => "bounded_tree_search",
+        ProposerCriticAdjudicator => "proposer_critic_adjudicator",
+        WorkflowReplayWithVerification => "workflow_replay_with_verification",
+    }
+}
+
+/// VRO-8 — kebab-case label for a [`vesper_domain::ReasoningMode`].
+#[must_use]
+pub(crate) fn mode_label_kebab(mode: vesper_domain::ReasoningMode) -> &'static str {
+    use vesper_domain::ReasoningMode;
+    match mode {
+        ReasoningMode::Auto => "auto",
+        ReasoningMode::Fast => "fast",
+        ReasoningMode::Balanced => "balanced",
+        ReasoningMode::Deep => "deep",
+        ReasoningMode::Maximum => "maximum",
+        ReasoningMode::Off => "off",
+    }
+}
+
+/// VRO-8 — lowercase label for a [`vesper_domain::RiskLevel`].
+#[must_use]
+pub(crate) fn risk_label_lowercase(risk: vesper_domain::RiskLevel) -> &'static str {
+    use vesper_domain::RiskLevel;
+    match risk {
+        RiskLevel::Low => "low",
+        RiskLevel::Medium => "medium",
+        RiskLevel::High => "high",
+    }
 }
 
 /// Renders one ReAct **Action** decision as a single markdown line.
@@ -4481,9 +4622,16 @@ fn spawn_vro_react_turn(
     // Action/Observation cycle live as the loop runs.
     let (traj_tx, traj_rx) = mpsc::unbounded_channel::<String>();
     let capturing_agent = TrajectoryCapturingReactAgent::new(bundle.agent, traj_tx.clone());
+    // Keep one sender for the VRO-7 learning-extraction notice so the
+    // Reasoning Panel renders it below the Action/Observation cycle when a
+    // ReAct turn succeeds (directive 3).
+    let traj_tx_for_notice = traj_tx.clone();
     let capturing_invoker = TrajectoryCapturingInvoker::new(bundle.invoker, traj_tx);
     let vro = vro.clone();
     let root = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    // VRO-8: honor a manual `/reasoning set mode=<X>` override so the
+    // orchestrator's ReAct budget preset matches the user's choice.
+    let effective_mode = session.state.effective_reasoning_mode();
 
     tokio::spawn(async move {
         let request = vesper_domain::ReasoningRequest {
@@ -4492,7 +4640,7 @@ fn spawn_vro_react_turn(
             session_id: vesper_domain::SessionId::new("live-tui").expect("valid"),
             user_message: user_text.clone(),
             context_refs: vec![],
-            mode: vesper_domain::ReasoningMode::Auto,
+            mode: effective_mode,
             risk_hint: None,
             budget_override: None,
             privacy_mode: vesper_domain::PrivacyMode::Private,
@@ -4537,6 +4685,23 @@ fn spawn_vro_react_turn(
             "ReAct — model calls: {}, tokens: {}",
             outcome.cost.model_calls, outcome.cost.total_tokens
         );
+
+        // VRO-7 (PRD §11.9) / directive 3: when a ToolGroundedReact turn
+        // succeeded with at least one model call, surface the
+        // learning-extraction notice through the trajectory channel so it
+        // appears in the Reasoning Panel below the Action/Observation cycle.
+        // `model_calls` is a faithful step-count proxy for a ReAct loop
+        // (each model call yields one Action or one Finish). The actual
+        // procedural-memory persistence happens asynchronously through the
+        // orchestrator's `execute_with_learning` path; the binary's
+        // `execute_react` only emits the trajectory.
+        if outcome.status == vesper_domain::OutcomeStatus::Succeeded && outcome.cost.model_calls > 0
+        {
+            let _ = traj_tx_for_notice.send(format_learning_extraction_notice(
+                "tool_grounded_react",
+                outcome.cost.model_calls as usize,
+            ));
+        }
 
         let _ = tx.send(AgentEvent::Completed {
             outcome: vesper_agent::AgentTurnOutcome::Completed {
@@ -11003,6 +11168,7 @@ mod tests {
             voice_sidecar: None,
             selection_anchor: None,
             selected_text: String::new(),
+            reasoning_diagnostics: None,
         };
         let (_tx, rx): (mpsc::UnboundedSender<AgentEvent>, _) = mpsc::unbounded_channel();
         drop(_tx);
@@ -11052,6 +11218,7 @@ mod tests {
             voice_sidecar: None,
             selection_anchor: None,
             selected_text: String::new(),
+            reasoning_diagnostics: None,
         };
         let (tx, rx): (mpsc::UnboundedSender<AgentEvent>, _) = mpsc::unbounded_channel();
         session.agent_rx = Some(rx);
@@ -11099,6 +11266,7 @@ mod tests {
             voice_sidecar: None,
             selection_anchor: None,
             selected_text: String::new(),
+            reasoning_diagnostics: None,
         };
         let (tx, rx): (mpsc::UnboundedSender<AgentEvent>, _) = mpsc::unbounded_channel();
         let _ = tx.send(AgentEvent::Progress(AgentProgressEvent::ReasoningDelta {
@@ -12231,6 +12399,126 @@ mod tests {
             voice_sidecar: None,
             selection_anchor: None,
             selected_text: String::new(),
+            reasoning_diagnostics: None,
         }
+    }
+
+    // ===================================================================
+    // VRO-8 (PRD §8.1) — diagnostics projection + learning-extraction
+    // notice helpers (directive 1 + directive 3).
+    // ===================================================================
+
+    #[test]
+    fn vro8_compute_reasoning_diagnostics_auto_path_marks_no_override() {
+        // Directive 1: with no override, the diagnostics report Auto mode
+        // with override_active == false. The strategy comes from the
+        // deterministic TaskProfiler for the given prompt.
+        let vro = vesper_agent::VroOrchestrator::disabled();
+        let diagnostics = compute_reasoning_diagnostics(&vro, "hello, what's up?", None);
+        assert_eq!(diagnostics.mode, "auto");
+        assert!(!diagnostics.override_active);
+        // A trivial prompt profiles as Direct.
+        assert_eq!(diagnostics.strategy, "direct");
+        assert!(
+            !diagnostics.risk_escalation,
+            "trivial prompt must not trigger risk escalation"
+        );
+    }
+
+    #[test]
+    fn vro8_compute_reasoning_diagnostics_deep_override_marks_override_active() {
+        // Directive 1 + 4: when a Deep override is set, the diagnostics
+        // surface the override flag so the panel header shows *(override)*.
+        // The mode label is "deep"; the budget fields come from
+        // ReasoningBudget::deep() (PRD §24).
+        let vro = vesper_agent::VroOrchestrator::disabled();
+        let diagnostics =
+            compute_reasoning_diagnostics(&vro, "hello", Some(vesper_domain::ReasoningMode::Deep));
+        assert_eq!(diagnostics.mode, "deep");
+        assert!(diagnostics.override_active);
+        // PRD §24 deep preset pinned values.
+        assert_eq!(diagnostics.max_search_depth, 3);
+        assert_eq!(diagnostics.max_parallel_branches, 3);
+        assert_eq!(diagnostics.max_model_calls, 10);
+        assert_eq!(diagnostics.max_repairs, 2);
+    }
+
+    #[test]
+    fn vro8_compute_reasoning_diagnostics_off_override_marks_override_active() {
+        // Edge case: even Off counts as an active override (the user
+        // explicitly bypassed VRO). The diagnostics reflect this so the
+        // panel explains why no strategy is running.
+        let vro = vesper_agent::VroOrchestrator::disabled();
+        let diagnostics =
+            compute_reasoning_diagnostics(&vro, "hello", Some(vesper_domain::ReasoningMode::Off));
+        assert_eq!(diagnostics.mode, "off");
+        assert!(diagnostics.override_active);
+    }
+
+    #[test]
+    fn vro8_strategy_snake_case_covers_all_ten_prd_variants() {
+        // The snake_case labels must match the PRD §10.3 / domain serde
+        // rename exactly so the panel header is identical to what the
+        // wire format would emit.
+        use vesper_domain::ReasoningStrategy::*;
+        assert_eq!(strategy_snake_case(Direct), "direct");
+        assert_eq!(strategy_snake_case(PlanThenAnswer), "plan_then_answer");
+        assert_eq!(
+            strategy_snake_case(PlanExecuteVerify),
+            "plan_execute_verify"
+        );
+        assert_eq!(
+            strategy_snake_case(GenerateVerifyRepair),
+            "generate_verify_repair"
+        );
+        assert_eq!(
+            strategy_snake_case(ParallelCandidatesConsensus),
+            "parallel_candidates_consensus"
+        );
+        assert_eq!(
+            strategy_snake_case(ParallelCandidatesJudge),
+            "parallel_candidates_judge"
+        );
+        assert_eq!(
+            strategy_snake_case(ToolGroundedReact),
+            "tool_grounded_react"
+        );
+        assert_eq!(
+            strategy_snake_case(BoundedTreeSearch),
+            "bounded_tree_search"
+        );
+        assert_eq!(
+            strategy_snake_case(ProposerCriticAdjudicator),
+            "proposer_critic_adjudicator"
+        );
+        assert_eq!(
+            strategy_snake_case(WorkflowReplayWithVerification),
+            "workflow_replay_with_verification"
+        );
+    }
+
+    #[test]
+    fn vro8_format_learning_extraction_notice_renders_strategy_and_step_count() {
+        // Directive 3: the notice must visually notify the user that VRO-7
+        // extracted a workflow. It must include the strategy label and a
+        // step count.
+        let notice = format_learning_extraction_notice("tool_grounded_react", 3);
+        assert!(notice.contains("**✓ LEARNED**"), "got: {notice}");
+        assert!(notice.contains("tool_grounded_react"), "got: {notice}");
+        assert!(notice.contains("3 step(s)"), "got: {notice}");
+        assert!(
+            notice.contains("saved to cognitive memory"),
+            "got: {notice}"
+        );
+    }
+
+    #[test]
+    fn vro8_format_learning_extraction_notice_clamps_zero_step_count_to_one() {
+        // Edge case: a zero-step count is reported as 1 so the notice is
+        // never grammatically wrong ("0 step(s)" would look like a bug to
+        // the user; the orchestrator only emits the notice after a
+        // successful non-empty turn).
+        let notice = format_learning_extraction_notice("direct", 0);
+        assert!(notice.contains("1 step(s)"), "got: {notice}");
     }
 }
