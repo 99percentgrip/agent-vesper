@@ -485,9 +485,17 @@ the multi-turn, tool-executing layer above it.
   (NOT a port of lavish-axi's `chrome-client.js`/`artifact-sdk.js`, which
   the harness scanner flagged); it contains no `http://`/`https://`/
   external-`src=` references and POSTs only to the relative `/feedback`
-  path. Planner integration (PRD §4) is a documented follow-up — the
-  library API `VesperLens::review_artifact(html, on_url)` is the
-  milestone deliverable.
+  path. **VRO-11.2 planner seam:** `src/vro/lens_integration.rs` defines
+  `LensReviewPort` (with `Debug` bound so `VroOrchestrator`'s derive
+  keeps working), `NoOpLensReviewPort` default, `looks_like_html_artifact`
+  heuristic (requires `starts_with('<')` so prose mentions of `<html>`
+  never trigger review), `diagnostic_for_review` (PRD §4 verbatim format),
+  and `feedback_as_context_message` (token-frugal context-injection
+  renderer). `VroOrchestrator` gains an optional `lens_port` field + a
+  `with_lens_port(port)` builder + an async `maybe_review_html_artifact`
+  method that returns `None` when no port is configured or the input is
+  not HTML. Default behavior is byte-identical to VRO-10; the seam is
+  opt-in at the composition boundary.
 
 ## Work Guidance
 

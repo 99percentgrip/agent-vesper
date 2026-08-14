@@ -29,13 +29,18 @@ with each release.
   exact shell-profile PATH marker owned by `install.sh`.
 - `uninstall.ps1` — Windows uninstaller. Removes only the launcher, bundle,
   and exact user PATH entry owned by `install.ps1`.
-- `acp_pr_439.md` — VRO-9 manual submission payload for the public ACP
-  Registry PR #439 (`agentclientprotocol/registry`). Data-only scaffolding:
-  contains the manifest JSON (mirroring `registry/agent.json`), the PR title,
-  the PR body, and the asset-URL audit table. Not executed; the local
-  installer (`install.sh` / `install.ps1`) consumes `registry/agent.json`
-  from the repo root, NOT this file. Bumped to v0.20.26 by the VRO-9 release
-  to sync the previously-stale `v0.1.0` URLs and reflect VRO capabilities.
+- `publish_to_acp_registry.sh` — VRO-11.2 publishing helper for the public
+  ACP Registry (`agentclientprotocol/registry`). Clones the registry to a
+  temporary directory, writes `registry/agent.json` from this repo into a
+  fresh `agent-vesper/` directory, commits on a new branch, and opens a
+  Pull Request titled *"Add agent-vesper: Native Rust Reasoning
+  Orchestrator"*. Idempotent: a second run with an already-open PR for the
+  same version updates the existing branch in place. The local installers
+  (`install.sh` / `install.ps1`) consume `registry/agent.json` from this
+  repo, NOT this script. Replaces the deleted `acp_pr_439.md` payload
+  (VRO-11.2: that file was stale — it claimed to be the payload for PR
+  #439, but PR #439 is the `native-glm-acp` Python project's PR and is
+  intentionally left untouched; `agent-vesper` is a separate agent entry).
 
 ## Local Contracts
 

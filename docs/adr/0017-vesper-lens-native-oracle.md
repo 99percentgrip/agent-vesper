@@ -123,6 +123,37 @@ explicitly opts into human review (e.g., a future HTML-generation branch).
 The VRO-11 milestone ships the oracle; the planner integration point is
 documented here and can be added in a follow-up without an ADR amendment.
 
+### VRO-11.2 — Planner seam and context injection
+
+VRO-11.2 closes the planner-wiring gap without changing any existing VRO
+control flow:
+
+- New trait `LensReviewPort` in
+  `crates/vesper-agent/src/vro/lens_integration.rs` abstracts the lens.
+  The orchestrator stays pure; the composition boundary (TUI binary)
+  supplies a concrete impl wrapping `VesperLens::review_artifact`.
+- `VroOrchestrator` gains an optional `lens_port: Option<Arc<dyn
+  LensReviewPort>>` field, a `with_lens_port(port)` builder, and an async
+  `maybe_review_html_artifact(html, on_diagnostic)` method that returns
+  `None` when no port is configured OR the input does not look like an
+  HTML artifact (see `looks_like_html_artifact`).
+- The host calls `maybe_review_html_artifact` when a tool output arrives.
+  When a port is configured and the text is HTML, the port's `review`
+  fires its own `on_url` callback; `maybe_review_html_artifact` adapts
+  that into the PRD §4 diagnostic line
+  (`[VesperLens] Artifact ready for review. Open: <URL>`) and forwards
+  it to the host's `on_diagnostic` sink (TUI status line).
+- After `review` returns, the host injects
+  `feedback_as_context_message(&feedback)` into the conversation as a
+  `role: Tool` message so the next model turn sees the human's verdict
+  (APPROVED / REJECTED / NEEDS MODIFICATION) and any per-selector
+  annotations (PRD §4: "context injection").
+
+**Zero breakage.** When `lens_port` is `None` (the default), every
+existing orchestrator method is byte-identical to VRO-10. All existing
+workspace tests pass unchanged; the 16 new tests (13 lens_integration +
+3 orchestrator-wiring) cover the seam in isolation.
+
 ## Consequences
 
 - **Positive:** VesperLens is fully native, zero-new-dep, loopback-only,

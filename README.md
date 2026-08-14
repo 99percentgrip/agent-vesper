@@ -264,6 +264,16 @@ VRO-11 adds the first **native loopback HTTP oracle** to `vesper-agent`: when th
 - **Minimal JSON contract.** The overlay posts `{action: "approve"|"reject"|"modify", annotations: [{selector, comment, suggested_html?}], notes}` which is parsed into native `LensFeedback` / `DomAnnotation` / `Action` types via `serde`. The agent receives the parsed struct — never raw HTML — bounding injection-via-feedback to attacker-controlled `comment`/`notes` strings (routed through the same untrusted-input discipline as any other user text).
 - **Reference acknowledgement.** The MIT-licensed [`kunchenguid/lavish-axi`](https://github.com/kunchenguid/lavish-axi) repository was read as a user-authorized architectural blueprint (Copyright (c) 2026 Kun Chen). No code was copied. See [ADR 0017](docs/adr/0017-vesper-lens-native-oracle.md) for the full contract.
 
+### VRO-11.2 — Planner Seam + Context Injection + Registry Launch
+
+VRO-11.2 wires the VesperLens oracle into the VRO planner without touching any existing control flow:
+
+- **`LensReviewPort` trait** (`crates/vesper-agent/src/vro/lens_integration.rs`) — abstracts the lens so the orchestrator stays pure. The composition boundary (TUI binary) supplies a concrete impl wrapping `VesperLens::review_artifact`. Includes `NoOpLensReviewPort` (returns `LensFeedback::default()` immediately, no I/O).
+- **`VroOrchestrator` gains an optional `lens_port: Option<Arc<dyn LensReviewPort>>` field + `with_lens_port(port)` builder.** When `None` (the default), every existing orchestrator method is byte-identical to VRO-10.
+- **`maybe_review_html_artifact(html, on_diagnostic)` async method** — returns `None` when no port is configured OR the input is not HTML (see `looks_like_html_artifact`, which requires `starts_with('<')` so prose mentions of `<html>` never trigger review). When it does fire, it routes through the port and surfaces the PRD §4 `[VesperLens] Artifact ready for review. Open: <URL>` diagnostic line.
+- **`feedback_as_context_message(&feedback)`** — token-frugal context-injection renderer (verdict + notes + numbered annotations). The host injects this as a `role: Tool` message so the next model turn can apply the human's corrections (PRD §4).
+- **Registry launch.** New `scripts/publish_to_acp_registry.sh` opens (or updates) a **brand-new** `agent-vesper` PR against `agentclientprotocol/registry`. The legacy `scripts/acp_pr_439.md` is deleted — PR #439 belongs to the `native-glm-acp` Python project and is intentionally left untouched.
+
 ### How VRO interacts with the live tool surface
 
 - The `tool_grounded_react` strategy (VRO-5) routes through a real LM Studio `ReactAgent` bundle when configured — `Actions` and `Observations` stream live into the Reasoning Panel as `▶ ACTION` / `↳ OBSERVATION` / `✗ ERROR` / `✓ FINISH` lines, alongside the diagnostic header above.

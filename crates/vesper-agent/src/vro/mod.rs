@@ -28,6 +28,7 @@
 
 pub mod executor;
 pub mod learning;
+pub mod lens_integration;
 pub mod orchestrator;
 pub mod profiler;
 pub mod rate_limit;
@@ -43,6 +44,10 @@ pub use executor::{
 pub use learning::{
     LearningError, ProceduralMemory, ProceduralMemorySink, ProceduralStep, SecretScrubber,
     WorkflowExtractor, cost_summary, distinct_actions, is_learning_eligible,
+};
+pub use lens_integration::{
+    LensReviewPort, NoOpLensReviewPort, diagnostic_for_review, feedback_as_context_message,
+    looks_like_html_artifact,
 };
 pub use orchestrator::{
     CandidateGenerator, GeneratedCandidate, run_generate_verify_repair,
@@ -111,6 +116,11 @@ pub struct VroOrchestrator {
     config: ReasoningConfig,
     profiler: TaskProfiler,
     registry: Arc<VerifierRegistry>,
+    /// Optional VesperLens review port (ADR 0017, VRO-11.2). `None` keeps
+    /// byte-identical VRO-10 behavior; `Some(port)` enables
+    /// [`Self::maybe_review_html_artifact`] for human-in-the-loop HTML
+    /// artifact review.
+    lens_port: Option<Arc<dyn LensReviewPort>>,
 }
 
 impl Default for VroOrchestrator {
@@ -120,6 +130,7 @@ impl Default for VroOrchestrator {
             config: ReasoningConfig::default(),
             profiler: TaskProfiler::new(),
             registry: Arc::new(VerifierRegistry::new()),
+            lens_port: None,
         }
     }
 }
@@ -133,6 +144,7 @@ impl VroOrchestrator {
             config,
             profiler: TaskProfiler::new(),
             registry: Arc::new(VerifierRegistry::default_cargo()),
+            lens_port: None,
         }
     }
 
@@ -152,6 +164,58 @@ impl VroOrchestrator {
     #[must_use]
     pub fn config(&self) -> &ReasoningConfig {
         &self.config
+    }
+
+    /// Wire a [`LensReviewPort`] for human-in-the-loop HTML artifact
+    /// review (ADR 0017, VRO-11.2). Builder-style; consumed at the
+    /// composition boundary (TUI binary).
+    ///
+    /// After this is called, [`Self::maybe_review_html_artifact`] will
+    /// route detectable HTML artifacts through the port. All other
+    /// orchestrator behavior is unchanged.
+    #[must_use]
+    pub fn with_lens_port(mut self, port: Arc<dyn LensReviewPort>) -> Self {
+        self.lens_port = Some(port);
+        self
+    }
+
+    /// Returns the configured [`LensReviewPort`], if any.
+    #[must_use]
+    pub fn lens_port(&self) -> Option<&dyn LensReviewPort> {
+        self.lens_port.as_deref()
+    }
+
+    /// Maybe route an HTML-looking tool output through VesperLens review.
+    ///
+    /// Returns `None` when no port is configured OR the text does not
+    /// look like a reviewable HTML artifact (see
+    /// [`looks_like_html_artifact`]). Returns `Some(Ok(feedback))` after
+    /// the human submits, or `Some(Err(_))` if the port itself failed
+    /// (timeout, parse error, etc.).
+    ///
+    /// `on_diagnostic` is called with the
+    /// `[VesperLens] Artifact ready for review. Open: <URL>` line right
+    /// before the port blocks awaiting the human (PRD §4). The host
+    /// wires this to the TUI status line.
+    pub async fn maybe_review_html_artifact(
+        &self,
+        html: &str,
+        on_diagnostic: &(dyn Fn(&str) + Send + Sync),
+    ) -> Option<Result<crate::planning::LensFeedback, crate::planning::vesper_lens::LensError>>
+    {
+        let port = self.lens_port.as_ref()?;
+        if !looks_like_html_artifact(html) {
+            return None;
+        }
+        // The port is responsible for invoking its own URL-announcement
+        // callback (the port implementation calls `on_url(url)` once the
+        // listener binds); we surface that URL to the host's diagnostic
+        // sink via a small adapter closure. The URL string itself is
+        // formatted by `diagnostic_for_review`.
+        let on_url = |url: &str| {
+            on_diagnostic(&diagnostic_for_review(url));
+        };
+        Some(port.review(html, &on_url).await)
     }
 
     /// The configured default mode.
@@ -862,6 +926,97 @@ mod tests {
         let cloned = vro.clone();
         assert_eq!(vro.enabled(), cloned.enabled());
         assert!(format!("{vro:?}").contains("VroOrchestrator"));
+    }
+
+    // === VRO-11.2 — VesperLens integration seam ===
+
+    /// In-test LensReviewPort impl that returns a fixed feedback.
+    #[derive(Debug)]
+    struct FixedLens {
+        action: crate::planning::vesper_lens::Action,
+    }
+
+    impl crate::vro::LensReviewPort for FixedLens {
+        fn review(
+            &self,
+            _html: &str,
+            on_url: &(dyn Fn(&str) + Send + Sync),
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<
+                        Output = Result<
+                            crate::planning::LensFeedback,
+                            crate::planning::vesper_lens::LensError,
+                        >,
+                    > + Send,
+            >,
+        > {
+            on_url("http://127.0.0.1:9999/");
+            let action = self.action;
+            Box::pin(async move {
+                Ok(crate::planning::LensFeedback {
+                    action,
+                    ..Default::default()
+                })
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn orchestrator_without_lens_port_skips_review() {
+        // Default orchestrator: lens_port is None.
+        let vro = VroOrchestrator::disabled();
+        let diagnostic_seen = std::sync::Mutex::new(String::new());
+        let result = vro
+            .maybe_review_html_artifact("<html><body>hi</body></html>", &|line: &str| {
+                *diagnostic_seen.lock().unwrap() = line.to_string()
+            })
+            .await;
+        assert!(result.is_none(), "no port configured => no review");
+        assert!(
+            diagnostic_seen.lock().unwrap().is_empty(),
+            "diagnostic sink must not be called when port is None"
+        );
+    }
+
+    #[tokio::test]
+    async fn orchestrator_with_lens_port_skips_non_html() {
+        let vro = VroOrchestrator::disabled().with_lens_port(std::sync::Arc::new(FixedLens {
+            action: crate::planning::vesper_lens::Action::Approve,
+        }));
+        let result = vro
+            .maybe_review_html_artifact(
+                "Sure, I can use <html> tags in the response.",
+                &|_line: &str| {},
+            )
+            .await;
+        assert!(result.is_none(), "non-HTML prose must not trigger review");
+    }
+
+    #[tokio::test]
+    async fn orchestrator_with_lens_port_reviews_html_and_emits_diagnostic() {
+        let vro = VroOrchestrator::disabled().with_lens_port(std::sync::Arc::new(FixedLens {
+            action: crate::planning::vesper_lens::Action::Approve,
+        }));
+        let diagnostic = std::sync::Mutex::new(String::new());
+        let result = vro
+            .maybe_review_html_artifact(
+                "<html><head></head><body><h1>artifact</h1></body></html>",
+                &|line: &str| *diagnostic.lock().unwrap() = line.to_string(),
+            )
+            .await;
+        let feedback = result
+            .expect("HTML artifact must route through port")
+            .unwrap();
+        assert_eq!(
+            feedback.action,
+            crate::planning::vesper_lens::Action::Approve
+        );
+        let diag = diagnostic.lock().unwrap().clone();
+        assert!(
+            diag.starts_with("[VesperLens] Artifact ready for review. Open: http://"),
+            "diagnostic must match PRD §4 format; got: {diag}",
+        );
     }
 
     // === VRO-4 — orchestrator-level dispatch tests ===
