@@ -115,7 +115,10 @@ gh repo clone "${REGISTRY_FORK}" "${TMPDIR}/registry" -- --depth=1 --origin fork
 cd "${TMPDIR}/registry"
 
 # Add upstream as a remote so we can rebase on the latest main.
-git remote add upstream "https://github.com/${REGISTRY_UPSTREAM}.git"
+# `gh repo clone` may already add it; check first.
+if ! git remote get-url upstream >/dev/null 2>&1; then
+    git remote add upstream "https://github.com/${REGISTRY_UPSTREAM}.git"
+fi
 git fetch upstream main --depth=20
 git checkout -B "${BRANCH}" upstream/main
 
@@ -188,32 +191,43 @@ EOF
 
 echo "=== opening / updating PR ==="
 PR_EXISTS=$(gh pr list --repo "${REGISTRY_UPSTREAM}" \
-    --head "${FORK_OWNER}:${BRANCH}" \
+    --head "${BRANCH}" \
     --state open \
     --json number \
     --jq 'length')
 
 if [ "${PR_EXISTS}" = "0" ]; then
-    gh pr create \
+    PR_URL=$(gh pr create \
         --repo "${REGISTRY_UPSTREAM}" \
         --head "${FORK_OWNER}:${BRANCH}" \
         --base main \
         --title "${PR_TITLE}" \
-        --body "${PR_BODY}"
+        --body "${PR_BODY}")
+    PR_NUMBER=$(printf '%s' "${PR_URL}" | sed -n 's|.*/pull/\([0-9][0-9]*\).*|\1|p')
     echo ""
     echo "=== DONE: new PR opened ==="
 else
-    # Update body of the existing PR.
+    # Update title + body of the existing PR. NOTE: `gh pr list --head`
+    # requires the branch name WITHOUT the owner: prefix on the querying
+    # side, even though `gh pr create --head` REQUIRES owner:branch.
     PR_NUMBER=$(gh pr list --repo "${REGISTRY_UPSTREAM}" \
-        --head "${FORK_OWNER}:${BRANCH}" \
+        --head "${BRANCH}" \
         --state open \
         --json number \
         --jq '.[0].number')
-    gh pr edit "${PR_NUMBER}" --repo "${REGISTRY_UPSTREAM}" \
-        --title "${PR_TITLE}" --body "${PR_BODY}"
+    # `gh pr edit` issues GraphQL queries against Projects-classic metadata
+    # which the agentclientprotocol/registry repo still has enabled, causing
+    # a deprecation failure. Update via the REST endpoint directly.
+    PR_BODY_FILE=$(mktemp)
+    printf '%s' "${PR_BODY}" > "${PR_BODY_FILE}"
+    gh api --method PATCH \
+        "repos/${REGISTRY_UPSTREAM}/pulls/${PR_NUMBER}" \
+        -f title="${PR_TITLE}" \
+        -F body=@"${PR_BODY_FILE}" >/dev/null
+    rm -f "${PR_BODY_FILE}"
     echo ""
-    echo "=== DONE: updated PR #${PR_NUMBER} ==="
+    echo "=== DONE: updated PR #${PR_NUMBER} via REST PATCH ==="
 fi
 
-gh pr view --repo "${REGISTRY_UPSTREAM}" \
-    --json url,number,title --jq '"  URL:   \(.url)\n  PR:    #\(.number)\n  Title: \(.title)"'
+gh api "repos/${REGISTRY_UPSTREAM}/pulls/${PR_NUMBER}" \
+    --jq '"  URL:   \(.html_url)\n  PR:    #\(.number)\n  Title: \(.title)"'
