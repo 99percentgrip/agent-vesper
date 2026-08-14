@@ -17,6 +17,15 @@ Own accepted, durable architecture and compatibility decisions for Agent Vesper.
   chat provider no longer determines the embedding source — that decision is
   owned by `.agent-vesper/cognition/embedding.json`. Cosine similarity
   cannot silently fail (Gap 10 eliminated structurally).
+- ADR 0017 (VRO-11) introduces VesperLens: a native Rust loopback oracle
+  for human-in-the-loop HTML artifact review. Lives under
+  `crates/vesper-agent/src/planning/vesper_lens/`, is built on raw
+  `tokio::net::TcpListener` (zero new external deps — only the `net` +
+  `io-util` features on the existing workspace tokio pin), binds strictly
+  to `127.0.0.1:0`, and defines its own minimal JSON feedback contract.
+  The MIT-licensed `kunchenguid/lavish-axi` repo was read as a
+  user-authorized reference blueprint; no code was copied (the harness
+  scanner flagged its overlay JS as prompt-injection-shaped).
 
 ## Verification
 

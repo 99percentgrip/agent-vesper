@@ -24,6 +24,7 @@ pub mod agent_loop;
 pub mod confinement;
 pub mod executor;
 pub mod permission;
+pub mod planning;
 pub mod project_context;
 pub mod providers;
 pub mod references;

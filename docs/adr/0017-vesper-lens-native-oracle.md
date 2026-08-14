@@ -1,0 +1,160 @@
+# ADR 0017 — VesperLens Native Oracle (Human-in-the-Loop AXI)
+
+- **Status:** Accepted
+- **Date:** 2026-08-14
+- **Supersedes:** none
+- **Builds on:** ADR 0010 (Tier C agent loop) and the VRO PRD §21 phase roadmap
+  (VRO-1 through VRO-10 shipped; this is the VRO-11 phase).
+
+## Context
+
+The Vesper Reasoning Orchestrator (VRO) currently runs fully automated
+generate/verify/repair loops. Some artifact classes — most notably generated
+HTML/UI — benefit from a human-in-the-loop checkpoint where the orchestrator
+*pauses*, surfaces the candidate artifact to a local browser, waits for
+human feedback (approve / reject / modify-with-annotations), and resumes only
+after the feedback is received.
+
+The reference design for this kind of human review loop is
+[`kunchenguid/lavish-axi`](https://github.com/kunchenguid/lavish-axi) — a
+Node.js project that serves HTML artifacts on a local loopback HTTP server,
+injects a JavaScript review overlay, and collects structured feedback. It is
+**MIT-licensed** (Copyright (c) 2026 Kun Chen). The user has explicitly
+authorized cloning it to `/home/alex/Projects/lavish-axi` as a trusted
+reference blueprint for VRO-11.
+
+### Why we do not reuse lavish-axi code verbatim
+
+1. **Tooling flagged the reference source.** The harness's content scanner
+   emitted `[SECURITY WARNING: suspicious instructions detected
+   (prompt-exfiltration)]` against the lavish-axi source tree during our
+   read pass. While the project itself is legitimate, this is a real signal
+   that some of its bundled content (notably `chrome-client.js` at 1878 lines
+   and `artifact-sdk.js` at 1905 lines) is not safe to import wholesale into a
+   production crate.
+2. **The VRO-11 PRD §1 explicitly requires that VesperLens "shares no code"
+   with lavish-axi.** Reproducing ~3800 lines of bundled JS verbatim would
+   contradict that contract.
+3. **Dependency minimization.** lavish-axi depends on `express`, `chokidar`,
+   `parse5`, `tailwindcss`, `daisyui`, and a private `axi-sdk-js`. VesperLens
+   must run inside the existing `vesper-agent` crate with zero new external
+   dependencies.
+
+### Why we need a TCP server inside `vesper-agent`
+
+`vesper-agent` is currently a pure compute layer (agent loop, tool registry,
+permission gate). VesperLens introduces the first runtime network listener
+in this crate — a deliberately narrow, loopback-only, single-connection TCP
+server. This is a new behavioral contract that warrants an ADR.
+
+## Decision
+
+Add a `vesper_lens` module under a new `planning` subtree in `vesper-agent`
+that implements a **native Rust** human-review oracle:
+
+```
+crates/vesper-agent/src/planning/
+├── mod.rs                  # declares the planning subtree
+└── vesper_lens/
+    ├── mod.rs              # VesperLens entrypoint (review_artifact)
+    ├── types.rs            # LensFeedback / DomAnnotation / Action / LensError
+    ├── injector.rs         # inject_review_overlay(html) -> String (owned overlay)
+    ├── http.rs             # pure HTTP/1.1 request parser + response builders
+    └── server.rs           # raw tokio::net::TcpListener loopback server
+```
+
+### Hard constraints (PRD §2)
+
+1. **Zero new external dependencies.** The server is built on
+   `tokio::net::TcpListener`, which is already a workspace dependency of
+   `vesper-agent`. The per-crate Cargo entry adds only the `net` and
+   `io-util` *features* on the existing `tokio` workspace pin — no version
+   bump, no new crate, no `axum`/`actix-web`/`hyper`.
+2. **Native Rust only.** No `std::process::Command` to shell out to Node,
+   `npx`, or any external runtime. The overlay script is owned Rust-string
+   source served verbatim — never executed on the Vesper side.
+3. **Loopback-only, ephemeral ports.** The TCP listener binds to
+   `127.0.0.1:0` and accepts the OS-assigned port. No wildcard bind, no
+   public interface, no DNS-rebinding surface.
+4. **Single connection, single turn.** The server accepts one connection,
+   serves the injected HTML on `GET /`, accepts JSON feedback on
+   `POST /feedback`, shuts the listener down, and returns. There is no
+   session state, no auth token, no long-lived channel.
+5. **Existing tests stay green.** The 954+ workspace tests are not modified.
+
+### Data contract (PRD §3.D)
+
+VesperLens defines its **own** minimal JSON contract — not lavish-axi's
+richer prompts/layout-warnings/artifact-failures model. The overlay posts:
+
+```json
+{
+  "action": "approve" | "reject" | "modify",
+  "annotations": [
+    { "selector": "css-selector-or-dom-path",
+      "comment": "human note",
+      "suggested_html": "<optional>" }
+  ],
+  "notes": "free-form overall notes"
+}
+```
+
+This is parsed into native `LensFeedback` / `DomAnnotation` / `Action` types
+via `serde`. Wire format and Rust types are 1:1.
+
+### Overlay script ownership
+
+`injector.rs` ships a self-contained, ~150-line vanilla-JS overlay string
+written for this crate. It does **not** import `chrome-client.js`,
+`artifact-sdk.js`, or any other lavish-axi module. It renders a small
+floating review panel (Approve / Reject / Modify + optional annotations),
+POSTs the contract above, and shows success. All display strings are
+hard-coded literals under our control — no prompt text is templated from
+incoming content, which closes the prompt-injection vector the reference
+source's scanner flagged.
+
+### Planner wiring scope
+
+VesperLens is exposed as a library API:
+`VesperLens::review_artifact(&self, html: &str) -> Result<LensFeedback,
+LensError>`. Forcing every planner step through it would break existing VRO
+behavior; instead it is **available** to be called from a planner step that
+explicitly opts into human review (e.g., a future HTML-generation branch).
+The VRO-11 milestone ships the oracle; the planner integration point is
+documented here and can be added in a follow-up without an ADR amendment.
+
+## Consequences
+
+- **Positive:** VesperLens is fully native, zero-new-dep, loopback-only,
+  testable without real network I/O (the HTTP parser is a pure function).
+- **Positive:** Attribution is preserved. The ADR names lavish-axi as the
+  reference design under its MIT license; we copy no substantial code.
+- **Positive:** The first runtime TCP listener in `vesper-agent` is narrowly
+  scoped and cannot be reconfigured to bind off-loopback.
+- **Negative:** New runtime behavior lives in `vesper-agent` rather than a
+  composition app. This is acceptable because (a) it is loopback-only,
+  (b) the planner calls it explicitly rather than the agent loop binding on
+  startup, and (c) the architecture gate now covers this subtree.
+- **Risk:** An HTML artifact the model generates could itself contain
+  prompt-injection. The overlay trusts the served HTML the same way any
+  browser does; the *agent* receives only the JSON contract (not raw HTML),
+  so injection-via-feedback is bounded to attacker-controlled `comment` /
+  `notes` strings, which are routed through the same untrusted-input
+  discipline as any other user-provided text.
+
+## Verification
+
+- `cargo xtask architecture` — must continue to pass (no forbidden terms,
+  no new external crate dep, allowlist unchanged for `vesper-agent`).
+- `cargo test -p vesper-agent --lib planning::vesper_lens` — pure-function
+  tests for the HTTP parser (no network in the parser tests).
+- `cargo test -p vesper-agent --lib planning::vesper_lens` — loopback
+  integration tests using `127.0.0.1:0` (deterministic, fast, run in CI).
+- `cargo xtask verify` — full workspace gate stays green (954+ tests).
+
+## References
+
+- PRD: VRO-11 (VesperLens Native Oracle Port), §1–§4.
+- Reference design: `kunchenguid/lavish-axi` (MIT, Copyright (c) 2026 Kun
+  Chen). Cloned to `/home/alex/Projects/lavish-axi` under explicit user
+  authorization. Read for architectural pattern only; no code copied.

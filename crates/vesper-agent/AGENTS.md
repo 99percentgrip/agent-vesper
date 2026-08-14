@@ -470,6 +470,24 @@ the multi-turn, tool-executing layer above it.
   scans `src/` only and would fail with "forbidden foundational reference
   `reqwest`" if the term appeared there. This is the same dev-only carve-out
   pattern TUI uses for `reqwest.workspace = true` in its production deps.
+- **ADR 0017 (VRO-11) VesperLens — first runtime TCP listener in this crate.**
+  `crates/vesper-agent/Cargo.toml` adds `tokio = { workspace = true,
+  features = ["net", "io-util"] }` additively on the existing workspace
+  tokio pin (no version bump, no new external crate, no `axum`/`hyper`).
+  The `src/planning/vesper_lens/` subtree owns a loopback-only
+  (`127.0.0.1:0`) single-turn HTTP/1.1 server that injects a review
+  overlay into HTML artifacts, serves them via raw `tokio::net::TcpListener`,
+  parses a JSON POST at `/feedback`, and returns a native `LensFeedback`.
+  Hard constraints: never binds a non-loopback interface, single
+  connection per request (`Connection: close`), pure-function HTTP parser
+  (testable without network), 64 KiB per-connection read cap, no auth
+  token, no session state. The overlay script is owned Rust-string source
+  (NOT a port of lavish-axi's `chrome-client.js`/`artifact-sdk.js`, which
+  the harness scanner flagged); it contains no `http://`/`https://`/
+  external-`src=` references and POSTs only to the relative `/feedback`
+  path. Planner integration (PRD §4) is a documented follow-up — the
+  library API `VesperLens::review_artifact(html, on_url)` is the
+  milestone deliverable.
 
 ## Work Guidance
 
@@ -500,4 +518,8 @@ the multi-turn, tool-executing layer above it.
 
 ## Child DOX Index
 
-No children.
+- `src/planning/vesper_lens/` — ADR 0017 (VRO-11) VesperLens native
+  human-in-the-loop HTML review oracle. Owns `types.rs`, `injector.rs`,
+  `http.rs`, `server.rs`, `mod.rs`. Not a durable enough boundary to
+  warrant its own AGENTS.md yet — the ADR + this entry cover its
+  contracts.
