@@ -222,6 +222,42 @@ business logic.
   interceptor transparently because `VroOrchestrator::execute_react` wraps
   its `invoker` argument with `LensObservingInvoker` when a `LensReviewPort`
   is configured (zero-cost when not).
+  **VRO-11.4 (Local Recon & UX Overhaul)**: four architectural course-
+  corrections driven by direct reconnaissance of the lavish-axi source.
+  **(1) Inline Telemetry** — tool execution logs are ripped out of the
+  Reasoning sidebar and rendered DIRECTLY in the main Conversation panel.
+  A new `TuiSession.live_trajectory: Vec<String>` field collects per-turn
+  tool telemetry from both the direct path (`AgentProgressEvent::ToolStarted`
+  / `ToolFinished` → `> 🛠️ Executing: <name>...` / `> ✓ <name>`) and the
+  ReAct trajectory stream (`drain_trajectory` → `> ⏳ *Executing* ...`).
+  The ViewModel's `transcript_lines_for` appends `live_trajectory` after
+  the transcript so the trajectory reads top-to-bottom naturally with the
+  assistant's text (matching Codex / Claude Code / lavish-axi host-agent
+  rendering). The field is cleared at turn start alongside `reasoning`.
+  **(2) Explicit `request_human_review` tool** — the implicit
+  `LensObservingInvoker` (VRO-11.3 directive 4) is DELETED. VesperLens
+  review is now triggered by an EXPLICIT tool the model calls when it wants
+  human review, matching lavish-axi's architecture (explicit CLI
+  invocation, no magic interception). The `TuiToolService` gains an
+  optional `lens_review: Option<Arc<dyn LensReviewPort>>` + `lens_url_tx`
+  channel. When configured, `definitions()` advertises
+  `request_human_review(file_path)` (ReadOnly, blocks until the human
+  submits). The tool reads the file, routes it through
+  `LensReviewPort::review`, and returns `feedback_as_context_message` as
+  the tool result. The `on_url` callback sends the review URL through the
+  channel → `drain_lens_urls` → `live_trajectory` so the user sees
+  `[VesperLens] Artifact ready for review. Open: <URL>` inline in the
+  Conversation panel. **(3) Silent bypass fixed** — the lens port is now
+  ALWAYS constructed at startup (`VesperLensPort::new()`) and wired into
+  both `TuiToolService` (for the explicit tool) and `VroOrchestrator`
+  (via `with_lens_port`, for `maybe_review_html_artifact` final-output
+  check). Before VRO-11.4, the orchestrator's `lens_port` was always
+  `None` because no TUI code called `with_lens_port`. **(4)
+  `LensReviewPort` trait signature** — `on_url` is now tied to the `'a`
+  lifetime of `&self` (was elided) so concrete impls like `VesperLensPort`
+  can call `on_url` from within the returned async block (needed because
+  `VesperLens::review_artifact` calls `on_url` mid-async when the TCP
+  listener binds).
   Zero-breakage: when LM Studio is NOT configured or the strategy is
   anything other than `ToolGroundedReact`, the existing direct / GVR /
   parallel-candidates paths are completely unchanged.

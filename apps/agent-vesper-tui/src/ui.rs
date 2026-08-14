@@ -182,6 +182,10 @@ pub struct ViewModel {
     pub task_plan: Vec<TaskItem>,
     /// Bounded live provider/tool activity.
     pub activity: Vec<String>,
+    /// VRO-11.4: inline tool telemetry rendered DIRECTLY in the main
+    /// Conversation panel. Populated from the direct path's
+    /// ToolStarted/ToolFinished events and the ReAct trajectory stream.
+    pub live_trajectory: Vec<String>,
     /// Provider-visible reasoning streamed during the current turn.
     pub reasoning: String,
     /// VRO-8 (PRD §8.1) — diagnostic projection rendered as a header at the
@@ -1250,7 +1254,7 @@ fn superpower_value_for(model: &ViewModel, alias: &str) -> Option<String> {
 /// Builds the transcript lines for the main panel: Plan Mode context first
 /// (pending questions during PLANNING, the plan body during REVIEW), then the
 /// accumulated transcript.
-fn transcript_lines_for(model: &ViewModel) -> Vec<String> {
+pub fn transcript_lines_for(model: &ViewModel) -> Vec<String> {
     let mut lines = Vec::new();
     match model.plan.phase() {
         PlanPhase::Planning => {
@@ -1266,6 +1270,14 @@ fn transcript_lines_for(model: &ViewModel) -> Vec<String> {
         PlanPhase::Normal | PlanPhase::Executing => {}
     }
     lines.extend(model.transcript.iter().cloned());
+    // VRO-11.4: inline tool telemetry renders DIRECTLY in the Conversation
+    // panel after the transcript, so the trajectory reads top-to-bottom
+    // naturally with the assistant's text (matches Codex / Claude Code /
+    // lavish-axi's host-agent rendering). Each line is already prefixed
+    // with `> ` for visual distinction from user/assistant turns.
+    if model.agent_running {
+        lines.extend(model.live_trajectory.iter().cloned());
+    }
     if model.agent_running && !model.live_response.is_empty() {
         lines.push(format!("assistant (streaming): {}", model.live_response));
     }

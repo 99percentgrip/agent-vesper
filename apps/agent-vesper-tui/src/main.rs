@@ -131,6 +131,12 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
     // VRO orchestrator: opt-in via AGENT_VESPER_VRO_ENABLED=1. When disabled
     // (the default), every turn routes through the direct AgentLoop — zero
     // behavior change. When enabled, non-Direct profiles go through VRO.
+    // VRO-11.4: the lens port is wired into the orchestrator (via
+    // with_lens_port) so maybe_review_html_artifact works for the final-
+    // output check. The PRIMARY trigger for human review is now the explicit
+    // `request_human_review` tool (Phase 2B-ii), NOT implicit interception.
+    let lens_port_for_orchestrator: Arc<dyn vesper_agent::vro::LensReviewPort> =
+        Arc::new(VesperLensPort::new());
     let vro = if std::env::var("AGENT_VESPER_VRO_ENABLED")
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(false)
@@ -139,8 +145,9 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
             enabled: true,
             ..Default::default()
         })
+        .with_lens_port(lens_port_for_orchestrator)
     } else {
-        vesper_agent::VroOrchestrator::disabled()
+        vesper_agent::VroOrchestrator::disabled().with_lens_port(lens_port_for_orchestrator)
     };
 
     // Runtime supervisor owns the live session state. Building it, creating a
@@ -199,12 +206,24 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
         registry: Arc::clone(&registry),
         config: build_agent_config(&provider_id)?,
     });
-    let agent_tools = Arc::new(TuiToolService::new(
-        Arc::clone(&memory_stores),
-        checkpoint_root_path(),
-        mcp_root_path(),
-        Some(worker_factory),
-    ));
+    // VRO-11.4 — construct the VesperLens review port + URL channel at the
+    // composition boundary. The explicit `request_human_review` tool routes
+    // through this port. The URL channel surfaces the review URL back to
+    // the TUI's inline trajectory so the user sees where to open the
+    // browser. This fixes the VRO-11.3 "silent bypass" — the lens port is
+    // now ALWAYS configured, so the `request_human_review` tool is always
+    // advertised to the model.
+    let (lens_url_tx, lens_url_rx) = mpsc::unbounded_channel::<String>();
+    let lens_port: Arc<dyn vesper_agent::vro::LensReviewPort> = Arc::new(VesperLensPort::new());
+    let agent_tools = Arc::new(
+        TuiToolService::new(
+            Arc::clone(&memory_stores),
+            checkpoint_root_path(),
+            mcp_root_path(),
+            Some(worker_factory),
+        )
+        .with_lens_review(Arc::clone(&lens_port), lens_url_tx),
+    );
     let (approval_port, approval_rx) = vesper_agent::ApprovalBroker::channel();
     // VRO-5.3: keep clones of the shared tool service + permission broker so
     // the `RegistryToolInvoker` for the Tool-Grounded ReAct path uses the
@@ -257,6 +276,8 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
         session_id: runtime_session_id.as_str().to_owned(),
         telemetry: Arc::new(trajectory_recorder()),
         activity: Vec::new(),
+        live_trajectory: Vec::new(),
+        lens_url_rx: Some(lens_url_rx),
         reasoning: String::new(),
         live_response: String::new(),
         turn_started: None,
@@ -550,6 +571,18 @@ struct TuiSession {
     telemetry: Arc<vesper_observability::TrajectoryRecorder>,
     /// Bounded live execution log shown while tools/provider turns run.
     activity: Vec<String>,
+    /// VRO-11.4: inline tool telemetry lines rendered DIRECTLY in the main
+    /// Conversation panel (not a sidebar). Populated from both the direct
+    /// path's `AgentProgressEvent::ToolStarted/ToolFinished` and the ReAct
+    /// trajectory stream. Reads top-to-bottom naturally with the assistant's
+    /// text. Cleared at turn start alongside `reasoning`.
+    live_trajectory: Vec<String>,
+    /// VRO-11.4 — receiver for VesperLens review-URL announcements. The
+    /// `request_human_review` tool sends the `[VesperLens] Artifact ready
+    /// for review. Open: <URL>` line through this channel; the event loop
+    /// drains it into `live_trajectory` so the URL renders inline in the
+    /// Conversation panel.
+    lens_url_rx: Option<mpsc::UnboundedReceiver<String>>,
     /// Provider-visible reasoning projection for the optional reasoning panel.
     reasoning: String,
     /// Assistant text accumulated during the current streamed response.
@@ -904,10 +937,15 @@ async fn drive_loop(
         // fall through and render the in-flight banner.
         drain_agent_event(session);
         // VRO-5.3 (PRD §11.6): drain any live ReAct trajectory entries from
-        // the in-flight `execute_react` turn so the Reasoning panel renders
-        // the Action/Observation cycle as it happens. Mirrors the
-        // `drain_agent_event` non-blocking pattern.
+        // the in-flight `execute_react` turn so the Conversation panel
+        // renders the Action/Observation cycle inline as it happens.
+        // VRO-11.4: trajectory now renders INLINE in the Conversation panel
+        // (not the Reasoning sidebar), matching Codex / Claude Code.
         drain_trajectory(session);
+        // VRO-11.4 — drain VesperLens URL announcements into the inline
+        // trajectory so the user sees the review URL in the Conversation
+        // panel when the `request_human_review` tool fires.
+        drain_lens_urls(session);
         drain_permission_request(session);
         drain_mobile_decision(session);
         refresh_command_menu(session, registry_commands, surface);
@@ -926,6 +964,7 @@ async fn drive_loop(
             panels: session.state.panels,
             task_plan: session.state.task_plan.clone(),
             activity: session.activity.clone(),
+            live_trajectory: session.live_trajectory.clone(),
             reasoning: session.reasoning.clone(),
             reasoning_diagnostics: session.reasoning_diagnostics.clone(),
             live_response: session.live_response.clone(),
@@ -4092,6 +4131,7 @@ fn spawn_agent_turn(
     session.agent_rx = Some(rx);
     session.agent_running = true;
     session.activity.clear();
+    session.live_trajectory.clear();
     session.reasoning.clear();
     session.live_response.clear();
     session.turn_started = Some(std::time::Instant::now());
@@ -4924,8 +4964,9 @@ fn spawn_vro_react_turn(
     session.agent_rx = Some(rx);
     session.trajectory_rx = Some(traj_rx);
     session.agent_running = true;
-    // Clear the reasoning buffer at turn start so the live trajectory starts
+    // Clear the trajectory buffer at turn start so the live trajectory starts
     // fresh — the existing direct/GVR paths also clear this on turn start.
+    session.live_trajectory.clear();
     session.reasoning.clear();
     session.state.status = Some("WORKING... (VRO ReAct grounding)".into());
     Ok(())
@@ -5460,13 +5501,20 @@ fn drain_trajectory(session: &mut TuiSession) {
     };
     // Drain a bounded batch per frame so a fast loop does not starve the
     // render thread. Mirrors drain_agent_event's 256-event batch.
+    //
+    // VRO-11.4: trajectory lines now route into `live_trajectory` so they
+    // render INLINE in the main Conversation panel (top-to-bottom with the
+    // assistant's text), NOT in the Reasoning sidebar. This matches the
+    // lavish-axi / Codex / Claude Code UX where tool execution reads as a
+    // single natural conversation flow.
     for _ in 0..256 {
         match rx.try_recv() {
             Ok(entry) => {
-                if !session.reasoning.is_empty() {
-                    append_bounded(&mut session.reasoning, "\n", 32 * 1024);
+                session.live_trajectory.push(format!("> {entry}"));
+                // Bound the buffer so a runaway loop cannot exhaust memory.
+                if session.live_trajectory.len() > 200 {
+                    session.live_trajectory.remove(0);
                 }
-                append_bounded(&mut session.reasoning, &entry, 32 * 1024);
             }
             Err(mpsc::error::TryRecvError::Empty) => return,
             // Disconnected: the spawn_vro_react_turn task ended (the senders
@@ -5474,6 +5522,32 @@ fn drain_trajectory(session: &mut TuiSession) {
             // future turn can stash a fresh one.
             Err(mpsc::error::TryRecvError::Disconnected) => {
                 session.trajectory_rx = None;
+                return;
+            }
+        }
+    }
+}
+
+/// VRO-11.4 — drains VesperLens review-URL announcements into the inline
+/// `live_trajectory` so the user sees `[VesperLens] Artifact ready for
+/// review. Open: <URL>` directly in the Conversation panel. Non-blocking.
+fn drain_lens_urls(session: &mut TuiSession) {
+    let Some(rx) = session.lens_url_rx.as_mut() else {
+        return;
+    };
+    for _ in 0..16 {
+        match rx.try_recv() {
+            Ok(line) => {
+                session.live_trajectory.push(line);
+                if session.live_trajectory.len() > 200 {
+                    session.live_trajectory.remove(0);
+                }
+            }
+            Err(mpsc::error::TryRecvError::Empty) => return,
+            // Disconnected: the tool service was dropped (binary exiting).
+            // Don't clear — the channel is process-scoped, not per-turn.
+            Err(mpsc::error::TryRecvError::Disconnected) => {
+                session.lens_url_rx = None;
                 return;
             }
         }
@@ -5552,13 +5626,19 @@ fn apply_agent_progress(progress: AgentProgressEvent, session: &mut TuiSession) 
             append_bounded(&mut session.live_response, text.as_str(), 32 * 1024);
         }
         AgentProgressEvent::ToolStarted { name } => {
-            push_activity(session, format!("→ {name}"));
+            // VRO-11.4: tool telemetry renders INLINE in the Conversation
+            // panel, not in the Activity sidebar. Format matches the
+            // directive: `> 🛠️ Executing: <name>...` for visual distinction
+            // from assistant text.
+            session
+                .live_trajectory
+                .push(format!("> 🛠️ Executing: {name}..."));
         }
         AgentProgressEvent::ToolFinished { name, success } => {
-            push_activity(
-                session,
-                format!("{} {name}", if success { "✓" } else { "✗" }),
-            );
+            // VRO-11.4: tool completion renders INLINE too. ✓ for success,
+            // ✗ for failure — same visual language as the ReAct path.
+            let mark = if success { "✓" } else { "✗" };
+            session.live_trajectory.push(format!("> {mark} {name}"));
         }
         AgentProgressEvent::PlanUpdated { markdown } => {
             apply_task_plan(&mut session.state, &markdown);
@@ -7400,12 +7480,94 @@ impl vesper_agent::ToolService for LegacyTuiToolService {
     }
 }
 
+/// VRO-11.4 — Concrete `LensReviewPort` wrapping a `VesperLens` instance.
+/// Created at the TUI composition boundary so the `request_human_review`
+/// tool can route HTML artifacts through VesperLens review without any
+/// implicit interception. Matches the lavish-axi architecture: the agent
+/// EXPLICITLY requests review; the lens doesn't sniff tool calls.
+#[derive(Debug, Clone)]
+struct VesperLensPort {
+    lens: Arc<vesper_agent::planning::VesperLens>,
+}
+
+impl VesperLensPort {
+    fn new() -> Self {
+        Self {
+            lens: Arc::new(vesper_agent::planning::VesperLens::new()),
+        }
+    }
+}
+
+impl vesper_agent::vro::LensReviewPort for VesperLensPort {
+    fn review<'a>(
+        &'a self,
+        html: &str,
+        on_url: &'a (dyn Fn(&str) + Send + Sync),
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Result<
+                        vesper_agent::planning::LensFeedback,
+                        vesper_agent::planning::LensError,
+                    >,
+                > + Send
+                + 'a,
+        >,
+    > {
+        let lens = Arc::clone(&self.lens);
+        let html = html.to_string();
+        Box::pin(async move {
+            // Bridge: LensReviewPort takes &dyn Fn (callable multiple times),
+            // VesperLens::review_artifact takes impl FnOnce. A &dyn Fn
+            // satisfies FnOnce (calling once is a subset of calling many
+            // times), so this closure adapts without issues.
+            lens.review_artifact(&html, |url| on_url(url)).await
+        })
+    }
+}
+
+/// VRO-11.4 — Tool definition for the explicit `request_human_review` tool.
+/// The agent calls this when it wants the human to visually review an HTML
+/// file — NOT triggered implicitly by file-write interception.
+fn request_human_review_definition() -> vesper_domain::ToolDefinition {
+    vesper_domain::ToolDefinition {
+        id: vesper_domain::ToolId::new("request_human_review").expect("bounded tool id"),
+        harness_name: vesper_domain::HarnessToolName::new("request_human_review")
+            .expect("bounded harness name"),
+        provider_name: None,
+        description: "Request human review of an HTML artifact via VesperLens. Opens the file in a browser with an annotation overlay and BLOCKS until the human submits feedback (approve/reject/modify). Use this when you want the user to visually review an HTML file you created — typically after writing a dashboard, report, or interactive page.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "file_path": {
+                    "type": "string",
+                    "description": "Path to the HTML file to review."
+                }
+            },
+            "required": ["file_path"]
+        }),
+        execution_class: vesper_domain::ToolExecutionClass::ReadOnly,
+        extensions: vesper_domain::ExtensionMap::default(),
+        defer_loading: false,
+    }
+}
+
 /// Frontend adapter over the shared hosted service. The legacy implementation
 /// below remains only for the narrow slash-command compatibility tests; all
 /// model-facing tool calls use this shared ACP/TUI surface.
 #[derive(Clone)]
 struct TuiToolService {
     inner: Arc<vesper_harness::HarnessToolService>,
+    /// VRO-11.4 — optional VesperLens review port. When `Some`, the
+    /// `request_human_review` tool is advertised and routes HTML files
+    /// through human-in-the-loop review. When `None`, the tool is hidden.
+    lens_review: Option<Arc<dyn vesper_agent::vro::LensReviewPort>>,
+    /// VRO-11.4 — channel for surfacing the review URL back to the TUI's
+    /// inline trajectory. The event loop drains the receiver into
+    /// `session.live_trajectory` so the user sees the `[VesperLens]
+    /// Artifact ready for review. Open: <URL>` line inline in the
+    /// Conversation panel.
+    lens_url_tx: Option<mpsc::UnboundedSender<String>>,
 }
 
 impl TuiToolService {
@@ -7428,13 +7590,36 @@ impl TuiToolService {
                 plugin_root,
                 worker_factory,
             )),
+            lens_review: None,
+            lens_url_tx: None,
         }
+    }
+
+    /// VRO-11.4 — injects the VesperLens review port + URL channel so the
+    /// explicit `request_human_review` tool is advertised and functional.
+    /// Without this call, the tool is hidden from the model (zero
+    /// behavior change for sessions that don't need visual review).
+    fn with_lens_review(
+        mut self,
+        lens: Arc<dyn vesper_agent::vro::LensReviewPort>,
+        url_tx: mpsc::UnboundedSender<String>,
+    ) -> Self {
+        self.lens_review = Some(lens);
+        self.lens_url_tx = Some(url_tx);
+        self
     }
 }
 
 impl vesper_agent::ToolService for TuiToolService {
     fn definitions(&self) -> Vec<vesper_domain::ToolDefinition> {
-        self.inner.definitions()
+        let mut defs = self.inner.definitions();
+        // VRO-11.4: advertise the explicit review tool ONLY when a lens
+        // port is configured. This prevents the model from calling a tool
+        // that would fail with "no lens configured".
+        if self.lens_review.is_some() {
+            defs.push(request_human_review_definition());
+        }
+        defs
     }
 
     fn execute<'a>(
@@ -7443,7 +7628,75 @@ impl vesper_agent::ToolService for TuiToolService {
         context: &'a vesper_agent::ToolContext,
     ) -> vesper_agent::ToolFuture<'a, Result<vesper_agent::ToolResult, vesper_agent::ToolError>>
     {
+        // VRO-11.4 — handle the explicit request_human_review tool locally.
+        // All other tools delegate to the inner harness service.
+        if call.tool_id.as_str() == "request_human_review" {
+            return self.execute_request_human_review(call, context);
+        }
         self.inner.execute(call, context)
+    }
+}
+
+impl TuiToolService {
+    /// Executes the `request_human_review` tool: reads the HTML file, routes
+    /// it through VesperLens, and returns the human's feedback as the tool
+    /// result. The tool BLOCKS until the human submits (matching lavish-axi's
+    /// explicit-invocation model).
+    fn execute_request_human_review<'a>(
+        &'a self,
+        call: &'a vesper_domain::ToolCall,
+        _context: &'a vesper_agent::ToolContext,
+    ) -> vesper_agent::ToolFuture<'a, Result<vesper_agent::ToolResult, vesper_agent::ToolError>>
+    {
+        let args = call.arguments.clone();
+        let lens = match &self.lens_review {
+            Some(l) => Arc::clone(l),
+            None => {
+                return Box::pin(async move {
+                    Err(tui_tool_failure(
+                        "request_human_review",
+                        "no VesperLens review port configured",
+                    ))
+                });
+            }
+        };
+        let url_tx = self.lens_url_tx.clone();
+        Box::pin(async move {
+            let path = args
+                .get("file_path")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| {
+                    tui_tool_failure("request_human_review", "missing file_path argument")
+                })?;
+            // Read the HTML file content.
+            let content = tokio::fs::read_to_string(path)
+                .await
+                .map_err(|e| tui_tool_failure("request_human_review", e))?;
+            // Surface the review URL to the TUI's inline trajectory so the
+            // user sees where to open the browser. The URL arrives through
+            // the on_url callback once VesperLens binds its listener.
+            let on_url: Box<dyn Fn(&str) + Send + Sync> = match &url_tx {
+                Some(tx) => {
+                    let tx = tx.clone();
+                    Box::new(move |url: &str| {
+                        let line = vesper_agent::vro::diagnostic_for_review(url);
+                        let _ = tx.send(format!("> {line}"));
+                    })
+                }
+                None => Box::new(|_url: &str| {}),
+            };
+            // Route the content through VesperLens. This BLOCKS until the
+            // human submits feedback (or the 30-minute timeout fires).
+            let feedback = lens
+                .review(&content, on_url.as_ref())
+                .await
+                .map_err(|e| tui_tool_failure("request_human_review", e))?;
+            // Return the feedback as the tool result. The model sees the
+            // verdict (APPROVED/REJECTED/NEEDS MODIFICATION) + notes +
+            // annotations and can apply corrections on the next step.
+            let msg = vesper_agent::vro::feedback_as_context_message(&feedback);
+            vesper_agent::ToolResult::new(msg)
+        })
     }
 }
 
@@ -11379,6 +11632,8 @@ mod tests {
             session_id: "test-session".into(),
             telemetry: Arc::new(vesper_observability::TrajectoryRecorder::disabled()),
             activity: Vec::new(),
+            live_trajectory: Vec::new(),
+            lens_url_rx: None,
             reasoning: String::new(),
             live_response: String::new(),
             turn_started: None,
@@ -11429,6 +11684,8 @@ mod tests {
             session_id: "test-session".into(),
             telemetry: Arc::new(vesper_observability::TrajectoryRecorder::disabled()),
             activity: Vec::new(),
+            live_trajectory: Vec::new(),
+            lens_url_rx: None,
             reasoning: String::new(),
             live_response: String::new(),
             turn_started: None,
@@ -11477,6 +11734,8 @@ mod tests {
             session_id: "test-session".into(),
             telemetry: Arc::new(vesper_observability::TrajectoryRecorder::disabled()),
             activity: Vec::new(),
+            live_trajectory: Vec::new(),
+            lens_url_rx: None,
             reasoning: String::new(),
             live_response: String::new(),
             turn_started: None,
@@ -12548,11 +12807,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn drain_trajectory_appends_streamed_entries_into_reasoning_buffer() {
-        // Directive 3 end-to-end: the event loop's `drain_trajectory` must
-        // consume whatever the capturing wrappers sent and append it to
-        // `session.reasoning` so the existing markdown renderer surfaces it
-        // in the Reasoning panel.
+    async fn drain_trajectory_appends_streamed_entries_into_live_trajectory() {
+        // VRO-11.4: the event loop's `drain_trajectory` must consume whatever
+        // the capturing wrappers sent and append it to `session.live_trajectory`
+        // so it renders INLINE in the Conversation panel (not the Reasoning
+        // sidebar). Each entry is prefixed with `> ` for visual distinction
+        // from user/assistant turns.
         let mut session = fresh_tui_session_for_trajectory_tests();
         let (tx, rx) = mpsc::unbounded_channel::<String>();
         let _ = tx.send("**▶ ACTION** `read_file` {\"path\":\"a\"}".to_string());
@@ -12560,31 +12820,32 @@ mod tests {
         session.trajectory_rx = Some(rx);
 
         // Sanity: empty before drain.
-        assert!(session.reasoning.is_empty());
+        assert!(session.live_trajectory.is_empty());
 
         drain_trajectory(&mut session);
 
-        // Both entries were appended in order, separated by a newline so the
-        // markdown renderer treats them as separate lines.
+        // Both entries were appended in order, prefixed with `> `.
+        assert_eq!(session.live_trajectory.len(), 2);
         assert!(
-            session.reasoning.contains("**▶ ACTION** `read_file`"),
-            "action must be in reasoning buffer: {}",
-            session.reasoning
+            session.live_trajectory[0].contains("**▶ ACTION** `read_file`"),
+            "action must be first: {:?}",
+            session.live_trajectory[0]
         );
         assert!(
-            session.reasoning.contains("*↳ OBSERVATION* contents"),
-            "observation must be in reasoning buffer: {}",
-            session.reasoning
+            session.live_trajectory[0].starts_with("> "),
+            "entry must be prefixed with '> ' for inline rendering: {:?}",
+            session.live_trajectory[0]
         );
-        // Order preserved: action before observation.
-        let pos_a = session.reasoning.find("ACTION").unwrap();
-        let pos_o = session.reasoning.find("OBSERVATION").unwrap();
-        assert!(pos_a < pos_o);
+        assert!(
+            session.live_trajectory[1].contains("*↳ OBSERVATION* contents"),
+            "observation must be second: {:?}",
+            session.live_trajectory[1]
+        );
 
         // A second drain with no new entries leaves the buffer unchanged.
-        let len_before = session.reasoning.len();
+        let len_before = session.live_trajectory.len();
         drain_trajectory(&mut session);
-        assert_eq!(session.reasoning.len(), len_before);
+        assert_eq!(session.live_trajectory.len(), len_before);
     }
 
     #[tokio::test]
@@ -12632,6 +12893,8 @@ mod tests {
             session_id: "test".to_owned(),
             telemetry: Arc::new(trajectory_recorder()),
             activity: Vec::new(),
+            live_trajectory: Vec::new(),
+            lens_url_rx: None,
             reasoning: String::new(),
             live_response: String::new(),
             turn_started: None,
@@ -13035,6 +13298,219 @@ mod tests {
         assert!(
             lower.contains("set mode=") || lower.contains("override"),
             "description does not advertise the VRO mode surface: {desc}"
+        );
+    }
+
+    // ===================================================================
+    // VRO-11.4 — Phase 2A: inline telemetry + Phase 2B: explicit tool
+    // ===================================================================
+
+    #[test]
+    fn vro114_request_human_review_definition_has_correct_name_and_schema() {
+        let def = request_human_review_definition();
+        assert_eq!(def.id.as_str(), "request_human_review");
+        assert_eq!(def.harness_name.as_str(), "request_human_review");
+        assert!(
+            def.description.contains("VesperLens"),
+            "description must name VesperLens: {}",
+            def.description
+        );
+        assert!(
+            def.description.contains("BLOCKS"),
+            "description must warn the tool blocks: {}",
+            def.description
+        );
+        // Schema must require file_path.
+        let required = def
+            .input_schema
+            .get("required")
+            .and_then(|v| v.as_array())
+            .expect("required array present");
+        assert!(
+            required.iter().any(|v| v.as_str() == Some("file_path")),
+            "file_path must be required: {required:?}"
+        );
+    }
+
+    #[test]
+    fn vro114_tui_tool_service_without_lens_excludes_request_human_review() {
+        // When no lens port is configured, the tool is NOT advertised
+        // (prevents the model from calling a tool that would fail).
+        let service = TuiToolService::new(
+            Arc::new(MemoryStores::open_default()),
+            std::path::PathBuf::from("/tmp/test-cron"),
+            std::path::PathBuf::from("/tmp/test-mcp"),
+            None,
+        );
+        let defs = vesper_agent::ToolService::definitions(&service);
+        assert!(
+            !defs.iter().any(|d| d.id.as_str() == "request_human_review"),
+            "tool must be hidden when no lens configured"
+        );
+    }
+
+    #[test]
+    fn vro114_tui_tool_service_with_lens_includes_request_human_review() {
+        // When a lens port IS configured, the tool IS advertised so the
+        // model can explicitly request human review.
+        let (lens_url_tx, _lens_url_rx) = mpsc::unbounded_channel::<String>();
+        let lens: Arc<dyn vesper_agent::vro::LensReviewPort> = Arc::new(VesperLensPort::new());
+        let service = TuiToolService::new(
+            Arc::new(MemoryStores::open_default()),
+            std::path::PathBuf::from("/tmp/test-cron"),
+            std::path::PathBuf::from("/tmp/test-mcp"),
+            None,
+        )
+        .with_lens_review(lens, lens_url_tx);
+        let defs = vesper_agent::ToolService::definitions(&service);
+        assert!(
+            defs.iter().any(|d| d.id.as_str() == "request_human_review"),
+            "tool must be present when lens configured"
+        );
+    }
+
+    #[test]
+    fn vro114_vesper_lens_port_can_be_arc_dyn_lens_review_port() {
+        // The adapter must be usable as Arc<dyn LensReviewPort> — the form
+        // VroOrchestrator and TuiToolService store.
+        let port: Arc<dyn vesper_agent::vro::LensReviewPort> = Arc::new(VesperLensPort::new());
+        // Formatting works (Debug bound).
+        let debug = format!("{port:?}");
+        assert!(debug.contains("VesperLensPort"), "got: {debug}");
+    }
+
+    #[tokio::test]
+    async fn vro114_drain_lens_urls_pushes_to_live_trajectory() {
+        let mut session = fresh_tui_session_for_trajectory_tests();
+        let (tx, rx) = mpsc::unbounded_channel::<String>();
+        let _ = tx.send("> [VesperLens] open http://127.0.0.1:1234/".to_string());
+        session.lens_url_rx = Some(rx);
+
+        assert!(session.live_trajectory.is_empty());
+        drain_lens_urls(&mut session);
+        assert_eq!(session.live_trajectory.len(), 1);
+        assert!(session.live_trajectory[0].contains("VesperLens"));
+        assert!(session.live_trajectory[0].contains("127.0.0.1:1234"));
+    }
+
+    #[test]
+    fn vro114_transcript_lines_include_live_trajectory_when_agent_running() {
+        // VRO-11.4 Phase 2A: tool telemetry renders INLINE in the Conversation
+        // panel. Verify the ViewModel's transcript includes live_trajectory
+        // entries when agent_running is true.
+        use agent_vesper_tui::ui::transcript_lines_for;
+        let model = ViewModel {
+            transcript: vec!["user: build a dashboard".into()],
+            live_trajectory: vec!["> 🛠️ Executing: write_file...".into()],
+            agent_running: true,
+            live_response: String::new(),
+            ..ViewModel::default()
+        };
+        let lines = transcript_lines_for(&model);
+        // The live_trajectory entry must appear after the transcript.
+        assert!(
+            lines.iter().any(|l| l.contains("🛠️ Executing: write_file")),
+            "live_trajectory must be inline: {lines:?}"
+        );
+    }
+
+    #[test]
+    fn vro114_transcript_lines_exclude_live_trajectory_when_agent_idle() {
+        // When the agent is NOT running, stale trajectory entries must NOT
+        // pollute the conversation — they're transient, per-turn only.
+        use agent_vesper_tui::ui::transcript_lines_for;
+        let model = ViewModel {
+            transcript: vec!["user: done".into()],
+            live_trajectory: vec!["> 🛠️ Executing: write_file...".into()],
+            agent_running: false,
+            live_response: String::new(),
+            ..ViewModel::default()
+        };
+        let lines = transcript_lines_for(&model);
+        assert!(
+            !lines.iter().any(|l| l.contains("Executing")),
+            "live_trajectory must be hidden when idle: {lines:?}"
+        );
+    }
+
+    #[test]
+    fn vro114_apply_agent_progress_routes_tool_started_to_live_trajectory() {
+        // VRO-11.4: ToolStarted events must push to live_trajectory (inline
+        // conversation), NOT to activity (sidebar).
+        let mut session = fresh_tui_session_for_trajectory_tests();
+        apply_agent_progress(
+            vesper_agent::AgentProgressEvent::ToolStarted {
+                name: "write_file".into(),
+            },
+            &mut session,
+        );
+        assert!(
+            session
+                .live_trajectory
+                .iter()
+                .any(|l| l.contains("🛠️") && l.contains("write_file")),
+            "ToolStarted must route to live_trajectory: {:?}",
+            session.live_trajectory
+        );
+        assert!(
+            !session.activity.iter().any(|l| l.contains("write_file")),
+            "ToolStarted must NOT route to activity sidebar: {:?}",
+            session.activity
+        );
+    }
+
+    #[test]
+    fn vro114_lens_port_lifetime_signature_allows_async_capture() {
+        // VRO-11.4: the updated LensReviewPort trait ties `on_url` to the
+        // `&self` lifetime so concrete impls can call on_url from within
+        // an async block. Verify the trait compiles with this signature
+        // by constructing an Arc<dyn LensReviewPort> and checking it is
+        // Debug + Send + Sync (the supertrait bounds the orchestrator
+        // requires).
+        let port: Arc<dyn vesper_agent::vro::LensReviewPort> = Arc::new(VesperLensPort::new());
+        assert!(format!("{port:?}").contains("VesperLensPort"));
+        // The trait object is Send + Sync (verified by the Arc<dyn> binding).
+        fn _assert_send_sync<T: Send + Sync>(_: &T) {}
+        _assert_send_sync(&port);
+    }
+
+    #[test]
+    fn vro114_apply_agent_progress_routes_tool_finished_to_live_trajectory() {
+        let mut session = fresh_tui_session_for_trajectory_tests();
+        apply_agent_progress(
+            vesper_agent::AgentProgressEvent::ToolFinished {
+                name: "read_file".into(),
+                success: true,
+            },
+            &mut session,
+        );
+        assert!(
+            session
+                .live_trajectory
+                .iter()
+                .any(|l| l.contains("✓") && l.contains("read_file")),
+            "ToolFinished success must route to live_trajectory: {:?}",
+            session.live_trajectory
+        );
+    }
+
+    #[test]
+    fn vro114_apply_agent_progress_tool_finished_failure_shows_cross() {
+        let mut session = fresh_tui_session_for_trajectory_tests();
+        apply_agent_progress(
+            vesper_agent::AgentProgressEvent::ToolFinished {
+                name: "bash".into(),
+                success: false,
+            },
+            &mut session,
+        );
+        assert!(
+            session
+                .live_trajectory
+                .iter()
+                .any(|l| l.contains("✗") && l.contains("bash")),
+            "ToolFinished failure must show ✗: {:?}",
+            session.live_trajectory
         );
     }
 }

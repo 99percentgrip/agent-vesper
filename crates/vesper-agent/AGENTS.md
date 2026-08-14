@@ -496,23 +496,22 @@ the multi-turn, tool-executing layer above it.
   method that returns `None` when no port is configured or the input is
   not HTML. Default behavior is byte-identical to VRO-10; the seam is
   opt-in at the composition boundary.
-  **VRO-11.3 directive 4 — file-save interceptor:** `lens_integration.rs`
-  adds `html_artifact_for_write_file(name, arguments) -> Option<String>`
-  (returns the content iff `name == "write_file"` AND the `path` ends with
-  `.html` AND the `content` passes `looks_like_html_artifact`) and the
-  `LensObservingInvoker<'a>` decorator that wraps any `&'a dyn
-  ToolInvoker` + `&'a dyn LensReviewPort` + `&'a` diagnostic callback.
-  After every successful `invoke`, the decorator routes eligible
-  `write_file(.html)` calls through `LensReviewPort::review` — the React
-  loop **halts** mid-turn until the human submits (the directive's "halt
-  for human review" semantics). `Action::Approve` returns the original
-  tool result verbatim; `Reject` / `Modify` append the verdict via
-  `feedback_as_context_message` so the model's next ReAct step can react.
-  `VroOrchestrator::execute_react` wraps its `invoker` argument with
-  `LensObservingInvoker` iff `self.lens_port` is `Some`; every existing
-  call site and test (which constructs orchestrators without
-  `with_lens_port`) is byte-identical to before — the wrapping is
-  zero-cost when the port is absent.
+  **VRO-11.4 — Explicit `request_human_review` tool (replaces implicit
+  interceptor):** the VRO-11.3 `LensObservingInvoker` (implicit
+  `write_file(.html)` interception) is DELETED — lavish-axi recon proved
+  that implicit interception is an anti-pattern; the model must EXPLICITLY
+  request review, matching lavish-axi's `npx -y lavish-axi <file>` CLI
+  invocation pattern. `VroOrchestrator::execute_react` no longer wraps the
+  invoker; it passes `invoker` straight through (byte-identical to pre-
+  VRO-11.3). The explicit trigger is a `request_human_review(file_path)`
+  tool registered at the TUI composition boundary (`TuiToolService`); it
+  reads the file, routes the content through `LensReviewPort::review`,
+  blocks until the human submits, and returns the verdict via
+  `feedback_as_context_message`. The `LensReviewPort` trait's `on_url`
+  parameter is now tied to the `'a` lifetime of `&self` so concrete impls
+  can call it from within the returned async block. The orchestrator's
+  `maybe_review_html_artifact` (final-output check) is still available for
+  hosts that want it; the TUI wires the port via `with_lens_port`.
 
 ## Work Guidance
 

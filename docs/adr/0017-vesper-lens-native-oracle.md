@@ -152,44 +152,52 @@ existing orchestrator method is byte-identical to VRO-10. All existing
 workspace tests pass unchanged; the 16 new tests (13 lens_integration +
 3 orchestrator-wiring) cover the seam in isolation.
 
-### VRO-11.3 — File-save interceptor (UX Hotfix)
+### VRO-11.4 — Explicit tool replaces implicit interceptor (UX Overhaul)
 
-The VRO-11.2 seam surfaced review only when the orchestrator's *final
-conversational text* looked like an HTML artifact. In practice the agent
-typically writes the dashboard to disk via `write_file` and then answers
-with a short prose summary, so the review oracle never fired — the
-artifact existed on disk but bypassed the human-in-the-loop checkpoint.
+The VRO-11.3 `LensObservingInvoker` was an implicit file-save interceptor:
+every successful `write_file(.html)` call was silently intercepted and
+routed through VesperLens review. Direct reconnaissance of the lavish-axi
+source code proved this is an architectural anti-pattern — lavish-axi uses
+**zero interception** and relies entirely on the model's judgment to
+explicitly invoke `npx -y lavish-axi <file>` when it wants human review.
 
-VRO-11.3 directive 4 closes this gap with a `ToolInvoker` decorator that
-intercepts successful `write_file` calls to `.html` paths and routes the
-content through the configured `LensReviewPort`:
+VRO-11.4 course-corrects:
 
-- **`html_artifact_for_write_file(name, arguments) -> Option<String>`**
-  is a pure heuristic that triggers iff `name == "write_file"` AND the
-  `path` ends with `.html` AND the `content` passes
-  `looks_like_html_artifact`. Every other combination returns `None` so
-  the React loop's tool result is untouched (zero behavior change for
-  non-HTML writes).
-- **`LensObservingInvoker<'a>`** wraps any `&'a dyn ToolInvoker` +
-  `&'a dyn LensReviewPort` + `&'a` diagnostic callback. After every
-  successful `invoke`, it consults `html_artifact_for_write_file`; if the
-  call qualifies, it invokes `LensReviewPort::review` and the React loop
-  **halts** mid-turn until the human submits (the directive's "halt for
-  human review" semantics).
-- **Verdict handling:** `Action::Approve` returns the original tool result
-  verbatim (noise-free success path). `Reject` / `Modify` append the
-  verdict via `feedback_as_context_message` so the model's next ReAct
-  step can react.
-- **`VroOrchestrator::execute_react`** wraps its `invoker` argument with
-  `LensObservingInvoker` iff `self.lens_port` is `Some`. Every existing
-  call site and test (which constructs orchestrators without
-  `with_lens_port`) is byte-identical to before — the wrapping is
-  zero-cost when the port is absent.
+- **Implicit interceptor DELETED.** `LensObservingInvoker` and
+  `html_artifact_for_write_file` are removed from `lens_integration.rs`.
+  `VroOrchestrator::execute_react` no longer wraps the invoker — it passes
+  it straight through, byte-identical to pre-VRO-11.3.
+- **Explicit `request_human_review` tool.** A new tool is registered at the
+  TUI composition boundary (`TuiToolService`). When the model wants human
+  review of an HTML artifact, it calls
+  `request_human_review(file_path="<path>")`. The tool reads the file,
+  routes the content through `LensReviewPort::review`, blocks until the
+  human submits (matching lavish-axi's blocking poll semantics), and
+  returns the verdict via `feedback_as_context_message`.
+- **Trait signature update.** `LensReviewPort::review`'s `on_url`
+  parameter is now tied to the `'a` lifetime of `&self` so concrete impls
+  can call `on_url` from within the returned async block (needed because
+  `VesperLens::review_artifact` calls `on_url` mid-async when the TCP
+  listener binds).
+- **Silent bypass fixed.** The TUI now ALWAYS constructs a
+  `VesperLensPort` at startup and wires it into both `TuiToolService`
+  (for the explicit tool) and `VroOrchestrator` (via `with_lens_port`).
+  Before VRO-11.4, the orchestrator's `lens_port` was always `None`
+  because no TUI code called `with_lens_port`.
+- **Inline telemetry.** Tool execution logs are ripped out of the
+  Reasoning sidebar and rendered DIRECTLY in the main Conversation panel
+  via a new `TuiSession.live_trajectory` field. Both the direct path
+  (`ToolStarted` / `ToolFinished`) and the ReAct trajectory stream
+  (`drain_trajectory`) now route to `live_trajectory`, which
+  `transcript_lines_for` appends after the transcript. This matches
+  Codex / Claude Code / lavish-axi host-agent rendering where the
+  trajectory reads top-to-bottom naturally with the assistant's text.
 
 This stays inside the ADR 0017 contract: the orchestrator never starts a
-TCP listener directly; it always goes through the trait port. The
-interceptor is purely an additional *trigger surface* (file-save events)
-that feeds the same `LensReviewPort::review` API.
+TCP listener directly; it always goes through the trait port. The change
+is purely a shift in **trigger surface** — from implicit interception
+(VRO-11.3) to explicit tool invocation (VRO-11.4), matching lavish-axi's
+proven architecture.
 
 ## Consequences
 

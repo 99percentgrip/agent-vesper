@@ -46,8 +46,8 @@ pub use learning::{
     WorkflowExtractor, cost_summary, distinct_actions, is_learning_eligible,
 };
 pub use lens_integration::{
-    LensObservingInvoker, LensReviewPort, NoOpLensReviewPort, diagnostic_for_review,
-    feedback_as_context_message, html_artifact_for_write_file, looks_like_html_artifact,
+    LensReviewPort, NoOpLensReviewPort, diagnostic_for_review, feedback_as_context_message,
+    looks_like_html_artifact,
 };
 pub use orchestrator::{
     CandidateGenerator, GeneratedCandidate, run_generate_verify_repair,
@@ -479,41 +479,22 @@ impl VroOrchestrator {
         // The profile's `requires_grounding` flag drives the Read-Before-Write
         // policy. The orchestrator remains agnostic of HOW grounding is
         // detected — that lives in the deterministic TaskProfiler.
-        let requires_grounding = profile.requires_grounding;
-
-        // VRO-11.3 directive 4 — VesperLens file-save interceptor. When a
-        // LensReviewPort is configured, wrap the caller-supplied invoker
-        // with [`LensObservingInvoker`] so successful `write_file(.html)`
-        // calls halt the React loop for human-in-the-loop review. The
-        // wrapping is **opt-in and zero-cost**: when `lens_port` is `None`
-        // (every existing call site and test), the original `invoker`
-        // reference is passed straight through and behavior is byte-identical
-        // to before this directive.
-        if let Some(lens) = self.lens_port.as_deref() {
-            // The orchestrator stays pure — it never writes to stdout. The
-            // no-op diagnostic sink is the default; the composition boundary
-            // (TUI) wires a real sink when it constructs the
-            // VesperLens-backed port so the human sees the review URL.
-            let on_diagnostic: &(dyn Fn(&str) + Send + Sync) = &|_line: &str| {};
-            let wrapped = LensObservingInvoker::new(invoker, lens, on_diagnostic);
-            run_tool_grounded_react(
-                &request.user_message,
-                agent,
-                &wrapped,
-                budget,
-                requires_grounding,
-            )
-            .await
-        } else {
-            run_tool_grounded_react(
-                &request.user_message,
-                agent,
-                invoker,
-                budget,
-                requires_grounding,
-            )
-            .await
-        }
+        //
+        // VRO-11.4: the implicit file-save interceptor (LensObservingInvoker)
+        // was removed. VesperLens review is now triggered by an EXPLICIT
+        // `request_human_review` tool the agent calls when it wants human
+        // review — matching the lavish-axi architecture (explicit CLI
+        // invocation, no magic interception). The orchestrator's `lens_port`
+        // is still available for `maybe_review_html_artifact` (final-output
+        // check) but is NOT wired into the invoker.
+        run_tool_grounded_react(
+            &request.user_message,
+            agent,
+            invoker,
+            budget,
+            profile.requires_grounding,
+        )
+        .await
     }
 
     /// Executes a turn through the Proposer-Critic-Adjudicator strategy (VRO-6,
