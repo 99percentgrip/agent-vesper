@@ -5505,7 +5505,7 @@ fn drain_trajectory(session: &mut TuiSession) {
     // VRO-11.4: trajectory lines now route into `live_trajectory` so they
     // render INLINE in the main Conversation panel (top-to-bottom with the
     // assistant's text), NOT in the Reasoning sidebar. This matches the
-    // lavish-axi / Codex / Claude Code UX where tool execution reads as a
+    // ORACEL / Codex / Claude Code UX where tool execution reads as a
     // single natural conversation flow.
     for _ in 0..256 {
         match rx.try_recv() {
@@ -7483,7 +7483,7 @@ impl vesper_agent::ToolService for LegacyTuiToolService {
 /// VRO-11.4 — Concrete `LensReviewPort` wrapping a `VesperLens` instance.
 /// Created at the TUI composition boundary so the `request_human_review`
 /// tool can route HTML artifacts through VesperLens review without any
-/// implicit interception. Matches the lavish-axi architecture: the agent
+/// implicit interception. Matches the ORACEL architecture: the agent
 /// EXPLICITLY requests review; the lens doesn't sniff tool calls.
 #[derive(Debug, Clone)]
 struct VesperLensPort {
@@ -7640,7 +7640,7 @@ impl vesper_agent::ToolService for TuiToolService {
 impl TuiToolService {
     /// Executes the `request_human_review` tool: reads the HTML file, routes
     /// it through VesperLens, and returns the human's feedback as the tool
-    /// result. The tool BLOCKS until the human submits (matching lavish-axi's
+    /// result. The tool BLOCKS until the human submits (matching ORACEL's
     /// explicit-invocation model).
     fn execute_request_human_review<'a>(
         &'a self,
