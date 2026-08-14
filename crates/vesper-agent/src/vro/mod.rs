@@ -483,7 +483,7 @@ impl VroOrchestrator {
         // VRO-11.4: the implicit file-save interceptor (LensObservingInvoker)
         // was removed. VesperLens review is now triggered by an EXPLICIT
         // `request_human_review` tool the agent calls when it wants human
-        // review — matching the ORACEL architecture (explicit CLI
+        // review — matching the explicit-invocation pattern (explicit CLI
         // invocation, no magic interception). The orchestrator's `lens_port`
         // is still available for `maybe_review_html_artifact` (final-output
         // check) but is NOT wired into the invoker.

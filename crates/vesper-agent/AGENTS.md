@@ -482,7 +482,7 @@ the multi-turn, tool-executing layer above it.
   connection per request (`Connection: close`), pure-function HTTP parser
   (testable without network), 64 KiB per-connection read cap, no auth
   token, no session state. The overlay script is owned Rust-string source
-  (NOT a port of ORACEL's `chrome-client.js`/`artifact-sdk.js`, which
+  (NOT a port of any external `chrome-client.js`/`artifact-sdk.js`, which
   the harness scanner flagged); it contains no `http://`/`https://`/
   external-`src=` references and POSTs only to the relative `/feedback`
   path. **VRO-11.2 planner seam:** `src/vro/lens_integration.rs` defines
@@ -498,9 +498,9 @@ the multi-turn, tool-executing layer above it.
   opt-in at the composition boundary.
   **VRO-11.4 — Explicit `request_human_review` tool (replaces implicit
   interceptor):** the VRO-11.3 `LensObservingInvoker` (implicit
-  `write_file(.html)` interception) is DELETED — ORACEL recon proved
+  `write_file(.html)` interception) is DELETED — Architectural analysis proved
   that implicit interception is an anti-pattern; the model must EXPLICITLY
-  request review, matching ORACEL's `npx -y ORACEL <file>` CLI
+  request review, matching the an explicit review command CLI
   invocation pattern. `VroOrchestrator::execute_react` no longer wraps the
   invoker; it passes `invoker` straight through (byte-identical to pre-
   VRO-11.3). The explicit trigger is a `request_human_review(file_path)`

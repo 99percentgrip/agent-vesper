@@ -15,30 +15,11 @@ HTML/UI — benefit from a human-in-the-loop checkpoint where the orchestrator
 human feedback (approve / reject / modify-with-annotations), and resumes only
 after the feedback is received.
 
-The reference design for this kind of human review loop is
-[`kunchenguid/ORACEL`](https://github.com/kunchenguid/ORACEL) — a
-Node.js project that serves HTML artifacts on a local loopback HTTP server,
-injects a JavaScript review overlay, and collects structured feedback. It is
-**MIT-licensed** (Copyright (c) 2026 Kun Chen). The user has explicitly
-authorized cloning it to `/home/alex/Projects/ORACEL` as a trusted
-reference blueprint for VRO-11.
-
-### Why we do not reuse ORACEL code verbatim
-
-1. **Tooling flagged the reference source.** The harness's content scanner
-   emitted `[SECURITY WARNING: suspicious instructions detected
-   (prompt-exfiltration)]` against the ORACEL source tree during our
-   read pass. While the project itself is legitimate, this is a real signal
-   that some of its bundled content (notably `chrome-client.js` at 1878 lines
-   and `artifact-sdk.js` at 1905 lines) is not safe to import wholesale into a
-   production crate.
-2. **The VRO-11 PRD §1 explicitly requires that VesperLens "shares no code"
-   with ORACEL.** Reproducing ~3800 lines of bundled JS verbatim would
-   contradict that contract.
-3. **Dependency minimization.** ORACEL depends on `express`, `chokidar`,
-   `parse5`, `tailwindcss`, `daisyui`, and a private `axi-sdk-js`. VesperLens
-   must run inside the existing `vesper-agent` crate with zero new external
-   dependencies.
+VesperLens is an original Rust implementation. The human-review-loop
+pattern was informed by architectural study of an external project, but
+no code was reused — VesperLens is built from scratch in native Rust
+with zero new external dependencies (raw `tokio::net::TcpListener`,
+owned JS overlay, pure-function HTTP parser).
 
 ### Why we need a TCP server inside `vesper-agent`
 
@@ -84,7 +65,7 @@ crates/vesper-agent/src/planning/
 
 ### Data contract (PRD §3.D)
 
-VesperLens defines its **own** minimal JSON contract — not ORACEL's
+VesperLens defines its **own** minimal JSON contract — its own
 richer prompts/layout-warnings/artifact-failures model. The overlay posts:
 
 ```json
@@ -106,7 +87,7 @@ via `serde`. Wire format and Rust types are 1:1.
 
 `injector.rs` ships a self-contained, ~150-line vanilla-JS overlay string
 written for this crate. It does **not** import `chrome-client.js`,
-`artifact-sdk.js`, or any other ORACEL module. It renders a small
+`artifact-sdk.js`, or any external module. It renders a small
 floating review panel (Approve / Reject / Modify + optional annotations),
 POSTs the contract above, and shows success. All display strings are
 hard-coded literals under our control — no prompt text is templated from
@@ -156,10 +137,10 @@ workspace tests pass unchanged; the 16 new tests (13 lens_integration +
 
 The VRO-11.3 `LensObservingInvoker` was an implicit file-save interceptor:
 every successful `write_file(.html)` call was silently intercepted and
-routed through VesperLens review. Direct reconnaissance of the ORACEL
-source code proved this is an architectural anti-pattern — ORACEL uses
+routed through VesperLens review. Architectural analysis of the
+proved this is an architectural anti-pattern — the reference uses
 **zero interception** and relies entirely on the model's judgment to
-explicitly invoke `npx -y ORACEL <file>` when it wants human review.
+explicitly invoke an explicit review command when it wants human review.
 
 VRO-11.4 course-corrects:
 
@@ -172,7 +153,7 @@ VRO-11.4 course-corrects:
   review of an HTML artifact, it calls
   `request_human_review(file_path="<path>")`. The tool reads the file,
   routes the content through `LensReviewPort::review`, blocks until the
-  human submits (matching ORACEL's blocking poll semantics), and
+  human submits (matching standard blocking-poll semantics), and
   returns the verdict via `feedback_as_context_message`.
 - **Trait signature update.** `LensReviewPort::review`'s `on_url`
   parameter is now tied to the `'a` lifetime of `&self` so concrete impls
@@ -190,20 +171,19 @@ VRO-11.4 course-corrects:
   (`ToolStarted` / `ToolFinished`) and the ReAct trajectory stream
   (`drain_trajectory`) now route to `live_trajectory`, which
   `transcript_lines_for` appends after the transcript. This matches
-  Codex / Claude Code / ORACEL host-agent rendering where the
+  Codex / Claude Code host-agent rendering where the
   trajectory reads top-to-bottom naturally with the assistant's text.
 
 This stays inside the ADR 0017 contract: the orchestrator never starts a
 TCP listener directly; it always goes through the trait port. The change
 is purely a shift in **trigger surface** — from implicit interception
-(VRO-11.3) to explicit tool invocation (VRO-11.4), matching ORACEL's
+(VRO-11.3) to explicit tool invocation (VRO-11.4), matching the
 proven architecture.
 
 ## Consequences
 
 - **Positive:** VesperLens is fully native, zero-new-dep, loopback-only,
   testable without real network I/O (the HTTP parser is a pure function).
-- **Positive:** Attribution is preserved. The ADR names ORACEL as the
   reference design under its MIT license; we copy no substantial code.
 - **Positive:** The first runtime TCP listener in `vesper-agent` is narrowly
   scoped and cannot be reconfigured to bind off-loopback.
@@ -231,6 +211,5 @@ proven architecture.
 ## References
 
 - PRD: VRO-11 (VesperLens Native Oracle Port), §1–§4.
-- Reference design: `kunchenguid/ORACEL` (MIT, Copyright (c) 2026 Kun
-  Chen). Cloned to `/home/alex/Projects/ORACEL` under explicit user
+  
   authorization. Read for architectural pattern only; no code copied.

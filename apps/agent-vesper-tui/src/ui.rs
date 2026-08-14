@@ -1273,7 +1273,7 @@ pub fn transcript_lines_for(model: &ViewModel) -> Vec<String> {
     // VRO-11.4: inline tool telemetry renders DIRECTLY in the Conversation
     // panel after the transcript, so the trajectory reads top-to-bottom
     // naturally with the assistant's text (matches Codex / Claude Code /
-    // ORACEL's host-agent rendering). Each line is already prefixed
+    // the host-agent rendering). Each line is already prefixed
     // with `> ` for visual distinction from user/assistant turns.
     if model.agent_running {
         lines.extend(model.live_trajectory.iter().cloned());

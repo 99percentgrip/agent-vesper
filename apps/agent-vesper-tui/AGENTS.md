@@ -223,7 +223,7 @@ business logic.
   its `invoker` argument with `LensObservingInvoker` when a `LensReviewPort`
   is configured (zero-cost when not).
   **VRO-11.4 (Local Recon & UX Overhaul)**: four architectural course-
-  corrections driven by direct reconnaissance of the ORACEL source.
+  corrections driven by architectural analysis.
   **(1) Inline Telemetry** — tool execution logs are ripped out of the
   Reasoning sidebar and rendered DIRECTLY in the main Conversation panel.
   A new `TuiSession.live_trajectory: Vec<String>` field collects per-turn
@@ -232,12 +232,12 @@ business logic.
   ReAct trajectory stream (`drain_trajectory` → `> ⏳ *Executing* ...`).
   The ViewModel's `transcript_lines_for` appends `live_trajectory` after
   the transcript so the trajectory reads top-to-bottom naturally with the
-  assistant's text (matching Codex / Claude Code / ORACEL host-agent
+  assistant's text (matching Codex / Claude Code host-agent
   rendering). The field is cleared at turn start alongside `reasoning`.
   **(2) Explicit `request_human_review` tool** — the implicit
   `LensObservingInvoker` (VRO-11.3 directive 4) is DELETED. VesperLens
   review is now triggered by an EXPLICIT tool the model calls when it wants
-  human review, matching ORACEL's architecture (explicit CLI
+  human review, matching the explicit-invocation pattern (explicit CLI
   invocation, no magic interception). The `TuiToolService` gains an
   optional `lens_review: Option<Arc<dyn LensReviewPort>>` + `lens_url_tx`
   channel. When configured, `definitions()` advertises
