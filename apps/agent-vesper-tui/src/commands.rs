@@ -1391,7 +1391,9 @@ impl CommandRegistry {
         buffer.push_str("  /clear-plan        clear Plan Mode back to NORMAL\n");
         buffer.push_str("\nSuperpowers (resolved against the active provider):\n");
         buffer.push_str("  /thinking <lvl>    session reasoning (disabled/enabled/high/max)\n");
-        buffer.push_str("  /reasoning <lvl>   alias for /thinking\n");
+        buffer.push_str(
+            "  /reasoning <args>  override the VRO reasoning mode (set mode=...|clear)\n",
+        );
         buffer.push_str("  /model <name>      switch the active model\n");
         buffer.push_str("  /plan <value>      select coding, standard, or bigmodel API plan\n");
         buffer.push_str("  /api-plan          alias for /plan\n");
@@ -1679,7 +1681,7 @@ const ORACLE_COMMAND_SURFACE: &[OracleCommandEntry] = &[
     OracleCommandEntry { name: "auxiliary",         description: "Change the auxiliary model" },
     OracleCommandEntry { name: "mixture",           description: "Enable or disable Mixture of Agents" },
     OracleCommandEntry { name: "settings",          description: "Open all live session settings" },
-    OracleCommandEntry { name: "reasoning",         description: "Alias for /thinking" },
+    OracleCommandEntry { name: "reasoning",         description: "Override the VRO reasoning mode: set mode=<auto|fast|balanced|deep|maximum|off> | clear" },
     OracleCommandEntry { name: "api-plan",          description: "Alias for /plan" },
     OracleCommandEntry { name: "endpoint",          description: "Alias for /plan" },
     OracleCommandEntry { name: "reasoning-panel",   description: "Show or hide the live reasoning panel" },

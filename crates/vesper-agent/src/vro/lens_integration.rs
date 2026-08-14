@@ -146,9 +146,163 @@ pub fn feedback_as_context_message(feedback: &LensFeedback) -> String {
     out
 }
 
+// ---------------------------------------------------------------------------
+// VRO-11.3 directive 4 — write_file(.html) tool-observer interceptor
+// ---------------------------------------------------------------------------
+
+/// Heuristic: did this tool call write a self-contained HTML artifact that
+/// should be routed through VesperLens human-in-the-loop review?
+///
+/// Triggers **only** when:
+/// 1. `name == "write_file"` (the canonical mutating write tool), AND
+/// 2. the `path` argument ends with `.html` (case-insensitive), AND
+/// 3. the `content` argument parses as a string AND
+///    [`looks_like_html_artifact`] agrees it is a reviewable artifact.
+///
+/// Returns the extracted content so the caller can pass it to
+/// [`LensReviewPort::review`] without re-reading the file. Returns `None`
+/// for every other combination so the React loop's tool result is
+/// untouched (zero behavior change for non-HTML writes).
+///
+/// This is the file-save interceptor that closes the gap the VRO-11.3
+/// directive diagnosed: previously VesperLens only triggered when the
+/// agent's *final conversational text* started with `<html` — but the
+/// agent typically writes the dashboard to disk via `write_file` and then
+/// answers with a short prose summary, so the review oracle never fired.
+/// Routing the review off the tool call itself catches the artifact at the
+/// moment it lands on disk.
+#[must_use]
+pub fn html_artifact_for_write_file(name: &str, arguments: &serde_json::Value) -> Option<String> {
+    if name != "write_file" {
+        return None;
+    }
+    let path = arguments.get("path").and_then(|v| v.as_str())?;
+    if !path.to_ascii_lowercase().ends_with(".html") {
+        return None;
+    }
+    let content = arguments.get("content").and_then(|v| v.as_str())?;
+    if !looks_like_html_artifact(content) {
+        return None;
+    }
+    Some(content.to_string())
+}
+
+/// A [`ToolInvoker`] decorator that routes successful `write_file(.html)`
+/// calls through the configured [`LensReviewPort`] for human-in-the-loop
+/// review (VRO-11.3 directive 4).
+///
+/// Wraps any inner invoker (typically the production
+/// [`RegistryToolInvoker`](crate::vro::react::RegistryToolInvoker)). After
+/// every successful `invoke`, [`html_artifact_for_write_file`] decides
+/// whether the call wrote a reviewable HTML artifact; if so, the lens port
+/// is invoked synchronously (the React loop **halts** until the human
+/// submits feedback — this is the directive's "halt for human review"
+/// behavior).
+///
+/// When the human returns [`Action::Approve`], the original tool result is
+/// returned unchanged. When the human returns [`Action::Reject`] or
+/// [`Action::Modify`], the feedback is appended to the tool result so the
+/// model's next ReAct step can react to the verdict (the standard
+/// `role: Tool` context-injection pattern from
+/// [`feedback_as_context_message`]).
+///
+/// Zero behavior change when the wrapped invoker is used without a lens
+/// port — the decorator is only constructed by
+/// [`VroOrchestrator::execute_react`](crate::vro::VroOrchestrator::execute_react)
+/// when `lens_port` is `Some`.
+pub struct LensObservingInvoker<'a> {
+    inner: &'a dyn crate::vro::react::ToolInvoker,
+    lens: &'a dyn LensReviewPort,
+    on_diagnostic: &'a (dyn Fn(&str) + Send + Sync),
+}
+
+impl<'a> std::fmt::Debug for LensObservingInvoker<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LensObservingInvoker")
+            .field("inner", &(self.inner as *const _))
+            .field("lens", &(self.lens as *const _))
+            .finish_non_exhaustive()
+    }
+}
+
+impl<'a> LensObservingInvoker<'a> {
+    /// Wraps `inner` so successful `write_file(.html)` calls are routed
+    /// through `lens` for human review. `on_diagnostic` receives the
+    /// formatted `[VesperLens] Artifact ready for review. Open: <URL>`
+    /// line right before the port blocks awaiting the human; the host
+    /// wires this to its status line / log sink.
+    #[must_use]
+    pub fn new(
+        inner: &'a dyn crate::vro::react::ToolInvoker,
+        lens: &'a dyn LensReviewPort,
+        on_diagnostic: &'a (dyn Fn(&str) + Send + Sync),
+    ) -> Self {
+        Self {
+            inner,
+            lens,
+            on_diagnostic,
+        }
+    }
+}
+
+impl<'a> crate::vro::react::ToolInvoker for LensObservingInvoker<'a> {
+    fn class_of(&self, name: &str) -> Option<vesper_domain::ToolExecutionClass> {
+        self.inner.class_of(name)
+    }
+
+    fn invoke<'b>(
+        &'b self,
+        name: &'b str,
+        arguments: &'b serde_json::Value,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Result<String, crate::vro::react::ToolInvocationError>>
+                + Send
+                + 'b,
+        >,
+    > {
+        let inner = self.inner;
+        let lens = self.lens;
+        let on_diagnostic = self.on_diagnostic;
+        Box::pin(async move {
+            let result = inner.invoke(name, arguments).await;
+            // Directive 4: only intercept successful write_file(.html)
+            // calls. Errors and every other tool pass through unchanged.
+            if let Ok(text) = &result
+                && let Some(html) = html_artifact_for_write_file(name, arguments)
+            {
+                let on_url = |url: &str| {
+                    on_diagnostic(&diagnostic_for_review(url));
+                };
+                // The port blocks until the human submits (or the
+                // VesperLens timeout fires). This is the directive's
+                // "halt for human review" semantics — the React loop
+                // pauses mid-turn.
+                if let Ok(feedback) = lens.review(&html, &on_url).await {
+                    // Approve → original result unchanged.
+                    // Reject / Modify → append the verdict so the
+                    // model's next step can react to the human's
+                    // corrections.
+                    if feedback.action != Action::Approve {
+                        let mut augmented = String::with_capacity(text.len() + 256);
+                        augmented.push_str(text);
+                        augmented.push_str("\n\n");
+                        augmented.push_str(&feedback_as_context_message(&feedback));
+                        return Ok(augmented);
+                    }
+                }
+                // Review failed (timeout / parse error / disconnected)
+                // OR human approved — return the original result.
+            }
+            result
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::vro::react::ToolInvoker;
     use std::sync::Arc;
 
     /// A test port that records the html it was asked to review and the
@@ -343,5 +497,248 @@ mod tests {
         assert!(msg.contains("REJECTED"));
         assert!(msg.contains("Overall notes: wrong color scheme entirely"));
         assert!(!msg.contains("Annotations"));
+    }
+
+    // -----------------------------------------------------------------
+    // VRO-11.3 directive 4 — write_file(.html) interceptor
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn html_artifact_for_write_file_extracts_content_from_html_path() {
+        let args = serde_json::json!({
+            "path": "dashboard/index.html",
+            "content": "<!doctype html><html><body><h1>Dashboard</h1></body></html>",
+        });
+        let extracted = html_artifact_for_write_file("write_file", &args);
+        assert_eq!(
+            extracted.as_deref(),
+            Some("<!doctype html><html><body><h1>Dashboard</h1></body></html>")
+        );
+    }
+
+    #[test]
+    fn html_artifact_for_write_file_is_case_insensitive_on_extension() {
+        let args = serde_json::json!({
+            "path": "out/Report.HTML",
+            "content": "<html><body>long enough body content goes here</body></html>",
+        });
+        assert!(html_artifact_for_write_file("write_file", &args).is_some());
+    }
+
+    #[test]
+    fn html_artifact_for_write_file_ignores_non_html_extensions() {
+        let args = serde_json::json!({
+            "path": "src/main.rs",
+            "content": "<html><body>not really html, it's source code</body></html>",
+        });
+        assert!(html_artifact_for_write_file("write_file", &args).is_none());
+    }
+
+    #[test]
+    fn html_artifact_for_write_file_ignores_non_write_file_tools() {
+        let args = serde_json::json!({
+            "path": "out/index.html",
+            "content": "<html><body>content here</body></html>",
+        });
+        assert!(html_artifact_for_write_file("read_file", &args).is_none());
+        assert!(html_artifact_for_write_file("edit_file", &args).is_none());
+        assert!(html_artifact_for_write_file("bash", &args).is_none());
+    }
+
+    #[test]
+    fn html_artifact_for_write_file_ignores_short_or_prose_content() {
+        // The content still has to pass looks_like_html_artifact — short
+        // fragments and prose mentions are NOT interceptable.
+        let args = serde_json::json!({
+            "path": "out/short.html",
+            "content": "<html>",
+        });
+        assert!(html_artifact_for_write_file("write_file", &args).is_none());
+
+        let args = serde_json::json!({
+            "path": "out/prose.html",
+            "content": "Sure, I can use <html> tags if you prefer.",
+        });
+        assert!(html_artifact_for_write_file("write_file", &args).is_none());
+    }
+
+    #[test]
+    fn html_artifact_for_write_file_ignores_missing_fields() {
+        // Missing path → None.
+        let args = serde_json::json!({"content": "<html><body>x</body></html>"});
+        assert!(html_artifact_for_write_file("write_file", &args).is_none());
+        // Missing content → None.
+        let args = serde_json::json!({"path": "out/x.html"});
+        assert!(html_artifact_for_write_file("write_file", &args).is_none());
+        // Non-string fields → None.
+        let args = serde_json::json!({"path": 42, "content": "<html></html>"});
+        assert!(html_artifact_for_write_file("write_file", &args).is_none());
+    }
+
+    /// A fake inner invoker that returns a fixed result for any call.
+    struct FixedInvoker {
+        result: Result<String, crate::vro::react::ToolInvocationError>,
+    }
+
+    impl crate::vro::react::ToolInvoker for FixedInvoker {
+        fn class_of(&self, _name: &str) -> Option<vesper_domain::ToolExecutionClass> {
+            None
+        }
+        fn invoke<'a>(
+            &'a self,
+            _name: &'a str,
+            _args: &'a serde_json::Value,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<
+                        Output = Result<String, crate::vro::react::ToolInvocationError>,
+                    > + Send
+                    + 'a,
+            >,
+        > {
+            let result = self.result.clone();
+            Box::pin(async move { result })
+        }
+    }
+
+    fn silent_diagnostic() -> Box<dyn Fn(&str) + Send + Sync> {
+        Box::new(|_line: &str| {})
+    }
+
+    #[tokio::test]
+    async fn lens_observing_invoker_passes_non_html_writes_unchanged() {
+        // A .rs write must pass through with no lens invocation.
+        let lens = RecordingLens::new(LensFeedback::default());
+        let inner = FixedInvoker {
+            result: Ok("wrote 1234 bytes".to_string()),
+        };
+        let diag = silent_diagnostic();
+        let wrapper = LensObservingInvoker::new(&inner, &lens, diag.as_ref());
+        let args = serde_json::json!({
+            "path": "src/main.rs",
+            "content": "fn main() {}",
+        });
+        let result = wrapper.invoke("write_file", &args).await.unwrap();
+        assert_eq!(result, "wrote 1234 bytes");
+        // Lens MUST NOT have been called for a non-HTML write.
+        assert!(lens.captured_html.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn lens_observing_invoker_skips_review_on_tool_failure() {
+        // A failed write_file(.html) must NOT trigger review — the file
+        // wasn't actually written, so there is nothing for the human to
+        // approve.
+        let lens = RecordingLens::new(LensFeedback::default());
+        let inner_err =
+            crate::vro::react::ToolInvocationError::ExecutionFailed("disk full".to_string());
+        let inner = FixedInvoker {
+            result: Err(inner_err),
+        };
+        let diag = silent_diagnostic();
+        let wrapper = LensObservingInvoker::new(&inner, &lens, diag.as_ref());
+        let args = serde_json::json!({
+            "path": "out/dashboard.html",
+            "content": "<!doctype html><html><body>dashboard content here</body></html>",
+        });
+        let result = wrapper.invoke("write_file", &args).await;
+        assert!(result.is_err());
+        assert!(lens.captured_html.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn lens_observing_invoker_approve_returns_original_result_unchanged() {
+        // Human approves → original tool result returned verbatim, no
+        // appended feedback (noise-free success path).
+        let lens = RecordingLens::new(LensFeedback {
+            action: Action::Approve,
+            ..Default::default()
+        });
+        let inner = FixedInvoker {
+            result: Ok("wrote 4096 bytes".to_string()),
+        };
+        let diag = silent_diagnostic();
+        let wrapper = LensObservingInvoker::new(&inner, &lens, diag.as_ref());
+        let args = serde_json::json!({
+            "path": "out/dashboard.html",
+            "content": "<!doctype html><html><body>dashboard content here</body></html>",
+        });
+        let result = wrapper.invoke("write_file", &args).await.unwrap();
+        assert_eq!(result, "wrote 4096 bytes");
+        // Lens WAS called once.
+        assert_eq!(lens.captured_html.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn lens_observing_invoker_reject_appends_feedback_to_result() {
+        // Human rejects → the verdict is appended to the tool result so
+        // the model's next ReAct step can react. The original tool result
+        // is preserved at the start of the string.
+        let lens = RecordingLens::new(LensFeedback {
+            action: Action::Reject,
+            notes: "the hero section is too aggressive".to_string(),
+            ..Default::default()
+        });
+        let inner = FixedInvoker {
+            result: Ok("wrote 8192 bytes".to_string()),
+        };
+        let diag = silent_diagnostic();
+        let wrapper = LensObservingInvoker::new(&inner, &lens, diag.as_ref());
+        let args = serde_json::json!({
+            "path": "out/dashboard.html",
+            "content": "<!doctype html><html><body><h1>dashboard content goes here</h1></body></html>",
+        });
+        let result = wrapper.invoke("write_file", &args).await.unwrap();
+        // Original tool result preserved at the start.
+        assert!(
+            result.starts_with("wrote 8192 bytes"),
+            "result should preserve the original tool output: {result}"
+        );
+        // Feedback appended.
+        assert!(result.contains("REJECTED"), "got: {result}");
+        assert!(
+            result.contains("the hero section is too aggressive"),
+            "got: {result}"
+        );
+    }
+
+    #[tokio::test]
+    async fn lens_observing_invoker_class_of_delegates_to_inner() {
+        // The decorator must not invent its own classification —
+        // Read-Before-Write policy depends on the inner invoker's view.
+        struct ClassifiedInvoker;
+        impl crate::vro::react::ToolInvoker for ClassifiedInvoker {
+            fn class_of(&self, name: &str) -> Option<vesper_domain::ToolExecutionClass> {
+                use vesper_domain::ToolExecutionClass;
+                if name == "write_file" {
+                    Some(ToolExecutionClass::Mutating)
+                } else {
+                    None
+                }
+            }
+            fn invoke<'a>(
+                &'a self,
+                _name: &'a str,
+                _args: &'a serde_json::Value,
+            ) -> std::pin::Pin<
+                Box<
+                    dyn std::future::Future<
+                            Output = Result<String, crate::vro::react::ToolInvocationError>,
+                        > + Send
+                        + 'a,
+                >,
+            > {
+                Box::pin(async { Ok(String::new()) })
+            }
+        }
+        let lens = RecordingLens::new(LensFeedback::default());
+        let inner = ClassifiedInvoker;
+        let diag = silent_diagnostic();
+        let wrapper = LensObservingInvoker::new(&inner, &lens, diag.as_ref());
+        assert_eq!(
+            wrapper.class_of("write_file"),
+            Some(vesper_domain::ToolExecutionClass::Mutating)
+        );
+        assert_eq!(wrapper.class_of("unknown"), None);
     }
 }

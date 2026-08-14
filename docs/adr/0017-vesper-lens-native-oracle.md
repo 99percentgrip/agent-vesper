@@ -123,9 +123,7 @@ explicitly opts into human review (e.g., a future HTML-generation branch).
 The VRO-11 milestone ships the oracle; the planner integration point is
 documented here and can be added in a follow-up without an ADR amendment.
 
-### VRO-11.2 — Planner seam and context injection
-
-VRO-11.2 closes the planner-wiring gap without changing any existing VRO
+### VRO-11.2 — Planner seam and context injectionVRO-11.2 closes the planner-wiring gap without changing any existing VRO
 control flow:
 
 - New trait `LensReviewPort` in
@@ -153,6 +151,45 @@ control flow:
 existing orchestrator method is byte-identical to VRO-10. All existing
 workspace tests pass unchanged; the 16 new tests (13 lens_integration +
 3 orchestrator-wiring) cover the seam in isolation.
+
+### VRO-11.3 — File-save interceptor (UX Hotfix)
+
+The VRO-11.2 seam surfaced review only when the orchestrator's *final
+conversational text* looked like an HTML artifact. In practice the agent
+typically writes the dashboard to disk via `write_file` and then answers
+with a short prose summary, so the review oracle never fired — the
+artifact existed on disk but bypassed the human-in-the-loop checkpoint.
+
+VRO-11.3 directive 4 closes this gap with a `ToolInvoker` decorator that
+intercepts successful `write_file` calls to `.html` paths and routes the
+content through the configured `LensReviewPort`:
+
+- **`html_artifact_for_write_file(name, arguments) -> Option<String>`**
+  is a pure heuristic that triggers iff `name == "write_file"` AND the
+  `path` ends with `.html` AND the `content` passes
+  `looks_like_html_artifact`. Every other combination returns `None` so
+  the React loop's tool result is untouched (zero behavior change for
+  non-HTML writes).
+- **`LensObservingInvoker<'a>`** wraps any `&'a dyn ToolInvoker` +
+  `&'a dyn LensReviewPort` + `&'a` diagnostic callback. After every
+  successful `invoke`, it consults `html_artifact_for_write_file`; if the
+  call qualifies, it invokes `LensReviewPort::review` and the React loop
+  **halts** mid-turn until the human submits (the directive's "halt for
+  human review" semantics).
+- **Verdict handling:** `Action::Approve` returns the original tool result
+  verbatim (noise-free success path). `Reject` / `Modify` append the
+  verdict via `feedback_as_context_message` so the model's next ReAct
+  step can react.
+- **`VroOrchestrator::execute_react`** wraps its `invoker` argument with
+  `LensObservingInvoker` iff `self.lens_port` is `Some`. Every existing
+  call site and test (which constructs orchestrators without
+  `with_lens_port`) is byte-identical to before — the wrapping is
+  zero-cost when the port is absent.
+
+This stays inside the ADR 0017 contract: the orchestrator never starts a
+TCP listener directly; it always goes through the trait port. The
+interceptor is purely an additional *trigger surface* (file-save events)
+that feeds the same `LensReviewPort::review` API.
 
 ## Consequences
 

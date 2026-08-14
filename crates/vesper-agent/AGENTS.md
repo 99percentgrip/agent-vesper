@@ -496,6 +496,23 @@ the multi-turn, tool-executing layer above it.
   method that returns `None` when no port is configured or the input is
   not HTML. Default behavior is byte-identical to VRO-10; the seam is
   opt-in at the composition boundary.
+  **VRO-11.3 directive 4 — file-save interceptor:** `lens_integration.rs`
+  adds `html_artifact_for_write_file(name, arguments) -> Option<String>`
+  (returns the content iff `name == "write_file"` AND the `path` ends with
+  `.html` AND the `content` passes `looks_like_html_artifact`) and the
+  `LensObservingInvoker<'a>` decorator that wraps any `&'a dyn
+  ToolInvoker` + `&'a dyn LensReviewPort` + `&'a` diagnostic callback.
+  After every successful `invoke`, the decorator routes eligible
+  `write_file(.html)` calls through `LensReviewPort::review` — the React
+  loop **halts** mid-turn until the human submits (the directive's "halt
+  for human review" semantics). `Action::Approve` returns the original
+  tool result verbatim; `Reject` / `Modify` append the verdict via
+  `feedback_as_context_message` so the model's next ReAct step can react.
+  `VroOrchestrator::execute_react` wraps its `invoker` argument with
+  `LensObservingInvoker` iff `self.lens_port` is `Some`; every existing
+  call site and test (which constructs orchestrators without
+  `with_lens_port`) is byte-identical to before — the wrapping is
+  zero-cost when the port is absent.
 
 ## Work Guidance
 

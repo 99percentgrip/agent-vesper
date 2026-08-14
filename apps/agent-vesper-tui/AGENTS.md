@@ -191,6 +191,37 @@ business logic.
   `format_react_observation_entry` / `format_react_finish_entry`) are the
   live path; `format_react_trajectory` is the canonical bulk-render utility
   (exercised by tests, reserved for future bulk-render use cases).
+  VRO-11.3 (UX Hotfix): four surgical TUI patches closing the dashboard-test
+  gaps. **(1) Bracketed Paste Mode** — `enter_raw_mode` /
+  `leave_raw_mode` queue `EnableBracketedPaste` / `DisableBracketedPaste`
+  alongside the existing mouse-capture commands, and the main event loop
+  handles `Event::Paste(text)` as a single contiguous insertion at the
+  composer cursor (NOT as individual `Char` / `Enter` events, which would
+  shatter multi-line clipboard content into premature submissions on the
+  first embedded `\n`). The paste is swallowed while the permission modal
+  is up so the user cannot type behind the dialog. **(2) Live Tool
+  Telemetry** — `format_react_executing_entry(name)` emits
+  `⏳ *Executing* \`<name>\`...` to the trajectory channel BEFORE
+  `TrajectoryCapturingInvoker` awaits `inner.invoke`, so the Reasoning
+  panel mirrors Codex / Claude Code's "the agent is acting" affordance
+  instead of freezing during a slow tool call; the matching Observation /
+  Error line streams second. **(3) Autocomplete Disconnect** — the
+  `/reasoning` argument surface is no longer aliased to `/thinking` in the
+  palette UI. `command_palette_candidates` short-circuits `/reasoning`
+  through the pure `reasoning_argument_candidates` helper, which surfaces
+  the six PRD §8.1 VRO modes (`set mode=auto|fast|balanced|deep|maximum|off`)
+  + `clear` instead of the GLM thinking-style levels (`disabled`/`enabled`/
+  `high`/`max`). The legacy `"/reasoning" => "thinking"` match arm in the
+  fallback is removed. The `ORACLE_COMMAND_SURFACE` description for
+  `reasoning` and the `help_text` line both drop the "Alias for /thinking"
+  text. The BACKEND `superpower_alias("reasoning") => "thinking"` fall-through
+  for `/reasoning <level>` is intentionally preserved (README-documented
+  backward compat) — only the autocomplete surface changes. **(4)
+  VesperLens file-save interceptor** — see `lens_integration.rs` in
+  `vesper-agent`; the TUI's `execute_react` call site inherits the
+  interceptor transparently because `VroOrchestrator::execute_react` wraps
+  its `invoker` argument with `LensObservingInvoker` when a `LensReviewPort`
+  is configured (zero-cost when not).
   Zero-breakage: when LM Studio is NOT configured or the strategy is
   anything other than `ToolGroundedReact`, the existing direct / GVR /
   parallel-candidates paths are completely unchanged.

@@ -40,8 +40,8 @@ use agent_vesper_tui::{
 };
 use crossterm::{
     event::{
-        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
-        KeyModifiers, MouseButton, MouseEventKind,
+        self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+        Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
     },
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
@@ -1071,6 +1071,30 @@ async fn drive_loop(
                 continue;
             }
         }
+        // Directive 1 (VRO-11.3): Bracketed Paste handling. With
+        // `EnableBracketedPaste` queued in `enter_raw_mode`, multi-line
+        // clipboard content arrives as one `Event::Paste(text)` carrying
+        // the full payload (embedded `\n` included). Ingest it as a single
+        // contiguous insertion at the composer cursor — do NOT split on
+        // `\n` or fall through to the per-key handler (which would submit
+        // on the first embedded newline). Bare `Enter` after the paste is
+        // what submits, exactly like the oracle composer. Swallow the
+        // paste while the permission modal is up so the user cannot
+        // accidentally type behind the dialog.
+        if let Event::Paste(text) = event.clone() {
+            if session.pending_approval.is_some() {
+                continue;
+            }
+            let cursor = session
+                .state
+                .preferences
+                .composer_cursor
+                .min(session.input.len());
+            session.input.insert_str(cursor, &text);
+            session.state.preferences.composer_cursor = cursor + text.len();
+            refresh_command_menu(session, registry_commands, surface);
+            continue;
+        }
         let Event::Key(KeyEvent {
             code,
             modifiers,
@@ -2054,7 +2078,19 @@ async fn ensure_provider_authenticated(
 
 fn enter_raw_mode() -> io::Result<()> {
     enable_raw_mode()?;
-    execute!(stdout(), EnterAlternateScreen, EnableMouseCapture)?;
+    // Directive 1 (VRO-11.3): Bracketed Paste Mode. When enabled, crossterm
+    // delivers multi-line clipboard content as a single `Event::Paste(text)`
+    // instead of shattering it into individual `Char('\n')` / `Enter` events.
+    // Without this, pasting a multi-line block triggers premature submission
+    // on the first embedded `\n`. Order matters: `EnableBracketedPaste`
+    // must be queued before leaving the alternate screen on teardown so the
+    // terminal's paste mode is reliably restored.
+    execute!(
+        stdout(),
+        EnterAlternateScreen,
+        EnableMouseCapture,
+        EnableBracketedPaste
+    )?;
     Ok(())
 }
 
@@ -2127,6 +2163,17 @@ fn command_palette_candidates(
             .map(|(id, name)| (format!("/provider {id}"), name.clone()))
             .collect();
     }
+    // VRO-11.3 directive 3 — Autocomplete Disconnect. `/reasoning`'s
+    // argument surface is the VRO mode override (PRD §8.1), NOT the legacy
+    // `/thinking` superpower levels. Short-circuit here so the palette
+    // surfaces `set mode=<X>` and `clear` instead of `disabled/enabled/
+    // high/max`. The backend fall-through (`/reasoning <level>` → thinking
+    // superpower for backward compat, README §"Vesper Reasoning
+    // Orchestrator") is intentionally preserved — only the autocomplete
+    // surface changes.
+    if command == "/reasoning" {
+        return reasoning_argument_candidates(argument);
+    }
     if let Some(choices) = session_setting_candidates(command, state, surface) {
         let query = argument.trim().to_ascii_lowercase();
         return choices
@@ -2143,10 +2190,11 @@ fn command_palette_candidates(
             })
             .collect();
     }
-    let alias = match command {
-        "/reasoning" => "thinking",
-        value => value.trim_start_matches('/'),
-    };
+    // VRO-11.3 directive 3: `/reasoning` no longer aliases to `thinking`
+    // in the autocomplete UI — the VRO mode surface is handled by the
+    // short-circuit above. Any other configurable command resolves
+    // through its own alias (default: the bare command name).
+    let alias = command.trim_start_matches('/');
     let Some(descriptor) = surface.by_alias(alias) else {
         return Vec::new();
     };
@@ -2179,6 +2227,65 @@ fn command_palette_candidates(
             )
         })
         .collect()
+}
+
+/// VRO-11.3 directive 3 — `/reasoning` argument completion candidates.
+///
+/// Surfaces the VRO orchestrator's mode-override surface (PRD §8.1)
+/// instead of the legacy `/thinking` superpower levels. The six PRD modes
+/// + `clear` are filtered by what the user has already typed:
+///
+/// - `/reasoning ` (empty arg) → all six `set mode=<X>` + `clear`
+/// - `/reasoning s` → all six `set mode=<X>` (`s` is a prefix of `set `)
+/// - `/reasoning set mode=d` → only `set mode=deep`
+/// - `/reasoning c` → only `clear`
+///
+/// The directive's expected visible options (`set mode=deep`, `set
+/// mode=fast`, `set mode=auto`, `clear`) are a subset of this surface;
+/// the full PRD §8.1 list is offered so the autocomplete matches the
+/// backend `parse_reasoning_mode` parser exactly (zero drift).
+fn reasoning_argument_candidates(argument: &str) -> Vec<(String, String)> {
+    let query = argument.trim().to_ascii_lowercase();
+    // The six PRD §8.1 modes accepted by `parse_reasoning_mode` in
+    // commands.rs. Order matches the parser's documented usage string.
+    let modes: [(&str, &str); 6] = [
+        ("auto", "Auto — profiler decides (clears override)"),
+        ("fast", "Fast — shallow verification"),
+        ("balanced", "Balanced — moderate depth"),
+        ("deep", "Deep — heavy multi-step verification"),
+        ("maximum", "Maximum — heaviest budget"),
+        ("off", "Off — bypass VRO entirely"),
+    ];
+    let mut out: Vec<(String, String)> = Vec::new();
+
+    // `set mode=<X>` family — visible whenever the user is typing the
+    // `set ...` prefix or has progressed into a specific mode query.
+    let set_mode_prefix = "set mode=";
+    let typing_set = query.starts_with("set");
+    let typing_full_prefix =
+        set_mode_prefix.starts_with(&query) || query.starts_with(set_mode_prefix);
+    if typing_set || typing_full_prefix {
+        let mode_query = query.strip_prefix(set_mode_prefix).unwrap_or_default();
+        for (mode, desc) in modes {
+            if mode.starts_with(mode_query) {
+                out.push((
+                    format!("/reasoning set mode={mode}"),
+                    format!("VRO mode · {desc}"),
+                ));
+            }
+        }
+    }
+
+    // `clear` — visible whenever the user is typing a `c` prefix and is
+    // not already inside the `set ...` family.
+    if !typing_set && "clear".starts_with(&query) {
+        out.push((
+            "/reasoning clear".to_string(),
+            "Return to profiler defaults (alias for set mode=auto)".to_string(),
+        ));
+    }
+
+    out
 }
 
 fn session_setting_candidates(
@@ -2572,7 +2679,15 @@ fn handle_vim_composer_key(
 }
 
 fn leave_raw_mode() -> io::Result<()> {
-    execute!(stdout(), DisableMouseCapture, LeaveAlternateScreen)?;
+    // Directive 1 (VRO-11.3): Disable bracketed paste FIRST so the
+    // terminal's normal paste behavior is restored even if a later
+    // command in this sequence fails.
+    execute!(
+        stdout(),
+        DisableBracketedPaste,
+        DisableMouseCapture,
+        LeaveAlternateScreen
+    )?;
     disable_raw_mode()?;
     Ok(())
 }
@@ -4455,6 +4570,21 @@ pub(crate) fn format_react_observation_entry(text: &str, success: bool) -> Strin
     format!("*{label}* {text}")
 }
 
+/// VRO-11.3 directive 2 — Live Tool Telemetry. Renders the pre-execution
+/// status line broadcast to the Reasoning panel the **instant** the agent
+/// requests a tool, BEFORE the tool runs. Mirrors Codex / Claude Code's
+/// "Executing: <tool>..." affordance so the user sees the agent is acting
+/// rather than staring at a frozen panel during a slow tool call.
+///
+/// Pairs with [`format_react_observation_entry`]: the executing line streams
+/// first, the observation line streams second when the tool returns. Both
+/// flow through the same `mpsc::UnboundedSender<String>` so source order is
+/// preserved in the panel.
+#[must_use]
+pub(crate) fn format_react_executing_entry(name: &str) -> String {
+    format!("⏳ *Executing* `{name}`...")
+}
+
 /// Renders one ReAct **Finish** decision as a single markdown line.
 ///
 /// Used by [`TrajectoryCapturingReactAgent`] when the model emits
@@ -4568,6 +4698,12 @@ where
         let tx = &self.tx;
         let inner = &self.inner;
         Box::pin(async move {
+            // VRO-11.3 directive 2 — Live Tool Telemetry: broadcast the
+            // executing line BEFORE awaiting the inner invoker so the user
+            // sees the agent acting immediately (mirrors Codex / Claude
+            // Code). The matching Observation / Error line streams below
+            // once the tool returns.
+            let _ = tx.send(format_react_executing_entry(name));
             let result = inner.invoke(name, arguments).await;
             // Stream the observation (success or failure) to the panel.
             let entry = match &result {
@@ -10545,9 +10681,12 @@ mod tests {
             .0,
             "/thinking high"
         );
+        // VRO-11.3 directive 3: `/reasoning` is disconnected from the
+        // `/thinking` alias in the autocomplete UI. The thinking-style
+        // levels are now reachable ONLY through `/thinking <level>`.
         assert_eq!(
             command_palette_candidates(
-                "/reasoning m",
+                "/thinking m",
                 &registry,
                 &surface,
                 &vesper_provider_glm::GlmSuperpowerPolicy,
@@ -10555,7 +10694,20 @@ mod tests {
                 &state
             )[0]
             .0,
-            "/reasoning max"
+            "/thinking max"
+        );
+        // And `/reasoning` now surfaces the VRO mode family instead.
+        assert_eq!(
+            command_palette_candidates(
+                "/reasoning set mode=m",
+                &registry,
+                &surface,
+                &vesper_provider_glm::GlmSuperpowerPolicy,
+                &[],
+                &state
+            )[0]
+            .0,
+            "/reasoning set mode=maximum"
         );
         assert_eq!(
             command_palette_candidates(
@@ -12336,8 +12488,20 @@ mod tests {
             .await;
         assert_eq!(result.as_deref(), Ok("file contents"));
 
-        // The wrapper must have emitted one *↳ OBSERVATION* line.
-        let streamed = rx.try_recv().expect("wrapper must emit one entry");
+        // VRO-11.3 directive 2: the wrapper now emits TWO entries per
+        // successful invocation — the pre-execution telemetry line first
+        // (so the user sees the agent acting immediately), then the
+        // observation. Read both in source order.
+        let executing = rx
+            .try_recv()
+            .expect("wrapper must emit executing entry first");
+        assert!(
+            executing.contains("Executing") && executing.contains("read_file"),
+            "executing line must precede the observation: {executing}"
+        );
+        let streamed = rx
+            .try_recv()
+            .expect("wrapper must emit observation entry second");
         assert!(
             streamed.contains("*↳ OBSERVATION* file contents"),
             "success observation must be labelled OBSERVATION: {streamed}"
@@ -12362,7 +12526,17 @@ mod tests {
         let result = wrapper.invoke("read_file", &serde_json::json!({})).await;
         assert!(result.is_err());
 
-        let streamed = rx.try_recv().expect("wrapper must emit one entry");
+        // VRO-11.3 directive 2: the executing telemetry line is still
+        // emitted before the failure observation (the agent attempted the
+        // tool before discovering the failure).
+        let executing = rx
+            .try_recv()
+            .expect("wrapper must emit executing entry first");
+        assert!(
+            executing.contains("Executing") && executing.contains("read_file"),
+            "executing line must precede the error: {executing}"
+        );
+        let streamed = rx.try_recv().expect("wrapper must emit error entry second");
         assert!(
             streamed.contains("*✗ ERROR*"),
             "failure must be labelled ERROR: {streamed}"
@@ -12679,5 +12853,188 @@ mod tests {
         // successful non-empty turn).
         let notice = format_learning_extraction_notice("direct", 0);
         assert!(notice.contains("1 step(s)"), "got: {notice}");
+    }
+
+    // -----------------------------------------------------------------
+    // VRO-11.3 directive 2 — Live Tool Telemetry
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn vro113_format_executing_entry_renders_tool_name() {
+        let entry = format_react_executing_entry("write_file");
+        assert!(entry.contains("Executing"), "got: {entry}");
+        assert!(entry.contains("write_file"), "got: {entry}");
+        // The line must be visually distinct from ACTION/OBSERVATION so
+        // the user can tell the agent is *about to* act vs already acted.
+        assert!(!entry.contains("ACTION"), "got: {entry}");
+        assert!(!entry.contains("OBSERVATION"), "got: {entry}");
+    }
+
+    #[tokio::test]
+    async fn vro113_trajectory_invoker_emits_executing_then_observation() {
+        use vesper_agent::vro::react::{ToolInvocationError, ToolInvoker};
+
+        // A fake invoker that records nothing but returns a fixed result.
+        struct FakeInvoker;
+        impl ToolInvoker for FakeInvoker {
+            fn class_of(&self, _name: &str) -> Option<vesper_domain::ToolExecutionClass> {
+                None
+            }
+            fn invoke<'a>(
+                &'a self,
+                _name: &'a str,
+                _args: &'a serde_json::Value,
+            ) -> std::pin::Pin<
+                Box<
+                    dyn std::future::Future<Output = Result<String, ToolInvocationError>>
+                        + Send
+                        + 'a,
+                >,
+            > {
+                Box::pin(async { Ok("ok".to_string()) })
+            }
+        }
+
+        let (tx, mut rx) = mpsc::unbounded_channel::<String>();
+        let wrapper = TrajectoryCapturingInvoker::new(FakeInvoker, tx);
+        let _ = wrapper
+            .invoke("write_file", &serde_json::json!({}))
+            .await
+            .unwrap();
+
+        // First message MUST be the executing line; second is the
+        // observation. Order proves the telemetry streams BEFORE the tool
+        // runs (live), not just after.
+        let first = rx.recv().await.expect("executing line streamed");
+        let second = rx.recv().await.expect("observation line streamed");
+        assert!(first.contains("Executing"), "first was: {first}");
+        assert!(second.contains("OBSERVATION"), "second was: {second}");
+        assert!(rx.try_recv().is_err(), "no further messages expected");
+    }
+
+    // -----------------------------------------------------------------
+    // VRO-11.3 directive 3 — Autocomplete Disconnect
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn vro113_reasoning_argument_candidates_empty_arg_shows_all_modes_plus_clear() {
+        let cands = reasoning_argument_candidates("");
+        // All six PRD §8.1 modes must be reachable.
+        for mode in ["auto", "fast", "balanced", "deep", "maximum", "off"] {
+            let needle = format!("/reasoning set mode={mode}");
+            assert!(
+                cands.iter().any(|(value, _)| value == &needle),
+                "missing {needle}; got: {cands:?}"
+            );
+        }
+        // `clear` is also reachable.
+        assert!(
+            cands.iter().any(|(value, _)| value == "/reasoning clear"),
+            "missing /reasoning clear; got: {cands:?}"
+        );
+    }
+
+    #[test]
+    fn vro113_reasoning_argument_candidates_filters_specific_mode() {
+        // The directive's expected visible options.
+        let deep = reasoning_argument_candidates("set mode=deep");
+        assert_eq!(deep.len(), 1);
+        assert_eq!(deep[0].0, "/reasoning set mode=deep");
+
+        let fast = reasoning_argument_candidates("set mode=fast");
+        assert_eq!(fast.len(), 1);
+        assert_eq!(fast[0].0, "/reasoning set mode=fast");
+
+        let auto = reasoning_argument_candidates("set mode=auto");
+        assert_eq!(auto.len(), 1);
+        assert_eq!(auto[0].0, "/reasoning set mode=auto");
+    }
+
+    #[test]
+    fn vro113_reasoning_argument_candidates_typing_set_shows_mode_family_only() {
+        // `/reasoning s` → user is typing "set ..." — only the mode family
+        // is shown, NOT `clear` (which would be noise at this point).
+        let cands = reasoning_argument_candidates("s");
+        assert!(
+            cands
+                .iter()
+                .all(|(v, _)| v.starts_with("/reasoning set mode="))
+        );
+        assert!(
+            !cands.iter().any(|(v, _)| v.contains("clear")),
+            "`s` should not surface `clear`; got: {cands:?}"
+        );
+    }
+
+    #[test]
+    fn vro113_reasoning_argument_candidates_typing_c_shows_clear_only() {
+        let cands = reasoning_argument_candidates("c");
+        // Only `clear` — no set-mode pollution when the user is typing the
+        // other branch.
+        assert_eq!(cands.len(), 1);
+        assert_eq!(cands[0].0, "/reasoning clear");
+    }
+
+    #[test]
+    fn vro113_command_palette_does_not_route_reasoning_to_thinking_alias() {
+        // Regression for the directive's core complaint: typing
+        // `/reasoning ` (trailing space) used to fall through to the
+        // `"/reasoning" => "thinking"` UI alias and surface the GLM
+        // thinking-style levels (`disabled`/`enabled`/`high`/`max`). After
+        // the fix, the palette surfaces the VRO mode family only.
+        let surface = palette_surface();
+        let state = SessionState::default();
+        let registry = CommandRegistry::stage_11b();
+        let providers: [(String, String); 0] = [];
+        let policy = vesper_provider::PermissiveSuperpowerPolicy;
+        let cands = command_palette_candidates(
+            "/reasoning ",
+            &registry,
+            &surface,
+            &policy,
+            &providers,
+            &state,
+        );
+        // No thinking-style values may leak through.
+        for (_, desc) in &cands {
+            let lower = desc.to_ascii_lowercase();
+            assert!(
+                !lower.contains("disabled") && !lower.contains("enabled"),
+                "thinking-style value leaked into /reasoning palette: {desc}"
+            );
+        }
+        // The VRO mode surface IS present.
+        assert!(
+            cands.iter().any(|(v, _)| v == "/reasoning set mode=deep"),
+            "VRO mode missing; got: {cands:?}"
+        );
+        assert!(
+            cands.iter().any(|(v, _)| v == "/reasoning clear"),
+            "clear missing; got: {cands:?}"
+        );
+    }
+
+    #[test]
+    fn vro113_command_surface_description_for_reasoning_is_not_alias_for_thinking() {
+        // The ORACLE_COMMAND_SURFACE description drives both the palette
+        // tooltip and `/help`. The directive requires it no longer say
+        // "Alias for /thinking". Note `/reasoning` prefix-matches BOTH
+        // `reasoning` and `reasoning-panel` — find the exact entry.
+        let registry = CommandRegistry::stage_11b();
+        let cands = registry.completion_candidates("/reasoning");
+        let reasoning_entry = cands
+            .iter()
+            .find(|(value, _)| value == "/reasoning")
+            .expect("the exact /reasoning entry must be present");
+        let desc = &reasoning_entry.1;
+        let lower = desc.to_ascii_lowercase();
+        assert!(
+            !lower.contains("alias for /thinking"),
+            "stale alias text leaked into palette: {desc}"
+        );
+        assert!(
+            lower.contains("set mode=") || lower.contains("override"),
+            "description does not advertise the VRO mode surface: {desc}"
+        );
     }
 }
