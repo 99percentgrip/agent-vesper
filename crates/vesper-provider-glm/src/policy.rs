@@ -7,9 +7,9 @@
 //!
 //! - `/model` candidates are filtered by API-plan support (`supports_plan`).
 //! - `/thinking` candidates are restricted to `disabled`/`enabled` unless the
-//!   active model is `glm-5.2`.
-//! - Selecting a non-`glm-5.2` model cascades a `thinking` reset to `enabled`
-//!   when the current thinking is `high`/`max`.
+//!   active model is in the flagship deep-reasoning line (`glm-5.3`/`glm-5.2`).
+//! - Selecting a model outside that line cascades a `thinking` reset to
+//!   `enabled` when the current thinking is `high`/`max`.
 //! - `/reasoning` values map 1:1 to the runtime reasoning mode
 //!   (`disabled`/`enabled`/`high`/`max`).
 
@@ -18,20 +18,21 @@ use vesper_provider::{
     PlanChangeReaction, SuperpowerPolicy, SuperpowerSideEffect, SuperpowerValue,
 };
 
-use crate::{GlmCatalog, GlmPlan};
+use crate::{GlmCatalog, GlmPlan, catalog::supports_deep_reasoning};
 
 /// The GLM provider's superpower policy. Stateless; safe to share.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct GlmSuperpowerPolicy;
 
-/// GLM's flagship model — the fallback when the active model is unavailable on
-/// a new plan, and the only model that supports the full `thinking` range.
-const FLAGSHIP_MODEL: &str = "glm-5.2";
+/// The current GLM flagship model — the fallback when the active model is
+/// unavailable on a new plan. Deep reasoning (`high`/`max`) is gated on the
+/// flagship line via [`supports_deep_reasoning`] (`glm-5.3` and `glm-5.2`).
+const FLAGSHIP_MODEL: &str = "glm-5.3";
 
 /// Advertised `thinking` choices that are always available regardless of model.
 const BASE_THINKING: &[&str] = &["disabled", "enabled"];
 
-/// Advertised `thinking` choices that only `glm-5.2` supports.
+/// Advertised `thinking` choices that only deep-reasoning models support.
 const EXTENDED_THINKING: &[&str] = &["high", "max"];
 
 /// The accepted runtime reasoning-mode labels.
@@ -85,7 +86,8 @@ impl SuperpowerPolicy for GlmSuperpowerPolicy {
                     .cloned()
                     .collect()
             }
-            // `/thinking`: `disabled`/`enabled` always; `high`/`max` only on the flagship.
+            // `/thinking`: `disabled`/`enabled` always; `high`/`max` only on
+            // the deep-reasoning flagship line.
             "thinking" => advertised
                 .iter()
                 .filter(|value| {
@@ -93,7 +95,8 @@ impl SuperpowerPolicy for GlmSuperpowerPolicy {
                         return false;
                     };
                     BASE_THINKING.contains(&label)
-                        || (active_model == FLAGSHIP_MODEL && EXTENDED_THINKING.contains(&label))
+                        || (supports_deep_reasoning(active_model)
+                            && EXTENDED_THINKING.contains(&label))
                 })
                 .cloned()
                 .collect(),
@@ -126,11 +129,12 @@ impl SuperpowerPolicy for GlmSuperpowerPolicy {
         value: &SuperpowerValue,
         _active_plan: &str,
     ) -> Vec<SuperpowerSideEffect> {
-        // Selecting a non-flagship model cascades a `thinking` reset to
-        // `enabled` — but only when the current thinking is `high` or `max`
-        // (those are flagship-only modes the new model cannot honor).
+        // Selecting a model outside the deep-reasoning flagship line cascades
+        // a `thinking` reset to `enabled` — but only when the current thinking
+        // is `high` or `max` (those are flagship-only modes the new model
+        // cannot honor).
         if alias == "model"
-            && Self::choice_label(value).is_some_and(|model| model != FLAGSHIP_MODEL)
+            && Self::choice_label(value).is_some_and(|model| !supports_deep_reasoning(model))
         {
             vec![SuperpowerSideEffect {
                 target_alias: "thinking".to_string(),
@@ -192,9 +196,10 @@ mod tests {
     }
 
     fn advertised_models() -> Vec<SuperpowerValue> {
-        // A representative slice of the GLM catalog: glm-5.2 (all plans),
-        // glm-4.5v (Standard, vision). Provenance of the rule is in catalog.rs.
-        vec![choice("glm-5.2"), choice("glm-4.5v")]
+        // A representative slice of the GLM catalog: the flagship line
+        // glm-5.3/glm-5.2 (all plans), glm-4.5v (Standard, vision). Provenance
+        // of the rule is in catalog.rs.
+        vec![choice("glm-5.3"), choice("glm-5.2"), choice("glm-4.5v")]
     }
 
     fn advertised_thinking() -> Vec<SuperpowerValue> {
@@ -228,9 +233,9 @@ mod tests {
     }
 
     #[test]
-    fn thinking_choices_restrict_to_base_unless_flagship() {
+    fn thinking_choices_restrict_to_base_unless_flagship_line() {
         let policy = GlmSuperpowerPolicy;
-        // Non-flagship active model: only disabled/enabled.
+        // Non-deep-reasoning active model: only disabled/enabled.
         let non_flag = policy.valid_choices("thinking", &advertised_thinking(), "", "glm-4.5v");
         let labels: Vec<&str> = non_flag
             .iter()
@@ -238,13 +243,18 @@ mod tests {
             .collect();
         assert_eq!(labels, vec!["disabled", "enabled"]);
 
-        // Flagship active model: full range.
-        let flagship = policy.valid_choices("thinking", &advertised_thinking(), "", "glm-5.2");
-        let labels: Vec<&str> = flagship
-            .iter()
-            .filter_map(|v| GlmSuperpowerPolicy::choice_label(v))
-            .collect();
-        assert!(labels.contains(&"high") && labels.contains(&"max"));
+        // The whole flagship line keeps the full range: glm-5.3 and glm-5.2.
+        for flagship in ["glm-5.3", "glm-5.2"] {
+            let full = policy.valid_choices("thinking", &advertised_thinking(), "", flagship);
+            let labels: Vec<&str> = full
+                .iter()
+                .filter_map(|v| GlmSuperpowerPolicy::choice_label(v))
+                .collect();
+            assert!(
+                labels.contains(&"high") && labels.contains(&"max"),
+                "{flagship} must expose deep reasoning"
+            );
+        }
     }
 
     #[test]
@@ -265,7 +275,7 @@ mod tests {
     }
 
     #[test]
-    fn on_change_cascades_thinking_reset_only_for_non_flagship_model() {
+    fn on_change_cascades_thinking_reset_only_outside_the_flagship_line() {
         let policy = GlmSuperpowerPolicy;
         // Switching to glm-4.5v cascades a thinking reset (guarded by high/max).
         let effects = policy.on_change("model", &choice("glm-4.5v"), "");
@@ -278,8 +288,13 @@ mod tests {
         );
         assert!(effects[0].apply_only_if_current_in.contains(&choice("max")));
 
-        // Switching to the flagship does not cascade.
-        assert!(policy.on_change("model", &choice("glm-5.2"), "").is_empty());
+        // Switching within the flagship line never cascades.
+        for flagship in ["glm-5.3", "glm-5.2"] {
+            assert!(
+                policy.on_change("model", &choice(flagship), "").is_empty(),
+                "{flagship} must keep deep thinking"
+            );
+        }
     }
 
     #[test]

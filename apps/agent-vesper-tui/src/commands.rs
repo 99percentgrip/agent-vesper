@@ -838,6 +838,7 @@ impl CommandRegistry {
                 SessionConfigKey::AuxiliaryModel,
                 &[
                     "main",
+                    "glm-5.3",
                     "glm-5.2",
                     "glm-5-turbo",
                     "glm-4.7",

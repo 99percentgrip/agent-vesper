@@ -14,13 +14,13 @@ serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
-vesper-domain = { path = "../vesper-domain", version = "=0.20.33" }
-vesper-provider = { path = "../vesper-provider", version = "=0.20.33" }
-vesper-sessions = { path = "../vesper-sessions", version = "=0.20.33" }
+vesper-domain = { path = "../vesper-domain", version = "=0.20.34" }
+vesper-provider = { path = "../vesper-provider", version = "=0.20.34" }
+vesper-sessions = { path = "../vesper-sessions", version = "=0.20.34" }
 
 [dev-dependencies]
 serde_json.workspace = true
-vesper-testkit = { path = "../vesper-testkit", version = "=0.20.33" }
+vesper-testkit = { path = "../vesper-testkit", version = "=0.20.34" }
 
 [lints]
 workspace = true

@@ -307,7 +307,7 @@ All configurable from the TUI — no restart needed:
 
 | Option | Values | Description |
 |---|---|---|
-| **Model** | GLM-5.2, GLM-5-Turbo, GLM-4.7, GLM-4.6 (+ vision models) | Model list syncs to the selected API plan |
+| **Model** | GLM-5.3, GLM-5.2, GLM-5-Turbo, GLM-4.7 (+ vision models) | Model list syncs to the selected API plan; GLM-5.3 is the default flagship |
 | **Reasoning Depth** | Off, Enabled, High, Max | Session-scoped GLM thinking depth (provider superpower; `/thinking`) |
 | **Reasoning Mode (VRO)** | Auto, Fast, Balanced, Deep, Maximum, Off | VRO orchestrator mode override (`/reasoning set mode=…`); see [Reasoning Orchestrator](#reasoning-orchestrator-vro) |
 | **API Plan** | Coding, Standard, BigModel (CN) | Switch endpoints |

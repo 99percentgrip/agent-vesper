@@ -47,7 +47,8 @@ constructed in the renderer.
 
 | Adapter model | Context | Eligible plans | Capability |
 | --- | ---: | --- | --- |
-| `glm-5.2` | 1,000,000 | Coding, Standard, BigModel | Flagship; deep reasoning |
+| `glm-5.3` | 1,000,000 | Coding, Standard, BigModel | Flagship; deep reasoning |
+| `glm-5.2` | 1,000,000 | Coding, Standard, BigModel | Flagship line; deep reasoning |
 | `glm-5-turbo` | 200,000 | Coding, Standard, BigModel | Text |
 | `glm-4.7` | 200,000 | Coding, Standard, BigModel | Text |
 | `glm-5v-turbo` | 200,000 | Standard, BigModel | Vision |
@@ -62,7 +63,8 @@ constructed in the renderer.
 
 Direct image input is rejected unless both the chosen plan and model advertise
 vision support. The reasoning picker exposes only adapter-supported values;
-Deep High and Deep Max are restricted to `glm-5.2`.
+Deep High and Deep Max are restricted to the flagship line (`glm-5.3`,
+`glm-5.2`).
 
 ## Harness and interaction matrix
 

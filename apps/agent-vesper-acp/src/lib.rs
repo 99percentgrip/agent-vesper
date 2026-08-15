@@ -381,7 +381,7 @@ impl ProviderProfile {
                     .map_err(|_| ())?;
             }
             let model = ModelId::new(
-                std::env::var("AGENT_VESPER_GLM_MODEL").unwrap_or_else(|_| "glm-5.2".into()),
+                std::env::var("AGENT_VESPER_GLM_MODEL").unwrap_or_else(|_| "glm-5.3".into()),
             )
             .map_err(|_| ())?;
             let endpoint = EndpointId::new("zai-coding").map_err(|_| ())?;
