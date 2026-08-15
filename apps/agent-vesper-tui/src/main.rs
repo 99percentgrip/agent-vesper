@@ -3817,7 +3817,7 @@ fn render_last_image(protocol: Option<&str>, session: &mut TuiSession) -> Result
 /// Builds the [`AgentLoop`] over the shared registry, with provider-aware
 /// configuration. Mirrors `runtime_defaults`'s composition-boundary
 /// convention: GLM (`zai`) gets the GLM factory's default configuration +
-/// `glm-5.2`; the synthetic provider gets its deterministic defaults.
+/// `glm-5.3`; the synthetic provider gets its deterministic defaults.
 ///
 /// Returns `Err` for an unknown provider id so a misconfigured
 /// `AGENT_VESPER_PROVIDER` fails fast at startup instead of mid-prompt.
@@ -3925,7 +3925,7 @@ fn provider_configuration_for(provider_id: &ProviderId) -> Result<ProviderConfig
 /// Resolves the provider's primary model id at the composition boundary.
 fn model_id_for_provider(provider_id: &ProviderId) -> Result<ModelId, String> {
     let id = match provider_id.as_str() {
-        "zai" => "glm-5.2",
+        "zai" => "glm-5.3",
         "lmstudio" => "local-model",
         #[cfg(test)]
         "vesper-synthetic" => "synthetic-1",
@@ -5291,7 +5291,7 @@ fn turn_configuration(
         return Ok(config);
     }
     let model =
-        active_superpower_choice(state, surface, "model").unwrap_or_else(|| "glm-5.2".to_owned());
+        active_superpower_choice(state, surface, "model").unwrap_or_else(|| "glm-5.3".to_owned());
     let reasoning = active_superpower_choice(state, surface, "thinking")
         .unwrap_or_else(|| "enabled".to_owned());
     config.model.model_id = ModelId::new(&model)
@@ -10785,6 +10785,7 @@ mod tests {
                     "zai:model",
                     "model",
                     &[
+                        "glm-5.3",
                         "glm-5.2",
                         "glm-5-turbo",
                         "glm-4.7",
@@ -11023,7 +11024,7 @@ mod tests {
             &[],
             &state,
         );
-        assert_eq!(coding.len(), 3);
+        assert_eq!(coding.len(), 4);
         assert!(coding.iter().all(|choice| !choice.0.contains("glm-5v")));
 
         state.controls.endpoint_plan = "standard".into();
@@ -11035,7 +11036,7 @@ mod tests {
             &[],
             &state,
         );
-        assert_eq!(standard.len(), 6);
+        assert_eq!(standard.len(), 7);
 
         let model = surface.by_alias("model").unwrap();
         state.overrides.set(
@@ -11181,7 +11182,7 @@ mod tests {
     #[test]
     fn model_id_resolves_per_provider() {
         let zai = ProviderId::new("zai").unwrap();
-        assert_eq!(model_id_for_provider(&zai).unwrap().as_str(), "glm-5.2");
+        assert_eq!(model_id_for_provider(&zai).unwrap().as_str(), "glm-5.3");
 
         let synthetic = ProviderId::new("vesper-synthetic").unwrap();
         assert_eq!(
@@ -11488,7 +11489,7 @@ mod tests {
         // Pure, registry-free check of the composition-boundary config: the
         // loop must target the requested provider id, the matching model,
         // and ship exactly one primary workspace root for tool confinement.
-        for (id_str, expected_model) in [("zai", "glm-5.2"), ("vesper-synthetic", "synthetic-1")] {
+        for (id_str, expected_model) in [("zai", "glm-5.3"), ("vesper-synthetic", "synthetic-1")] {
             let provider_id = ProviderId::new(id_str).unwrap();
             let config = build_agent_config(&provider_id)
                 .unwrap_or_else(|error| panic!("build_agent_config({id_str}) failed: {error}"));

@@ -337,9 +337,11 @@ fn validate_reasoning_for_model(
     reasoning: GlmReasoningMode,
     model: &str,
 ) -> Result<(), GlmAdapterError> {
-    if matches!(reasoning, GlmReasoningMode::High | GlmReasoningMode::Max) && model != "glm-5.2" {
+    if matches!(reasoning, GlmReasoningMode::High | GlmReasoningMode::Max)
+        && !crate::catalog::supports_deep_reasoning(model)
+    {
         Err(GlmAdapterError::UnsupportedRequest(
-            "high and max reasoning require glm-5.2",
+            "high and max reasoning require glm-5.3 or glm-5.2",
         ))
     } else {
         Ok(())
@@ -583,7 +585,7 @@ pub fn serialize_auxiliary_request(
 #[cfg(test)]
 mod tests {
     use vesper_domain::{
-        CapabilityId, CapabilityRequest, FeatureRequirement, HarnessToolName, MessageId, ModelId,
+        CapabilityId, CapabilityRequest, FeatureRequirement, HarnessToolName, MessageId,
         ProviderId, ProviderRequestId, QualifiedModelId, ReasoningRetention, ToolDefinition,
         ToolExecutionClass, ToolId,
     };
@@ -600,7 +602,7 @@ mod tests {
             provider_id: ProviderId::new("zai").unwrap(),
             model: QualifiedModelId {
                 provider_id: ProviderId::new("zai").unwrap(),
-                model_id: ModelId::new("glm-5.2").unwrap(),
+                model_id: GlmConfig::default().model.clone(),
             },
             endpoint_id: Some(vesper_domain::EndpointId::new("zai-coding").unwrap()),
             system_instructions: Vec::new(),
@@ -661,7 +663,7 @@ mod tests {
         assert_eq!(
             request.body,
             json!({
-                "model": "glm-5.2",
+                "model": "glm-5.3",
                 "messages": [{"role": "user", "content": "hello"}],
                 "stream": true,
                 "max_tokens": 1024,

@@ -29,9 +29,19 @@ const API_PLANS: &[GlmPlan] = &[GlmPlan::Standard, GlmPlan::BigModel];
 
 const MODELS: &[FrozenModel] = &[
     FrozenModel {
+        id: "glm-5.3",
+        display: "GLM-5.3 (Flagship)",
+        description: "Latest flagship — advanced complex software engineering, agent tasks, and emergent cybersecurity",
+        context: 1_000_000,
+        output: 128_000,
+        plans: ALL_PLANS,
+        vision: false,
+        deep_reasoning: true,
+    },
+    FrozenModel {
         id: "glm-5.2",
-        display: "GLM-5.2 (Flagship)",
-        description: "Latest flagship — maximum reasoning, coding, and long-horizon agentic tasks",
+        display: "GLM-5.2",
+        description: "Flagship reasoning, coding, and long-horizon agentic tasks",
         context: 1_000_000,
         output: 128_000,
         plans: ALL_PLANS,
@@ -298,6 +308,15 @@ pub(crate) fn model_output_limit(model: &str) -> Option<u64> {
         .map(|entry| entry.output)
 }
 
+/// Returns whether a frozen model supports the deep reasoning effort levels
+/// (`high`/`max`). Currently the flagship line: `glm-5.3` and `glm-5.2`.
+pub(crate) fn supports_deep_reasoning(model: &str) -> bool {
+    MODELS
+        .iter()
+        .find(|entry| entry.id == model)
+        .is_some_and(|entry| entry.deep_reasoning)
+}
+
 #[cfg(test)]
 mod tests {
     use vesper_domain::ProviderId;
@@ -307,12 +326,33 @@ mod tests {
     #[test]
     fn frozen_catalog_and_plan_eligibility_match_source() {
         let snapshot = GlmCatalog::snapshot();
-        assert_eq!(snapshot.models.len(), 6);
+        assert_eq!(snapshot.models.len(), 7);
         assert_eq!(snapshot.provenance, ModelCatalogProvenance::Static);
+        assert!(model_supports_plan("glm-5.3", GlmPlan::Coding));
         assert!(model_supports_plan("glm-5.2", GlmPlan::Coding));
         assert!(!model_supports_plan("glm-4.5v", GlmPlan::Coding));
         assert!(model_supports_plan("glm-4.5v", GlmPlan::Standard));
         assert_eq!(model_output_limit("glm-4.5v"), Some(16_384));
+    }
+
+    #[test]
+    fn deep_reasoning_gates_on_the_flagship_line_only() {
+        // High/max reasoning effort is a flagship capability: glm-5.3 (the
+        // current flagship) and glm-5.2 (its post-training predecessor).
+        assert!(supports_deep_reasoning("glm-5.3"));
+        assert!(supports_deep_reasoning("glm-5.2"));
+        assert!(!supports_deep_reasoning("glm-5-turbo"));
+        assert!(!supports_deep_reasoning("glm-5v-turbo"));
+        assert!(!supports_deep_reasoning("glm-4.7"));
+    }
+
+    #[test]
+    fn flagship_displays_and_limits_match_the_lineup() {
+        let flagship = GlmCatalog::find("glm-5.3").expect("glm-5.3 is registered");
+        assert_eq!(flagship.display_name.as_str(), "GLM-5.3 (Flagship)");
+        let legacy = GlmCatalog::find("glm-5.2").expect("glm-5.2 stays selectable");
+        assert_eq!(legacy.display_name.as_str(), "GLM-5.2");
+        assert_eq!(model_output_limit("glm-5.3"), Some(128_000));
     }
 
     #[test]

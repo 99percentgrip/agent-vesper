@@ -1306,9 +1306,11 @@ mod integration_tests {
 
         step(&mut state, &registry, &surface, "/model glm-5v-turbo");
         step(&mut state, &registry, &surface, "/plan coding");
+        // glm-5v-turbo is not on the Coding plan, so the plan change resets
+        // the model to the current flagship fallback (glm-5.3).
         assert!(matches!(
             state.overrides.get("zai:model", None),
-            Some(SuperpowerValue::Choice { value }) if value.as_str() == "glm-5.2"
+            Some(SuperpowerValue::Choice { value }) if value.as_str() == "glm-5.3"
         ));
     }
 

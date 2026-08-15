@@ -272,6 +272,9 @@ fn request(with_tools: bool) -> ProviderRequest {
         provider_id: ProviderId::new("zai").unwrap(),
         model: QualifiedModelId {
             provider_id: ProviderId::new("zai").unwrap(),
+            // Pinned to the model the frozen oracle fixtures were captured
+            // with (see `configured_session`); the conformance suite proves
+            // wire-format parity, not the current default model.
             model_id: ModelId::new("glm-5.2").unwrap(),
         },
         endpoint_id: Some(EndpointId::new("zai-custom").unwrap()),
@@ -308,6 +311,10 @@ fn capability(value: &str) -> CapabilityRequest {
 
 fn configured_session(url: &str, continuation_limit: u32) -> GlmSession {
     let config = GlmConfig {
+        // Pinned to the model the frozen oracle fixtures were captured with
+        // (request-serialization compares the exact wire body). The live
+        // default model is asserted in config.rs tests instead.
+        model: ModelId::new("glm-5.2").unwrap(),
         endpoint: GlmEndpoint::custom(url, true, true).unwrap(),
         continuation_limit,
         connect_timeout: Duration::from_secs(1),

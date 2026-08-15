@@ -101,7 +101,7 @@ impl GlmFactory {
     pub fn default_configuration() -> ProviderConfiguration {
         let mut values = ExtensionMap::default();
         values
-            .insert("zai:model", json!("glm-5.2"))
+            .insert("zai:model", json!("glm-5.3"))
             .expect("bounded config");
         values
             .insert("zai:endpoint-plan", json!("coding"))
@@ -238,7 +238,7 @@ fn glm_superpowers() -> Vec<vesper_provider::SuperpowerDescriptor> {
             kind: SuperpowerKind::Choice,
             scope: SuperpowerScope::Session,
             default_value: SuperpowerValue::Choice {
-                value: BoundedString::new("glm-5.2").expect("bounded value"),
+                value: BoundedString::new("glm-5.3").expect("bounded value"),
             },
             allowed_values: GlmCatalog::snapshot()
                 .models

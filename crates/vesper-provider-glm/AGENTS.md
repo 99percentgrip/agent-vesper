@@ -37,6 +37,12 @@ quota normalization, and legacy GLM compatibility translation.
   `SuperpowerValue` into the runtime reasoning-mode label; `serialize_request`
   already turns `request.reasoning.mode` into the wire `reasoning_effort` /
   `thinking` pair.
+- Model registry lives in `catalog.rs` (`FrozenModel` table). `glm-5.3` is the
+  current flagship and the adapter default; deep reasoning (`high`/`max`) gates
+  on the flagship line via `catalog::supports_deep_reasoning`
+  (`glm-5.3` + `glm-5.2`). Loopback conformance fixtures are captured against
+  `glm-5.2` and pin it explicitly in `configured_session`/`fixture_request` —
+  they prove wire parity, not the default model.
 
 ## Verification
 

@@ -248,9 +248,9 @@ pub enum GlmReasoningMode {
     Disabled,
     /// Standard visible thinking.
     Enabled,
-    /// GLM-5.2 high effort.
+    /// Flagship-line high effort.
     High,
-    /// GLM-5.2 maximum effort.
+    /// Flagship-line maximum effort.
     Max,
 }
 
@@ -304,7 +304,7 @@ pub struct GlmConfig {
 impl Default for GlmConfig {
     fn default() -> Self {
         Self {
-            model: ModelId::new("glm-5.2").expect("static model ID"),
+            model: ModelId::new("glm-5.3").expect("static model ID"),
             endpoint: GlmEndpoint::official(GlmPlan::Coding).expect("static endpoint"),
             reasoning: GlmReasoningMode::Enabled,
             generation_profile: GlmGenerationProfile::Balanced,
@@ -341,10 +341,10 @@ impl GlmConfig {
         if matches!(
             self.reasoning,
             GlmReasoningMode::High | GlmReasoningMode::Max
-        ) && self.model.as_str() != "glm-5.2"
+        ) && !crate::catalog::supports_deep_reasoning(self.model.as_str())
         {
             return Err(GlmAdapterError::Configuration(
-                "high and max reasoning require glm-5.2",
+                "high and max reasoning require glm-5.3 or glm-5.2",
             ));
         }
         Ok(())
@@ -500,5 +500,23 @@ mod tests {
             config.validate().unwrap_err(),
             GlmAdapterError::ModelPlanMismatch
         );
+    }
+
+    #[test]
+    fn deep_reasoning_is_valid_on_both_flagship_models() {
+        // High/max gate on the whole flagship line, not one model id.
+        for model in ["glm-5.3", "glm-5.2"] {
+            let config = GlmConfig {
+                model: ModelId::new(model).unwrap(),
+                reasoning: GlmReasoningMode::Max,
+                ..GlmConfig::default()
+            };
+            assert!(config.validate().is_ok(), "{model} must accept max");
+        }
+    }
+
+    #[test]
+    fn default_model_is_the_current_flagship() {
+        assert_eq!(GlmConfig::default().model.as_str(), "glm-5.3");
     }
 }
