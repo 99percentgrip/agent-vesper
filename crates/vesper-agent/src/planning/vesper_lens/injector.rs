@@ -198,14 +198,14 @@ const OVERLAY_SCRIPT: &str = r##"(function(){
     pickMode = on;
     closePopover();
     if (on) {
-      document.body.addEventListener("mouseover", onHover, true);
-      document.body.addEventListener("click", onBodyClick, true);
-      document.body.addEventListener("mouseup", onMouseUp, true);
+      document.addEventListener("mouseover", onHover, true);
+      document.addEventListener("click", onBodyClick, true);
+      document.addEventListener("mouseup", onMouseUp, true);
       document.addEventListener("keydown", onKey, true);
     } else {
-      document.body.removeEventListener("mouseover", onHover, true);
-      document.body.removeEventListener("click", onBodyClick, true);
-      document.body.removeEventListener("mouseup", onMouseUp, true);
+      document.removeEventListener("mouseover", onHover, true);
+      document.removeEventListener("click", onBodyClick, true);
+      document.removeEventListener("mouseup", onMouseUp, true);
       document.removeEventListener("keydown", onKey, true);
       clearHover();
     }
@@ -379,6 +379,17 @@ const OVERLAY_SCRIPT: &str = r##"(function(){
   } else {
     setPickMode(pickMode);
   }
+
+  // Watchdog: artifact pages frequently rebuild document.body after load
+  // (charts, hydration), which removes an appended panel. If our panel
+  // vanishes and the review is still pending, re-attach and re-render it.
+  // Listeners live on `document` (capture), so they survive body wipes.
+  setInterval(function(){
+    if (submitted) return;
+    if (!document.getElementById("vl-panel")) {
+      try { document.body.appendChild(panel); render(); } catch (e) {}
+    }
+  }, 800);
 })();""##;
 
 /// Inject the VesperLens review overlay into an HTML artifact.
@@ -542,6 +553,30 @@ mod tests {
         assert!(
             OVERLAY_SCRIPT.contains("setPickMode(pickMode);"),
             "boot must attach listeners for the default pick state"
+        );
+    }
+
+    #[test]
+    fn overlay_listeners_survive_body_wipes_and_panel_is_watchdogged() {
+        // VRO-11.8: artifact dashboards often rebuild document.body after
+        // load, destroying an appended panel and any body-level listeners.
+        // The overlay must attach pick listeners to `document` (capture)
+        // and re-attach its panel via a watchdog if it vanishes.
+        assert!(
+            !OVERLAY_SCRIPT.contains("document.body.addEventListener"),
+            "no body-level listeners — they die with body wipes"
+        );
+        assert!(
+            OVERLAY_SCRIPT.contains("document.addEventListener(\"click\", onBodyClick, true);"),
+            "pick click listener must be document-level capture"
+        );
+        assert!(
+            OVERLAY_SCRIPT.contains("setInterval"),
+            "the panel watchdog must exist"
+        );
+        assert!(
+            OVERLAY_SCRIPT.contains("document.getElementById(\"vl-panel\")"),
+            "the watchdog must detect a removed panel"
         );
     }
 

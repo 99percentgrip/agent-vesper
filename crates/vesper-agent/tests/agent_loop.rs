@@ -221,11 +221,11 @@ async fn loop_executes_a_tool_call_then_completes_on_the_next_turn() {
     )));
     assert!(events.iter().any(|event| matches!(
         event,
-        AgentProgressEvent::ToolStarted { name } if name == "read_file"
+        AgentProgressEvent::ToolStarted { name, .. } if name == "read_file"
     )));
     assert!(events.iter().any(|event| matches!(
         event,
-        AgentProgressEvent::ToolFinished { name, success: true } if name == "read_file"
+        AgentProgressEvent::ToolFinished { name, success: true, .. } if name == "read_file"
     )));
 }
 
@@ -977,7 +977,7 @@ async fn loop_calls_an_injected_tool_through_the_gateway_on_the_next_turn() {
     let started_injected = events.iter().any(|event| {
         matches!(
             event,
-            AgentProgressEvent::ToolStarted { name } if name == &injected_name
+            AgentProgressEvent::ToolStarted { name, .. } if name == &injected_name
         )
     });
     assert!(
@@ -987,7 +987,7 @@ async fn loop_calls_an_injected_tool_through_the_gateway_on_the_next_turn() {
     let finished_injected_ok = events.iter().any(|event| {
         matches!(
             event,
-            AgentProgressEvent::ToolFinished { name, success: true } if name == &injected_name
+            AgentProgressEvent::ToolFinished { name, success: true, .. } if name == &injected_name
         )
     });
     assert!(

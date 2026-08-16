@@ -321,6 +321,14 @@ VRO-11.7 fixes what the live v0.20.36 test exposed: the review URL rendered **tw
 3. **The model's TODO list is back — inline.** Every `update_plan` now pushes a Claude Code-style todo block directly into the conversation transcript (`⎿ TODO` / `✓ done` / `● in progress` / `○ pending`), so the live plan state reads in-flow while history keeps earlier snapshots. No dead sidebar panel.
 4. **Overlay interactivity by default.** The review page boots in pick mode (hover outline + click-to-annotate active immediately); Esc or the panel button turns picking off.
 
+### VRO-11.8 — Rich Telemetry, Guaranteed TODO, Wipe-Proof Overlay
+
+VRO-11.8 closes the three gaps from the live v0.20.38 test:
+
+1. **Telemetry is rich, not bare names.** Tool events carry a secret-safe display digest: `⏺ write_file · dashboard.html` and `  ⎿ ✓ write_file · 43 lines`. Hints come only from whitelisted argument keys (paths, patterns, commands — never `content`/`body`/credential keys, 48-char cap); success notes are size digests only, so file bytes never reach the progress stream.
+2. **The TODO list is now guaranteed.** The tool-enforcement instruction mandates `update_plan` for multi-step work in every mode (the previous Plan-mode-exception wording quietly discouraged it in Code mode — the root cause of the missing block). Expect `⎿ TODO` on the first tool turn and after each milestone.
+3. **The overlay survives artifact JS.** Dashboards that rebuild `document.body` after load no longer kill the review UI: pick listeners attach at `document` level (capture phase) and an 800ms watchdog re-attaches the panel if the page removes it.
+
 ### How VRO interacts with the live tool surface
 
 - The `tool_grounded_react` strategy (VRO-5) routes through a real LM Studio `ReactAgent` bundle when configured — `Actions` and `Observations` stream live into the Conversation panel as `⏺ <tool>` / indented `⎿ <result>` lines, alongside the inline thinking header above.

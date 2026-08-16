@@ -3809,7 +3809,11 @@ task: write it with write_file (content, not a placeholder).\n\
 - When the request_human_review tool is registered, call it after writing the \
 artifact so the human can review it; when it is not registered, skip it.\n\
 - The only exception is Plan mode, where you present the plan through the \
-update_plan tool instead of mutating files.";
+update_plan tool instead of mutating files.\n\
+- For ANY multi-step task, maintain a live TODO list the user can see: call \
+the update_plan tool with your task list at the START of the turn and again \
+after each milestone (marking items completed/in_progress). Never narrate a \
+plan in prose when update_plan is available.";
     SystemInstruction {
         content: vec![ContentPart::Text(
             ContentText::new(body).expect("bounded system instruction"),
@@ -5674,18 +5678,33 @@ fn apply_agent_progress(progress: AgentProgressEvent, session: &mut TuiSession) 
         AgentProgressEvent::ContentDelta { text } => {
             append_bounded(&mut session.live_response, text.as_str(), 32 * 1024);
         }
-        AgentProgressEvent::ToolStarted { name } => {
-            // VRO-11.4/11.6: tool telemetry renders INLINE in the
+        AgentProgressEvent::ToolStarted { name, hint } => {
+            // VRO-11.4/11.6/11.8: tool telemetry renders INLINE in the
             // Conversation panel using Claude Code's `⏺ <name>` action
-            // shape (no quote prefix, no decorations).
-            session.live_trajectory.push(format!("⏺ {name}"));
+            // shape, enriched with the secret-safe argument hint when one
+            // exists (`⏺ write_file · dashboard.html`).
+            if hint.is_empty() {
+                session.live_trajectory.push(format!("⏺ {name}"));
+            } else {
+                session.live_trajectory.push(format!("⏺ {name} · {hint}"));
+            }
         }
-        AgentProgressEvent::ToolFinished { name, success } => {
-            // VRO-11.6: completion mirrors Claude Code's indented `⎿`
+        AgentProgressEvent::ToolFinished {
+            name,
+            success,
+            note,
+        } => {
+            // VRO-11.6/11.8: completion mirrors Claude Code's indented `⎿`
             // result glyph — ✓ for success, ✗ for failure — nested under
-            // the action line.
+            // the action line, with a bounded size/error digest.
             let mark = if success { "✓" } else { "✗" };
-            session.live_trajectory.push(format!("  ⎿ {mark} {name}"));
+            if note.is_empty() {
+                session.live_trajectory.push(format!("  ⎿ {mark} {name}"));
+            } else {
+                session
+                    .live_trajectory
+                    .push(format!("  ⎿ {mark} {name} · {note}"));
+            }
         }
         AgentProgressEvent::PlanUpdated { markdown } => {
             apply_task_plan(&mut session.state, &markdown);
@@ -11392,6 +11411,10 @@ mod tests {
                 text.contains("Do NOT output your plan and yield to the user"),
                 "plan-only yielding must be explicitly forbidden"
             );
+            assert!(
+                text.contains("maintain a live TODO list"),
+                "VRO-11.8: the instruction must mandate update_plan TODO tracking; got: {text}"
+            );
         }
     }
 
@@ -13734,6 +13757,7 @@ mod tests {
         apply_agent_progress(
             vesper_agent::AgentProgressEvent::ToolStarted {
                 name: "write_file".into(),
+                hint: "dashboard.html".into(),
             },
             &mut session,
         );
@@ -13774,6 +13798,7 @@ mod tests {
             vesper_agent::AgentProgressEvent::ToolFinished {
                 name: "read_file".into(),
                 success: true,
+                note: "43 lines".into(),
             },
             &mut session,
         );
@@ -13794,6 +13819,7 @@ mod tests {
             vesper_agent::AgentProgressEvent::ToolFinished {
                 name: "bash".into(),
                 success: false,
+                note: "tool error: command exited 1".into(),
             },
             &mut session,
         );
