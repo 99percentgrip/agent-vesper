@@ -312,6 +312,15 @@ VRO-11.6 closes the three gaps the first live VRO-11.5 test exposed: telemetry t
 2. **The review URL is finally openable.** The `[VesperLens]` announcement now sends the **bare URL on its own line** (own-line + no wrapping is what terminal auto-linkification needs), rendered cyan + underlined as an obvious link. And for any terminal that still refuses: **Ctrl+O** opens the most recent review URL in the system browser (`xdg-open` / `open` / `start`), with the status line advertising it the moment a review goes pending. Fails loudly with a copyable URL if no opener exists.
 3. **lavish-axi-style interactive overlay.** The VesperLens review page drops `window.prompt` entirely: **pick mode** outlines elements on hover, a click opens an **inline popover editor** anchored at the click, **text selections are quotable annotations** (the selection is embedded in the note), annotations live in a removable numbered list (✕ per item), Esc exits pick mode, Enter confirms the popover. Approve / Request changes submit the same `{action, annotations, notes}` contract as before — no backend change.
 
+### VRO-11.7 — Clickability & TODO Restore (Mouse Off, One URL, Inline Todos)
+
+VRO-11.7 fixes what the live v0.20.36 test exposed: the review URL rendered **twice** (embedded in the message line and as the bare line) and **neither was clickable**, and the TODO list removal had overshot.
+
+1. **Mouse capture is now opt-in (the real clickability fix).** The TUI no longer grabs the mouse at startup — `enter_raw_mode` enables `EnableMouseCapture` only when the `native_mouse` preference is on (default off). Claude Code leaves the mouse to the terminal; that is exactly why its URLs are natively clickable and text selection works. Turn it on in settings if you want clickable footer rows.
+2. **One URL, not two.** The VesperLens announcement is now a message line without any URL plus a **single bare-URL line** — the sole, linkifiable copy (cyan + underlined), with **Ctrl+O** still guaranteed to open it.
+3. **The model's TODO list is back — inline.** Every `update_plan` now pushes a Claude Code-style todo block directly into the conversation transcript (`⎿ TODO` / `✓ done` / `● in progress` / `○ pending`), so the live plan state reads in-flow while history keeps earlier snapshots. No dead sidebar panel.
+4. **Overlay interactivity by default.** The review page boots in pick mode (hover outline + click-to-annotate active immediately); Esc or the panel button turns picking off.
+
 ### How VRO interacts with the live tool surface
 
 - The `tool_grounded_react` strategy (VRO-5) routes through a real LM Studio `ReactAgent` bundle when configured — `Actions` and `Observations` stream live into the Conversation panel as `⏺ <tool>` / indented `⎿ <result>` lines, alongside the inline thinking header above.

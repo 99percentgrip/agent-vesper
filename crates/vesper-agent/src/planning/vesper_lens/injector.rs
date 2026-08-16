@@ -50,13 +50,16 @@ const OVERLAY_SCRIPT: &str = r##"(function(){
   if (window.__vesperLensBooted) return;
   window.__vesperLensBooted = true;
 
-  // VRO-11.6 — lavish-axi-style review loop: pick mode with hover
+  // VRO-11.7 — lavish-axi-style review loop: pick mode with hover
   // highlight, an INLINE popover editor (never a native prompt dialog),
   // text-selection annotations, and a removable/editable annotation list.
   // All strings are owned literals; the only network call is the relative
   // POST /feedback.
+  // Pick mode is ON BY DEFAULT (VRO-11.7): the page is immediately
+  // interactive — hover outlines, click annotates — with no hidden mode
+  // to discover. Esc or the panel button turns picking off.
   var annotations = [];
-  var pickMode = false;
+  var pickMode = true;
   var submitted = false;
   var popover = null;
   var popoverCtx = null; // {el, selector, quote}
@@ -372,9 +375,9 @@ const OVERLAY_SCRIPT: &str = r##"(function(){
   }
 
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", render);
+    document.addEventListener("DOMContentLoaded", function(){ setPickMode(pickMode); });
   } else {
-    render();
+    setPickMode(pickMode);
   }
 })();""##;
 
@@ -525,6 +528,21 @@ mod tests {
         assert!(OVERLAY_SCRIPT.contains("vl-x"));
         assert!(OVERLAY_SCRIPT.contains("\"Escape\""));
         assert!(OVERLAY_SCRIPT.contains("Enter"));
+    }
+
+    #[test]
+    fn overlay_pick_mode_is_on_by_default_and_boots_attached() {
+        // VRO-11.7: interactivity must be immediate — the page opens in
+        // pick mode (hover outline + click-to-annotate) with the listeners
+        // attached at boot, no hidden button to discover.
+        assert!(
+            OVERLAY_SCRIPT.contains("var pickMode = true;"),
+            "pick mode must default ON"
+        );
+        assert!(
+            OVERLAY_SCRIPT.contains("setPickMode(pickMode);"),
+            "boot must attach listeners for the default pick state"
+        );
     }
 
     #[test]
