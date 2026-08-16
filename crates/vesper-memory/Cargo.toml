@@ -12,8 +12,8 @@ publish = false
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-vesper-domain = { path = "../vesper-domain", version = "=0.20.34" }
-vesper-security = { path = "../vesper-security", version = "=0.20.34" }
+vesper-domain = { path = "../vesper-domain", version = "=0.20.35" }
+vesper-security = { path = "../vesper-security", version = "=0.20.35" }
 
 [dev-dependencies]
 tempfile = { workspace = true }

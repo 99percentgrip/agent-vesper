@@ -404,7 +404,14 @@ the multi-turn, tool-executing layer above it.
   feeds the failure back to the model as an observation for self-correction.
   The transport is `Arc<dyn LmStudioTransport>` (shared, cheap clone) so the
   agent mirrors `LmStudioCandidateGenerator`'s shape exactly). No live LM
-  Studio integration in VRO-3.1 (per execution constraints).
+  Studio integration in VRO-3.1 (per execution constraints). **VRO-11.5:**
+  `REACT_SYSTEM_PROMPT` carries rule 5 — the tool-execution enforcement
+  mandate: artifact-generation requests MUST execute `write_file` (+
+  `request_human_review` when registered) within the same turn, plan-only
+  yielding is forbidden, and printing artifact content without calling
+  `write_file` is named a FAILED turn (the behavioral patch for the 180s
+  zero-tool turn; the shared-`AgentLoop` paths get the same mandate from
+  the TUI composition boundary's `tool_enforcement_instruction`).
 
 ## Local Contracts
 
