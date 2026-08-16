@@ -637,12 +637,11 @@ fn apply_outcome(
                 ));
             }
             UiAction::ToggleTasks => {
-                // VRO-11.5: the TODO panel is retired — model-authored plans
-                // surface through the REVIEW phase in the conversation, and
-                // tool telemetry streams inline. Keep the oracle command
-                // resolving with a truthful status instead of dead state.
+                // VRO-11.7: the TODO list lives INLINE in the conversation —
+                // every plan update pushes a fresh block (Claude Code's
+                // inline todo widget). No separate panel exists to toggle.
                 *status =
-                    Some("TODO panel retired — plan updates render in the conversation.".into());
+                    Some("TODO renders inline in the conversation on every plan update.".into());
             }
             UiAction::ToggleSidebar => {
                 panels.sidebar = !panels.sidebar;

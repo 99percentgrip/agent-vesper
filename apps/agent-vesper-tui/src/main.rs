@@ -304,7 +304,8 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
         eprintln!("Starting a fresh session instead.");
     }
 
-    enter_raw_mode().map_err(|error| format!("failed to enter raw mode: {error}"))?;
+    enter_raw_mode(session.state.preferences.native_mouse)
+        .map_err(|error| format!("failed to enter raw mode: {error}"))?;
     let result = drive_loop(
         &provider_id,
         &registry,
@@ -2035,7 +2036,7 @@ async fn ensure_provider_authenticated(
     }
 }
 
-fn enter_raw_mode() -> io::Result<()> {
+fn enter_raw_mode(enable_mouse: bool) -> io::Result<()> {
     enable_raw_mode()?;
     // Directive 1 (VRO-11.3): Bracketed Paste Mode. When enabled, crossterm
     // delivers multi-line clipboard content as a single `Event::Paste(text)`
@@ -2044,12 +2045,22 @@ fn enter_raw_mode() -> io::Result<()> {
     // on the first embedded `\n`. Order matters: `EnableBracketedPaste`
     // must be queued before leaving the alternate screen on teardown so the
     // terminal's paste mode is reliably restored.
-    execute!(
-        stdout(),
-        EnterAlternateScreen,
-        EnableMouseCapture,
-        EnableBracketedPaste
-    )?;
+    //
+    // VRO-11.7: mouse capture is OPT-IN (matches the `native_mouse`
+    // preference, default off). Grabbing the mouse by default defeats the
+    // terminal's native URL linkification and text selection — the exact
+    // affordances Claude Code leaves alone. Users who want clickable footer
+    // rows can enable it via the settings toggle.
+    if enable_mouse {
+        execute!(
+            stdout(),
+            EnterAlternateScreen,
+            EnableMouseCapture,
+            EnableBracketedPaste
+        )?;
+    } else {
+        execute!(stdout(), EnterAlternateScreen, EnableBracketedPaste)?;
+    }
     Ok(())
 }
 
@@ -3306,7 +3317,7 @@ fn edit_keybindings(
         session.state.status = Some("Keybindings updated and applied live.".into());
         Ok(())
     })();
-    enter_raw_mode().map_err(|error| error.to_string())?;
+    enter_raw_mode(session.state.preferences.native_mouse).map_err(|error| error.to_string())?;
     terminal.clear().map_err(|error| error.to_string())?;
     result
 }
@@ -3506,7 +3517,7 @@ fn edit_prompt_in_external_editor(
         Ok(())
     })();
     let _ = std::fs::remove_file(&path);
-    enter_raw_mode().map_err(|error| error.to_string())?;
+    enter_raw_mode(session.state.preferences.native_mouse).map_err(|error| error.to_string())?;
     terminal.clear().map_err(|error| error.to_string())?;
     result
 }
@@ -3585,7 +3596,7 @@ fn annotate_diff_in_external_editor(
         Ok(())
     })();
     let _ = std::fs::remove_file(&path);
-    enter_raw_mode().map_err(|error| error.to_string())?;
+    enter_raw_mode(session.state.preferences.native_mouse).map_err(|error| error.to_string())?;
     terminal.clear().map_err(|error| error.to_string())?;
     result
 }
@@ -5678,12 +5689,45 @@ fn apply_agent_progress(progress: AgentProgressEvent, session: &mut TuiSession) 
         }
         AgentProgressEvent::PlanUpdated { markdown } => {
             apply_task_plan(&mut session.state, &markdown);
+            // VRO-11.7: the model's TODO list is restored — rendered INLINE
+            // in the Conversation transcript on every plan update, exactly
+            // like Claude Code's inline todo widget (the VRO-11.5 sidebar
+            // removal overshot; it belongs in the conversation, not a
+            // dashboard panel). The block persists as a transcript entry so
+            // the latest plan state stays readable while scrolling history.
+            let block = format_todo_block(&session.state.task_plan);
+            if !block.is_empty() {
+                session.state.transcript.push(block);
+            }
             push_activity(
                 session,
                 format!("☑ TODO updated ({} task(s))", session.state.task_plan.len()),
             );
         }
     }
+}
+
+/// VRO-11.7 — renders the model-authored TODO list as a Claude Code-style
+/// inline transcript block. Each update replaces nothing (history keeps
+/// prior blocks); the newest block reflects the full current plan state:
+/// ✓ completed, ● in progress, ○ pending. Empty plans render as an empty
+/// string (nothing pushed).
+#[must_use]
+pub(crate) fn format_todo_block(tasks: &[crate::dispatch::TaskItem]) -> String {
+    if tasks.is_empty() {
+        return String::new();
+    }
+    let mut out = String::from("⎿ TODO\n");
+    for task in tasks {
+        let marker = match task.status.as_str() {
+            "completed" => "✓",
+            "in_progress" => "●",
+            _ => "○",
+        };
+        out.push_str(&format!("  {marker} {}\n", task.content.as_str()));
+    }
+    // Trim the trailing newline: transcript entries are rendered as blocks.
+    out.trim_end_matches('\n').to_string()
 }
 
 fn push_activity(session: &mut TuiSession, line: impl Into<String>) {
@@ -7715,12 +7759,17 @@ impl TuiToolService {
                 Some(tx) => {
                     let tx = tx.clone();
                     Box::new(move |url: &str| {
-                        // VRO-11.6: TWO lines — the human-readable message,
-                        // then the BARE URL on its own line. A URL embedded
-                        // mid-sentence gets wrapped by the terminal width and
-                        // stops being clickable; a bare own-line URL is what
-                        // terminals auto-linkify, and Ctrl+O covers the rest.
-                        let _ = tx.send(vesper_agent::vro::diagnostic_for_review(url));
+                        // VRO-11.7: the announcement message must NOT embed
+                        // the URL (v0.20.36 rendered it TWICE — once inside
+                        // `Open: <URL>` from the PRD diagnostic, once as the
+                        // bare line — and neither was clickable). Now: ONE
+                        // message line WITHOUT the URL, then the BARE URL on
+                        // its own line — the single, linkifiable copy.
+                        // Ctrl+O remains the guaranteed opener.
+                        let _ = tx.send(
+                            "[VesperLens] Artifact ready for review. Click the link below, or press Ctrl+O:"
+                                .to_string(),
+                        );
                         let _ = tx.send(url.to_string());
                     })
                 }
@@ -13619,6 +13668,62 @@ mod tests {
             !lines.iter().any(|l| l.contains("write_file")),
             "live_trajectory must be hidden when idle: {lines:?}"
         );
+    }
+
+    #[test]
+    fn vro117_format_todo_block_renders_claude_code_markers() {
+        use crate::dispatch::TaskItem;
+        let item = |content: &str, status: &str| TaskItem {
+            content: content.into(),
+            status: status.into(),
+            priority: "0".into(),
+        };
+        let block = format_todo_block(&[
+            item("Write the HTML file", "completed"),
+            item("Wire the chart CSS", "in_progress"),
+            item("Request review", "pending"),
+        ]);
+        assert!(block.starts_with("⎿ TODO"), "header first: {block}");
+        assert!(
+            block.contains("  ✓ Write the HTML file"),
+            "completed: {block}"
+        );
+        assert!(
+            block.contains("  ● Wire the chart CSS"),
+            "in progress: {block}"
+        );
+        assert!(block.contains("  ○ Request review"), "pending: {block}");
+        // Ordering follows the plan.
+        let done = block.find("✓").unwrap();
+        let wip = block.find("●").unwrap();
+        let todo = block.find("○").unwrap();
+        assert!(done < wip && wip < todo);
+        // Empty plan renders nothing (no orphan header pushed).
+        assert_eq!(format_todo_block(&[]), "");
+    }
+
+    #[test]
+    fn vro117_plan_updated_pushes_todo_block_into_transcript() {
+        // VRO-11.7: restoring the TODO list — Claude Code-style INLINE in
+        // the conversation. Every PlanUpdated must push a fresh block into
+        // the persistent transcript (not a panel, not activity only).
+        let mut session = fresh_tui_session_for_trajectory_tests();
+        let before = session.state.transcript.len();
+        apply_agent_progress(
+            vesper_agent::AgentProgressEvent::PlanUpdated {
+                markdown: "[ ] (pending/1) Write the HTML file\n[ ] (pending/2) Request review"
+                    .into(),
+            },
+            &mut session,
+        );
+        assert_eq!(
+            session.state.transcript.len(),
+            before + 1,
+            "exactly one todo block pushed"
+        );
+        let block = session.state.transcript.last().unwrap();
+        assert!(block.starts_with("⎿ TODO"), "block: {block}");
+        assert!(block.contains("○ Write the HTML file"), "block: {block}");
     }
 
     #[test]

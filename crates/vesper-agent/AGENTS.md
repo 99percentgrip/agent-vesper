@@ -551,12 +551,12 @@ the multi-turn, tool-executing layer above it.
 
 - `src/planning/vesper_lens/` — ADR 0017 (VRO-11) VesperLens native
   human-in-the-loop HTML review oracle. Owns `types.rs`, `injector.rs`,
-  `http.rs`, `server.rs`, `mod.rs`. **VRO-11.6:** the overlay is
-  lavish-axi-style interactive — pick mode with hover outline, an INLINE
-  popover editor anchored at the click (never a native prompt dialog),
-  quotable text-selection annotations, a removable numbered annotation
-  list, Esc/Enter keyboard support — while keeping every ADR 0017
-  constraint (owned Rust-string JS, no external URLs, POST only to the
-  relative `/feedback`, single-turn). Not a durable enough boundary to
-  warrant its own AGENTS.md yet — the ADR + this entry cover its
-  contracts.
+  `http.rs`, `server.rs`, `mod.rs`. **VRO-11.6/11.7:** the overlay is
+  lavish-axi-style interactive — pick mode (DEFAULT ON, listeners attached
+  at boot) with hover outline, an INLINE popover editor anchored at the
+  click (never a native prompt dialog), quotable text-selection
+  annotations, a removable numbered annotation list, Esc/Enter keyboard
+  support — while keeping every ADR 0017 constraint (owned Rust-string
+  JS, no external URLs, POST only to the relative `/feedback`,
+  single-turn). Not a durable enough boundary to warrant its own
+  AGENTS.md yet — the ADR + this entry cover its contracts.

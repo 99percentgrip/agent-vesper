@@ -303,6 +303,18 @@ business logic.
   `cmd /C start`) is the guaranteed browser opener; failures surface the
   copyable URL in the status line. (3) `ui.rs` renders `⏺`/indented-`⎿`
   lines dim and bare-URL lines cyan + underlined (link affordance).
+  **VRO-11.7 (clickability + TODO restore)**: (1) **mouse capture is
+  OPT-IN** — `enter_raw_mode(enable_mouse)` queues `EnableMouseCapture`
+  only when the `native_mouse` preference is on (default OFF, all four
+  call sites pass the preference). Grabbing the mouse by default was what
+  defeated native terminal URL linkification and text selection; Claude
+  Code leaves the mouse alone. (2) **single URL** — the `on_url`
+  announcement no longer embeds the URL inside the message line (v0.20.36
+  rendered it twice, neither clickable); it sends one message line plus
+  ONE bare-URL line. (3) **inline TODO restored** — every
+  `PlanUpdated` pushes `format_todo_block(&task_plan)` (⎿ TODO / ✓ ● ○
+  markers) into the persistent transcript, Claude Code's inline todo
+  widget; `/tasks` reports the inline location (no panel to toggle).
   VRO-8 (PRD §8.1 — UX & Diagnostics): three pure helpers + the wiring
   that surfaces VRO telemetry to the driver. (1) `compute_reasoning_diagnostics`
   reads only `VroOrchestrator::profile` (deterministic, allocation-only) +

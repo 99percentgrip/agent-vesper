@@ -11,13 +11,13 @@ regex.workspace = true
 sha2.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
-vesper-agent = { path = "../vesper-agent", version = "=0.20.36" }
-vesper-checkpoints = { path = "../vesper-checkpoints", version = "=0.20.36" }
-vesper-domain = { path = "../vesper-domain", version = "=0.20.36" }
-vesper-mcp = { path = "../vesper-mcp", version = "=0.20.36" }
-vesper-memory = { path = "../vesper-memory", version = "=0.20.36" }
-vesper-runtime = { path = "../vesper-runtime", version = "=0.20.36" }
-vesper-sessions = { path = "../vesper-sessions", version = "=0.20.36" }
+vesper-agent = { path = "../vesper-agent", version = "=0.20.37" }
+vesper-checkpoints = { path = "../vesper-checkpoints", version = "=0.20.37" }
+vesper-domain = { path = "../vesper-domain", version = "=0.20.37" }
+vesper-mcp = { path = "../vesper-mcp", version = "=0.20.37" }
+vesper-memory = { path = "../vesper-memory", version = "=0.20.37" }
+vesper-runtime = { path = "../vesper-runtime", version = "=0.20.37" }
+vesper-sessions = { path = "../vesper-sessions", version = "=0.20.37" }
 
 [dev-dependencies]
 tempfile.workspace = true
