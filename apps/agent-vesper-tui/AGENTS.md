@@ -290,6 +290,19 @@ business logic.
   died with the Reasoning panel); PageUp/PageDown/Home/End and the mouse
   wheel always scroll the conversation; F2 / `toggle_thinking` toggles the
   inline-thinking visibility carried by `panels.reasoning`.
+  **VRO-11.6 (review UX parity)**: (1) telemetry uses the exact Claude
+  Code shapes — `⏺ <tool>` action (flush-left) / `  ⎿ ✓/✗ <tool>` result
+  (indented); the `> ` quote prefix is gone and `drain_trajectory` pushes
+  entries AS-IS; the ReAct formatters (`format_react_*`) emit the same
+  glyphs. (2) The VesperLens URL announcement sends TWO lines — the
+  `[VesperLens] …` message and the **bare URL on its own line** (own-line
+  URLs are what terminals auto-linkify; wrapped mid-sentence URLs are
+  not); `drain_lens_urls` stashes it on `TuiSession.last_lens_url` and
+  sets a "Ctrl+O opens it" status hint. **Ctrl+O** (`open_last_lens_review`
+  + pure `lens_opener_command`: `xdg-open` / macOS `open` / Windows
+  `cmd /C start`) is the guaranteed browser opener; failures surface the
+  copyable URL in the status line. (3) `ui.rs` renders `⏺`/indented-`⎿`
+  lines dim and bare-URL lines cyan + underlined (link affordance).
   VRO-8 (PRD §8.1 — UX & Diagnostics): three pure helpers + the wiring
   that surfaces VRO telemetry to the driver. (1) `compute_reasoning_diagnostics`
   reads only `VroOrchestrator::profile` (deterministic, allocation-only) +

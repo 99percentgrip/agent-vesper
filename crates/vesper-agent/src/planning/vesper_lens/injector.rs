@@ -33,43 +33,75 @@
 ///     know about.
 ///
 /// The overlay:
-/// 1. Injects a floating review panel (fixed top-right, ~280px wide).
-/// 2. Provides Approve / Reject / Modify buttons.
-/// 3. In Modify mode, attaches a click handler that captures the clicked
-///    element's CSS selector and prompts for a comment, collecting
-///    annotations into a list.
-/// 4. On submit, POSTs `{action, annotations, notes}` as JSON to
+/// 1. Injects a floating review panel (fixed top-right, ~320px wide).
+/// 2. Provides Approve (submit `approve`) / Request changes (submit
+///    `reject`) / Annotate page (pick mode) actions.
+/// 3. In pick mode: hovering outlines the element under the cursor; a
+///    click opens an INLINE popover editor anchored at the click (no
+///    `window.prompt`) that captures the comment; selecting text first
+///    quotes the selection inside the note; a second click on an already
+///    annotated element removes its annotation; Esc exits pick mode.
+/// 4. Annotations render as a removable numbered list (✕ per item).
+/// 5. On submit, POSTs `{action, annotations, notes}` as JSON to
 ///    `/feedback` and replaces the panel with a success message.
-/// 5. Disables itself after submit (single-turn contract).
+/// 6. Disables itself after submit (single-turn contract).
 const OVERLAY_SCRIPT: &str = r##"(function(){
   "use strict";
   if (window.__vesperLensBooted) return;
   window.__vesperLensBooted = true;
 
+  // VRO-11.6 — lavish-axi-style review loop: pick mode with hover
+  // highlight, an INLINE popover editor (never a native prompt dialog),
+  // text-selection annotations, and a removable/editable annotation list.
+  // All strings are owned literals; the only network call is the relative
+  // POST /feedback.
   var annotations = [];
-  var modifyMode = false;
+  var pickMode = false;
   var submitted = false;
+  var popover = null;
+  var popoverCtx = null; // {el, selector, quote}
 
   var style = document.createElement("style");
   style.textContent = [
-    "#vl-panel{position:fixed;top:12px;right:12px;width:300px;z-index:2147483647;",
-    "background:#1e1e2e;color:#cdd6f4;border:1px solid #45475a;border-radius:8px;",
-    "font:13px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;",
-    "padding:12px;box-shadow:0 8px 24px rgba(0,0,0,.35);}",
-    "#vl-panel h2{margin:0 0 8px;font-size:14px;color:#cba6f7;}",
+    "#vl-panel{position:fixed;top:12px;right:12px;width:320px;z-index:2147483647;",
+    "background:#1e1e2e;color:#cdd6f4;border:1px solid #45475a;border-radius:10px;",
+    "font:13px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;",
+    "padding:14px;box-shadow:0 12px 32px rgba(0,0,0,.45);}",
+    "#vl-panel h2{margin:0 0 10px;font-size:14px;color:#cba6f7;display:flex;",
+    "align-items:center;gap:6px;}",
+    "#vl-panel h2 .vl-dot{width:8px;height:8px;border-radius:50%;background:#89b4fa;",
+    "display:inline-block;}",
     "#vl-panel button{cursor:pointer;border:1px solid #45475a;background:#313244;",
-    "color:#cdd6f4;padding:6px 10px;border-radius:4px;margin:2px;font:inherit;}",
+    "color:#cdd6f4;padding:6px 12px;border-radius:6px;margin:2px;font:inherit;}",
     "#vl-panel button:hover{background:#45475a;}",
-    "#vl-panel button.primary{background:#a6e3a1;color:#1e1e2e;border-color:#a6e3a1;}",
-    "#vl-panel button.danger{background:#f38ba8;color:#1e1e2e;border-color:#f38ba8;}",
+    "#vl-panel button.primary{background:#a6e3a1;color:#1e1e2e;border-color:#a6e3a1;font-weight:600;}",
+    "#vl-panel button.danger{background:#f38ba8;color:#1e1e2e;border-color:#f38ba8;font-weight:600;}",
+    "#vl-panel button.on{background:#f9e2af;color:#1e1e2e;border-color:#f9e2af;font-weight:600;}",
     "#vl-panel textarea{width:100%;box-sizing:border-box;background:#11111b;color:#cdd6f4;",
-    "border:1px solid #45475a;border-radius:4px;padding:6px;font:inherit;margin-top:6px;}",
-    "#vl-panel .vl-row{margin-top:8px;}",
-    "#vl-panel .vl-note{font-size:11px;color:#9399b2;margin-top:6px;}",
-    "#vl-annot-list{margin-top:6px;max-height:120px;overflow:auto;}",
-    "#vl-annot-list .vl-item{background:#11111b;padding:4px 6px;border-radius:4px;margin-top:4px;",
-    "font-size:11px;word-break:break-word;}",
-    ".vl-highlight{outline:2px solid #f9e2af !important;outline-offset:1px;}"
+    "border:1px solid #45475a;border-radius:6px;padding:7px;font:inherit;margin-top:8px;}",
+    "#vl-panel .vl-row{margin-top:10px;display:flex;flex-wrap:wrap;}",
+    "#vl-panel .vl-note{font-size:11px;color:#9399b2;margin-top:8px;}",
+    "#vl-annot-list{margin-top:8px;max-height:150px;overflow:auto;}",
+    "#vl-annot-list .vl-item{background:#11111b;padding:6px 8px;border-radius:6px;margin-top:5px;",
+    "font-size:11.5px;word-break:break-word;border-left:3px solid #f9e2af;}",
+    "#vl-annot-list .vl-item .vl-x{float:right;cursor:pointer;color:#f38ba8;font-weight:700;",
+    "padding:0 3px;}",
+    "#vl-annot-list .vl-item .vl-sel{color:#89b4fa;font-family:ui-monospace,monospace;",
+    "font-size:10.5px;}",
+    "#vl-popover{position:absolute;z-index:2147483647;background:#11111b;color:#cdd6f4;",
+    "border:1px solid #89b4fa;border-radius:8px;padding:10px;width:260px;font:12.5px/1.4",
+    " -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.5);}",
+    "#vl-popover .vl-target{color:#89b4fa;font-family:ui-monospace,monospace;font-size:10.5px;",
+    "word-break:break-all;margin-bottom:6px;}",
+    "#vl-popover .vl-quote{color:#9399b2;font-style:italic;margin-bottom:6px;",
+    "max-height:52px;overflow:hidden;}",
+    "#vl-popover input{width:100%;box-sizing:border-box;background:#1e1e2e;color:#cdd6f4;",
+    "border:1px solid #45475a;border-radius:6px;padding:6px;font:inherit;}",
+    "#vl-popover .vl-row{margin-top:8px;}",
+    ".vl-highlight{outline:2px solid #f9e2af !important;outline-offset:1px;}",
+    ".vl-hover{outline:2px dashed #89b4fa !important;outline-offset:1px;}",
+    "#vl-panel .vl-badge{display:inline-block;background:#313244;border-radius:10px;",
+    "padding:1px 8px;font-size:10.5px;color:#9399b2;margin-left:6px;}"
   ].join("");
   document.head.appendChild(style);
 
@@ -77,10 +109,20 @@ const OVERLAY_SCRIPT: &str = r##"(function(){
   panel.id = "vl-panel";
   document.body.appendChild(panel);
 
+  function esc(s){ var d = document.createElement("span"); d.textContent = s; return d; }
+
   function render() {
     panel.innerHTML = "";
     var title = document.createElement("h2");
-    title.textContent = "VesperLens Review";
+    var dot = document.createElement("span"); dot.className = "vl-dot";
+    title.appendChild(dot);
+    title.appendChild(document.createTextNode("VesperLens Review"));
+    if (annotations.length) {
+      var badge = document.createElement("span");
+      badge.className = "vl-badge";
+      badge.textContent = annotations.length + " note" + (annotations.length > 1 ? "s" : "");
+      title.appendChild(badge);
+    }
     panel.appendChild(title);
 
     if (submitted) {
@@ -94,17 +136,17 @@ const OVERLAY_SCRIPT: &str = r##"(function(){
 
     var row = document.createElement("div");
     row.className = "vl-row";
-    var approve = btn("Approve", "primary", function(){ submit("approve"); });
-    var reject = btn("Reject", "danger", function(){ submit("reject"); });
-    var modify = btn("Modify", "", toggleModify);
-    row.appendChild(approve); row.appendChild(reject); row.appendChild(modify);
+    row.appendChild(btn("Approve", "primary", function(){ submit("approve"); }));
+    row.appendChild(btn("Request changes", "danger", function(){ submit("reject"); }));
+    var pick = btn(pickMode ? "Picking\u2026" : "Annotate page", pickMode ? "on" : "", togglePick);
+    row.appendChild(pick);
     panel.appendChild(row);
 
     var hint = document.createElement("div");
     hint.className = "vl-note";
-    hint.textContent = modifyMode
-      ? "Modify mode ON \u2014 click any element to annotate it."
-      : "Click Modify to annotate specific elements.";
+    hint.textContent = pickMode
+      ? "Click any element to comment on it, or select text first to quote it. Esc stops picking."
+      : "Annotate page \u2192 click elements / select text \u2192 leave inline notes for the agent.";
     panel.appendChild(hint);
 
     var list = document.createElement("div");
@@ -112,7 +154,18 @@ const OVERLAY_SCRIPT: &str = r##"(function(){
     annotations.forEach(function(a, i){
       var item = document.createElement("div");
       item.className = "vl-item";
-      item.textContent = "[" + (i+1) + "] " + a.selector + " \u2014 " + a.comment;
+      var x = document.createElement("span");
+      x.className = "vl-x";
+      x.textContent = "\u2715";
+      x.title = "Remove note";
+      x.addEventListener("click", function(){ removeAnnotation(i); });
+      item.appendChild(x);
+      var sel = document.createElement("div");
+      sel.className = "vl-sel";
+      sel.textContent = (i + 1) + ". " + a.selector;
+      item.appendChild(sel);
+      if (a.comment) item.appendChild(esc(a.comment));
+      else { var em = document.createElement("i"); em.textContent = "(no comment)"; item.appendChild(em); }
       list.appendChild(item);
     });
     panel.appendChild(list);
@@ -136,37 +189,141 @@ const OVERLAY_SCRIPT: &str = r##"(function(){
     return b;
   }
 
-  function toggleModify() {
-    modifyMode = !modifyMode;
-    if (modifyMode) {
+  function togglePick() { setPickMode(!pickMode); }
+
+  function setPickMode(on) {
+    pickMode = on;
+    closePopover();
+    if (on) {
+      document.body.addEventListener("mouseover", onHover, true);
       document.body.addEventListener("click", onBodyClick, true);
+      document.body.addEventListener("mouseup", onMouseUp, true);
+      document.addEventListener("keydown", onKey, true);
     } else {
+      document.body.removeEventListener("mouseover", onHover, true);
       document.body.removeEventListener("click", onBodyClick, true);
+      document.body.removeEventListener("mouseup", onMouseUp, true);
+      document.removeEventListener("keydown", onKey, true);
+      clearHover();
     }
     render();
   }
 
+  var hovered = null;
+  function onHover(ev){
+    if (submitted || pickMode === false) return;
+    if (panel.contains(ev.target) || (popover && popover.contains(ev.target))) return;
+    clearHover();
+    hovered = ev.target;
+    if (hovered.classList) hovered.classList.add("vl-hover");
+  }
+  function clearHover(){
+    if (hovered && hovered.classList) hovered.classList.remove("vl-hover");
+    hovered = null;
+  }
+
+  function onMouseUp(ev){
+    if (submitted || !pickMode) return;
+    if (panel.contains(ev.target) || (popover && popover.contains(ev.target))) return;
+    var sel = window.getSelection();
+    var text = sel ? String(sel) : "";
+    if (!text.trim()) return;
+    var node = sel.anchorNode;
+    var el = node && node.nodeType === 1 ? node : (node ? node.parentElement : null);
+    if (!el) return;
+    ev.preventDefault(); ev.stopPropagation();
+    clearHover();
+    openPopover(ev, el, cssPath(el), text.trim().slice(0, 120));
+  }
+
   function onBodyClick(ev) {
-    if (submitted) return;
-    if (panel.contains(ev.target)) return; // ignore clicks on the panel itself
+    if (submitted || !pickMode) return;
+    if (panel.contains(ev.target) || (popover && popover.contains(ev.target))) return;
     ev.preventDefault();
     ev.stopPropagation();
+    clearHover();
     var el = ev.target;
     var selector = cssPath(el);
+    closePopover();
     var prev = el.getAttribute("data-vl") === "1";
     if (prev) {
-      // second click on the same element removes its annotation
       annotations = annotations.filter(function(a){ return a.selector !== selector; });
       el.classList.remove("vl-highlight");
       el.removeAttribute("data-vl");
       render();
       return;
     }
-    var comment = window.prompt("Comment for " + selector + ":", "");
-    if (comment === null) return; // user cancelled
-    el.classList.add("vl-highlight");
-    el.setAttribute("data-vl", "1");
-    annotations.push({ selector: selector, comment: comment || "", suggested_html: null });
+    openPopover(ev, el, selector, null);
+  }
+
+  function onKey(ev){
+    if (ev.key === "Escape") {
+      if (popover) { closePopover(); return; }
+      setPickMode(false);
+    }
+  }
+
+  function openPopover(ev, el, selector, quote) {
+    closePopover();
+    popoverCtx = { el: el, selector: selector, quote: quote };
+    popover = document.createElement("div");
+    popover.id = "vl-popover";
+    var target = document.createElement("div");
+    target.className = "vl-target";
+    target.textContent = selector;
+    popover.appendChild(target);
+    if (quote) {
+      var q = document.createElement("div");
+      q.className = "vl-quote";
+      q.textContent = "\u201C" + quote + "\u201D";
+      popover.appendChild(q);
+    }
+    var input = document.createElement("input");
+    input.type = "text";
+    input.placeholder = "What should change here?";
+    popover.appendChild(input);
+    var row = document.createElement("div");
+    row.className = "vl-row";
+    var add = btn("Add note", "primary", confirmPopover);
+    var cancel = btn("Cancel", "", closePopover);
+    row.appendChild(add); row.appendChild(cancel);
+    popover.appendChild(row);
+    document.body.appendChild(popover);
+    // Anchor near the click, clamped to the viewport.
+    var x = Math.min((ev.clientX || 0) + 12, window.innerWidth - 280);
+    var y = Math.min((ev.clientY || 0) + 12, window.innerHeight - 160);
+    popover.style.left = Math.max(8, x) + "px";
+    popover.style.top = Math.max(8, y) + "px";
+    input.focus();
+    input.addEventListener("keydown", function(e){
+      if (e.key === "Enter") { e.preventDefault(); confirmPopover(); }
+    });
+  }
+
+  function confirmPopover() {
+    if (!popover || !popoverCtx) return;
+    var input = popover.querySelector("input");
+    var comment = input ? input.value.trim() : "";
+    if (popoverCtx.quote) comment = "[selection \u201C" + popoverCtx.quote + "\u201D] " + comment;
+    var el = popoverCtx.el;
+    if (el && el.classList) { el.classList.add("vl-highlight"); el.setAttribute("data-vl", "1"); }
+    annotations.push({
+      selector: popoverCtx.selector,
+      comment: comment || "",
+      suggested_html: null
+    });
+    closePopover();
+    render();
+  }
+
+  function closePopover() {
+    if (popover && popover.parentNode) popover.parentNode.removeChild(popover);
+    popover = null;
+    popoverCtx = null;
+  }
+
+  function removeAnnotation(i) {
+    annotations.splice(i, 1);
     render();
   }
 
@@ -198,7 +355,7 @@ const OVERLAY_SCRIPT: &str = r##"(function(){
       notes: notes
     };
     submitted = true;
-    document.body.removeEventListener("click", onBodyClick, true);
+    setPickMode(false);
     render();
     fetch("/feedback", {
       method: "POST",
@@ -338,6 +495,36 @@ mod tests {
     #[test]
     fn overlay_script_targets_only_relative_feedback_path() {
         assert!(OVERLAY_SCRIPT.contains("fetch(\"/feedback\""));
+    }
+
+    #[test]
+    fn overlay_uses_inline_popover_not_window_prompt() {
+        // VRO-11.6: window.prompt was the "not interactive" complaint — the
+        // overlay must use its own inline popover editor instead.
+        assert!(
+            !OVERLAY_SCRIPT.contains("window.prompt"),
+            "window.prompt must not appear in the overlay"
+        );
+        assert!(
+            OVERLAY_SCRIPT.contains("vl-popover"),
+            "the inline popover element must exist"
+        );
+        assert!(
+            OVERLAY_SCRIPT.contains("input.focus()"),
+            "the popover input must auto-focus"
+        );
+    }
+
+    #[test]
+    fn overlay_supports_pick_mode_hover_and_selection() {
+        // VRO-11.6 lavish-axi-style affordances: hover outline while
+        // picking, text-selection annotation, removable note list, Esc exit.
+        assert!(OVERLAY_SCRIPT.contains("vl-hover"));
+        assert!(OVERLAY_SCRIPT.contains("onMouseUp"));
+        assert!(OVERLAY_SCRIPT.contains("getSelection"));
+        assert!(OVERLAY_SCRIPT.contains("vl-x"));
+        assert!(OVERLAY_SCRIPT.contains("\"Escape\""));
+        assert!(OVERLAY_SCRIPT.contains("Enter"));
     }
 
     #[test]

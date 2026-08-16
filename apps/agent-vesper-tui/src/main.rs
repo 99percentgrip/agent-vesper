@@ -278,6 +278,7 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
         activity: Vec::new(),
         live_trajectory: Vec::new(),
         lens_url_rx: Some(lens_url_rx),
+        last_lens_url: None,
         reasoning: String::new(),
         live_response: String::new(),
         turn_started: None,
@@ -579,10 +580,14 @@ struct TuiSession {
     live_trajectory: Vec<String>,
     /// VRO-11.4 — receiver for VesperLens review-URL announcements. The
     /// `request_human_review` tool sends the `[VesperLens] Artifact ready
-    /// for review. Open: <URL>` line through this channel; the event loop
-    /// drains it into `live_trajectory` so the URL renders inline in the
-    /// Conversation panel.
+    /// for review.` message and the bare URL line through this channel; the
+    /// event loop drains them into `live_trajectory` so the URL renders
+    /// inline (own line, linkifiable) in the Conversation panel.
     lens_url_rx: Option<mpsc::UnboundedReceiver<String>>,
+    /// VRO-11.6 — most recent VesperLens review URL, stashed by
+    /// [`drain_lens_urls`] so **Ctrl+O** (`open_last_lens_review`) can open
+    /// it in the system browser regardless of terminal link support.
+    last_lens_url: Option<String>,
     /// Provider-visible reasoning projection for the optional reasoning panel.
     reasoning: String,
     /// Assistant text accumulated during the current streamed response.
@@ -1239,6 +1244,13 @@ async fn drive_loop(
             // Tab inserts a tab character into a non-empty composer. With an
             // empty composer it is a no-op (the panel-focus toggle it used
             // to perform died with the VRO-11.5 Reasoning-panel removal).
+            // VRO-11.6: Ctrl+O opens the most recent VesperLens review URL
+            // in the system browser — the guaranteed open path when the
+            // terminal does not linkify URLs inside styled TUI text.
+            KeyCode::Char('o') if ctrl && session.command_matches.is_empty() => {
+                open_last_lens_review(session);
+                continue;
+            }
             KeyCode::Char('p') if ctrl => {
                 session.input = "/".into();
                 session.state.preferences.composer_cursor = 1;
@@ -4530,8 +4542,10 @@ pub(crate) fn risk_label_lowercase(risk: vesper_domain::RiskLevel) -> &'static s
     }
 }
 
-/// Renders one ReAct **Action** decision as a single markdown line.
+/// Renders one ReAct **Action** decision as a single line.
 ///
+/// VRO-11.6: uses Claude Code's `⏺ <tool>` shape (the old `▶ ACTION`
+/// markdown-bold label was noisy). Argument summary follows the name.
 /// Used both by [`format_react_trajectory`] (bulk) and by
 /// [`TrajectoryCapturingReactAgent`] (live stream).
 #[must_use]
@@ -4542,29 +4556,29 @@ pub(crate) fn format_react_action_entry(name: &str, arguments: &serde_json::Valu
     } else {
         String::new()
     };
-    format!("**▶ ACTION** `{name}`{args_str}")
+    format!("⏺ {name}{args_str}")
 }
 
-/// Renders one ReAct **Observation** as a single markdown line.
+/// Renders one ReAct **Observation** as an indented `⎿` result line —
+/// Claude Code's exact hierarchy (action flush-left, result nested).
 ///
-/// `success == true` → *↳ OBSERVATION*; `success == false` → *✗ ERROR*.
+/// `success == true` → plain result; `success == false` → `✗` prefix.
 /// Used both by [`format_react_trajectory`] (bulk) and by
 /// [`TrajectoryCapturingInvoker`] (live stream).
 #[must_use]
 pub(crate) fn format_react_observation_entry(text: &str, success: bool) -> String {
-    let label = if success {
-        "↳ OBSERVATION"
+    if success {
+        format!("  ⎿ {text}")
     } else {
-        "✗ ERROR"
-    };
-    format!("*{label}* {text}")
+        format!("  ⎿ ✗ {text}")
+    }
 }
 
-/// VRO-11.3 directive 2 — Live Tool Telemetry. Renders the pre-execution
-/// status line broadcast to the Reasoning panel the **instant** the agent
-/// requests a tool, BEFORE the tool runs. Mirrors Codex / Claude Code's
-/// "Executing: <tool>..." affordance so the user sees the agent is acting
-/// rather than staring at a frozen panel during a slow tool call.
+/// VRO-11.3 directive 2 / VRO-11.6 restyle — Live Tool Telemetry. Renders
+/// the pre-execution status line broadcast inline the **instant** the agent
+/// requests a tool, BEFORE the tool runs. Claude Code's `⏺ <tool>` affordance
+/// so the user sees the agent is acting rather than staring at a frozen
+/// panel during a slow tool call.
 ///
 /// Pairs with [`format_react_observation_entry`]: the executing line streams
 /// first, the observation line streams second when the tool returns. Both
@@ -4572,10 +4586,10 @@ pub(crate) fn format_react_observation_entry(text: &str, success: bool) -> Strin
 /// preserved in the panel.
 #[must_use]
 pub(crate) fn format_react_executing_entry(name: &str) -> String {
-    format!("⏳ *Executing* `{name}`...")
+    format!("⏺ {name}")
 }
 
-/// Renders one ReAct **Finish** decision as a single markdown line.
+/// Renders one ReAct **Finish** decision as a `⎿ ✓` result line.
 ///
 /// Used by [`TrajectoryCapturingReactAgent`] when the model emits
 /// `ReactDecision::Finish`. Non-string outputs are stringified.
@@ -4585,7 +4599,7 @@ pub(crate) fn format_react_finish_entry(output: &serde_json::Value) -> String {
         serde_json::Value::String(s) => s.clone(),
         other => other.to_string(),
     };
-    format!("**✓ FINISH** {text}")
+    format!("  ⎿ ✓ {text}")
 }
 
 // ---------------------------------------------------------------------------
@@ -5457,10 +5471,13 @@ fn drain_trajectory(session: &mut TuiSession) {
     // assistant's text), NOT in the Reasoning sidebar. This matches the
     // Codex / Claude Code UX where tool execution reads as a
     // single natural conversation flow.
+    // VRO-11.6: entries are pushed AS-IS (no `> ` quote prefix) — the
+    // formatters already emit the Claude Code `⏺` / `⎿` shapes and the
+    // old prefix made the lines read as ugly block quotes.
     for _ in 0..256 {
         match rx.try_recv() {
             Ok(entry) => {
-                session.live_trajectory.push(format!("> {entry}"));
+                session.live_trajectory.push(entry);
                 // Bound the buffer so a runaway loop cannot exhaust memory.
                 if session.live_trajectory.len() > 200 {
                     session.live_trajectory.remove(0);
@@ -5478,9 +5495,15 @@ fn drain_trajectory(session: &mut TuiSession) {
     }
 }
 
-/// VRO-11.4 — drains VesperLens review-URL announcements into the inline
-/// `live_trajectory` so the user sees `[VesperLens] Artifact ready for
-/// review. Open: <URL>` directly in the Conversation panel. Non-blocking.
+/// VRO-11.4 / VRO-11.6 — drains VesperLens review-URL announcements into
+/// the inline `live_trajectory` so the user sees the review invitation
+/// directly in the Conversation panel. Each announcement arrives as TWO
+/// pre-formatted lines: the `[VesperLens] Artifact ready for review.`
+/// message and the **bare URL on its own line** (own-line + plain styling
+/// is what makes terminals auto-linkify it — a URL wrapped mid-string
+/// inside a longer sentence is NOT clickable). The URL is also stashed on
+/// `session.last_lens_url` so **Ctrl+O** can open it in the browser no
+/// matter what the terminal supports. Non-blocking.
 fn drain_lens_urls(session: &mut TuiSession) {
     let Some(rx) = session.lens_url_rx.as_mut() else {
         return;
@@ -5488,6 +5511,11 @@ fn drain_lens_urls(session: &mut TuiSession) {
     for _ in 0..16 {
         match rx.try_recv() {
             Ok(line) => {
+                if looks_like_url(line.as_str()) {
+                    session.last_lens_url = Some(line.clone());
+                    session.state.status =
+                        Some("VesperLens review pending — Ctrl+O opens it in your browser.".into());
+                }
                 session.live_trajectory.push(line);
                 if session.live_trajectory.len() > 200 {
                     session.live_trajectory.remove(0);
@@ -5500,6 +5528,66 @@ fn drain_lens_urls(session: &mut TuiSession) {
                 session.lens_url_rx = None;
                 return;
             }
+        }
+    }
+}
+
+/// `true` when the line is a bare http(s) URL on its own (used to track
+/// the clickable VesperLens review URL). Deliberately strict: no leading
+/// text, so the `[VesperLens] …` message line does not match.
+fn looks_like_url(line: &str) -> bool {
+    (line.starts_with("http://") || line.starts_with("https://")) && !line.contains(' ')
+}
+
+/// Builds the platform browser-opener command for a review URL.
+///
+/// Pure and unit-testable: returns the `Command` without spawning it, so
+/// tests can assert the program + argument without touching a browser.
+/// Windows: `cmd /C start "" <url>` (the empty title argument keeps `start`
+/// from treating a quoted URL as the window title); macOS: `open`; other
+/// Unix-likes: `xdg-open`.
+fn lens_opener_command(url: &str) -> std::process::Command {
+    let mut command;
+    #[cfg(windows)]
+    {
+        command = std::process::Command::new("cmd");
+        command.args(["/C", "start", "", url]);
+    }
+    #[cfg(not(windows))]
+    {
+        if cfg!(target_os = "macos") {
+            command = std::process::Command::new("open");
+        } else {
+            command = std::process::Command::new("xdg-open");
+        }
+        command.arg(url);
+    }
+    command
+}
+
+/// VRO-11.6 — Ctrl+O: opens the most recent VesperLens review URL in the
+/// system browser. This is the guaranteed open path that works regardless
+/// of whether the user's terminal linkifies URLs in styled TUI text.
+/// Fails loudly into the status line (never crashes the loop).
+fn open_last_lens_review(session: &mut TuiSession) {
+    let Some(url) = session.last_lens_url.clone() else {
+        session.state.status =
+            Some("No VesperLens review URL yet — request a review first.".into());
+        return;
+    };
+    match lens_opener_command(&url).spawn() {
+        Ok(mut child) => {
+            // Reap asynchronously so a hung browser process never blocks
+            // the UI loop; detach by ignoring the handle entirely.
+            std::thread::spawn(move || {
+                let _ = child.wait();
+            });
+            session.state.status = Some(format!("Opened review in browser: {url}"));
+        }
+        Err(error) => {
+            session.state.status = Some(format!(
+                "Could not open browser ({error}) — copy the URL: {url}"
+            ));
         }
     }
 }
@@ -5576,16 +5664,17 @@ fn apply_agent_progress(progress: AgentProgressEvent, session: &mut TuiSession) 
             append_bounded(&mut session.live_response, text.as_str(), 32 * 1024);
         }
         AgentProgressEvent::ToolStarted { name } => {
-            // VRO-11.4/11.5: tool telemetry renders INLINE in the
-            // Conversation panel as dim quiet lines, using Claude Code's
-            // `⏺` action glyph so live tool usage reads at a glance.
-            session.live_trajectory.push(format!("> ⏺ {name}"));
+            // VRO-11.4/11.6: tool telemetry renders INLINE in the
+            // Conversation panel using Claude Code's `⏺ <name>` action
+            // shape (no quote prefix, no decorations).
+            session.live_trajectory.push(format!("⏺ {name}"));
         }
         AgentProgressEvent::ToolFinished { name, success } => {
-            // VRO-11.5: completion mirrors Claude Code's `⎿` result glyph —
-            // ✓ for success, ✗ for failure — under the action line.
+            // VRO-11.6: completion mirrors Claude Code's indented `⎿`
+            // result glyph — ✓ for success, ✗ for failure — nested under
+            // the action line.
             let mark = if success { "✓" } else { "✗" };
-            session.live_trajectory.push(format!("> ⎿ {mark} {name}"));
+            session.live_trajectory.push(format!("  ⎿ {mark} {name}"));
         }
         AgentProgressEvent::PlanUpdated { markdown } => {
             apply_task_plan(&mut session.state, &markdown);
@@ -7626,8 +7715,13 @@ impl TuiToolService {
                 Some(tx) => {
                     let tx = tx.clone();
                     Box::new(move |url: &str| {
-                        let line = vesper_agent::vro::diagnostic_for_review(url);
-                        let _ = tx.send(format!("> {line}"));
+                        // VRO-11.6: TWO lines — the human-readable message,
+                        // then the BARE URL on its own line. A URL embedded
+                        // mid-sentence gets wrapped by the terminal width and
+                        // stops being clickable; a bare own-line URL is what
+                        // terminals auto-linkify, and Ctrl+O covers the rest.
+                        let _ = tx.send(vesper_agent::vro::diagnostic_for_review(url));
+                        let _ = tx.send(url.to_string());
                     })
                 }
                 None => Box::new(|_url: &str| {}),
@@ -11624,6 +11718,7 @@ mod tests {
             activity: Vec::new(),
             live_trajectory: Vec::new(),
             lens_url_rx: None,
+            last_lens_url: None,
             reasoning: String::new(),
             live_response: String::new(),
             turn_started: None,
@@ -11676,6 +11771,7 @@ mod tests {
             activity: Vec::new(),
             live_trajectory: Vec::new(),
             lens_url_rx: None,
+            last_lens_url: None,
             reasoning: String::new(),
             live_response: String::new(),
             turn_started: None,
@@ -11726,6 +11822,7 @@ mod tests {
             activity: Vec::new(),
             live_trajectory: Vec::new(),
             lens_url_rx: None,
+            last_lens_url: None,
             reasoning: String::new(),
             live_response: String::new(),
             turn_started: None,
@@ -12487,8 +12584,8 @@ mod tests {
 
     #[test]
     fn format_react_trajectory_renders_action_then_observation() {
-        // Directive 3: the trajectory's Action/Observation cycle must render
-        // as readable markdown the Reasoning panel can display.
+        // Directive 3 (VRO-11.6 restyle): the trajectory's Action/Observation
+        // cycle renders as Claude Code's ⏺ / indented ⎿ shapes.
         use vesper_agent::vro::react::TrajectoryEntry;
         let trajectory = vec![
             TrajectoryEntry::Action {
@@ -12502,20 +12599,20 @@ mod tests {
         ];
         let rendered = format_react_trajectory(&trajectory);
         assert!(
-            rendered.contains("**▶ ACTION** `read_file`"),
-            "action must render with the tool name in inline code: {rendered}"
+            rendered.contains("⏺ read_file"),
+            "action must render with the ⏺ action glyph: {rendered}"
         );
         assert!(
             rendered.contains("\"path\":\"src/main.rs\""),
             "action arguments must render inline (serde_json omits key/value space): {rendered}"
         );
         assert!(
-            rendered.contains("*↳ OBSERVATION* fn main()"),
-            "successful observation must render with the OBSERVATION label: {rendered}"
+            rendered.contains("  ⎿ fn main()"),
+            "successful observation must render as an indented ⎿ result: {rendered}"
         );
         // Order: the action comes before its observation.
-        let action_pos = rendered.find("**▶ ACTION**").unwrap();
-        let obs_pos = rendered.find("*↳ OBSERVATION*").unwrap();
+        let action_pos = rendered.find("⏺").unwrap();
+        let obs_pos = rendered.find("⎿").unwrap();
         assert!(
             action_pos < obs_pos,
             "action must precede its observation in the rendered string"
@@ -12525,7 +12622,7 @@ mod tests {
     #[test]
     fn format_react_trajectory_renders_failure_observation_as_error() {
         // Directive 3: failed observations (tool errors, R/B/W rejections)
-        // must render with the ERROR label so the user can see the model
+        // must render with the ✗ marker so the user can see the model
         // self-corrected.
         use vesper_agent::vro::react::TrajectoryEntry;
         let trajectory = vec![TrajectoryEntry::Observation {
@@ -12534,8 +12631,8 @@ mod tests {
         }];
         let rendered = format_react_trajectory(&trajectory);
         assert!(
-            rendered.contains("*✗ ERROR* no such file"),
-            "failed observation must render with the ERROR label: {rendered}"
+            rendered.contains("  ⎿ ✗ no such file"),
+            "failed observation must render as an indented ⎿ ✗ result: {rendered}"
         );
     }
 
@@ -12549,8 +12646,7 @@ mod tests {
         }];
         let rendered = format_react_trajectory(&trajectory);
         assert!(
-            rendered.contains("**▶ ACTION** `list_directory`\n")
-                || rendered.ends_with("**▶ ACTION** `list_directory`"),
+            rendered.contains("⏺ list_directory\n") || rendered.ends_with("⏺ list_directory"),
             "empty args must be omitted: {rendered}"
         );
         assert!(
@@ -12592,10 +12688,10 @@ mod tests {
         ];
         let rendered = format_react_trajectory(&trajectory);
         // Both actions and both observations appear in source order.
-        let pos_a1 = rendered.find("`read_file`").unwrap();
-        let pos_o1 = rendered.find("*↳ OBSERVATION*").unwrap();
-        let pos_a2 = rendered.find("`grep`").unwrap();
-        let pos_o2 = rendered.rfind("*✗ ERROR*").unwrap();
+        let pos_a1 = rendered.find("⏺ read_file").unwrap();
+        let pos_o1 = rendered.find("  ⎿ contents a").unwrap();
+        let pos_a2 = rendered.find("⏺ grep").unwrap();
+        let pos_o2 = rendered.rfind("  ⎿ ✗").unwrap();
         assert!(pos_a1 < pos_o1);
         assert!(pos_o1 < pos_a2);
         assert!(pos_a2 < pos_o2);
@@ -12682,8 +12778,8 @@ mod tests {
         // The wrapper must also have emitted one formatted Action line.
         let streamed = rx.try_recv().expect("wrapper must emit one entry");
         assert!(
-            streamed.contains("**▶ ACTION** `read_file`"),
-            "action must be formatted: {streamed}"
+            streamed.contains("⏺ read_file"),
+            "action must be formatted with the ⏺ glyph: {streamed}"
         );
         assert!(
             streamed.contains("\"path\":\"a.rs\""),
@@ -12695,7 +12791,7 @@ mod tests {
 
     #[tokio::test]
     async fn trajectory_capturing_react_agent_streams_finish_decision_with_finish_label() {
-        // A Finish decision must use the **✓ FINISH** label so the panel
+        // A Finish decision must use the ⎿ ✓ result shape so the panel
         // visibly marks the loop's termination.
         use vesper_agent::vro::react::ReactAgent;
         let (tx, mut rx) = mpsc::unbounded_channel::<String>();
@@ -12708,15 +12804,15 @@ mod tests {
         let _ = wrapper.next_action("hi", &[]).await;
         let streamed = rx.try_recv().expect("wrapper must emit the finish entry");
         assert!(
-            streamed.contains("**✓ FINISH** the answer is 42"),
-            "finish must be labelled FINISH with the answer: {streamed}"
+            streamed.contains("⎿ ✓ the answer is 42"),
+            "finish must render as an indented ⎿ ✓ result: {streamed}"
         );
     }
 
     #[tokio::test]
     async fn trajectory_capturing_invoker_streams_success_observation() {
         // Directive 3: the ToolInvoker wrapper must mirror each successful
-        // invocation as a *↳ OBSERVATION* entry.
+        // invocation as an indented ⎿ result.
         use vesper_agent::vro::react::ToolInvoker;
         let (tx, mut rx) = mpsc::unbounded_channel::<String>();
         let inner = ScriptedInvoker {
@@ -12745,21 +12841,21 @@ mod tests {
             .try_recv()
             .expect("wrapper must emit executing entry first");
         assert!(
-            executing.contains("Executing") && executing.contains("read_file"),
+            executing.contains("⏺") && executing.contains("read_file"),
             "executing line must precede the observation: {executing}"
         );
         let streamed = rx
             .try_recv()
             .expect("wrapper must emit observation entry second");
         assert!(
-            streamed.contains("*↳ OBSERVATION* file contents"),
-            "success observation must be labelled OBSERVATION: {streamed}"
+            streamed.contains("  ⎿ file contents"),
+            "success observation must render as an indented ⎿ result: {streamed}"
         );
     }
 
     #[tokio::test]
     async fn trajectory_capturing_invoker_streams_failure_observation_as_error() {
-        // Directive 3: a failed invocation must stream as *✗ ERROR* so the
+        // Directive 3: a failed invocation must stream as ⎿ ✗ so the
         // user sees the model self-corrected after a tool failure.
         use vesper_agent::vro::react::ToolInvoker;
         let (tx, mut rx) = mpsc::unbounded_channel::<String>();
@@ -12782,13 +12878,13 @@ mod tests {
             .try_recv()
             .expect("wrapper must emit executing entry first");
         assert!(
-            executing.contains("Executing") && executing.contains("read_file"),
+            executing.contains("⏺") && executing.contains("read_file"),
             "executing line must precede the error: {executing}"
         );
         let streamed = rx.try_recv().expect("wrapper must emit error entry second");
         assert!(
-            streamed.contains("*✗ ERROR*"),
-            "failure must be labelled ERROR: {streamed}"
+            streamed.contains("⎿ ✗"),
+            "failure must carry the ✗ marker: {streamed}"
         );
         assert!(
             streamed.contains("no such file"),
@@ -12798,15 +12894,15 @@ mod tests {
 
     #[tokio::test]
     async fn drain_trajectory_appends_streamed_entries_into_live_trajectory() {
-        // VRO-11.4: the event loop's `drain_trajectory` must consume whatever
-        // the capturing wrappers sent and append it to `session.live_trajectory`
-        // so it renders INLINE in the Conversation panel (not the Reasoning
-        // sidebar). Each entry is prefixed with `> ` for visual distinction
-        // from user/assistant turns.
+        // VRO-11.4/11.6: the event loop's `drain_trajectory` must consume
+        // whatever the capturing wrappers sent and append it AS-IS to
+        // `session.live_trajectory` so it renders INLINE in the Conversation
+        // panel — no `> ` quote prefix (VRO-11.6); the ⏺/⎿ glyphs carry the
+        // visual distinction.
         let mut session = fresh_tui_session_for_trajectory_tests();
         let (tx, rx) = mpsc::unbounded_channel::<String>();
-        let _ = tx.send("**▶ ACTION** `read_file` {\"path\":\"a\"}".to_string());
-        let _ = tx.send("*↳ OBSERVATION* contents".to_string());
+        let _ = tx.send("⏺ read_file {\"path\":\"a\"}".to_string());
+        let _ = tx.send("  ⎿ contents".to_string());
         session.trajectory_rx = Some(rx);
 
         // Sanity: empty before drain.
@@ -12814,20 +12910,20 @@ mod tests {
 
         drain_trajectory(&mut session);
 
-        // Both entries were appended in order, prefixed with `> `.
+        // Both entries were appended in order, unmodified.
         assert_eq!(session.live_trajectory.len(), 2);
         assert!(
-            session.live_trajectory[0].contains("**▶ ACTION** `read_file`"),
+            session.live_trajectory[0].contains("⏺ read_file"),
             "action must be first: {:?}",
             session.live_trajectory[0]
         );
         assert!(
-            session.live_trajectory[0].starts_with("> "),
-            "entry must be prefixed with '> ' for inline rendering: {:?}",
+            !session.live_trajectory[0].starts_with("> "),
+            "entries must NOT be quote-prefixed (VRO-11.6): {:?}",
             session.live_trajectory[0]
         );
         assert!(
-            session.live_trajectory[1].contains("*↳ OBSERVATION* contents"),
+            session.live_trajectory[1].contains("⎿ contents"),
             "observation must be second: {:?}",
             session.live_trajectory[1]
         );
@@ -12885,6 +12981,7 @@ mod tests {
             activity: Vec::new(),
             live_trajectory: Vec::new(),
             lens_url_rx: None,
+            last_lens_url: None,
             reasoning: String::new(),
             live_response: String::new(),
             turn_started: None,
@@ -13114,13 +13211,12 @@ mod tests {
 
     #[test]
     fn vro113_format_executing_entry_renders_tool_name() {
+        // VRO-11.6: the executing line is Claude Code's `⏺ <tool>` shape.
         let entry = format_react_executing_entry("write_file");
-        assert!(entry.contains("Executing"), "got: {entry}");
+        assert!(entry.contains("⏺"), "got: {entry}");
         assert!(entry.contains("write_file"), "got: {entry}");
-        // The line must be visually distinct from ACTION/OBSERVATION so
-        // the user can tell the agent is *about to* act vs already acted.
-        assert!(!entry.contains("ACTION"), "got: {entry}");
-        assert!(!entry.contains("OBSERVATION"), "got: {entry}");
+        assert!(entry.starts_with("⏺"), "glyph leads: {entry}");
+        assert!(!entry.contains("Executing"), "old label retired: {entry}");
     }
 
     #[tokio::test]
@@ -13155,13 +13251,13 @@ mod tests {
             .await
             .unwrap();
 
-        // First message MUST be the executing line; second is the
-        // observation. Order proves the telemetry streams BEFORE the tool
-        // runs (live), not just after.
+        // First message MUST be the executing line (⏺ action shape); second
+        // is the indented ⎿ result. Order proves the telemetry streams
+        // BEFORE the tool runs (live), not just after.
         let first = rx.recv().await.expect("executing line streamed");
         let second = rx.recv().await.expect("observation line streamed");
-        assert!(first.contains("Executing"), "first was: {first}");
-        assert!(second.contains("OBSERVATION"), "second was: {second}");
+        assert!(first.starts_with("⏺"), "first was: {first}");
+        assert!(second.starts_with("  ⎿"), "second was: {second}");
         assert!(rx.try_recv().is_err(), "no further messages expected");
     }
 
@@ -13381,6 +13477,105 @@ mod tests {
         assert_eq!(session.live_trajectory.len(), 1);
         assert!(session.live_trajectory[0].contains("VesperLens"));
         assert!(session.live_trajectory[0].contains("127.0.0.1:1234"));
+    }
+
+    #[test]
+    fn vro116_looks_like_url_requires_bare_own_line_url() {
+        // Only a bare http(s) URL with no spaces counts — the
+        // `[VesperLens] …` message line must NOT match.
+        assert!(looks_like_url("http://127.0.0.1:1234/review/abc"));
+        assert!(looks_like_url("https://example.test/x"));
+        assert!(!looks_like_url(
+            "[VesperLens] Artifact ready for review. Open: http://127.0.0.1:1234/"
+        ));
+        assert!(!looks_like_url("see http://127.0.0.1:1234/ here"));
+        assert!(!looks_like_url(""));
+    }
+
+    #[test]
+    fn vro116_lens_opener_command_targets_the_platform_opener() {
+        let cmd = lens_opener_command("http://127.0.0.1:1234/review/x");
+        let program = cmd.get_program().to_string_lossy().to_string();
+        #[cfg(windows)]
+        {
+            assert_eq!(program, "cmd");
+            let args: Vec<String> = cmd
+                .get_args()
+                .map(|a| a.to_string_lossy().to_string())
+                .collect();
+            assert_eq!(
+                args,
+                vec!["/C", "start", "", "http://127.0.0.1:1234/review/x"]
+            );
+        }
+        #[cfg(target_os = "macos")]
+        assert_eq!(program, "open");
+        #[cfg(all(not(windows), not(target_os = "macos")))]
+        assert_eq!(program, "xdg-open");
+        #[cfg(not(windows))]
+        {
+            let arg = cmd
+                .get_args()
+                .next()
+                .map(|a| a.to_string_lossy().to_string());
+            assert_eq!(
+                arg.as_deref(),
+                Some("http://127.0.0.1:1234/review/x"),
+                "the URL must be the opener's single argument"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn vro116_drain_lens_urls_stashes_bare_url_and_hints_ctrl_o() {
+        // VRO-11.6: the bare-URL line is stashed on `last_lens_url` (the
+        // Ctrl+O target) and the status line tells the driver Ctrl+O opens
+        // it. The message line alone must NOT clobber the stash.
+        let mut session = fresh_tui_session_for_trajectory_tests();
+        let (tx, rx) = mpsc::unbounded_channel::<String>();
+        let _ = tx.send("[VesperLens] Artifact ready for review.".to_string());
+        let _ = tx.send("http://127.0.0.1:41277/review/dash".to_string());
+        session.lens_url_rx = Some(rx);
+
+        drain_lens_urls(&mut session);
+        assert_eq!(
+            session.last_lens_url.as_deref(),
+            Some("http://127.0.0.1:41277/review/dash"),
+            "the bare URL must be stashed for Ctrl+O"
+        );
+        assert_eq!(
+            session.live_trajectory.len(),
+            2,
+            "message + URL lines both land inline"
+        );
+        assert!(
+            session
+                .state
+                .status
+                .as_deref()
+                .unwrap_or_default()
+                .contains("Ctrl+O"),
+            "status must advertise the Ctrl+O opener: {:?}",
+            session.state.status
+        );
+    }
+
+    #[tokio::test]
+    async fn vro116_open_last_lens_review_without_url_sets_guidance_status() {
+        // No review URL yet → Ctrl+O must guide the user, never panic.
+        let mut session = fresh_tui_session_for_trajectory_tests();
+        assert!(session.last_lens_url.is_none());
+        open_last_lens_review(&mut session);
+        assert!(
+            session
+                .state
+                .status
+                .as_deref()
+                .unwrap_or_default()
+                .contains("No VesperLens review URL yet"),
+            "guidance status expected: {:?}",
+            session.state.status
+        );
     }
 
     #[test]
