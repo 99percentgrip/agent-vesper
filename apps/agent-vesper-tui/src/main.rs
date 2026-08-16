@@ -975,8 +975,6 @@ async fn drive_loop(
             working_tree_lines: session.working_tree_lines.clone(),
             preferences: session.state.preferences.clone(),
             conversation_manual_scroll: session.state.conversation_manual_scroll,
-            reasoning_manual_scroll: session.state.reasoning_manual_scroll,
-            reasoning_panel_focused: session.state.reasoning_panel_focused,
             pending_permission: session
                 .pending_approval
                 .as_ref()
@@ -1035,55 +1033,11 @@ async fn drive_loop(
                 mouse.kind,
                 MouseEventKind::ScrollDown | MouseEventKind::ScrollUp
             ) {
-                // Mouse wheel scrolling. Hit-test which panel the cursor is
-                // over by reconstructing the layout Y boundaries. The
-                // conversation column lives between the 1-row header and the
-                // composer footer (≈6 rows: hint + activity + composer(3) +
-                // footer + menu(0 when closed)). Within the conversation
-                // column, the Reasoning panel sits in the LAST 10 rows
-                // (Constraint::Length(10) when shown).
-                //
-                // When reasoning is hidden, all wheel events scroll the
-                // conversation. When shown, events in the reasoning band
-                // scroll reasoning; events elsewhere scroll conversation.
-                let term_height = terminal.size().map(|s| s.height).unwrap_or(24);
-                let menu_height = if session.command_matches.is_empty() {
-                    0
-                } else {
-                    session.command_matches.len().min(8) as u16
-                };
-                let reasoning_shown = session.state.panels.reasoning;
-                let reasoning_bottom_y = term_height.saturating_sub(6 + menu_height);
-                let reasoning_top_y = reasoning_bottom_y.saturating_sub(10);
-                let over_reasoning = reasoning_shown
-                    && mouse.row >= reasoning_top_y
-                    && mouse.row < reasoning_bottom_y;
+                // Mouse wheel scrolling. VRO-11.5: the bottom Reasoning
+                // panel is gone — the wheel always scrolls the single
+                // Conversation column, wherever the cursor sits.
                 const WHEEL_STEP: u16 = 3;
-                if over_reasoning {
-                    let current_up = session.state.reasoning_manual_scroll.unwrap_or(0);
-                    match mouse.kind {
-                        MouseEventKind::ScrollUp => {
-                            let next = current_up.saturating_add(WHEEL_STEP);
-                            session.state.reasoning_manual_scroll = Some(next);
-                            session.state.status = Some(format!(
-                                "Reasoning: scrolled up {next} lines. End = follow."
-                            ));
-                        }
-                        MouseEventKind::ScrollDown => {
-                            let next_up = current_up.saturating_sub(WHEEL_STEP);
-                            session.state.reasoning_manual_scroll =
-                                (next_up > 0).then_some(next_up);
-                            session.state.status = if next_up > 0 {
-                                Some(format!(
-                                    "Reasoning: {next_up} lines from bottom. End = follow."
-                                ))
-                            } else {
-                                Some("Reasoning: following latest output.".into())
-                            };
-                        }
-                        _ => {}
-                    }
-                } else {
+                {
                     let current_up = session.state.conversation_manual_scroll.unwrap_or(0);
                     match mouse.kind {
                         MouseEventKind::ScrollUp => {
@@ -1244,43 +1198,9 @@ async fn drive_loop(
                 if session.command_matches.is_empty() =>
             {
                 let page = page_size_for_scroll(terminal.size().map(|s| s.height).unwrap_or(20));
-                // Route to whichever scrollable panel is focused. Default =
-                // Conversation; Tab (handled below) toggles to Reasoning.
-                if session.state.reasoning_panel_focused {
-                    let current_up = session.state.reasoning_manual_scroll.unwrap_or(0);
-                    match code {
-                        KeyCode::PageUp => {
-                            let next = current_up.saturating_add(page);
-                            session.state.reasoning_manual_scroll = Some(next);
-                            session.state.status = Some(format!(
-                                "Reasoning: scrolled up {next} lines from bottom. End = follow."
-                            ));
-                        }
-                        KeyCode::PageDown => {
-                            let next_up = current_up.saturating_sub(page);
-                            session.state.reasoning_manual_scroll =
-                                (next_up > 0).then_some(next_up);
-                            session.state.status = if next_up > 0 {
-                                Some(format!(
-                                    "Reasoning: {next_up} lines from bottom. End = follow."
-                                ))
-                            } else {
-                                Some("Reasoning: following latest output.".into())
-                            };
-                        }
-                        KeyCode::Home => {
-                            session.state.reasoning_manual_scroll = Some(u16::MAX);
-                            session.state.status =
-                                Some("Reasoning: jumped to top. End = follow.".into());
-                        }
-                        KeyCode::End => {
-                            session.state.reasoning_manual_scroll = None;
-                            session.state.status =
-                                Some("Reasoning: following latest output.".into());
-                        }
-                        _ => {}
-                    }
-                } else {
+                // VRO-11.5: the Reasoning panel is gone — every scroll key
+                // targets the single Conversation column.
+                {
                     let current_up = session.state.conversation_manual_scroll.unwrap_or(0);
                     match code {
                         KeyCode::PageUp => {
@@ -1316,21 +1236,9 @@ async fn drive_loop(
                 }
                 continue;
             }
-            // Tab with an EMPTY composer toggles between Conversation and
-            // Reasoning panel focus. With non-empty composer, Tab inserts a
-            // tab character into the prompt (composer default behavior).
-            KeyCode::Tab if session.command_matches.is_empty() && session.input.is_empty() => {
-                session.state.reasoning_panel_focused = !session.state.reasoning_panel_focused;
-                session.state.status = if session.state.reasoning_panel_focused {
-                    Some("Focused Reasoning panel. PgUp/PgDn/Home/End scroll it. Tab to switch back.".into())
-                } else {
-                    Some(
-                        "Focused Conversation panel. PgUp/PgDn/Home/End scroll it. Tab to switch."
-                            .into(),
-                    )
-                };
-                continue;
-            }
+            // Tab inserts a tab character into a non-empty composer. With an
+            // empty composer it is a no-op (the panel-focus toggle it used
+            // to perform died with the VRO-11.5 Reasoning-panel removal).
             KeyCode::Char('p') if ctrl => {
                 session.input = "/".into();
                 session.state.preferences.composer_cursor = 1;
@@ -3839,11 +3747,53 @@ fn build_agent_loop(
             .system_instructions
             .push(cognitive_capability_instruction());
     }
+    // VRO-11.5: force tool execution for artifact-generation requests. The
+    // 180-second zero-tool turn that motivated this release showed the model
+    // announcing a plan and yielding its turn instead of calling
+    // `write_file` / `request_human_review` — the loop then completed with
+    // `Tool results 0` and nothing shipped. This instruction is the
+    // behavioral patch; the enforcement applies to every path that shares
+    // this loop (direct turns, GVR, parallel candidates, tree search, PCA).
+    config
+        .system_instructions
+        .push(tool_enforcement_instruction());
     Ok(AgentLoop::new(
         registry,
         ToolRegistry::parity_default().with_service(tool_service),
         config,
     ))
+}
+
+/// VRO-11.5 — tool-execution enforcement system instruction.
+///
+/// Teaches the model that producing code/UI/artifacts REQUIRES executing
+/// the tools in the same turn: `write_file` for every file it claims to
+/// create, and `request_human_review` when that tool is registered (the
+/// TUI wires it whenever a VesperLens review port is configured).
+/// Announcing a plan and yielding the turn is an explicit failure mode the
+/// instruction forbids. In Plan mode the equivalent action is the
+/// `update_plan` tool, so the carve-out keeps Plan-mode discipline intact.
+///
+/// Kept as one bounded static instruction (cache-stable) so every turn —
+/// direct or VRO-orchestrated — sees the same contract.
+fn tool_enforcement_instruction() -> SystemInstruction {
+    let body = "### Tool Execution Enforcement\n\
+When asked to generate code, UI, or artifacts, you MUST execute the write_file \
+tool and the request_human_review tool within the same turn. Do NOT output \
+your plan and yield to the user. Execute the tools immediately.\n\
+- Producing a file by printing its content in the chat is NOT completing the \
+task: write it with write_file (content, not a placeholder).\n\
+- When the request_human_review tool is registered, call it after writing the \
+artifact so the human can review it; when it is not registered, skip it.\n\
+- The only exception is Plan mode, where you present the plan through the \
+update_plan tool instead of mutating files.";
+    SystemInstruction {
+        content: vec![ContentPart::Text(
+            ContentText::new(body).expect("bounded system instruction"),
+        )],
+        cache_stable: true,
+        extensions: vesper_domain::ExtensionMap::default(),
+    }
 }
 
 /// A static system-prompt instruction describing the harness's cognitive
@@ -5626,19 +5576,16 @@ fn apply_agent_progress(progress: AgentProgressEvent, session: &mut TuiSession) 
             append_bounded(&mut session.live_response, text.as_str(), 32 * 1024);
         }
         AgentProgressEvent::ToolStarted { name } => {
-            // VRO-11.4: tool telemetry renders INLINE in the Conversation
-            // panel, not in the Activity sidebar. Format matches the
-            // directive: `> 🛠️ Executing: <name>...` for visual distinction
-            // from assistant text.
-            session
-                .live_trajectory
-                .push(format!("> 🛠️ Executing: {name}..."));
+            // VRO-11.4/11.5: tool telemetry renders INLINE in the
+            // Conversation panel as dim quiet lines, using Claude Code's
+            // `⏺` action glyph so live tool usage reads at a glance.
+            session.live_trajectory.push(format!("> ⏺ {name}"));
         }
         AgentProgressEvent::ToolFinished { name, success } => {
-            // VRO-11.4: tool completion renders INLINE too. ✓ for success,
-            // ✗ for failure — same visual language as the ReAct path.
+            // VRO-11.5: completion mirrors Claude Code's `⎿` result glyph —
+            // ✓ for success, ✗ for failure — under the action line.
             let mark = if success { "✓" } else { "✗" };
-            session.live_trajectory.push(format!("> {mark} {name}"));
+            session.live_trajectory.push(format!("> ⎿ {mark} {name}"));
         }
         AgentProgressEvent::PlanUpdated { markdown } => {
             apply_task_plan(&mut session.state, &markdown);
@@ -11263,6 +11210,48 @@ mod tests {
         );
     }
 
+    #[test]
+    fn build_agent_loop_appends_tool_enforcement_instruction_always() {
+        // VRO-11.5: the tool-execution enforcement instruction is
+        // UNCONDITIONAL (unlike the cognition instruction) — the zero-tool
+        // 180s turn happened on a plain loop with no artifact mandate, so
+        // every path that shares the loop must see it.
+        let provider = ProviderId::new("zai").unwrap();
+        let registry = Arc::new(vesper_runtime::ProviderRegistry::new());
+        let tools = Arc::new(TuiToolService::new(
+            Arc::new(MemoryStores::open_default()),
+            checkpoint_root_path(),
+            mcp_root_path(),
+            None,
+        ));
+        for cognition in [false, true] {
+            let agent = build_agent_loop(
+                Arc::clone(&registry),
+                &provider,
+                Arc::clone(&tools) as Arc<dyn vesper_agent::ToolService>,
+                cognition,
+            )
+            .expect("agent loop build");
+            let text = extract_system_prompt_text(&agent);
+            assert!(
+                text.contains("Tool Execution Enforcement"),
+                "enforcement header must be present (cognition={cognition})"
+            );
+            assert!(
+                text.contains("MUST execute the write_file tool"),
+                "the dictated write_file mandate must be verbatim; got: {text}"
+            );
+            assert!(
+                text.contains("request_human_review"),
+                "the review-tool mandate must be present"
+            );
+            assert!(
+                text.contains("Do NOT output your plan and yield to the user"),
+                "plan-only yielding must be explicitly forbidden"
+            );
+        }
+    }
+
     /// Helper: extracts the concatenated system-prompt text from an agent loop
     /// so tests can assert on the cognitive-memory instruction.
     fn extract_system_prompt_text(agent: &AgentLoop) -> String {
@@ -13396,13 +13385,14 @@ mod tests {
 
     #[test]
     fn vro114_transcript_lines_include_live_trajectory_when_agent_running() {
-        // VRO-11.4 Phase 2A: tool telemetry renders INLINE in the Conversation
-        // panel. Verify the ViewModel's transcript includes live_trajectory
-        // entries when agent_running is true.
+        // VRO-11.4 Phase 2A / VRO-11.5: tool telemetry renders INLINE in the
+        // Conversation panel with the Claude Code ⏺ action glyph. Verify the
+        // ViewModel's transcript includes live_trajectory entries when
+        // agent_running is true.
         use agent_vesper_tui::ui::transcript_lines_for;
         let model = ViewModel {
             transcript: vec!["user: build a dashboard".into()],
-            live_trajectory: vec!["> 🛠️ Executing: write_file...".into()],
+            live_trajectory: vec!["> ⏺ write_file".into()],
             agent_running: true,
             live_response: String::new(),
             ..ViewModel::default()
@@ -13410,7 +13400,9 @@ mod tests {
         let lines = transcript_lines_for(&model);
         // The live_trajectory entry must appear after the transcript.
         assert!(
-            lines.iter().any(|l| l.contains("🛠️ Executing: write_file")),
+            lines
+                .iter()
+                .any(|l| l.contains("⏺") && l.contains("write_file")),
             "live_trajectory must be inline: {lines:?}"
         );
     }
@@ -13422,22 +13414,22 @@ mod tests {
         use agent_vesper_tui::ui::transcript_lines_for;
         let model = ViewModel {
             transcript: vec!["user: done".into()],
-            live_trajectory: vec!["> 🛠️ Executing: write_file...".into()],
+            live_trajectory: vec!["> ⏺ write_file".into()],
             agent_running: false,
             live_response: String::new(),
             ..ViewModel::default()
         };
         let lines = transcript_lines_for(&model);
         assert!(
-            !lines.iter().any(|l| l.contains("Executing")),
+            !lines.iter().any(|l| l.contains("write_file")),
             "live_trajectory must be hidden when idle: {lines:?}"
         );
     }
 
     #[test]
     fn vro114_apply_agent_progress_routes_tool_started_to_live_trajectory() {
-        // VRO-11.4: ToolStarted events must push to live_trajectory (inline
-        // conversation), NOT to activity (sidebar).
+        // VRO-11.4/11.5: ToolStarted events must push to live_trajectory as
+        // an inline dim `⏺ <name>` line, NOT to activity (sidebar).
         let mut session = fresh_tui_session_for_trajectory_tests();
         apply_agent_progress(
             vesper_agent::AgentProgressEvent::ToolStarted {
@@ -13449,7 +13441,7 @@ mod tests {
             session
                 .live_trajectory
                 .iter()
-                .any(|l| l.contains("🛠️") && l.contains("write_file")),
+                .any(|l| l.contains("⏺") && l.contains("write_file")),
             "ToolStarted must route to live_trajectory: {:?}",
             session.live_trajectory
         );

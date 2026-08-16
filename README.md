@@ -24,7 +24,7 @@ Built as a native port of the [Native GLM ACP](https://github.com/99percentgrip/
 
 <table>
 <tr><td><b>🧠 Cognitive Memory</b></td><td>The agent extracts facts from every conversation, stores them in a local SQLite database, and <b>silently recalls relevant memories before each reply</b>. You never repeat yourself. Type <code>/remember</code> to add a fact manually, <code>/recall</code> to search, <code>/forget</code> to delete.</td></tr>
-<tr><td><b>📝 Rich Markdown TUI</b></td><td>Full-screen terminal UI with streaming reasoning traces, syntax-highlighted code blocks, full-width user-turn role banners, an interactive centered tool-permission modal (<code>Tab</code> / arrows to switch, <code>Enter</code> to confirm), mouse-wheel + PageUp/PageDown/Home/End scrolling with a visible scrollbar, a live slash-command palette, <b>bracketed-paste mode</b> (multi-line clipboard content arrives as a single contiguous insertion — no premature submits on embedded newlines), and <b>live tool telemetry</b> (<code>⏳ Executing ...</code> streams to the Reasoning Panel before each tool runs, mirroring Codex / Claude Code). Built on <code>ratatui</code> + <code>crossterm</code>.</td></tr>
+<tr><td><b>📝 Rich Markdown TUI</b></td><td>Single-column terminal UI (Claude Code / Codex style): the Conversation panel takes the full body height and streams <b>thinking inline</b> (dim italic <code>🧠 Thinking · strategy · mode · risk</code> block, F2 to toggle), <b>live tool telemetry</b> with <code>⏺</code> action / <code>⎿</code> result glyphs, and the answer in one feed — plus syntax-highlighted code blocks, full-width user-turn role banners, an interactive centered tool-permission modal, mouse-wheel + PageUp/PageDown/Home/End scrolling with a visible scrollbar, a live slash-command palette, and <b>bracketed-paste mode</b> (multi-line clipboard content arrives as a single contiguous insertion — no premature submits on embedded newlines). Built on <code>ratatui</code> + <code>crossterm</code>.</td></tr>
 <tr><td><b>🎯 Plan Mode</b></td><td>A pure 4-phase state machine (<code>NORMAL → PLANNING → REVIEW → EXECUTING</code>) that lets the model author a plan, you review it, then it executes with bounded tool calls.</td></tr>
 <tr><td><b>🔧 87 Slash Commands</b></td><td>The complete Python oracle command surface — memory, skills, checkpoints, MCP, plugins, goals, awareness, sessions, export, CI status, and more.</td></tr>
 <tr><td><b>🔐 Provider-Neutral Auth</b></td><td>Credentials route through the provider layer — never hardcoded. OS keyring with owner-only Unix vault fallback. <code>/auth</code> force-rotates without restart.</td></tr>
@@ -147,7 +147,7 @@ The agent silently recalls relevant memories before every reply. You don't need 
 
 ## Reasoning Orchestrator (VRO)
 
-The Vesper Reasoning Orchestrator (VRO) is the multi-strategy reasoning layer that sits above the raw provider dispatch. Every prompt is profiled by a deterministic **TaskProfiler** (no LLM call), routed to one of ten **ReasoningStrategies**, and bounded by a **ReasoningBudget** preset. The TUI surfaces every step of this decision through the **Reasoning Panel** header so you always know what's happening and why.
+The Vesper Reasoning Orchestrator (VRO) is the multi-strategy reasoning layer that sits above the raw provider dispatch. Every prompt is profiled by a deterministic **TaskProfiler** (no LLM call), routed to one of ten **ReasoningStrategies**, and bounded by a **ReasoningBudget** preset. The TUI surfaces every step of this decision through the **inline thinking header** that streams in the Conversation panel so you always know what's happening and why.
 
 ### The Six Reasoning Modes (PRD §8.1)
 
@@ -179,22 +179,20 @@ The profiler maps each prompt onto one of:
 | `proposer_critic_adjudicator` | Three-role workflow: propose → critique → judge | §11.8 |
 | `workflow_replay_with_verification` | Reuse a learned workflow + re-verify | §10.3 |
 
-### The Reasoning Panel Header (VRO-8)
+### The Inline Thinking Header (VRO-8, restyled VRO-11.5)
 
-Every VRO turn now opens with a structured diagnostic header at the top of the Reasoning Panel, rendered through the same markdown pipeline as the streamed thinking:
+Every VRO turn now opens with a compact diagnostic label at the top of the inline thinking block that streams in the Conversation panel (the standalone bottom Reasoning panel was removed in VRO-11.5 — thinking, tool telemetry, and the answer all render in one Claude Code-style column):
 
 ```
-Strategy: bounded_tree_search | Mode: deep (override) | Risk: high ⚠ RISK ESCALATION
-        | Depth: 3 | Branches: 3 | Models: 10 | Repairs: 2
-──────────────────────────────────────────────────────────────────────
-(streamed chain-of-thought continues below…)
+🧠 Thinking · Validating result · bounded_tree_search · deep (override) · risk: high ⚠ RISK ESCALATION
+        (dimmed chain-of-thought streams below, bounded to the newest lines…)
 ```
 
-- **`Strategy`** — the exact variant chosen (snake_case, matches the wire format)
-- **`Mode`** — the active reasoning mode; `*(override)*` marks when the user forced it via `/reasoning set mode=…`
-- **`Risk`** — the profiler's consequence assessment (`low`/`medium`/`high`)
-- **⚠ RISK ESCALATION** — prominently surfaced when the profiler escalated a task to `high` risk (e.g. mutating shell commands, deletions)
-- **Depth / Branches / Models / Repairs** — the budget envelope from the active preset
+- **Phase** — the live orchestrator phase (PRD §8.2 vocabulary) when one applies
+- **Strategy** — the exact variant chosen (snake_case, matches the wire format)
+- **Mode** — the active reasoning mode; `(override)` marks when the user forced it via `/reasoning set mode=…`
+- **Risk** — the profiler's consequence assessment (`low`/`medium`/`high`), with a prominent **⚠ RISK ESCALATION** marker when the profiler escalated a task to `high` risk (e.g. mutating shell commands, deletions)
+- The thinking block renders **dim + italic**, collapses away when the turn completes, and is toggleable with **F2**
 
 ### `/reasoning` — Manual Override (VRO-8)
 
@@ -221,7 +219,7 @@ The override **persists for the entire conversation** (mirrors how superpower ov
 
 ### ✓ LEARNED — Verified Workflow Learning (VRO-7, PRD §11.9)
 
-After a successful complex-strategy turn (ReAct, GVR, parallel candidates, tree search, or PCA), the orchestrator summarizes the trajectory into a sanitized, generalized `ProceduralMemory` recipe and pushes a **✓ LEARNED** notice through the Reasoning Panel:
+After a successful complex-strategy turn (ReAct, GVR, parallel candidates, tree search, or PCA), the orchestrator summarizes the trajectory into a sanitized, generalized `ProceduralMemory` recipe and pushes a **✓ LEARNED** notice into the conversation feed:
 
 ```
 ✓ LEARNED Workflow extracted (3 step(s), strategy=`tool_grounded_react`)
@@ -295,10 +293,21 @@ VRO-11.4 is an architectural course-correction driven by **architectural analysi
 
 **Verification:** `cargo xtask verify` green; workspace tests **1028 pass / 0 fail / 10 ignored** (11 deleted interceptor tests replaced by 11 explicit-tool + inline-telemetry tests).
 
+### VRO-11.5 — Claude Code UI & System-Prompt Enforcement (Single-Column Layout, Inline Thinking, Tool Mandate)
+
+VRO-11.5 closes the gap a 180-second **zero-tool turn** exposed: the model announced a plan, yielded its turn, and never called `write_file` / `request_human_review` — while the dashboard-style UI (bottom Reasoning panel, TODO panel, Activity strip) made it look like the harness was ignoring the user. The architecture was sound; the layout and the prompt were not.
+
+1. **UI declutter — single conversation column.** The bottom **Reasoning panel**, the sidebar **TODO** panel, and the sidebar **Activity** strip are **removed**. The Conversation panel now takes the full body height (F4 working-tree view still overlays when opened); the sidebar keeps only Session + Run report. PageUp/PgDn/Home/End and the mouse wheel always scroll the conversation — the Tab panel-focus toggle is gone with the panel it focused.
+2. **Inline thinking stream.** The provider's raw chain of thought (GLM `reasoning: max`, Qwen3/DeepSeek-R1 `reasoning_content`, and the LM Studio stream) renders **directly in the Conversation feed** as a dim italic block under a compact `🧠 Thinking · strategy · mode · risk` header (with live phase and ⚠ risk-escalation marker). Only the newest `14` reasoning lines stream (long thinks stay readable), and the block collapses away when the turn completes — exactly Claude Code's live-thinking behavior. **F2** toggles it.
+3. **Tool telemetry parity (⏺ / ⎿).** Direct-path tool events render with Claude Code's glyphs: `> ⏺ write_file` when the tool starts, `> ⎿ ✓ write_file` when it finishes (✗ on failure) — dim, inline, one column.
+4. **Tool-execution enforcement (system prompt).** Every shared-`AgentLoop` path (direct, GVR, parallel candidates, tree search, PCA) now appends a **`Tool Execution Enforcement`** system instruction: *"When asked to generate code, UI, or artifacts, you MUST execute the write_file tool and the request_human_review tool within the same turn. Do NOT output your plan and yield to the user. Execute the tools immediately."* Printing an artifact's content instead of writing the file is explicitly named a **failed turn**; Plan mode keeps its `update_plan` carve-out. The ReAct path carries the same mandate as rule 5 of `REACT_SYSTEM_PROMPT`.
+
+**Verification:** `cargo xtask verify` green; enforcement + inline-thinking tests added in `agent-vesper-tui` and `vesper-agent`.
+
 ### How VRO interacts with the live tool surface
 
-- The `tool_grounded_react` strategy (VRO-5) routes through a real LM Studio `ReactAgent` bundle when configured — `Actions` and `Observations` stream live into the Reasoning Panel as `▶ ACTION` / `↳ OBSERVATION` / `✗ ERROR` / `✓ FINISH` lines, alongside the diagnostic header above.
-- The other nine strategies execute in the background; only the LEARNED notice and the final answer land in the panel.
+- The `tool_grounded_react` strategy (VRO-5) routes through a real LM Studio `ReactAgent` bundle when configured — `Actions` and `Observations` stream live into the Conversation panel as `▶ ACTION` / `↳ OBSERVATION` / `✗ ERROR` / `✓ FINISH` lines, alongside the inline thinking header above.
+- The other nine strategies execute in the background; only the LEARNED notice and the final answer land in the conversation feed.
 - VRO is **off by default** (PRD §21 — zero behavior regression when disabled). It activates only when `[reasoning] enabled = true` is set in the runtime config OR a `/reasoning set mode=<X>` override is in force.
 
 ## Configuration

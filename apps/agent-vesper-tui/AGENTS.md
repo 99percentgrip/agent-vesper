@@ -67,12 +67,25 @@ business logic.
   `SuperpowerOverrides`, the pure projection the TUI keeps of the active
   provider's advertised descriptors.
 - `src/ui.rs` — `TerminalRenderer` trait, `ViewModel`, `StubRenderer` for
-  tests, and the production `render_to_frame` ratatui/crossterm backend. The
-  production view owns the oracle-style conversation/reasoning/sidebar/
-  composer composition, full-height slash-command palette, clickable footer,
-  working-tree panel, live activity, TODO, and structured run report. The
-  Conversation and Reasoning panels render assistant/reasoning text through
-  `markdown::render_markdown`; scroll is estimated from the rendered Lines.
+  tests, and the production `render_to_frame` ratatui/crossterm backend.
+  **VRO-11.5 (single-column layout):** the bottom Reasoning panel, the
+  sidebar TODO panel, and the sidebar Activity strip are DELETED — the
+  Conversation column takes the full body height (working tree overlays
+  via F4; the sidebar keeps Session + Run report only). The provider
+  chain of thought streams INLINE in the Conversation feed:
+  `transcript_lines_for` emits a `thinking:`-prefixed block (compact
+  `ReasoningDiagnostics::render_inline_header()` label + the newest
+  `INLINE_THINKING_TAIL_LINES` reasoning lines) while a turn runs;
+  `render_transcript_with_role_banners` renders `thinking:` entries dim +
+  italic and `> ` telemetry entries dim (no bubble) via `restyle_line`,
+  mirroring Claude Code / Codex live-tool hierarchy. `PanelVisibility`
+  now means: `reasoning` = inline-thinking visibility (F2), `sidebar` =
+  Session/Run sidebar; the `tasks` flag is gone (`/tasks` resolves to a
+  truthful "retired" status). `ViewModel` no longer carries
+  `reasoning_manual_scroll` / `reasoning_panel_focused` — every scroll
+  input targets the conversation. Tool telemetry uses the `⏺` action /
+  `⎿` result glyphs (Claude Code parity; the strings are formatted in
+  `main.rs::apply_agent_progress`).
   User turns (`user:` prefix) render inside a full-width dark-blue role
   banner (`USER_BANNER_STYLE` via `render_transcript_with_role_banners`) so
   conversational turn changes read instantly. The interactive
@@ -83,13 +96,14 @@ business logic.
   modal is up and resolves through `PermissionRequest::approve` / `reject`.
   VRO-8 (PRD §8.1): `ReasoningDiagnostics` is a label-typed struct (snake_case
   strategy + kebab-case mode + lowercase risk + numeric budget fields)
-  exposed via `lib.rs` and rendered as a markdown header at the top of the
-  Reasoning Panel via `render_header()`. The header surfaces **Strategy**,
-  **Mode** (with `*(override)*` when the user forced it), **Risk**, a
-  prominent **⚠ RISK ESCALATION** warning when risk escalated to `High`,
-  and the key budget fields (Depth / Branches / Models / Repairs). The
-  binary populates `ViewModel.reasoning_diagnostics` before each VRO turn;
-  `None` (the default) hides the header.
+  exposed via `lib.rs`. Since VRO-11.5 it renders as the ONE-line inline
+  thinking header (`render_inline_header()`) — phase · strategy · mode
+  (with `(override)` when the user forced it) · risk, plus a prominent
+  **⚠ RISK ESCALATION** marker when risk escalated to `High`. The full
+  markdown budget header (`render_header()`) remains available for hosts
+  that want Depth / Branches / Models / Repairs. The binary populates
+  `ViewModel.reasoning_diagnostics` before each VRO turn; `None` (the
+  default) renders a plain `🧠 Thinking…` header.
 - `src/markdown.rs` — self-contained, streaming-safe markdown → ratatui
   `Line` renderer. Re-parses the buffered assistant text every frame so
   partial syntax degrades gracefully: open inline markers (`**bold` with no
@@ -185,9 +199,9 @@ business logic.
   `mpsc::UnboundedSender<String>` and stream each Action/Observation/Finish
   as a pre-formatted markdown line. The event loop drains the receiver via
   `drain_trajectory(session)` each iteration (alongside
-  `drain_agent_event`) and appends to `session.reasoning`, which the
-  existing markdown renderer surfaces live in the Reasoning panel as the
-  loop runs. The per-entry formatters (`format_react_action_entry` /
+  `drain_agent_event`) and appends to `session.live_trajectory` (VRO-11.4),
+  which the transcript renderer surfaces INLINE in the Conversation panel
+  as the loop runs. The per-entry formatters (`format_react_action_entry` /
   `format_react_observation_entry` / `format_react_finish_entry`) are the
   live path; `format_react_trajectory` is the canonical bulk-render utility
   (exercised by tests, reserved for future bulk-render use cases).
@@ -261,6 +275,21 @@ business logic.
   Zero-breakage: when LM Studio is NOT configured or the strategy is
   anything other than `ToolGroundedReact`, the existing direct / GVR /
   parallel-candidates paths are completely unchanged.
+  **VRO-11.5 (Claude Code UI & prompt enforcement)**: (1) **tool-execution
+  enforcement** — `build_agent_loop` now ALWAYS appends the
+  `tool_enforcement_instruction()` system instruction (after project
+  instructions + the optional cognition instruction): artifact-generation
+  requests MUST execute `write_file` (+ `request_human_review` when
+  registered) within the same turn; plan-only yielding is forbidden; Plan
+  mode keeps the `update_plan` carve-out. Every path sharing the loop
+  (direct, GVR, parallel candidates, tree search, PCA) sees the mandate —
+  this is the behavioral patch for the 180s zero-tool turn. (2) **telemetry
+  glyphs** — `apply_agent_progress` formats `ToolStarted` as `> ⏺ <name>`
+  and `ToolFinished` as `> ⎿ ✓/✗ <name>` (Claude Code parity). (3) **input
+  wiring** — Tab with an empty composer is a no-op (the panel-focus toggle
+  died with the Reasoning panel); PageUp/PageDown/Home/End and the mouse
+  wheel always scroll the conversation; F2 / `toggle_thinking` toggles the
+  inline-thinking visibility carried by `panels.reasoning`.
   VRO-8 (PRD §8.1 — UX & Diagnostics): three pure helpers + the wiring
   that surfaces VRO telemetry to the driver. (1) `compute_reasoning_diagnostics`
   reads only `VroOrchestrator::profile` (deterministic, allocation-only) +

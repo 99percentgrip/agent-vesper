@@ -83,7 +83,13 @@ Rules:
    If a Read-Before-Write policy is in effect, you MUST gather at least one \
    successful read-only observation before any mutation.
 4. When you have enough evidence to answer the user, emit the final answer \
-   JSON. Do NOT call more tools after you have the answer.";
+   JSON. Do NOT call more tools after you have the answer.
+5. When asked to generate code, UI, or artifacts, you MUST execute the \
+   write_file tool and the request_human_review tool within the same turn. \
+   Do NOT output your plan and yield to the user. Execute the tools \
+   immediately. Printing the artifact's content as your final answer without \
+   calling write_file is a FAILED turn. The only exception is Plan mode, \
+   where update_plan replaces file mutation.";
 
 /// LM Studio-backed [`ReactAgent`].
 ///
@@ -726,6 +732,32 @@ mod tests {
         assert_eq!(messages[0].content, REACT_SYSTEM_PROMPT);
         assert_eq!(messages[1].role, "user");
         assert_eq!(messages[1].content, "hello");
+    }
+
+    #[test]
+    fn react_system_prompt_enforces_same_turn_artifact_tools() {
+        // VRO-11.5: the 180s zero-tool turn showed models announcing a plan
+        // and yielding instead of executing write_file / request_human_review.
+        // The system prompt MUST carry the same-turn tool mandate.
+        assert!(
+            REACT_SYSTEM_PROMPT.contains(
+                "you MUST execute the write_file tool and the \
+                 request_human_review tool within the same turn"
+            ),
+            "the dictated enforcement wording must be present"
+        );
+        assert!(
+            REACT_SYSTEM_PROMPT.contains("Do NOT output your plan and yield to the user"),
+            "plan-only yielding must be forbidden"
+        );
+        assert!(
+            REACT_SYSTEM_PROMPT.contains("Execute the tools immediately"),
+            "the immediacy mandate must be present"
+        );
+        assert!(
+            REACT_SYSTEM_PROMPT.contains("FAILED turn"),
+            "printing artifact content without write_file must be named a failure"
+        );
     }
 
     #[test]

@@ -148,11 +148,6 @@ pub struct SessionState {
     /// `Paragraph::scroll` call uses. Reset to `None` by `End`, a new prompt
     /// submission, or PageDown/ScrollDown reaching the bottom.
     pub conversation_manual_scroll: Option<u16>,
-    /// Manual reasoning-panel scroll (mirrors `conversation_manual_scroll`).
-    pub reasoning_manual_scroll: Option<u16>,
-    /// Which panel receives PageUp/PgDn/Home/End: `false` = Conversation,
-    /// `true` = Reasoning. Toggled by Tab when the composer is empty.
-    pub reasoning_panel_focused: bool,
     /// Currently focused action button in the tool-permission modal. Defaults
     /// to `Allow` (the conservative pick); Tab/Left/Right toggles between
     /// `Deny` and `Allow`. Mirrored into the renderer's
@@ -187,10 +182,18 @@ impl Default for SessionControls {
 }
 
 /// User-controlled dashboard panel visibility.
+///
+/// VRO-11.5: the TODO panel and the bottom Reasoning panel no longer exist
+/// as layout regions — the dashboard is a single Claude Code-style
+/// conversation column. `reasoning` now toggles whether the inline thinking
+/// block streams inside that column (F2), and `sidebar` toggles the
+/// Session/Run-report sidebar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PanelVisibility {
+    /// Whether live provider thinking streams inline in the Conversation
+    /// panel (dim `🧠 Thinking` block). Toggled by F2 / `toggle_thinking`.
     pub reasoning: bool,
-    pub tasks: bool,
+    /// Whether the Session + Run-report sidebar renders (wide terminals).
     pub sidebar: bool,
 }
 
@@ -198,7 +201,6 @@ impl Default for PanelVisibility {
     fn default() -> Self {
         Self {
             reasoning: true,
-            tasks: true,
             sidebar: true,
         }
     }
@@ -404,8 +406,6 @@ fn apply_outcome(
         pending_lmstudio_settings,
         pending_provider_switch,
         conversation_manual_scroll: _,
-        reasoning_manual_scroll: _,
-        reasoning_panel_focused: _,
         permission_modal_focus: _,
     } = state;
     match outcome {
@@ -632,16 +632,17 @@ fn apply_outcome(
             UiAction::ToggleReasoning => {
                 panels.reasoning = !panels.reasoning;
                 *status = Some(format!(
-                    "Reasoning panel {}.",
+                    "Inline thinking {}.",
                     if panels.reasoning { "shown" } else { "hidden" }
                 ));
             }
             UiAction::ToggleTasks => {
-                panels.tasks = !panels.tasks;
-                *status = Some(format!(
-                    "TODO panel {}.",
-                    if panels.tasks { "shown" } else { "hidden" }
-                ));
+                // VRO-11.5: the TODO panel is retired — model-authored plans
+                // surface through the REVIEW phase in the conversation, and
+                // tool telemetry streams inline. Keep the oracle command
+                // resolving with a truthful status instead of dead state.
+                *status =
+                    Some("TODO panel retired — plan updates render in the conversation.".into());
             }
             UiAction::ToggleSidebar => {
                 panels.sidebar = !panels.sidebar;

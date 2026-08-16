@@ -150,6 +150,29 @@ impl ReasoningDiagnostics {
         ));
         out
     }
+
+    /// Renders the diagnostics as ONE compact inline label for the
+    /// VRO-11.5 thinking block that streams inside the Conversation panel
+    /// (`🧠 Thinking · strategy · mode · risk`). This replaces the deleted
+    /// bottom Reasoning panel's full markdown header: inline thinking needs
+    /// a single quiet line, not a budget table. Budget numbers stay
+    /// available through [`Self::render_header`] for hosts that want them.
+    #[must_use]
+    pub fn render_inline_header(&self) -> String {
+        let mut out = String::from("🧠 Thinking");
+        if !self.phase.is_empty() {
+            out.push_str(&format!(" · {}", self.phase));
+        }
+        out.push_str(&format!(" · {} · {}", self.strategy, self.mode));
+        if self.override_active {
+            out.push_str(" (override)");
+        }
+        out.push_str(&format!(" · risk: {}", self.risk));
+        if self.risk_escalation {
+            out.push_str(" · ⚠ RISK ESCALATION");
+        }
+        out
+    }
 }
 
 /// Pure view model the renderer consumes every frame.
@@ -211,16 +234,6 @@ pub struct ViewModel {
     /// `position = max_scroll.saturating_sub(n)` — the same value passed to
     /// `Paragraph::scroll` — so the thumb position is always truthful.
     pub conversation_manual_scroll: Option<u16>,
-    /// Manual reasoning-panel scroll expressed as **lines up from the
-    /// bottom**, mirroring [`Self::conversation_manual_scroll`]. `None` =
-    /// auto-follow the latest thinking; `Some(n)` = `n` lines above the
-    /// newest reasoning line.
-    pub reasoning_manual_scroll: Option<u16>,
-    /// Which scrollable panel receives PageUp/PageDown/Home/End events.
-    /// `false` (default) = Conversation panel; `true` = Reasoning panel.
-    /// Toggled by the user pressing Tab when the composer is empty (so Tab
-    /// inside a non-empty prompt still composes a tab character).
-    pub reasoning_panel_focused: bool,
     /// Pending tool-permission modal. `Some` whenever the agent loop has
     /// emitted a one-time approval request that has not been resolved; the
     /// renderer overlays a centered `Clear` + bordered dialog over the
@@ -327,16 +340,14 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
     } else {
         0
     };
-    let reasoning_height = if model.panels.reasoning { 10 } else { 0 };
-    let activity_height = 0;
+    // VRO-11.5: the bottom Reasoning panel and the Activity strip are gone —
+    // the stream of provider thinking renders INLINE in the Conversation
+    // panel (see `transcript_lines_for`) and the Conversation column takes
+    // the full body height, matching Claude Code / Codex single-column
+    // agent CLIs.
     let conversation_chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Min(5),
-            Constraint::Length(reasoning_height),
-            Constraint::Length(activity_height),
-            Constraint::Length(working_tree_height),
-        ])
+        .constraints([Constraint::Min(5), Constraint::Length(working_tree_height)])
         .split(body[0]);
 
     // Conversation — prepended with Plan Mode context (pending questions
@@ -425,92 +436,6 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
         &mut scrollbar_state,
     );
 
-    if reasoning_height > 0 {
-        // VRO-8 (PRD §8.1): when diagnostics are present, prepend a
-        // strategy/budget/risk header to the reasoning text. The header
-        // is rendered through the same markdown pipeline as the rest of
-        // the panel, so bold/italic/code spans style it consistently with
-        // the streamed thinking.
-        let reasoning_text = if let Some(diagnostics) = model.reasoning_diagnostics.as_ref() {
-            let mut text = diagnostics.render_header();
-            text.push_str("\n\n---\n\n");
-            text.push_str(&model.reasoning);
-            text
-        } else {
-            model.reasoning.clone()
-        };
-        let reasoning_lines: Vec<Line<'static>> = if reasoning_text.is_empty() {
-            vec![Line::from("Waiting for provider-visible reasoning…")]
-        } else {
-            crate::markdown::render_markdown(&reasoning_text)
-        };
-        let reasoning_area = conversation_chunks[1];
-        let title = if model.reasoning_panel_focused {
-            " Reasoning (focused — Tab to switch, PgUp/PgDn/Home/End scroll) "
-        } else {
-            " Reasoning "
-        };
-        let paragraph = Paragraph::new(reasoning_lines.clone())
-            .wrap(Wrap { trim: false })
-            .style(Style::default().fg(Color::Rgb(159, 122, 234)))
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded)
-                    .border_style(if model.reasoning_panel_focused {
-                        Style::default().fg(Color::Rgb(159, 122, 234))
-                    } else {
-                        Style::default().fg(CHROME_BORDER)
-                    })
-                    .title(title),
-            );
-        let visible_lines = usize::from(reasoning_area.height.saturating_sub(2));
-        let inner_width = usize::from(reasoning_area.width.saturating_sub(2));
-        let wrapped_lines = estimated_wrapped_lines(&reasoning_lines, inner_width);
-        let max_scroll = wrapped_lines
-            .saturating_sub(visible_lines)
-            .min(u16::MAX as usize) as u16;
-        let manual = model.reasoning_manual_scroll.unwrap_or(0).min(max_scroll);
-        let effective_scroll = max_scroll.saturating_sub(manual);
-        frame.render_widget(paragraph.scroll((effective_scroll, 0)), reasoning_area);
-
-        // Vertical scrollbar mirroring the Conversation panel's pattern.
-        let mut scrollbar_state = ScrollbarState::new(wrapped_lines.min(u16::MAX as usize))
-            .position(usize::from(effective_scroll))
-            .viewport_content_length(visible_lines);
-        frame.render_stateful_widget(
-            Scrollbar::new(ScrollbarOrientation::VerticalRight)
-                .thumb_style(Style::default().fg(Color::Rgb(159, 122, 234)))
-                .track_style(Style::default().fg(Color::Rgb(60, 50, 85))),
-            reasoning_area,
-            &mut scrollbar_state,
-        );
-    }
-    if activity_height > 0 {
-        let activity = model
-            .activity
-            .iter()
-            .rev()
-            .take(6)
-            .rev()
-            .map(|line| ListItem::new(line.as_str()))
-            .collect::<Vec<_>>();
-        frame.render_widget(
-            List::new(activity)
-                .style(Style::default().fg(Color::Cyan))
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .border_type(BorderType::Rounded)
-                        .border_style(Style::default().fg(CHROME_BORDER))
-                        .title(format!(
-                            " Live activity • {} event(s) ",
-                            model.activity.len()
-                        )),
-                ),
-            conversation_chunks[2],
-        );
-    }
     if working_tree_height > 0 {
         frame.render_widget(
             Paragraph::new(model.working_tree_lines.join("\n"))
@@ -525,7 +450,7 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
                             model.working_tree_title.as_deref().unwrap_or_default()
                         )),
                 ),
-            conversation_chunks[3],
+            conversation_chunks[1],
         );
     }
 
@@ -947,6 +872,14 @@ fn render_transcript_with_role_banners(
     for (idx, raw) in transcript_lines.iter().enumerate() {
         let is_user_turn = raw.starts_with("user:");
         let is_assistant_turn = raw.starts_with("assistant");
+        // VRO-11.5 live-region markers: `thinking:` entries stream the
+        // provider chain of thought (dim + italic, no bubble), and `> `
+        // entries are quiet tool telemetry (dim, no bubble). Both read as
+        // secondary text between the user/assistant bubbles — the same
+        // visual hierarchy Claude Code and Codex use for thinking and
+        // tool lines in their single conversation feed.
+        let is_thinking = raw.starts_with("thinking:");
+        let is_telemetry = raw.starts_with("> ");
 
         // One blank line between turns for vertical pacing. The asymmetric
         // bubble indents (user right, agent left) provide the visual turn
@@ -973,6 +906,17 @@ fn render_transcript_with_role_banners(
             // Handles both "assistant: ..." and "assistant (streaming): ..."
             let text = raw.find(": ").map(|i| &raw[i + 2..]).unwrap_or(raw);
             (text, false)
+        } else if is_thinking {
+            let text = raw
+                .strip_prefix("thinking: ")
+                .or_else(|| raw.strip_prefix("thinking:"))
+                .unwrap_or(raw);
+            (text, false)
+        } else if is_telemetry {
+            // Keep the `>` glyph — it reads as a quiet quote marker in
+            // front of the ⏺/⎿ tool glyphs, mirroring Claude Code's dim
+            // tool lines.
+            (raw.as_str(), false)
         } else {
             (raw.as_str(), false)
         };
@@ -1014,12 +958,48 @@ fn render_transcript_with_role_banners(
                     inner_width,
                 ));
             }
+        } else if is_thinking {
+            // VRO-11.5: live thinking streams as dim italic secondary text —
+            // visually distinct from the final conversational answer without
+            // stealing attention from it (the `🧠` header line included).
+            let style = Style::default()
+                .fg(Color::Rgb(148, 148, 170))
+                .add_modifier(Modifier::ITALIC);
+            for line in lines {
+                rendered.push(restyle_line(line, style));
+            }
+        } else if is_telemetry {
+            // VRO-11.5: tool telemetry renders dim (no italics) so the
+            // ⏺/⎿ action/result lines read as quiet machine output between
+            // the human-readable turns — Claude Code's exact hierarchy.
+            let style = Style::default().fg(Color::Rgb(148, 148, 170));
+            for line in lines {
+                rendered.push(restyle_line(line, style));
+            }
         } else {
             // System / plan context / errors: no bubble, default styling.
             rendered.extend(lines);
         }
     }
     rendered
+}
+
+/// Re-styles every span of a rendered markdown line with `style`, keeping
+/// the span segmentation (so wrapped-width estimates stay identical) while
+/// overriding the foreground color and modifiers. Used by the VRO-11.5
+/// live-region branches (thinking + telemetry) so dim secondary text still
+/// benefits from markdown parsing (inline code, bold) without inventing a
+/// second renderer.
+fn restyle_line(line: Line<'static>, style: Style) -> Line<'static> {
+    Line::from(
+        line.spans
+            .into_iter()
+            .map(|mut span| {
+                span.style = style;
+                span
+            })
+            .collect::<Vec<_>>(),
+    )
 }
 
 /// Estimates how many display rows `lines` will occupy after ratatui wraps
@@ -1094,14 +1074,15 @@ fn render_screen_reader(frame: &mut Frame<'_>, model: &ViewModel) {
 }
 
 fn render_sidebar(frame: &mut Frame<'_>, area: ratatui::layout::Rect, model: &ViewModel) {
+    // VRO-11.5: the Activity strip and TODO panel are removed from the
+    // sidebar — tool telemetry already renders inline in the Conversation
+    // panel (VRO-11.4) and plan updates surface through the REVIEW phase,
+    // so the dashboard widgets were pure clutter. What remains is the
+    // session summary the driver actually consults plus the structured
+    // run report.
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(11),
-            Constraint::Length(10),
-            Constraint::Min(8),
-            Constraint::Length(8),
-        ])
+        .constraints([Constraint::Length(11), Constraint::Min(8)])
         .split(area);
 
     let model_name = superpower_value_for(model, "model").unwrap_or_else(|| "provider".into());
@@ -1133,66 +1114,11 @@ fn render_sidebar(frame: &mut Frame<'_>, area: ratatui::layout::Rect, model: &Vi
         chunks[0],
     );
 
-    let activity = if model.activity.is_empty() {
-        vec![ListItem::new("Waiting for tool activity…")]
-    } else {
-        model
-            .activity
-            .iter()
-            .rev()
-            .take(8)
-            .rev()
-            .map(|line| ListItem::new(line.as_str()))
-            .collect()
-    };
-    frame.render_widget(
-        List::new(activity).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(CHROME_BORDER))
-                .title(" Activity "),
-        ),
-        chunks[1],
-    );
-
-    let tasks = if !model.panels.tasks {
-        vec![ListItem::new("TODO panel hidden (/tasks)")]
-    } else if model.task_plan.is_empty() {
-        vec![ListItem::new("No model-authored tasks yet")]
-    } else {
-        model
-            .task_plan
-            .iter()
-            .map(|task| {
-                let (symbol, color) = match task.status.as_str() {
-                    "completed" => ("✓", Color::Green),
-                    "in_progress" => ("●", Color::Yellow),
-                    _ => ("○", Color::DarkGray),
-                };
-                ListItem::new(Line::from(vec![
-                    Span::styled(format!("{symbol} "), Style::default().fg(color)),
-                    Span::raw(task.content.as_str()),
-                ]))
-            })
-            .collect()
-    };
     let completed = model
         .task_plan
         .iter()
         .filter(|task| task.status == "completed")
         .count();
-    frame.render_widget(
-        List::new(tasks).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(CHROME_BORDER))
-                .title(format!(" TODO {completed}/{} ", model.task_plan.len())),
-        ),
-        chunks[2],
-    );
-
     if model.last_report.is_empty() {
         let ratio = if model.task_plan.is_empty() {
             0.0
@@ -1215,7 +1141,7 @@ fn render_sidebar(frame: &mut Frame<'_>, area: ratatui::layout::Rect, model: &Vi
                 } else {
                     "READY"
                 }),
-            chunks[3],
+            chunks[1],
         );
     } else {
         frame.render_widget(
@@ -1228,7 +1154,7 @@ fn render_sidebar(frame: &mut Frame<'_>, area: ratatui::layout::Rect, model: &Vi
                         .border_style(Style::default().fg(CHROME_BORDER))
                         .title(" Run report "),
                 ),
-            chunks[3],
+            chunks[1],
         );
     }
 }
@@ -1251,9 +1177,18 @@ fn superpower_value_for(model: &ViewModel, alias: &str) -> Option<String> {
         .map(|value| format_superpower_value(&value))
 }
 
+/// How many of the most recent thinking lines stream inline in the
+/// Conversation panel while a turn is running. The provider chain of
+/// thought can grow for minutes on `reasoning: max` turns — a fixed tail
+/// window keeps the live feed readable (Claude Code collapses thinking the
+/// same way once the turn completes; while running, the newest reasoning is
+/// what matters).
+pub const INLINE_THINKING_TAIL_LINES: usize = 14;
+
 /// Builds the transcript lines for the main panel: Plan Mode context first
 /// (pending questions during PLANNING, the plan body during REVIEW), then the
-/// accumulated transcript.
+/// accumulated transcript, then the live region (inline thinking → tool
+/// telemetry → streaming response) while a turn runs.
 pub fn transcript_lines_for(model: &ViewModel) -> Vec<String> {
     let mut lines = Vec::new();
     match model.plan.phase() {
@@ -1270,6 +1205,31 @@ pub fn transcript_lines_for(model: &ViewModel) -> Vec<String> {
         PlanPhase::Normal | PlanPhase::Executing => {}
     }
     lines.extend(model.transcript.iter().cloned());
+    // VRO-11.5: the provider-visible chain of thought streams INLINE in the
+    // Conversation panel as a dimmed `🧠 Thinking` block (the bottom
+    // Reasoning panel is gone). Only a bounded tail of the newest reasoning
+    // lines renders; the block disappears when the turn completes, exactly
+    // like Claude Code collapsing live thinking into the final answer.
+    if model.agent_running && model.panels.reasoning && !model.reasoning.is_empty() {
+        let header = match model.reasoning_diagnostics.as_ref() {
+            Some(diagnostics) => diagnostics.render_inline_header(),
+            None => "🧠 Thinking…".to_string(),
+        };
+        lines.push(format!("thinking: {header}"));
+        let tail: Vec<&str> = model
+            .reasoning
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .rev()
+            .take(INLINE_THINKING_TAIL_LINES)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect();
+        for line in tail {
+            lines.push(format!("thinking: {line}"));
+        }
+    }
     // VRO-11.4: inline tool telemetry renders DIRECTLY in the Conversation
     // panel after the transcript, so the trajectory reads top-to-bottom
     // naturally with the assistant's text (matches Codex / Claude Code /
@@ -1476,11 +1436,15 @@ mod tests {
     }
 
     #[test]
-    fn render_to_frame_renders_reasoning_markdown() {
+    fn render_to_frame_renders_inline_thinking_in_conversation() {
         use ratatui::Terminal;
         use ratatui::backend::TestBackend;
 
+        // VRO-11.5: the bottom Reasoning panel is gone; live thinking must
+        // stream INLINE in the Conversation panel while a turn runs, with
+        // the dim italic secondary styling.
         let model = ViewModel {
+            agent_running: true,
             panels: PanelVisibility {
                 reasoning: true,
                 ..PanelVisibility::default()
@@ -1493,7 +1457,7 @@ mod tests {
         let mut terminal = Terminal::new(backend).expect("test backend");
         terminal
             .draw(|f| render_to_frame(f, &model))
-            .expect("reasoning markdown must not panic");
+            .expect("inline thinking must not panic");
         let content: String = terminal
             .backend()
             .buffer()
@@ -1501,9 +1465,110 @@ mod tests {
             .iter()
             .map(|cell| cell.symbol())
             .collect();
+        // The emoji is a double-width glyph, so the collected cell string
+        // carries a wide-followup space — assert the pieces separately.
+        assert!(
+            content.contains("🧠") && content.contains("Thinking"),
+            "the thinking header must render inline: {content}"
+        );
         assert!(
             content.contains("this"),
-            "reasoning bold text should be visible"
+            "thinking text should be visible inline"
+        );
+        // The thinking cells carry the dim italic live-region style.
+        let has_dim_italic = terminal.backend().buffer().content.iter().any(|cell| {
+            cell.style()
+                .add_modifier
+                .contains(ratatui::style::Modifier::ITALIC)
+                && cell.style().fg == Some(ratatui::style::Color::Rgb(148, 148, 170))
+        });
+        assert!(
+            has_dim_italic,
+            "inline thinking must render dim + italic, not as primary text"
+        );
+    }
+
+    #[test]
+    fn transcript_lines_gate_thinking_on_running_and_visibility() {
+        // VRO-11.5: the inline thinking block requires ALL of: a running
+        // turn, visible thinking (`panels.reasoning`, the F2 toggle), and
+        // non-empty reasoning text.
+        let base = ViewModel {
+            agent_running: true,
+            panels: PanelVisibility {
+                reasoning: true,
+                ..PanelVisibility::default()
+            },
+            reasoning: "let me consider the layout".to_string(),
+            ..ViewModel::default()
+        };
+        let lines = transcript_lines_for(&base);
+        assert!(
+            lines.iter().any(|l| l.starts_with("thinking: ")),
+            "running turn with visible reasoning must include the thinking block"
+        );
+
+        let idle = ViewModel {
+            agent_running: false,
+            ..base.clone()
+        };
+        assert!(
+            !transcript_lines_for(&idle)
+                .iter()
+                .any(|l| l.starts_with("thinking: ")),
+            "idle turns must collapse the thinking block"
+        );
+
+        let hidden = ViewModel {
+            panels: PanelVisibility {
+                reasoning: false,
+                ..PanelVisibility::default()
+            },
+            ..base
+        };
+        assert!(
+            !transcript_lines_for(&hidden)
+                .iter()
+                .any(|l| l.starts_with("thinking: ")),
+            "F2 hidden thinking must suppress the inline block"
+        );
+    }
+
+    #[test]
+    fn transcript_lines_bound_the_inline_thinking_tail() {
+        // A long chain of thought must not flood the conversation: only
+        // INLINE_THINKING_TAIL_LINES most recent reasoning lines render.
+        let model = ViewModel {
+            agent_running: true,
+            panels: PanelVisibility {
+                reasoning: true,
+                ..PanelVisibility::default()
+            },
+            reasoning: (0..60)
+                .map(|i| format!("reasoning line {i}"))
+                .collect::<Vec<_>>()
+                .join("\n"),
+            ..ViewModel::default()
+        };
+        let lines = transcript_lines_for(&model);
+        let thinking: Vec<&String> = lines
+            .iter()
+            .filter(|l| l.starts_with("thinking: "))
+            .collect();
+        assert_eq!(
+            thinking.len(),
+            INLINE_THINKING_TAIL_LINES + 1,
+            "one header line + exactly the bounded tail"
+        );
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.contains(&format!("reasoning line {}", 59))),
+            "the newest reasoning line must be present"
+        );
+        assert!(
+            !lines.iter().any(|l| l.contains("reasoning line 30")),
+            "old reasoning lines must be dropped from the tail window"
         );
     }
 
