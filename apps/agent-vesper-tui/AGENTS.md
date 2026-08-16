@@ -315,6 +315,21 @@ business logic.
   `PlanUpdated` pushes `format_todo_block(&task_plan)` (⎿ TODO / ✓ ● ○
   markers) into the persistent transcript, Claude Code's inline todo
   widget; `/tasks` reports the inline location (no panel to toggle).
+  **VRO-11.8**: (1) `AgentProgressEvent::ToolStarted` carries a `hint`
+  and `ToolFinished` a `note` — derived by the pure
+  `vesper_agent::tool_arg_hint` (whitelisted arg keys only:
+  path/pattern/command/…, 48-char cap; NEVER content/body/credential
+  keys) and `tool_result_note` (success = size digest "N lines"/"N chars",
+  failure = first line of the harness error, 72-char cap) — so telemetry
+  renders rich (`⏺ write_file · dashboard.html` /
+  `  ⎿ ✓ write_file · 43 lines`) without leaking payloads. (2) The
+  enforcement instruction now mandates `update_plan` TODO tracking for
+  multi-step tasks in EVERY mode (the Plan-mode-exception wording
+  discouraged Code-mode plans — the live-test root cause of the missing
+  TODO block). (3) The VesperLens overlay attaches pick listeners to
+  `document` (capture) and runs a 800ms panel watchdog that re-attaches
+  the panel when artifact JS rebuilds `document.body` (the live-test
+  root cause of the dead overlay).
   VRO-8 (PRD §8.1 — UX & Diagnostics): three pure helpers + the wiring
   that surfaces VRO telemetry to the driver. (1) `compute_reasoning_diagnostics`
   reads only `VroOrchestrator::profile` (deterministic, allocation-only) +

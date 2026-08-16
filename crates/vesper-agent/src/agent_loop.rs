@@ -50,11 +50,110 @@ pub enum AgentProgressEvent {
     /// User-visible assistant text arrived.
     ContentDelta { text: ContentText },
     /// A named tool is about to pass through permission gating and execution.
-    ToolStarted { name: String },
+    /// `hint` is a secret-safe display digest of the call (VRO-11.8):
+    /// derived ONLY from whitelisted argument keys (`path`, `file_path`,
+    /// `pattern`, `command`, …) by [`tool_arg_hint`] — never from content,
+    /// body, text, or credential-shaped payloads — and truncated to a
+    /// terminal-friendly width.
+    ToolStarted { name: String, hint: String },
     /// A named tool finished. `success` is false for denied/failed results.
-    ToolFinished { name: String, success: bool },
+    /// `note` (VRO-11.8) is a bounded result summary: on success it carries
+    /// ONLY a size digest ("43 lines" / "120 chars") — never result content,
+    /// which may hold file bytes or secrets; on failure it carries the
+    /// first line of the harness's own error text.
+    ToolFinished {
+        name: String,
+        success: bool,
+        note: String,
+    },
     /// The model replaced the current task plan.
     PlanUpdated { markdown: String },
+}
+
+/// Argument keys whose values are safe to surface in the UI telemetry
+/// (VRO-11.8). Deliberately a WHITELIST: paths, patterns, and command
+/// heads are public-shaped; `content`, `body`, `text`, `json`, and any
+/// credential-shaped key are never eligible, whatever the tool.
+const TOOL_HINT_ARG_KEYS: &[&str] = &[
+    "path",
+    "file_path",
+    "file",
+    "dir",
+    "directory",
+    "folder",
+    "pattern",
+    "query",
+    "command",
+    "cmd",
+    "url",
+    "title",
+    "selector",
+    "name",
+];
+
+/// Maximum display width of a telemetry hint, in chars.
+const TOOL_HINT_MAX_CHARS: usize = 48;
+
+/// Derives the secret-safe display hint for a tool call (VRO-11.8).
+///
+/// Takes the FIRST whitelisted key present with a string value, collapses
+/// whitespace to single spaces, and truncates on a char boundary with an
+/// ellipsis. Returns the empty string when no whitelisted argument exists
+/// (the TUI then renders the bare tool name).
+///
+/// Pure; unit-tested below.
+#[must_use]
+pub fn tool_arg_hint(args: &serde_json::Value) -> String {
+    for key in TOOL_HINT_ARG_KEYS {
+        if let Some(value) = args.get(*key).and_then(|v| v.as_str()) {
+            let collapsed: String = value.split_whitespace().collect::<Vec<_>>().join(" ");
+            if collapsed.is_empty() {
+                continue;
+            }
+            if collapsed.chars().count() <= TOOL_HINT_MAX_CHARS {
+                return collapsed;
+            }
+            let truncated: String = collapsed.chars().take(TOOL_HINT_MAX_CHARS - 1).collect();
+            return format!("{truncated}…");
+        }
+    }
+    String::new()
+}
+
+/// Maximum display width of a failure note, in chars.
+const TOOL_NOTE_MAX_CHARS: usize = 72;
+
+/// Derives the bounded result note for a tool completion (VRO-11.8).
+///
+/// Success: a SIZE digest only — line count when the output has lines,
+/// otherwise char count. Result bytes never leave the loop (they may be
+/// file contents or secrets). Failure: the first line of the harness's
+/// own error text, truncated.
+///
+/// Pure; unit-tested below.
+#[must_use]
+pub fn tool_result_note(output: &str, success: bool) -> String {
+    if success {
+        let trimmed = output.trim_end();
+        if trimmed.is_empty() {
+            return String::new();
+        }
+        let lines = trimmed.lines().count();
+        if lines > 1 {
+            return format!("{lines} lines");
+        }
+        format!("{} chars", trimmed.chars().count())
+    } else {
+        let first = output.lines().next().unwrap_or("").trim();
+        if first.is_empty() {
+            return String::new();
+        }
+        if first.chars().count() <= TOOL_NOTE_MAX_CHARS {
+            return first.to_string();
+        }
+        let truncated: String = first.chars().take(TOOL_NOTE_MAX_CHARS - 1).collect();
+        format!("{truncated}…")
+    }
 }
 
 /// Host-owned sink for live agent progress.
@@ -314,6 +413,7 @@ impl AgentLoop {
                 let tool_name = call.tool_id.as_str().to_string();
                 self.progress_port.emit(AgentProgressEvent::ToolStarted {
                     name: tool_name.clone(),
+                    hint: tool_arg_hint(&call.arguments),
                 });
                 let outcome = self
                     .gate_and_execute(&call, &context, &advertised_tools)
@@ -332,9 +432,11 @@ impl AgentLoop {
                 let success = !output.starts_with("tool error:")
                     && !output.starts_with("permission denied:")
                     && !output.starts_with("unknown tool:");
+                let note = tool_result_note(&output, success);
                 self.progress_port.emit(AgentProgressEvent::ToolFinished {
                     name: tool_name,
                     success,
+                    note,
                 });
                 let bounded = ContentText::new(output).unwrap_or_else(|_| {
                     ContentText::new("[tool output too large]").expect("bounded")
@@ -677,5 +779,59 @@ mod tests {
             ContentPart::Text(ContentText::new((MAX_CONTEXT_MESSAGES + 19).to_string()).unwrap())
         );
         assert_eq!(messages.len(), MAX_CONTEXT_MESSAGES + 20);
+    }
+    // ------------------------------------------------------------------
+    // VRO-11.8 — telemetry hint/note derivation
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn tool_arg_hint_prefers_whitelisted_keys() {
+        let args = serde_json::json!({"content": "SECRET BODY", "path": "dashboard.html"});
+        assert_eq!(tool_arg_hint(&args), "dashboard.html");
+        // First whitelisted key in priority order wins even if several exist.
+        let both = serde_json::json!({"file_path": "a.rs", "pattern": "fn main"});
+        assert_eq!(tool_arg_hint(&both), "a.rs");
+    }
+
+    #[test]
+    fn tool_arg_hint_never_surfaces_payload_keys() {
+        // Content/body/text/json and credential-shaped keys are excluded
+        // even when they are the ONLY arguments.
+        for key in [
+            "content", "body", "text", "json", "api_key", "token", "password",
+        ] {
+            let args = serde_json::json!({key: "should never appear"});
+            assert_eq!(tool_arg_hint(&args), "", "{key} must not be hinted");
+        }
+    }
+
+    #[test]
+    fn tool_arg_hint_collapses_and_truncates() {
+        let messy = serde_json::json!({"command": "cargo   test\n--workspace"});
+        assert_eq!(tool_arg_hint(&messy), "cargo test --workspace");
+        let long = serde_json::json!({"path": "x".repeat(120)});
+        let hint = tool_arg_hint(&long);
+        assert!(hint.chars().count() <= 48, "hint bounded: {hint}");
+        assert!(hint.ends_with('…'), "truncation ellipsis: {hint}");
+    }
+
+    #[test]
+    fn tool_result_note_success_is_size_only() {
+        let content = "line1\nline2\nline3";
+        assert_eq!(tool_result_note(content, true), "3 lines");
+        assert_eq!(tool_result_note("one-liner", true), "9 chars");
+        assert_eq!(tool_result_note("   ", true), "");
+    }
+
+    #[test]
+    fn tool_result_note_failure_carries_first_line_bounded() {
+        assert_eq!(
+            tool_result_note("tool error: no such file: missing.rs", false),
+            "tool error: no such file: missing.rs"
+        );
+        let long_error = format!("tool error: {}", "e".repeat(200));
+        let note = tool_result_note(&long_error, false);
+        assert!(note.chars().count() <= 72, "failure note bounded: {note}");
+        assert!(note.ends_with('…'));
     }
 }

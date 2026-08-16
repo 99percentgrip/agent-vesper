@@ -10,8 +10,8 @@ publish = false
 
 [dependencies]
 serde.workspace = true
-vesper-domain = { path = "../vesper-domain", version = "=0.20.38" }
-vesper-security = { path = "../vesper-security", version = "=0.20.38" }
+vesper-domain = { path = "../vesper-domain", version = "=0.20.39" }
+vesper-security = { path = "../vesper-security", version = "=0.20.39" }
 
 [lints]
 workspace = true
