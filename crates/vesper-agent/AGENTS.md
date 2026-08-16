@@ -552,7 +552,7 @@ the multi-turn, tool-executing layer above it.
 - `src/planning/vesper_lens/` — ADR 0017 (VRO-11) VesperLens native
   human-in-the-loop HTML review oracle. Owns `types.rs`, `injector.rs`,
   `http.rs`, `server.rs`, `mod.rs`. **VRO-11.6/11.7:** the overlay is
-  lavish-axi-style interactive — pick mode (DEFAULT ON, listeners attached
+  Oracle-style interactive — pick mode (DEFAULT ON, listeners attached
   at boot) with hover outline, an INLINE popover editor anchored at the
   click (never a native prompt dialog), quotable text-selection
   annotations, a removable numbered annotation list, Esc/Enter keyboard

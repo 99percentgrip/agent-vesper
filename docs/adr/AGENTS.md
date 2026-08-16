@@ -23,7 +23,7 @@ Own accepted, durable architecture and compatibility decisions for Agent Vesper.
   `tokio::net::TcpListener` (zero new external deps — only the `net` +
   `io-util` features on the existing workspace tokio pin), binds strictly
   to `127.0.0.1:0`, and defines its own minimal JSON feedback contract.
-  The MIT-licensed `kunchenguid/lavish-axi` repo was read as a
+  The MIT-licensed reference Oracle repo was read as a
   user-authorized reference blueprint; no code was copied (the harness
   scanner flagged its overlay JS as prompt-injection-shaped).
 

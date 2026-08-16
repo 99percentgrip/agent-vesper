@@ -7,9 +7,9 @@
 //!
 //! ## What this is NOT
 //!
-//! - It is **not** a port of lavish-axi's `chrome-client.js` (1878 lines)
-//!   or `artifact-sdk.js` (1905 lines). Those modules were flagged by the
-//!   harness content scanner and are not imported here.
+//! - It is **not** a port of the reference Oracle's `chrome-client.js`
+//!   (1878 lines) or `artifact-sdk.js` (1905 lines). Those modules were
+//!   flagged by the harness content scanner and are not imported here.
 //! - The overlay contains no code that the agent-generated HTML could
 //!   influence at inject time. All review-panel strings are hard-coded
 //!   literals owned by this crate. The only thing the overlay does with
@@ -50,7 +50,7 @@ const OVERLAY_SCRIPT: &str = r##"(function(){
   if (window.__vesperLensBooted) return;
   window.__vesperLensBooted = true;
 
-  // VRO-11.7 — lavish-axi-style review loop: pick mode with hover
+  // VRO-11.7 — Oracle-style review loop: pick mode with hover
   // highlight, an INLINE popover editor (never a native prompt dialog),
   // text-selection annotations, and a removable/editable annotation list.
   // All strings are owned literals; the only network call is the relative
@@ -520,7 +520,7 @@ mod tests {
 
     #[test]
     fn overlay_supports_pick_mode_hover_and_selection() {
-        // VRO-11.6 lavish-axi-style affordances: hover outline while
+        // VRO-11.6 Oracle-style affordances: hover outline while
         // picking, text-selection annotation, removable note list, Esc exit.
         assert!(OVERLAY_SCRIPT.contains("vl-hover"));
         assert!(OVERLAY_SCRIPT.contains("onMouseUp"));
