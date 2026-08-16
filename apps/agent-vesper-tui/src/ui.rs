@@ -872,14 +872,16 @@ fn render_transcript_with_role_banners(
     for (idx, raw) in transcript_lines.iter().enumerate() {
         let is_user_turn = raw.starts_with("user:");
         let is_assistant_turn = raw.starts_with("assistant");
-        // VRO-11.5 live-region markers: `thinking:` entries stream the
-        // provider chain of thought (dim + italic, no bubble), and `> `
-        // entries are quiet tool telemetry (dim, no bubble). Both read as
+        // VRO-11.5/11.6 live-region markers: `⏺` / indented `⎿` entries are
+        // tool telemetry (dim, no bubble) and bare `http(s)://` lines are
+        // clickable URLs (cyan + underlined, own line). Both read as
         // secondary text between the user/assistant bubbles — the same
-        // visual hierarchy Claude Code and Codex use for thinking and
-        // tool lines in their single conversation feed.
+        // visual hierarchy Claude Code and Codex use in their single
+        // conversation feed.
         let is_thinking = raw.starts_with("thinking:");
-        let is_telemetry = raw.starts_with("> ");
+        let is_telemetry = raw.starts_with("⏺") || raw.trim_start_matches(' ').starts_with("⎿");
+        let is_url_line =
+            (raw.starts_with("http://") || raw.starts_with("https://")) && !raw.contains(' ');
 
         // One blank line between turns for vertical pacing. The asymmetric
         // bubble indents (user right, agent left) provide the visual turn
@@ -913,9 +915,8 @@ fn render_transcript_with_role_banners(
                 .unwrap_or(raw);
             (text, false)
         } else if is_telemetry {
-            // Keep the `>` glyph — it reads as a quiet quote marker in
-            // front of the ⏺/⎿ tool glyphs, mirroring Claude Code's dim
-            // tool lines.
+            // Keep the ⏺ / indented ⎿ glyphs verbatim — they read as
+            // Claude Code's quiet action/result markers.
             (raw.as_str(), false)
         } else {
             (raw.as_str(), false)
@@ -968,9 +969,20 @@ fn render_transcript_with_role_banners(
             for line in lines {
                 rendered.push(restyle_line(line, style));
             }
+        } else if is_url_line {
+            // VRO-11.6: a bare URL renders as an obvious link — cyan +
+            // underlined, at normal brightness — and, critically, on its own
+            // unwrapped line so terminal auto-linkification works. Ctrl+O is
+            // the guaranteed opener when the terminal refuses.
+            let style = Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::UNDERLINED);
+            for line in lines {
+                rendered.push(restyle_line(line, style));
+            }
         } else if is_telemetry {
-            // VRO-11.5: tool telemetry renders dim (no italics) so the
-            // ⏺/⎿ action/result lines read as quiet machine output between
+            // VRO-11.6: tool telemetry (⏺ action / ⎿ result) renders dim
+            // (no italics) so the lines read as quiet machine output between
             // the human-readable turns — Claude Code's exact hierarchy.
             let style = Style::default().fg(Color::Rgb(148, 148, 170));
             for line in lines {
@@ -1416,6 +1428,67 @@ mod tests {
         assert!(content.contains("bold"), "bold text should be visible");
         assert!(content.contains("item one"), "list item should be visible");
         assert!(content.contains("fn main"), "code block should be visible");
+    }
+
+    #[test]
+    fn render_to_frame_styles_telemetry_dim_and_url_as_link() {
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
+        // VRO-11.6: ⏺/⎿ telemetry lines render dim (quiet machine output)
+        // and a bare URL line renders as an obvious link — cyan +
+        // underlined at normal brightness — so terminals auto-linkify it.
+        let model = ViewModel {
+            agent_running: true,
+            live_trajectory: vec![
+                "⏺ write_file".to_string(),
+                "  ⎿ ✓ write_file".to_string(),
+                "http://127.0.0.1:41277/review/dash".to_string(),
+            ],
+            ..ViewModel::default()
+        };
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).expect("test backend");
+        terminal
+            .draw(|f| render_to_frame(f, &model))
+            .expect("telemetry + URL render must not panic");
+        let content: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(content.contains("write_file"), "tool name visible");
+        assert!(
+            content.contains("127.0.0.1:41277"),
+            "the review URL must be visible inline: {content}"
+        );
+
+        let has_cyan_link = terminal.backend().buffer().content.iter().any(|cell| {
+            cell.style().fg == Some(ratatui::style::Color::Cyan)
+                && cell
+                    .style()
+                    .add_modifier
+                    .contains(ratatui::style::Modifier::UNDERLINED)
+        });
+        assert!(
+            has_cyan_link,
+            "the URL line must render cyan + underlined (link affordance)"
+        );
+
+        let has_dim_telemetry = terminal.backend().buffer().content.iter().any(|cell| {
+            cell.style().fg == Some(ratatui::style::Color::Rgb(148, 148, 170))
+                && !cell
+                    .style()
+                    .add_modifier
+                    .contains(ratatui::style::Modifier::ITALIC)
+        });
+        assert!(
+            has_dim_telemetry,
+            "⏺/⎿ telemetry must render dim (non-italic) secondary text"
+        );
     }
 
     #[test]

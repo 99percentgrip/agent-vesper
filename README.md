@@ -304,9 +304,17 @@ VRO-11.5 closes the gap a 180-second **zero-tool turn** exposed: the model annou
 
 **Verification:** `cargo xtask verify` green; enforcement + inline-thinking tests added in `agent-vesper-tui` and `vesper-agent`.
 
+### VRO-11.6 — Review UX Parity (Claude Code Telemetry, Clickable URL + Ctrl+O, Interactive Lens Overlay)
+
+VRO-11.6 closes the three gaps the first live VRO-11.5 test exposed: telemetry that still looked like block-quoted noise, a review URL the terminal refused to make clickable, and a review overlay that annotated through a crude native prompt dialog.
+
+1. **Exact Claude Code telemetry shape.** The `> ` quote prefix is gone. Tool events now render exactly like Claude Code: `⏺ write_file` flush-left for the action, `  ⎿ ✓ write_file` indented for the result (✗ on failure) — dim, quiet, one column. The ReAct path's `▶ ACTION` / `↳ OBSERVATION` / `✓ FINISH` markdown labels are retired for the same `⏺` / `⎿` shapes.
+2. **The review URL is finally openable.** The `[VesperLens]` announcement now sends the **bare URL on its own line** (own-line + no wrapping is what terminal auto-linkification needs), rendered cyan + underlined as an obvious link. And for any terminal that still refuses: **Ctrl+O** opens the most recent review URL in the system browser (`xdg-open` / `open` / `start`), with the status line advertising it the moment a review goes pending. Fails loudly with a copyable URL if no opener exists.
+3. **lavish-axi-style interactive overlay.** The VesperLens review page drops `window.prompt` entirely: **pick mode** outlines elements on hover, a click opens an **inline popover editor** anchored at the click, **text selections are quotable annotations** (the selection is embedded in the note), annotations live in a removable numbered list (✕ per item), Esc exits pick mode, Enter confirms the popover. Approve / Request changes submit the same `{action, annotations, notes}` contract as before — no backend change.
+
 ### How VRO interacts with the live tool surface
 
-- The `tool_grounded_react` strategy (VRO-5) routes through a real LM Studio `ReactAgent` bundle when configured — `Actions` and `Observations` stream live into the Conversation panel as `▶ ACTION` / `↳ OBSERVATION` / `✗ ERROR` / `✓ FINISH` lines, alongside the inline thinking header above.
+- The `tool_grounded_react` strategy (VRO-5) routes through a real LM Studio `ReactAgent` bundle when configured — `Actions` and `Observations` stream live into the Conversation panel as `⏺ <tool>` / indented `⎿ <result>` lines, alongside the inline thinking header above.
 - The other nine strategies execute in the background; only the LEARNED notice and the final answer land in the conversation feed.
 - VRO is **off by default** (PRD §21 — zero behavior regression when disabled). It activates only when `[reasoning] enabled = true` is set in the runtime config OR a `/reasoning set mode=<X>` override is in force.
 
