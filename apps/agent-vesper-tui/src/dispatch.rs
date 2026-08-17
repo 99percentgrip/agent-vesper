@@ -228,7 +228,7 @@ impl Default for TerminalPreferences {
         Self {
             theme: "vesper".into(),
             screen_reader: false,
-            native_mouse: false,
+            native_mouse: true,
             sound: false,
             vim: false,
             vim_mode: "insert".into(),
@@ -1036,6 +1036,18 @@ mod integration_tests {
     use crate::ui::{StubRenderer, TerminalRenderer, ViewModel};
     use vesper_domain::{BoundedString, ProviderId};
     use vesper_provider::{SuperpowerDescriptor, SuperpowerKind, SuperpowerScope, SuperpowerValue};
+
+    #[test]
+    fn vro119_native_mouse_defaults_on_so_the_wheel_reaches_the_app() {
+        // VRO-11.9: the VRO-11.7 off-default broke mouse-wheel scrolling —
+        // in the alternate screen, terminals deliver NO wheel events to the
+        // app unless mouse reporting is enabled. Native selection users
+        // can still toggle it off via settings.
+        assert!(
+            TerminalPreferences::default().native_mouse,
+            "mouse capture must default ON (wheel parity)"
+        );
+    }
 
     fn provider() -> ProviderId {
         ProviderId::new("zai").unwrap()
