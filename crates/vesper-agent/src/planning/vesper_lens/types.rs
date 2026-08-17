@@ -13,7 +13,8 @@
 //!   "annotations": [
 //!     { "selector": "#hero", "comment": "too big", "suggested_html": null }
 //!   ],
-//!   "notes": ""
+//!   "notes": "",
+//!   "answers": [{ "question": "framework", "value": "Rust" }]
 //! }
 //! ```
 
@@ -51,6 +52,28 @@ pub struct DomAnnotation {
     pub suggested_html: Option<String>,
 }
 
+/// One structured answer collected from an interactive VesperLens planning
+/// question. `question` is the stable id supplied by the tool caller; `value`
+/// is the human-selected or typed value.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LensAnswer {
+    pub question: String,
+    pub value: String,
+}
+
+/// One bounded planning question rendered by the native VesperLens interview
+/// surface. Empty `options` produces a free-text field; otherwise the browser
+/// renders radio buttons or checkboxes according to `allow_multiple`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LensQuestion {
+    pub id: String,
+    pub prompt: String,
+    #[serde(default)]
+    pub options: Vec<String>,
+    #[serde(default)]
+    pub allow_multiple: bool,
+}
+
 /// The overarching struct returned by [`crate::planning::vesper_lens::VesperLens::review_artifact`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LensFeedback {
@@ -62,6 +85,10 @@ pub struct LensFeedback {
     /// Free-form overall notes. Untrusted user input.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub notes: String,
+    /// Structured planning/interview answers gathered from controls carrying
+    /// a `data-vesper-question` id. Empty for ordinary artifact reviews.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub answers: Vec<LensAnswer>,
 }
 
 impl Default for LensFeedback {
@@ -72,6 +99,7 @@ impl Default for LensFeedback {
             action: Action::Reject,
             annotations: Vec::new(),
             notes: String::new(),
+            answers: Vec::new(),
         }
     }
 }
@@ -153,6 +181,10 @@ mod tests {
                 suggested_html: Some("<h1>smaller</h1>".into()),
             }],
             notes: "overall fine".into(),
+            answers: vec![LensAnswer {
+                question: "framework".into(),
+                value: "Rust".into(),
+            }],
         };
         let json = serde_json::to_string(&fb).unwrap();
         let back: LensFeedback = serde_json::from_str(&json).unwrap();
@@ -165,6 +197,7 @@ mod tests {
             action: Action::Approve,
             annotations: Vec::new(),
             notes: String::new(),
+            answers: Vec::new(),
         };
         let json = serde_json::to_string(&fb).unwrap();
         // notes is skipped when empty; annotations is `[]` (defaulted on
@@ -183,6 +216,7 @@ mod tests {
         assert_eq!(fb.action, Action::Approve);
         assert!(fb.annotations.is_empty());
         assert!(fb.notes.is_empty());
+        assert!(fb.answers.is_empty());
     }
 
     #[test]
@@ -191,6 +225,7 @@ mod tests {
         assert_eq!(d.action, Action::Reject);
         assert!(d.annotations.is_empty());
         assert!(d.notes.is_empty());
+        assert!(d.answers.is_empty());
     }
 
     #[test]

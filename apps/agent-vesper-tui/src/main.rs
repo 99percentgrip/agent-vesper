@@ -2093,11 +2093,9 @@ fn enter_raw_mode(enable_mouse: bool) -> io::Result<()> {
     // must be queued before leaving the alternate screen on teardown so the
     // terminal's paste mode is reliably restored.
     //
-    // VRO-11.7: mouse capture is OPT-IN (matches the `native_mouse`
-    // preference, default off). Grabbing the mouse by default defeats the
-    // terminal's native URL linkification and text selection — the exact
-    // affordances Claude Code leaves alone. Users who want clickable footer
-    // rows can enable it via the settings toggle.
+    // Mouse capture follows the `native_mouse` preference. It defaults on so
+    // wheel/click events reach the alternate-screen app; users can disable it
+    // when they prefer native terminal selection.
     if enable_mouse {
         execute!(
             stdout(),
@@ -3855,6 +3853,10 @@ your plan and yield to the user. Execute the tools immediately.\n\
 task: write it with write_file (content, not a placeholder).\n\
 - When the request_human_review tool is registered, call it after writing the \
 artifact so the human can review it; when it is not registered, skip it.\n\
+- When planning depends on unresolved user choices, call request_human_input \
+with one to four concrete questions and continue from the returned browser \
+answers. Do not invent requirements or finalize the plan while required \
+answers are missing.\n\
 - The only exception is Plan mode, where you present the plan through the \
 update_plan tool instead of mutating files.\n\
 - For ANY multi-step task, maintain a live TODO list the user can see: call \
@@ -5576,7 +5578,7 @@ fn drain_lens_urls(session: &mut TuiSession) {
                 if looks_like_url(line.as_str()) {
                     session.last_lens_url = Some(line.clone());
                     session.state.status = Some(
-                        "VesperLens review pending — click the link or press Ctrl+O to open."
+                        "VesperLens response pending — use the browser; Ctrl+O opens or reopens it."
                             .into(),
                     );
                 }
@@ -5637,18 +5639,24 @@ fn lens_opener_command(url: &str) -> std::process::Command {
     command
 }
 
+/// Starts the platform browser without inheriting the alternate-screen TUI's
+/// stdio. The child is reaped on a background thread so review handoff never
+/// blocks the terminal event loop.
+fn spawn_browser_detached(url: &str) -> Result<(), std::io::Error> {
+    let mut child = lens_opener_command(url).spawn()?;
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(())
+}
+
 /// Opens `url` in the system browser with silenced stdio, detaches the
 /// child, and reports the outcome on the status line. Shared by the
 /// Ctrl+O binding and the in-app click on a bare-URL transcript line
 /// (VRO-11.9). Never panics; failures surface the copyable URL.
 fn open_url_in_browser(session: &mut TuiSession, url: &str) {
-    match lens_opener_command(url).spawn() {
-        Ok(mut child) => {
-            // Reap asynchronously so a hung browser process never blocks
-            // the UI loop; detach by ignoring the handle entirely.
-            std::thread::spawn(move || {
-                let _ = child.wait();
-            });
+    match spawn_browser_detached(url) {
+        Ok(()) => {
             session.state.status = Some(format!("Opened in browser: {url}"));
         }
         Err(error) => {
@@ -5773,45 +5781,12 @@ fn apply_agent_progress(progress: AgentProgressEvent, session: &mut TuiSession) 
         }
         AgentProgressEvent::PlanUpdated { markdown } => {
             apply_task_plan(&mut session.state, &markdown);
-            // VRO-11.7: the model's TODO list is restored — rendered INLINE
-            // in the Conversation transcript on every plan update, exactly
-            // like Claude Code's inline todo widget (the VRO-11.5 sidebar
-            // removal overshot; it belongs in the conversation, not a
-            // dashboard panel). The block persists as a transcript entry so
-            // the latest plan state stays readable while scrolling history.
-            let block = format_todo_block(&session.state.task_plan);
-            if !block.is_empty() {
-                session.state.transcript.push(block);
-            }
             push_activity(
                 session,
                 format!("☑ TODO updated ({} task(s))", session.state.task_plan.len()),
             );
         }
     }
-}
-
-/// VRO-11.7 — renders the model-authored TODO list as a Claude Code-style
-/// inline transcript block. Each update replaces nothing (history keeps
-/// prior blocks); the newest block reflects the full current plan state:
-/// ✓ completed, ● in progress, ○ pending. Empty plans render as an empty
-/// string (nothing pushed).
-#[must_use]
-pub(crate) fn format_todo_block(tasks: &[crate::dispatch::TaskItem]) -> String {
-    if tasks.is_empty() {
-        return String::new();
-    }
-    let mut out = String::from("⎿ TODO\n");
-    for task in tasks {
-        let marker = match task.status.as_str() {
-            "completed" => "✓",
-            "in_progress" => "●",
-            _ => "○",
-        };
-        out.push_str(&format!("  {marker} {}\n", task.content.as_str()));
-    }
-    // Trim the trailing newline: transcript entries are rendered as blocks.
-    out.trim_end_matches('\n').to_string()
 }
 
 fn push_activity(session: &mut TuiSession, line: impl Into<String>) {
@@ -7716,15 +7691,79 @@ fn request_human_review_definition() -> vesper_domain::ToolDefinition {
     }
 }
 
+/// Browser-native structured planning interview. Unlike artifact review,
+/// this tool owns the HTML surface and returns stable question/value pairs.
+fn request_human_input_definition() -> vesper_domain::ToolDefinition {
+    vesper_domain::ToolDefinition {
+        id: vesper_domain::ToolId::new("request_human_input").expect("bounded tool id"),
+        harness_name: vesper_domain::HarnessToolName::new("request_human_input")
+            .expect("bounded harness name"),
+        provider_name: None,
+        description: "Open a VesperLens browser interview and BLOCK until the human answers planning questions. Use this before finalizing a plan when requirements, choices, preferences, scope, or tradeoffs are unresolved. Ask 1-4 concise questions; options are optional and produce free text when omitted.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "Short interview title."
+                },
+                "questions": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 4,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id": { "type": "string", "description": "Stable short answer key." },
+                            "prompt": { "type": "string", "description": "Concrete question shown to the human." },
+                            "options": {
+                                "type": "array",
+                                "maxItems": 6,
+                                "items": { "type": "string" }
+                            },
+                            "allow_multiple": { "type": "boolean", "default": false }
+                        },
+                        "required": ["id", "prompt"]
+                    }
+                }
+            },
+            "required": ["questions"]
+        }),
+        execution_class: vesper_domain::ToolExecutionClass::ReadOnly,
+        extensions: vesper_domain::ExtensionMap::default(),
+        defer_loading: false,
+    }
+}
+
+fn lens_url_callback(
+    url_tx: Option<mpsc::UnboundedSender<String>>,
+) -> Box<dyn Fn(&str) + Send + Sync> {
+    match url_tx {
+        Some(tx) => Box::new(move |url: &str| {
+            let message = match spawn_browser_detached(url) {
+                Ok(()) => {
+                    "[VesperLens] Review opened in your browser. Use the page, then submit your response."
+                }
+                Err(_) => {
+                    "[VesperLens] Could not open a browser automatically. Click the link below, or press Ctrl+O:"
+                }
+            };
+            let _ = tx.send(message.to_string());
+            let _ = tx.send(url.to_string());
+        }),
+        None => Box::new(|_url: &str| {}),
+    }
+}
+
 /// Frontend adapter over the shared hosted service. The legacy implementation
 /// below remains only for the narrow slash-command compatibility tests; all
 /// model-facing tool calls use this shared ACP/TUI surface.
 #[derive(Clone)]
 struct TuiToolService {
     inner: Arc<vesper_harness::HarnessToolService>,
-    /// VRO-11.4 — optional VesperLens review port. When `Some`, the
-    /// `request_human_review` tool is advertised and routes HTML files
-    /// through human-in-the-loop review. When `None`, the tool is hidden.
+    /// Optional VesperLens review port. When `Some`, artifact review and
+    /// structured planning-interview tools are advertised. When `None`, both
+    /// tools are hidden.
     lens_review: Option<Arc<dyn vesper_agent::vro::LensReviewPort>>,
     /// VRO-11.4 — channel for surfacing the review URL back to the TUI's
     /// inline trajectory. The event loop drains the receiver into
@@ -7759,10 +7798,8 @@ impl TuiToolService {
         }
     }
 
-    /// VRO-11.4 — injects the VesperLens review port + URL channel so the
-    /// explicit `request_human_review` tool is advertised and functional.
-    /// Without this call, the tool is hidden from the model (zero
-    /// behavior change for sessions that don't need visual review).
+    /// Injects the VesperLens port + URL channel so artifact review and
+    /// structured planning interview tools are advertised and functional.
     fn with_lens_review(
         mut self,
         lens: Arc<dyn vesper_agent::vro::LensReviewPort>,
@@ -7777,11 +7814,11 @@ impl TuiToolService {
 impl vesper_agent::ToolService for TuiToolService {
     fn definitions(&self) -> Vec<vesper_domain::ToolDefinition> {
         let mut defs = self.inner.definitions();
-        // VRO-11.4: advertise the explicit review tool ONLY when a lens
-        // port is configured. This prevents the model from calling a tool
-        // that would fail with "no lens configured".
+        // Advertise browser human-input tools only when their Lens port is
+        // configured, so every advertised call has a real executor.
         if self.lens_review.is_some() {
             defs.push(request_human_review_definition());
+            defs.push(request_human_input_definition());
         }
         defs
     }
@@ -7796,6 +7833,9 @@ impl vesper_agent::ToolService for TuiToolService {
         // All other tools delegate to the inner harness service.
         if call.tool_id.as_str() == "request_human_review" {
             return self.execute_request_human_review(call, context);
+        }
+        if call.tool_id.as_str() == "request_human_input" {
+            return self.execute_request_human_input(call, context);
         }
         self.inner.execute(call, context)
     }
@@ -7839,26 +7879,7 @@ impl TuiToolService {
             // Surface the review URL to the TUI's inline trajectory so the
             // user sees where to open the browser. The URL arrives through
             // the on_url callback once VesperLens binds its listener.
-            let on_url: Box<dyn Fn(&str) + Send + Sync> = match &url_tx {
-                Some(tx) => {
-                    let tx = tx.clone();
-                    Box::new(move |url: &str| {
-                        // VRO-11.7: the announcement message must NOT embed
-                        // the URL (v0.20.36 rendered it TWICE — once inside
-                        // `Open: <URL>` from the PRD diagnostic, once as the
-                        // bare line — and neither was clickable). Now: ONE
-                        // message line WITHOUT the URL, then the BARE URL on
-                        // its own line — the single, linkifiable copy.
-                        // Ctrl+O remains the guaranteed opener.
-                        let _ = tx.send(
-                            "[VesperLens] Artifact ready for review. Click the link below, or press Ctrl+O:"
-                                .to_string(),
-                        );
-                        let _ = tx.send(url.to_string());
-                    })
-                }
-                None => Box::new(|_url: &str| {}),
-            };
+            let on_url = lens_url_callback(url_tx);
             // Route the content through VesperLens. This BLOCKS until the
             // human submits feedback (or the 30-minute timeout fires).
             let feedback = lens
@@ -7870,6 +7891,108 @@ impl TuiToolService {
             // annotations and can apply corrections on the next step.
             let msg = vesper_agent::vro::feedback_as_context_message(&feedback);
             vesper_agent::ToolResult::new(msg)
+        })
+    }
+
+    fn execute_request_human_input<'a>(
+        &'a self,
+        call: &'a vesper_domain::ToolCall,
+        _context: &'a vesper_agent::ToolContext,
+    ) -> vesper_agent::ToolFuture<'a, Result<vesper_agent::ToolResult, vesper_agent::ToolError>>
+    {
+        let args = call.arguments.clone();
+        let lens = match &self.lens_review {
+            Some(lens) => Arc::clone(lens),
+            None => {
+                return Box::pin(async move {
+                    Err(tui_tool_failure(
+                        "request_human_input",
+                        "no VesperLens review port configured",
+                    ))
+                });
+            }
+        };
+        let url_tx = self.lens_url_tx.clone();
+        Box::pin(async move {
+            let raw_questions = args
+                .get("questions")
+                .and_then(serde_json::Value::as_array)
+                .ok_or_else(|| {
+                    tui_tool_failure("request_human_input", "missing questions array")
+                })?;
+            if !(1..=4).contains(&raw_questions.len()) {
+                return Err(tui_tool_failure(
+                    "request_human_input",
+                    "questions must contain between 1 and 4 items",
+                ));
+            }
+            let mut questions = Vec::with_capacity(raw_questions.len());
+            let mut question_ids = std::collections::BTreeSet::new();
+            for raw in raw_questions {
+                let id = raw
+                    .get("id")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .ok_or_else(|| {
+                        tui_tool_failure("request_human_input", "question id must not be empty")
+                    })?;
+                if !question_ids.insert(id.to_owned()) {
+                    return Err(tui_tool_failure(
+                        "request_human_input",
+                        format!("duplicate question id `{id}`"),
+                    ));
+                }
+                let prompt = raw
+                    .get("prompt")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .ok_or_else(|| {
+                        tui_tool_failure("request_human_input", "question prompt must not be empty")
+                    })?;
+                let options = raw
+                    .get("options")
+                    .and_then(serde_json::Value::as_array)
+                    .map(|items| {
+                        items
+                            .iter()
+                            .filter_map(serde_json::Value::as_str)
+                            .map(str::trim)
+                            .filter(|value| !value.is_empty())
+                            .map(str::to_owned)
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                if options.len() > 6 {
+                    return Err(tui_tool_failure(
+                        "request_human_input",
+                        "each question supports at most 6 options",
+                    ));
+                }
+                questions.push(vesper_agent::planning::LensQuestion {
+                    id: id.to_owned(),
+                    prompt: prompt.to_owned(),
+                    options,
+                    allow_multiple: raw
+                        .get("allow_multiple")
+                        .and_then(serde_json::Value::as_bool)
+                        .unwrap_or(false),
+                });
+            }
+            let title = args
+                .get("title")
+                .and_then(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .unwrap_or("Planning interview");
+            let html = vesper_agent::planning::render_interview_artifact(title, &questions);
+            let on_url = lens_url_callback(url_tx);
+            let feedback = lens
+                .review(&html, on_url.as_ref())
+                .await
+                .map_err(|error| tui_tool_failure("request_human_input", error))?;
+            vesper_agent::ToolResult::new(vesper_agent::vro::feedback_as_context_message(&feedback))
         })
     }
 }
@@ -11480,6 +11603,10 @@ mod tests {
                 text.contains("maintain a live TODO list"),
                 "VRO-11.8: the instruction must mandate update_plan TODO tracking; got: {text}"
             );
+            assert!(
+                text.contains("request_human_input"),
+                "planning must expose the interactive browser interview; got: {text}"
+            );
         }
     }
 
@@ -13560,6 +13687,97 @@ mod tests {
     }
 
     #[test]
+    fn request_human_input_definition_exposes_bounded_planning_questions() {
+        let def = request_human_input_definition();
+        assert_eq!(def.id.as_str(), "request_human_input");
+        assert!(def.description.contains("planning"));
+        assert!(def.description.contains("BLOCK"));
+        assert_eq!(def.input_schema["properties"]["questions"]["minItems"], 1);
+        assert_eq!(def.input_schema["properties"]["questions"]["maxItems"], 4);
+        assert_eq!(
+            def.input_schema["properties"]["questions"]["items"]["properties"]["options"]["maxItems"],
+            6
+        );
+    }
+
+    #[tokio::test]
+    async fn request_human_input_executes_interview_and_returns_structured_answers() {
+        #[derive(Debug)]
+        struct CapturingLens {
+            html: std::sync::Mutex<String>,
+        }
+        impl vesper_agent::vro::LensReviewPort for CapturingLens {
+            fn review<'a>(
+                &'a self,
+                html: &str,
+                on_url: &'a (dyn Fn(&str) + Send + Sync),
+            ) -> std::pin::Pin<
+                Box<
+                    dyn std::future::Future<
+                            Output = Result<
+                                vesper_agent::planning::LensFeedback,
+                                vesper_agent::planning::LensError,
+                            >,
+                        > + Send
+                        + 'a,
+                >,
+            > {
+                *self.html.lock().unwrap() = html.to_owned();
+                on_url("http://127.0.0.1:43210/");
+                Box::pin(async {
+                    Ok(vesper_agent::planning::LensFeedback {
+                        action: vesper_agent::planning::Action::Modify,
+                        answers: vec![vesper_agent::planning::LensAnswer {
+                            question: "framework".into(),
+                            value: "Rust".into(),
+                        }],
+                        ..Default::default()
+                    })
+                })
+            }
+        }
+
+        let lens = Arc::new(CapturingLens {
+            html: std::sync::Mutex::new(String::new()),
+        });
+        let mut service = TuiToolService::new(
+            Arc::new(MemoryStores::open_default()),
+            std::path::PathBuf::from("/tmp/test-cron"),
+            std::path::PathBuf::from("/tmp/test-mcp"),
+            None,
+        );
+        service.lens_review = Some(lens.clone());
+        service.lens_url_tx = None;
+        let call = vesper_domain::ToolCall {
+            id: vesper_domain::ToolCallId::new("interview-call").unwrap(),
+            tool_id: vesper_domain::ToolId::new("request_human_input").unwrap(),
+            arguments: serde_json::json!({
+                "title": "Architecture choices",
+                "questions": [{
+                    "id": "framework",
+                    "prompt": "Which implementation language?",
+                    "options": ["Rust", "Go"]
+                }]
+            }),
+            extensions: vesper_domain::ExtensionMap::default(),
+        };
+        let context = vesper_agent::executor::uncancellable_context(
+            Vec::new(),
+            vesper_domain::SessionOperatingMode::Code,
+            vesper_domain::SessionPermissionMode::Ask,
+        );
+
+        let result = vesper_agent::ToolService::execute(&service, &call, &context)
+            .await
+            .expect("interview tool succeeds");
+        let html = lens.html.lock().unwrap().clone();
+        assert!(html.contains("Architecture choices"));
+        assert!(html.contains("data-vesper-question=\"framework\""));
+        assert!(result.text.as_str().contains("Planning answers (1):"));
+        assert!(result.text.as_str().contains("framework: Rust"));
+    }
+
+    #[test]
     fn vro114_tui_tool_service_without_lens_excludes_request_human_review() {
         // When no lens port is configured, the tool is NOT advertised
         // (prevents the model from calling a tool that would fail).
@@ -13573,6 +13791,10 @@ mod tests {
         assert!(
             !defs.iter().any(|d| d.id.as_str() == "request_human_review"),
             "tool must be hidden when no lens configured"
+        );
+        assert!(
+            !defs.iter().any(|d| d.id.as_str() == "request_human_input"),
+            "interview tool must be hidden when no lens configured"
         );
     }
 
@@ -13593,6 +13815,10 @@ mod tests {
         assert!(
             defs.iter().any(|d| d.id.as_str() == "request_human_review"),
             "tool must be present when lens configured"
+        );
+        assert!(
+            defs.iter().any(|d| d.id.as_str() == "request_human_input"),
+            "interactive planning tool must be present when lens configured"
         );
     }
 
@@ -13769,42 +13995,7 @@ mod tests {
     }
 
     #[test]
-    fn vro117_format_todo_block_renders_claude_code_markers() {
-        use crate::dispatch::TaskItem;
-        let item = |content: &str, status: &str| TaskItem {
-            content: content.into(),
-            status: status.into(),
-            priority: "0".into(),
-        };
-        let block = format_todo_block(&[
-            item("Write the HTML file", "completed"),
-            item("Wire the chart CSS", "in_progress"),
-            item("Request review", "pending"),
-        ]);
-        assert!(block.starts_with("⎿ TODO"), "header first: {block}");
-        assert!(
-            block.contains("  ✓ Write the HTML file"),
-            "completed: {block}"
-        );
-        assert!(
-            block.contains("  ● Wire the chart CSS"),
-            "in progress: {block}"
-        );
-        assert!(block.contains("  ○ Request review"), "pending: {block}");
-        // Ordering follows the plan.
-        let done = block.find("✓").unwrap();
-        let wip = block.find("●").unwrap();
-        let todo = block.find("○").unwrap();
-        assert!(done < wip && wip < todo);
-        // Empty plan renders nothing (no orphan header pushed).
-        assert_eq!(format_todo_block(&[]), "");
-    }
-
-    #[test]
-    fn vro117_plan_updated_pushes_todo_block_into_transcript() {
-        // VRO-11.7: restoring the TODO list — Claude Code-style INLINE in
-        // the conversation. Every PlanUpdated must push a fresh block into
-        // the persistent transcript (not a panel, not activity only).
+    fn plan_updated_refreshes_tasks_without_polluting_chat_history() {
         let mut session = fresh_tui_session_for_trajectory_tests();
         let before = session.state.transcript.len();
         apply_agent_progress(
@@ -13816,12 +14007,12 @@ mod tests {
         );
         assert_eq!(
             session.state.transcript.len(),
-            before + 1,
-            "exactly one todo block pushed"
+            before,
+            "TODO state belongs in its dedicated panel, not chat history"
         );
-        let block = session.state.transcript.last().unwrap();
-        assert!(block.starts_with("⎿ TODO"), "block: {block}");
-        assert!(block.contains("○ Write the HTML file"), "block: {block}");
+        assert_eq!(session.state.task_plan.len(), 2);
+        assert_eq!(session.state.task_plan[0].content, "Write the HTML file");
+        assert_eq!(session.state.task_plan[1].content, "Request review");
     }
 
     #[test]

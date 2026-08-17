@@ -13,7 +13,7 @@ use ratatui::{
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{
-        Block, BorderType, Borders, Clear, Gauge, List, ListItem, ListState, Paragraph, Scrollbar,
+        Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph, Scrollbar,
         ScrollbarOrientation, ScrollbarState, Wrap,
     },
 };
@@ -378,20 +378,10 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
         ]);
         (ratatui::text::Text::from(ready), 1)
     } else {
-        // Render each top-level transcript line through markdown separately
-        // so role banners can apply a distinct background style across the
-        // full pane width. A `user:` prefix marks a user turn (full-width
-        // dark-blue banner); every other role (assistant, streaming, plan
-        // context, errors) renders against the default background. Joining
-        // all entries into one document (the previous approach) collapses
-        // markdown constructs across role boundaries and loses the per-turn
-        // segmentation the reference layout shows.
-        //
-        // `inner_width` is passed in so user banner lines can be padded to
-        // the next multiple of the inner width — ratatui 0.30 does NOT fill
-        // trailing empty cells with the line's bg, so explicit padding is
-        // required for the banner to span the full pane width.
-        let rendered = render_transcript_with_role_banners(&transcript_lines, inner_width);
+        // Render each top-level entry separately so markdown cannot bleed
+        // across role/tool boundaries and user prompts can receive the quiet
+        // terminal-native `›` marker.
+        let rendered = render_transcript_lines(&transcript_lines, inner_width);
         let estimate = estimated_wrapped_lines(&rendered, inner_width);
         (ratatui::text::Text::from(rendered), estimate)
     };
@@ -776,106 +766,24 @@ fn theme_style(theme: &str) -> Style {
     }
 }
 
-/// Background style applied to user-turn banner lines. The reference Native
 /// Subtle slate color used for the rounded application chrome (composer,
 /// conversation, sidebar panels). Tying the whole UI to one border color
 /// gives the polished, cohesive look the Native GLM reference layout shows.
 const CHROME_BORDER: Color = Color::Rgb(60, 70, 85);
 
-/// Background color for the user chat bubble (oracle: `#12314b`). The user
-/// bubble is right-shifted via an 8-cell left indent so it reads as the
-/// "outgoing" message in the iMessage-style asymmetric layout.
-const USER_BUBBLE_BG: Color = Color::Rgb(18, 49, 75);
-
-/// Background color for the agent chat bubble (oracle: `#171d26`). The
-/// agent bubble is left-shifted via an 8-cell right indent so it reads as
-/// the "incoming" message on the left side of the pane.
-const AGENT_BUBBLE_BG: Color = Color::Rgb(23, 29, 38);
-
-/// Left indent (empty cells with no bubble bg) for the user bubble. Matches
-/// the oracle's `margin: 1 1 0 8` (left=8) so the user message sits on the
-/// RIGHT side of the pane like an outgoing chat bubble.
-const USER_BUBBLE_INDENT_LEFT: usize = 8;
-/// Right indent for the user bubble (oracle: margin right=1).
-const USER_BUBBLE_INDENT_RIGHT: usize = 1;
-/// Left indent for the agent bubble (oracle: margin left=1).
-const AGENT_BUBBLE_INDENT_LEFT: usize = 1;
-/// Right indent for the agent bubble. Matches the oracle's
-/// `margin: 1 8 0 1` (right=8) so the agent message sits on the LEFT side
-/// of the pane like an incoming chat bubble.
-const AGENT_BUBBLE_INDENT_RIGHT: usize = 8;
-
-/// Wraps a markdown-rendered [`Line`] in an asymmetric chat bubble.
-///
-/// `indent_left` and `indent_right` are empty-cell margins on each side
-/// (rendered with default background, NO bubble bg). The bubble's content
-/// spans `inner_width - indent_left - indent_right` cells with `bubble_bg`
-/// as the background. Each content span retains its original foreground /
-/// modifier (bold color, code highlight, etc.) — the bubble bg layers
-/// *underneath* via `.patch()`. Trailing cells inside the bubble are padded
-/// with bg-styled spaces so the bubble fills its full width and reads as a
-/// solid block rather than just highlighting the typed characters.
-fn wrap_in_bubble(
-    mut line: Line<'static>,
-    indent_left: usize,
-    indent_right: usize,
-    bubble_bg: Color,
-    inner_width: usize,
-) -> Line<'static> {
-    let bubble_width = inner_width
-        .saturating_sub(indent_left + indent_right)
-        .max(1);
-    let bubble_style = Style::default().bg(bubble_bg);
-    let mut new_spans: Vec<Span<'static>> = Vec::new();
-    if indent_left > 0 {
-        new_spans.push(Span::raw(" ".repeat(indent_left)));
-    }
-    let mut content_width: usize = 0;
-    for span in line.spans.drain(..) {
-        content_width += span.content.chars().count();
-        new_spans.push(Span::styled(span.content, span.style.patch(bubble_style)));
-    }
-    if content_width < bubble_width {
-        let pad = " ".repeat(bubble_width - content_width);
-        new_spans.push(Span::styled(pad, bubble_style));
-    }
-    if indent_right > 0 {
-        new_spans.push(Span::raw(" ".repeat(indent_right)));
-    }
-    Line::from(new_spans)
-}
-
-/// Renders each transcript entry through markdown, then wraps user and
-/// assistant turns in **asymmetric chat bubbles** matching the frozen
-/// Python oracle's iMessage-style layout.
-///
-/// **Oracle design (frozen `glm_acp/tui.py:2199-2201`, pinned bf4d428):**
-/// ```text
-/// .user-message  { margin: 1 1 0 8; padding: 1; background: #12314b; }
-/// .agent-message { margin: 1 8 0 1; padding: 1; background: #171d26; }
-/// ```
-/// - **User bubble**: 8-cell left indent → message sits on the RIGHT side,
-///   dark-blue bg `Rgb(18, 49, 75)`.
-/// - **Agent bubble**: 8-cell right indent → message sits on the LEFT side,
-///   dark-gray bg `Rgb(23, 29, 38)`.
-/// - The **asymmetry alone separates turns** — no horizontal dividers
-///   needed (the oracle uses none).
-///
-/// System messages, plan-mode context, and errors render without a bubble
-/// (matching the oracle's `.system-message { color: $text-muted; }`).
-fn render_transcript_with_role_banners(
-    transcript_lines: &[String],
-    inner_width: usize,
-) -> Vec<Line<'static>> {
-    let inner_width = inner_width.max(1);
+/// Renders the transcript as a quiet terminal-native feed: user prompts carry
+/// a cyan `›` marker, assistant markdown is unboxed, and thinking/tool output
+/// stays visually secondary. This follows Codex/Claude terminal hierarchy
+/// without chat bubbles or full-width role banners.
+fn render_transcript_lines(transcript_lines: &[String], _inner_width: usize) -> Vec<Line<'static>> {
     let mut rendered: Vec<Line<'static>> = Vec::new();
     for (idx, raw) in transcript_lines.iter().enumerate() {
         let is_user_turn = raw.starts_with("user:");
         let is_assistant_turn = raw.starts_with("assistant");
         // VRO-11.5/11.6 live-region markers: `⏺` / indented `⎿` entries are
-        // tool telemetry (dim, no bubble) and bare `http(s)://` lines are
+        // tool telemetry (dim) and bare `http(s)://` lines are
         // clickable URLs (cyan + underlined, own line). Both read as
-        // secondary text between the user/assistant bubbles — the same
+        // secondary text between user/assistant turns — the same
         // visual hierarchy Claude Code and Codex use in their single
         // conversation feed.
         let is_thinking = raw.starts_with("thinking:");
@@ -883,82 +791,50 @@ fn render_transcript_with_role_banners(
         let is_url_line =
             (raw.starts_with("http://") || raw.starts_with("https://")) && !raw.contains(' ');
 
-        // One blank line between turns for vertical pacing. The asymmetric
-        // bubble indents (user right, agent left) provide the visual turn
-        // separation — no horizontal `─` dividers (the oracle uses none).
+        // One blank line between turns for vertical pacing.
         if idx > 0 {
             rendered.push(Line::raw(""));
         }
 
-        // Strip the role prefix from the content so the bubble shows ONLY
-        // the message text. The asymmetric indent already communicates the
-        // role (user on the right, agent on the left) — showing "user:" or
-        // "assistant:" inside the bubble would be redundant and ugly.
-        // For user turns we prepend a bold "You" label matching the oracle
-        // (`Static(f"{label}\n{text}")`). Agent turns render just the
-        // markdown content with no label (matching the oracle's bare
-        // `SelectableStatic` updated with `RichMarkdown(text)`).
-        let (content, prepend_you_label) = if is_user_turn {
-            let text = raw
-                .strip_prefix("user: ")
+        // Strip internal role prefixes; the visible marker and text hierarchy
+        // communicate the role without leaking transport labels.
+        let content = if is_user_turn {
+            raw.strip_prefix("user: ")
                 .or_else(|| raw.strip_prefix("user:"))
-                .unwrap_or(raw);
-            (text, true)
+                .unwrap_or(raw)
         } else if is_assistant_turn {
             // Handles both "assistant: ..." and "assistant (streaming): ..."
-            let text = raw.find(": ").map(|i| &raw[i + 2..]).unwrap_or(raw);
-            (text, false)
+            raw.find(": ").map(|i| &raw[i + 2..]).unwrap_or(raw)
         } else if is_thinking {
-            let text = raw
-                .strip_prefix("thinking: ")
+            raw.strip_prefix("thinking: ")
                 .or_else(|| raw.strip_prefix("thinking:"))
-                .unwrap_or(raw);
-            (text, false)
+                .unwrap_or(raw)
         } else if is_telemetry {
             // Keep the ⏺ / indented ⎿ glyphs verbatim — they read as
             // Claude Code's quiet action/result markers.
-            (raw.as_str(), false)
+            raw.as_str()
         } else {
-            (raw.as_str(), false)
+            raw.as_str()
         };
 
-        let mut lines = crate::markdown::render_markdown(content);
-        if prepend_you_label {
-            // Bold blue "You" label as the first line of the user bubble,
-            // matching the oracle's `Static(f"{label}\n{text}")`.
-            lines.insert(
-                0,
-                Line::from(Span::styled(
-                    "You",
-                    Style::default()
-                        .add_modifier(Modifier::BOLD)
-                        .fg(Color::Rgb(130, 170, 255)),
-                )),
-            );
-        }
+        let lines = crate::markdown::render_markdown(content);
 
         if is_user_turn {
-            // User bubble: right-shifted (8-cell left indent), dark-blue bg.
-            for line in lines {
-                rendered.push(wrap_in_bubble(
-                    line,
-                    USER_BUBBLE_INDENT_LEFT,
-                    USER_BUBBLE_INDENT_RIGHT,
-                    USER_BUBBLE_BG,
-                    inner_width,
-                ));
+            for (line_index, mut line) in lines.into_iter().enumerate() {
+                let marker = if line_index == 0 { "› " } else { "  " };
+                line.spans.insert(
+                    0,
+                    Span::styled(
+                        marker,
+                        Style::default()
+                            .fg(Color::Cyan)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                );
+                rendered.push(line);
             }
         } else if is_assistant_turn {
-            // Agent bubble: left-shifted (8-cell right indent), dark-gray bg.
-            for line in lines {
-                rendered.push(wrap_in_bubble(
-                    line,
-                    AGENT_BUBBLE_INDENT_LEFT,
-                    AGENT_BUBBLE_INDENT_RIGHT,
-                    AGENT_BUBBLE_BG,
-                    inner_width,
-                ));
-            }
+            rendered.extend(lines);
         } else if is_thinking {
             // VRO-11.5: live thinking streams as dim italic secondary text —
             // visually distinct from the final conversational answer without
@@ -989,7 +865,7 @@ fn render_transcript_with_role_banners(
                 rendered.push(restyle_line(line, style));
             }
         } else {
-            // System / plan context / errors: no bubble, default styling.
+            // System / plan context / errors: default styling.
             rendered.extend(lines);
         }
     }
@@ -1003,7 +879,7 @@ fn render_transcript_with_role_banners(
 /// transcript content) returns `None` so the caller falls through to the
 /// default click behavior.
 ///
-/// Replicates the renderer's pure pipeline (per-entry banner rendering +
+/// Replicates the renderer's pure pipeline (per-entry role rendering +
 /// wrap estimation + the same scroll math) so the mapping is consistent
 /// with what is on screen. Wrap counts are estimates; a miss is always a
 /// safe no-op.
@@ -1025,8 +901,7 @@ pub fn bare_url_entry_at_row(model: &ViewModel, area: Rect, row: u16) -> Option<
     let mut total = 0_usize;
     let mut spans: Vec<(usize, usize)> = Vec::with_capacity(lines.len());
     for (idx, entry) in lines.iter().enumerate() {
-        let rendered =
-            render_transcript_with_role_banners(std::slice::from_ref(entry), inner_width);
+        let rendered = render_transcript_lines(std::slice::from_ref(entry), inner_width);
         let wrapped = estimated_wrapped_lines(&rendered, inner_width);
         let rows = if idx > 0 { wrapped + 1 } else { wrapped };
         spans.push((total, total + rows));
@@ -1143,15 +1018,23 @@ fn render_screen_reader(frame: &mut Frame<'_>, model: &ViewModel) {
 }
 
 fn render_sidebar(frame: &mut Frame<'_>, area: ratatui::layout::Rect, model: &ViewModel) {
-    // VRO-11.5: the Activity strip and TODO panel are removed from the
-    // sidebar — tool telemetry already renders inline in the Conversation
-    // panel (VRO-11.4) and plan updates surface through the REVIEW phase,
-    // so the dashboard widgets were pure clutter. What remains is the
-    // session summary the driver actually consults plus the structured
-    // run report.
+    // Keep the rail useful and quiet: compact session facts, a dedicated
+    // live TODO surface, and a bounded run summary. Tool telemetry remains
+    // inline with the conversation, but plan state does not belong in chat
+    // history because repeated updates bury the actual dialogue.
+    let report_height = if model.last_report.is_empty() { 3 } else { 8 };
+    let todo_constraint = if model.panels.tasks {
+        Constraint::Min(7)
+    } else {
+        Constraint::Length(0)
+    };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(11), Constraint::Min(8)])
+        .constraints([
+            Constraint::Length(9),
+            todo_constraint,
+            Constraint::Length(report_height),
+        ])
         .split(area);
 
     let model_name = superpower_value_for(model, "model").unwrap_or_else(|| "provider".into());
@@ -1167,10 +1050,8 @@ fn render_sidebar(frame: &mut Frame<'_>, area: ratatui::layout::Rect, model: &Vi
         Line::from(format!("Thinking    {thinking}")),
         Line::from(format!("Permission  {:?}", model.controls.permission_mode)),
         Line::from(format!("Mode        {:?}", model.controls.operating_mode)),
-        Line::from(format!("Generation  {}", model.controls.generation_profile)),
-        Line::from(format!("API plan    {}", model.controls.endpoint_plan)),
         Line::from(format!("Phase       {}", model.plan.phase().label())),
-        Line::from(format!("Transcript  {} lines", model.transcript.len())),
+        Line::from(format!("Context     {} entries", model.transcript.len())),
     ];
     frame.render_widget(
         Paragraph::new(session).block(
@@ -1183,49 +1064,79 @@ fn render_sidebar(frame: &mut Frame<'_>, area: ratatui::layout::Rect, model: &Vi
         chunks[0],
     );
 
+    let todo_lines = if model.task_plan.is_empty() {
+        vec![Line::from(Span::styled(
+            "No active tasks",
+            Style::default().fg(Color::DarkGray),
+        ))]
+    } else {
+        model
+            .task_plan
+            .iter()
+            .map(|task| {
+                let (marker, color) = match task.status.as_str() {
+                    "completed" => ("✓", Color::Green),
+                    "in_progress" => ("●", Color::Yellow),
+                    _ => ("○", Color::DarkGray),
+                };
+                Line::from(vec![
+                    Span::styled(format!("{marker} "), Style::default().fg(color)),
+                    Span::raw(task.content.clone()),
+                ])
+            })
+            .collect()
+    };
     let completed = model
         .task_plan
         .iter()
         .filter(|task| task.status == "completed")
         .count();
-    if model.last_report.is_empty() {
-        let ratio = if model.task_plan.is_empty() {
-            0.0
-        } else {
-            completed as f64 / model.task_plan.len() as f64
-        };
+    if model.panels.tasks {
         frame.render_widget(
-            Gauge::default()
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .border_type(BorderType::Rounded)
-                        .border_style(Style::default().fg(CHROME_BORDER))
-                        .title(" Run "),
-                )
-                .gauge_style(Style::default().fg(Color::Cyan))
-                .ratio(ratio)
-                .label(if model.agent_running {
-                    "WORKING"
-                } else {
-                    "READY"
-                }),
-            chunks[1],
-        );
-    } else {
-        frame.render_widget(
-            Paragraph::new(model.last_report.join("\n"))
-                .wrap(Wrap { trim: false })
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .border_type(BorderType::Rounded)
-                        .border_style(Style::default().fg(CHROME_BORDER))
-                        .title(" Run report "),
-                ),
+            Paragraph::new(todo_lines).wrap(Wrap { trim: false }).block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .border_style(Style::default().fg(CHROME_BORDER))
+                    .title(format!(" TODO {completed}/{} ", model.task_plan.len())),
+            ),
             chunks[1],
         );
     }
+
+    let run_lines = if model.last_report.is_empty() {
+        vec![Line::from(vec![
+            Span::styled(
+                if model.agent_running { "● " } else { "○ " },
+                Style::default().fg(if model.agent_running {
+                    Color::Yellow
+                } else {
+                    Color::DarkGray
+                }),
+            ),
+            Span::raw(if model.agent_running {
+                "Working"
+            } else {
+                "Ready"
+            }),
+        ])]
+    } else {
+        model.last_report.iter().cloned().map(Line::from).collect()
+    };
+    frame.render_widget(
+        Paragraph::new(run_lines).wrap(Wrap { trim: false }).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(CHROME_BORDER))
+                .title(if model.last_report.is_empty() {
+                    " Run "
+                } else {
+                    " Last run "
+                }),
+        ),
+        chunks[2],
+    );
 }
 
 fn superpower_value_for(model: &ViewModel, alias: &str) -> Option<String> {
@@ -1457,9 +1368,7 @@ mod tests {
                 "- item two".to_string(),
                 "```rust\nfn main() {}\n```".to_string(),
             ],
-            // Disable the reasoning panel so the conversation panel gets the
-            // full body height — the bubble + blank-line layout needs more
-            // vertical room than the old flat layout did.
+            // Disable inline reasoning so this test isolates transcript text.
             panels: PanelVisibility {
                 reasoning: false,
                 ..PanelVisibility::default()
@@ -1485,6 +1394,52 @@ mod tests {
         assert!(content.contains("bold"), "bold text should be visible");
         assert!(content.contains("item one"), "list item should be visible");
         assert!(content.contains("fn main"), "code block should be visible");
+    }
+
+    #[test]
+    fn wide_layout_renders_todo_in_a_dedicated_compact_sidebar() {
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
+        let model = ViewModel {
+            transcript: vec!["assistant: Actual conversation".into()],
+            task_plan: vec![
+                TaskItem {
+                    content: "Inspect implementation".into(),
+                    status: "completed".into(),
+                    priority: "1".into(),
+                },
+                TaskItem {
+                    content: "Open interactive review".into(),
+                    status: "in_progress".into(),
+                    priority: "2".into(),
+                },
+            ],
+            agent_running: true,
+            ..ViewModel::default()
+        };
+        let backend = TestBackend::new(140, 35);
+        let mut terminal = Terminal::new(backend).expect("test backend");
+        terminal
+            .draw(|f| render_to_frame(f, &model))
+            .expect("wide sidebar render");
+        let content: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+
+        assert!(
+            content.contains("TODO 1/2"),
+            "dedicated TODO title: {content}"
+        );
+        assert!(content.contains("Inspect implementation"));
+        assert!(content.contains("Open interactive review"));
+        assert!(content.contains("Run"));
+        assert!(content.contains("Working"));
+        assert!(content.contains("Actual conversation"));
     }
 
     #[test]
@@ -1584,16 +1539,15 @@ mod tests {
             bare_url_entry_at_row(&only_url, area, top),
             Some(url.clone())
         );
-        // Multi-entry model content rows: user bubble rows 0-1 ("You" +
-        // text), separator row 2, assistant row 3, separator row 4, URL
-        // row 5. Click the URL's own row.
-        let url_row = top + 5;
+        // Multi-entry rows: user prompt row 0, separator 1, assistant 2,
+        // separator 3, URL 4. Click the URL's own row.
+        let url_row = top + 4;
         assert_eq!(
             bare_url_entry_at_row(&model, area, url_row),
             Some(url.clone()),
             "the URL entry's own row must map to it"
         );
-        // The user-bubble rows are not URLs.
+        // The user prompt and separator rows are not URLs.
         assert_eq!(bare_url_entry_at_row(&model, area, top), None);
         assert_eq!(bare_url_entry_at_row(&model, area, top + 1), None);
         // Outside the transcript content (border row / below the content).
@@ -1811,8 +1765,7 @@ mod tests {
             "scrolling 50 lines up from the bottom must NOT show the newest line"
         );
         // The scrollbar renders without panic (proven by reaching this point).
-        // With the new bubble + blank-line layout, each entry takes ~2
-        // rendered lines (blank separator + bubble content), so 200 entries
+        // With blank-line pacing, each entry takes ~2 rendered lines, so 200 entries
         // produce ~400 rendered lines. Scroll 50 from bottom on a ~15-row
         // viewport shows entries roughly in the 165-185 range. Assert that
         // SOME mid-to-late line is visible to confirm the scroll math works.
@@ -1898,19 +1851,10 @@ mod tests {
     }
 
     #[test]
-    fn user_turns_render_as_right_shifted_chat_bubble() {
+    fn user_turns_render_with_terminal_prompt_marker_without_chat_bubble() {
         use ratatui::Terminal;
         use ratatui::backend::TestBackend;
 
-        // The oracle (frozen glm_acp/tui.py:2199) uses iMessage-style
-        // asymmetric chat bubbles:
-        //   .user-message  { margin: 1 1 0 8; background: #12314b; }
-        //   .agent-message { margin: 1 8 0 1; background: #171d26; }
-        // User messages are right-shifted (8-cell left indent) with a
-        // dark-blue bubble bg. The "user:" prefix is stripped and replaced
-        // by a bold "You" label on the first line. This test verifies the
-        // bubble math: indent on the left, fill on the right, correct bg
-        // color, and no redundant "user:" prefix text.
         let model = ViewModel {
             transcript: vec![
                 "assistant: hello there".to_string(),
@@ -1925,80 +1869,31 @@ mod tests {
         let mut terminal = Terminal::new(backend).expect("test backend");
         terminal
             .draw(|f| render_to_frame(f, &model))
-            .expect("bubble render must not panic");
+            .expect("terminal feed render must not panic");
 
         let buffer = terminal.backend().buffer();
-        let user_bubble_bg = Color::Rgb(18, 49, 75); // USER_BUBBLE_BG
-        let width = usize::from(width_u16);
-        let height = usize::from(height_u16);
-
         let content: String = buffer.content.iter().map(|c| c.symbol()).collect();
-
-        // The "user:" prefix must be STRIPPED — not visible inside the bubble.
         assert!(
             !content.contains("user: please"),
-            "the raw 'user:' prefix must be stripped from the bubble content"
+            "the raw transport role prefix must be stripped"
         );
-
-        // The "You" label must be present (oracle: Static(f\"{label}\\n{text}\")).
-        assert!(
-            content.contains("You"),
-            "the bold 'You' label must appear as the first line of the user bubble"
-        );
-
-        // The message text must be present inside the bubble.
         assert!(
             content.contains("please"),
-            "the message text 'please' must be visible inside the user bubble"
+            "the user prompt text must remain visible"
         );
-
-        // Find a row carrying the user bubble bg (the "please help" content row).
-        // Skip the "You" label row (which also has the bg) and find the text row.
-        let mut bubble_row: Option<usize> = None;
-        for y in 0..height {
-            for x in 0..width {
-                let cell = &buffer.content[y * width + x];
-                if cell.symbol() == "p" && cell.bg == user_bubble_bg {
-                    bubble_row = Some(y);
-                    break;
-                }
-            }
-            if bubble_row.is_some() {
-                break;
-            }
-        }
-        let bubble_row =
-            bubble_row.expect("a row with 'p' carrying the user bubble bg must be visible");
-
-        // The leftmost cells (x < 9 = 1 border + 8 indent) must NOT carry
-        // the bubble bg — this proves the user bubble is RIGHT-SHIFTED,
-        // not full-width.
-        for x in 1..9 {
-            let cell = &buffer.content[bubble_row * width + x];
-            assert_ne!(
-                cell.bg, user_bubble_bg,
-                "cell at x={x} (left indent zone) must NOT carry the bubble bg — \
-                 the user bubble is right-shifted, not full-width"
-            );
-        }
-
-        // The rightmost bubble-bg cell must reach close to the right edge
-        // (x >= 36), proving the bubble fills its allocated width via
-        // trailing-space padding. The bubble ends at inner_width - 1 (right
-        // indent = 1), so rightmost bg is at x ~ 37-38.
-        let mut rightmost_bubble_x: Option<usize> = None;
-        for x in (0..width).rev() {
-            if buffer.content[bubble_row * width + x].bg == user_bubble_bg {
-                rightmost_bubble_x = Some(x);
-                break;
-            }
-        }
-        let rightmost_bubble_x = rightmost_bubble_x
-            .expect("at least one bubble-bg cell must exist on the user content row");
         assert!(
-            rightmost_bubble_x >= 36,
-            "rightmost bubble-bg cell is at x={rightmost_bubble_x}; must be >= 36 \
-             to prove the bubble fills its allocated width to the right edge"
+            buffer.content.iter().any(|cell| {
+                cell.symbol() == "›"
+                    && cell.style().fg == Some(Color::Cyan)
+                    && cell.style().add_modifier.contains(Modifier::BOLD)
+            }),
+            "user turns need the compact cyan › marker"
+        );
+        assert!(
+            buffer.content.iter().all(|cell| {
+                cell.bg != Color::Rgb(18, 49, 75) && cell.bg != Color::Rgb(23, 29, 38)
+            }),
+            "conversation turns must not paint legacy chat-bubble backgrounds"
         );
     }
 

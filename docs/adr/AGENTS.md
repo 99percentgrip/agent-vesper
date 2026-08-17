@@ -26,6 +26,9 @@ Own accepted, durable architecture and compatibility decisions for Agent Vesper.
   The MIT-licensed reference Oracle repo was read as a
   user-authorized reference blueprint; no code was copied (the harness
   scanner flagged its overlay JS as prompt-injection-shaped).
+- ADR 0018 keeps ADR 0017's network/security boundaries while adding the
+  automatic browser handoff, interaction-first artifact review, structured
+  browser planning questions/answers, and the dedicated TUI TODO panel.
 
 ## Verification
 

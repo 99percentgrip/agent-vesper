@@ -68,27 +68,27 @@ business logic.
   provider's advertised descriptors.
 - `src/ui.rs` — `TerminalRenderer` trait, `ViewModel`, `StubRenderer` for
   tests, and the production `render_to_frame` ratatui/crossterm backend.
-  **VRO-11.5 (single-column layout):** the bottom Reasoning panel, the
-  sidebar TODO panel, and the sidebar Activity strip are DELETED — the
-  Conversation column takes the full body height (working tree overlays
-  via F4; the sidebar keeps Session + Run report only). The provider
+  **Current layout:** the bottom Reasoning panel and Activity strip stay
+  removed; the Conversation column owns chat, inline thinking, and tool
+  telemetry. Wide terminals show a compact right rail with Session, a
+  dedicated live TODO panel, and a bounded Last run summary. `/tasks`
+  toggles the TODO region and reveals the sidebar when enabling it. The provider
   chain of thought streams INLINE in the Conversation feed:
   `transcript_lines_for` emits a `thinking:`-prefixed block (compact
   `ReasoningDiagnostics::render_inline_header()` label + the newest
   `INLINE_THINKING_TAIL_LINES` reasoning lines) while a turn runs;
-  `render_transcript_with_role_banners` renders `thinking:` entries dim +
-  italic and `> ` telemetry entries dim (no bubble) via `restyle_line`,
+  `render_transcript_lines` renders `thinking:` entries dim + italic and
+  `⏺`/`⎿` telemetry entries dim via `restyle_line`,
   mirroring Claude Code / Codex live-tool hierarchy. `PanelVisibility`
   now means: `reasoning` = inline-thinking visibility (F2), `sidebar` =
-  Session/Run sidebar; the `tasks` flag is gone (`/tasks` resolves to a
-  truthful "retired" status). `ViewModel` no longer carries
+  right-rail visibility, and `tasks` = dedicated TODO visibility. `ViewModel` no longer carries
   `reasoning_manual_scroll` / `reasoning_panel_focused` — every scroll
   input targets the conversation. Tool telemetry uses the `⏺` action /
   `⎿` result glyphs (Claude Code parity; the strings are formatted in
   `main.rs::apply_agent_progress`).
-  User turns (`user:` prefix) render inside a full-width dark-blue role
-  banner (`USER_BANNER_STYLE` via `render_transcript_with_role_banners`) so
-  conversational turn changes read instantly. The interactive
+  User turns (`user:` prefix) render as plain markdown with a compact cyan
+  `›` prompt marker; assistant turns remain unboxed. Legacy full-width and
+  asymmetric chat-bubble backgrounds are prohibited. The interactive
   `render_permission_modal` overlays a centered `Clear` + bordered dialog
   (`PermissionModal`/`PermissionChoice` exported from `lib.rs`) whenever
   `ViewModel::pending_permission` is set; the binary's event loop intercepts
@@ -303,18 +303,12 @@ business logic.
   `cmd /C start`) is the guaranteed browser opener; failures surface the
   copyable URL in the status line. (3) `ui.rs` renders `⏺`/indented-`⎿`
   lines dim and bare-URL lines cyan + underlined (link affordance).
-  **VRO-11.7 (clickability + TODO restore)**: (1) **mouse capture is
-  OPT-IN** — `enter_raw_mode(enable_mouse)` queues `EnableMouseCapture`
-  only when the `native_mouse` preference is on (default OFF, all four
-  call sites pass the preference). Grabbing the mouse by default was what
-  defeated native terminal URL linkification and text selection; Claude
-  Code leaves the mouse alone. (2) **single URL** — the `on_url`
+  **VRO-11.7 (clickability + TODO restore)**: (1) `enter_raw_mode(enable_mouse)`
+  honors the `native_mouse` preference at every call site. (2) **single URL** — the `on_url`
   announcement no longer embeds the URL inside the message line (v0.20.36
   rendered it twice, neither clickable); it sends one message line plus
-  ONE bare-URL line. (3) **inline TODO restored** — every
-  `PlanUpdated` pushes `format_todo_block(&task_plan)` (⎿ TODO / ✓ ● ○
-  markers) into the persistent transcript, Claude Code's inline todo
-  widget; `/tasks` reports the inline location (no panel to toggle).
+  ONE bare-URL line. The later VRO-11.11 layout contract moves live TODO
+  state out of transcript history and into the dedicated sidebar panel.
   **VRO-11.9 (wheel + click parity)**: the 11.7 OFF-default killed the
   mouse wheel — in the alternate screen terminals deliver NO wheel events
   to apps unless mouse reporting is enabled (PageUp/Down kept working
@@ -346,6 +340,18 @@ business logic.
   `document` (capture) and runs a 800ms panel watchdog that re-attaches
   the panel when artifact JS rebuilds `document.body` (the live-test
   root cause of the dead overlay).
+  **VRO-11.11 (interactive handoff + planning interview):** VesperLens
+  review URLs now open in the system browser automatically; the bare URL,
+  click handling, and Ctrl+O remain fallbacks. Artifact review starts in
+  interaction mode so native page controls work; annotation capture is an
+  explicit toggle, `Action::Modify` has a real Send changes action, draft
+  notes survive panel rerenders, and non-2xx feedback submissions fail
+  visibly. The TUI advertises `request_human_input(title, questions)` beside
+  `request_human_review`: it renders 1–4 escaped free-text/radio/checkbox
+  questions, requires every answer, blocks on the same loopback Lens port,
+  and returns stable question/value pairs as tool context. TODO snapshots no
+  longer enter chat history; the dedicated sidebar panel owns current plan
+  state and the former full-height Run gauge is a compact status/report.
   VRO-8 (PRD §8.1 — UX & Diagnostics): three pure helpers + the wiring
   that surfaces VRO telemetry to the driver. (1) `compute_reasoning_diagnostics`
   reads only `VroOrchestrator::profile` (deterministic, allocation-only) +

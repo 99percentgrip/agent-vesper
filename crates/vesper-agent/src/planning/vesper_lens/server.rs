@@ -283,7 +283,7 @@ mod tests {
 
     #[tokio::test]
     async fn post_with_annotations_parses_correctly() {
-        let body = r##"{"action":"modify","annotations":[{"selector":"#hero","comment":"too big"}],"notes":"fix it"}"##;
+        let body = r##"{"action":"modify","annotations":[{"selector":"#hero","comment":"too big"}],"notes":"fix it","answers":[{"question":"framework","value":"Rust"}]}"##;
         let (url, server) =
             start_server("<html><body></body></html>", Duration::from_secs(5)).await;
 
@@ -303,6 +303,9 @@ mod tests {
         assert_eq!(feedback.annotations[0].selector, "#hero");
         assert_eq!(feedback.annotations[0].comment, "too big");
         assert_eq!(feedback.notes, "fix it");
+        assert_eq!(feedback.answers.len(), 1);
+        assert_eq!(feedback.answers[0].question, "framework");
+        assert_eq!(feedback.answers[0].value, "Rust");
     }
 
     #[tokio::test]

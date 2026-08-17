@@ -138,6 +138,12 @@ pub fn feedback_as_context_message(feedback: &LensFeedback) -> String {
     if !feedback.notes.is_empty() {
         out.push_str(&format!("Overall notes: {}\n", feedback.notes));
     }
+    if !feedback.answers.is_empty() {
+        out.push_str(&format!("Planning answers ({}):\n", feedback.answers.len()));
+        for answer in &feedback.answers {
+            out.push_str(&format!("  {}: {}\n", answer.question, answer.value));
+        }
+    }
     if !feedback.annotations.is_empty() {
         out.push_str(&format!("Annotations ({}):\n", feedback.annotations.len()));
         for (i, a) in feedback.annotations.iter().enumerate() {
@@ -327,6 +333,7 @@ mod tests {
                 suggested_html: Some("<h1>smaller</h1>".into()),
             }],
             notes: "fix it".into(),
+            answers: Vec::new(),
         };
         let msg = feedback_as_context_message(&fb);
         assert!(msg.contains("NEEDS MODIFICATION"));
@@ -335,6 +342,28 @@ mod tests {
         assert!(msg.contains("selector: #hero"));
         assert!(msg.contains("comment:  too big"));
         assert!(msg.contains("suggested: <h1>smaller</h1>"));
+    }
+
+    #[test]
+    fn feedback_context_message_includes_structured_planning_answers() {
+        let fb = LensFeedback {
+            action: Action::Modify,
+            answers: vec![
+                crate::planning::LensAnswer {
+                    question: "framework".into(),
+                    value: "Rust".into(),
+                },
+                crate::planning::LensAnswer {
+                    question: "targets".into(),
+                    value: "Web, Desktop".into(),
+                },
+            ],
+            ..Default::default()
+        };
+        let msg = feedback_as_context_message(&fb);
+        assert!(msg.contains("Planning answers (2):"));
+        assert!(msg.contains("framework: Rust"));
+        assert!(msg.contains("targets: Web, Desktop"));
     }
 
     #[test]
