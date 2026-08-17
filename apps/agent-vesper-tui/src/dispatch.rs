@@ -183,11 +183,8 @@ impl Default for SessionControls {
 
 /// User-controlled dashboard panel visibility.
 ///
-/// VRO-11.5: the TODO panel and the bottom Reasoning panel no longer exist
-/// as layout regions — the dashboard is a single Claude Code-style
-/// conversation column. `reasoning` now toggles whether the inline thinking
-/// block streams inside that column (F2), and `sidebar` toggles the
-/// Session/Run-report sidebar.
+/// Inline reasoning stays in the conversation, while the compact right rail
+/// owns session facts, the live TODO list, and the last-run summary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PanelVisibility {
     /// Whether live provider thinking streams inline in the Conversation
@@ -195,6 +192,8 @@ pub struct PanelVisibility {
     pub reasoning: bool,
     /// Whether the Session + Run-report sidebar renders (wide terminals).
     pub sidebar: bool,
+    /// Whether the dedicated TODO region renders inside the sidebar.
+    pub tasks: bool,
 }
 
 impl Default for PanelVisibility {
@@ -202,6 +201,7 @@ impl Default for PanelVisibility {
         Self {
             reasoning: true,
             sidebar: true,
+            tasks: true,
         }
     }
 }
@@ -637,11 +637,14 @@ fn apply_outcome(
                 ));
             }
             UiAction::ToggleTasks => {
-                // VRO-11.7: the TODO list lives INLINE in the conversation —
-                // every plan update pushes a fresh block (Claude Code's
-                // inline todo widget). No separate panel exists to toggle.
-                *status =
-                    Some("TODO renders inline in the conversation on every plan update.".into());
+                panels.tasks = !panels.tasks;
+                if panels.tasks {
+                    panels.sidebar = true;
+                }
+                *status = Some(format!(
+                    "TODO panel {}.",
+                    if panels.tasks { "shown" } else { "hidden" }
+                ));
             }
             UiAction::ToggleSidebar => {
                 panels.sidebar = !panels.sidebar;
@@ -1506,6 +1509,24 @@ mod integration_tests {
         step(&mut state, &registry, &surface, "/clear-plan");
         assert_eq!(state.phase(), PlanPhase::Normal);
         assert!(state.pending_prompt.is_none());
+    }
+
+    #[test]
+    fn tasks_command_toggles_the_dedicated_sidebar_panel() {
+        let registry = registry();
+        let surface = surface();
+        let mut state = SessionState::new();
+        assert!(state.panels.tasks);
+
+        step(&mut state, &registry, &surface, "/tasks");
+        assert!(!state.panels.tasks);
+        assert_eq!(state.status.as_deref(), Some("TODO panel hidden."));
+
+        state.panels.sidebar = false;
+        step(&mut state, &registry, &surface, "/tasks");
+        assert!(state.panels.tasks);
+        assert!(state.panels.sidebar, "showing TODO must reveal its sidebar");
+        assert_eq!(state.status.as_deref(), Some("TODO panel shown."));
     }
 
     #[test]

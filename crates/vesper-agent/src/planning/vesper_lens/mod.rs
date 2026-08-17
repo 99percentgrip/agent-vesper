@@ -14,9 +14,9 @@ pub mod injector;
 pub mod server;
 pub mod types;
 
-pub use injector::inject_review_overlay;
+pub use injector::{inject_review_overlay, render_interview_artifact};
 pub use server::serve_and_collect_feedback;
-pub use types::{Action, DomAnnotation, LensError, LensFeedback};
+pub use types::{Action, DomAnnotation, LensAnswer, LensError, LensFeedback, LensQuestion};
 
 use std::time::Duration;
 

@@ -34,15 +34,15 @@
 ///
 /// The overlay:
 /// 1. Injects a floating review panel (fixed top-right, ~320px wide).
-/// 2. Provides Approve (submit `approve`) / Request changes (submit
-///    `reject`) / Annotate page (pick mode) actions.
+/// 2. Opens in interaction mode so the reviewed page's own controls work,
+///    with explicit Approve / Send changes / Reject / Annotate actions.
 /// 3. In pick mode: hovering outlines the element under the cursor; a
 ///    click opens an INLINE popover editor anchored at the click (no
 ///    `window.prompt`) that captures the comment; selecting text first
 ///    quotes the selection inside the note; a second click on an already
 ///    annotated element removes its annotation; Esc exits pick mode.
 /// 4. Annotations render as a removable numbered list (✕ per item).
-/// 5. On submit, POSTs `{action, annotations, notes}` as JSON to
+/// 5. On submit, POSTs `{action, annotations, notes, answers}` as JSON to
 ///    `/feedback` and replaces the panel with a success message.
 /// 6. Disables itself after submit (single-turn contract).
 const OVERLAY_SCRIPT: &str = r##"(function(){
@@ -55,12 +55,13 @@ const OVERLAY_SCRIPT: &str = r##"(function(){
   // text-selection annotations, and a removable/editable annotation list.
   // All strings are owned literals; the only network call is the relative
   // POST /feedback.
-  // Pick mode is ON BY DEFAULT (VRO-11.7): the page is immediately
-  // interactive — hover outlines, click annotates — with no hidden mode
-  // to discover. Esc or the panel button turns picking off.
+  // The reviewed artifact opens in INTERACTION mode. Annotation is explicit:
+  // capturing every click on boot makes dashboards and prototypes impossible
+  // to operate, which defeats the purpose of reviewing an interactive page.
   var annotations = [];
-  var pickMode = true;
+  var pickMode = false;
   var submitted = false;
+  var overallNotes = "";
   var popover = null;
   var popoverCtx = null; // {el, selector, quote}
 
@@ -116,10 +117,11 @@ const OVERLAY_SCRIPT: &str = r##"(function(){
 
   function render() {
     panel.innerHTML = "";
+    var interviewMode = document.querySelectorAll("[data-vesper-question]").length > 0;
     var title = document.createElement("h2");
     var dot = document.createElement("span"); dot.className = "vl-dot";
     title.appendChild(dot);
-    title.appendChild(document.createTextNode("VesperLens Review"));
+    title.appendChild(document.createTextNode(interviewMode ? "VesperLens Interview" : "VesperLens Review"));
     if (annotations.length) {
       var badge = document.createElement("span");
       badge.className = "vl-badge";
@@ -139,17 +141,23 @@ const OVERLAY_SCRIPT: &str = r##"(function(){
 
     var row = document.createElement("div");
     row.className = "vl-row";
-    row.appendChild(btn("Approve", "primary", function(){ submit("approve"); }));
-    row.appendChild(btn("Request changes", "danger", function(){ submit("reject"); }));
-    var pick = btn(pickMode ? "Picking\u2026" : "Annotate page", pickMode ? "on" : "", togglePick);
+    if (interviewMode) {
+      row.appendChild(btn("Send answers", "primary", function(){ submit("modify"); }));
+      row.appendChild(btn("Cancel", "danger", function(){ submit("reject"); }));
+    } else {
+      row.appendChild(btn("Approve", "primary", function(){ submit("approve"); }));
+      row.appendChild(btn("Send changes", "on", function(){ submit("modify"); }));
+      row.appendChild(btn("Reject", "danger", function(){ submit("reject"); }));
+    }
+    var pick = btn(pickMode ? "Interact with page" : "Annotate page", pickMode ? "on" : "", togglePick);
     row.appendChild(pick);
     panel.appendChild(row);
 
     var hint = document.createElement("div");
     hint.className = "vl-note";
     hint.textContent = pickMode
-      ? "Click any element to comment on it, or select text first to quote it. Esc stops picking."
-      : "Annotate page \u2192 click elements / select text \u2192 leave inline notes for the agent.";
+      ? "Annotation mode: click an element to comment, or select text first. Esc returns to interaction mode."
+      : "Interaction mode: use the page normally. Choose Annotate page when you want to attach feedback.";
     panel.appendChild(hint);
 
     var list = document.createElement("div");
@@ -175,12 +183,14 @@ const OVERLAY_SCRIPT: &str = r##"(function(){
 
     var notesLabel = document.createElement("div");
     notesLabel.className = "vl-note";
-    notesLabel.textContent = "Overall notes (optional):";
+    notesLabel.textContent = interviewMode ? "Additional context (optional):" : "Overall notes (optional):";
     panel.appendChild(notesLabel);
     var notes = document.createElement("textarea");
     notes.id = "vl-notes";
     notes.rows = 2;
     notes.placeholder = "Overall feedback for the agent...";
+    notes.value = overallNotes;
+    notes.addEventListener("input", function(){ overallNotes = notes.value; });
     panel.appendChild(notes);
   }
 
@@ -348,14 +358,50 @@ const OVERLAY_SCRIPT: &str = r##"(function(){
     return parts.join(" > ");
   }
 
+  function collectAnswers() {
+    var grouped = Object.create(null);
+    var controls = document.querySelectorAll("[data-vesper-question]");
+    Array.prototype.forEach.call(controls, function(control){
+      var question = control.getAttribute("data-vesper-question") || "";
+      if (!question) return;
+      var type = String(control.type || "").toLowerCase();
+      if ((type === "radio" || type === "checkbox") && !control.checked) return;
+      var value = control.value == null ? "" : String(control.value);
+      if (type === "checkbox" && !value) value = "true";
+      if (!grouped[question]) grouped[question] = [];
+      grouped[question].push(value);
+    });
+    return Object.keys(grouped).map(function(question){
+      return { question: question, value: grouped[question].join(", ") };
+    });
+  }
+
   function submit(action) {
     if (submitted) return;
     var notesEl = document.getElementById("vl-notes");
-    var notes = notesEl ? notesEl.value : "";
+    overallNotes = notesEl ? notesEl.value : overallNotes;
+    var answers = collectAnswers();
+    var expected = Object.create(null);
+    Array.prototype.forEach.call(document.querySelectorAll("[data-vesper-question]"), function(control){
+      var id = control.getAttribute("data-vesper-question") || "";
+      if (id) expected[id] = true;
+    });
+    if (action === "modify" && Object.keys(expected).length > 0) {
+      var answered = Object.create(null);
+      answers.forEach(function(answer){
+        if (String(answer.value || "").trim()) answered[answer.question] = true;
+      });
+      var missing = Object.keys(expected).filter(function(id){ return !answered[id]; });
+      if (missing.length) {
+        window.alert("Please answer every planning question before sending.");
+        return;
+      }
+    }
     var payload = {
       action: action,
       annotations: annotations,
-      notes: notes
+      notes: overallNotes,
+      answers: answers
     };
     submitted = true;
     setPickMode(false);
@@ -365,7 +411,8 @@ const OVERLAY_SCRIPT: &str = r##"(function(){
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
       keepalive: true
-    }).then(function(){
+    }).then(function(response){
+      if (!response.ok) throw new Error("server returned HTTP " + response.status);
       render();
     }).catch(function(err){
       submitted = false;
@@ -390,7 +437,7 @@ const OVERLAY_SCRIPT: &str = r##"(function(){
       try { document.body.appendChild(panel); render(); } catch (e) {}
     }
   }, 800);
-})();""##;
+})();"##;
 
 /// Neutralizes artifact-authored Content-Security-Policy `<meta>` tags.
 ///
@@ -438,6 +485,64 @@ fn strip_csp_meta_tags(html: &str) -> String {
     }
     out.push_str(&html[cursor..]);
     out
+}
+
+/// Builds a self-contained, script-free planning interview artifact. The
+/// standard VesperLens overlay discovers the `data-vesper-question` controls,
+/// labels the surface as an interview, and returns their values in
+/// [`super::LensFeedback::answers`]. All model-provided strings are HTML
+/// escaped before insertion.
+#[must_use]
+pub fn render_interview_artifact(title: &str, questions: &[super::LensQuestion]) -> String {
+    let mut fields = String::new();
+    for question in questions {
+        let id = escape_html(question.id.trim());
+        let prompt = escape_html(question.prompt.trim());
+        fields.push_str("<fieldset><legend>");
+        fields.push_str(&prompt);
+        fields.push_str("</legend>");
+        if question.options.is_empty() {
+            fields.push_str(&format!(
+                "<textarea data-vesper-question=\"{id}\" rows=\"3\" placeholder=\"Type your answer\"></textarea>"
+            ));
+        } else {
+            let input_type = if question.allow_multiple {
+                "checkbox"
+            } else {
+                "radio"
+            };
+            for (index, option) in question.options.iter().enumerate() {
+                let option = escape_html(option);
+                fields.push_str(&format!(
+                    "<label><input type=\"{input_type}\" name=\"{id}\" data-vesper-question=\"{id}\" value=\"{option}\"> <span>{option}</span></label>"
+                ));
+                if index + 1 < question.options.len() {
+                    fields.push('\n');
+                }
+            }
+        }
+        fields.push_str("</fieldset>");
+    }
+
+    format!(
+        "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{title}</title><style>\
+        :root{{color-scheme:dark;font-family:ui-sans-serif,system-ui,sans-serif;background:#0b0f17;color:#e6edf7}}\
+        body{{margin:0;padding:48px;max-width:850px}}main{{display:grid;gap:18px}}h1{{margin:0 0 8px;font-size:28px}}\
+        p{{color:#9aa8ba;margin:0 0 16px}}fieldset{{border:1px solid #334155;border-radius:10px;padding:18px;display:grid;gap:10px}}\
+        legend{{font-weight:650;padding:0 8px}}label{{display:flex;gap:10px;align-items:flex-start;padding:9px;border-radius:7px;background:#111827}}\
+        input{{margin-top:3px}}textarea{{box-sizing:border-box;width:100%;resize:vertical;border:1px solid #475569;border-radius:7px;background:#0f172a;color:#e6edf7;padding:10px;font:inherit}}\
+        </style></head><body><main><header><h1>{title}</h1><p>Answer the planning questions, add optional context in the VesperLens panel, then choose Send answers.</p></header>{fields}</main></body></html>",
+        title = escape_html(title.trim()),
+    )
+}
+
+fn escape_html(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
 }
 
 /// Inject the VesperLens review overlay into an HTML artifact.
@@ -537,6 +642,8 @@ mod tests {
         let out = inject_review_overlay(html);
         let count = out.matches("<script>").count();
         assert_eq!(count, 1, "exactly one overlay <script> should be injected");
+        assert!(out.contains("})();</script>"));
+        assert!(!out.contains("})();\"</script>"));
     }
 
     #[test]
@@ -593,18 +700,85 @@ mod tests {
     }
 
     #[test]
-    fn overlay_pick_mode_is_on_by_default_and_boots_attached() {
-        // VRO-11.7: interactivity must be immediate — the page opens in
-        // pick mode (hover outline + click-to-annotate) with the listeners
-        // attached at boot, no hidden button to discover.
+    fn overlay_opens_in_interaction_mode_and_annotation_is_explicit() {
+        // The artifact must remain usable as an interactive page. Annotation
+        // capture is opt-in and Esc returns to interaction mode.
         assert!(
-            OVERLAY_SCRIPT.contains("var pickMode = true;"),
-            "pick mode must default ON"
+            OVERLAY_SCRIPT.contains("var pickMode = false;"),
+            "pick mode must default OFF so native page interactions work"
         );
         assert!(
             OVERLAY_SCRIPT.contains("setPickMode(pickMode);"),
-            "boot must attach listeners for the default pick state"
+            "boot must render the explicit interaction/annotation state"
         );
+        assert!(
+            OVERLAY_SCRIPT.contains("Interact with page"),
+            "annotation mode must provide an obvious path back to interaction"
+        );
+    }
+
+    #[test]
+    fn overlay_exposes_all_feedback_actions_and_preserves_draft_notes() {
+        assert!(OVERLAY_SCRIPT.contains("submit(\"approve\")"));
+        assert!(
+            OVERLAY_SCRIPT.contains("submit(\"modify\")"),
+            "the native Action::Modify variant must be reachable from the browser"
+        );
+        assert!(OVERLAY_SCRIPT.contains("submit(\"reject\")"));
+        assert!(
+            OVERLAY_SCRIPT.contains("notes.value = overallNotes"),
+            "panel rerenders must not erase the user's draft notes"
+        );
+        assert!(
+            OVERLAY_SCRIPT.contains("if (!response.ok)"),
+            "an HTTP error must not be presented as successful feedback"
+        );
+    }
+
+    #[test]
+    fn overlay_collects_structured_interview_answers() {
+        assert!(OVERLAY_SCRIPT.contains("[data-vesper-question]"));
+        assert!(OVERLAY_SCRIPT.contains("VesperLens Interview"));
+        assert!(OVERLAY_SCRIPT.contains("Send answers"));
+        assert!(OVERLAY_SCRIPT.contains("answers: answers"));
+        assert!(
+            OVERLAY_SCRIPT.contains("Please answer every planning question before sending."),
+            "the interview must not silently submit incomplete requirements"
+        );
+    }
+
+    #[test]
+    fn interview_artifact_renders_text_single_and_multiple_choice_safely() {
+        use super::super::LensQuestion;
+
+        let html = render_interview_artifact(
+            "Plan <review>",
+            &[
+                LensQuestion {
+                    id: "scope".into(),
+                    prompt: "What should ship?".into(),
+                    options: Vec::new(),
+                    allow_multiple: false,
+                },
+                LensQuestion {
+                    id: "theme".into(),
+                    prompt: "Choose a theme".into(),
+                    options: vec!["Dark".into(), "Light".into()],
+                    allow_multiple: false,
+                },
+                LensQuestion {
+                    id: "targets".into(),
+                    prompt: "Select targets".into(),
+                    options: vec!["Web".into(), "Desktop".into()],
+                    allow_multiple: true,
+                },
+            ],
+        );
+        assert!(html.contains("Plan &lt;review&gt;"));
+        assert!(html.contains("<textarea data-vesper-question=\"scope\""));
+        assert!(html.contains("type=\"radio\" name=\"theme\""));
+        assert!(html.contains("type=\"checkbox\" name=\"targets\""));
+        assert!(!html.contains("<h1>Plan <review></h1>"));
     }
 
     #[test]

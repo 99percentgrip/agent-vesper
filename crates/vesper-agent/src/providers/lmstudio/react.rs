@@ -89,7 +89,10 @@ Rules:
    Do NOT output your plan and yield to the user. Execute the tools \
    immediately. Printing the artifact's content as your final answer without \
    calling write_file is a FAILED turn. The only exception is Plan mode, \
-   where update_plan replaces file mutation.";
+   where update_plan replaces file mutation.
+6. When planning depends on unresolved user choices, call \
+   request_human_input with one to four concrete questions. Continue from \
+   the returned browser answers; never invent missing requirements.";
 
 /// LM Studio-backed [`ReactAgent`].
 ///
@@ -757,6 +760,10 @@ mod tests {
         assert!(
             REACT_SYSTEM_PROMPT.contains("FAILED turn"),
             "printing artifact content without write_file must be named a failure"
+        );
+        assert!(
+            REACT_SYSTEM_PROMPT.contains("request_human_input"),
+            "unresolved planning choices must route through the interactive interview"
         );
     }
 
