@@ -263,17 +263,14 @@ business logic.
   optional `lens_review: Option<Arc<dyn LensReviewPort>>` + `lens_url_tx`
   channel. When configured, `definitions()` advertises
   `request_human_review(file_path)` (ReadOnly, blocks until the human
-  submits). The tool reads the file, routes it through
-  `LensReviewPort::review`, and returns `feedback_as_context_message` as
+  submits). The tool confines an HTML file to the primary workspace, routes it
+  through `LensReviewPort::review_file`, and returns `feedback_as_context_message` as
   the tool result. The `on_url` callback sends the review URL through the
   channel → `drain_lens_urls` → `live_trajectory` so the user sees
   `[VesperLens] Artifact ready for review. Open: <URL>` inline in the
-  Conversation panel. **(3) Silent bypass fixed** — the lens port is now
-  ALWAYS constructed at startup (`VesperLensPort::new()`) and wired into
-  both `TuiToolService` (for the explicit tool) and `VroOrchestrator`
-  (via `with_lens_port`, for `maybe_review_html_artifact` final-output
-  check). Before VRO-11.4, the orchestrator's `lens_port` was always
-  `None` because no TUI code called `with_lens_port`. **(4)
+  Conversation panel. **(3) Explicit ownership** — the lens port is always
+  constructed for `TuiToolService`; ADR 0020 removed the dormant
+  `VroOrchestrator` final-output seam. **(4)
   `LensReviewPort` trait signature** — `on_url` is now tied to the `'a`
   lifetime of `&self` (was elided) so concrete impls like `VesperLensPort`
   can call `on_url` from within the returned async block (needed because
@@ -286,8 +283,9 @@ business logic.
   enforcement** — `build_agent_loop` now ALWAYS appends the
   `tool_enforcement_instruction()` system instruction (after project
   instructions + the optional cognition instruction): artifact-generation
-  requests MUST execute `write_file` (+ `request_human_review` when
-  registered) within the same turn; plan-only yielding is forbidden; Plan
+  requests MUST execute `write_file` within the same turn;
+  `request_human_review` is conditional, workspace-confined, and HTML-only;
+  plan-only yielding is forbidden; Plan
   mode keeps the `update_plan` carve-out. Every path sharing the loop
   (direct, GVR, parallel candidates, tree search, PCA) sees the mandate —
   this is the behavioral patch for the 180s zero-tool turn. (2) **telemetry
@@ -343,10 +341,9 @@ business logic.
   enforcement instruction now mandates `update_plan` TODO tracking for
   multi-step tasks in EVERY mode (the Plan-mode-exception wording
   discouraged Code-mode plans — the live-test root cause of the missing
-  TODO block). (3) The VesperLens overlay attaches pick listeners to
-  `document` (capture) and runs a 800ms panel watchdog that re-attaches
-  the panel when artifact JS rebuilds `document.body` (the live-test
-  root cause of the dead overlay).
+  TODO block). (3) ADR 0020 supersedes the same-document watchdog with trusted
+  outer chrome and a sandbox-only annotation SDK, so artifact DOM rebuilds
+  cannot remove or impersonate verdict controls.
   **VRO-11.11 (interactive handoff + planning interview):** VesperLens
   review URLs now open in the system browser automatically; the bare URL,
   click handling, and Ctrl+O remain fallbacks. Artifact review starts in
@@ -360,6 +357,12 @@ business logic.
   and returns stable question/value pairs as tool context. TODO snapshots no
   longer enter chat history; the dedicated sidebar panel owns current plan
   state and the former full-height Run gauge is a compact status/report.
+  **ADR 0020 review hardening:** trusted outer chrome owns verdicts; artifacts
+  run in a no-same-origin iframe, feedback is session-authenticated, repeated
+  file rounds reuse one live URL, sibling assets are confined, drafts survive
+  reload, and annotations include exact range metadata plus editable suggested
+  HTML. Layout warnings are passive and reviewer-selected. Both checked-in
+  Playwright flows are required release evidence.
   VRO-8 (PRD §8.1 — UX & Diagnostics): three pure helpers + the wiring
   that surfaces VRO telemetry to the driver. (1) `compute_reasoning_diagnostics`
   reads only `VroOrchestrator::profile` (deterministic, allocation-only) +

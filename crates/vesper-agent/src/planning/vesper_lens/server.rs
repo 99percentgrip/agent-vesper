@@ -1,385 +1,628 @@
-//! Raw `tokio::net::TcpListener` loopback server for VesperLens (ADR 0017).
+//! Authenticated loopback review server for VesperLens.
 //!
-//! Per the PRD §3.C, this module owns:
-//! - binding to `127.0.0.1:0` (OS-assigned ephemeral port),
-//! - serving the injected HTML on `GET /`,
-//! - parsing JSON feedback on `POST /feedback`,
-//! - shutting down the listener after the POST and returning the parsed
-//!   [`LensFeedback`].
-//!
-//! No web framework, no `axum`/`hyper`, no `std::process::Command`. The
-//! HTTP/1.1 wire format is parsed by the pure functions in [`super::http`].
-//!
-//! ## Robustness
-//!
-//! A real browser using `fetch("/feedback", { keepalive: true })` will
-//! typically close the GET connection (we advertise `Connection: close`)
-//! and open a fresh connection for the POST. The accept loop therefore
-//! handles **any number of sequential connections** within the configured
-//! timeout, and within each connection reads **any number of requests**
-//! until either a `POST /feedback` arrives or the peer closes.
+//! Trusted review chrome is served as the top-level document. The artifact is
+//! confined to a sandboxed iframe and can communicate only through the owned
+//! annotation SDK. Feedback requires an unguessable session route, an exact
+//! Host and Origin, JSON content type, and a matching custom token header.
 
-use std::time::Duration;
+use std::fs::File;
+use std::io::Read;
+use std::path::{Component, Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::time::{Duration, SystemTime};
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::{Mutex, mpsc};
 use tokio::time;
+use uuid::Uuid;
 
-use super::http::{ParsedRequest, build_html_response, build_json_response, try_parse_request};
+use super::http::{
+    ParsedRequest, build_json_response, build_response, build_response_with_headers,
+    try_parse_request,
+};
+use super::injector::{
+    ARTIFACT_SDK_SCRIPT, CHROME_SCRIPT, inject_review_sdk, render_review_chrome,
+};
 use super::types::{LensError, LensFeedback};
 
-/// The address we always bind. Hard-coded; never overridable.
 const LOOPBACK_BIND: &str = "127.0.0.1:0";
-
-/// Per-connection read buffer cap. An honest feedback POST is well under
-/// 1 KiB; a 64 KiB cap absorbs pathological `notes` strings without letting
-/// a hostile client exhaust memory.
 const READ_BUFFER_CAP: usize = 64 * 1024;
+pub const MAX_ARTIFACT_BYTES: u64 = 8 * 1024 * 1024;
+pub const MAX_ASSET_BYTES: u64 = 16 * 1024 * 1024;
 
-/// Serve `injected_html` on an ephemeral loopback port and block until the
-/// human submits feedback.
-///
-/// `on_url` is called exactly once with the canonical review URL
-/// (`http://127.0.0.1:<port>/`) as soon as the listener is bound. The
-/// caller wires this into the TUI status line per PRD §4.
-///
-/// `timeout` bounds the entire review window. If no feedback arrives in
-/// time the listener is dropped (RAII) and [`LensError::Timeout`] is
-/// returned.
+#[derive(Debug, Clone)]
+pub(crate) enum ArtifactSource {
+    Inline(Arc<str>),
+    File { index: PathBuf, root: PathBuf },
+}
+
+impl ArtifactSource {
+    pub(crate) fn inline(html: &str) -> Self {
+        Self::Inline(Arc::from(html))
+    }
+
+    pub(crate) fn file(index: PathBuf) -> Result<Self, LensError> {
+        let root = index
+            .parent()
+            .ok_or_else(|| LensError::InvalidArtifact("artifact has no parent directory".into()))?
+            .to_path_buf();
+        Ok(Self::File { index, root })
+    }
+
+    fn revision(&self) -> String {
+        match self {
+            Self::Inline(html) => format!("inline-{}", html.len()),
+            Self::File { index, .. } => std::fs::metadata(index).map_or_else(
+                |_| "missing".into(),
+                |metadata| {
+                    let modified = metadata
+                        .modified()
+                        .unwrap_or(SystemTime::UNIX_EPOCH)
+                        .duration_since(SystemTime::UNIX_EPOCH)
+                        .unwrap_or_default();
+                    format!(
+                        "{}-{}-{}",
+                        modified.as_secs(),
+                        modified.subsec_nanos(),
+                        metadata.len()
+                    )
+                },
+            ),
+        }
+    }
+
+    fn index_html(&self) -> Result<String, LensError> {
+        match self {
+            Self::Inline(html) => Ok(html.to_string()),
+            Self::File { index, .. } => read_bounded_text(index, MAX_ARTIFACT_BYTES),
+        }
+    }
+
+    fn asset(&self, relative: &str) -> Result<Option<(Vec<u8>, &'static str)>, LensError> {
+        let Self::File { root, .. } = self else {
+            return Ok(None);
+        };
+        let decoded = percent_decode(relative)?;
+        let relative_path = Path::new(&decoded);
+        if relative_path.is_absolute()
+            || relative_path.components().any(|component| {
+                matches!(
+                    component,
+                    Component::ParentDir | Component::RootDir | Component::Prefix(_)
+                )
+            })
+        {
+            return Err(LensError::InvalidArtifact(
+                "asset path escapes the artifact directory".into(),
+            ));
+        }
+        let candidate = root.join(relative_path);
+        let canonical = match candidate.canonicalize() {
+            Ok(path) => path,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(LensError::Io(error)),
+        };
+        let canonical_root = root.canonicalize()?;
+        if !canonical.starts_with(&canonical_root) || !canonical.is_file() {
+            return Err(LensError::InvalidArtifact(
+                "asset symlink escapes the artifact directory".into(),
+            ));
+        }
+        let bytes = read_bounded(&canonical, MAX_ASSET_BYTES)?;
+        Ok(Some((bytes, mime_for_path(&canonical))))
+    }
+}
+
+#[derive(Debug)]
+struct SessionInner {
+    token: String,
+    url: String,
+    source: ArtifactSource,
+    feedback_rx: Mutex<mpsc::UnboundedReceiver<LensFeedback>>,
+    round: AtomicU64,
+    alive: AtomicBool,
+}
+
+/// Reusable handle to one browser review session. Submitted feedback remains
+/// queued even when an individual agent tool future is cancelled.
+#[derive(Debug, Clone)]
+pub(crate) struct ReviewSessionHandle(Arc<SessionInner>);
+
+impl ReviewSessionHandle {
+    pub(crate) fn url(&self) -> &str {
+        &self.0.url
+    }
+    pub(crate) fn begin_round(&self) -> u64 {
+        self.0.round.fetch_add(1, Ordering::SeqCst) + 1
+    }
+    pub(crate) fn is_alive(&self) -> bool {
+        self.0.alive.load(Ordering::SeqCst)
+    }
+
+    pub(crate) async fn next_feedback(&self, timeout: Duration) -> Result<LensFeedback, LensError> {
+        let mut receiver = self.0.feedback_rx.lock().await;
+        match time::timeout(timeout, receiver.recv()).await {
+            Ok(Some(feedback)) => Ok(feedback),
+            Ok(None) => Err(LensError::Disconnected),
+            Err(_) => Err(LensError::Timeout),
+        }
+    }
+}
+
+pub(crate) async fn start_review_session(
+    source: ArtifactSource,
+    inactivity_timeout: Duration,
+) -> Result<ReviewSessionHandle, LensError> {
+    let listener = TcpListener::bind(LOOPBACK_BIND).await?;
+    let address = listener.local_addr()?;
+    let token = Uuid::new_v4().simple().to_string();
+    let url = format!("http://{address}/s/{token}");
+    let (feedback_tx, feedback_rx) = mpsc::unbounded_channel();
+    let inner = Arc::new(SessionInner {
+        token,
+        url,
+        source,
+        feedback_rx: Mutex::new(feedback_rx),
+        round: AtomicU64::new(0),
+        alive: AtomicBool::new(true),
+    });
+    let server_inner = Arc::clone(&inner);
+    tokio::spawn(async move {
+        run_server(
+            listener,
+            address.to_string(),
+            server_inner,
+            feedback_tx,
+            inactivity_timeout,
+        )
+        .await
+    });
+    Ok(ReviewSessionHandle(inner))
+}
+
+/// Compatibility one-shot entrypoint used by inline interviews and tests.
 pub async fn serve_and_collect_feedback(
-    injected_html: &str,
+    html: &str,
     on_url: impl FnOnce(&str),
     timeout: Duration,
 ) -> Result<LensFeedback, LensError> {
-    let listener = TcpListener::bind(LOOPBACK_BIND).await?;
-    let bound_addr = listener.local_addr()?;
-    let url = format!("http://{bound_addr}/");
-    on_url(&url);
-
-    // Bounded by the outer timeout: every accept/read races against it.
-    let result = time::timeout(timeout, accept_loop(&listener, injected_html)).await;
-    match result {
-        Ok(inner) => inner,
-        Err(_) => Err(LensError::Timeout),
-    }
+    let session = start_review_session(ArtifactSource::inline(html), timeout).await?;
+    session.begin_round();
+    on_url(session.url());
+    session.next_feedback(timeout).await
 }
 
-async fn accept_loop(
-    listener: &TcpListener,
-    injected_html: &str,
-) -> Result<LensFeedback, LensError> {
+async fn run_server(
+    listener: TcpListener,
+    expected_host: String,
+    session: Arc<SessionInner>,
+    feedback_tx: mpsc::UnboundedSender<LensFeedback>,
+    inactivity_timeout: Duration,
+) {
     loop {
-        // Accept errors (transient EMFILE etc.) are retried; we never
-        // surface them as the final verdict unless the listener itself
-        // dies.
-        let (mut stream, _peer) = match listener.accept().await {
-            Ok(pair) => pair,
-            Err(_) => continue,
+        let accepted = time::timeout(inactivity_timeout, listener.accept()).await;
+        let Ok(Ok((mut stream, _))) = accepted else {
+            break;
         };
-        // localhost peer is implicitly trusted because the bind is loopback
-        // only. We deliberately do NOT log _peer (which would be 127.0.0.1
-        // anyway).
-        match handle_connection(&mut stream, injected_html).await {
-            Ok(Some(feedback)) => return Ok(feedback),
-            Ok(None) => {
-                // Connection closed cleanly without a POST. Loop and accept
-                // the next one (a browser may issue GET then POST on
-                // separate connections).
-                continue;
-            }
-            Err(LensError::HttpParse(_)) => {
-                // A single malformed request does not poison the whole
-                // server — drop this connection and accept the next.
-                continue;
-            }
-            Err(other) => return Err(other),
+        let should_end = handle_connection(&mut stream, &expected_host, &session, &feedback_tx)
+            .await
+            .unwrap_or(false);
+        if should_end {
+            break;
         }
     }
+    session.alive.store(false, Ordering::SeqCst);
 }
 
-/// Handle one accepted TCP connection: read **exactly one** complete
-/// HTTP request, dispatch it, and return. The connection is then closed
-/// by the caller (this matches the `Connection: close` response header
-/// we advertise, so a browser reconnects for the next request).
-///
-/// Returns:
-/// - `Ok(Some(feedback))` — a POST /feedback was received and parsed.
-/// - `Ok(None)` — the peer sent a non-POST request (GET handled, junk
-///   ignored, etc.) OR closed cleanly without sending anything.
-/// - `Err(_)` — I/O failure, malformed request, or unparseable JSON.
 async fn handle_connection(
-    stream: &mut tokio::net::TcpStream,
-    injected_html: &str,
-) -> Result<Option<LensFeedback>, LensError> {
-    let mut buf: Vec<u8> = Vec::with_capacity(8192);
-    let mut tmp = [0u8; 4096];
-
-    // Read until we have one complete request (header terminator present
-    // AND, if Content-Length is set, all body bytes present).
-    let req = loop {
-        match try_parse_request(&buf) {
-            Ok(Some(req)) => break req,
+    stream: &mut TcpStream,
+    expected_host: &str,
+    session: &Arc<SessionInner>,
+    feedback_tx: &mpsc::UnboundedSender<LensFeedback>,
+) -> Result<bool, LensError> {
+    let mut buffer = Vec::with_capacity(8192);
+    let mut chunk = [0_u8; 4096];
+    let request = loop {
+        match try_parse_request(&buffer) {
+            Ok(Some(request)) => break request,
             Ok(None) => {
-                let n = stream.read(&mut tmp).await?;
-                if n == 0 {
-                    if buf.is_empty() {
-                        return Ok(None);
-                    }
-                    return Err(LensError::HttpParse("connection closed mid-request".into()));
+                let read = stream.read(&mut chunk).await?;
+                if read == 0 {
+                    return Ok(false);
                 }
-                buf.extend_from_slice(&tmp[..n]);
-                if buf.len() > READ_BUFFER_CAP {
-                    return Err(LensError::HttpParse(format!(
-                        "request exceeded {READ_BUFFER_CAP}-byte cap"
-                    )));
+                if buffer.len() + read > READ_BUFFER_CAP {
+                    write_response(
+                        stream,
+                        build_json_response(413, r#"{"ok":false,"error":"request too large"}"#),
+                    )
+                    .await?;
+                    return Ok(false);
                 }
+                buffer.extend_from_slice(&chunk[..read]);
             }
-            Err(e) => return Err(LensError::HttpParse(e.to_string())),
+            Err(error) => {
+                write_response(
+                    stream,
+                    build_json_response(
+                        400,
+                        &serde_json::json!({"ok":false,"error":error.to_string()}).to_string(),
+                    ),
+                )
+                .await?;
+                return Ok(false);
+            }
         }
     };
 
-    // Dispatch exactly one request, then return so the caller closes the
-    // connection. The `consumed_len` bookkeeping is unnecessary because we
-    // never read a second request on the same stream.
-    let _ = buf; // buf goes out of scope here
-    dispatch(stream, req, injected_html).await
+    if request.headers.get("host").map(String::as_str) != Some(expected_host) {
+        write_response(
+            stream,
+            build_json_response(403, r#"{"ok":false,"error":"forbidden host"}"#),
+        )
+        .await?;
+        return Ok(false);
+    }
+
+    dispatch(stream, request, expected_host, session, feedback_tx).await
 }
 
-/// Dispatch a parsed request. Returns `Some(feedback)` only for a
-/// successful POST /feedback.
 async fn dispatch(
-    stream: &mut tokio::net::TcpStream,
-    req: ParsedRequest,
-    injected_html: &str,
-) -> Result<Option<LensFeedback>, LensError> {
-    match (req.method.as_str(), req.path.as_str()) {
-        ("GET", "/") | ("GET", "/index.html") => {
-            let bytes = build_html_response(injected_html);
-            stream.write_all(&bytes).await?;
-            stream.flush().await?;
-            Ok(None)
+    stream: &mut TcpStream,
+    request: ParsedRequest,
+    expected_host: &str,
+    session: &Arc<SessionInner>,
+    feedback_tx: &mpsc::UnboundedSender<LensFeedback>,
+) -> Result<bool, LensError> {
+    let path = request.path.split('?').next().unwrap_or(&request.path);
+    let base = format!("/s/{}", session.token);
+    if request.method == "GET" && path == "/favicon.ico" {
+        write_response(
+            stream,
+            build_response("204 No Content", "image/x-icon", &[]),
+        )
+        .await?;
+        return Ok(false);
+    }
+    if request.method == "GET" && (path == "/" || path == base) {
+        let chrome = render_review_chrome(&session.token);
+        let response = build_response_with_headers(
+            "200 OK",
+            "text/html",
+            chrome.as_bytes(),
+            &[
+                (
+                    "Content-Security-Policy",
+                    "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; frame-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+                ),
+                ("Cross-Origin-Opener-Policy", "same-origin"),
+                ("X-Frame-Options", "DENY"),
+            ],
+        );
+        write_response(stream, response).await?;
+        return Ok(false);
+    }
+    if request.method == "GET" && path == format!("{base}/chrome.js") {
+        write_response(
+            stream,
+            build_response("200 OK", "text/javascript", CHROME_SCRIPT.as_bytes()),
+        )
+        .await?;
+        return Ok(false);
+    }
+    if request.method == "GET" && path == format!("{base}/sdk.js") {
+        write_response(
+            stream,
+            build_response("200 OK", "text/javascript", ARTIFACT_SDK_SCRIPT.as_bytes()),
+        )
+        .await?;
+        return Ok(false);
+    }
+    if request.method == "GET" && path == format!("{base}/state") {
+        let body = serde_json::json!({"round":session.round.load(Ordering::SeqCst),"revision":session.source.revision()}).to_string();
+        write_response(stream, build_json_response(200, &body)).await?;
+        return Ok(false);
+    }
+    let artifact_prefix = format!("{base}/artifact/");
+    if request.method == "GET" && path == format!("{artifact_prefix}index.html") {
+        match session.source.index_html() {
+            Ok(html) => {
+                let injected = inject_review_sdk(&html, &format!("{base}/sdk.js"));
+                write_response(
+                    stream,
+                    build_response("200 OK", "text/html", injected.as_bytes()),
+                )
+                .await?;
+            }
+            Err(error) => {
+                write_response(
+                    stream,
+                    build_response(
+                        "500 Internal Server Error",
+                        "text/plain",
+                        error.to_string().as_bytes(),
+                    ),
+                )
+                .await?
+            }
         }
-        ("POST", "/feedback") => {
-            if req.body.is_empty() {
-                let _ = stream
-                    .write_all(&build_json_response(
+        return Ok(false);
+    }
+    if request.method == "GET" && path.starts_with(&artifact_prefix) {
+        let relative = &path[artifact_prefix.len()..];
+        match session.source.asset(relative) {
+            Ok(Some((bytes, mime))) => {
+                write_response(stream, build_response("200 OK", mime, &bytes)).await?
+            }
+            Ok(None) => {
+                write_response(
+                    stream,
+                    build_json_response(404, r#"{"ok":false,"error":"asset not found"}"#),
+                )
+                .await?
+            }
+            Err(error) => {
+                write_response(
+                    stream,
+                    build_json_response(
+                        403,
+                        &serde_json::json!({"ok":false,"error":error.to_string()}).to_string(),
+                    ),
+                )
+                .await?
+            }
+        }
+        return Ok(false);
+    }
+    if request.method == "POST" && path == format!("{base}/feedback") {
+        let expected_origin = format!("http://{expected_host}");
+        let content_type_ok = request
+            .headers
+            .get("content-type")
+            .is_some_and(|value| value.to_ascii_lowercase().starts_with("application/json"));
+        let authenticated = request.headers.get("origin").map(String::as_str)
+            == Some(expected_origin.as_str())
+            && request
+                .headers
+                .get("x-vesper-lens-token")
+                .map(String::as_str)
+                == Some(session.token.as_str())
+            && content_type_ok;
+        if !authenticated {
+            write_response(
+                stream,
+                build_json_response(403, r#"{"ok":false,"error":"unauthenticated feedback"}"#),
+            )
+            .await?;
+            return Ok(false);
+        }
+        let feedback: LensFeedback = match serde_json::from_slice(&request.body) {
+            Ok(feedback) => feedback,
+            Err(error) => {
+                write_response(
+                    stream,
+                    build_json_response(
                         400,
-                        r#"{"ok":false,"error":"empty body"}"#,
-                    ))
-                    .await;
-                let _ = stream.flush().await;
-                return Err(LensError::EmptyBody);
+                        &serde_json::json!({"ok":false,"error":error.to_string()}).to_string(),
+                    ),
+                )
+                .await?;
+                return Ok(false);
             }
-            match serde_json::from_slice::<LensFeedback>(&req.body) {
-                Ok(fb) => {
-                    let _ = stream
-                        .write_all(&build_json_response(200, r#"{"ok":true}"#))
-                        .await;
-                    let _ = stream.flush().await;
-                    Ok(Some(fb))
-                }
-                Err(err) => {
-                    let msg = format!(
-                        r#"{{"ok":false,"error":{}}}"#,
-                        serde_json::json!(err.to_string())
-                    );
-                    let _ = stream.write_all(&build_json_response(400, &msg)).await;
-                    let _ = stream.flush().await;
-                    Err(LensError::Json(err))
-                }
+        };
+        let should_end = feedback.end_session;
+        if feedback_tx.send(feedback).is_err() {
+            write_response(
+                stream,
+                build_json_response(410, r#"{"ok":false,"error":"review session ended"}"#),
+            )
+            .await?;
+            return Ok(true);
+        }
+        write_response(stream, build_json_response(200, r#"{"ok":true}"#)).await?;
+        return Ok(should_end);
+    }
+    write_response(
+        stream,
+        build_json_response(404, r#"{"ok":false,"error":"not found"}"#),
+    )
+    .await?;
+    Ok(false)
+}
+
+async fn write_response(stream: &mut TcpStream, response: Vec<u8>) -> Result<(), LensError> {
+    stream.write_all(&response).await?;
+    stream.flush().await?;
+    Ok(())
+}
+
+fn read_bounded_text(path: &Path, max: u64) -> Result<String, LensError> {
+    let bytes = read_bounded(path, max)?;
+    String::from_utf8(bytes)
+        .map_err(|_| LensError::InvalidArtifact("artifact is not valid UTF-8 HTML".into()))
+}
+
+fn read_bounded(path: &Path, max: u64) -> Result<Vec<u8>, LensError> {
+    let metadata = std::fs::metadata(path)?;
+    if metadata.len() > max {
+        return Err(LensError::InvalidArtifact(format!(
+            "{} exceeds the {} byte review limit",
+            path.display(),
+            max
+        )));
+    }
+    let mut file = File::open(path)?;
+    let mut bytes = Vec::with_capacity(metadata.len() as usize);
+    file.by_ref().take(max + 1).read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > max {
+        return Err(LensError::InvalidArtifact(
+            "file grew beyond the review limit while reading".into(),
+        ));
+    }
+    Ok(bytes)
+}
+
+fn percent_decode(value: &str) -> Result<String, LensError> {
+    let bytes = value.as_bytes();
+    let mut output = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' {
+            if index + 2 >= bytes.len() {
+                return Err(LensError::InvalidArtifact(
+                    "malformed percent-encoded asset path".into(),
+                ));
             }
+            let high = hex(bytes[index + 1])?;
+            let low = hex(bytes[index + 2])?;
+            output.push((high << 4) | low);
+            index += 3;
+        } else {
+            output.push(bytes[index]);
+            index += 1;
         }
-        // Browser favicon / preflight / unknown routes get a clean 404 so
-        // we do not poison the connection.
-        _ => {
-            let _ = stream
-                .write_all(&build_json_response(
-                    404,
-                    r#"{"ok":false,"error":"not found"}"#,
-                ))
-                .await;
-            let _ = stream.flush().await;
-            Ok(None)
-        }
+    }
+    String::from_utf8(output)
+        .map_err(|_| LensError::InvalidArtifact("asset path is not UTF-8".into()))
+}
+
+fn hex(value: u8) -> Result<u8, LensError> {
+    match value {
+        b'0'..=b'9' => Ok(value - b'0'),
+        b'a'..=b'f' => Ok(value - b'a' + 10),
+        b'A'..=b'F' => Ok(value - b'A' + 10),
+        _ => Err(LensError::InvalidArtifact(
+            "malformed percent-encoded asset path".into(),
+        )),
     }
 }
 
-// NOTE: We previously tracked the byte length of a parsed request here so
-// that the read loop could drain `buf` and handle multiple requests per
-// connection. With the simplified one-request-per-connection design above
-// (matching `Connection: close`), the bookkeeping is unnecessary; the
-// `http_find_header_end` helper in `mod.rs` is retained for tests.
+fn mime_for_path(path: &Path) -> &'static str {
+    match path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "html" | "htm" => "text/html",
+        "css" => "text/css",
+        "js" | "mjs" => "text/javascript",
+        "json" => "application/json",
+        "svg" => "image/svg+xml",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "woff" => "font/woff",
+        "woff2" => "font/woff2",
+        "txt" => "text/plain",
+        _ => "application/octet-stream",
+    }
+}
 
 #[cfg(test)]
 mod tests {
-    use super::super::types::Action;
     use super::*;
-    use crate::planning::vesper_lens::injector::inject_review_overlay;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-    /// Start a fresh server, returning (bound_url, server_join_handle).
-    async fn start_server(
-        html: &str,
-        timeout: Duration,
-    ) -> (
-        String,
-        tokio::task::JoinHandle<Result<LensFeedback, LensError>>,
-    ) {
-        let injected = inject_review_overlay(html);
-        let (tx, rx) = tokio::sync::oneshot::channel::<String>();
-        let handle = tokio::spawn(async move {
-            serve_and_collect_feedback(
-                &injected,
-                |url| {
-                    let _ = tx.send(url.to_string());
-                },
-                timeout,
-            )
-            .await
-        });
-        let url = rx.await.expect("server must bind");
-        (url, handle)
+    async fn request(address: &str, raw: String) -> String {
+        let mut stream = TcpStream::connect(address).await.unwrap();
+        stream.write_all(raw.as_bytes()).await.unwrap();
+        let mut response = String::new();
+        stream.read_to_string(&mut response).await.unwrap();
+        response
     }
 
-    /// Strip "http://" and trailing "/" to get the bare host:port for TcpStream::connect.
-    fn addr_of(url: &str) -> &str {
-        url.trim_start_matches("http://").trim_end_matches('/')
+    fn address_and_token(url: &str) -> (&str, &str) {
+        let without_scheme = url.strip_prefix("http://").unwrap();
+        let (address, path) = without_scheme.split_once('/').unwrap();
+        (address, path.strip_prefix("s/").unwrap())
     }
 
     #[tokio::test]
-    async fn happy_path_get_then_post_feedback() {
-        let (url, server) = start_server(
-            "<html><body><h1>Hello</h1></body></html>",
-            Duration::from_secs(5),
+    async fn chrome_is_sandboxed_and_feedback_is_authenticated() {
+        let session = start_review_session(
+            ArtifactSource::inline("<html><body>safe</body></html>"),
+            Duration::from_secs(3),
+        )
+        .await
+        .unwrap();
+        session.begin_round();
+        let (address, token) = address_and_token(session.url());
+        let chrome = request(
+            address,
+            format!("GET /s/{token} HTTP/1.1\r\nHost: {address}\r\n\r\n"),
         )
         .await;
-
-        // GET first, on its own connection.
-        {
-            let mut s = tokio::net::TcpStream::connect(addr_of(&url)).await.unwrap();
-            s.write_all(b"GET / HTTP/1.1\r\nHost: x\r\n\r\n")
-                .await
-                .unwrap();
-            let mut buf = vec![0u8; 4096];
-            let _ = s.read(&mut buf).await.unwrap();
-        }
-        // POST feedback on a fresh connection.
-        {
-            let mut s = tokio::net::TcpStream::connect(addr_of(&url)).await.unwrap();
-            let body = r#"{"action":"approve"}"#;
-            let req = format!(
-                "POST /feedback HTTP/1.1\r\nHost: x\r\nContent-Length: {}\r\n\r\n{}",
-                body.len(),
-                body
-            );
-            s.write_all(req.as_bytes()).await.unwrap();
-            let mut buf = vec![0u8; 256];
-            let _ = s.read(&mut buf).await.unwrap();
-        }
-
-        let feedback = server.await.unwrap().unwrap();
-        assert_eq!(feedback.action, Action::Approve);
-    }
-
-    #[tokio::test]
-    async fn post_with_annotations_parses_correctly() {
-        let body = r##"{"action":"modify","annotations":[{"selector":"#hero","comment":"too big"}],"notes":"fix it","answers":[{"question":"framework","value":"Rust"}]}"##;
-        let (url, server) =
-            start_server("<html><body></body></html>", Duration::from_secs(5)).await;
-
-        let mut s = tokio::net::TcpStream::connect(addr_of(&url)).await.unwrap();
-        let req = format!(
-            "POST /feedback HTTP/1.1\r\nHost: x\r\nContent-Length: {}\r\n\r\n{}",
-            body.len(),
-            body
+        assert!(
+            chrome.contains("sandbox=\"allow-scripts allow-forms allow-popups allow-downloads\"")
         );
-        s.write_all(req.as_bytes()).await.unwrap();
-        let mut buf = vec![0u8; 1024];
-        let _ = s.read(&mut buf).await.unwrap();
-
-        let feedback = server.await.unwrap().unwrap();
-        assert_eq!(feedback.action, Action::Modify);
-        assert_eq!(feedback.annotations.len(), 1);
-        assert_eq!(feedback.annotations[0].selector, "#hero");
-        assert_eq!(feedback.annotations[0].comment, "too big");
-        assert_eq!(feedback.notes, "fix it");
-        assert_eq!(feedback.answers.len(), 1);
-        assert_eq!(feedback.answers[0].question, "framework");
-        assert_eq!(feedback.answers[0].value, "Rust");
+        assert!(!chrome.contains("allow-same-origin"));
+        let body = r#"{"action":"approve","annotations":[],"notes":"","answers":[]}"#;
+        let forged = request(address, format!("POST /s/{token}/feedback HTTP/1.1\r\nHost: {address}\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{body}", body.len())).await;
+        assert!(forged.starts_with("HTTP/1.1 403"));
+        let valid = request(address, format!("POST /s/{token}/feedback HTTP/1.1\r\nHost: {address}\r\nOrigin: http://{address}\r\nContent-Type: application/json\r\nX-Vesper-Lens-Token: {token}\r\nContent-Length: {}\r\n\r\n{body}", body.len())).await;
+        assert!(valid.starts_with("HTTP/1.1 200"));
+        assert_eq!(
+            session
+                .next_feedback(Duration::from_secs(1))
+                .await
+                .unwrap()
+                .action,
+            super::super::Action::Approve
+        );
     }
 
     #[tokio::test]
-    async fn get_returns_injected_html_with_overlay() {
-        let (url, _server) = start_server(
-            "<html><body><p>artifact</p></body></html>",
-            // Short timeout: we don't POST, so the server will time out
-            // after we've grabbed the GET response.
-            Duration::from_millis(300),
+    async fn host_header_rebinding_is_rejected() {
+        let session = start_review_session(
+            ArtifactSource::inline("<html></html>"),
+            Duration::from_secs(2),
+        )
+        .await
+        .unwrap();
+        let (address, token) = address_and_token(session.url());
+        let response = request(
+            address,
+            format!("GET /s/{token} HTTP/1.1\r\nHost: attacker.example\r\n\r\n"),
         )
         .await;
-
-        let mut s = tokio::net::TcpStream::connect(addr_of(&url)).await.unwrap();
-        s.write_all(b"GET / HTTP/1.1\r\nHost: x\r\n\r\n")
-            .await
-            .unwrap();
-        let mut buf = vec![0u8; 65536];
-        let n = s.read(&mut buf).await.unwrap();
-        let got = &buf[..n];
-        let s = std::str::from_utf8(got).unwrap();
-        assert!(s.contains("HTTP/1.1 200 OK"));
-        assert!(s.contains("<p>artifact</p>"));
-        assert!(s.contains("VesperLens Review"));
+        assert!(response.starts_with("HTTP/1.1 403"));
     }
 
-    #[tokio::test]
-    async fn timeout_returns_timeout_error() {
-        let injected = inject_review_overlay("<html></html>");
-        let (tx, rx) = tokio::sync::oneshot::channel::<String>();
-        let handle = tokio::spawn(async move {
-            serve_and_collect_feedback(
-                &injected,
-                |url| {
-                    let _ = tx.send(url.to_string());
-                },
-                Duration::from_millis(100),
+    #[test]
+    fn percent_decoding_and_mime_are_bounded() {
+        assert_eq!(
+            percent_decode("assets/my%20image.png").unwrap(),
+            "assets/my image.png"
+        );
+        assert!(percent_decode("bad%2").is_err());
+        assert_eq!(mime_for_path(Path::new("x.css")), "text/css");
+    }
+
+    #[test]
+    fn sibling_assets_are_served_but_traversal_and_symlink_escapes_are_rejected() {
+        let root = tempfile::tempdir().unwrap();
+        let index = root.path().join("index.html");
+        std::fs::write(&index, "<html></html>").unwrap();
+        std::fs::write(root.path().join("styles.css"), "body{}").unwrap();
+        let source = ArtifactSource::file(index).unwrap();
+        let (bytes, mime) = source.asset("styles.css").unwrap().unwrap();
+        assert_eq!(bytes, b"body{}");
+        assert_eq!(mime, "text/css");
+        assert!(source.asset("../secret.txt").is_err());
+        #[cfg(unix)]
+        {
+            let outside = tempfile::tempdir().unwrap();
+            std::fs::write(outside.path().join("secret.txt"), "secret").unwrap();
+            std::os::unix::fs::symlink(
+                outside.path().join("secret.txt"),
+                root.path().join("escape.txt"),
             )
-            .await
-        });
-        // Confirm the server bound (so we know the timeout is real, not
-        // a bind failure).
-        let _url = rx.await.expect("server must bind");
-        let res = handle.await.unwrap();
-        assert!(matches!(res, Err(LensError::Timeout)));
-    }
-
-    #[tokio::test]
-    async fn malformed_request_does_not_poison_server() {
-        // Send garbage on connection 1; the server should drop it and
-        // still serve the legitimate POST on connection 2.
-        let body = r#"{"action":"reject"}"#;
-        let (url, server) = start_server("<html></html>", Duration::from_secs(5)).await;
-
-        // Garbage connection.
-        {
-            let mut g = tokio::net::TcpStream::connect(addr_of(&url)).await.unwrap();
-            g.write_all(b"NOT HTTP AT ALL\r\n\r\n").await.unwrap();
-            let mut buf = vec![0u8; 64];
-            let _ = g.read(&mut buf).await;
+            .unwrap();
+            assert!(source.asset("escape.txt").is_err());
         }
-        // Real POST on a fresh connection.
-        {
-            let mut s = tokio::net::TcpStream::connect(addr_of(&url)).await.unwrap();
-            let req = format!(
-                "POST /feedback HTTP/1.1\r\nHost: x\r\nContent-Length: {}\r\n\r\n{}",
-                body.len(),
-                body
-            );
-            s.write_all(req.as_bytes()).await.unwrap();
-            let mut buf = vec![0u8; 256];
-            let _ = s.read(&mut buf).await.unwrap();
-        }
-
-        let feedback = server.await.unwrap().unwrap();
-        assert_eq!(feedback.action, Action::Reject);
     }
 }
