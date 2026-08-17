@@ -12,6 +12,10 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
   external mem0 (`29fa4155`) oracle and the evidence base for ADR 0015
   (Stage 16 — `vesper-cognition`). The mem0 oracle is independent of the
   frozen Python harness; this is the only place where mem0 is cited.
+- `vesperlens-end-to-end-acceptance-postmortem.md` is the owner-directed
+  VesperLens audit (v0.20.29 → v0.20.44): the binding end-to-end completion
+  standard, the ten audited gaps, honest-scope list, and the open task of
+  wiring the real-browser scripts into verification.
 - The remaining reports document source-baseline diagnosis, fixture/oracle results, disposable Rust spikes, and readiness.
 
 ## Local Contracts
