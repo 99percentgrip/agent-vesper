@@ -329,6 +329,14 @@ VRO-11.8 closes the three gaps from the live v0.20.38 test:
 2. **The TODO list is now guaranteed.** The tool-enforcement instruction mandates `update_plan` for multi-step work in every mode (the previous Plan-mode-exception wording quietly discouraged it in Code mode — the root cause of the missing block). Expect `⎿ TODO` on the first tool turn and after each milestone.
 3. **The overlay survives artifact JS.** Dashboards that rebuild `document.body` after load no longer kill the review UI: pick listeners attach at `document` level (capture phase) and an 800ms watchdog re-attaches the panel if the page removes it.
 
+### VRO-11.9 — Wheel Restored + In-App Clickable Links + Silent Browser Spawn
+
+VRO-11.9 fixes the two regressions the live v0.20.39 test exposed:
+
+1. **Mouse wheel scrolls again.** VRO-11.7's capture-off default had a hidden cost: in the alternate screen, terminals deliver **no wheel events at all** to apps without mouse reporting — so the wheel went dead (only PageUp/Down worked). Mouse capture is back **ON by default**; users who prefer native terminal selection can still toggle it off in settings (Shift-drag also selects in most terminals while reporting is on).
+2. **The link is clickable in-app.** Since the app owns the mouse again, it now owns linkification: clicking the cyan review-URL line opens the browser directly — the click is inverse-mapped through the exact same render pipeline that drew the line. No terminal support required. **Ctrl+O** remains the keyboard path.
+3. **Ctrl+O no longer wrecks the screen.** The "errors" on Ctrl+O were the default browser's own stderr (harmless Chromium `atom_cache` / GCM logs) — but the spawned browser inherited the TUI's stdio and sprayed those lines over the interface. The opener now spawns with **null stdio**; browser noise can never touch the display again.
+
 ### How VRO interacts with the live tool surface
 
 - The `tool_grounded_react` strategy (VRO-5) routes through a real LM Studio `ReactAgent` bundle when configured — `Actions` and `Observations` stream live into the Conversation panel as `⏺ <tool>` / indented `⎿ <result>` lines, alongside the inline thinking header above.

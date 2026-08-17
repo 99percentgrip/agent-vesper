@@ -315,6 +315,22 @@ business logic.
   `PlanUpdated` pushes `format_todo_block(&task_plan)` (⎿ TODO / ✓ ● ○
   markers) into the persistent transcript, Claude Code's inline todo
   widget; `/tasks` reports the inline location (no panel to toggle).
+  **VRO-11.9 (wheel + click parity)**: the 11.7 OFF-default killed the
+  mouse wheel — in the alternate screen terminals deliver NO wheel events
+  to apps unless mouse reporting is enabled (PageUp/Down kept working
+  because they are key events). `native_mouse` is therefore **ON by
+  default again**, and clickability moved INTO the app: `drive_loop`
+  stashes each frame's `ViewModel` on `TuiSession.last_model`;
+  `handle_mouse_click` reconstructs the transcript `Rect` (header 1 /
+  bottom chrome menu+6 / working-tree 10 / sidebar width split) and calls
+  the pure `ui::bare_url_entry_at_row` — an inverse mapping through the
+  same render+wrap pipeline — so a click on a bare-URL line opens the
+  browser via `open_url_in_browser` regardless of terminal link support.
+  Ctrl+O remains. **Browser-stdio isolation**: `lens_opener_command`
+  attaches `Stdio::null()` to stdin/stdout/stderr — the launched
+  browser's own stderr (Chromium `atom_cache` / GCM `DEPRECATED_ENDPOINT`
+  lines) previously inherited the TUI's stdio and sprayed over the
+  alternate screen, corrupting the display on Ctrl+O.
   **VRO-11.8**: (1) `AgentProgressEvent::ToolStarted` carries a `hint`
   and `ToolFinished` a `note` — derived by the pure
   `vesper_agent::tool_arg_hint` (whitelisted arg keys only:

@@ -996,6 +996,63 @@ fn render_transcript_with_role_banners(
     rendered
 }
 
+/// VRO-11.9 — best-effort inverse mapping of a clicked row inside the
+/// Conversation panel to the source transcript entry rendered there.
+/// Returns the source line ONLY when it is a bare http(s) URL line (the
+/// clickable VesperLens review link); any other hit (or a row outside the
+/// transcript content) returns `None` so the caller falls through to the
+/// default click behavior.
+///
+/// Replicates the renderer's pure pipeline (per-entry banner rendering +
+/// wrap estimation + the same scroll math) so the mapping is consistent
+/// with what is on screen. Wrap counts are estimates; a miss is always a
+/// safe no-op.
+#[must_use]
+pub fn bare_url_entry_at_row(model: &ViewModel, area: Rect, row: u16) -> Option<String> {
+    if area.height < 3 || area.width < 3 {
+        return None;
+    }
+    let inner_width = usize::from(area.width.saturating_sub(2));
+    let visible = usize::from(area.height.saturating_sub(2));
+    let top = area.y.saturating_add(1);
+    if !(top..top.saturating_add(visible as u16)).contains(&row) {
+        return None;
+    }
+    let lines = transcript_lines_for(model);
+    if lines.is_empty() {
+        return None;
+    }
+    let mut total = 0_usize;
+    let mut spans: Vec<(usize, usize)> = Vec::with_capacity(lines.len());
+    for (idx, entry) in lines.iter().enumerate() {
+        let rendered =
+            render_transcript_with_role_banners(std::slice::from_ref(entry), inner_width);
+        let wrapped = estimated_wrapped_lines(&rendered, inner_width);
+        let rows = if idx > 0 { wrapped + 1 } else { wrapped };
+        spans.push((total, total + rows));
+        total += rows;
+    }
+    let max_scroll = total.saturating_sub(visible).min(u16::MAX as usize) as u16;
+    let manual = model
+        .conversation_manual_scroll
+        .unwrap_or(0)
+        .min(max_scroll);
+    let effective = max_scroll.saturating_sub(manual) as usize;
+    let row_in_content = usize::from(row - top) + effective;
+    for (idx, (start, end)) in spans.iter().enumerate() {
+        if row_in_content >= *start && row_in_content < *end {
+            let candidate = lines[idx].trim();
+            if (candidate.starts_with("http://") || candidate.starts_with("https://"))
+                && !candidate.contains(' ')
+            {
+                return Some(lines[idx].clone());
+            }
+            return None;
+        }
+    }
+    None
+}
+
 /// Re-styles every span of a rendered markdown line with `style`, keeping
 /// the span segmentation (so wrapped-width estimates stay identical) while
 /// overriding the foreground color and modifiers. Used by the VRO-11.5
@@ -1489,6 +1546,70 @@ mod tests {
             has_dim_telemetry,
             "⏺/⎿ telemetry must render dim (non-italic) secondary text"
         );
+    }
+
+    #[test]
+    fn bare_url_entry_at_row_maps_clicks_on_the_url_line() {
+        use ratatui::layout::Rect;
+        // VRO-11.9: with mouse capture ON the app itself must open the
+        // review link — a click on the bare-URL line maps back to it, a
+        // click on any other entry does not, and out-of-area rows are
+        // ignored.
+        let url = "http://127.0.0.1:41277/review/dash".to_string();
+        let model = ViewModel {
+            transcript: vec![
+                "user: build a dashboard".to_string(),
+                "assistant: done".to_string(),
+                url.clone(),
+            ],
+            ..ViewModel::default()
+        };
+        let area = Rect {
+            x: 0,
+            y: 1,
+            width: 80,
+            height: 10,
+        };
+        // Content is TOP-aligned: entries start at area.y + 1. The URL is
+        // the last entry — map its span start by walking the same pure
+        // pipeline the helper uses, then assert that exact row resolves to
+        // it (self-consistent mapping) while neighbors do not.
+        let top = area.y + 1;
+        // Single-entry model: the URL occupies content row 0.
+        let only_url = ViewModel {
+            transcript: vec![url.clone()],
+            ..ViewModel::default()
+        };
+        assert_eq!(
+            bare_url_entry_at_row(&only_url, area, top),
+            Some(url.clone())
+        );
+        // Multi-entry model content rows: user bubble rows 0-1 ("You" +
+        // text), separator row 2, assistant row 3, separator row 4, URL
+        // row 5. Click the URL's own row.
+        let url_row = top + 5;
+        assert_eq!(
+            bare_url_entry_at_row(&model, area, url_row),
+            Some(url.clone()),
+            "the URL entry's own row must map to it"
+        );
+        // The user-bubble rows are not URLs.
+        assert_eq!(bare_url_entry_at_row(&model, area, top), None);
+        assert_eq!(bare_url_entry_at_row(&model, area, top + 1), None);
+        // Outside the transcript content (border row / below the content).
+        assert_eq!(bare_url_entry_at_row(&model, area, area.y), None);
+        assert_eq!(
+            bare_url_entry_at_row(&model, area, area.y + area.height - 1),
+            None
+        );
+        // Degenerate area is a safe no-op.
+        let tiny = Rect {
+            x: 0,
+            y: 0,
+            width: 2,
+            height: 2,
+        };
+        assert_eq!(bare_url_entry_at_row(&model, tiny, 0), None);
     }
 
     #[test]

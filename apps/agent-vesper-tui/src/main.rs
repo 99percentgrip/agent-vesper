@@ -279,6 +279,7 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
         live_trajectory: Vec::new(),
         lens_url_rx: Some(lens_url_rx),
         last_lens_url: None,
+        last_model: None,
         reasoning: String::new(),
         live_response: String::new(),
         turn_started: None,
@@ -589,6 +590,11 @@ struct TuiSession {
     /// [`drain_lens_urls`] so **Ctrl+O** (`open_last_lens_review`) can open
     /// it in the system browser regardless of terminal link support.
     last_lens_url: Option<String>,
+    /// VRO-11.9 — the ViewModel rendered by the previous frame, stashed so
+    /// the mouse click handler can inverse-map a clicked transcript row to
+    /// its source line (click-on-URL opens the browser in-app). Refreshed
+    /// every loop iteration before `terminal.draw`.
+    last_model: Option<agent_vesper_tui::ui::ViewModel>,
     /// Provider-visible reasoning projection for the optional reasoning panel.
     reasoning: String,
     /// Assistant text accumulated during the current streamed response.
@@ -814,7 +820,7 @@ enum MouseClickOutcome {
 fn handle_mouse_click(
     column: u16,
     row: u16,
-    _width: u16,
+    width: u16,
     height: u16,
     session: &mut TuiSession,
     registry: &CommandRegistry,
@@ -847,6 +853,44 @@ fn handle_mouse_click(
                 };
             }
             start = end.saturating_add(2);
+        }
+    }
+
+    // VRO-11.9 — click-to-open: with mouse capture ON (the default), the
+    // terminal cannot linkify URLs itself, so the app does it. Reconstruct
+    // the transcript block rect exactly as `render_to_frame` lays it out
+    // and inverse-map the clicked row to its source line; a bare-URL line
+    // (the VesperLens review link) opens in the browser immediately.
+    // Only active while the command palette is closed so palette clicks
+    // keep their own hit-testing.
+    if session.command_matches.is_empty()
+        && let Some(model) = session.last_model.clone()
+    {
+        let menu_height = command_menu_height(height, session.command_matches.len());
+        let bottom_chrome = menu_height.saturating_add(6);
+        let working_tree_height = if session.working_tree_view.is_some() {
+            10
+        } else {
+            0
+        };
+        let transcript_height = height
+            .saturating_sub(1 + bottom_chrome)
+            .saturating_sub(working_tree_height);
+        let show_sidebar = session.state.panels.sidebar && width >= 110;
+        let body_width = if show_sidebar {
+            width.saturating_sub(40)
+        } else {
+            width
+        };
+        let area = ratatui::layout::Rect {
+            x: 0,
+            y: 1,
+            width: body_width,
+            height: transcript_height,
+        };
+        if let Some(url) = agent_vesper_tui::ui::bare_url_entry_at_row(&model, area, row) {
+            open_url_in_browser(session, &url);
+            return MouseClickOutcome::Handled;
         }
     }
 
@@ -992,6 +1036,9 @@ async fn drive_loop(
                     focus: session.state.permission_modal_focus,
                 }),
         };
+        // VRO-11.9: stash the frame's view model so the click handler can
+        // inverse-map transcript rows (click-on-URL opens the browser).
+        session.last_model = Some(model.clone());
         if let Err(error) = terminal.draw(|frame| {
             render_to_frame(frame, &model);
         }) {
@@ -5528,8 +5575,10 @@ fn drain_lens_urls(session: &mut TuiSession) {
             Ok(line) => {
                 if looks_like_url(line.as_str()) {
                     session.last_lens_url = Some(line.clone());
-                    session.state.status =
-                        Some("VesperLens review pending — Ctrl+O opens it in your browser.".into());
+                    session.state.status = Some(
+                        "VesperLens review pending — click the link or press Ctrl+O to open."
+                            .into(),
+                    );
                 }
                 session.live_trajectory.push(line);
                 if session.live_trajectory.len() > 200 {
@@ -5577,7 +5626,37 @@ fn lens_opener_command(url: &str) -> std::process::Command {
         }
         command.arg(url);
     }
+    // VRO-11.9: the browser's own stderr (Chromium atom-cache/GCM noise)
+    // must never inherit the TUI's stdio — it sprays raw lines over the
+    // alternate screen and wrecks the display. Silence all three streams.
+    use std::process::Stdio;
     command
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    command
+}
+
+/// Opens `url` in the system browser with silenced stdio, detaches the
+/// child, and reports the outcome on the status line. Shared by the
+/// Ctrl+O binding and the in-app click on a bare-URL transcript line
+/// (VRO-11.9). Never panics; failures surface the copyable URL.
+fn open_url_in_browser(session: &mut TuiSession, url: &str) {
+    match lens_opener_command(url).spawn() {
+        Ok(mut child) => {
+            // Reap asynchronously so a hung browser process never blocks
+            // the UI loop; detach by ignoring the handle entirely.
+            std::thread::spawn(move || {
+                let _ = child.wait();
+            });
+            session.state.status = Some(format!("Opened in browser: {url}"));
+        }
+        Err(error) => {
+            session.state.status = Some(format!(
+                "Could not open browser ({error}) — copy the URL: {url}"
+            ));
+        }
+    }
 }
 
 /// VRO-11.6 — Ctrl+O: opens the most recent VesperLens review URL in the
@@ -5590,21 +5669,7 @@ fn open_last_lens_review(session: &mut TuiSession) {
             Some("No VesperLens review URL yet — request a review first.".into());
         return;
     };
-    match lens_opener_command(&url).spawn() {
-        Ok(mut child) => {
-            // Reap asynchronously so a hung browser process never blocks
-            // the UI loop; detach by ignoring the handle entirely.
-            std::thread::spawn(move || {
-                let _ = child.wait();
-            });
-            session.state.status = Some(format!("Opened review in browser: {url}"));
-        }
-        Err(error) => {
-            session.state.status = Some(format!(
-                "Could not open browser ({error}) — copy the URL: {url}"
-            ));
-        }
-    }
+    open_url_in_browser(session, &url);
 }
 
 fn build_completion_report(session: &mut TuiSession, event: &AgentEvent) {
@@ -11791,6 +11856,7 @@ mod tests {
             live_trajectory: Vec::new(),
             lens_url_rx: None,
             last_lens_url: None,
+            last_model: None,
             reasoning: String::new(),
             live_response: String::new(),
             turn_started: None,
@@ -11844,6 +11910,7 @@ mod tests {
             live_trajectory: Vec::new(),
             lens_url_rx: None,
             last_lens_url: None,
+            last_model: None,
             reasoning: String::new(),
             live_response: String::new(),
             turn_started: None,
@@ -11895,6 +11962,7 @@ mod tests {
             live_trajectory: Vec::new(),
             lens_url_rx: None,
             last_lens_url: None,
+            last_model: None,
             reasoning: String::new(),
             live_response: String::new(),
             turn_started: None,
@@ -13054,6 +13122,7 @@ mod tests {
             live_trajectory: Vec::new(),
             lens_url_rx: None,
             last_lens_url: None,
+            last_model: None,
             reasoning: String::new(),
             live_response: String::new(),
             turn_started: None,
@@ -13596,6 +13665,12 @@ mod tests {
                 "the URL must be the opener's single argument"
             );
         }
+        // VRO-11.9: the opener must NOT inherit the TUI's stdio — browser
+        // stderr (Chromium atom/GCM noise) sprayed over the alternate
+        // screen is what corrupted the display on Ctrl+O. The null stdio
+        // is attached inside `lens_opener_command` itself (single site);
+        // Command stdio getters are still unstable, so this contract is
+        // enforced by the centralized builder rather than introspection.
     }
 
     #[tokio::test]
