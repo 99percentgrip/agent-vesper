@@ -392,8 +392,58 @@ const OVERLAY_SCRIPT: &str = r##"(function(){
   }, 800);
 })();""##;
 
+/// Neutralizes artifact-authored Content-Security-Policy `<meta>` tags.
+///
+/// VRO-11.10: an agent-generated dashboard can carry
+/// `<meta http-equiv="Content-Security-Policy" content="...">`, and a
+/// restrictive policy (e.g. `script-src 'none'` or any policy without
+/// `'unsafe-inline'`) **silently blocks the entire VesperLens overlay
+/// script** — the review page renders with zero interactivity and no
+/// obvious console clue the user would connect to the review tool.
+///
+/// The reviewed copy is OUR rendering of their artifact from OUR loopback
+/// origin; the original file on disk is untouched. Stripping the
+/// artifact's CSP from that copy is what guarantees the review controls
+/// are always operable. Only the `http-equiv="Content-Security-Policy"`
+/// form is removed (case-insensitive attribute values); every other meta
+/// survives.
+fn strip_csp_meta_tags(html: &str) -> String {
+    if !html
+        .to_ascii_lowercase()
+        .contains("content-security-policy")
+    {
+        return html.to_string();
+    }
+    let lower = html.to_ascii_lowercase();
+    let mut out = String::with_capacity(html.len());
+    let mut cursor = 0_usize;
+    while let Some(rel) = lower[cursor..].find('<') {
+        let start = cursor + rel;
+        // Carry through any text between the previous tag and this one —
+        // the document body is not made of tags alone.
+        out.push_str(&html[cursor..start]);
+        // Find the end of this tag.
+        let Some(gt) = lower[start..].find('>') else {
+            break;
+        };
+        let end = start + gt + 1;
+        let tag = &lower[start..end];
+        let declares_csp = tag.starts_with("<meta")
+            && tag.contains("http-equiv")
+            && tag.contains("content-security-policy");
+        if !declares_csp {
+            out.push_str(&html[start..end]);
+        }
+        cursor = end;
+    }
+    out.push_str(&html[cursor..]);
+    out
+}
+
 /// Inject the VesperLens review overlay into an HTML artifact.
 ///
+/// - First, any artifact-authored CSP `<meta>` is stripped
+///   ([`strip_csp_meta_tags`]) so the overlay's inline script always runs.
 /// - If the artifact contains a `</body>` (case-insensitive, allowing
 ///   trailing whitespace), the overlay is inserted immediately before it.
 /// - Otherwise the overlay is appended to the end.
@@ -403,6 +453,7 @@ const OVERLAY_SCRIPT: &str = r##"(function(){
 /// because the overlay guards on `window.__vesperLensBooted`). Callers
 /// should inject exactly once.
 pub fn inject_review_overlay(html: &str) -> String {
+    let html = &strip_csp_meta_tags(html);
     let overlay = build_overlay_tag();
     // Case-insensitive search for the LAST occurrence of </body>. We use
     // the last to handle pathological HTML that includes the literal
@@ -578,6 +629,44 @@ mod tests {
             OVERLAY_SCRIPT.contains("document.getElementById(\"vl-panel\")"),
             "the watchdog must detect a removed panel"
         );
+    }
+
+    #[test]
+    fn strips_artifact_csp_meta_tags_so_the_overlay_always_runs() {
+        // VRO-11.10: an agent-authored CSP meta silently blocks the entire
+        // overlay script — the review page renders with zero interactivity.
+        // The injector must remove exactly the CSP meta and nothing else.
+        let hostile = "<html><head>\
+<meta http-equiv=\"Content-Security-Policy\" content=\"script-src 'none'\">\
+<meta charset=\"utf-8\">\
+</head><body><h1>dash</h1></body></html>";
+        let out = inject_review_overlay(hostile);
+        let lower = out.to_ascii_lowercase();
+        assert!(
+            !lower.contains("content-security-policy"),
+            "CSP meta must be stripped from the reviewed copy: {out}"
+        );
+        assert!(
+            lower.contains("<meta charset=\"utf-8\">"),
+            "every other meta must survive"
+        );
+        assert!(out.contains("<h1>dash</h1>"), "body survives");
+        assert!(out.contains("VesperLens Review"), "overlay injected");
+    }
+
+    #[test]
+    fn strips_csp_meta_case_insensitively_and_handles_no_head() {
+        let upper = "<META HTTP-EQUIV=\"Content-Security-Policy\" CONTENT=\"default-src 'none'\"><body>x</body>";
+        let out = inject_review_overlay(upper);
+        assert!(
+            !out.to_ascii_lowercase().contains("content-security-policy"),
+            "case-insensitive strip"
+        );
+        assert!(out.contains("x"));
+        // Documents without any CSP pass through untouched (plus overlay).
+        let clean = inject_review_overlay("<html><body><p>ok</p></body></html>");
+        assert!(clean.contains("<p>ok</p>"));
+        assert!(clean.contains("VesperLens Review"));
     }
 
     #[test]
