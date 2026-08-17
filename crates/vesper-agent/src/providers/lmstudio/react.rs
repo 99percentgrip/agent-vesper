@@ -91,7 +91,8 @@ Rules:
    calling write_file is a FAILED turn. The only exception is Plan mode, \
    where update_plan replaces file mutation.
 6. When planning depends on unresolved user choices, call \
-   request_human_input with one to four concrete questions. Continue from \
+   request_human_input with only the concrete questions needed and never more \
+   than the current tool schema permits. Continue from \
    the returned browser answers; never invent missing requirements.";
 
 /// LM Studio-backed [`ReactAgent`].

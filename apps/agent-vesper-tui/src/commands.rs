@@ -194,6 +194,11 @@ pub enum CommandOutcome {
     /// `SessionState.reasoning_mode_override`.
     ReasoningStatus,
 
+    /// Set the session-scoped VesperLens planning-interview question policy.
+    InterviewLimit(InterviewQuestionLimit),
+    /// Show the current VesperLens planning-interview question policy.
+    InterviewLimitStatus,
+
     /// Quit/exit requested.
     Quit,
     /// Unknown command or invalid argument; the message is shown to the user.
@@ -228,6 +233,49 @@ pub enum SessionConfigKey {
     MixtureMode,
     Theme,
     MaxIterations,
+}
+
+/// Session-scoped question policy for VesperLens planning interviews.
+///
+/// A fixed value is a maximum, not a quota: the agent should ask fewer
+/// questions when the requirements are already clear. `Auto` lets the agent
+/// choose the count while retaining a deterministic safety ceiling.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InterviewQuestionLimit {
+    Auto,
+    Fixed(u8),
+}
+
+/// Backward-compatible default used until `/interview-limit` changes it.
+pub const DEFAULT_INTERVIEW_QUESTION_LIMIT: u8 = 4;
+/// Safety ceiling for both explicit and agent-selected interview sizes.
+pub const MAX_INTERVIEW_QUESTIONS: u8 = 12;
+
+impl Default for InterviewQuestionLimit {
+    fn default() -> Self {
+        Self::Fixed(DEFAULT_INTERVIEW_QUESTION_LIMIT)
+    }
+}
+
+impl InterviewQuestionLimit {
+    #[must_use]
+    pub fn max_questions(self) -> usize {
+        match self {
+            Self::Auto => usize::from(MAX_INTERVIEW_QUESTIONS),
+            Self::Fixed(value) => usize::from(value),
+        }
+    }
+
+    #[must_use]
+    pub fn label(self) -> String {
+        match self {
+            Self::Auto => format!("auto (agent chooses 1-{MAX_INTERVIEW_QUESTIONS})"),
+            Self::Fixed(DEFAULT_INTERVIEW_QUESTION_LIMIT) => {
+                format!("{DEFAULT_INTERVIEW_QUESTION_LIMIT} (default maximum)")
+            }
+            Self::Fixed(value) => format!("{value} (maximum)"),
+        }
+    }
 }
 
 /// Terminal projections which do not mutate provider/domain state.
@@ -801,6 +849,23 @@ impl CommandRegistry {
                             value: value.to_string(),
                         },
                         _ => CommandOutcome::Error("Usage: /max-iterations [1-200]".into()),
+                    }
+                }
+            }
+            "interview-limit" => {
+                let value = argument.trim();
+                if value.is_empty() {
+                    CommandOutcome::InterviewLimitStatus
+                } else if value.eq_ignore_ascii_case("auto") {
+                    CommandOutcome::InterviewLimit(InterviewQuestionLimit::Auto)
+                } else {
+                    match value.parse::<u8>() {
+                        Ok(value @ 1..=MAX_INTERVIEW_QUESTIONS) => {
+                            CommandOutcome::InterviewLimit(InterviewQuestionLimit::Fixed(value))
+                        }
+                        _ => CommandOutcome::Error(format!(
+                            "Usage: /interview-limit [auto|1-{MAX_INTERVIEW_QUESTIONS}]"
+                        )),
                     }
                 }
             }
@@ -1423,6 +1488,9 @@ impl CommandRegistry {
         buffer.push_str("  /toggle-thinking   alias for /reasoning-panel\n");
         buffer.push_str("  /statusline        show or hide the session sidebar\n");
         buffer.push_str("  /max-iterations    show the per-turn tool-call iteration cap\n");
+        buffer.push_str(
+            "  /interview-limit    show or set VesperLens questions (auto|1-12; default 4)\n",
+        );
         buffer.push_str("  /usage             show the current usage summary\n");
         buffer.push_str("  /history           browse and resume persisted sessions\n");
         buffer.push_str("  /search <text>     grep the visible conversation\n");
@@ -1689,6 +1757,7 @@ const ORACLE_COMMAND_SURFACE: &[OracleCommandEntry] = &[
     OracleCommandEntry { name: "toggle-thinking",   description: "Alias for /reasoning-panel" },
     OracleCommandEntry { name: "clear-view",        description: "Clear only the visible transcript" },
     OracleCommandEntry { name: "max-iterations",    description: "Show or set the per-turn tool-call iteration cap" },
+    OracleCommandEntry { name: "interview-limit",   description: "Show or set the VesperLens interview question limit (auto or 1-12)" },
     OracleCommandEntry { name: "recap",             description: "Show a one-line summary of the session so far" },
     OracleCommandEntry { name: "blocks",            description: "Pick a code block from recent responses to copy or save" },
     OracleCommandEntry { name: "statusline",        description: "Choose which sidebar segments are visible" },
@@ -2251,12 +2320,16 @@ mod tests {
             registry.contains("forget"),
             "Stage 16 Vesper-native /forget must be registered"
         );
+        assert!(
+            registry.contains("interview-limit"),
+            "VesperLens-native /interview-limit must be registered"
+        );
         assert_eq!(
             registry.names().len(),
-            90,
-            "Phase 7 parity: 80 oracle commands + 10 Vesper-native = 90 total \
+            91,
+            "Phase 7 parity: 80 oracle commands + 11 Vesper-native = 91 total \
              (Vesper-native: approve, cancel, auth, lmstudio, provider, embedding, \
-             quit, remember, recall, forget)"
+             quit, remember, recall, forget, interview-limit)"
         );
     }
 
@@ -2411,6 +2484,30 @@ mod tests {
             CommandOutcome::ContextView(ViewKind::MaxIterations)
         );
         assert_eq!(resolve_bare("usage"), CommandOutcome::ProviderUsage);
+    }
+
+    #[test]
+    fn interview_limit_defaults_to_status_and_accepts_auto_or_bounded_values() {
+        assert_eq!(
+            resolve_bare("interview-limit"),
+            CommandOutcome::InterviewLimitStatus
+        );
+        assert_eq!(
+            resolve_bare_intent(&CommandIntent::parse("/interview-limit auto")),
+            CommandOutcome::InterviewLimit(InterviewQuestionLimit::Auto)
+        );
+        assert_eq!(
+            resolve_bare_intent(&CommandIntent::parse("/interview-limit 8")),
+            CommandOutcome::InterviewLimit(InterviewQuestionLimit::Fixed(8))
+        );
+        for invalid in ["0", "13", "many"] {
+            assert!(matches!(
+                resolve_bare_intent(&CommandIntent::parse(&format!(
+                    "/interview-limit {invalid}"
+                ))),
+                CommandOutcome::Error(_)
+            ));
+        }
     }
 
     #[test]
