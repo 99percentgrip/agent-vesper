@@ -556,7 +556,7 @@ the multi-turn, tool-executing layer above it.
   hover targeting, inline comment popovers, text-selection annotations, a
   removable list, and Esc/Enter keyboard support. The feedback contract also
   carries optional structured `LensAnswer` values. `render_interview_artifact`
-  builds an escaped, script-free 1–4-question surface discovered through
+  builds an escaped, script-free bounded-question surface discovered through
   `data-vesper-question` controls; incomplete interviews cannot submit.
   Every ADR 0017 boundary remains in force: owned Rust-string JS, no external
   URLs, POST only to relative `/feedback`, loopback-only, single-turn. This

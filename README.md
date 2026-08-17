@@ -347,7 +347,7 @@ VRO-11.11 closes the remaining gap with the reviewed Lavish workflow: opening a 
 
 1. **Automatic browser handoff.** `request_human_review` and `request_human_input` open the loopback review URL with the platform browser as soon as the listener binds. The bare URL, in-app click target, and Ctrl+O remain reliable recovery paths when desktop opening is unavailable.
 2. **Artifacts work before annotation.** VesperLens starts in interaction mode, so dashboard buttons, forms, links, and other native controls remain usable. Annotation is an explicit toggle. The overlay exposes all three native verdicts (Approve / Send changes / Reject), preserves draft notes across panel rerenders, and treats non-2xx submissions as failures.
-3. **Interactive planning questions.** The model-facing `request_human_input` tool accepts 1–4 bounded questions with optional choices. VesperLens renders escaped free-text, radio, or checkbox controls, requires every answer before submission, and returns stable `question: value` pairs to the model as tool context so planning can continue without invented requirements.
+3. **Interactive planning questions.** The model-facing `request_human_input` tool accepts bounded questions with optional choices. `/interview-limit` reports or changes the session policy: `1`–`12` sets a hard maximum, `auto` lets the agent choose 1–12 questions from the PRD's unresolved decisions, and the default remains 4. VesperLens renders escaped free-text, radio, or checkbox controls, requires every answer before submission, and returns stable `question: value` pairs to the model as tool context so planning can continue without invented requirements.
 4. **Terminal-native conversation and TODO state.** User turns use a compact cyan `›` marker, assistant markdown is unboxed, and tool/thinking lines stay dim; the old full-width/asymmetric chat bubbles are gone. Repeated `update_plan` snapshots no longer enter transcript history. Wide terminals show current task state in a dedicated, toggleable TODO sidebar between a compact Session summary and a compact Run/Last run panel; `/tasks` controls it.
 
 ### How VRO interacts with the live tool surface
@@ -365,6 +365,7 @@ All configurable from the TUI — no restart needed:
 | **Model** | GLM-5.3, GLM-5.2, GLM-5-Turbo, GLM-4.7 (+ vision models) | Model list syncs to the selected API plan; GLM-5.3 is the default flagship |
 | **Reasoning Depth** | Off, Enabled, High, Max | Session-scoped GLM thinking depth (provider superpower; `/thinking`) |
 | **Reasoning Mode (VRO)** | Auto, Fast, Balanced, Deep, Maximum, Off | VRO orchestrator mode override (`/reasoning set mode=…`); see [Reasoning Orchestrator](#reasoning-orchestrator-vro) |
+| **VesperLens interview limit** | Auto or 1–12 (default 4) | Session-scoped maximum for `request_human_input`; `/interview-limit` reports or changes it |
 | **API Plan** | Coding, Standard, BigModel (CN) | Switch endpoints |
 | **Permissions** | Ask, Read Only, Bypass | Gate destructive tools |
 | **Generation** | Balanced, Precise, Exploratory | Temperature / sampling strategy |

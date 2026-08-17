@@ -30,9 +30,10 @@ business logic.
 - `src/commands.rs` — slash-command parsing, registry, and resolution
   against the active provider's superpowers. Tier C Phase 7 (ADR 0010): the
   registry now covers the **entire** Python oracle `LOCAL_COMMANDS` surface
-  (80 distinct oracle command names, including `/export last`, + 10
-  Vesper-native = 90 commands; Vesper-native = approve, cancel, auth,
-  lmstudio, provider, embedding, quit, remember, recall, forget). The
+  (80 distinct oracle command names, including `/export last`, + 11
+  Vesper-native = 91 commands; Vesper-native = approve, cancel, auth,
+  lmstudio, provider, embedding, quit, remember, recall, forget,
+  interview-limit). The
   `ORACLE_COMMAND_SURFACE` const table is the single source of truth for the
   migration matrix. ADR 0016 follow-up: `/embedding` (Status/Set/Clear) is
   the most recent Vesper-native addition; it parses
@@ -50,6 +51,12 @@ business logic.
   six-variant parser (PRD §8.1 authoritative list + `max` shorthand for
   `Maximum`; rejects every invented mode with a usage error listing all
   six).
+  ADR 0019: `/interview-limit` reports or changes the session-scoped
+  VesperLens question policy. Bare reports; `auto` lets the agent choose
+  1–12 decision-relevant questions; `1`–`12` sets a hard maximum. The default
+  remains 4. The command, palette, tool schema, and executor share one typed
+  policy, and the schema is rebuilt for every turn so the model sees the
+  active value.
 - `src/dispatch.rs` — pure, terminal-free event-loop dispatch: the bridge
   between the command registry, the Plan Mode state machine, and the
   `SuperpowerOverrides` store. Owns `SessionState`, `DispatchOutcome`, and
@@ -347,8 +354,9 @@ business logic.
   explicit toggle, `Action::Modify` has a real Send changes action, draft
   notes survive panel rerenders, and non-2xx feedback submissions fail
   visibly. The TUI advertises `request_human_input(title, questions)` beside
-  `request_human_review`: it renders 1–4 escaped free-text/radio/checkbox
-  questions, requires every answer, blocks on the same loopback Lens port,
+  `request_human_review`: it renders 1–12 escaped free-text/radio/checkbox
+  questions under the active `/interview-limit` policy, requires every
+  answer, blocks on the same loopback Lens port,
   and returns stable question/value pairs as tool context. TODO snapshots no
   longer enter chat history; the dedicated sidebar panel owns current plan
   state and the former full-height Run gauge is a compact status/report.

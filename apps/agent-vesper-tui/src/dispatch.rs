@@ -24,7 +24,8 @@ use vesper_domain::{BoundedString, ProviderId, SessionOperatingMode, SessionPerm
 use vesper_provider::SuperpowerValue;
 
 use crate::commands::{
-    CommandIntent, CommandOutcome, CommandRegistry, PlanGesture, SessionConfigKey, UiAction,
+    CommandIntent, CommandOutcome, CommandRegistry, InterviewQuestionLimit, PlanGesture,
+    SessionConfigKey, UiAction,
 };
 use crate::plan_mode::{PlanPhase, PlanState};
 use crate::superpowers::{ProviderSuperpowerSurface, SuperpowerOverrides};
@@ -165,6 +166,8 @@ pub struct SessionControls {
     pub auxiliary_model: String,
     pub mixture_mode: String,
     pub max_tool_iterations: u32,
+    /// Maximum VesperLens interview size, or bounded agent-selected `Auto`.
+    pub interview_question_limit: InterviewQuestionLimit,
 }
 
 impl Default for SessionControls {
@@ -177,6 +180,7 @@ impl Default for SessionControls {
             auxiliary_model: "main".into(),
             mixture_mode: "off".into(),
             max_tool_iterations: vesper_agent::DEFAULT_MAX_TOOL_ITERATIONS,
+            interview_question_limit: InterviewQuestionLimit::default(),
         }
     }
 }
@@ -612,6 +616,18 @@ fn apply_outcome(
             }
             transcript.push(format!("session setting: {key:?} → {value}"));
             *status = Some(format!("Updated {key:?} to {value}."));
+        }
+        CommandOutcome::InterviewLimit(limit) => {
+            controls.interview_question_limit = limit;
+            let label = limit.label();
+            transcript.push(format!("VesperLens interview limit → {label}"));
+            *status = Some(format!("VesperLens interview limit: {label}."));
+        }
+        CommandOutcome::InterviewLimitStatus => {
+            *status = Some(format!(
+                "VesperLens interview limit: {}. Set with `/interview-limit auto|1-12`.",
+                controls.interview_question_limit.label()
+            ));
         }
         CommandOutcome::Ui(action) => match action {
             UiAction::OpenSettings => {
@@ -1171,6 +1187,35 @@ mod integration_tests {
         );
         // The plan body must be retained so the driver can review it.
         assert!(state.plan.plan().is_some());
+    }
+
+    #[test]
+    fn interview_limit_is_session_scoped_and_defaults_to_four() {
+        let registry = registry();
+        let surface = surface();
+        let mut state = SessionState::new();
+        assert_eq!(
+            state.controls.interview_question_limit,
+            InterviewQuestionLimit::Fixed(4)
+        );
+
+        step(&mut state, &registry, &surface, "/interview-limit auto");
+        assert_eq!(
+            state.controls.interview_question_limit,
+            InterviewQuestionLimit::Auto
+        );
+
+        step(&mut state, &registry, &surface, "/interview-limit 7");
+        assert_eq!(
+            state.controls.interview_question_limit,
+            InterviewQuestionLimit::Fixed(7)
+        );
+        assert!(
+            state
+                .status
+                .as_deref()
+                .is_some_and(|status| status.contains("7 (maximum)"))
+        );
     }
 
     #[test]

@@ -28,11 +28,12 @@ mod mobile;
 
 use std::io::{self, stdout};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
 
 use agent_vesper_tui::{
-    AuthHubAction, AuthHubState, AuthProvider, CommandIntent, CommandRegistry, DispatchOutcome,
-    FOOTER_ACTIONS, LmStudioHub, LmStudioSettings, LmStudioSettingsAction, MediaOp,
+    AuthHubAction, AuthHubState, AuthProvider, CommandIntent, CommandRegistry,
+    DEFAULT_INTERVIEW_QUESTION_LIMIT, DispatchOutcome, FOOTER_ACTIONS, InterviewQuestionLimit,
+    LmStudioHub, LmStudioSettings, LmStudioSettingsAction, MAX_INTERVIEW_QUESTIONS, MediaOp,
     PermissionChoice, PermissionModal, PlanPhase, ProviderSuperpowerSurface, SessionState,
     StartupRoute, TerminalAction, ViewModel, apply_model_plan, apply_task_plan,
     command_menu_height, dispatch, load_lmstudio_settings, query_startup_view, render_auth_hub,
@@ -64,6 +65,36 @@ use vesper_provider::{ProviderConfiguration, SuperpowerValue};
 
 /// Default provider identity when `AGENT_VESPER_PROVIDER` is unset.
 const DEFAULT_PROVIDER: &str = "zai";
+
+/// Shared session policy consulted both when advertising and executing the
+/// VesperLens interview tool. Zero encodes `Auto`; fixed values encode their
+/// maximum directly.
+#[derive(Clone, Debug)]
+struct InterviewQuestionPolicy(Arc<AtomicU8>);
+
+impl Default for InterviewQuestionPolicy {
+    fn default() -> Self {
+        Self(Arc::new(AtomicU8::new(DEFAULT_INTERVIEW_QUESTION_LIMIT)))
+    }
+}
+
+impl InterviewQuestionPolicy {
+    fn set(&self, limit: InterviewQuestionLimit) {
+        let encoded = match limit {
+            InterviewQuestionLimit::Auto => 0,
+            InterviewQuestionLimit::Fixed(value) => value,
+        };
+        self.0.store(encoded, Ordering::Relaxed);
+    }
+
+    fn get(&self) -> InterviewQuestionLimit {
+        match self.0.load(Ordering::Relaxed) {
+            0 => InterviewQuestionLimit::Auto,
+            value @ 1..=MAX_INTERVIEW_QUESTIONS => InterviewQuestionLimit::Fixed(value),
+            _ => InterviewQuestionLimit::default(),
+        }
+    }
+}
 
 type Backend = CrosstermBackend<io::Stdout>;
 
@@ -215,6 +246,8 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
     // advertised to the model.
     let (lens_url_tx, lens_url_rx) = mpsc::unbounded_channel::<String>();
     let lens_port: Arc<dyn vesper_agent::vro::LensReviewPort> = Arc::new(VesperLensPort::new());
+    let interview_question_policy = InterviewQuestionPolicy::default();
+    interview_question_policy.set(InterviewQuestionLimit::default());
     let agent_tools = Arc::new(
         TuiToolService::new(
             Arc::clone(&memory_stores),
@@ -222,6 +255,7 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
             mcp_root_path(),
             Some(worker_factory),
         )
+        .with_interview_question_policy(interview_question_policy.clone())
         .with_lens_review(Arc::clone(&lens_port), lens_url_tx),
     );
     let (approval_port, approval_rx) = vesper_agent::ApprovalBroker::channel();
@@ -320,6 +354,7 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
         &runtime_session_id,
         &agent,
         &agent_tools_for_react,
+        &interview_question_policy,
         approval_port_for_react,
         &memory_stores,
         &cognition_bundle,
@@ -968,6 +1003,7 @@ async fn drive_loop(
     runtime_session_id: &SessionId,
     agent: &Arc<AgentLoop>,
     agent_tools: &Arc<dyn vesper_agent::ToolService>,
+    interview_question_policy: &InterviewQuestionPolicy,
     approval_port_for_react: Arc<dyn vesper_agent::PermissionPort>,
     memory_stores: &MemoryStores,
     cognition_bundle: &CognitionBundle,
@@ -1349,6 +1385,7 @@ async fn drive_loop(
                     provider_id,
                     &mut session.state,
                 );
+                interview_question_policy.set(session.state.controls.interview_question_limit);
                 if outcome == DispatchOutcome::Quit {
                     session.state.transcript.push("bye.".into());
                     break;
@@ -1638,6 +1675,16 @@ async fn drive_loop(
                         std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
                     match vesper_agent::expand_references(&root, &text) {
                         Ok(expanded) => {
+                            // Rebuild the hosted-tool projection for this turn
+                            // so `request_human_input` advertises the live
+                            // `/interview-limit` policy. The service Arc is the
+                            // same executor used by direct and ReAct paths.
+                            let turn_agent = Arc::new(
+                                agent.as_ref().clone().with_tool_registry(
+                                    ToolRegistry::parity_default()
+                                        .with_service(Arc::clone(agent_tools)),
+                                ),
+                            );
                             // VRO-8 (PRD §8.1): compute the diagnostic
                             // projection before the turn spawns so the
                             // Reasoning Panel shows the chosen strategy /
@@ -1688,7 +1735,7 @@ async fn drive_loop(
                                     ReactDispatchDecision::React => {
                                         if let Err(error) = spawn_vro_react_turn(
                                             vro,
-                                            agent,
+                                            &turn_agent,
                                             agent_tools,
                                             Arc::clone(&approval_port_for_react),
                                             expanded,
@@ -1699,7 +1746,7 @@ async fn drive_loop(
                                     }
                                     ReactDispatchDecision::Orchestrate => {
                                         if let Err(error) =
-                                            spawn_vro_turn(vro, agent, expanded, session)
+                                            spawn_vro_turn(vro, &turn_agent, expanded, session)
                                         {
                                             session.state.status = Some(error);
                                         }
@@ -1709,7 +1756,7 @@ async fn drive_loop(
                                         // Orchestrate — fall through to the
                                         // direct AgentLoop path.
                                         if let Err(error) = spawn_agent_turn(
-                                            agent,
+                                            &turn_agent,
                                             expanded,
                                             session,
                                             surface,
@@ -1720,7 +1767,7 @@ async fn drive_loop(
                                     }
                                 }
                             } else if let Err(error) = spawn_agent_turn(
-                                agent,
+                                &turn_agent,
                                 expanded,
                                 session,
                                 surface,
@@ -2189,6 +2236,9 @@ fn command_palette_candidates(
     if command == "/reasoning" {
         return reasoning_argument_candidates(argument);
     }
+    if command == "/interview-limit" {
+        return interview_limit_argument_candidates(argument);
+    }
     if let Some(choices) = session_setting_candidates(command, state, surface) {
         let query = argument.trim().to_ascii_lowercase();
         return choices
@@ -2301,6 +2351,34 @@ fn reasoning_argument_candidates(argument: &str) -> Vec<(String, String)> {
     }
 
     out
+}
+
+fn interview_limit_argument_candidates(argument: &str) -> Vec<(String, String)> {
+    let query = argument.trim().to_ascii_lowercase();
+    let mut candidates = vec![(
+        "/interview-limit auto".to_string(),
+        format!("Agent chooses 1-{MAX_INTERVIEW_QUESTIONS} decision-relevant questions"),
+    )];
+    candidates.extend((1..=MAX_INTERVIEW_QUESTIONS).map(|value| {
+        (
+            format!("/interview-limit {value}"),
+            if value == DEFAULT_INTERVIEW_QUESTION_LIMIT {
+                "Fixed maximum · default".to_string()
+            } else {
+                "Fixed maximum".to_string()
+            },
+        )
+    }));
+    candidates
+        .into_iter()
+        .filter(|(command, _description)| {
+            query.is_empty()
+                || command
+                    .split_whitespace()
+                    .last()
+                    .is_some_and(|value| value.starts_with(&query))
+        })
+        .collect()
 }
 
 fn session_setting_candidates(
@@ -2537,6 +2615,7 @@ fn command_expands_to_argument(command: &str, surface: &ProviderSuperpowerSurfac
                 | "rollback"
                 | "rewind"
                 | "loop"
+                | "interview-limit"
         )
 }
 
@@ -3854,9 +3933,9 @@ task: write it with write_file (content, not a placeholder).\n\
 - When the request_human_review tool is registered, call it after writing the \
 artifact so the human can review it; when it is not registered, skip it.\n\
 - When planning depends on unresolved user choices, call request_human_input \
-with one to four concrete questions and continue from the returned browser \
-answers. Do not invent requirements or finalize the plan while required \
-answers are missing.\n\
+with only the concrete questions needed, never exceeding the current tool \
+schema's question limit, and continue from the returned browser answers. Do \
+not invent requirements or finalize the plan while required answers are missing.\n\
 - The only exception is Plan mode, where you present the plan through the \
 update_plan tool instead of mutating files.\n\
 - For ANY multi-step task, maintain a live TODO list the user can see: call \
@@ -7693,13 +7772,24 @@ fn request_human_review_definition() -> vesper_domain::ToolDefinition {
 
 /// Browser-native structured planning interview. Unlike artifact review,
 /// this tool owns the HTML surface and returns stable question/value pairs.
-fn request_human_input_definition() -> vesper_domain::ToolDefinition {
+fn request_human_input_definition(limit: InterviewQuestionLimit) -> vesper_domain::ToolDefinition {
+    let max_questions = limit.max_questions();
+    let policy = match limit {
+        InterviewQuestionLimit::Auto => format!(
+            "Choose only the unresolved, decision-relevant questions needed for this PRD (1-{MAX_INTERVIEW_QUESTIONS}); do not pad the interview."
+        ),
+        InterviewQuestionLimit::Fixed(value) => format!(
+            "Ask at most {value} concise questions and use fewer when the requirements are already clear."
+        ),
+    };
     vesper_domain::ToolDefinition {
         id: vesper_domain::ToolId::new("request_human_input").expect("bounded tool id"),
         harness_name: vesper_domain::HarnessToolName::new("request_human_input")
             .expect("bounded harness name"),
         provider_name: None,
-        description: "Open a VesperLens browser interview and BLOCK until the human answers planning questions. Use this before finalizing a plan when requirements, choices, preferences, scope, or tradeoffs are unresolved. Ask 1-4 concise questions; options are optional and produce free text when omitted.".to_string(),
+        description: format!(
+            "Open a VesperLens browser interview and BLOCK until the human answers planning questions. Use this before finalizing a plan when requirements, choices, preferences, scope, or tradeoffs are unresolved. {policy} Options are optional and produce free text when omitted."
+        ),
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {
@@ -7710,7 +7800,7 @@ fn request_human_input_definition() -> vesper_domain::ToolDefinition {
                 "questions": {
                     "type": "array",
                     "minItems": 1,
-                    "maxItems": 4,
+                    "maxItems": max_questions,
                     "items": {
                         "type": "object",
                         "properties": {
@@ -7771,6 +7861,8 @@ struct TuiToolService {
     /// Artifact ready for review. Open: <URL>` line inline in the
     /// Conversation panel.
     lens_url_tx: Option<mpsc::UnboundedSender<String>>,
+    /// Live question policy selected by `/interview-limit`.
+    interview_question_policy: InterviewQuestionPolicy,
 }
 
 impl TuiToolService {
@@ -7795,7 +7887,13 @@ impl TuiToolService {
             )),
             lens_review: None,
             lens_url_tx: None,
+            interview_question_policy: InterviewQuestionPolicy::default(),
         }
+    }
+
+    fn with_interview_question_policy(mut self, policy: InterviewQuestionPolicy) -> Self {
+        self.interview_question_policy = policy;
+        self
     }
 
     /// Injects the VesperLens port + URL channel so artifact review and
@@ -7818,7 +7916,9 @@ impl vesper_agent::ToolService for TuiToolService {
         // configured, so every advertised call has a real executor.
         if self.lens_review.is_some() {
             defs.push(request_human_review_definition());
-            defs.push(request_human_input_definition());
+            defs.push(request_human_input_definition(
+                self.interview_question_policy.get(),
+            ));
         }
         defs
     }
@@ -7920,10 +8020,15 @@ impl TuiToolService {
                 .ok_or_else(|| {
                     tui_tool_failure("request_human_input", "missing questions array")
                 })?;
-            if !(1..=4).contains(&raw_questions.len()) {
+            let limit = self.interview_question_policy.get();
+            let max_questions = limit.max_questions();
+            if !(1..=max_questions).contains(&raw_questions.len()) {
                 return Err(tui_tool_failure(
                     "request_human_input",
-                    "questions must contain between 1 and 4 items",
+                    format!(
+                        "questions must contain between 1 and {max_questions} items under the current `/interview-limit` policy ({})",
+                        limit.label()
+                    ),
                 ));
             }
             let mut questions = Vec::with_capacity(raw_questions.len());
@@ -13593,6 +13698,23 @@ mod tests {
     }
 
     #[test]
+    fn interview_limit_candidates_offer_auto_and_bounded_fixed_values() {
+        let candidates = interview_limit_argument_candidates("");
+        assert_eq!(candidates.len(), usize::from(MAX_INTERVIEW_QUESTIONS) + 1);
+        assert_eq!(candidates[0].0, "/interview-limit auto");
+        assert!(candidates.iter().any(
+            |candidate| candidate.0 == "/interview-limit 4" && candidate.1.contains("default")
+        ));
+        assert_eq!(
+            interview_limit_argument_candidates("12")
+                .into_iter()
+                .map(|candidate| candidate.0)
+                .collect::<Vec<_>>(),
+            ["/interview-limit 12"]
+        );
+    }
+
+    #[test]
     fn vro113_command_palette_does_not_route_reasoning_to_thinking_alias() {
         // Regression for the directive's core complaint: typing
         // `/reasoning ` (trailing space) used to fall through to the
@@ -13688,7 +13810,7 @@ mod tests {
 
     #[test]
     fn request_human_input_definition_exposes_bounded_planning_questions() {
-        let def = request_human_input_definition();
+        let def = request_human_input_definition(InterviewQuestionLimit::default());
         assert_eq!(def.id.as_str(), "request_human_input");
         assert!(def.description.contains("planning"));
         assert!(def.description.contains("BLOCK"));
@@ -13698,6 +13820,13 @@ mod tests {
             def.input_schema["properties"]["questions"]["items"]["properties"]["options"]["maxItems"],
             6
         );
+
+        let auto = request_human_input_definition(InterviewQuestionLimit::Auto);
+        assert_eq!(
+            auto.input_schema["properties"]["questions"]["maxItems"],
+            MAX_INTERVIEW_QUESTIONS
+        );
+        assert!(auto.description.contains("do not pad"));
     }
 
     #[tokio::test]
@@ -13775,6 +13904,42 @@ mod tests {
         assert!(html.contains("data-vesper-question=\"framework\""));
         assert!(result.text.as_str().contains("Planning answers (1):"));
         assert!(result.text.as_str().contains("framework: Rust"));
+    }
+
+    #[tokio::test]
+    async fn request_human_input_enforces_the_live_fixed_limit() {
+        let mut service = TuiToolService::new(
+            Arc::new(MemoryStores::open_default()),
+            std::path::PathBuf::from("/tmp/test-cron"),
+            std::path::PathBuf::from("/tmp/test-mcp"),
+            None,
+        );
+        service.lens_review = Some(Arc::new(VesperLensPort::new()));
+        service
+            .interview_question_policy
+            .set(InterviewQuestionLimit::Fixed(2));
+        let call = vesper_domain::ToolCall {
+            id: vesper_domain::ToolCallId::new("too-many-questions").unwrap(),
+            tool_id: vesper_domain::ToolId::new("request_human_input").unwrap(),
+            arguments: serde_json::json!({
+                "questions": [
+                    {"id": "one", "prompt": "One?"},
+                    {"id": "two", "prompt": "Two?"},
+                    {"id": "three", "prompt": "Three?"}
+                ]
+            }),
+            extensions: vesper_domain::ExtensionMap::default(),
+        };
+        let context = vesper_agent::executor::uncancellable_context(
+            Vec::new(),
+            vesper_domain::SessionOperatingMode::Code,
+            vesper_domain::SessionPermissionMode::Ask,
+        );
+
+        let error = vesper_agent::ToolService::execute(&service, &call, &context)
+            .await
+            .expect_err("three questions must exceed a fixed limit of two");
+        assert!(error.to_string().contains("between 1 and 2"));
     }
 
     #[test]

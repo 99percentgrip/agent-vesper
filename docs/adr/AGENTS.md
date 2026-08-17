@@ -29,6 +29,9 @@ Own accepted, durable architecture and compatibility decisions for Agent Vesper.
 - ADR 0018 keeps ADR 0017's network/security boundaries while adding the
   automatic browser handoff, interaction-first artifact review, structured
   browser planning questions/answers, and the dedicated TUI TODO panel.
+- ADR 0019 replaces ADR 0018's fixed four-question host cap with a typed
+  session policy: fixed 1–12 or agent-selected auto 1–12, defaulting to four,
+  with matching per-turn tool schema and executor enforcement.
 
 ## Verification
 

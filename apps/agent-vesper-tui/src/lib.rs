@@ -38,7 +38,10 @@ pub mod ui;
 pub use auth_hub::{
     AuthHubAction, AuthHubState, AuthProvider, StartupRoute, render_auth_hub, startup_route,
 };
-pub use commands::{CommandIntent, CommandOutcome, CommandRegistry, MediaOp, PlanGesture};
+pub use commands::{
+    CommandIntent, CommandOutcome, CommandRegistry, DEFAULT_INTERVIEW_QUESTION_LIMIT,
+    InterviewQuestionLimit, MAX_INTERVIEW_QUESTIONS, MediaOp, PlanGesture,
+};
 pub use dispatch::{
     DispatchOutcome, PanelVisibility, SessionControls, SessionState, TaskItem, TerminalAction,
     TerminalPreferences, apply_model_plan, apply_task_plan, dispatch,
