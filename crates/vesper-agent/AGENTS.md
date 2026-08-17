@@ -405,13 +405,11 @@ the multi-turn, tool-executing layer above it.
   The transport is `Arc<dyn LmStudioTransport>` (shared, cheap clone) so the
   agent mirrors `LmStudioCandidateGenerator`'s shape exactly). No live LM
   Studio integration in VRO-3.1 (per execution constraints). **VRO-11.5:**
-  `REACT_SYSTEM_PROMPT` carries rule 5 — the tool-execution enforcement
-  mandate: artifact-generation requests MUST execute `write_file` (+
-  `request_human_review` when registered) within the same turn, plan-only
-  yielding is forbidden, and printing artifact content without calling
-  `write_file` is named a FAILED turn (the behavioral patch for the 180s
-  zero-tool turn; the shared-`AgentLoop` paths get the same mandate from
-  the TUI composition boundary's `tool_enforcement_instruction`).
+  `REACT_SYSTEM_PROMPT` carries rule 5 — artifact-generation requests MUST
+  execute `write_file` within the same turn. `request_human_review` is
+  conditional and HTML-only: use it for requested or materially useful visual
+  inspection, never ordinary source code. Plan-only yielding is forbidden,
+  and printing artifact content without `write_file` is a FAILED turn.
 
 ## Local Contracts
 
@@ -428,8 +426,9 @@ the multi-turn, tool-executing layer above it.
   most `MAX_CONTEXT_MESSAGES` messages while the host retains the returned
   transcript.
 - Depends on `vesper-domain`, `vesper-provider`, `vesper-runtime` (+ `glob`,
-  `regex` for search; `sha2` for VRO-7 deterministic procedure IDs; `tempfile`
-  dev-only). Must NOT depend on `vesper-acp`, `vesper-sessions`, SQLite, MCP,
+  `regex` for search; `sha2` for VRO-7 deterministic procedure IDs; workspace
+  `uuid` for VesperLens session tokens; `tempfile` dev-only). Must NOT depend
+  on `vesper-acp`, `vesper-sessions`, SQLite, MCP,
   frontends, or any disposable spike. **VRO-7 per-crate `regex` override:**
   `crates/vesper-agent/Cargo.toml` declares
   `regex = { version = "1", default-features = false, features = ["std",
@@ -477,48 +476,29 @@ the multi-turn, tool-executing layer above it.
   scans `src/` only and would fail with "forbidden foundational reference
   `reqwest`" if the term appeared there. This is the same dev-only carve-out
   pattern TUI uses for `reqwest.workspace = true` in its production deps.
-- **ADR 0017 (VRO-11) VesperLens — first runtime TCP listener in this crate.**
-  `crates/vesper-agent/Cargo.toml` adds `tokio = { workspace = true,
-  features = ["net", "io-util"] }` additively on the existing workspace
-  tokio pin (no version bump, no new external crate, no `axum`/`hyper`).
-  The `src/planning/vesper_lens/` subtree owns a loopback-only
-  (`127.0.0.1:0`) single-turn HTTP/1.1 server that injects a review
-  overlay into HTML artifacts, serves them via raw `tokio::net::TcpListener`,
-  parses a JSON POST at `/feedback`, and returns a native `LensFeedback`.
-  Hard constraints: never binds a non-loopback interface, single
-  connection per request (`Connection: close`), pure-function HTTP parser
-  (testable without network), 64 KiB per-connection read cap, no auth
-  token, no session state. The overlay script is owned Rust-string source
-  (NOT a port of any external `chrome-client.js`/`artifact-sdk.js`, which
-  the harness scanner flagged); it contains no `http://`/`https://`/
-  external-`src=` references and POSTs only to the relative `/feedback`
-  path. **VRO-11.2 planner seam:** `src/vro/lens_integration.rs` defines
-  `LensReviewPort` (with `Debug` bound so `VroOrchestrator`'s derive
-  keeps working), `NoOpLensReviewPort` default, `looks_like_html_artifact`
-  heuristic (requires `starts_with('<')` so prose mentions of `<html>`
-  never trigger review), `diagnostic_for_review` (PRD §4 verbatim format),
-  and `feedback_as_context_message` (token-frugal context-injection
-  renderer). `VroOrchestrator` gains an optional `lens_port` field + a
-  `with_lens_port(port)` builder + an async `maybe_review_html_artifact`
-  method that returns `None` when no port is configured or the input is
-  not HTML. Default behavior is byte-identical to VRO-10; the seam is
-  opt-in at the composition boundary.
-  **VRO-11.4 — Explicit `request_human_review` tool (replaces implicit
-  interceptor):** the VRO-11.3 `LensObservingInvoker` (implicit
-  `write_file(.html)` interception) is DELETED — Architectural analysis proved
-  that implicit interception is an anti-pattern; the model must EXPLICITLY
-  request review, matching the an explicit review command CLI
-  invocation pattern. `VroOrchestrator::execute_react` no longer wraps the
-  invoker; it passes `invoker` straight through (byte-identical to pre-
-  VRO-11.3). The explicit trigger is a `request_human_review(file_path)`
-  tool registered at the TUI composition boundary (`TuiToolService`); it
-  reads the file, routes the content through `LensReviewPort::review`,
-  blocks until the human submits, and returns the verdict via
-  `feedback_as_context_message`. The `LensReviewPort` trait's `on_url`
-  parameter is now tied to the `'a` lifetime of `&self` so concrete impls
-  can call it from within the returned async block. The orchestrator's
-  `maybe_review_html_artifact` (final-output check) is still available for
-  hosts that want it; the TUI wires the port via `with_lens_port`.
+- **ADR 0017–0020 VesperLens.** `src/planning/vesper_lens/` owns the native
+  loopback review server and typed feedback. ADR 0020 supersedes the original
+  same-document/single-turn boundary: trusted top-level chrome contains a
+  sandboxed artifact iframe without `allow-same-origin`; only the trusted
+  chrome can submit feedback. Every session has a UUIDv4 route token and
+  feedback additionally requires exact loopback Host, same Origin, JSON content
+  type, and `X-Vesper-Lens-Token`. The server retains the 64 KiB request cap and
+  never binds outside `127.0.0.1:0`.
+- File review is confined to the primary workspace, `.html`/`.htm`, and 8 MiB.
+  Sibling assets are served up to 16 MiB only after lexical and canonical
+  symlink containment beneath the artifact directory. Canonical file paths
+  reuse an in-process session; queued feedback survives cancelled tool waits,
+  browser drafts survive reloads, and revision polling live-reloads the iframe.
+- Annotations carry stable IDs, editable comments/replacement HTML, and typed
+  element or text-range targets. Planning questions support descriptions,
+  required/optional state, recommendations, and Other while ADR 0019 retains
+  the fixed/auto 1–12 policy. Bounded overflow/clipping diagnostics remain
+  passive until the reviewer selects them. The Playwright E2E fixtures under
+  `tests/` verify artifact review and interview behavior in real Chrome with
+  console/network assertions.
+- `LensReviewPort` exists only for the explicit TUI tools. ADR 0020 removes the
+  unused `VroOrchestrator::maybe_review_html_artifact`/`with_lens_port` path;
+  no implicit or final-output interception remains.
 
 ## Work Guidance
 
@@ -549,15 +529,14 @@ the multi-turn, tool-executing layer above it.
 
 ## Child DOX Index
 
-- `src/planning/vesper_lens/` — ADR 0017 (VRO-11) VesperLens native
-  human-in-the-loop HTML review oracle. Owns `types.rs`, `injector.rs`,
-  `http.rs`, `server.rs`, `mod.rs`. The overlay opens in interaction mode so
-  native artifact controls remain usable; explicit annotation mode provides
-  hover targeting, inline comment popovers, text-selection annotations, a
-  removable list, and Esc/Enter keyboard support. The feedback contract also
-  carries optional structured `LensAnswer` values. `render_interview_artifact`
-  builds an escaped, script-free bounded-question surface discovered through
-  `data-vesper-question` controls; incomplete interviews cannot submit.
-  Every ADR 0017 boundary remains in force: owned Rust-string JS, no external
-  URLs, POST only to relative `/feedback`, loopback-only, single-turn. This
-  subtree is not yet a durable enough boundary for its own AGENTS.md.
+- `src/planning/vesper_lens/` — ADR 0017–0020 native human-in-the-loop HTML
+  review. Owns trusted chrome, sandbox SDK injection, authenticated HTTP,
+  confined file/assets, reusable in-process sessions, typed annotations and
+  planning interviews. Browser verification lives at
+  `tests/vesper_lens_browser.mjs`; its deterministic assets are under
+  `tests/fixtures/vesper-lens/`. This subtree remains governed here.
+- `examples/vesper_lens_fixture.rs` — bounded manual/browser-E2E launcher that
+  reviews one workspace HTML file and prints machine-readable URL/feedback
+  lines; it is not a production binary.
+- `tests/vesper_lens_browser.mjs` and `tests/fixtures/vesper-lens/` — real
+  Playwright/Chrome review flow and deterministic sibling-resource fixture.

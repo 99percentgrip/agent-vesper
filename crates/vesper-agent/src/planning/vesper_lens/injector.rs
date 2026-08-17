@@ -1,484 +1,226 @@
-//! HTML injector for the VesperLens review overlay (ADR 0017).
+//! Trusted review chrome and sandbox annotation SDK for VesperLens.
 //!
-//! [`inject_review_overlay`] is a pure function that takes the agent's raw
-//! HTML artifact and returns a new HTML string with the VesperLens review
-//! overlay `<script>` and `<style>` inserted just before `</body>` (or
-//! appended at the end if no `</body>` is present).
-//!
-//! ## What this is NOT
-//!
-//! - It is **not** a port of the reference Oracle's `chrome-client.js`
-//!   (1878 lines) or `artifact-sdk.js` (1905 lines). Those modules were
-//!   flagged by the harness content scanner and are not imported here.
-//! - The overlay contains no code that the agent-generated HTML could
-//!   influence at inject time. All review-panel strings are hard-coded
-//!   literals owned by this crate. The only thing the overlay does with
-//!   the page DOM is read it (to compute selectors on user click) and POST
-//!   the resulting JSON contract to `/feedback`.
-//!
-//! ## Security
-//!
-//! The overlay trusts the served HTML exactly as a browser would — it
-//! executes inside the same document. The *agent* only ever receives the
-//! [`super::types::LensFeedback`] struct back; it never receives raw HTML.
-//! User-supplied `comment` / `notes` strings are treated as untrusted input
-//! by every downstream consumer.
+//! The review controls never execute in the artifact document. The server
+//! renders [`render_review_chrome`] as the top-level page and places the
+//! reviewed artifact in a sandboxed iframe without `allow-same-origin`.
+//! [`inject_review_sdk`] adds only a bounded annotation/message bridge to the
+//! reviewed copy; that bridge cannot submit feedback or reach parent DOM.
 
-/// The review-overlay JavaScript, as a single owned string.
-///
-/// Kept inline (rather than `include_str!`-loaded) so that:
-/// (a) the overlay ships as a literal in the binary and is reviewable in
-///     this source file, and
-/// (b) there is no separate asset file the architecture gate would need to
-///     know about.
-///
-/// The overlay:
-/// 1. Injects a floating review panel (fixed top-right, ~320px wide).
-/// 2. Opens in interaction mode so the reviewed page's own controls work,
-///    with explicit Approve / Send changes / Reject / Annotate actions.
-/// 3. In pick mode: hovering outlines the element under the cursor; a
-///    click opens an INLINE popover editor anchored at the click (no
-///    `window.prompt`) that captures the comment; selecting text first
-///    quotes the selection inside the note; a second click on an already
-///    annotated element removes its annotation; Esc exits pick mode.
-/// 4. Annotations render as a removable numbered list (✕ per item).
-/// 5. On submit, POSTs `{action, annotations, notes, answers}` as JSON to
-///    `/feedback` and replaces the panel with a success message.
-/// 6. Disables itself after submit (single-turn contract).
-const OVERLAY_SCRIPT: &str = r##"(function(){
-  "use strict";
-  if (window.__vesperLensBooted) return;
-  window.__vesperLensBooted = true;
+/// Trusted top-level review client. It owns all feedback submission controls.
+pub(crate) const CHROME_SCRIPT: &str = r#"(function(){
+  'use strict';
+  const root=document.body, token=root.dataset.token, frame=document.getElementById('artifact');
+  const notes=document.getElementById('notes'), list=document.getElementById('annotations');
+  const status=document.getElementById('status'), failures=document.getElementById('failures');
+  const storageKey='vesper-lens:'+token, state=load();
+  let annotations=Array.isArray(state.annotations)?state.annotations:[];
+  let layoutWarnings=Array.isArray(state.layoutWarnings)?state.layoutWarnings:[];
+  let answers=Array.isArray(state.answers)?state.answers:[];
+  let expected=Array.isArray(state.expected)?state.expected:[];
+  let round=Number(state.round||0), revision=String(state.revision||'');
+  let pickMode=false, submitting=false, interviewMode=false;
+  notes.value=String(state.notes||'');
 
-  // VRO-11.7 — Oracle-style review loop: pick mode with hover
-  // highlight, an INLINE popover editor (never a native prompt dialog),
-  // text-selection annotations, and a removable/editable annotation list.
-  // All strings are owned literals; the only network call is the relative
-  // POST /feedback.
-  // The reviewed artifact opens in INTERACTION mode. Annotation is explicit:
-  // capturing every click on boot makes dashboards and prototypes impossible
-  // to operate, which defeats the purpose of reviewing an interactive page.
-  var annotations = [];
-  var pickMode = false;
-  var submitted = false;
-  var overallNotes = "";
-  var popover = null;
-  var popoverCtx = null; // {el, selector, quote}
+  function load(){try{return JSON.parse(sessionStorage.getItem(storageKey)||'{}')}catch(_){return {}}}
+  function save(){try{sessionStorage.setItem(storageKey,JSON.stringify({annotations,layoutWarnings,answers,expected,notes:notes.value,round,revision,scrollY:Number(state.scrollY||0),interview:interviewMode}))}catch(_){}}
+  function esc(value){const el=document.createElement('span');el.textContent=String(value||'');return el.innerHTML}
+  function setStatus(text,kind){status.textContent=text;status.dataset.kind=kind||''}
+  function post(message){if(frame.contentWindow)frame.contentWindow.postMessage(message,'*')}
 
-  var style = document.createElement("style");
-  style.textContent = [
-    "#vl-panel{position:fixed;top:12px;right:12px;width:320px;z-index:2147483647;",
-    "background:#1e1e2e;color:#cdd6f4;border:1px solid #45475a;border-radius:10px;",
-    "font:13px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;",
-    "padding:14px;box-shadow:0 12px 32px rgba(0,0,0,.45);}",
-    "#vl-panel h2{margin:0 0 10px;font-size:14px;color:#cba6f7;display:flex;",
-    "align-items:center;gap:6px;}",
-    "#vl-panel h2 .vl-dot{width:8px;height:8px;border-radius:50%;background:#89b4fa;",
-    "display:inline-block;}",
-    "#vl-panel button{cursor:pointer;border:1px solid #45475a;background:#313244;",
-    "color:#cdd6f4;padding:6px 12px;border-radius:6px;margin:2px;font:inherit;}",
-    "#vl-panel button:hover{background:#45475a;}",
-    "#vl-panel button.primary{background:#a6e3a1;color:#1e1e2e;border-color:#a6e3a1;font-weight:600;}",
-    "#vl-panel button.danger{background:#f38ba8;color:#1e1e2e;border-color:#f38ba8;font-weight:600;}",
-    "#vl-panel button.on{background:#f9e2af;color:#1e1e2e;border-color:#f9e2af;font-weight:600;}",
-    "#vl-panel textarea{width:100%;box-sizing:border-box;background:#11111b;color:#cdd6f4;",
-    "border:1px solid #45475a;border-radius:6px;padding:7px;font:inherit;margin-top:8px;}",
-    "#vl-panel .vl-row{margin-top:10px;display:flex;flex-wrap:wrap;}",
-    "#vl-panel .vl-note{font-size:11px;color:#9399b2;margin-top:8px;}",
-    "#vl-annot-list{margin-top:8px;max-height:150px;overflow:auto;}",
-    "#vl-annot-list .vl-item{background:#11111b;padding:6px 8px;border-radius:6px;margin-top:5px;",
-    "font-size:11.5px;word-break:break-word;border-left:3px solid #f9e2af;}",
-    "#vl-annot-list .vl-item .vl-x{float:right;cursor:pointer;color:#f38ba8;font-weight:700;",
-    "padding:0 3px;}",
-    "#vl-annot-list .vl-item .vl-sel{color:#89b4fa;font-family:ui-monospace,monospace;",
-    "font-size:10.5px;}",
-    "#vl-popover{position:absolute;z-index:2147483647;background:#11111b;color:#cdd6f4;",
-    "border:1px solid #89b4fa;border-radius:8px;padding:10px;width:260px;font:12.5px/1.4",
-    " -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.5);}",
-    "#vl-popover .vl-target{color:#89b4fa;font-family:ui-monospace,monospace;font-size:10.5px;",
-    "word-break:break-all;margin-bottom:6px;}",
-    "#vl-popover .vl-quote{color:#9399b2;font-style:italic;margin-bottom:6px;",
-    "max-height:52px;overflow:hidden;}",
-    "#vl-popover input{width:100%;box-sizing:border-box;background:#1e1e2e;color:#cdd6f4;",
-    "border:1px solid #45475a;border-radius:6px;padding:6px;font:inherit;}",
-    "#vl-popover .vl-row{margin-top:8px;}",
-    ".vl-highlight{outline:2px solid #f9e2af !important;outline-offset:1px;}",
-    ".vl-hover{outline:2px dashed #89b4fa !important;outline-offset:1px;}",
-    "#vl-panel .vl-badge{display:inline-block;background:#313244;border-radius:10px;",
-    "padding:1px 8px;font-size:10.5px;color:#9399b2;margin-left:6px;}"
-  ].join("");
-  document.head.appendChild(style);
-
-  var panel = document.createElement("div");
-  panel.id = "vl-panel";
-  document.body.appendChild(panel);
-
-  function esc(s){ var d = document.createElement("span"); d.textContent = s; return d; }
-
-  function render() {
-    panel.innerHTML = "";
-    var interviewMode = document.querySelectorAll("[data-vesper-question]").length > 0;
-    var title = document.createElement("h2");
-    var dot = document.createElement("span"); dot.className = "vl-dot";
-    title.appendChild(dot);
-    title.appendChild(document.createTextNode(interviewMode ? "VesperLens Interview" : "VesperLens Review"));
-    if (annotations.length) {
-      var badge = document.createElement("span");
-      badge.className = "vl-badge";
-      badge.textContent = annotations.length + " note" + (annotations.length > 1 ? "s" : "");
-      title.appendChild(badge);
-    }
-    panel.appendChild(title);
-
-    if (submitted) {
-      var ok = document.createElement("div");
-      ok.textContent = "Feedback sent \u2713  You may close this tab.";
-      ok.className = "vl-note";
-      ok.style.color = "#a6e3a1";
-      panel.appendChild(ok);
-      return;
-    }
-
-    var row = document.createElement("div");
-    row.className = "vl-row";
-    if (interviewMode) {
-      row.appendChild(btn("Send answers", "primary", function(){ submit("modify"); }));
-      row.appendChild(btn("Cancel", "danger", function(){ submit("reject"); }));
-    } else {
-      row.appendChild(btn("Approve", "primary", function(){ submit("approve"); }));
-      row.appendChild(btn("Send changes", "on", function(){ submit("modify"); }));
-      row.appendChild(btn("Reject", "danger", function(){ submit("reject"); }));
-    }
-    var pick = btn(pickMode ? "Interact with page" : "Annotate page", pickMode ? "on" : "", togglePick);
-    row.appendChild(pick);
-    panel.appendChild(row);
-
-    var hint = document.createElement("div");
-    hint.className = "vl-note";
-    hint.textContent = pickMode
-      ? "Annotation mode: click an element to comment, or select text first. Esc returns to interaction mode."
-      : "Interaction mode: use the page normally. Choose Annotate page when you want to attach feedback.";
-    panel.appendChild(hint);
-
-    var list = document.createElement("div");
-    list.id = "vl-annot-list";
-    annotations.forEach(function(a, i){
-      var item = document.createElement("div");
-      item.className = "vl-item";
-      var x = document.createElement("span");
-      x.className = "vl-x";
-      x.textContent = "\u2715";
-      x.title = "Remove note";
-      x.addEventListener("click", function(){ removeAnnotation(i); });
-      item.appendChild(x);
-      var sel = document.createElement("div");
-      sel.className = "vl-sel";
-      sel.textContent = (i + 1) + ". " + a.selector;
-      item.appendChild(sel);
-      if (a.comment) item.appendChild(esc(a.comment));
-      else { var em = document.createElement("i"); em.textContent = "(no comment)"; item.appendChild(em); }
-      list.appendChild(item);
-    });
-    panel.appendChild(list);
-
-    var notesLabel = document.createElement("div");
-    notesLabel.className = "vl-note";
-    notesLabel.textContent = interviewMode ? "Additional context (optional):" : "Overall notes (optional):";
-    panel.appendChild(notesLabel);
-    var notes = document.createElement("textarea");
-    notes.id = "vl-notes";
-    notes.rows = 2;
-    notes.placeholder = "Overall feedback for the agent...";
-    notes.value = overallNotes;
-    notes.addEventListener("input", function(){ overallNotes = notes.value; });
-    panel.appendChild(notes);
-  }
-
-  function btn(label, cls, onClick) {
-    var b = document.createElement("button");
-    b.textContent = label;
-    if (cls) b.className = cls;
-    b.addEventListener("click", onClick);
-    return b;
-  }
-
-  function togglePick() { setPickMode(!pickMode); }
-
-  function setPickMode(on) {
-    pickMode = on;
-    closePopover();
-    if (on) {
-      document.addEventListener("mouseover", onHover, true);
-      document.addEventListener("click", onBodyClick, true);
-      document.addEventListener("mouseup", onMouseUp, true);
-      document.addEventListener("keydown", onKey, true);
-    } else {
-      document.removeEventListener("mouseover", onHover, true);
-      document.removeEventListener("click", onBodyClick, true);
-      document.removeEventListener("mouseup", onMouseUp, true);
-      document.removeEventListener("keydown", onKey, true);
-      clearHover();
-    }
-    render();
-  }
-
-  var hovered = null;
-  function onHover(ev){
-    if (submitted || pickMode === false) return;
-    if (panel.contains(ev.target) || (popover && popover.contains(ev.target))) return;
-    clearHover();
-    hovered = ev.target;
-    if (hovered.classList) hovered.classList.add("vl-hover");
-  }
-  function clearHover(){
-    if (hovered && hovered.classList) hovered.classList.remove("vl-hover");
-    hovered = null;
-  }
-
-  function onMouseUp(ev){
-    if (submitted || !pickMode) return;
-    if (panel.contains(ev.target) || (popover && popover.contains(ev.target))) return;
-    var sel = window.getSelection();
-    var text = sel ? String(sel) : "";
-    if (!text.trim()) return;
-    var node = sel.anchorNode;
-    var el = node && node.nodeType === 1 ? node : (node ? node.parentElement : null);
-    if (!el) return;
-    ev.preventDefault(); ev.stopPropagation();
-    clearHover();
-    openPopover(ev, el, cssPath(el), text.trim().slice(0, 120));
-  }
-
-  function onBodyClick(ev) {
-    if (submitted || !pickMode) return;
-    if (panel.contains(ev.target) || (popover && popover.contains(ev.target))) return;
-    ev.preventDefault();
-    ev.stopPropagation();
-    clearHover();
-    var el = ev.target;
-    var selector = cssPath(el);
-    closePopover();
-    var prev = el.getAttribute("data-vl") === "1";
-    if (prev) {
-      annotations = annotations.filter(function(a){ return a.selector !== selector; });
-      el.classList.remove("vl-highlight");
-      el.removeAttribute("data-vl");
-      render();
-      return;
-    }
-    openPopover(ev, el, selector, null);
-  }
-
-  function onKey(ev){
-    if (ev.key === "Escape") {
-      if (popover) { closePopover(); return; }
-      setPickMode(false);
-    }
-  }
-
-  function openPopover(ev, el, selector, quote) {
-    closePopover();
-    popoverCtx = { el: el, selector: selector, quote: quote };
-    popover = document.createElement("div");
-    popover.id = "vl-popover";
-    var target = document.createElement("div");
-    target.className = "vl-target";
-    target.textContent = selector;
-    popover.appendChild(target);
-    if (quote) {
-      var q = document.createElement("div");
-      q.className = "vl-quote";
-      q.textContent = "\u201C" + quote + "\u201D";
-      popover.appendChild(q);
-    }
-    var input = document.createElement("input");
-    input.type = "text";
-    input.placeholder = "What should change here?";
-    popover.appendChild(input);
-    var row = document.createElement("div");
-    row.className = "vl-row";
-    var add = btn("Add note", "primary", confirmPopover);
-    var cancel = btn("Cancel", "", closePopover);
-    row.appendChild(add); row.appendChild(cancel);
-    popover.appendChild(row);
-    document.body.appendChild(popover);
-    // Anchor near the click, clamped to the viewport.
-    var x = Math.min((ev.clientX || 0) + 12, window.innerWidth - 280);
-    var y = Math.min((ev.clientY || 0) + 12, window.innerHeight - 160);
-    popover.style.left = Math.max(8, x) + "px";
-    popover.style.top = Math.max(8, y) + "px";
-    input.focus();
-    input.addEventListener("keydown", function(e){
-      if (e.key === "Enter") { e.preventDefault(); confirmPopover(); }
-    });
-  }
-
-  function confirmPopover() {
-    if (!popover || !popoverCtx) return;
-    var input = popover.querySelector("input");
-    var comment = input ? input.value.trim() : "";
-    if (popoverCtx.quote) comment = "[selection \u201C" + popoverCtx.quote + "\u201D] " + comment;
-    var el = popoverCtx.el;
-    if (el && el.classList) { el.classList.add("vl-highlight"); el.setAttribute("data-vl", "1"); }
-    annotations.push({
-      selector: popoverCtx.selector,
-      comment: comment || "",
-      suggested_html: null
-    });
-    closePopover();
-    render();
-  }
-
-  function closePopover() {
-    if (popover && popover.parentNode) popover.parentNode.removeChild(popover);
-    popover = null;
-    popoverCtx = null;
-  }
-
-  function removeAnnotation(i) {
-    annotations.splice(i, 1);
-    render();
-  }
-
-  function cssPath(el) {
-    if (el.id) return "#" + el.id;
-    var parts = [];
-    while (el && el.nodeType === 1 && parts.length < 6) {
-      var part = el.nodeName.toLowerCase();
-      if (el.className && typeof el.className === "string") {
-        var c = el.className.trim().split(/\s+/).slice(0, 2).join(".");
-        if (c) part += "." + c;
-      }
-      var sib = el, nth = 1;
-      while ((sib = sib.previousElementSibling)) nth++;
-      part += ":nth-of-type(" + nth + ")";
-      parts.unshift(part);
-      el = el.parentElement;
-    }
-    return parts.join(" > ");
-  }
-
-  function collectAnswers() {
-    var grouped = Object.create(null);
-    var controls = document.querySelectorAll("[data-vesper-question]");
-    Array.prototype.forEach.call(controls, function(control){
-      var question = control.getAttribute("data-vesper-question") || "";
-      if (!question) return;
-      var type = String(control.type || "").toLowerCase();
-      if ((type === "radio" || type === "checkbox") && !control.checked) return;
-      var value = control.value == null ? "" : String(control.value);
-      if (type === "checkbox" && !value) value = "true";
-      if (!grouped[question]) grouped[question] = [];
-      grouped[question].push(value);
-    });
-    return Object.keys(grouped).map(function(question){
-      return { question: question, value: grouped[question].join(", ") };
-    });
-  }
-
-  function submit(action) {
-    if (submitted) return;
-    var notesEl = document.getElementById("vl-notes");
-    overallNotes = notesEl ? notesEl.value : overallNotes;
-    var answers = collectAnswers();
-    var expected = Object.create(null);
-    Array.prototype.forEach.call(document.querySelectorAll("[data-vesper-question]"), function(control){
-      var id = control.getAttribute("data-vesper-question") || "";
-      if (id) expected[id] = true;
-    });
-    if (action === "modify" && Object.keys(expected).length > 0) {
-      var answered = Object.create(null);
-      answers.forEach(function(answer){
-        if (String(answer.value || "").trim()) answered[answer.question] = true;
+  function renderAnnotations(){
+    list.innerHTML='';
+    annotations.forEach(function(annotation,index){
+      const card=document.createElement('article');card.className='annotation';
+      card.innerHTML='<div class="annotation-head"><code>'+esc(annotation.selector)+'</code><button type="button" aria-label="Remove annotation">×</button></div>'+
+        '<label>Comment<textarea class="comment" rows="2"></textarea></label>'+
+        '<label>Suggested HTML (optional)<textarea class="suggested" rows="2"></textarea></label>';
+      card.querySelector('.comment').value=annotation.comment||'';
+      card.querySelector('.suggested').value=annotation.suggested_html||'';
+      card.querySelector('.comment').addEventListener('input',function(event){annotations[index].comment=event.target.value;save()});
+      card.querySelector('.suggested').addEventListener('input',function(event){annotations[index].suggested_html=event.target.value||null;save()});
+      card.querySelector('button').addEventListener('click',function(){
+        const removed=annotations.splice(index,1)[0];post({type:'vesper:remove-highlight',id:removed.id});save();renderAnnotations();
       });
-      var missing = Object.keys(expected).filter(function(id){ return !answered[id]; });
-      if (missing.length) {
-        window.alert("Please answer every planning question before sending.");
-        return;
-      }
-    }
-    var payload = {
-      action: action,
-      annotations: annotations,
-      notes: overallNotes,
-      answers: answers
-    };
-    submitted = true;
-    setPickMode(false);
-    render();
-    fetch("/feedback", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      keepalive: true
-    }).then(function(response){
-      if (!response.ok) throw new Error("server returned HTTP " + response.status);
-      render();
-    }).catch(function(err){
-      submitted = false;
-      render();
-      window.alert("VesperLens: failed to submit feedback: " + err);
+      list.appendChild(card);
+    });
+    document.getElementById('annotation-count').textContent=annotations.length?String(annotations.length):'';
+  }
+
+  function renderLayoutWarnings(){
+    const box=document.getElementById('diagnostics'),items=document.getElementById('diagnostic-items');items.innerHTML='';
+    box.hidden=!layoutWarnings.length;
+    layoutWarnings.forEach(function(warning,index){
+      const label=document.createElement('label');label.className='diagnostic';
+      label.innerHTML='<input type="checkbox"> <span><strong>'+esc(warning.message)+'</strong><code>'+esc(warning.selector)+'</code></span>';
+      const input=label.querySelector('input');input.checked=Boolean(warning.selected);
+      input.addEventListener('change',function(){layoutWarnings[index].selected=input.checked;save()});items.appendChild(label);
     });
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", function(){ setPickMode(pickMode); });
-  } else {
-    setPickMode(pickMode);
+  function submit(action,endSession){
+    if(submitting)return;
+    const missing=expected.filter(function(id){return !answers.some(function(a){return a.question===id&&String(a.value||'').trim()})});
+    if(interviewMode&&action!=='reject'&&missing.length){setStatus('Answer the required questions: '+missing.join(', '),'error');return}
+    submitting=true;setStatus('Sending feedback…','working');
+    const selectedDiagnostics=layoutWarnings.filter(function(warning){return warning.selected}).map(function(warning){return '[Layout: '+warning.rule+'] '+warning.message+' ('+warning.selector+')'}).join('\n');
+    const submittedNotes=[notes.value,selectedDiagnostics].filter(Boolean).join('\n');
+    fetch('/s/'+token+'/feedback',{method:'POST',headers:{'content-type':'application/json','x-vesper-lens-token':token},
+      body:JSON.stringify({action:action,annotations:annotations,notes:submittedNotes,answers:answers,end_session:Boolean(endSession)})})
+      .then(function(response){if(!response.ok)throw new Error('HTTP '+response.status);return response.json()})
+      .then(function(){setStatus(endSession?'Session ended.':'Feedback delivered. Keep this tab open for the next round.','ok');submitting=false})
+      .catch(function(error){submitting=false;setStatus('Could not send feedback: '+error.message,'error')});
   }
 
-  // Watchdog: artifact pages frequently rebuild document.body after load
-  // (charts, hydration), which removes an appended panel. If our panel
-  // vanishes and the review is still pending, re-attach and re-render it.
-  // Listeners live on `document` (capture), so they survive body wipes.
-  setInterval(function(){
-    if (submitted) return;
-    if (!document.getElementById("vl-panel")) {
-      try { document.body.appendChild(panel); render(); } catch (e) {}
-    }
-  }, 800);
-})();"##;
+  document.getElementById('approve').addEventListener('click',function(){submit('approve',false)});
+  document.getElementById('changes').addEventListener('click',function(){submit('modify',false)});
+  document.getElementById('reject').addEventListener('click',function(){submit('reject',false)});
+  document.getElementById('end').addEventListener('click',function(){submit('reject',true)});
+  document.getElementById('annotate').addEventListener('click',function(event){
+    pickMode=!pickMode;event.currentTarget.setAttribute('aria-pressed',String(pickMode));
+    event.currentTarget.textContent=pickMode?'Interact with page':'Annotate page';
+    post({type:'vesper:set-mode',annotating:pickMode});
+  });
+  document.getElementById('reload').addEventListener('click',function(){post({type:'vesper:request-state'});setTimeout(function(){frame.src=frame.dataset.src+'?r='+Date.now()},30)});
+  notes.addEventListener('input',save);
 
-/// Neutralizes artifact-authored Content-Security-Policy `<meta>` tags.
-///
-/// VRO-11.10: an agent-generated dashboard can carry
-/// `<meta http-equiv="Content-Security-Policy" content="...">`, and a
-/// restrictive policy (e.g. `script-src 'none'` or any policy without
-/// `'unsafe-inline'`) **silently blocks the entire VesperLens overlay
-/// script** — the review page renders with zero interactivity and no
-/// obvious console clue the user would connect to the review tool.
-///
-/// The reviewed copy is OUR rendering of their artifact from OUR loopback
-/// origin; the original file on disk is untouched. Stripping the
-/// artifact's CSP from that copy is what guarantees the review controls
-/// are always operable. Only the `http-equiv="Content-Security-Policy"`
-/// form is removed (case-insensitive attribute values); every other meta
-/// survives.
+  window.addEventListener('message',function(event){
+    if(event.source!==frame.contentWindow||!event.data||typeof event.data.type!=='string')return;
+    const message=event.data;
+    if(message.type==='vesper:ready'){
+      post({type:'vesper:restore',answers:answers,annotations:annotations,scrollY:Number(state.scrollY||0),annotating:pickMode});
+    }else if(message.type==='vesper:annotation'&&message.annotation){
+      const existing=annotations.findIndex(function(item){return item.id===message.annotation.id});
+      if(existing>=0)annotations[existing]=message.annotation;else annotations.push(message.annotation);
+      save();renderAnnotations();
+    }else if(message.type==='vesper:review-state'){
+      answers=Array.isArray(message.answers)?message.answers:[];
+      expected=Array.isArray(message.expected)?message.expected:[];
+      interviewMode=Boolean(message.interview);
+      const approve=document.getElementById('approve'),changes=document.getElementById('changes'),reject=document.getElementById('reject'),annotate=document.getElementById('annotate'),end=document.getElementById('end');
+      approve.hidden=interviewMode;approve.disabled=interviewMode;
+      changes.textContent=interviewMode?'Send answers':'Send changes';changes.disabled=false;
+      reject.textContent=interviewMode?'Cancel':'Reject';reject.disabled=false;
+      annotate.hidden=interviewMode;annotate.disabled=interviewMode;
+      end.hidden=interviewMode;end.disabled=interviewMode;
+      state.scrollY=Number(message.scrollY||0);save();
+    }else if(message.type==='vesper:artifact-failure'){
+      failures.hidden=false;failures.textContent='Artifact issue: '+String(message.message||'unknown resource failure');
+    }else if(message.type==='vesper:layout-diagnostics'){
+      const previous=new Map(layoutWarnings.map(function(warning){return [warning.id,Boolean(warning.selected)]}));
+      layoutWarnings=(Array.isArray(message.warnings)?message.warnings:[]).map(function(warning){warning.selected=previous.get(warning.id)||false;return warning});
+      save();renderLayoutWarnings();
+    }
+  });
+
+  function poll(){
+    fetch('/s/'+token+'/state',{cache:'no-store'}).then(function(response){if(!response.ok)throw new Error();return response.json()}).then(function(next){
+      const nextRound=Number(next.round||0), nextRevision=String(next.revision||'');
+      if(round&&nextRound!==round)setStatus('The agent started review round '+nextRound+'.','ok');
+      if(revision&&nextRevision&&nextRevision!==revision){post({type:'vesper:request-state'});setTimeout(function(){frame.src=frame.dataset.src+'?revision='+encodeURIComponent(nextRevision)},40)}
+      round=nextRound;revision=nextRevision;save();
+      setTimeout(poll,1000);
+    }).catch(function(){setStatus('Review server disconnected. Re-run the review tool to resume.','error');setTimeout(poll,2500)});
+  }
+  renderAnnotations();renderLayoutWarnings();poll();
+})();"#;
+
+/// Sandboxed artifact bridge. It may observe the artifact DOM and send typed
+/// messages to its parent, but contains no fetch call and no feedback action.
+pub(crate) const ARTIFACT_SDK_SCRIPT: &str = r#"(function(){
+  'use strict';
+  if(window.__vesperLensSdk)return;window.__vesperLensSdk=true;
+  let annotating=false,hovered=null,shadow=null,highlights=new Map();
+  function send(message){parent.postMessage(message,'*')}
+  function selector(el){
+    if(!el||el.nodeType!==1)return '';
+    if(el.id)return '#'+CSS.escape(el.id);
+    const parts=[];while(el&&el.nodeType===1&&parts.length<10){
+      let part=el.localName||'element';const stable=Array.from(el.classList||[]).filter(function(c){return !c.startsWith('vl-')}).slice(0,2);
+      if(stable.length)part+='.'+stable.map(CSS.escape).join('.');
+      let index=1,sibling=el;while((sibling=sibling.previousElementSibling))if(sibling.localName===el.localName)index++;
+      part+=':nth-of-type('+index+')';parts.unshift(part);el=el.parentElement;
+    }return parts.join(' > ');
+  }
+  function nodePath(node,root){const path=[];let current=node;while(current&&current!==root){if(!current.parentNode)break;path.unshift(Array.prototype.indexOf.call(current.parentNode.childNodes,current));current=current.parentNode}return path}
+  function boundary(node,offset){const el=node.nodeType===1?node:node.parentElement;return {selector:selector(el),path:nodePath(node,el),offset:Number(offset)||0}}
+  function id(){return crypto.randomUUID?crypto.randomUUID():'vl-'+Date.now()+'-'+Math.random().toString(16).slice(2)}
+  function mark(el,annotationId){if(!el)return;el.classList.add('vl-highlight');el.dataset.vlAnnotation=annotationId;highlights.set(annotationId,el)}
+  function annotationFor(el,range){
+    const annotationId=id(),sel=selector(el),text=String((el&&el.textContent)||'').trim().replace(/\s+/g,' ').slice(0,480);
+    if(range){const selected=String(range.toString()).trim().replace(/\s+/g,' ').slice(0,480);return {id:annotationId,selector:sel,comment:'',suggested_html:null,target:{type:'text-range',text:selected,selector:sel,start:boundary(range.startContainer,range.startOffset),end:boundary(range.endContainer,range.endOffset)}}}
+    return {id:annotationId,selector:sel,comment:'',suggested_html:null,target:{type:'element',selector:sel,tag:(el.localName||''),text:text}};
+  }
+  function ensureStyle(){
+    if(document.getElementById('vesper-lens-sdk-style'))return;
+    const style=document.createElement('style');style.id='vesper-lens-sdk-style';style.textContent='.vl-hover{outline:2px dashed #60a5fa!important;outline-offset:2px}.vl-highlight{outline:2px solid #fbbf24!important;outline-offset:2px}';document.head.appendChild(style);
+  }
+  function onMove(event){if(!annotating)return;if(hovered)hovered.classList.remove('vl-hover');hovered=event.target;if(hovered)hovered.classList.add('vl-hover')}
+  function onClick(event){if(!annotating)return;event.preventDefault();event.stopPropagation();const el=event.target;if(!el)return;const annotation=annotationFor(el,null);mark(el,annotation.id);send({type:'vesper:annotation',annotation:annotation})}
+  function onSelection(){if(!annotating)return;const selection=getSelection();if(!selection||selection.rangeCount===0||selection.isCollapsed)return;const range=selection.getRangeAt(0);const el=range.commonAncestorContainer.nodeType===1?range.commonAncestorContainer:range.commonAncestorContainer.parentElement;if(!el)return;const annotation=annotationFor(el,range);mark(el,annotation.id);send({type:'vesper:annotation',annotation:annotation});selection.removeAllRanges()}
+  function controls(){
+    const grouped={},required=new Set();document.querySelectorAll('[data-vesper-question]').forEach(function(control){
+      const question=control.dataset.vesperQuestion;if(!question)return;const field=control.closest('[data-vesper-required]');if(field&&field.dataset.vesperRequired==='true')required.add(question);
+      const type=String(control.type||'').toLowerCase();if((type==='radio'||type==='checkbox')&&!control.checked)return;
+      const value=String(control.value||'').trim();if(!value)return;(grouped[question]||(grouped[question]=[])).push(value);
+    });
+    return {answers:Object.keys(grouped).map(function(question){return {question:question,value:grouped[question].join(', ')}}),expected:Array.from(required),scrollY:window.scrollY||0,interview:Boolean(document.querySelector('[data-vesper-question]'))};
+  }
+  function report(){const value=controls();send({type:'vesper:review-state',answers:value.answers,expected:value.expected,scrollY:value.scrollY,interview:value.interview})}
+  function restore(message){
+    const byQuestion={};(message.answers||[]).forEach(function(answer){byQuestion[answer.question]=String(answer.value||'').split(', ')});
+    document.querySelectorAll('[data-vesper-question]').forEach(function(control){const values=byQuestion[control.dataset.vesperQuestion]||[];const type=String(control.type||'').toLowerCase();if(type==='radio'||type==='checkbox')control.checked=values.includes(String(control.value));else if(values.length)control.value=values.join(', ')});
+    (message.annotations||[]).forEach(function(annotation){try{mark(document.querySelector(annotation.selector),annotation.id)}catch(_){}});
+    window.scrollTo(0,Number(message.scrollY||0));annotating=Boolean(message.annotating);report();
+  }
+  function auditLayout(){
+    const warnings=[],root=document.documentElement;
+    if(root.scrollWidth>window.innerWidth+2)warnings.push({id:'horizontal-overflow:document',rule:'horizontal-overflow',selector:'html',message:'Page content extends '+(root.scrollWidth-window.innerWidth)+'px beyond the viewport.'});
+    Array.from(document.body?document.body.querySelectorAll('*'):[]).slice(0,800).forEach(function(el){
+      if(warnings.length>=20||el.id==='vesper-lens-sdk-style')return;const style=getComputedStyle(el),clips=style.overflow==='hidden'||style.overflow==='clip'||style.overflowX==='hidden'||style.overflowY==='hidden';
+      if(!clips||!String(el.textContent||'').trim())return;const horizontal=el.scrollWidth>el.clientWidth+2,vertical=el.scrollHeight>el.clientHeight+2;if(!horizontal&&!vertical)return;
+      const sel=selector(el),axis=horizontal&&vertical?'width and height':horizontal?'width':'height';warnings.push({id:'clipped-content:'+sel,rule:'clipped-content',selector:sel,message:'Content appears clipped along its '+axis+'.'});
+    });
+    send({type:'vesper:layout-diagnostics',warnings:warnings});
+  }
+  window.addEventListener('message',function(event){const message=event.data||{};if(message.type==='vesper:set-mode')annotating=Boolean(message.annotating);else if(message.type==='vesper:remove-highlight'){const el=highlights.get(message.id);if(el){el.classList.remove('vl-highlight');delete el.dataset.vlAnnotation}highlights.delete(message.id)}else if(message.type==='vesper:request-state')report();else if(message.type==='vesper:restore')restore(message)});
+  window.addEventListener('error',function(event){const target=event.target;if(target&&target!==window&&(target.src||target.href))send({type:'vesper:artifact-failure',message:'Could not load '+String(target.src||target.href)})},true);
+  document.addEventListener('mousemove',onMove,true);document.addEventListener('click',onClick,true);document.addEventListener('mouseup',onSelection,true);
+  document.addEventListener('input',report,true);document.addEventListener('change',report,true);window.addEventListener('scroll',report,{passive:true});
+  let auditTimer=0;window.addEventListener('resize',function(){clearTimeout(auditTimer);auditTimer=setTimeout(auditLayout,150)});
+  ensureStyle();send({type:'vesper:ready'});report();requestAnimationFrame(function(){requestAnimationFrame(auditLayout)});
+})();"#;
+
+/// Render the trusted outer review page.
+#[must_use]
+pub(crate) fn render_review_chrome(token: &str) -> String {
+    format!(
+        r#"<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>VesperLens Review</title><style>
+*{{box-sizing:border-box}}:root{{color-scheme:dark;font-family:ui-sans-serif,system-ui,sans-serif;background:#0b0f17;color:#e6edf7}}body{{margin:0;height:100vh;overflow:hidden}}.layout{{height:100%;display:grid;grid-template-columns:minmax(0,1fr) 340px}}.frame{{padding:12px;background:#090d14}}iframe{{width:100%;height:100%;border:1px solid #334155;border-radius:10px;background:white}}aside{{overflow:auto;padding:16px;background:#111827;border-left:1px solid #334155}}h1{{font-size:16px;margin:0 0 4px}}h2{{font-size:13px;margin:12px 0 4px}}.subtle,#status{{font-size:12px;color:#94a3b8}}.actions{{display:flex;flex-wrap:wrap;gap:7px;margin:14px 0}}button{{border:1px solid #475569;border-radius:7px;background:#1e293b;color:#e2e8f0;padding:8px 10px;cursor:pointer}}button:hover{{background:#334155}}button:disabled{{cursor:wait;opacity:.55}}#approve{{background:#86efac;color:#052e16}}#changes{{background:#fde68a;color:#422006}}#reject,#end{{background:#fda4af;color:#4c0519}}#annotate[aria-pressed=true]{{background:#60a5fa;color:#082f49}}label{{display:grid;gap:5px;font-size:12px;margin-top:10px}}textarea{{width:100%;resize:vertical;border:1px solid #475569;border-radius:7px;background:#0f172a;color:#e2e8f0;padding:8px;font:inherit}}.annotation{{border:1px solid #334155;border-left:3px solid #fbbf24;border-radius:8px;padding:9px;margin-top:10px;background:#0f172a}}.annotation-head{{display:flex;gap:6px;align-items:start}}.annotation-head code{{font-size:10px;color:#93c5fd;word-break:break-all;flex:1}}.annotation-head button{{padding:1px 7px}}.diagnostic{{grid-template-columns:auto 1fr;align-items:start;border:1px solid #78350f;border-radius:7px;padding:7px;background:#1c1917}}.diagnostic span{{display:grid;gap:3px}}.diagnostic code{{font-size:10px;color:#fbbf24;word-break:break-all}}#status{{min-height:20px;margin-top:8px}}#status[data-kind=error],#failures{{color:#fda4af}}#status[data-kind=ok]{{color:#86efac}}#failures{{font-size:12px;margin:8px 0}}@media(max-width:800px){{.layout{{grid-template-columns:1fr;grid-template-rows:60vh 40vh}}aside{{border-left:0;border-top:1px solid #334155}}}}
+</style></head><body data-token="{token}"><div class="layout"><div class="frame"><iframe id="artifact" title="Artifact under review" sandbox="allow-scripts allow-forms allow-popups allow-downloads" data-src="/s/{token}/artifact/index.html" src="/s/{token}/artifact/index.html"></iframe></div><aside><h1>VesperLens Review <span id="annotation-count"></span></h1><div class="subtle">Operate the artifact normally, or enter annotation mode to target changes.</div><div class="actions"><button id="approve" type="button" disabled>Approve</button><button id="changes" type="button" disabled>Send changes</button><button id="reject" type="button" disabled>Reject</button><button id="annotate" type="button" aria-pressed="false" disabled>Annotate page</button><button id="reload" type="button">Reload</button><button id="end" type="button" disabled>End session</button></div><div id="status" role="status" aria-live="polite"></div><div id="failures" hidden></div><section id="diagnostics" hidden><h2>Possible layout issues</h2><div class="subtle">Select only confirmed issues to include in feedback.</div><div id="diagnostic-items"></div></section><div id="annotations"></div><label>Overall notes (optional)<textarea id="notes" rows="4" placeholder="Feedback for the agent"></textarea></label></aside></div><script src="/s/{token}/chrome.js" defer></script></body></html>"#
+    )
+}
+
+/// Remove artifact-authored CSP meta tags from the isolated review copy so
+/// the owned external SDK can run. The trusted outer chrome has its own CSP.
 fn strip_csp_meta_tags(html: &str) -> String {
-    if !html
-        .to_ascii_lowercase()
-        .contains("content-security-policy")
-    {
+    let lower = html.to_ascii_lowercase();
+    if !lower.contains("content-security-policy") {
         return html.to_string();
     }
-    let lower = html.to_ascii_lowercase();
     let mut out = String::with_capacity(html.len());
-    let mut cursor = 0_usize;
-    while let Some(rel) = lower[cursor..].find('<') {
-        let start = cursor + rel;
-        // Carry through any text between the previous tag and this one —
-        // the document body is not made of tags alone.
+    let mut cursor = 0;
+    while let Some(relative) = lower[cursor..].find('<') {
+        let start = cursor + relative;
         out.push_str(&html[cursor..start]);
-        // Find the end of this tag.
-        let Some(gt) = lower[start..].find('>') else {
+        let Some(end_relative) = lower[start..].find('>') else {
             break;
         };
-        let end = start + gt + 1;
+        let end = start + end_relative + 1;
         let tag = &lower[start..end];
-        let declares_csp = tag.starts_with("<meta")
+        if !(tag.starts_with("<meta")
             && tag.contains("http-equiv")
-            && tag.contains("content-security-policy");
-        if !declares_csp {
+            && tag.contains("content-security-policy"))
+        {
             out.push_str(&html[start..end]);
         }
         cursor = end;
@@ -487,52 +229,75 @@ fn strip_csp_meta_tags(html: &str) -> String {
     out
 }
 
-/// Builds a self-contained, script-free planning interview artifact. The
-/// standard VesperLens overlay discovers the `data-vesper-question` controls,
-/// labels the surface as an interview, and returns their values in
-/// [`super::LensFeedback::answers`]. All model-provided strings are HTML
-/// escaped before insertion.
+/// Inject only the sandbox bridge into a reviewed HTML copy.
+#[must_use]
+pub fn inject_review_sdk(html: &str, sdk_path: &str) -> String {
+    let html = strip_csp_meta_tags(html);
+    let script = format!(
+        "\n<!-- VesperLens sandbox SDK -->\n<script src=\"{}\" defer></script>\n",
+        escape_html(sdk_path)
+    );
+    if let Some(index) = html.to_ascii_lowercase().rfind("</body") {
+        let mut output = String::with_capacity(html.len() + script.len());
+        output.push_str(&html[..index]);
+        output.push_str(&script);
+        output.push_str(&html[index..]);
+        output
+    } else {
+        format!("{html}{script}")
+    }
+}
+
+/// Compatibility name retained for callers; now injects only the isolated SDK.
+#[must_use]
+pub fn inject_review_overlay(html: &str) -> String {
+    inject_review_sdk(html, "/sdk.js")
+}
+
+/// Builds a self-contained planning interview artifact.
 #[must_use]
 pub fn render_interview_artifact(title: &str, questions: &[super::LensQuestion]) -> String {
     let mut fields = String::new();
     for question in questions {
         let id = escape_html(question.id.trim());
         let prompt = escape_html(question.prompt.trim());
-        fields.push_str("<fieldset><legend>");
-        fields.push_str(&prompt);
-        fields.push_str("</legend>");
-        if question.options.is_empty() {
+        fields.push_str(&format!(
+            "<fieldset data-vesper-required=\"{}\"><legend>{prompt}</legend>",
+            question.required
+        ));
+        if !question.description.trim().is_empty() {
             fields.push_str(&format!(
-                "<textarea data-vesper-question=\"{id}\" rows=\"3\" placeholder=\"Type your answer\"></textarea>"
+                "<p class=\"description\">{}</p>",
+                escape_html(question.description.trim())
             ));
+        }
+        if !question.recommended.trim().is_empty() {
+            fields.push_str(&format!(
+                "<p class=\"recommended\">Recommended: {}</p>",
+                escape_html(question.recommended.trim())
+            ));
+        }
+        if question.options.is_empty() {
+            fields.push_str(&format!("<textarea data-vesper-question=\"{id}\" rows=\"3\" placeholder=\"Type your answer\"></textarea>"));
         } else {
             let input_type = if question.allow_multiple {
                 "checkbox"
             } else {
                 "radio"
             };
-            for (index, option) in question.options.iter().enumerate() {
+            for option in &question.options {
                 let option = escape_html(option);
-                fields.push_str(&format!(
-                    "<label><input type=\"{input_type}\" name=\"{id}\" data-vesper-question=\"{id}\" value=\"{option}\"> <span>{option}</span></label>"
-                ));
-                if index + 1 < question.options.len() {
-                    fields.push('\n');
-                }
+                fields.push_str(&format!("<label><input type=\"{input_type}\" name=\"{id}\" data-vesper-question=\"{id}\" value=\"{option}\"> <span>{option}</span></label>"));
+            }
+            if question.allow_other {
+                fields.push_str(&format!("<label class=\"other\">Other <input type=\"text\" data-vesper-question=\"{id}\" placeholder=\"Enter another answer\"></label>"));
             }
         }
         fields.push_str("</fieldset>");
     }
-
     format!(
-        "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{title}</title><style>\
-        :root{{color-scheme:dark;font-family:ui-sans-serif,system-ui,sans-serif;background:#0b0f17;color:#e6edf7}}\
-        body{{margin:0;padding:48px;max-width:850px}}main{{display:grid;gap:18px}}h1{{margin:0 0 8px;font-size:28px}}\
-        p{{color:#9aa8ba;margin:0 0 16px}}fieldset{{border:1px solid #334155;border-radius:10px;padding:18px;display:grid;gap:10px}}\
-        legend{{font-weight:650;padding:0 8px}}label{{display:flex;gap:10px;align-items:flex-start;padding:9px;border-radius:7px;background:#111827}}\
-        input{{margin-top:3px}}textarea{{box-sizing:border-box;width:100%;resize:vertical;border:1px solid #475569;border-radius:7px;background:#0f172a;color:#e6edf7;padding:10px;font:inherit}}\
-        </style></head><body><main><header><h1>{title}</h1><p>Answer the planning questions, add optional context in the VesperLens panel, then choose Send answers.</p></header>{fields}</main></body></html>",
-        title = escape_html(title.trim()),
+        r#"<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{title}</title><style>:root{{color-scheme:dark;font-family:ui-sans-serif,system-ui,sans-serif;background:#0b0f17;color:#e6edf7}}body{{margin:0;padding:42px;max-width:850px}}main{{display:grid;gap:18px}}h1{{margin:0}}header>p,.description{{color:#9aa8ba}}fieldset{{border:1px solid #334155;border-radius:10px;padding:18px;display:grid;gap:10px}}legend{{font-weight:650;padding:0 8px}}label{{display:flex;gap:10px;align-items:flex-start;padding:9px;border-radius:7px;background:#111827}}textarea,input[type=text]{{box-sizing:border-box;width:100%;border:1px solid #475569;border-radius:7px;background:#0f172a;color:#e6edf7;padding:10px;font:inherit}}.recommended{{color:#86efac;margin:0}}.other{{display:grid}}</style></head><body><main><header><h1>{title}</h1><p>Answer the planning questions, add optional context in VesperLens, then send your answers.</p></header>{fields}</main></body></html>"#,
+        title = escape_html(title.trim())
     )
 }
 
@@ -545,310 +310,90 @@ fn escape_html(value: &str) -> String {
         .replace('\'', "&#39;")
 }
 
-/// Inject the VesperLens review overlay into an HTML artifact.
-///
-/// - First, any artifact-authored CSP `<meta>` is stripped
-///   ([`strip_csp_meta_tags`]) so the overlay's inline script always runs.
-/// - If the artifact contains a `</body>` (case-insensitive, allowing
-///   trailing whitespace), the overlay is inserted immediately before it.
-/// - Otherwise the overlay is appended to the end.
-///
-/// The function is idempotent in the sense that calling it on already-
-/// injected HTML will inject the overlay a second time (this is harmless
-/// because the overlay guards on `window.__vesperLensBooted`). Callers
-/// should inject exactly once.
-pub fn inject_review_overlay(html: &str) -> String {
-    let html = &strip_csp_meta_tags(html);
-    let overlay = build_overlay_tag();
-    // Case-insensitive search for the LAST occurrence of </body>. We use
-    // the last to handle pathological HTML that includes the literal
-    // "</body>" inside a string earlier in the document. Case-insensitive
-    // because real-world HTML is often `<BODY>` or `<Body>` (HTML is
-    // case-insensitive for tag names per the HTML spec).
-    if let Some(idx) = rfind_ci(html, "</body") {
-        // Find the closing '>' of the </body...> tag.
-        if html[idx..].find('>').is_some() {
-            let mut out = String::with_capacity(html.len() + overlay.len());
-            // Insert the overlay BEFORE the `</body...>` tag, then keep
-            // the original `</body>` (and everything after) verbatim.
-            out.push_str(&html[..idx]);
-            out.push_str(&overlay);
-            out.push_str(&html[idx..]);
-            return out;
-        }
-    }
-    // No </body> — append.
-    let mut out = String::with_capacity(html.len() + overlay.len());
-    out.push_str(html);
-    out.push_str(&overlay);
-    out
-}
-
-fn build_overlay_tag() -> String {
-    format!("\n<!-- VesperLens review overlay (ADR 0017) -->\n<script>{OVERLAY_SCRIPT}</script>\n")
-}
-
-/// Case-insensitive `rfind`. Byte offsets in the lowercased haystack equal
-/// those in the original because `to_ascii_lowercase` is byte-for-byte
-/// (non-ASCII bytes are preserved unchanged).
-fn rfind_ci(haystack: &str, needle: &str) -> Option<usize> {
-    haystack
-        .to_ascii_lowercase()
-        .rfind(&needle.to_ascii_lowercase())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn injects_before_body_close_tag() {
-        let html = "<html><body><h1>hi</h1></body></html>";
-        let out = inject_review_overlay(html);
-        let body_pos = out.rfind("</body>").unwrap();
-        let script_pos = out.find("<script>").unwrap();
-        assert!(script_pos < body_pos, "script must precede </body>");
-        assert!(out.contains("VesperLens Review"));
+    fn artifact_copy_contains_only_the_sandbox_sdk() {
+        let output = inject_review_sdk("<html><body><h1>Hi</h1></body></html>", "/s/token/sdk.js");
+        assert!(output.contains("<script src=\"/s/token/sdk.js\" defer>"));
+        assert!(!output.contains("Approve"));
+        assert!(!ARTIFACT_SDK_SCRIPT.contains("fetch("));
+        assert!(!ARTIFACT_SDK_SCRIPT.contains("feedback"));
     }
 
     #[test]
-    fn injects_before_body_close_tag_with_whitespace() {
-        let html = "<html><body><p>x</p></body  \n  ></html>";
-        let out = inject_review_overlay(html);
-        assert!(out.contains("<script>"));
-        // The </body ...> tag must come AFTER the script.
-        let script_pos = out.find("<script>").unwrap();
-        let body_close = out.find("</body").unwrap();
-        assert!(script_pos < body_close);
-    }
-
-    #[test]
-    fn appends_when_no_body_close_tag() {
-        let html = "<html><h1>fragments only</h1>";
-        let out = inject_review_overlay(html);
-        assert!(out.ends_with("</script>\n"));
-        assert!(out.contains("VesperLens Review"));
-    }
-
-    #[test]
-    fn handles_empty_html() {
-        let out = inject_review_overlay("");
-        assert!(out.contains("<script>"));
-    }
-
-    #[test]
-    fn injects_exactly_one_overlay_tag() {
-        let html = "<html><body></body></html>";
-        let out = inject_review_overlay(html);
-        let count = out.matches("<script>").count();
-        assert_eq!(count, 1, "exactly one overlay <script> should be injected");
-        assert!(out.contains("})();</script>"));
-        assert!(!out.contains("})();\"</script>"));
-    }
-
-    #[test]
-    fn preserves_original_html_bytes() {
-        let html = "<html><body><p>preserve me</p></body></html>";
-        let out = inject_review_overlay(html);
-        assert!(out.contains("<p>preserve me</p>"));
-        assert!(out.contains("</html>"));
-    }
-
-    #[test]
-    fn overlay_script_does_not_reference_external_urls() {
-        // The overlay must not load any external resource. fetch() to
-        // "/feedback" is the only network call.
-        assert!(!OVERLAY_SCRIPT.contains("http://"));
-        assert!(!OVERLAY_SCRIPT.contains("https://"));
-        assert!(!OVERLAY_SCRIPT.contains("src="));
-        assert!(!OVERLAY_SCRIPT.contains("<link"));
-    }
-
-    #[test]
-    fn overlay_script_targets_only_relative_feedback_path() {
-        assert!(OVERLAY_SCRIPT.contains("fetch(\"/feedback\""));
-    }
-
-    #[test]
-    fn overlay_uses_inline_popover_not_window_prompt() {
-        // VRO-11.6: window.prompt was the "not interactive" complaint — the
-        // overlay must use its own inline popover editor instead.
+    fn trusted_chrome_sandboxes_the_artifact_without_same_origin() {
+        let html = render_review_chrome("safe-token");
         assert!(
-            !OVERLAY_SCRIPT.contains("window.prompt"),
-            "window.prompt must not appear in the overlay"
+            html.contains("sandbox=\"allow-scripts allow-forms allow-popups allow-downloads\"")
+        );
+        assert!(!html.contains("allow-same-origin"));
+        assert!(html.contains("/s/safe-token/chrome.js"));
+    }
+
+    #[test]
+    fn chrome_owns_submission_and_requires_the_session_header() {
+        assert!(CHROME_SCRIPT.contains("x-vesper-lens-token"));
+        assert!(CHROME_SCRIPT.contains("/feedback"));
+        assert!(!ARTIFACT_SDK_SCRIPT.contains("/feedback"));
+    }
+
+    #[test]
+    fn csp_is_removed_only_from_the_isolated_copy() {
+        let output = inject_review_sdk(
+            "<html><head><meta http-equiv=\"Content-Security-Policy\" content=\"script-src 'none'\"><meta name=\"x\" content=\"y\"></head></html>",
+            "/sdk.js",
         );
         assert!(
-            OVERLAY_SCRIPT.contains("vl-popover"),
-            "the inline popover element must exist"
+            !output
+                .to_ascii_lowercase()
+                .contains("content-security-policy")
         );
-        assert!(
-            OVERLAY_SCRIPT.contains("input.focus()"),
-            "the popover input must auto-focus"
-        );
+        assert!(output.contains("name=\"x\""));
     }
 
     #[test]
-    fn overlay_supports_pick_mode_hover_and_selection() {
-        // VRO-11.6 Oracle-style affordances: hover outline while
-        // picking, text-selection annotation, removable note list, Esc exit.
-        assert!(OVERLAY_SCRIPT.contains("vl-hover"));
-        assert!(OVERLAY_SCRIPT.contains("onMouseUp"));
-        assert!(OVERLAY_SCRIPT.contains("getSelection"));
-        assert!(OVERLAY_SCRIPT.contains("vl-x"));
-        assert!(OVERLAY_SCRIPT.contains("\"Escape\""));
-        assert!(OVERLAY_SCRIPT.contains("Enter"));
-    }
-
-    #[test]
-    fn overlay_opens_in_interaction_mode_and_annotation_is_explicit() {
-        // The artifact must remain usable as an interactive page. Annotation
-        // capture is opt-in and Esc returns to interaction mode.
-        assert!(
-            OVERLAY_SCRIPT.contains("var pickMode = false;"),
-            "pick mode must default OFF so native page interactions work"
-        );
-        assert!(
-            OVERLAY_SCRIPT.contains("setPickMode(pickMode);"),
-            "boot must render the explicit interaction/annotation state"
-        );
-        assert!(
-            OVERLAY_SCRIPT.contains("Interact with page"),
-            "annotation mode must provide an obvious path back to interaction"
-        );
-    }
-
-    #[test]
-    fn overlay_exposes_all_feedback_actions_and_preserves_draft_notes() {
-        assert!(OVERLAY_SCRIPT.contains("submit(\"approve\")"));
-        assert!(
-            OVERLAY_SCRIPT.contains("submit(\"modify\")"),
-            "the native Action::Modify variant must be reachable from the browser"
-        );
-        assert!(OVERLAY_SCRIPT.contains("submit(\"reject\")"));
-        assert!(
-            OVERLAY_SCRIPT.contains("notes.value = overallNotes"),
-            "panel rerenders must not erase the user's draft notes"
-        );
-        assert!(
-            OVERLAY_SCRIPT.contains("if (!response.ok)"),
-            "an HTTP error must not be presented as successful feedback"
-        );
-    }
-
-    #[test]
-    fn overlay_collects_structured_interview_answers() {
-        assert!(OVERLAY_SCRIPT.contains("[data-vesper-question]"));
-        assert!(OVERLAY_SCRIPT.contains("VesperLens Interview"));
-        assert!(OVERLAY_SCRIPT.contains("Send answers"));
-        assert!(OVERLAY_SCRIPT.contains("answers: answers"));
-        assert!(
-            OVERLAY_SCRIPT.contains("Please answer every planning question before sending."),
-            "the interview must not silently submit incomplete requirements"
-        );
-    }
-
-    #[test]
-    fn interview_artifact_renders_text_single_and_multiple_choice_safely() {
-        use super::super::LensQuestion;
-
+    fn rich_interview_metadata_is_escaped_and_rendered() {
         let html = render_interview_artifact(
             "Plan <review>",
-            &[
-                LensQuestion {
-                    id: "scope".into(),
-                    prompt: "What should ship?".into(),
-                    options: Vec::new(),
-                    allow_multiple: false,
-                },
-                LensQuestion {
-                    id: "theme".into(),
-                    prompt: "Choose a theme".into(),
-                    options: vec!["Dark".into(), "Light".into()],
-                    allow_multiple: false,
-                },
-                LensQuestion {
-                    id: "targets".into(),
-                    prompt: "Select targets".into(),
-                    options: vec!["Web".into(), "Desktop".into()],
-                    allow_multiple: true,
-                },
-            ],
+            &[super::super::LensQuestion {
+                id: "scope".into(),
+                prompt: "What ships?".into(),
+                description: "Choose <carefully>".into(),
+                options: vec!["Web".into()],
+                allow_multiple: false,
+                required: false,
+                recommended: "Web".into(),
+                allow_other: true,
+            }],
         );
         assert!(html.contains("Plan &lt;review&gt;"));
-        assert!(html.contains("<textarea data-vesper-question=\"scope\""));
-        assert!(html.contains("type=\"radio\" name=\"theme\""));
-        assert!(html.contains("type=\"checkbox\" name=\"targets\""));
-        assert!(!html.contains("<h1>Plan <review></h1>"));
+        assert!(html.contains("Choose &lt;carefully&gt;"));
+        assert!(html.contains("data-vesper-required=\"false\""));
+        assert!(html.contains("Recommended: Web"));
+        assert!(html.contains("Other"));
     }
 
     #[test]
-    fn overlay_listeners_survive_body_wipes_and_panel_is_watchdogged() {
-        // VRO-11.8: artifact dashboards often rebuild document.body after
-        // load, destroying an appended panel and any body-level listeners.
-        // The overlay must attach pick listeners to `document` (capture)
-        // and re-attach its panel via a watchdog if it vanishes.
-        assert!(
-            !OVERLAY_SCRIPT.contains("document.body.addEventListener"),
-            "no body-level listeners — they die with body wipes"
-        );
-        assert!(
-            OVERLAY_SCRIPT.contains("document.addEventListener(\"click\", onBodyClick, true);"),
-            "pick click listener must be document-level capture"
-        );
-        assert!(
-            OVERLAY_SCRIPT.contains("setInterval"),
-            "the panel watchdog must exist"
-        );
-        assert!(
-            OVERLAY_SCRIPT.contains("document.getElementById(\"vl-panel\")"),
-            "the watchdog must detect a removed panel"
-        );
+    fn precise_ranges_and_editable_annotations_are_supported() {
+        assert!(ARTIFACT_SDK_SCRIPT.contains("text-range"));
+        assert!(ARTIFACT_SDK_SCRIPT.contains("start:boundary"));
+        assert!(CHROME_SCRIPT.contains("suggested_html"));
+        assert!(CHROME_SCRIPT.contains("vesper:remove-highlight"));
     }
 
     #[test]
-    fn strips_artifact_csp_meta_tags_so_the_overlay_always_runs() {
-        // VRO-11.10: an agent-authored CSP meta silently blocks the entire
-        // overlay script — the review page renders with zero interactivity.
-        // The injector must remove exactly the CSP meta and nothing else.
-        let hostile = "<html><head>\
-<meta http-equiv=\"Content-Security-Policy\" content=\"script-src 'none'\">\
-<meta charset=\"utf-8\">\
-</head><body><h1>dash</h1></body></html>";
-        let out = inject_review_overlay(hostile);
-        let lower = out.to_ascii_lowercase();
-        assert!(
-            !lower.contains("content-security-policy"),
-            "CSP meta must be stripped from the reviewed copy: {out}"
-        );
-        assert!(
-            lower.contains("<meta charset=\"utf-8\">"),
-            "every other meta must survive"
-        );
-        assert!(out.contains("<h1>dash</h1>"), "body survives");
-        assert!(out.contains("VesperLens Review"), "overlay injected");
+    fn layout_diagnostics_are_passive_and_reviewer_selected() {
+        assert!(ARTIFACT_SDK_SCRIPT.contains("horizontal-overflow"));
+        assert!(ARTIFACT_SDK_SCRIPT.contains("clipped-content"));
+        assert!(CHROME_SCRIPT.contains("warning.selected"));
+        assert!(!ARTIFACT_SDK_SCRIPT.contains("/feedback"));
     }
 
     #[test]
-    fn strips_csp_meta_case_insensitively_and_handles_no_head() {
-        let upper = "<META HTTP-EQUIV=\"Content-Security-Policy\" CONTENT=\"default-src 'none'\"><body>x</body>";
-        let out = inject_review_overlay(upper);
-        assert!(
-            !out.to_ascii_lowercase().contains("content-security-policy"),
-            "case-insensitive strip"
-        );
-        assert!(out.contains("x"));
-        // Documents without any CSP pass through untouched (plus overlay).
-        let clean = inject_review_overlay("<html><body><p>ok</p></body></html>");
-        assert!(clean.contains("<p>ok</p>"));
-        assert!(clean.contains("VesperLens Review"));
-    }
-
-    #[test]
-    fn case_insensitive_body_tag() {
-        let html = "<html><BODY><p>x</p></BODY></html>";
-        let out = inject_review_overlay(html);
-        let script_pos = out.find("<script>").unwrap();
-        let body_close = out.find("</BODY").unwrap();
-        assert!(script_pos < body_close);
+    fn target_text_has_a_bound() {
+        assert!(ARTIFACT_SDK_SCRIPT.contains("slice(0,480)"));
     }
 }

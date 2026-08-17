@@ -252,22 +252,22 @@ VRO-10 closes the final 8 PRD gaps (3 PARTIAL + 5 DEFERRED) identified in the VR
 
 ### VRO-11 — VesperLens Native Human-in-the-Loop Oracle (ADR 0017)
 
-VRO-11 adds the first **native loopback HTTP oracle** to `vesper-agent`: when the planner produces an HTML/UI artifact that benefits from human review, VesperLens injects a review overlay, binds a raw `tokio::net::TcpListener` on `127.0.0.1:0`, prints the review URL, and **awaits** structured feedback from the human before resuming the VRO loop.
+VRO-11 adds the first **native loopback HTTP oracle** to `vesper-agent`. ADR 0020 now places trusted review chrome around a sandboxed artifact iframe, binds a raw `tokio::net::TcpListener` on `127.0.0.1:0`, and awaits authenticated structured feedback before the explicit tool resumes.
 
 - **Zero new external dependencies.** Built on raw `tokio::net::TcpListener` (no `axum` / `actix-web` / `hyper`). Only the `net` + `io-util` *features* are added to the existing workspace `tokio` pin — no version bump, no new crate.
-- **Native Rust only.** No `std::process::Command` to shell out to Node, `npx`, or any external runtime. The overlay script is owned Rust-string source.
+- **Native Rust only.** No external web runtime or framework. Trusted chrome and the sandbox SDK are owned Rust-string assets.
 - **Loopback-only, ephemeral ports.** Binds strictly to `127.0.0.1:0`; the OS assigns the open port. No wildcard bind, no public interface.
 - **Pure-function HTTP parser.** `try_parse_request(bytes)` is a pure function with no network — the parser is unit-testable by feeding exact byte arrays (PRD §4: "mock the TCP byte streams").
-- **Owned overlay.** The injected `<script>` is ~150 lines of vanilla JS written from scratch for this crate. It contains no `http://` / `https://` / external-`src=` references and POSTs only to the relative `/feedback` path.
-- **Minimal JSON contract.** The overlay posts `{action: "approve"|"reject"|"modify", annotations: [{selector, comment, suggested_html?}], notes, answers: [{question, value}]}` which is parsed into native `LensFeedback` / `DomAnnotation` / `LensAnswer` / `Action` types via `serde`. `answers` is empty for ordinary artifact review and populated by planning interviews. The agent receives the parsed struct — never raw HTML — and all returned strings retain ordinary untrusted-user-input treatment.
+- **Isolated and authenticated.** The artifact iframe has no same-origin authority. Only trusted chrome can POST feedback, using a UUID session route plus exact Host/Origin, JSON content type, and token-header checks.
+- **Precise JSON contract.** Feedback includes stable annotation IDs, editable comments/replacement HTML, element or text-range targets, notes, planning answers, and explicit session ending. All returned strings remain untrusted user input.
+- **Complete local artifacts.** Workspace-confined `.html`/`.htm` files are size-bounded and serve canonically confined sibling assets; repeated file rounds reuse the live session and revision polling reloads changed artifacts without discarding browser drafts.
 
 ### VRO-11.2 — Planner Seam + Context Injection + Registry Launch
 
-VRO-11.2 wires the VesperLens oracle into the VRO planner without touching any existing control flow:
+VRO-11.2 originally introduced an orchestrator seam. ADR 0020 supersedes the unused orchestrator field/methods; only the explicit TUI tools own review now:
 
 - **`LensReviewPort` trait** (`crates/vesper-agent/src/vro/lens_integration.rs`) — abstracts the lens so the orchestrator stays pure. The composition boundary (TUI binary) supplies a concrete impl wrapping `VesperLens::review_artifact`. Includes `NoOpLensReviewPort` (returns `LensFeedback::default()` immediately, no I/O).
-- **`VroOrchestrator` gains an optional `lens_port: Option<Arc<dyn LensReviewPort>>` field + `with_lens_port(port)` builder.** When `None` (the default), every existing orchestrator method is byte-identical to VRO-10.
-- **`maybe_review_html_artifact(html, on_diagnostic)` async method** — returns `None` when no port is configured OR the input is not HTML (see `looks_like_html_artifact`, which requires `starts_with('<')` so prose mentions of `<html>` never trigger review). When it does fire, it routes through the port and surfaces the PRD §4 `[VesperLens] Artifact ready for review. Open: <URL>` diagnostic line.
+- **No dormant final-output interception.** `VroOrchestrator::with_lens_port` and `maybe_review_html_artifact` were removed because they had no production caller and contradicted explicit invocation.
 - **`feedback_as_context_message(&feedback)`** — token-frugal context-injection renderer (verdict + notes + numbered annotations). The host injects this as a `role: Tool` message so the next model turn can apply the human's corrections (PRD §4).
 - **Registry launch.** New `scripts/publish_to_acp_registry.sh` opens (or updates) a **brand-new** `agent-vesper` PR against `agentclientprotocol/registry`. The legacy `scripts/acp_pr_439.md` is deleted — PR #439 belongs to the `native-glm-acp` Python project and is intentionally left untouched.
 
@@ -288,7 +288,7 @@ VRO-11.4 is an architectural course-correction driven by **architectural analysi
 
 1. **Inline Telemetry.** Tool execution logs are ripped out of the Reasoning sidebar and rendered **DIRECTLY in the main Conversation panel**. A new `TuiSession.live_trajectory` field collects per-turn tool telemetry from both the direct path (`ToolStarted` / `ToolFinished` → `> 🛠️ Executing: <name>...` / `> ✓ <name>`) and the ReAct trajectory stream (`> ⏳ *Executing* ...` / `> **▶ ACTION**` / `> *↳ OBSERVATION*`). The trajectory now reads top-to-bottom naturally with the assistant's text, matching Codex / Claude Code host-agent rendering.
 2. **Explicit `request_human_review` tool.** The implicit `LensObservingInvoker` (VRO-11.3 directive 4) is **DELETED**. VesperLens review is now triggered by an **explicit tool** the model calls when it wants human review — matching the explicit-invocation pattern. The `TuiToolService` advertises `request_human_review(file_path)` when a lens port is configured. The tool reads the file, routes it through `LensReviewPort::review`, **blocks** until the human submits, and returns the verdict as the tool result.
-3. **Silent bypass fixed.** The lens port is now **always constructed** at TUI startup and wired into both `TuiToolService` (for the explicit tool) and `VroOrchestrator` (via `with_lens_port`). Before VRO-11.4, the orchestrator's `lens_port` was always `None` because no TUI code called `with_lens_port` — the entire VesperLens surface was silently dead.
+3. **Historical orchestrator wiring.** VRO-11.4 wired both surfaces to close a silent bypass. ADR 0020 later removed the unused orchestrator seam; `TuiToolService` is now the sole explicit owner.
 4. **`LensReviewPort` trait lifetime fix.** The `on_url` parameter is now tied to the `'a` lifetime of `&self` so concrete impls can call `on_url` from within the returned async block (needed because `VesperLens::review_artifact` calls `on_url` mid-async when the TCP listener binds).
 
 **Verification:** `cargo xtask verify` green; workspace tests **1028 pass / 0 fail / 10 ignored** (11 deleted interceptor tests replaced by 11 explicit-tool + inline-telemetry tests).
@@ -300,7 +300,7 @@ VRO-11.5 closes the gap a 180-second **zero-tool turn** exposed: the model annou
 1. **UI declutter — single conversation column.** The bottom **Reasoning panel**, the sidebar **TODO** panel, and the sidebar **Activity** strip are **removed**. The Conversation panel now takes the full body height (F4 working-tree view still overlays when opened); the sidebar keeps only Session + Run report. PageUp/PgDn/Home/End and the mouse wheel always scroll the conversation — the Tab panel-focus toggle is gone with the panel it focused.
 2. **Inline thinking stream.** The provider's raw chain of thought (GLM `reasoning: max`, Qwen3/DeepSeek-R1 `reasoning_content`, and the LM Studio stream) renders **directly in the Conversation feed** as a dim italic block under a compact `🧠 Thinking · strategy · mode · risk` header (with live phase and ⚠ risk-escalation marker). Only the newest `14` reasoning lines stream (long thinks stay readable), and the block collapses away when the turn completes — exactly Claude Code's live-thinking behavior. **F2** toggles it.
 3. **Tool telemetry parity (⏺ / ⎿).** Direct-path tool events render with Claude Code's glyphs: `> ⏺ write_file` when the tool starts, `> ⎿ ✓ write_file` when it finishes (✗ on failure) — dim, inline, one column.
-4. **Tool-execution enforcement (system prompt).** Every shared-`AgentLoop` path (direct, GVR, parallel candidates, tree search, PCA) now appends a **`Tool Execution Enforcement`** system instruction: *"When asked to generate code, UI, or artifacts, you MUST execute the write_file tool and the request_human_review tool within the same turn. Do NOT output your plan and yield to the user. Execute the tools immediately."* Printing an artifact's content instead of writing the file is explicitly named a **failed turn**; Plan mode keeps its `update_plan` carve-out. The ReAct path carries the same mandate as rule 5 of `REACT_SYSTEM_PROMPT`.
+4. **Tool-execution enforcement (system prompt).** Every shared-`AgentLoop` path requires real `write_file` execution and forbids plan-only yielding. ADR 0020 narrows browser review to requested or materially useful workspace-confined HTML; ordinary source code and deterministically verifiable HTML are not forced through VesperLens.
 
 **Verification:** `cargo xtask verify` green; enforcement + inline-thinking tests added in `agent-vesper-tui` and `vesper-agent`.
 
@@ -349,6 +349,16 @@ VRO-11.11 closes the remaining gap with the reviewed Lavish workflow: opening a 
 2. **Artifacts work before annotation.** VesperLens starts in interaction mode, so dashboard buttons, forms, links, and other native controls remain usable. Annotation is an explicit toggle. The overlay exposes all three native verdicts (Approve / Send changes / Reject), preserves draft notes across panel rerenders, and treats non-2xx submissions as failures.
 3. **Interactive planning questions.** The model-facing `request_human_input` tool accepts bounded questions with optional choices. `/interview-limit` reports or changes the session policy: `1`–`12` sets a hard maximum, `auto` lets the agent choose 1–12 questions from the PRD's unresolved decisions, and the default remains 4. VesperLens renders escaped free-text, radio, or checkbox controls, requires every answer before submission, and returns stable `question: value` pairs to the model as tool context so planning can continue without invented requirements.
 4. **Terminal-native conversation and TODO state.** User turns use a compact cyan `›` marker, assistant markdown is unboxed, and tool/thinking lines stay dim; the old full-width/asymmetric chat bubbles are gone. Repeated `update_plan` snapshots no longer enter transcript history. Wide terminals show current task state in a dedicated, toggleable TODO sidebar between a compact Session summary and a compact Run/Last run panel; `/tasks` controls it.
+
+### VRO-11.12 — Isolated, Authenticated, Resumable Review (ADR 0020)
+
+1. **Trusted chrome, sandboxed artifact.** Verdict controls live outside a no-same-origin iframe; artifact JavaScript cannot directly approve, reject, or manipulate the review panel.
+2. **Authenticated loopback session.** UUID routes, Host/Origin checks, JSON-only feedback, a custom token header, CSP, request bounds, and workspace/file confinement close the local trust-boundary gaps.
+3. **Iterative artifact review.** Canonical file sessions queue feedback across cancelled waits, reuse their URL for later rounds, poll file revisions, preserve drafts in browser session storage, and serve confined sibling CSS/JS/images/fonts.
+4. **Precise feedback and richer interviews.** Stable annotation IDs, exact text-range anchors, editable suggested HTML, clean highlight removal, optional questions, help text, recommendations, and Other answers are native typed contracts.
+5. **Conditional review.** File creation remains mandatory; browser review is requested only for workspace-confined HTML when the user asks or visual/interaction choices materially need human inspection.
+6. **Passive diagnostics.** Bounded overflow/clipping warnings never wake the agent and enter feedback only when the reviewer confirms them.
+7. **Real-browser gate.** The artifact-review and interview Playwright scripts drive Chrome and fail on console, network, resource, sandbox, interaction, validation, annotation, or submission regressions.
 
 ### How VRO interacts with the live tool surface
 

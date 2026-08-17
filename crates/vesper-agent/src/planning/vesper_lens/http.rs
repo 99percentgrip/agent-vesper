@@ -161,8 +161,12 @@ pub fn build_html_response(html: &str) -> Vec<u8> {
 pub fn build_json_response(status: u16, json_body: &str) -> Vec<u8> {
     let reason = match status {
         200 => "OK",
+        204 => "No Content",
         400 => "Bad Request",
+        403 => "Forbidden",
         404 => "Not Found",
+        410 => "Gone",
+        413 => "Content Too Large",
         500 => "Internal Server Error",
         _ => "OK",
     };
@@ -170,7 +174,16 @@ pub fn build_json_response(status: u16, json_body: &str) -> Vec<u8> {
     build_response(&status_line, "application/json", json_body.as_bytes())
 }
 
-fn build_response(status_and_reason: &str, content_type: &str, body: &[u8]) -> Vec<u8> {
+pub(crate) fn build_response(status_and_reason: &str, content_type: &str, body: &[u8]) -> Vec<u8> {
+    build_response_with_headers(status_and_reason, content_type, body, &[])
+}
+
+pub(crate) fn build_response_with_headers(
+    status_and_reason: &str,
+    content_type: &str,
+    body: &[u8],
+    extra_headers: &[(&str, &str)],
+) -> Vec<u8> {
     // Cap arbitrary content-type with charset where it makes sense.
     let ct = if content_type.starts_with("text/") || content_type.starts_with("application/") {
         if content_type.contains("charset") {
@@ -181,16 +194,22 @@ fn build_response(status_and_reason: &str, content_type: &str, body: &[u8]) -> V
     } else {
         content_type.to_string()
     };
-    let head = format!(
+    let mut head = format!(
         "HTTP/1.1 {status_and_reason}\r\n\
          Content-Type: {ct}\r\n\
          Content-Length: {len}\r\n\
          Connection: close\r\n\
          Cache-Control: no-store\r\n\
-         X-Content-Type-Options: nosniff\r\n\
-         \r\n",
+         X-Content-Type-Options: nosniff\r\n",
         len = body.len()
     );
+    for (name, value) in extra_headers {
+        head.push_str(name);
+        head.push_str(": ");
+        head.push_str(value);
+        head.push_str("\r\n");
+    }
+    head.push_str("\r\n");
     let mut out = Vec::with_capacity(head.len() + body.len());
     out.extend_from_slice(head.as_bytes());
     out.extend_from_slice(body);

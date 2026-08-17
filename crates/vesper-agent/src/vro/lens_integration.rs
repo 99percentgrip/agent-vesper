@@ -1,32 +1,13 @@
 //! VesperLens integration into the VRO planner (ADR 0017, VRO-11.2).
 //!
-//! This module exposes the **seam** between the VRO orchestrator and the
-//! VesperLens review oracle. The orchestrator stays pure and never starts
-//! a TCP listener directly; instead it holds an optional
-//! [`LensReviewPort`] implemented at the composition boundary (the TUI
-//! binary wires a concrete `VesperLens` impl).
-//!
-//! ## Integration contract
-//!
-//! 1. The host constructs a `VroOrchestrator` and calls
-//!    [`VroOrchestrator::with_lens_port`] when human-in-the-loop review
-//!    is desired.
-//! 2. The host drives the agent loop / orchestrator normally.
-//! 3. When a tool output arrives that looks like an HTML artifact
-//!    ([`looks_like_html_artifact`]), the host calls
-//!    [`VroOrchestrator::maybe_review_html_artifact`].
-//! 4. If a port is configured, the orchestrator invokes
-//!    [`LensReviewPort::review`], which:
-//!    - prints a `[VesperLens] Artifact ready for review. Open: <URL>`
-//!      diagnostic via the `on_url` callback (PRD §4),
-//!    - blocks until the human POSTs feedback,
-//!    - returns a parsed [`LensFeedback`].
-//! 5. The host injects
-//!    [`feedback_as_context_message`] into the conversation as a
-//!    `role: Tool` message so the next model turn can apply the human's
-//!    corrections (PRD §4: "context injection").
+//! This module exposes the explicit-tool seam between the TUI composition
+//! boundary and VesperLens. The VRO orchestrator owns no review port and does
+//! not intercept outputs. `request_human_review`/`request_human_input` call a
+//! [`LensReviewPort`], then inject [`feedback_as_context_message`] as tool
+//! context for the next model step.
 
 use std::future::Future;
+use std::path::Path;
 use std::pin::Pin;
 
 use crate::planning::vesper_lens::{Action, LensError, LensFeedback};
@@ -59,6 +40,28 @@ pub trait LensReviewPort: Send + Sync + std::fmt::Debug {
         html: &str,
         on_url: &'a (dyn Fn(&str) + Send + Sync),
     ) -> Pin<Box<dyn Future<Output = Result<LensFeedback, LensError>> + Send + 'a>>;
+
+    /// Review a workspace-confined HTML file. Concrete browser ports override
+    /// this to retain the file identity for sibling assets, live reload, and
+    /// reusable review sessions.
+    fn review_file<'a>(
+        &'a self,
+        file: &'a Path,
+        workspace_root: &'a Path,
+        on_url: &'a (dyn Fn(&str) + Send + Sync),
+    ) -> Pin<Box<dyn Future<Output = Result<LensFeedback, LensError>> + Send + 'a>> {
+        Box::pin(async move {
+            let canonical_root = workspace_root.canonicalize()?;
+            let canonical_file = file.canonicalize()?;
+            if !canonical_file.starts_with(&canonical_root) {
+                return Err(LensError::InvalidArtifact(
+                    "artifact escapes the active workspace".into(),
+                ));
+            }
+            let html = std::fs::read_to_string(canonical_file)?;
+            self.review(&html, on_url).await
+        })
+    }
 }
 
 /// Default no-op port. Used when VesperLens is not configured. Returns
@@ -147,12 +150,23 @@ pub fn feedback_as_context_message(feedback: &LensFeedback) -> String {
     if !feedback.annotations.is_empty() {
         out.push_str(&format!("Annotations ({}):\n", feedback.annotations.len()));
         for (i, a) in feedback.annotations.iter().enumerate() {
+            if !a.id.is_empty() {
+                out.push_str(&format!("  [{}] id:       {}\n", i + 1, a.id));
+            }
             out.push_str(&format!("  [{}] selector: {}\n", i + 1, a.selector));
             out.push_str(&format!("      comment:  {}\n", a.comment));
+            if let Some(target) = &a.target
+                && let Ok(target) = serde_json::to_string(target)
+            {
+                out.push_str(&format!("      target:    {target}\n"));
+            }
             if let Some(html) = &a.suggested_html {
                 out.push_str(&format!("      suggested: {}\n", html));
             }
         }
+    }
+    if feedback.end_session {
+        out.push_str("The reviewer ended this VesperLens session.\n");
     }
     out
 }
@@ -328,12 +342,15 @@ mod tests {
         let fb = LensFeedback {
             action: Action::Modify,
             annotations: vec![crate::planning::vesper_lens::DomAnnotation {
+                id: "note-1".into(),
                 selector: "#hero".into(),
                 comment: "too big".into(),
                 suggested_html: Some("<h1>smaller</h1>".into()),
+                target: None,
             }],
             notes: "fix it".into(),
             answers: Vec::new(),
+            end_session: false,
         };
         let msg = feedback_as_context_message(&fb);
         assert!(msg.contains("NEEDS MODIFICATION"));

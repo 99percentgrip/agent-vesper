@@ -41,6 +41,10 @@ pub enum Action {
 /// a unique identifier the agent can blindly re-resolve.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DomAnnotation {
+    /// Stable browser-generated identifier used to update or remove the
+    /// corresponding highlight without relying on a fragile selector.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub id: String,
     /// CSS selector, DOM path, or element id identifying the annotated node.
     pub selector: String,
     /// Free-form human comment about this node. Treated as untrusted user
@@ -50,6 +54,38 @@ pub struct DomAnnotation {
     /// `None` means "no concrete replacement proposed, just a comment".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub suggested_html: Option<String>,
+    /// Rich target metadata. Element annotations retain a selector while text
+    /// selections additionally preserve exact DOM range boundaries.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<AnnotationTarget>,
+}
+
+/// Precise browser target attached to an annotation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "kebab-case")]
+pub enum AnnotationTarget {
+    Element {
+        selector: String,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        tag: String,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        text: String,
+    },
+    TextRange {
+        text: String,
+        selector: String,
+        start: RangeBoundary,
+        end: RangeBoundary,
+    },
+}
+
+/// One anchored endpoint of a selected DOM text range.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RangeBoundary {
+    pub selector: String,
+    #[serde(default)]
+    pub path: Vec<usize>,
+    pub offset: usize,
 }
 
 /// One structured answer collected from an interactive VesperLens planning
@@ -68,10 +104,22 @@ pub struct LensAnswer {
 pub struct LensQuestion {
     pub id: String,
     pub prompt: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub description: String,
     #[serde(default)]
     pub options: Vec<String>,
     #[serde(default)]
     pub allow_multiple: bool,
+    #[serde(default = "default_required")]
+    pub required: bool,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub recommended: String,
+    #[serde(default)]
+    pub allow_other: bool,
+}
+
+const fn default_required() -> bool {
+    true
 }
 
 /// The overarching struct returned by [`crate::planning::vesper_lens::VesperLens::review_artifact`].
@@ -89,6 +137,9 @@ pub struct LensFeedback {
     /// a `data-vesper-question` id. Empty for ordinary artifact reviews.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub answers: Vec<LensAnswer>,
+    /// True when the reviewer explicitly ended the reusable browser session.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub end_session: bool,
 }
 
 impl Default for LensFeedback {
@@ -100,6 +151,7 @@ impl Default for LensFeedback {
             annotations: Vec::new(),
             notes: String::new(),
             answers: Vec::new(),
+            end_session: false,
         }
     }
 }
@@ -128,11 +180,13 @@ pub enum LensError {
     /// listener is shut down before this is returned.
     #[error("timed out waiting for human review")]
     Timeout,
-    /// The single accepted connection closed before any POST /feedback was
-    /// received. The server does not retry on a second connection — that
-    /// is by design (single-turn contract, PRD §3.C).
+    /// The reusable server session ended before queued feedback was received.
     #[error("connection closed before feedback received")]
     Disconnected,
+    /// The requested artifact was outside the workspace, was not HTML, or
+    /// exceeded the bounded review size.
+    #[error("invalid review artifact: {0}")]
+    InvalidArtifact(String),
 }
 
 #[cfg(test)]
@@ -176,15 +230,18 @@ mod tests {
         let fb = LensFeedback {
             action: Action::Modify,
             annotations: vec![DomAnnotation {
+                id: "note-1".into(),
                 selector: "#hero".into(),
                 comment: "too big".into(),
                 suggested_html: Some("<h1>smaller</h1>".into()),
+                target: None,
             }],
             notes: "overall fine".into(),
             answers: vec![LensAnswer {
                 question: "framework".into(),
                 value: "Rust".into(),
             }],
+            end_session: false,
         };
         let json = serde_json::to_string(&fb).unwrap();
         let back: LensFeedback = serde_json::from_str(&json).unwrap();
@@ -198,6 +255,7 @@ mod tests {
             annotations: Vec::new(),
             notes: String::new(),
             answers: Vec::new(),
+            end_session: false,
         };
         let json = serde_json::to_string(&fb).unwrap();
         // notes is skipped when empty; annotations is `[]` (defaulted on
@@ -210,7 +268,7 @@ mod tests {
     #[test]
     fn lens_feedback_decodes_minimal_wire() {
         // Approve with no annotations/notes — the absolute minimum the
-        // overlay would ever POST.
+        // trusted review chrome would ever POST.
         let json = r#"{"action":"approve"}"#;
         let fb: LensFeedback = serde_json::from_str(json).unwrap();
         assert_eq!(fb.action, Action::Approve);
@@ -231,9 +289,11 @@ mod tests {
     #[test]
     fn dom_annotation_skips_null_suggested_html_on_serialize() {
         let a = DomAnnotation {
+            id: String::new(),
             selector: "p".into(),
             comment: "x".into(),
             suggested_html: None,
+            target: None,
         };
         let json = serde_json::to_string(&a).unwrap();
         assert!(!json.contains("suggested_html"));

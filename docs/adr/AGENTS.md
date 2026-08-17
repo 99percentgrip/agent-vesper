@@ -32,6 +32,11 @@ Own accepted, durable architecture and compatibility decisions for Agent Vesper.
 - ADR 0019 replaces ADR 0018's fixed four-question host cap with a typed
   session policy: fixed 1–12 or agent-selected auto 1–12, defaulting to four,
   with matching per-turn tool schema and executor enforcement.
+- ADR 0020 supersedes ADR 0017/0018's same-document, unauthenticated,
+  single-turn review boundary with trusted outer chrome, a sandboxed artifact,
+  authenticated session routes, confined sibling assets, reusable in-process
+  sessions, precise annotation targets, richer interviews, conditional HTML
+  review triggering, and real-browser verification. ADR 0019 remains active.
 
 ## Verification
 

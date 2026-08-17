@@ -162,12 +162,9 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
     // VRO orchestrator: opt-in via AGENT_VESPER_VRO_ENABLED=1. When disabled
     // (the default), every turn routes through the direct AgentLoop — zero
     // behavior change. When enabled, non-Direct profiles go through VRO.
-    // VRO-11.4: the lens port is wired into the orchestrator (via
-    // with_lens_port) so maybe_review_html_artifact works for the final-
-    // output check. The PRIMARY trigger for human review is now the explicit
-    // `request_human_review` tool (Phase 2B-ii), NOT implicit interception.
-    let lens_port_for_orchestrator: Arc<dyn vesper_agent::vro::LensReviewPort> =
-        Arc::new(VesperLensPort::new());
+    // VesperLens is exposed only through the explicit human-input tools at
+    // the TUI composition boundary. VRO does not retain a dead implicit or
+    // final-output interception seam.
     let vro = if std::env::var("AGENT_VESPER_VRO_ENABLED")
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(false)
@@ -176,9 +173,8 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
             enabled: true,
             ..Default::default()
         })
-        .with_lens_port(lens_port_for_orchestrator)
     } else {
-        vesper_agent::VroOrchestrator::disabled().with_lens_port(lens_port_for_orchestrator)
+        vesper_agent::VroOrchestrator::disabled()
     };
 
     // Runtime supervisor owns the live session state. Building it, creating a
@@ -3915,8 +3911,7 @@ fn build_agent_loop(
 ///
 /// Teaches the model that producing code/UI/artifacts REQUIRES executing
 /// the tools in the same turn: `write_file` for every file it claims to
-/// create, and `request_human_review` when that tool is registered (the
-/// TUI wires it whenever a VesperLens review port is configured).
+/// create. VesperLens review remains an explicit, HTML-only judgment call.
 /// Announcing a plan and yielding the turn is an explicit failure mode the
 /// instruction forbids. In Plan mode the equivalent action is the
 /// `update_plan` tool, so the carve-out keeps Plan-mode discipline intact.
@@ -3926,12 +3921,14 @@ fn build_agent_loop(
 fn tool_enforcement_instruction() -> SystemInstruction {
     let body = "### Tool Execution Enforcement\n\
 When asked to generate code, UI, or artifacts, you MUST execute the write_file \
-tool and the request_human_review tool within the same turn. Do NOT output \
+tool within the same turn. Do NOT output \
 your plan and yield to the user. Execute the tools immediately.\n\
 - Producing a file by printing its content in the chat is NOT completing the \
 task: write it with write_file (content, not a placeholder).\n\
-- When the request_human_review tool is registered, call it after writing the \
-artifact so the human can review it; when it is not registered, skip it.\n\
+- request_human_review accepts only workspace-confined HTML. Call it when the \
+user requested visual review or unresolved visual/interaction choices make \
+human inspection materially useful. Do not call it for ordinary source files \
+or fully specified HTML that can be verified deterministically.\n\
 - When planning depends on unresolved user choices, call request_human_input \
 with only the concrete questions needed, never exceeding the current tool \
 schema's question limit, and continue from the returned browser answers. Do \
@@ -7742,6 +7739,31 @@ impl vesper_agent::vro::LensReviewPort for VesperLensPort {
             lens.review_artifact(&html, |url| on_url(url)).await
         })
     }
+
+    fn review_file<'a>(
+        &'a self,
+        file: &'a std::path::Path,
+        workspace_root: &'a std::path::Path,
+        on_url: &'a (dyn Fn(&str) + Send + Sync),
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Result<
+                        vesper_agent::planning::LensFeedback,
+                        vesper_agent::planning::LensError,
+                    >,
+                > + Send
+                + 'a,
+        >,
+    > {
+        let lens = Arc::clone(&self.lens);
+        let file = file.to_path_buf();
+        let workspace_root = workspace_root.to_path_buf();
+        Box::pin(async move {
+            lens.review_file(&file, &workspace_root, |url| on_url(url))
+                .await
+        })
+    }
 }
 
 /// VRO-11.4 — Tool definition for the explicit `request_human_review` tool.
@@ -7753,7 +7775,7 @@ fn request_human_review_definition() -> vesper_domain::ToolDefinition {
         harness_name: vesper_domain::HarnessToolName::new("request_human_review")
             .expect("bounded harness name"),
         provider_name: None,
-        description: "Request human review of an HTML artifact via VesperLens. Opens the file in a browser with an annotation overlay and BLOCKS until the human submits feedback (approve/reject/modify). Use this when you want the user to visually review an HTML file you created — typically after writing a dashboard, report, or interactive page.".to_string(),
+        description: "Request human review of a workspace-confined HTML artifact via VesperLens. Opens trusted review chrome around a sandboxed page and BLOCKS until the human submits feedback (approve/reject/modify). Use only when the user requested visual review or visual/interaction choices materially need inspection; do not use for ordinary source code or fully specified HTML that deterministic checks can verify.".to_string(),
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {
@@ -7806,12 +7828,16 @@ fn request_human_input_definition(limit: InterviewQuestionLimit) -> vesper_domai
                         "properties": {
                             "id": { "type": "string", "description": "Stable short answer key." },
                             "prompt": { "type": "string", "description": "Concrete question shown to the human." },
+                            "description": { "type": "string", "description": "Optional help text explaining why the decision matters." },
                             "options": {
                                 "type": "array",
                                 "maxItems": 6,
                                 "items": { "type": "string" }
                             },
-                            "allow_multiple": { "type": "boolean", "default": false }
+                            "allow_multiple": { "type": "boolean", "default": false },
+                            "required": { "type": "boolean", "default": true },
+                            "recommended": { "type": "string", "description": "Optional recommended answer displayed to the human." },
+                            "allow_other": { "type": "boolean", "default": false }
                         },
                         "required": ["id", "prompt"]
                     }
@@ -7949,7 +7975,7 @@ impl TuiToolService {
     fn execute_request_human_review<'a>(
         &'a self,
         call: &'a vesper_domain::ToolCall,
-        _context: &'a vesper_agent::ToolContext,
+        context: &'a vesper_agent::ToolContext,
     ) -> vesper_agent::ToolFuture<'a, Result<vesper_agent::ToolResult, vesper_agent::ToolError>>
     {
         let args = call.arguments.clone();
@@ -7972,10 +7998,11 @@ impl TuiToolService {
                 .ok_or_else(|| {
                     tui_tool_failure("request_human_review", "missing file_path argument")
                 })?;
-            // Read the HTML file content.
-            let content = tokio::fs::read_to_string(path)
-                .await
-                .map_err(|e| tui_tool_failure("request_human_review", e))?;
+            let workspace_root = vesper_agent::confinement::primary_root(context)
+                .map_err(|error| tui_tool_failure("request_human_review", error))?
+                .to_path_buf();
+            let confined = vesper_agent::confinement::confine(&workspace_root, path)
+                .map_err(|error| tui_tool_failure("request_human_review", error))?;
             // Surface the review URL to the TUI's inline trajectory so the
             // user sees where to open the browser. The URL arrives through
             // the on_url callback once VesperLens binds its listener.
@@ -7983,7 +8010,7 @@ impl TuiToolService {
             // Route the content through VesperLens. This BLOCKS until the
             // human submits feedback (or the 30-minute timeout fires).
             let feedback = lens
-                .review(&content, on_url.as_ref())
+                .review_file(&confined, &workspace_root, on_url.as_ref())
                 .await
                 .map_err(|e| tui_tool_failure("request_human_review", e))?;
             // Return the feedback as the tool result. The model sees the
@@ -8048,6 +8075,12 @@ impl TuiToolService {
                         format!("duplicate question id `{id}`"),
                     ));
                 }
+                if id.chars().count() > 64 {
+                    return Err(tui_tool_failure(
+                        "request_human_input",
+                        "question id must be at most 64 characters",
+                    ));
+                }
                 let prompt = raw
                     .get("prompt")
                     .and_then(serde_json::Value::as_str)
@@ -8056,6 +8089,12 @@ impl TuiToolService {
                     .ok_or_else(|| {
                         tui_tool_failure("request_human_input", "question prompt must not be empty")
                     })?;
+                if prompt.chars().count() > 500 {
+                    return Err(tui_tool_failure(
+                        "request_human_input",
+                        "question prompt must be at most 500 characters",
+                    ));
+                }
                 let options = raw
                     .get("options")
                     .and_then(serde_json::Value::as_array)
@@ -8075,12 +8114,44 @@ impl TuiToolService {
                         "each question supports at most 6 options",
                     ));
                 }
+                if options.iter().any(|option| option.chars().count() > 200) {
+                    return Err(tui_tool_failure(
+                        "request_human_input",
+                        "question options must be at most 200 characters",
+                    ));
+                }
+                let description = raw
+                    .get("description")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::trim)
+                    .unwrap_or_default();
+                let recommended = raw
+                    .get("recommended")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::trim)
+                    .unwrap_or_default();
+                if description.chars().count() > 1_000 || recommended.chars().count() > 200 {
+                    return Err(tui_tool_failure(
+                        "request_human_input",
+                        "question description or recommendation is too long",
+                    ));
+                }
                 questions.push(vesper_agent::planning::LensQuestion {
                     id: id.to_owned(),
                     prompt: prompt.to_owned(),
+                    description: description.to_owned(),
                     options,
                     allow_multiple: raw
                         .get("allow_multiple")
+                        .and_then(serde_json::Value::as_bool)
+                        .unwrap_or(false),
+                    required: raw
+                        .get("required")
+                        .and_then(serde_json::Value::as_bool)
+                        .unwrap_or(true),
+                    recommended: recommended.to_owned(),
+                    allow_other: raw
+                        .get("allow_other")
                         .and_then(serde_json::Value::as_bool)
                         .unwrap_or(false),
                 });

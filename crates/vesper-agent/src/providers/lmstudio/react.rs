@@ -85,7 +85,10 @@ Rules:
 4. When you have enough evidence to answer the user, emit the final answer \
    JSON. Do NOT call more tools after you have the answer.
 5. When asked to generate code, UI, or artifacts, you MUST execute the \
-   write_file tool and the request_human_review tool within the same turn. \
+   write_file tool within the same turn. Call request_human_review only for \
+   workspace-confined HTML when the user requested visual review or unresolved \
+   visual/interaction choices materially require human inspection. Never use \
+   it for ordinary source code. \
    Do NOT output your plan and yield to the user. Execute the tools \
    immediately. Printing the artifact's content as your final answer without \
    calling write_file is a FAILED turn. The only exception is Plan mode, \
@@ -739,16 +742,19 @@ mod tests {
     }
 
     #[test]
-    fn react_system_prompt_enforces_same_turn_artifact_tools() {
+    fn react_system_prompt_enforces_writes_and_conditional_html_review() {
         // VRO-11.5: the 180s zero-tool turn showed models announcing a plan
-        // and yielding instead of executing write_file / request_human_review.
-        // The system prompt MUST carry the same-turn tool mandate.
+        // and yielding instead of executing write_file. Review remains an
+        // explicit HTML-only judgment instead of a blanket code mandate.
         assert!(
-            REACT_SYSTEM_PROMPT.contains(
-                "you MUST execute the write_file tool and the \
-                 request_human_review tool within the same turn"
-            ),
-            "the dictated enforcement wording must be present"
+            REACT_SYSTEM_PROMPT
+                .contains("you MUST execute the write_file tool within the same turn"),
+            "the write mandate must be present"
+        );
+        assert!(
+            REACT_SYSTEM_PROMPT.contains("workspace-confined HTML")
+                && REACT_SYSTEM_PROMPT.contains("Never use it for ordinary source code"),
+            "review must be conditional and HTML-only"
         );
         assert!(
             REACT_SYSTEM_PROMPT.contains("Do NOT output your plan and yield to the user"),
