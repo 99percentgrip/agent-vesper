@@ -6187,6 +6187,21 @@ fn build_user_message_with_images(text: &str, images: Vec<ImageDescriptor>) -> C
 // immediately.
 // ---------------------------------------------------------------------------
 
+/// Returns the cross-project memory root under the user's home directory
+/// (`USERPROFILE` on Windows, `HOME` elsewhere). Never created here; a
+/// missing directory simply disables the global skill read layer.
+fn home_memory_root() -> std::path::PathBuf {
+    let variable = if cfg!(target_os = "windows") {
+        "USERPROFILE"
+    } else {
+        "HOME"
+    };
+    let home = std::env::var(variable)
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::path::PathBuf::from("."));
+    home.join(".agent-vesper").join("memory")
+}
+
 /// Bundle of the four durable memory stores, all rooted at the same path.
 /// The binary owns one `MemoryStores`; the event loop borrows it for the
 /// duration of `drive_loop`.
@@ -6201,8 +6216,12 @@ struct MemoryStores {
 
 impl MemoryStores {
     /// Opens the bundle at `AGENT_VESPER_MEMORY_ROOT` (falling back to
-    /// `.agent-vesper/memory/` under the current directory). If opening any
-    /// store fails the bundle stays `None` for that store and memory
+    /// `.agent-vesper/memory/` under the current directory). The skill
+    /// store additionally reads a cross-project global layer at
+    /// `AGENT_VESPER_GLOBAL_MEMORY_ROOT` (falling back to
+    /// `~/.agent-vesper/memory/`): global skills appear after local ones,
+    /// local slugs shadow, and writes always stay project-local. If opening
+    /// any store fails the bundle stays `None` for that store and memory
     /// commands surface a clear error rather than crashing the TUI.
     fn open_default() -> Self {
         let root = match std::env::var("AGENT_VESPER_MEMORY_ROOT") {
@@ -6212,11 +6231,17 @@ impl MemoryStores {
                 .join(".agent-vesper")
                 .join("memory"),
         };
+        let global_memory_root = match std::env::var("AGENT_VESPER_GLOBAL_MEMORY_ROOT") {
+            Ok(value) => std::path::PathBuf::from(value),
+            Err(_) => home_memory_root(),
+        };
         // Ensure the root directory exists so the stores can open it.
         let _ = std::fs::create_dir_all(&root);
         let root_display = root.display().to_string();
         let memory = vesper_memory::MemoryStore::open(&root).ok().map(Arc::new);
-        let skills = vesper_memory::SkillStore::open(&root).ok().map(Arc::new);
+        let skills = vesper_memory::SkillStore::open_with_global(&root, &global_memory_root)
+            .ok()
+            .map(Arc::new);
         let profile = vesper_memory::UserProfile::open(&root).ok().map(Arc::new);
         let awareness = vesper_memory::AwarenessLedger::open(&root)
             .ok()
@@ -7556,9 +7581,14 @@ impl vesper_agent::ToolService for LegacyTuiToolService {
             ),
             (
                 "read_skill",
-                "Read one learned project skill.",
+                "Read one learned project skill. Optional `section` returns one heading's section; optional 1-based `offset`/`limit` return a line window for very large skills.",
                 ToolExecutionClass::ReadOnly,
-                &[("name", "string", true)],
+                &[
+                    ("name", "string", true),
+                    ("section", "string", false),
+                    ("offset", "integer", false),
+                    ("limit", "integer", false),
+                ],
             ),
             (
                 "learn_skill",
@@ -7568,6 +7598,9 @@ impl vesper_agent::ToolService for LegacyTuiToolService {
                     ("name", "string", true),
                     ("description", "string", true),
                     ("instructions", "string", true),
+                    ("environments", "array", false),
+                    ("requires_tools", "array", false),
+                    ("tasks", "array", false),
                 ],
             ),
             (
@@ -9561,11 +9594,37 @@ fn execute_tui_tool(
             };
             let slug =
                 SkillSlug::new(&string("name")?).map_err(|error| tui_tool_failure(name, error))?;
-            vesper_agent::ToolResult::new(
+            let body = if let Some(section) = optional_string("section") {
+                skills
+                    .read_section(&slug, &section)
+                    .map_err(|error| tui_tool_failure(name, error))?
+            } else {
                 skills
                     .read(&slug)
-                    .map_err(|error| tui_tool_failure(name, error))?,
-            )
+                    .map_err(|error| tui_tool_failure(name, error))?
+            };
+            // Optional 1-based line window keeps very large skills from
+            // flooding the context; omitted params return the whole body.
+            let offset = arguments
+                .get("offset")
+                .and_then(serde_json::Value::as_u64)
+                .filter(|value| *value > 0);
+            let limit = arguments
+                .get("limit")
+                .and_then(serde_json::Value::as_u64)
+                .filter(|value| *value > 0);
+            let body = if offset.is_some() || limit.is_some() {
+                let start = offset.map_or(0, |value| (value - 1) as usize);
+                let end = limit.map_or(usize::MAX, |value| start + value as usize);
+                body.lines()
+                    .skip(start)
+                    .take(end.saturating_sub(start))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            } else {
+                body
+            };
+            vesper_agent::ToolResult::new(body)
         }
         "learn_skill" => {
             let Some(skills) = stores.skills.as_ref() else {
@@ -9573,11 +9632,51 @@ fn execute_tui_tool(
             };
             let slug =
                 SkillSlug::new(&string("name")?).map_err(|error| tui_tool_failure(name, error))?;
-            let body = format!(
-                "# {}\n\n{}\n\n{}\n",
+            let description = string("description")?;
+            let instructions = string("instructions")?;
+            // Oracle parity: bounded tool inputs (500-char description,
+            // 12_000-char instructions) so listings stay concise.
+            if description.chars().count() > 500 {
+                return Err(tui_tool_failure(name, "description exceeds 500 chars"));
+            }
+            if instructions.chars().count() > 12_000 {
+                return Err(tui_tool_failure(name, "instructions exceed 12000 chars"));
+            }
+            let sanitize_list = |key: &str| -> Option<String> {
+                let entries: Vec<String> = arguments
+                    .get(key)
+                    .and_then(serde_json::Value::as_array)?
+                    .iter()
+                    .filter_map(serde_json::Value::as_str)
+                    .map(str::trim)
+                    .filter(|entry| {
+                        !entry.is_empty() && entry.len() <= 64 && !entry.contains(['"', '\n', '\r'])
+                    })
+                    .take(8)
+                    .map(str::to_owned)
+                    .collect();
+                (!entries.is_empty()).then(|| format!("[{}]", entries.join(", ")))
+            };
+            let mut frontmatter = format!(
+                "---\nname: {}\ndescription: {}\n",
                 slug.as_str(),
-                string("description")?,
-                string("instructions")?
+                description.replace('\n', " ")
+            );
+            if let Some(environments) = sanitize_list("environments") {
+                frontmatter.push_str(&format!("environments: {environments}\n"));
+            }
+            if let Some(requires_tools) = sanitize_list("requires_tools") {
+                frontmatter.push_str(&format!("requires_tools: {requires_tools}\n"));
+            }
+            if let Some(tasks) = sanitize_list("tasks") {
+                frontmatter.push_str(&format!("tasks: {tasks}\n"));
+            }
+            frontmatter.push_str("---\n\n");
+            let body = format!(
+                "{frontmatter}# {}\n\n{}\n\n{}\n",
+                slug.as_str(),
+                description.replace('\n', " "),
+                instructions
             );
             skills
                 .write(&slug, &body)

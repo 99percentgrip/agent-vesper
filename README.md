@@ -130,7 +130,8 @@ The agent silently recalls relevant memories before every reply. You don't need 
 | `/demote <id>` | Move a global memory into the current project |
 | `/memory [query]` | List project-local memory entries |
 | `/goal <text>` | Set a persistent goal |
-| `/skills` | List learned skills |
+| `/skills` | List learned skills (frontmatter descriptions; project + global library) |
+| `/read_skill` surface | Hosted `read_skill` takes `section`/`offset`/`limit` for large skills |
 | `/profile` | Show approved user-profile preferences |
 | `/awareness` | Show live epistemic state |
 | `/checkpoint [label]` | Capture a workspace snapshot |
@@ -369,6 +370,18 @@ VRO-11.11 closes the remaining gap with the reviewed Lavish workflow: opening a 
 - The `tool_grounded_react` strategy (VRO-5) routes through a real LM Studio `ReactAgent` bundle when configured — `Actions` and `Observations` stream live into the Conversation panel as `⏺ <tool>` / indented `⎿ <result>` lines, alongside the inline thinking header above.
 - The other nine strategies execute in the background; only the LEARNED notice and the final answer land in the conversation feed.
 - VRO is **off by default** (PRD §21 — zero behavior regression when disabled). It activates only when `[reasoning] enabled = true` is set in the runtime config OR a `/reasoning set mode=<X>` override is in force.
+
+## Skill Library
+
+Agent Vesper ships a curated cross-project skill library at
+`~/.agent-vesper/memory/skills/` (79 skills across 14 category bundles —
+software development, GitHub workflows, research, documents, creative and
+more). The library is a **read layer**: every project sees it, project-local
+skills shadow same-named global ones, and `learn_skill` always writes
+project-locally. Skill bodies are bounded at 200 KB; `read_skill` can pull a
+single `section` or line window instead of a whole skill; `list_skills`
+surfaces each skill's frontmatter description. Override the library root
+with `AGENT_VESPER_GLOBAL_MEMORY_ROOT`.
 
 ## Configuration
 

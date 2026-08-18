@@ -169,6 +169,13 @@ business logic.
   calls on Tokio blocking threads before entering the conversation loop. Owns the
   credential-free `RuntimeSupervisor` and drains `SessionState.pending_reasoning`
   into the runtime `UpdateSessionReasoning` command after each dispatch (ADR 0009).
+  Owns the skill-store global read layer wiring: `MemoryStores::open_default`
+  roots `SkillStore` at `AGENT_VESPER_GLOBAL_MEMORY_ROOT` (default
+  `~/.agent-vesper/memory`, resolved via `USERPROFILE`/`HOME`; missing root
+  disables the layer). Owns the hosted skill tool surface: `read_skill`
+  accepts optional `section`/`offset`/`limit`; `learn_skill` writes
+  frontmatter (name/description + optional `environments`/`requires_tools`/
+  `tasks`) with oracle-bounded inputs (500/12,000 chars).
   Phase 6 (ADR 0010): also owns the multi-turn `vesper_agent::AgentLoop` bridge —
   `build_agent_loop`, `spawn_agent_turn` (background `tokio::spawn`), and the
   non-blocking `drain_agent_event` / `apply_agent_event` result handlers.
