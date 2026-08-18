@@ -30,12 +30,14 @@ business logic.
 - `src/commands.rs` — slash-command parsing, registry, and resolution
   against the active provider's superpowers. Tier C Phase 7 (ADR 0010): the
   registry now covers the **entire** Python oracle `LOCAL_COMMANDS` surface
-  (80 distinct oracle command names, including `/export last`, + 14
-  Vesper-native = 94 commands; Vesper-native = approve, cancel, auth,
-  lmstudio, provider, embedding, quit, remember, recall, forget,
+  (80 distinct oracle command names, including `/export last`, + 15
+  Vesper-native = 95 commands; Vesper-native = approve, cancel, auth,
+  lmstudio, provider, embedding, chat-only, quit, remember, recall, forget,
   memories, promote, demote, interview-limit). The
   `ORACLE_COMMAND_SURFACE` const table is the single source of truth for the
-  migration matrix. ADR 0016 follow-up: `/embedding` (Status/Set/Clear) is
+  migration matrix. `chat-only` (the `/chat-only` palette twin of the F11
+  keybinding) resolves to `UiAction::ToggleChatOnly`; like every registry
+  entry it keeps `quit` last so the palette order contract holds. ADR 0016 follow-up: `/embedding` (Status/Set/Clear) is
   the most recent Vesper-native addition; it parses
   `key=value` pairs via `EmbeddingPairs::parse` and drains through
   `pending_embedding_op` → `drain_embedding_op` (write `embedding.json` +
@@ -90,7 +92,14 @@ business logic.
   removed; the Conversation column owns chat, inline thinking, and tool
   telemetry. Wide terminals show a compact right rail with Session, a
   dedicated live TODO panel, and a bounded Last run summary. `/tasks`
-  toggles the TODO region and reveals the sidebar when enabling it. The provider
+  toggles the TODO region and reveals the sidebar when enabling it. F11
+  (`toggle_chat_only`) collapses the entire right rail — Session + TODO +
+  Last run — into a chat-only full-width view; the collapse is a pure
+  render-time overlay (`PanelVisibility::chat_only`), so the per-panel
+  `sidebar` / `tasks` flags keep their values and a second F11 restores the
+  exact previous layout. `/tasks` and `/statusline` clear the overlay when
+  they explicitly reveal the rail. The footer advertises the F11 action
+  beside the other mouse-operable footer segments. The provider
   chain of thought streams INLINE in the Conversation feed:
   `transcript_lines_for` emits a `thinking:`-prefixed block (compact
   `ReasoningDiagnostics::render_inline_header()` label + the newest

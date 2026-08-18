@@ -291,6 +291,7 @@ pub enum UiAction {
     ToggleReasoning,
     ToggleTasks,
     ToggleSidebar,
+    ToggleChatOnly,
     ToggleScreenReader,
     ToggleNativeMouse,
     ToggleSound,
@@ -972,6 +973,7 @@ impl CommandRegistry {
             "provider" => CommandOutcome::Ui(UiAction::OpenProviderSwitcher),
             "reasoning-panel" | "toggle-thinking" => CommandOutcome::Ui(UiAction::ToggleReasoning),
             "statusline" => CommandOutcome::Ui(UiAction::ToggleSidebar),
+            "chat-only" => CommandOutcome::Ui(UiAction::ToggleChatOnly),
             "theme" => resolve_session_choice(
                 name,
                 argument,
@@ -1904,6 +1906,7 @@ const ORACLE_COMMAND_SURFACE: &[OracleCommandEntry] = &[
     OracleCommandEntry { name: "lmstudio",          description: "Configure the LM Studio LAN/localhost endpoint (Vesper-native)" },
     OracleCommandEntry { name: "provider",          description: "Switch the active provider (Vesper-native, arrow-key picker)" },
     OracleCommandEntry { name: "embedding",         description: "View or set the cognitive-memory embedding source (ADR 0016, Vesper-native)" },
+    OracleCommandEntry { name: "chat-only",         description: "Toggle the F11 chat-only layout collapse (Vesper-native)" },
     OracleCommandEntry { name: "quit",              description: "Exit the TUI (Vesper-native; oracle uses Ctrl+X)" },
 ];
 
@@ -2402,12 +2405,17 @@ mod tests {
             registry.contains("interview-limit"),
             "VesperLens-native /interview-limit must be registered"
         );
+        assert!(
+            registry.contains("chat-only"),
+            "Vesper-native /chat-only must be registered"
+        );
         assert_eq!(
             registry.names().len(),
-            94,
-            "Phase 7 parity: 80 oracle commands + 14 Vesper-native = 94 total \
+            95,
+            "Phase 7 parity: 80 oracle commands + 15 Vesper-native = 95 total \
              (Vesper-native: approve, cancel, auth, lmstudio, provider, embedding, \
-             quit, remember, recall, forget, memories, promote, demote, interview-limit)"
+             chat-only, quit, remember, recall, forget, memories, promote, demote, \
+             interview-limit)"
         );
     }
 

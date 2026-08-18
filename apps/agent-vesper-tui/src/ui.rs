@@ -252,6 +252,12 @@ pub trait TerminalRenderer {
 }
 
 /// Clickable footer segments shared by rendering and mouse hit-testing.
+///
+/// Rendering and `handle_mouse_click` both walk this const in order with
+/// computed x-offsets, so the two views cannot drift — but neither may
+/// filter the list independently (that WOULD desync click targets).
+/// `toggle_chat_only` (F11) stays always-visible because it is also the
+/// restore affordance from chat-only mode.
 pub const FOOTER_ACTIONS: &[(&str, &str)] = &[
     ("^f Search", "open_search"),
     ("^x Quit", "quit_agent"),
@@ -264,6 +270,7 @@ pub const FOOTER_ACTIONS: &[(&str, &str)] = &[
     ("F5 Push to talk", "toggle_voice"),
     ("F6 History", "open_history"),
     ("^y Copy response", "copy_last_response"),
+    ("F11 Chat only", "toggle_chat_only"),
     ("^p Palette", "open_palette"),
 ];
 
@@ -325,7 +332,7 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
     ]);
     frame.render_widget(Paragraph::new(header), chunks[0]);
 
-    let show_sidebar = model.panels.sidebar && chunks[1].width >= 110;
+    let show_sidebar = model.panels.sidebar_visible() && chunks[1].width >= 110;
     let body = Layout::default()
         .direction(Direction::Horizontal)
         .constraints(if show_sidebar {
@@ -1440,6 +1447,70 @@ mod tests {
         assert!(content.contains("Run"));
         assert!(content.contains("Working"));
         assert!(content.contains("Actual conversation"));
+    }
+
+    #[test]
+    fn chat_only_collapse_hides_the_rail_and_widens_the_conversation() {
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
+        // F11 must be a render-time override: the sidebar rail (Session +
+        // TODO + Last run) disappears while `sidebar` / `tasks` keep their
+        // values, and the Conversation column takes the full body width.
+        let mut model = ViewModel {
+            transcript: vec!["assistant: Actual conversation".into()],
+            task_plan: vec![TaskItem {
+                content: "Inspect implementation".into(),
+                status: "in_progress".into(),
+                priority: "1".into(),
+            }],
+            agent_running: true,
+            ..ViewModel::default()
+        };
+
+        let backend = TestBackend::new(140, 35);
+        let mut terminal = Terminal::new(backend).expect("test backend");
+        terminal
+            .draw(|f| render_to_frame(f, &model))
+            .expect("wide sidebar render");
+        let before: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(
+            before.contains("TODO 0/1"),
+            "rail renders by default: {before}"
+        );
+
+        model.panels.toggle_chat_only();
+        terminal
+            .draw(|f| render_to_frame(f, &model))
+            .expect("chat-only render");
+        let after: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(
+            !after.contains("TODO 1/1"),
+            "chat-only collapse must hide the rail: {after}"
+        );
+        assert!(
+            !after.contains("Session"),
+            "chat-only collapse must hide the session panel: {after}"
+        );
+        assert!(
+            after.contains("Actual conversation"),
+            "conversation survives the collapse: {after}"
+        );
+        // The per-panel flags stay intact so a second F11 restores them.
+        assert!(model.panels.sidebar);
+        assert!(model.panels.tasks);
     }
 
     #[test]

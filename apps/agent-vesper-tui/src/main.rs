@@ -907,7 +907,7 @@ fn handle_mouse_click(
         let transcript_height = height
             .saturating_sub(1 + bottom_chrome)
             .saturating_sub(working_tree_height);
-        let show_sidebar = session.state.panels.sidebar && width >= 110;
+        let show_sidebar = session.state.panels.sidebar_visible() && width >= 110;
         let body_width = if show_sidebar {
             width.saturating_sub(40)
         } else {
@@ -2795,6 +2795,7 @@ fn default_keybindings() -> std::collections::BTreeMap<String, String> {
         ("open_history", "f6"),
         ("toggle_native_mouse", "f7"),
         ("toggle_screen_reader", "f8"),
+        ("toggle_chat_only", "f11"),
         ("open_search", "ctrl+f"),
         ("copy_last_response", "ctrl+y"),
         ("copy_selection", "ctrl+shift+c"),
@@ -3553,6 +3554,17 @@ fn apply_keybinding_action(
         }
         "toggle_screen_reader" => {
             session.state.preferences.screen_reader = !session.state.preferences.screen_reader;
+        }
+        "toggle_chat_only" => {
+            // F11 collapse: chat-only is a render-time override, so the
+            // underlying panel preferences survive and F11 restores them.
+            let panels = &mut session.state.panels;
+            panels.chat_only = !panels.chat_only;
+            session.state.status = Some(if panels.chat_only {
+                "Chat-only view. F11 restores the sidebar panels.".into()
+            } else {
+                "Sidebar panels restored.".into()
+            });
         }
         "settings" | "open_history" | "open_search" => {
             session.input = match action {
@@ -11974,6 +11986,7 @@ mod tests {
             ("open_history", "f6"),
             ("toggle_native_mouse", "f7"),
             ("toggle_screen_reader", "f8"),
+            ("toggle_chat_only", "f11"),
             ("open_search", "ctrl+f"),
             ("copy_last_response", "ctrl+y"),
             ("copy_selection", "ctrl+shift+c"),
@@ -11983,6 +11996,21 @@ mod tests {
             assert_eq!(bindings.get(action).map(String::as_str), Some(key));
         }
         assert!(!bindings.contains_key("toggle_tasks"));
+    }
+
+    #[test]
+    fn chat_only_collapse_hides_the_sidebar_without_destroying_panel_state() {
+        // F11 must be a render-time override: every underlying panel flag is
+        // preserved so the second F11 restores exactly what was visible.
+        let mut panels = agent_vesper_tui::dispatch::PanelVisibility::default();
+        assert!(panels.sidebar_visible(), "rail renders by default");
+        assert!(panels.toggle_chat_only(), "first F11 collapses the rail");
+        assert!(!panels.sidebar_visible(), "chat-only hides the rail");
+        assert!(panels.tasks, "individual panel flags stay intact");
+        assert!(panels.sidebar, "the sidebar switch stays intact");
+        assert!(!panels.toggle_chat_only(), "second F11 restores the rail");
+        assert!(panels.sidebar_visible());
+        assert!(panels.tasks, "TODO flag survived the full cycle");
     }
 
     #[test]

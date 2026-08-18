@@ -106,7 +106,7 @@ pub struct SessionState {
     pub task_plan: Vec<TaskItem>,
     /// Native terminal panel visibility.
     pub panels: PanelVisibility,
-    /// Native presentation and terminal-integration preferences.
+    /// Native terminal preferences which immediately affect rendering/feedback.
     pub preferences: TerminalPreferences,
     /// Crossterm side effect for the binary to drain after pure dispatch.
     pub pending_terminal_action: Option<TerminalAction>,
@@ -198,6 +198,36 @@ pub struct PanelVisibility {
     pub sidebar: bool,
     /// Whether the dedicated TODO region renders inside the sidebar.
     pub tasks: bool,
+    /// Chat-only mode (F11): a render-time collapse that hides the whole
+    /// right rail (Session + TODO + Run) so the Conversation column owns the
+    /// full width. Unlike the per-panel switches this flag never destroys
+    /// state — `sidebar` / `tasks` keep their values, so pressing F11 again
+    /// restores the exact previous layout. Turning either per-panel switch
+    /// back ON clears it.
+    pub chat_only: bool,
+}
+
+impl PanelVisibility {
+    /// Toggles the F11 chat-only collapse and returns whether chat-only
+    /// mode is now active.
+    ///
+    /// Pure presentational overlay: only [`Self::chat_only`] flips. The
+    /// `sidebar` / `tasks` / `reasoning` flags keep their values, so a
+    /// second press restores the exact layout that was visible before
+    /// collapsing rather than a reset one. `/statusline` and `/tasks` clear
+    /// the flag directly when they explicitly reveal the rail.
+    pub fn toggle_chat_only(&mut self) -> bool {
+        self.chat_only = !self.chat_only;
+        self.chat_only
+    }
+
+    /// Whether the right rail renders at all. Chat-only mode collapses it
+    /// regardless of the per-panel switches, so the renderer and the mouse
+    /// hit-test mirrors share this single predicate.
+    #[must_use]
+    pub const fn sidebar_visible(&self) -> bool {
+        self.sidebar && !self.chat_only
+    }
 }
 
 impl Default for PanelVisibility {
@@ -206,6 +236,7 @@ impl Default for PanelVisibility {
             reasoning: true,
             sidebar: true,
             tasks: true,
+            chat_only: false,
         }
     }
 }
@@ -656,6 +687,9 @@ fn apply_outcome(
                 panels.tasks = !panels.tasks;
                 if panels.tasks {
                     panels.sidebar = true;
+                    // Revealing the TODO rail explicitly drops any chat-only
+                    // overlay so the panels are actually visible.
+                    panels.chat_only = false;
                 }
                 *status = Some(format!(
                     "TODO panel {}.",
@@ -664,9 +698,27 @@ fn apply_outcome(
             }
             UiAction::ToggleSidebar => {
                 panels.sidebar = !panels.sidebar;
+                // The explicit rail control replaces the chat-only overlay:
+                // showing must reveal the rail, and hiding owns the state
+                // directly instead of leaving a stale overlay flag.
+                panels.chat_only = false;
                 *status = Some(format!(
                     "Session sidebar {}.",
                     if panels.sidebar { "shown" } else { "hidden" }
+                ));
+            }
+            UiAction::ToggleChatOnly => {
+                // The F11 keybinding and the `/chat-only` slash command own
+                // the same overlay through one pure helper so both stay in
+                // lockstep.
+                let collapsed = panels.toggle_chat_only();
+                *status = Some(format!(
+                    "Chat-only view {} (F11 toggles).",
+                    if collapsed {
+                        "on — sidebar hidden"
+                    } else {
+                        "off"
+                    }
                 ));
             }
             UiAction::ToggleScreenReader => {
@@ -1572,6 +1624,90 @@ mod integration_tests {
         assert!(state.panels.tasks);
         assert!(state.panels.sidebar, "showing TODO must reveal its sidebar");
         assert_eq!(state.status.as_deref(), Some("TODO panel shown."));
+    }
+
+    #[test]
+    fn statusline_command_toggles_the_session_sidebar() {
+        let registry = registry();
+        let surface = surface();
+        let mut state = SessionState::new();
+        assert!(state.panels.sidebar);
+
+        step(&mut state, &registry, &surface, "/statusline");
+        assert!(!state.panels.sidebar);
+        assert_eq!(state.status.as_deref(), Some("Session sidebar hidden."));
+
+        step(&mut state, &registry, &surface, "/statusline");
+        assert!(state.panels.sidebar);
+        assert_eq!(state.status.as_deref(), Some("Session sidebar shown."));
+    }
+
+    #[test]
+    fn chat_only_hides_the_sidebar_and_leaves_panel_flags_untouched() {
+        let mut state = SessionState::new();
+        assert!(state.panels.sidebar);
+        assert!(state.panels.tasks);
+
+        assert!(state.panels.toggle_chat_only());
+        assert!(state.panels.chat_only);
+        // The remembered panel flags stay intact so restoring shows what was
+        // there before collapsing.
+        assert!(state.panels.sidebar);
+        assert!(state.panels.tasks);
+
+        assert!(!state.panels.toggle_chat_only());
+        assert!(!state.panels.chat_only);
+        assert!(state.panels.sidebar);
+        assert!(state.panels.tasks);
+    }
+
+    #[test]
+    fn chat_only_slash_command_matches_the_f11_keybinding() {
+        let registry = registry();
+        let surface = surface();
+
+        // The `/chat-only` slash command and the F11 keybinding must share
+        // one fate: both route through `PanelVisibility::toggle_chat_only`,
+        // so the palette and the footer describe the same toggle.
+        let mut via_command = SessionState::new();
+        step(&mut via_command, &registry, &surface, "/chat-only");
+        assert!(via_command.panels.chat_only);
+        assert!(via_command.panels.sidebar, "flags survive the overlay");
+        assert!(via_command.panels.tasks, "flags survive the overlay");
+
+        // A second invocation restores — same as a second F11.
+        step(&mut via_command, &registry, &surface, "/chat-only");
+        assert!(!via_command.panels.chat_only);
+        assert!(via_command.panels.sidebar);
+        assert!(via_command.panels.tasks);
+    }
+
+    #[test]
+    fn enabling_the_sidebar_leaves_chat_only_mode() {
+        let registry = registry();
+        let surface = surface();
+        let mut state = SessionState::new();
+
+        // Realistic collapse: TODO and rail already hidden by their own
+        // switches, then F11 layered on top.
+        state.panels.tasks = false;
+        state.panels.sidebar = false;
+        state.panels.toggle_chat_only();
+
+        // /tasks must both reveal the sidebar AND drop the chat-only
+        // override, otherwise the render-time collapse would swallow the
+        // explicit user intent.
+        step(&mut state, &registry, &surface, "/tasks");
+        assert!(state.panels.tasks);
+        assert!(state.panels.sidebar);
+        assert!(!state.panels.chat_only);
+
+        // /statusline likewise.
+        state.panels.toggle_chat_only();
+        state.panels.sidebar = false;
+        step(&mut state, &registry, &surface, "/statusline");
+        assert!(state.panels.sidebar);
+        assert!(!state.panels.chat_only);
     }
 
     #[test]
