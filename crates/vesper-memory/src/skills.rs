@@ -17,8 +17,9 @@ use crate::types::SkillSlug;
 
 /// Maximum allowed markdown body size for a single skill (in bytes).
 /// Sized to admit curated reference skills (the largest migrated library
-/// document is ~72 KB) with growth headroom; raised from 24 KB.
-pub const MAX_SKILL_BYTES: usize = 128_000;
+/// document is ~72 KB) with growth headroom for enriched skills; raised
+/// 24 KB -> 128 KB -> 200 KB (2026-08, quality-first migration).
+pub const MAX_SKILL_BYTES: usize = 200_000;
 /// Hard cap on the number of skill files the store will enumerate.
 pub const MAX_SKILL_FILES: usize = 500;
 /// Maximum number of skills referenced by one bundle.
@@ -52,6 +53,10 @@ pub struct SkillBundle {
 /// Read/write access to learned-skill markdown files.
 pub struct SkillStore {
     root: PathBuf,
+    /// Optional cross-project read layer (a second memory-style root that
+    /// contains `skills/` and `bundles/`). Local skills always shadow it;
+    /// writes never touch it. Invalid roots degrade to `None`.
+    global_root: Option<PathBuf>,
     /// Lazily populated slug cache (slug → file mtime seen at last scan).
     cache: Mutex<Vec<String>>,
 }
@@ -78,8 +83,28 @@ impl SkillStore {
         }
         Ok(Self {
             root: root.to_path_buf(),
+            global_root: None,
             cache: Mutex::new(Vec::new()),
         })
+    }
+
+    /// Opens a skill store with an additional cross-project read layer.
+    ///
+    /// The global root follows the same validation rule as the local root;
+    /// an invalid or missing global root degrades to "no global layer"
+    /// instead of failing the whole store. Reads fall back to the global
+    /// layer when a skill is absent locally, and listings append
+    /// global-only skills after local ones (local slugs shadow).
+    pub fn open_with_global(root: &Path, global_root: &Path) -> Result<Self, MemoryError> {
+        let mut store = Self::open(root)?;
+        if global_root.is_absolute()
+            && global_root
+                .parent()
+                .is_some_and(|parent| parent.exists() && global_root.exists())
+        {
+            store.global_root = Some(global_root.to_path_buf());
+        }
+        Ok(store)
     }
 
     fn skills_dir(&self) -> PathBuf {
@@ -90,44 +115,39 @@ impl SkillStore {
         self.root.join("bundles")
     }
 
+    fn global_skills_dir(&self) -> Option<PathBuf> {
+        self.global_root.as_ref().map(|root| root.join("skills"))
+    }
+
+    fn global_bundles_dir(&self) -> Option<PathBuf> {
+        self.global_root.as_ref().map(|root| root.join("bundles"))
+    }
+
+    fn global_skill_path(&self, slug: &SkillSlug) -> Option<PathBuf> {
+        self.global_skills_dir()
+            .map(|dir| dir.join(format!("{}.md", slug.as_str())))
+    }
+
     fn skill_path(&self, slug: &SkillSlug) -> PathBuf {
         self.skills_dir().join(format!("{}.md", slug.as_str()))
     }
 
-    /// Lists every `.md` file under `skills/`. Files whose stems fail slug
-    /// validation are skipped so the store never surfaces unsafe paths.
+    /// Lists every readable `.md` skill: project-local files first, then
+    /// cross-project global-layer files whose slugs are not shadowed by a
+    /// local skill. Files whose stems fail slug validation are skipped so
+    /// the store never surfaces unsafe paths.
     pub fn list(&self) -> Vec<SkillSummary> {
-        let dir = self.skills_dir();
         let mut summaries = Vec::new();
-        let entries = match std::fs::read_dir(&dir) {
-            Ok(entries) => entries,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                return Vec::new();
+        scan_skills_dir(&self.skills_dir(), &mut summaries);
+        if let Some(global_dir) = self.global_skills_dir() {
+            let local: Vec<String> = summaries.iter().map(|s| s.slug.clone()).collect();
+            let mut global = Vec::new();
+            scan_skills_dir(&global_dir, &mut global);
+            for summary in global {
+                if !local.contains(&summary.slug) && summaries.len() < MAX_SKILL_FILES {
+                    summaries.push(summary);
+                }
             }
-            Err(_) => return Vec::new(),
-        };
-        for entry in entries.flatten() {
-            if summaries.len() >= MAX_SKILL_FILES {
-                break;
-            }
-            let path = entry.path();
-            if path.extension().and_then(|ext| ext.to_str()) != Some("md") {
-                continue;
-            }
-            let stem = match path.file_stem().and_then(|s| s.to_str()) {
-                Some(stem) => stem,
-                None => continue,
-            };
-            let slug = match SkillSlug::new(stem) {
-                Ok(slug) => slug,
-                Err(_) => continue,
-            };
-            let body = std::fs::read_to_string(&path).unwrap_or_default();
-            let headline = headline_of(&body);
-            summaries.push(SkillSummary {
-                slug: slug.as_str().to_string(),
-                headline,
-            });
         }
         // Update the cache for tests + the curator.
         if let Ok(mut cache) = self.cache.lock() {
@@ -137,13 +157,46 @@ impl SkillStore {
         summaries
     }
 
-    /// Reads the full markdown body of one skill. Returns
-    /// [`MemoryError::NotFound`] when the skill is absent.
+    /// Reads the full markdown body of one skill, falling back to the
+    /// cross-project global layer when the skill is absent locally.
+    /// Returns [`MemoryError::NotFound`] when both layers miss.
     pub fn read(&self, slug: &SkillSlug) -> Result<String, MemoryError> {
         let path = self.skill_path(slug);
-        let body = std::fs::read_to_string(&path)
-            .map_err(|_| MemoryError::NotFound(format!("skill:{}", slug.as_str())))?;
-        Ok(body)
+        if let Ok(body) = std::fs::read_to_string(&path) {
+            return Ok(body);
+        }
+        if let Some(body) = self
+            .global_skill_path(slug)
+            .and_then(|path| std::fs::read_to_string(path).ok())
+        {
+            return Ok(body);
+        }
+        Err(MemoryError::NotFound(format!("skill:{}", slug.as_str())))
+    }
+
+    /// Reads one `##`-style section of a skill (the heading line through the
+    /// line before the next heading of the same or higher level). The
+    /// heading match is case-insensitive on trimmed text and accepts either
+    /// `Setup` or `## Setup`. When no section matches, the error lists the
+    /// first available headings so the caller can retry precisely.
+    pub fn read_section(&self, slug: &SkillSlug, heading: &str) -> Result<String, MemoryError> {
+        let body = self.read(slug)?;
+        match extract_section(&body, heading) {
+            Some(section) => Ok(section),
+            None => {
+                let available: Vec<String> =
+                    body.lines().filter_map(heading_text_of).take(10).collect();
+                Err(MemoryError::NotFound(format!(
+                    "skill:{} section not found; available: {}",
+                    slug.as_str(),
+                    if available.is_empty() {
+                        "none".to_string()
+                    } else {
+                        available.join(", ")
+                    }
+                )))
+            }
+        }
     }
 
     /// Writes (or replaces) a skill file. The body is bounded by
@@ -168,30 +221,34 @@ impl SkillStore {
         }
     }
 
-    /// Lists project-local skill bundles.
+    /// Lists skill bundles: project-local first, then cross-project global
+    /// bundles whose names are not shadowed locally.
     pub fn list_bundles(&self) -> Vec<SkillBundle> {
-        let dir = self.bundles_dir();
-        let Ok(entries) = std::fs::read_dir(dir) else {
-            return Vec::new();
-        };
-        entries
-            .flatten()
-            .filter_map(|entry| {
-                (entry.path().extension().and_then(|ext| ext.to_str()) == Some("json"))
-                    .then(|| std::fs::read_to_string(entry.path()).ok())
-                    .flatten()
-                    .and_then(|body| serde_json::from_str::<SkillBundle>(&body).ok())
-            })
-            .take(MAX_SKILL_FILES)
-            .collect()
+        let mut bundles = scan_bundles_dir(&self.bundles_dir());
+        if let Some(global_dir) = self.global_bundles_dir() {
+            let local: Vec<String> = bundles.iter().map(|b| b.name.clone()).collect();
+            for bundle in scan_bundles_dir(&global_dir) {
+                if !local.contains(&bundle.name) && bundles.len() < MAX_SKILL_FILES {
+                    bundles.push(bundle);
+                }
+            }
+        }
+        bundles
     }
 
-    /// Reads one bundle by validated slug.
+    /// Reads one bundle by validated slug, falling back to the global layer.
     pub fn read_bundle(&self, name: &SkillSlug) -> Result<SkillBundle, MemoryError> {
         let path = self.bundles_dir().join(format!("{}.json", name.as_str()));
-        let body = std::fs::read_to_string(path)
-            .map_err(|_| MemoryError::NotFound(format!("bundle:{}", name.as_str())))?;
-        serde_json::from_str(&body).map_err(MemoryError::from)
+        if let Ok(body) = std::fs::read_to_string(&path) {
+            return serde_json::from_str(&body).map_err(MemoryError::from);
+        }
+        if let Some(global_dir) = self.global_bundles_dir() {
+            let global_path = global_dir.join(format!("{}.json", name.as_str()));
+            if let Ok(body) = std::fs::read_to_string(global_path) {
+                return serde_json::from_str(&body).map_err(MemoryError::from);
+            }
+        }
+        Err(MemoryError::NotFound(format!("bundle:{}", name.as_str())))
     }
 
     /// Creates or replaces one bundle atomically.
@@ -227,9 +284,14 @@ impl SkillStore {
     }
 }
 
-/// Returns the first non-empty, non-frontmatter, non-leading-`#`-header
-/// line of `body`, truncated to 120 chars.
+/// Returns the headline shown by `list_skills`: the frontmatter
+/// `description:` when present (mirroring the oracle's context format
+/// `- {name}: {description}`), otherwise the first non-empty,
+/// non-frontmatter line or leading `# ` header. Truncated to 120 chars.
 fn headline_of(body: &str) -> String {
+    if let Some(description) = frontmatter_description_of(body) {
+        return truncate(&description, 120);
+    }
     let mut in_frontmatter = false;
     for raw in body.lines() {
         let line = raw.trim();
@@ -251,6 +313,141 @@ fn headline_of(body: &str) -> String {
         }
     }
     String::new()
+}
+
+/// Extracts a single-line frontmatter `description:` value from the leading
+/// YAML block, stripping balanced quotes. Returns `None` for missing, empty,
+/// or multi-line (folded) values.
+fn frontmatter_description_of(body: &str) -> Option<String> {
+    let mut lines = body.lines();
+    if lines.next()?.trim() != "---" {
+        return None;
+    }
+    for raw in lines {
+        let line = raw.trim();
+        if line == "---" {
+            return None;
+        }
+        if let Some(rest) = line.strip_prefix("description:") {
+            let mut value = rest.trim();
+            if value.len() >= 2
+                && ((value.starts_with('"') && value.ends_with('"'))
+                    || (value.starts_with('\'') && value.ends_with('\'')))
+            {
+                value = &value[1..value.len() - 1];
+            }
+            let value = value.trim();
+            if !value.is_empty() {
+                return Some(value.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Returns the trimmed text of one markdown heading line (`#`..`######`),
+/// or `None` for non-heading lines.
+fn heading_text_of(line: &str) -> Option<String> {
+    let trimmed = line.trim();
+    let rest = trimmed.trim_start_matches('#');
+    if !rest.starts_with(' ') {
+        return None;
+    }
+    let text = rest.trim();
+    if text.is_empty() {
+        None
+    } else {
+        Some(text.to_string())
+    }
+}
+
+/// Returns the heading level (1-6) of a heading line, or `None`.
+fn heading_level_of(line: &str) -> Option<usize> {
+    let trimmed = line.trim();
+    let hashes = trimmed.chars().take_while(|c| *c == '#').count();
+    if (1..=6).contains(&hashes) {
+        trimmed[hashes..].starts_with(' ').then_some(hashes)
+    } else {
+        None
+    }
+}
+
+/// Extracts the section starting at the heading whose trimmed text equals
+/// `heading` (case-insensitive) through the line before the next heading of
+/// the same or higher level. Returns `None` when the heading is absent.
+fn extract_section(body: &str, heading: &str) -> Option<String> {
+    let target = heading.trim().to_ascii_lowercase();
+    let mut lines = body.lines();
+    // Find the opening heading.
+    let mut collected: Vec<&str> = Vec::new();
+    let mut level = 0usize;
+    for raw in lines.by_ref() {
+        if let (Some(text), Some(lvl)) = (heading_text_of(raw), heading_level_of(raw))
+            && text.to_ascii_lowercase() == target
+        {
+            collected.push(raw);
+            level = lvl;
+            break;
+        }
+    }
+    if collected.is_empty() {
+        return None;
+    }
+    for raw in lines {
+        if heading_level_of(raw).is_some_and(|lvl| lvl <= level) {
+            break;
+        }
+        collected.push(raw);
+    }
+    Some(collected.join("\n"))
+}
+
+/// Scans one `skills/` directory into `out`, respecting [`MAX_SKILL_FILES`].
+fn scan_skills_dir(dir: &Path, out: &mut Vec<SkillSummary>) {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        if out.len() >= MAX_SKILL_FILES {
+            break;
+        }
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("md") {
+            continue;
+        }
+        let stem = match path.file_stem().and_then(|s| s.to_str()) {
+            Some(stem) => stem,
+            None => continue,
+        };
+        let slug = match SkillSlug::new(stem) {
+            Ok(slug) => slug,
+            Err(_) => continue,
+        };
+        let body = std::fs::read_to_string(&path).unwrap_or_default();
+        let headline = headline_of(&body);
+        out.push(SkillSummary {
+            slug: slug.as_str().to_string(),
+            headline,
+        });
+    }
+}
+
+/// Scans one `bundles/` directory into a vector of parsed bundles.
+fn scan_bundles_dir(dir: &Path) -> Vec<SkillBundle> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .filter_map(|entry| {
+            (entry.path().extension().and_then(|ext| ext.to_str()) == Some("json"))
+                .then(|| std::fs::read_to_string(entry.path()).ok())
+                .flatten()
+                .and_then(|body| serde_json::from_str::<SkillBundle>(&body).ok())
+        })
+        .take(MAX_SKILL_FILES)
+        .collect()
 }
 
 fn truncate(value: &str, limit: usize) -> String {
@@ -317,17 +514,168 @@ mod tests {
 
     #[test]
     fn caps_admit_curated_skill_library() {
-        // Caps were raised (24 KB / 200 files -> 128 KB / 500 files) so
-        // migrated curated reference skills — the largest observed is
-        // ~72 KB — round-trip through learn_skill/manage_skill without
-        // tripping BoundsViolated.
+        // Caps were raised (24 KB -> 128 KB -> 200 KB body, 200 -> 500
+        // files) so migrated curated reference skills — the largest
+        // observed is ~72 KB — round-trip through learn_skill/manage_skill
+        // without tripping BoundsViolated, with headroom for enrichment.
         let temp = TempDir::new().unwrap();
         let (_root, store) = store_under(&temp);
         let slug = SkillSlug::new("curated-large").unwrap();
-        let body = format!("# Curated library skill\n\n{}", "x".repeat(72_171));
+        let body = format!("# Curated library skill\n\n{}", "x".repeat(150_000));
         store.write(&slug, &body).unwrap();
-        assert!(store.read(&slug).unwrap().len() > 72_000);
-        assert_eq!(store.list().len(), 1);
+        assert!(store.read(&slug).unwrap().len() > 150_000);
+        let over = SkillSlug::new("over").unwrap();
+        let err = store
+            .write(&over, &format!("x{}", "y".repeat(MAX_SKILL_BYTES)))
+            .unwrap_err();
+        assert_eq!(err, MemoryError::BoundsViolated("skill body size"));
+    }
+
+    #[test]
+    fn headline_prefers_frontmatter_description() {
+        // Mirrors the oracle context format `- {name}: {description}`:
+        // the listing should surface the description authors wrote.
+        let temp = TempDir::new().unwrap();
+        let (_root, store) = store_under(&temp);
+        let slug = SkillSlug::new("described").unwrap();
+        let body = "---\nname: described\ndescription: \"Do the thing well.\"\n---\n\n# Described\n\nBody line.";
+        store.write(&slug, body).unwrap();
+        let summaries = store.list();
+        assert_eq!(summaries[0].headline, "Do the thing well.");
+
+        let plain = SkillSlug::new("plain").unwrap();
+        store
+            .write(&plain, "---\nname: plain\n---\n\n# Plain Header\n\nBody.")
+            .unwrap();
+        let summaries = store.list();
+        let plain = summaries.iter().find(|s| s.slug == "plain").unwrap();
+        assert_eq!(plain.headline, "Plain Header");
+    }
+
+    #[test]
+    fn global_layer_appends_and_local_shadows() {
+        let temp = TempDir::new().unwrap();
+        let (root, _store) = store_under(&temp);
+        let global_root = temp.path().join("global-root");
+        std::fs::create_dir_all(global_root.join("skills")).unwrap();
+        std::fs::create_dir_all(root.join("skills")).unwrap();
+        // Same slug in both layers; different headline.
+        std::fs::write(
+            global_root.join("skills").join("shared.md"),
+            "---\ndescription: global version\n---\nbody",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("skills").join("shared.md"),
+            "---\ndescription: local version\n---\nbody",
+        )
+        .unwrap();
+        std::fs::write(
+            global_root.join("skills").join("global-only.md"),
+            "---\ndescription: only global\n---\nbody",
+        )
+        .unwrap();
+        let store = SkillStore::open_with_global(&root, &global_root).unwrap();
+        let summaries = store.list();
+        assert_eq!(summaries.len(), 2);
+        let shared = summaries.iter().find(|s| s.slug == "shared").unwrap();
+        assert_eq!(shared.headline, "local version");
+        assert!(summaries.iter().any(|s| s.slug == "global-only"));
+        // Reads shadow locally and fall back globally.
+        let shared_slug = SkillSlug::new("shared").unwrap();
+        assert!(store.read(&shared_slug).unwrap().contains("local version"));
+        let global_only = SkillSlug::new("global-only").unwrap();
+        assert!(store.read(&global_only).unwrap().contains("only global"));
+        // Writes stay local: the global file is untouched.
+        store.write(&global_only, "# rewritten locally").unwrap();
+        assert!(
+            store
+                .read(&global_only)
+                .unwrap()
+                .contains("rewritten locally")
+        );
+        assert!(
+            global_root
+                .join("skills")
+                .join("global-only.md")
+                .metadata()
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn global_layer_invalid_root_is_ignored() {
+        let temp = TempDir::new().unwrap();
+        let (root, _store) = store_under(&temp);
+        let missing = temp.path().join("does-not-exist");
+        let store = SkillStore::open_with_global(&root, &missing).unwrap();
+        assert!(store.list().is_empty());
+        let slug = SkillSlug::new("anything").unwrap();
+        assert!(store.read(&slug).is_err());
+    }
+
+    #[test]
+    fn global_bundles_merge_after_local() {
+        let temp = TempDir::new().unwrap();
+        let (root, _store) = store_under(&temp);
+        let global_root = temp.path().join("global-root");
+        std::fs::create_dir_all(global_root.join("bundles")).unwrap();
+        let global_bundle = SkillBundle {
+            name: "categories".into(),
+            description: "global categories".into(),
+            skills: vec!["plan".into()],
+            instruction: String::new(),
+        };
+        std::fs::write(
+            global_root.join("bundles").join("categories.json"),
+            serde_json::to_string(&global_bundle).unwrap(),
+        )
+        .unwrap();
+        let local_bundle = SkillBundle {
+            name: "local".into(),
+            description: "project-local bundle".into(),
+            skills: vec![],
+            instruction: String::new(),
+        };
+        let store = SkillStore::open_with_global(&root, &global_root).unwrap();
+        store.write_bundle(local_bundle).unwrap();
+        let bundles = store.list_bundles();
+        assert_eq!(bundles.len(), 2);
+        assert_eq!(bundles[0].name, "local");
+        assert_eq!(
+            store
+                .read_bundle(&SkillSlug::new("categories").unwrap())
+                .unwrap()
+                .description,
+            "global categories"
+        );
+    }
+
+    #[test]
+    fn read_section_extracts_between_matching_headings() {
+        let temp = TempDir::new().unwrap();
+        let (_root, store) = store_under(&temp);
+        let slug = SkillSlug::new("sectioned").unwrap();
+        let body = "# Title\n\n## Setup\n\ndo this\n\n### Detail\n\ninner\n\n## Usage\n\nthat\n";
+        store.write(&slug, body).unwrap();
+        let setup = store.read_section(&slug, "Setup").unwrap();
+        assert!(setup.starts_with("## Setup"));
+        assert!(setup.contains("do this"));
+        assert!(setup.contains("### Detail"));
+        assert!(setup.contains("inner"));
+        assert!(!setup.contains("## Usage"));
+        // Case-insensitive match.
+        let usage = store.read_section(&slug, "usage").unwrap();
+        assert!(usage.contains("that"));
+        // Missing section reports the available headings.
+        let err = store.read_section(&slug, "Missing").unwrap_err();
+        match err {
+            MemoryError::NotFound(message) => {
+                assert!(message.contains("Setup"));
+                assert!(message.contains("Usage"));
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
     }
 
     #[test]

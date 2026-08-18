@@ -73,7 +73,7 @@ Thirteen commands move from `Deferred` to a real, persistent backing:
 
 4. **Bounded contract**: summary ≤ 1024 chars, scopes ≤ 8, evidence ≤ 16,
    ids ≤ 64 chars, memory entries ≤ 10_000, awareness records ≤ 100,
-   skill files ≤ 500, skill body ≤ 128 KB (raised 2026-08 to admit migrated curated skill libraries), profile ≤ 16 KB. Inputs that
+   skill files ≤ 500, skill body ≤ 200 KB (raised 2026-08 to admit migrated curated skill libraries), profile ≤ 16 KB. Skills additionally have an optional cross-project global read layer: project-local skills shadow global ones, reads fall back, writes stay project-local (amendment 2026-08, migration of the curated library to `~/.agent-vesper/memory/skills/`). Inputs that
    exceed bounds are rejected, not silently truncated.
 
 5. **TUI wiring** follows the existing `pending_*` drain pattern:

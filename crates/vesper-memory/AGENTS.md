@@ -46,8 +46,17 @@ subsystem that backs the Tier C Phase 8 un-stubbed commands
 - Skill bundles are validated before atomic replacement: at most 32
   validated skill slugs and 32 KiB serialized JSON per bundle.
 - Learned-skill files are bounded: the store enumerates at most 500
-  skill files and each body is at most 128 KB (raised 2026-08 so
+  skill files and each body is at most 200 KB (raised 2026-08 so
   migrated curated reference skills round-trip through `learn_skill`).
+- `SkillStore` has an optional cross-project global read layer
+  (`open_with_global`): listings append global-only skills after local
+  ones, local slugs shadow, reads fall back, and writes/bundles-merges
+  follow the same precedence. The TUI roots it at
+  `AGENT_VESPER_GLOBAL_MEMORY_ROOT` (default `~/.agent-vesper/memory`);
+  a missing root silently disables the layer.
+- `read_section` extracts one heading's section; the headline shown by
+  `list_skills` prefers the frontmatter `description` (oracle context
+  parity: `- {name}: {description}`).
 
 ## Work Guidance
 
