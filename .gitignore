@@ -23,3 +23,6 @@ Thumbs.db
 
 # Screenshot cache from the ACP image-share protocol
 .glm-acp-images/
+
+# Stray foreign-agent state dir (skills are rewritten to ~/.agent-vesper)
+.hermes/
