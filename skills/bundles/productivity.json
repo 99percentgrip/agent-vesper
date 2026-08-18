@@ -1,0 +1,23 @@
+{
+  "name": "productivity",
+  "description": "Skills for document creation, presentations, spreadsheets, and other productivity workflows.",
+  "skills": [
+    "airtable",
+    "box",
+    "document-to-action-items",
+    "docx",
+    "google-workspace",
+    "maps",
+    "meeting-action-items",
+    "nano-pdf",
+    "notion",
+    "ocr-and-documents",
+    "pdf",
+    "powerpoint",
+    "product-price-monitor",
+    "session-librarian",
+    "weekly-review-planning",
+    "xlsx"
+  ],
+  "instruction": "Read a skill with read_skill (optionally section=...) before following it. Skill resources live under ~/.agent-vesper/memory/skills/<slug>/."
+}

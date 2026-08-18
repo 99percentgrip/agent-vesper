@@ -1,0 +1,11 @@
+{
+  "name": "apple",
+  "description": "Apple / macOS skills — tools that interact with the Mac desktop (Finder,",
+  "skills": [
+    "apple-notes",
+    "apple-reminders",
+    "findmy",
+    "imessage"
+  ],
+  "instruction": "Read a skill with read_skill (optionally section=...) before following it. Skill resources live under ~/.agent-vesper/memory/skills/<slug>/."
+}

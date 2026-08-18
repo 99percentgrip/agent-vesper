@@ -60,6 +60,43 @@ try {
     $tuiLauncherContent = "@echo off`r`n`"%~dp0agent-vesper-acp.bundle\agent-vesper-tui.exe`" %*"
     Set-Content -LiteralPath $tuiLauncher -Value $tuiLauncherContent -NoNewline
 
+    # Seed the curated skill library into the cross-project memory root.
+    # Never destructive: existing files win (user edits preserved), slugs in
+    # the seed manifest are never resurrected (deletions preserved), and new
+    # seed skills from later releases are seeded on upgrade.
+    $memoryRoot = if ($env:AGENT_VESPER_MEMORY_ROOT) { $env:AGENT_VESPER_MEMORY_ROOT } else { Join-Path $HOME ".agent-vesper\memory" }
+    $seedRoot = Join-Path $bundle "skills"
+    $script:seededCount = 0
+    if (Test-Path -LiteralPath (Join-Path $seedRoot "skills") -PathType Container) {
+        New-Item -ItemType Directory -Path (Join-Path $memoryRoot "skills"), (Join-Path $memoryRoot "bundles") -Force | Out-Null
+        $manifest = Join-Path $memoryRoot ".seed-manifest"
+        if (-not (Test-Path -LiteralPath $manifest -PathType Leaf)) {
+            Set-Content -LiteralPath $manifest -Value ""
+        }
+        $manifestSlugs = @(Get-Content -LiteralPath $manifest -ErrorAction SilentlyContinue)
+        Get-ChildItem -LiteralPath (Join-Path $seedRoot "skills") -Filter "*.md" -File | ForEach-Object {
+            $slug = $_.BaseName
+            if ($manifestSlugs -contains $slug) { return }
+            $dest = Join-Path $memoryRoot "skills\$($_.Name)"
+            if (Test-Path -LiteralPath $dest -PathType Leaf) { return }
+            Copy-Item -LiteralPath $_.FullName -Destination $dest
+            $resDir = Join-Path $seedRoot "skills\$slug"
+            $destDir = Join-Path $memoryRoot "skills\$slug"
+            if ((Test-Path -LiteralPath $resDir -PathType Container) -and -not (Test-Path -LiteralPath $destDir -PathType Container)) {
+                Copy-Item -LiteralPath $resDir -Destination $destDir -Recurse
+            }
+            Add-Content -LiteralPath $manifest -Value $slug
+            $script:seededCount++
+        }
+        Get-ChildItem -LiteralPath (Join-Path $seedRoot "bundles") -Filter "*.json" -File -ErrorAction SilentlyContinue | ForEach-Object {
+            $dest = Join-Path $memoryRoot "bundles\$($_.Name)"
+            if (-not (Test-Path -LiteralPath $dest -PathType Leaf)) {
+                Copy-Item -LiteralPath $_.FullName -Destination $dest
+            }
+        }
+    }
+    Write-Host "Seeded $seededCount skill(s) into $memoryRoot"
+
     $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
     $pathEntries = @($userPath -split ";" | Where-Object { $_ })
     if ($pathEntries -notcontains $InstallDir) {

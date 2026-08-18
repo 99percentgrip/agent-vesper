@@ -374,9 +374,12 @@ VRO-11.11 closes the remaining gap with the reviewed Lavish workflow: opening a 
 ## Skill Library
 
 Agent Vesper ships a curated cross-project skill library at
-`~/.agent-vesper/memory/skills/` (79 skills across 14 category bundles —
+`~/.agent-vesper/memory/skills/` (81 skills across 14 category bundles —
 software development, GitHub workflows, research, documents, creative and
-more). The library is a **read layer**: every project sees it, project-local
+more). **The installers seed it automatically**: a fresh install lands with
+the full suite, upgrades add newly curated skills, and your own edits and
+deletions are never overwritten (a seed manifest tracks what was offered).
+The library is a **read layer**: every project sees it, project-local
 skills shadow same-named global ones, and `learn_skill` always writes
 project-locally. Skill bodies are bounded at 200 KB; `read_skill` can pull a
 single `section` or line window instead of a whole skill; `list_skills`

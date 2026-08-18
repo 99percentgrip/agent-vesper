@@ -115,6 +115,7 @@ When the user requests a durable behavior change, record it here or in the relev
 - `crates/AGENTS.md` — production foundational crate boundaries and dependency direction.
 - `apps/AGENTS.md` — thin production composition binaries.
 - `registry/AGENTS.md` — ACP registry manifest for Zed discovery/install.
+- `skills/AGENTS.md` — curated seed skill library bundled in release archives.
 - `scripts/AGENTS.md` — cross-platform installers for the `agent-vesper-acp` binary.
 - `spikes/AGENTS.md` — disposable Rust compatibility and platform experiments.
 - `tools/AGENTS.md` — non-production migration tooling and oracle ownership.

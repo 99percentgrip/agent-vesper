@@ -1,0 +1,9 @@
+{
+  "name": "email",
+  "description": "Skills for sending, receiving, searching, and managing email from the terminal.",
+  "skills": [
+    "email-inbox-triage",
+    "himalaya"
+  ],
+  "instruction": "Read a skill with read_skill (optionally section=...) before following it. Skill resources live under ~/.agent-vesper/memory/skills/<slug>/."
+}

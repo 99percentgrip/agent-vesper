@@ -74,6 +74,37 @@ printf '#!/bin/sh\nexec "%s/agent-vesper-tui" "$@"\n' "$bundle_dir" > "$install_
 chmod 0755 "$install_dir/agent-vesper-acp"
 chmod 0755 "$install_dir/agent-vesper-tui"
 
+# Seed the curated skill library into the cross-project memory root.
+# Never destructive: existing files win (user edits preserved), slugs listed
+# in the seed manifest are never resurrected (user deletions preserved), and
+# new seed skills added in later releases are seeded on upgrade.
+memory_root="${AGENT_VESPER_MEMORY_ROOT:-$HOME/.agent-vesper/memory}"
+seed_root="$bundle_dir/skills"
+seeded_count=0
+if [ -d "$seed_root/skills" ]; then
+    mkdir -p "$memory_root/skills" "$memory_root/bundles"
+    manifest="$memory_root/.seed-manifest"
+    touch "$manifest"
+    for seed_md in "$seed_root/skills/"*.md; do
+        [ -f "$seed_md" ] || continue
+        slug="$(basename "$seed_md" .md)"
+        grep -Fqx "$slug" "$manifest" && continue
+        [ -e "$memory_root/skills/$slug.md" ] && continue
+        cp "$seed_md" "$memory_root/skills/$slug.md"
+        if [ -d "$seed_root/skills/$slug" ] && [ ! -d "$memory_root/skills/$slug" ]; then
+            cp -R "$seed_root/skills/$slug" "$memory_root/skills/$slug"
+        fi
+        printf '%s\n' "$slug" >> "$manifest"
+        seeded_count=$((seeded_count + 1))
+    done
+    for seed_bundle in "$seed_root/bundles/"*.json; do
+        [ -f "$seed_bundle" ] || continue
+        [ -e "$memory_root/bundles/$(basename "$seed_bundle")" ] && continue
+        cp "$seed_bundle" "$memory_root/bundles/"
+    done
+fi
+printf 'Seeded %s skill(s) into %s\n' "$seeded_count" "$memory_root"
+
 installed_version="$("$install_dir/agent-vesper-acp" --version 2>&1)"
 tui_version="$("$install_dir/agent-vesper-tui" --version 2>&1)"
 printf 'Installed Agent Vesper (%s; %s):\n' "$installed_version" "$tui_version"

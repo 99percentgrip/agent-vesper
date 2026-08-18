@@ -1,0 +1,12 @@
+{
+  "name": "mlops",
+  "description": "Knowledge and Tools for Machine Learning Operations - tools and frameworks for training, fine-tuning, deploying, and optimizing ML/AI models",
+  "skills": [
+    "evaluating-llms-harness",
+    "huggingface-hub",
+    "llama-cpp",
+    "serving-llms-vllm",
+    "weights-and-biases"
+  ],
+  "instruction": "Read a skill with read_skill (optionally section=...) before following it. Skill resources live under ~/.agent-vesper/memory/skills/<slug>/."
+}

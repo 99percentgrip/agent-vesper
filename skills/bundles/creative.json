@@ -1,0 +1,23 @@
+{
+  "name": "creative",
+  "description": "Creative content generation — ASCII art, hand-drawn style diagrams, and visual design tools.",
+  "skills": [
+    "architecture-diagram",
+    "ascii-art",
+    "ascii-video",
+    "baoyu-infographic",
+    "claude-design",
+    "comfyui",
+    "design-md",
+    "excalidraw",
+    "humanizer",
+    "manim-video",
+    "p5js",
+    "popular-web-designs",
+    "pretext",
+    "sketch",
+    "songwriting-and-ai-music",
+    "touchdesigner-mcp"
+  ],
+  "instruction": "Read a skill with read_skill (optionally section=...) before following it. Skill resources live under ~/.agent-vesper/memory/skills/<slug>/."
+}
