@@ -11,7 +11,6 @@
     "spike",
     "systematic-debugging",
     "test-driven-development",
-    "vesper-agent-skill-authoring",
     "vesper-skill-authoring"
   ],
   "instruction": "Read a skill with read_skill (optionally section=...) before following it. Skill resources live under ~/.agent-vesper/memory/skills/<slug>/."

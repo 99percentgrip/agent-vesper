@@ -57,5 +57,7 @@ platform assumptions on hosts unavailable locally.
   eligible spike matrix.
 - `workflows/foundation-spikes.yml` — five-target disposable spike test matrix.
 - `workflows/release.yml` — tag-triggered ACP+TUI archive packaging and GitHub
-  Release publication for the registry and installers; the registry continues
+  Release publication for the registry and installers; archives also bundle
+  the repo `skills/` seed library seeded by the installers into
+  `~/.agent-vesper/memory/`; the registry continues
   to launch only the ACP binary from the shared bundle.

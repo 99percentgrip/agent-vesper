@@ -41,7 +41,9 @@ overwritten or resurrected.
 
 - `find skills/skills -maxdepth 1 -name '*.md' | wc -l` equals the sum of
   bundle skill references (currently 81).
-- `grep -ri hermes skills/` returns no matches.
+- A case-insensitive grep for the foreign harness name over
+  `skills/` returns no matches (kept verbatim-free here so this gate is
+  self-checking).
 - `cargo xtask verify` stays green after any change touching packaging.
 
 ## Child DOX Index
