@@ -519,12 +519,30 @@ impl McpOp {
 /// cognitive-memory engine backed by [`vesper_cognition::CognitiveMemory`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CognitionOp {
-    /// `/remember <text>` — force an extraction + injection into the cognitive store.
-    Remember { text: String },
-    /// `/recall <query>` — manually search the cognitive store.
-    Recall { query: String },
-    /// `/forget <id>` — delete a specific memory by its ID.
-    Forget { id: String },
+    /// `/remember [--global|--project] <text>` — route a fact to one store.
+    Remember { text: String, scope: CognitionScope },
+    /// `/recall [--global|--project] <query>` — search one or both stores.
+    Recall {
+        query: String,
+        scope: CognitionScope,
+    },
+    /// `/forget [--global|--project] <id>` — delete from one or both stores.
+    Forget { id: String, scope: CognitionScope },
+    /// `/promote <id>` — move a project memory into the global store.
+    Promote { id: String },
+    /// `/demote <id>` — move a global memory into the project store.
+    Demote { id: String },
+    /// `/memories [query]` — audit global and project memories side by side.
+    Audit { query: Option<String> },
+}
+
+/// User-selectable cognitive-memory destination. `Smart` means automatic
+/// routing for writes and both stores for reads/deletes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CognitionScope {
+    Smart,
+    Global,
+    Project,
 }
 
 impl CognitionOp {
@@ -534,8 +552,37 @@ impl CognitionOp {
             Self::Remember { .. } => "remember",
             Self::Recall { .. } => "recall",
             Self::Forget { .. } => "forget",
+            Self::Promote { .. } => "promote",
+            Self::Demote { .. } => "demote",
+            Self::Audit { .. } => "memories",
         }
     }
+}
+
+fn cognition_scope_and_body(argument: &str) -> Result<(CognitionScope, String), String> {
+    let mut scope = CognitionScope::Smart;
+    let mut body = Vec::new();
+    for token in argument.split_whitespace() {
+        match token {
+            "--global" => {
+                if scope != CognitionScope::Smart {
+                    return Err("choose only one of --global or --project".into());
+                }
+                scope = CognitionScope::Global;
+            }
+            "--project" | "--local" => {
+                if scope != CognitionScope::Smart {
+                    return Err("choose only one of --global or --project".into());
+                }
+                scope = CognitionScope::Project;
+            }
+            value if value.starts_with("--") => {
+                return Err(format!("unknown memory scope flag: {value}"));
+            }
+            value => body.push(value),
+        }
+    }
+    Ok((scope, body.join(" ")))
 }
 
 /// ADR 0016 — `/embedding` slash command. The command lives in the
@@ -1310,34 +1357,52 @@ impl CommandRegistry {
             }
 
             // === Phase 11 (ADR 0015 — Stage 16) — cognitive-memory commands ===
-            "remember" => {
-                let text = argument.trim();
-                if text.is_empty() {
-                    CommandOutcome::Error("Usage: /remember <text to remember>".into())
-                } else {
-                    CommandOutcome::Cognition(CognitionOp::Remember {
-                        text: text.to_string(),
-                    })
+            "remember" => match cognition_scope_and_body(argument) {
+                Ok((scope, text)) if !text.is_empty() => {
+                    CommandOutcome::Cognition(CognitionOp::Remember { text, scope })
                 }
-            }
-            "recall" => {
-                let query = argument.trim();
-                if query.is_empty() {
-                    CommandOutcome::Error("Usage: /recall <search query>".into())
-                } else {
-                    CommandOutcome::Cognition(CognitionOp::Recall {
-                        query: query.to_string(),
-                    })
+                Ok(_) => CommandOutcome::Error(
+                    "Usage: /remember [--global|--project] <text to remember>".into(),
+                ),
+                Err(error) => CommandOutcome::Error(format!("/remember: {error}")),
+            },
+            "recall" => match cognition_scope_and_body(argument) {
+                Ok((scope, query)) if !query.is_empty() => {
+                    CommandOutcome::Cognition(CognitionOp::Recall { query, scope })
                 }
-            }
-            "forget" => {
+                Ok(_) => CommandOutcome::Error(
+                    "Usage: /recall [--global|--project] <search query>".into(),
+                ),
+                Err(error) => CommandOutcome::Error(format!("/recall: {error}")),
+            },
+            "forget" => match cognition_scope_and_body(argument) {
+                Ok((scope, id)) if !id.is_empty() => {
+                    CommandOutcome::Cognition(CognitionOp::Forget { id, scope })
+                }
+                Ok(_) => {
+                    CommandOutcome::Error("Usage: /forget [--global|--project] <memory-id>".into())
+                }
+                Err(error) => CommandOutcome::Error(format!("/forget: {error}")),
+            },
+            "promote" => {
                 let id = argument.trim();
                 if id.is_empty() {
-                    CommandOutcome::Error("Usage: /forget <memory-id>".into())
+                    CommandOutcome::Error("Usage: /promote <project-memory-id>".into())
                 } else {
-                    CommandOutcome::Cognition(CognitionOp::Forget { id: id.to_string() })
+                    CommandOutcome::Cognition(CognitionOp::Promote { id: id.into() })
                 }
             }
+            "demote" => {
+                let id = argument.trim();
+                if id.is_empty() {
+                    CommandOutcome::Error("Usage: /demote <global-memory-id>".into())
+                } else {
+                    CommandOutcome::Cognition(CognitionOp::Demote { id: id.into() })
+                }
+            }
+            "memories" => CommandOutcome::Cognition(CognitionOp::Audit {
+                query: (!argument.trim().is_empty()).then(|| argument.trim().to_string()),
+            }),
 
             // === ADR 0016 — provider-independent embedding layer command ===
             // `/embedding`              → status (config + live engine mode)
@@ -1538,9 +1603,12 @@ impl CommandRegistry {
         buffer.push_str("  /curator            run deterministic skill maintenance\n");
         buffer.push_str("  /journey            show the memory/skill/profile timeline\n");
         buffer.push_str("\nCognitive memory (durable):\n");
-        buffer.push_str("  /remember <text>    add a fact to the cognitive memory store\n");
-        buffer.push_str("  /recall <query>     search the cognitive memory store\n");
-        buffer.push_str("  /forget <id>        delete a cognitive memory by ID\n");
+        buffer.push_str("  /remember [--global|--project] <text>  remember with visible scope\n");
+        buffer.push_str("  /recall [--global|--project] <query>   search scoped memories\n");
+        buffer.push_str("  /forget [--global|--project] <id>      delete a scoped memory\n");
+        buffer.push_str("  /memories [query]   audit global and project memories\n");
+        buffer.push_str("  /promote <id>       move project memory to global\n");
+        buffer.push_str("  /demote <id>        move global memory to this project\n");
         buffer.push_str("\nSessions, checkpoints & export (durable):\n");
         buffer.push_str("  /sessions-new [name] create a session\n");
         buffer.push_str("  /sessions           list sessions\n");
@@ -1810,6 +1878,9 @@ const ORACLE_COMMAND_SURFACE: &[OracleCommandEntry] = &[
     OracleCommandEntry { name: "remember",          description: "Manually add a fact to the cognitive memory store" },
     OracleCommandEntry { name: "recall",            description: "Search the cognitive memory store for relevant context" },
     OracleCommandEntry { name: "forget",            description: "Delete a cognitive memory by its ID" },
+    OracleCommandEntry { name: "memories",          description: "Audit global and project cognitive memories" },
+    OracleCommandEntry { name: "promote",           description: "Move a project memory into global memory" },
+    OracleCommandEntry { name: "demote",            description: "Move a global memory into this project" },
     OracleCommandEntry { name: "version",           description: "Show package, Python, and platform version info" },
     OracleCommandEntry { name: "help",              description: "Show the full harness command reference" },
     OracleCommandEntry { name: "copy",              description: "Copy the last response to clipboard" },
@@ -2294,7 +2365,8 @@ mod tests {
         assert!(!registry.contains("frobnicate"));
         // The full surface count: 80 oracle command names (including the
         // distinct `/export last` route) + 9 Vesper-native (approve, cancel,
-        // quit, auth, lmstudio, provider, remember, recall, forget) = 89 total.
+        // quit, auth, lmstudio, provider, remember, recall, forget, memories,
+        // promote, demote) plus later Vesper-native controls.
         assert!(registry.contains("export last"));
         assert!(
             registry.contains("auth"),
@@ -2320,17 +2392,68 @@ mod tests {
             registry.contains("forget"),
             "Stage 16 Vesper-native /forget must be registered"
         );
+        for command in ["memories", "promote", "demote"] {
+            assert!(
+                registry.contains(command),
+                "scoped cognitive-memory command /{command} must be registered"
+            );
+        }
         assert!(
             registry.contains("interview-limit"),
             "VesperLens-native /interview-limit must be registered"
         );
         assert_eq!(
             registry.names().len(),
-            91,
-            "Phase 7 parity: 80 oracle commands + 11 Vesper-native = 91 total \
+            94,
+            "Phase 7 parity: 80 oracle commands + 14 Vesper-native = 94 total \
              (Vesper-native: approve, cancel, auth, lmstudio, provider, embedding, \
-             quit, remember, recall, forget, interview-limit)"
+             quit, remember, recall, forget, memories, promote, demote, interview-limit)"
         );
+    }
+
+    #[test]
+    fn scoped_cognition_commands_parse_overrides_and_lifecycle_operations() {
+        assert_eq!(
+            resolve_bare_intent(&CommandIntent::parse("/remember --global my name is Alex")),
+            CommandOutcome::Cognition(CognitionOp::Remember {
+                text: "my name is Alex".into(),
+                scope: CognitionScope::Global,
+            })
+        );
+        assert_eq!(
+            resolve_bare_intent(&CommandIntent::parse(
+                "/remember mock server runs on port 8321"
+            )),
+            CommandOutcome::Cognition(CognitionOp::Remember {
+                text: "mock server runs on port 8321".into(),
+                scope: CognitionScope::Smart,
+            })
+        );
+        assert_eq!(
+            resolve_bare_intent(&CommandIntent::parse("/recall --project mock server")),
+            CommandOutcome::Cognition(CognitionOp::Recall {
+                query: "mock server".into(),
+                scope: CognitionScope::Project,
+            })
+        );
+        assert_eq!(
+            resolve_bare_intent(&CommandIntent::parse("/memories Alex")),
+            CommandOutcome::Cognition(CognitionOp::Audit {
+                query: Some("Alex".into()),
+            })
+        );
+        assert_eq!(
+            resolve_bare_intent(&CommandIntent::parse("/promote abc123")),
+            CommandOutcome::Cognition(CognitionOp::Promote {
+                id: "abc123".into(),
+            })
+        );
+        assert!(matches!(
+            resolve_bare_intent(&CommandIntent::parse(
+                "/remember --global --project contradictory"
+            )),
+            CommandOutcome::Error(_)
+        ));
     }
 
     #[test]

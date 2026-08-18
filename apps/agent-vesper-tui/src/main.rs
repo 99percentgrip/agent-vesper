@@ -270,7 +270,7 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
             Arc::clone(&registry),
             &provider_id,
             agent_tools,
-            cognition_bundle.engine.is_some(),
+            cognition_bundle.engine.is_some() || cognition_bundle.global_engine.is_some(),
         )
         .map_err(|error| format!("agent loop construction failed: {error}"))?
         .with_permission_port(approval_port),
@@ -3977,7 +3977,9 @@ current turn — silence does not mean memory is empty.\n\
 assistant: refer to any recalled facts, and if none were auto-recalled, say you \
 may not have any stored memories about that specific topic yet rather than \
 disavowing memory entirely.\n\
-- The user can manage memory explicitly via /remember, /recall, and /forget commands.";
+- The user can manage memory explicitly via /remember, /recall, /forget, /memories, \
+/promote, and /demote. /remember supports --global and --project and always \
+confirms the selected scope.";
     SystemInstruction {
         content: vec![ContentPart::Text(
             ContentText::new(body).expect("bounded system instruction"),
@@ -6410,9 +6412,15 @@ impl vesper_cognition::EmbeddingPort for BigModelEmbeddingAdapter {
 }
 
 struct CognitionBundle {
+    /// Existing project-local cognitive store. Its default path is unchanged
+    /// so upgrades never strand memories already saved by `/remember`.
     engine: Option<Arc<vesper_cognition::CognitiveMemory>>,
+    /// User-wide cognitive store shared by every project.
+    global_engine: Option<Arc<vesper_cognition::CognitiveMemory>>,
     /// Human-readable root path used in error notices.
     root_display: String,
+    global_root_display: String,
+    project_display: String,
     /// Owned copy of the cognition root (used by `/embedding set ...` to
     /// rewrite `embedding.json` and trigger a hot-reload).
     root: std::path::PathBuf,
@@ -6425,6 +6433,28 @@ struct CognitionBundle {
     /// Snapshot of the active credential source — used by the background
     /// startup probe (Directive 2) and by BigModel hot-reload.
     credential_source: Arc<dyn vesper_provider_glm::GlmCredentialSource>,
+}
+
+fn global_cognition_root() -> std::path::PathBuf {
+    if let Ok(value) = std::env::var("AGENT_VESPER_GLOBAL_COGNITION_ROOT") {
+        return std::path::PathBuf::from(value);
+    }
+    if let Ok(value) = std::env::var("XDG_DATA_HOME") {
+        return std::path::PathBuf::from(value)
+            .join("agent-vesper")
+            .join("cognition");
+    }
+    if let Ok(value) = std::env::var("HOME") {
+        return std::path::PathBuf::from(value)
+            .join(".local")
+            .join("share")
+            .join("agent-vesper")
+            .join("cognition");
+    }
+    std::env::current_dir()
+        .unwrap_or_else(|_| std::path::PathBuf::from("."))
+        .join(".agent-vesper")
+        .join("global-cognition")
 }
 
 /// ADR 0016 — Provider-Independent Embedding Layer. Deserializes from
@@ -6640,6 +6670,16 @@ impl CognitionBundle {
         let _ = std::fs::create_dir_all(&root);
         let db_path = root.join("cognition.db");
         let root_display = root.display().to_string();
+        let project_display = std::env::current_dir()
+            .ok()
+            .and_then(|path| path.canonicalize().ok().or(Some(path)))
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .display()
+            .to_string();
+        let global_root = global_cognition_root();
+        let _ = std::fs::create_dir_all(&global_root);
+        let global_db_path = global_root.join("cognition.db");
+        let global_root_display = global_root.display().to_string();
 
         // ADR 0016 — Provider-Independent Embedding Layer. If the user has
         // written `$ROOT/embedding.json` with an explicit `source` field,
@@ -6727,11 +6767,23 @@ impl CognitionBundle {
             entity_nlp: Arc::new(ZaiEntityExtractor),
         };
 
-        let engine = vesper_cognition::open(&db_path, ports, config)
+        let global_config = vesper_cognition::CognitiveConfig {
+            embedding_dim: config.embedding_dim,
+            enable_conflict_detection: config.enable_conflict_detection,
+            fusion_strategy: config.fusion_strategy,
+            max_injection_tokens: config.max_injection_tokens,
+        };
+        let engine = vesper_cognition::open(&db_path, ports.clone(), config)
+            .ok()
+            .map(Arc::new);
+        let global_engine = vesper_cognition::open(&global_db_path, ports, global_config)
             .ok()
             .map(Arc::new);
         // ADR 0016: apply the startup-determined search mode.
         if let Some(engine) = engine.as_ref() {
+            engine.set_search_mode(search_mode_hint);
+        }
+        if let Some(engine) = global_engine.as_ref() {
             engine.set_search_mode(search_mode_hint);
         }
         // Migration detection (Gap 11): model-name comparison via the
@@ -6809,9 +6861,33 @@ impl CognitionBundle {
             let _ = search_mode_hint; // already applied above
             Some(engine)
         })();
+        let global_engine = (|| {
+            let engine = global_engine?;
+            let active_model = engine.embedder_model_name();
+            let stored_model = engine.get_meta("embedding_model").ok().flatten();
+            let active_dim = probed_dim.unwrap_or(default_dim);
+            if stored_model
+                .as_deref()
+                .is_some_and(|stored| stored != active_model)
+            {
+                match engine.reembed_everything() {
+                    Ok(_) => engine.set_search_mode(vesper_cognition::SearchMode::Hybrid),
+                    Err(error) => {
+                        eprintln!("cognition: global-memory re-embed failed: {error}");
+                        engine.set_search_mode(vesper_cognition::SearchMode::BM25Only);
+                    }
+                }
+            }
+            let _ = engine.set_meta("embedding_model", active_model);
+            let _ = engine.set_meta("embedding_dim", &active_dim.to_string());
+            Some(engine)
+        })();
         Self {
             engine: engine.clone(),
+            global_engine,
             root_display,
+            global_root_display,
+            project_display,
             root,
             embedder: Some(embedder),
             credential_source: Arc::clone(&credential_source),
@@ -6825,16 +6901,21 @@ impl CognitionBundle {
     /// probe completes, `search()` honors the BM25Only starting mode and
     /// returns keyword-only results — graceful fallback, no UI stall.
     fn spawn_background_probe(self: &Arc<Self>) {
-        let Some(engine) = self.engine.clone() else {
+        let engines = [self.engine.clone(), self.global_engine.clone()];
+        if engines.iter().all(Option::is_none) {
             return;
-        };
+        }
         let Some(embedder) = self.embedder.clone() else {
             return;
         };
         // Skip the probe when already in Hybrid mode (e.g. `source: "local"`
         // or ZAI provider-routed BigModel — both start in Hybrid because
         // they have no network dependency to verify).
-        if engine.search_mode() == vesper_cognition::SearchMode::Hybrid {
+        if engines
+            .iter()
+            .flatten()
+            .all(|engine| engine.search_mode() == vesper_cognition::SearchMode::Hybrid)
+        {
             return;
         }
         std::thread::spawn(move || {
@@ -6846,7 +6927,9 @@ impl CognitionBundle {
                 "local-hash-embedder" => {
                     // LocalHashEmbedder cannot fail; flip to Hybrid
                     // immediately so the first search uses semantic recall.
-                    engine.set_search_mode(vesper_cognition::SearchMode::Hybrid);
+                    for engine in engines.iter().flatten() {
+                        engine.set_search_mode(vesper_cognition::SearchMode::Hybrid);
+                    }
                 }
                 _ => {
                     // Probe the live endpoint. The trait doesn't expose
@@ -6861,7 +6944,9 @@ impl CognitionBundle {
                                 "cognition: background probe succeeded — search mode \
                                  upgraded to Hybrid."
                             );
-                            engine.set_search_mode(vesper_cognition::SearchMode::Hybrid);
+                            for engine in engines.iter().flatten() {
+                                engine.set_search_mode(vesper_cognition::SearchMode::Hybrid);
+                            }
                         }
                         Err(err) => {
                             eprintln!(
@@ -10801,156 +10886,440 @@ fn drain_cognition_op(
     bundle: &CognitionBundle,
     state: &mut SessionState,
 ) {
-    use agent_vesper_tui::commands::CognitionOp;
-    let Some(engine) = bundle.engine.as_ref() else {
-        state.transcript.push(format!(
-            "cognition: engine unavailable (root {} could not be opened)",
-            bundle.root_display
-        ));
-        state.status = Some("cognitive memory is disabled.".into());
-        return;
-    };
-    let scope = vesper_cognition::Scope {
+    use agent_vesper_tui::commands::{CognitionOp, CognitionScope};
+    let user_scope = cognition_user_scope();
+    match op {
+        CognitionOp::Remember { text, scope } => {
+            let (destination, reason) = match scope {
+                CognitionScope::Smart => smart_memory_scope(&text),
+                CognitionScope::Global => (CognitionScope::Global, "explicit --global override"),
+                CognitionScope::Project => (CognitionScope::Project, "explicit --project override"),
+            };
+            let (engine, label, location) = match destination {
+                CognitionScope::Global => (
+                    bundle.global_engine.as_ref(),
+                    "globally",
+                    "user profile — available across projects".to_string(),
+                ),
+                CognitionScope::Project | CognitionScope::Smart => (
+                    bundle.engine.as_ref(),
+                    "for this project",
+                    bundle.project_display.clone(),
+                ),
+            };
+            let Some(engine) = engine else {
+                state.transcript.push(format!(
+                    "cognition: {label} memory store unavailable ({location})"
+                ));
+                state.status = Some("cognitive memory is disabled for that scope.".into());
+                return;
+            };
+            match add_cognitive_memory(engine, &user_scope, &text, true) {
+                Ok((events, fallback)) if !events.is_empty() => {
+                    state.transcript.push(format!("✓ Remembered {label}"));
+                    state.transcript.push(format!("  Scope: {location}"));
+                    state.transcript.push(format!("  Routing: {reason}"));
+                    if let Some(warning) = fallback {
+                        state.transcript.push(format!("  Note: {warning}"));
+                    }
+                    for event in events.iter().take(10) {
+                        state.transcript.push(format!(
+                            "  [{}] {}",
+                            short_memory_id(&event.id),
+                            event.memory.chars().take(100).collect::<String>()
+                        ));
+                    }
+                }
+                Ok(_) => state.transcript.push(format!(
+                    "cognition: nothing new to remember {label} (already known or no extractable facts)"
+                )),
+                Err(error) => state.transcript.push(format!("cognition: /remember failed: {error}")),
+            }
+        }
+        CognitionOp::Recall { query, scope } => {
+            let mut hits = Vec::new();
+            if scope != CognitionScope::Global
+                && let Some(engine) = bundle.engine.as_ref()
+            {
+                collect_scoped_hits(engine, &user_scope, &query, "project", &mut hits);
+            }
+            if scope != CognitionScope::Project
+                && let Some(engine) = bundle.global_engine.as_ref()
+            {
+                collect_scoped_hits(engine, &user_scope, &query, "global", &mut hits);
+            }
+            hits.sort_by(|left, right| right.1.score.total_cmp(&left.1.score));
+            hits.truncate(10);
+            if hits.is_empty() {
+                state
+                    .transcript
+                    .push(format!("cognition: no memories match \"{query}\""));
+            } else {
+                state.transcript.push(format!(
+                    "cognition: {} memor{} recalled for \"{query}\"",
+                    hits.len(),
+                    if hits.len() == 1 { "y" } else { "ies" }
+                ));
+                for (label, hit) in hits {
+                    state.transcript.push(format!(
+                        "  [{label} · {} · {:.2}] {}",
+                        short_memory_id(&hit.id),
+                        hit.score,
+                        hit.memory.chars().take(120).collect::<String>()
+                    ));
+                }
+            }
+        }
+        CognitionOp::Forget { id, scope } => {
+            let mut deleted = Vec::new();
+            let mut errors = Vec::new();
+            if scope != CognitionScope::Global
+                && let Some(engine) = bundle.engine.as_ref()
+            {
+                match delete_scoped_memory(engine, &user_scope, &id) {
+                    Ok(true) => deleted.push("project"),
+                    Ok(false) => {}
+                    Err(error) => errors.push(format!("project: {error}")),
+                }
+            }
+            if scope != CognitionScope::Project
+                && let Some(engine) = bundle.global_engine.as_ref()
+            {
+                match delete_scoped_memory(engine, &user_scope, &id) {
+                    Ok(true) => deleted.push("global"),
+                    Ok(false) => {}
+                    Err(error) => errors.push(format!("global: {error}")),
+                }
+            }
+            if !errors.is_empty() {
+                state
+                    .transcript
+                    .push(format!("cognition: /forget failed — {}", errors.join("; ")));
+            } else if deleted.is_empty() {
+                state
+                    .transcript
+                    .push(format!("cognition: no memory matches ID {id}"));
+            } else {
+                state.transcript.push(format!(
+                    "✓ Deleted memory {id} from {} scope{}",
+                    deleted.join(" and "),
+                    if deleted.len() == 1 { "" } else { "s" }
+                ));
+            }
+        }
+        CognitionOp::Promote { id } => transfer_memory(
+            bundle.engine.as_ref(),
+            bundle.global_engine.as_ref(),
+            &user_scope,
+            &id,
+            "project",
+            "global",
+            state,
+        ),
+        CognitionOp::Demote { id } => transfer_memory(
+            bundle.global_engine.as_ref(),
+            bundle.engine.as_ref(),
+            &user_scope,
+            &id,
+            "global",
+            "project",
+            state,
+        ),
+        CognitionOp::Audit { query } => {
+            state.transcript.push("Cognitive memory audit".into());
+            audit_memory_store(
+                bundle.global_engine.as_ref(),
+                &user_scope,
+                &format!(
+                    "Global — available across projects ({})",
+                    bundle.global_root_display
+                ),
+                query.as_deref(),
+                state,
+            );
+            audit_memory_store(
+                bundle.engine.as_ref(),
+                &user_scope,
+                &format!(
+                    "Project — {} ({})",
+                    bundle.project_display, bundle.root_display
+                ),
+                query.as_deref(),
+                state,
+            );
+        }
+    }
+    state.status = None;
+}
+
+fn cognition_user_scope() -> vesper_cognition::Scope {
+    vesper_cognition::Scope {
         user_id: Some(
             std::env::var("AGENT_VESPER_COGNITION_USER_ID").unwrap_or_else(|_| "local".into()),
         ),
         ..Default::default()
+    }
+}
+
+fn smart_memory_scope(text: &str) -> (agent_vesper_tui::commands::CognitionScope, &'static str) {
+    use agent_vesper_tui::commands::CognitionScope;
+    let lower = text.to_ascii_lowercase();
+    let global_signals = [
+        "my name",
+        "call me",
+        "i prefer",
+        "i like",
+        "i dislike",
+        "my favorite",
+        "my favourite",
+        "my pronouns",
+        "my timezone",
+        "i live in",
+        "i am based in",
+        "always respond",
+        "never respond",
+        "across projects",
+    ];
+    if global_signals.iter().any(|signal| lower.contains(signal)) {
+        return (
+            CognitionScope::Global,
+            "identity or stable preference detected",
+        );
+    }
+    let project_signals = [
+        "project",
+        "repository",
+        "repo",
+        "workspace",
+        "localhost",
+        "port ",
+        "runs on",
+        "build command",
+        "test command",
+        "branch",
+        "endpoint",
+        "cargo ",
+        "npm ",
+        "pnpm ",
+        "src/",
+        ".rs",
+        ".js",
+        ".ts",
+        ".toml",
+        ".yaml",
+        ".yml",
+    ];
+    if project_signals.iter().any(|signal| lower.contains(signal)) {
+        return (CognitionScope::Project, "project-specific fact detected");
+    }
+    (CognitionScope::Project, "conservative smart default")
+}
+
+fn add_cognitive_memory(
+    engine: &vesper_cognition::CognitiveMemory,
+    scope: &vesper_cognition::Scope,
+    text: &str,
+    infer: bool,
+) -> Result<(Vec<vesper_cognition::MemoryEvent>, Option<String>), String> {
+    let message = vesper_cognition::Message::user(text);
+    let request = |infer| vesper_cognition::AddRequest {
+        messages: std::slice::from_ref(&message),
+        scope,
+        extras: None,
+        expiration_date: None,
+        infer,
+        custom_instructions: None,
+        observation_date: None,
     };
-    match op {
-        CognitionOp::Remember { text } => {
-            let msg = vesper_cognition::Message::user(&text);
-            // First attempt: full LLM extraction (type/priority/scene classification).
-            let req = vesper_cognition::AddRequest {
-                messages: std::slice::from_ref(&msg),
-                scope: &scope,
-                extras: None,
-                expiration_date: None,
-                infer: true,
-                custom_instructions: None,
-                observation_date: None,
-            };
-            match engine.add(req) {
-                Ok(events) if !events.is_empty() => {
-                    let count = events.len();
+    match engine.add(request(infer)) {
+        Ok(events) => Ok((events, None)),
+        Err(error) if infer => {
+            let warning = format!("stored raw text because extraction was unavailable: {error}");
+            engine
+                .add(request(false))
+                .map(|events| (events, Some(warning)))
+                .map_err(|fallback| format!("{error}; raw-text fallback also failed: {fallback}"))
+        }
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+fn short_memory_id(id: &str) -> &str {
+    &id[..8.min(id.len())]
+}
+
+fn collect_scoped_hits(
+    engine: &vesper_cognition::CognitiveMemory,
+    scope: &vesper_cognition::Scope,
+    query: &str,
+    label: &'static str,
+    output: &mut Vec<(&'static str, vesper_cognition::MemoryHit)>,
+) {
+    let request = vesper_cognition::SearchRequest {
+        query,
+        scope,
+        filters: None,
+        top_k: 10,
+        threshold: 0.05,
+        explain: false,
+        show_expired: false,
+    };
+    if let Ok(hits) = engine.search(request) {
+        output.extend(hits.into_iter().map(|hit| (label, hit)));
+    }
+}
+
+fn find_scoped_memory(
+    engine: &vesper_cognition::CognitiveMemory,
+    scope: &vesper_cognition::Scope,
+    id: &str,
+) -> Result<Option<vesper_cognition::MemoryRecord>, String> {
+    let records = engine
+        .get_all(scope, None, 10_000, true)
+        .map_err(|error| error.to_string())?;
+    if let Some(exact) = records.iter().find(|record| record.id == id) {
+        return Ok(Some(exact.clone()));
+    }
+    let mut matches = records
+        .into_iter()
+        .filter(|record| record.id.starts_with(id));
+    let first = matches.next();
+    if first.is_some() && matches.next().is_some() {
+        return Err(format!("memory ID prefix {id} is ambiguous"));
+    }
+    Ok(first)
+}
+
+fn delete_scoped_memory(
+    engine: &vesper_cognition::CognitiveMemory,
+    scope: &vesper_cognition::Scope,
+    id: &str,
+) -> Result<bool, String> {
+    let Some(record) = find_scoped_memory(engine, scope, id)? else {
+        return Ok(false);
+    };
+    engine
+        .delete(&record.id)
+        .map_err(|error| error.to_string())?;
+    Ok(true)
+}
+
+fn find_scoped_memory_by_data(
+    engine: &vesper_cognition::CognitiveMemory,
+    scope: &vesper_cognition::Scope,
+    data: &str,
+) -> Result<Option<vesper_cognition::MemoryRecord>, String> {
+    engine
+        .get_all(scope, None, 10_000, true)
+        .map_err(|error| error.to_string())
+        .map(|records| records.into_iter().find(|candidate| candidate.data == data))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn transfer_memory(
+    source: Option<&Arc<vesper_cognition::CognitiveMemory>>,
+    destination: Option<&Arc<vesper_cognition::CognitiveMemory>>,
+    scope: &vesper_cognition::Scope,
+    id: &str,
+    source_label: &str,
+    destination_label: &str,
+    state: &mut SessionState,
+) {
+    let (Some(source), Some(destination)) = (source, destination) else {
+        state
+            .transcript
+            .push("cognition: one of the scoped memory stores is unavailable".into());
+        return;
+    };
+    let record = match find_scoped_memory(source, scope, id) {
+        Ok(Some(record)) => record,
+        Ok(None) => {
+            state.transcript.push(format!(
+                "cognition: no {source_label} memory matches ID {id}"
+            ));
+            return;
+        }
+        Err(error) => {
+            state.transcript.push(format!("cognition: {error}"));
+            return;
+        }
+    };
+    match add_cognitive_memory(destination, scope, &record.data, false) {
+        Ok(_) => {
+            let destination_record = match find_scoped_memory_by_data(
+                destination,
+                scope,
+                &record.data,
+            ) {
+                Ok(Some(destination_record)) => destination_record,
+                Ok(None) => {
                     state.transcript.push(format!(
-                        "cognition: remembered {count} fact{} from your input",
-                        if count == 1 { "" } else { "s" }
+                        "cognition: transfer failed — {destination_label} copy could not be verified; {source_label} copy was kept"
                     ));
-                    for evt in events.iter().take(10) {
-                        state.transcript.push(format!(
-                            "  [{}] {}",
-                            &evt.id[..8.min(evt.id.len())],
-                            evt.memory.chars().take(100).collect::<String>()
-                        ));
-                    }
+                    return;
                 }
-                Ok(_) => {
-                    state.transcript.push(
-                        "cognition: nothing new to remember (already known or no extractable facts)".into(),
-                    );
-                }
-                Err(err) => {
-                    // Fallback: if LLM extraction failed (429/balance/network),
-                    // store the raw text without extraction. The memory is still
-                    // searchable via BM25 keyword + entity boost — just without
-                    // type/priority/scene classification.
-                    let err_str = format!("{err}");
-                    let is_api_error = err_str.contains("429")
-                        || err_str.contains("balance")
-                        || err_str.contains("HTTP 5")
-                        || err_str.contains("send failed")
-                        || err_str.contains("credential");
-                    if is_api_error {
-                        let raw_req = vesper_cognition::AddRequest {
-                            messages: std::slice::from_ref(&msg),
-                            scope: &scope,
-                            extras: None,
-                            expiration_date: None,
-                            infer: false,
-                            custom_instructions: None,
-                            observation_date: None,
-                        };
-                        match engine.add(raw_req) {
-                            Ok(events) if !events.is_empty() => {
-                                state.transcript.push(format!(
-                                    "cognition: stored raw text (LLM extraction skipped — API error: {err_str})"
-                                ));
-                                for evt in events.iter().take(5) {
-                                    state.transcript.push(format!(
-                                        "  [{}] {}",
-                                        &evt.id[..8.min(evt.id.len())],
-                                        evt.memory.chars().take(100).collect::<String>()
-                                    ));
-                                }
-                            }
-                            _ => {
-                                state.transcript.push(format!(
-                                    "cognition: /remember failed completely — {err_str}"
-                                ));
-                            }
-                        }
-                    } else {
-                        state
-                            .transcript
-                            .push(format!("cognition: /remember failed: {err_str}"));
-                    }
-                }
-            }
-            state.status = None;
-        }
-        CognitionOp::Recall { query } => {
-            let req = vesper_cognition::SearchRequest {
-                query: &query,
-                scope: &scope,
-                filters: None,
-                top_k: 10,
-                threshold: 0.05,
-                explain: false,
-                show_expired: false,
-            };
-            match engine.search(req) {
-                Ok(hits) if !hits.is_empty() => {
-                    let count = hits.len();
+                Err(error) => {
                     state.transcript.push(format!(
-                        "cognition: {count} memor{} recalled for \"{query}\"",
-                        if count == 1 { "y" } else { "ies" }
+                        "cognition: transfer failed while verifying {destination_label} copy: {error}; {source_label} copy was kept"
                     ));
-                    for hit in hits.iter().take(10) {
-                        state.transcript.push(format!(
-                            "  [{:.2}] {}",
-                            hit.score,
-                            hit.memory.chars().take(120).collect::<String>()
-                        ));
-                    }
+                    return;
                 }
-                Ok(_) => {
-                    state
-                        .transcript
-                        .push(format!("cognition: no memories match \"{query}\""));
-                }
-                Err(err) => {
-                    state
-                        .transcript
-                        .push(format!("cognition: /recall failed: {err}"));
+            };
+            match source.delete(&record.id) {
+            Ok(()) => state.transcript.push(format!(
+                "✓ Moved [{}] from {source_label} to {destination_label} memory as [{}]",
+                short_memory_id(&record.id),
+                short_memory_id(&destination_record.id)
+            )),
+            Err(error) => state.transcript.push(format!(
+                "cognition: copied to {destination_label} as [{}], but could not remove {source_label} copy: {error}",
+                short_memory_id(&destination_record.id)
+            )),
+        }
+        }
+        Err(error) => state
+            .transcript
+            .push(format!("cognition: transfer failed: {error}")),
+    }
+}
+
+fn audit_memory_store(
+    engine: Option<&Arc<vesper_cognition::CognitiveMemory>>,
+    scope: &vesper_cognition::Scope,
+    heading: &str,
+    query: Option<&str>,
+    state: &mut SessionState,
+) {
+    state.transcript.push(format!("{heading}:"));
+    let Some(engine) = engine else {
+        state.transcript.push("  unavailable".into());
+        return;
+    };
+    match engine.get_all(scope, None, 200, false) {
+        Ok(records) => {
+            let query = query.map(str::to_ascii_lowercase);
+            let filtered: Vec<_> = records
+                .into_iter()
+                .filter(|record| {
+                    query.as_ref().is_none_or(|needle| {
+                        record.data.to_ascii_lowercase().contains(needle)
+                            || record.id.to_ascii_lowercase().contains(needle)
+                    })
+                })
+                .collect();
+            if filtered.is_empty() {
+                state.transcript.push("  (none)".into());
+            } else {
+                for record in filtered.iter().take(50) {
+                    state.transcript.push(format!(
+                        "  [{}] {}",
+                        short_memory_id(&record.id),
+                        record.data.chars().take(140).collect::<String>()
+                    ));
                 }
             }
-            state.status = None;
         }
-        CognitionOp::Forget { id } => {
-            match engine.delete(&id) {
-                Ok(()) => {
-                    state
-                        .transcript
-                        .push(format!("cognition: deleted memory {id}"));
-                }
-                Err(err) => {
-                    state
-                        .transcript
-                        .push(format!("cognition: /forget failed: {err}"));
-                }
-            }
-            state.status = None;
-        }
+        Err(error) => state.transcript.push(format!("  failed: {error}")),
     }
 }
 
@@ -11028,7 +11397,7 @@ fn render_embedding_status(bundle: &CognitionBundle, state: &mut SessionState) {
     if let Some(d) = cfg.dimension {
         state.transcript.push(format!("  dimension: {d}"));
     }
-    if let Some(engine) = bundle.engine.as_ref() {
+    if let Some(engine) = bundle.engine.as_ref().or(bundle.global_engine.as_ref()) {
         let mode = match engine.search_mode() {
             vesper_cognition::SearchMode::Hybrid => "Hybrid (semantic + BM25)",
             vesper_cognition::SearchMode::BM25Only => "BM25Only (keyword-only; will auto-upgrade)",
@@ -11101,16 +11470,24 @@ fn apply_embedding_set(
             "embedding: hot-reload starting in {:?} mode; background probe will upgrade to Hybrid if reachable.",
             initial_mode
         ));
-        if let Some(engine) = bundle.engine.as_ref() {
-            engine.set_search_mode(initial_mode);
+        let engines: Vec<_> = [bundle.engine.as_ref(), bundle.global_engine.as_ref()]
+            .into_iter()
+            .flatten()
+            .cloned()
+            .collect();
+        if !engines.is_empty() {
+            for engine in &engines {
+                engine.set_search_mode(initial_mode);
+            }
             // Spawn a probe that uses the new embedder. On success it flips
             // the engine to Hybrid; on failure it leaves BM25Only in place
             // (search() will still auto-upgrade on first successful embed).
-            let engine_arc = Arc::clone(engine);
             std::thread::spawn(move || {
                 let model_name = new_embedder.model_name();
                 if model_name == "local-hash-embedder" {
-                    engine_arc.set_search_mode(vesper_cognition::SearchMode::Hybrid);
+                    for engine in &engines {
+                        engine.set_search_mode(vesper_cognition::SearchMode::Hybrid);
+                    }
                     return;
                 }
                 match new_embedder.embed(
@@ -11121,7 +11498,9 @@ fn apply_embedding_set(
                         eprintln!(
                             "cognition: hot-reload probe succeeded — search mode upgraded to Hybrid."
                         );
-                        engine_arc.set_search_mode(vesper_cognition::SearchMode::Hybrid);
+                        for engine in &engines {
+                            engine.set_search_mode(vesper_cognition::SearchMode::Hybrid);
+                        }
                     }
                     Err(err) => {
                         eprintln!(
@@ -11148,46 +11527,31 @@ fn apply_embedding_set(
 /// user message content before sending to the provider; the persisted
 /// history is restored to the original text after the turn (silent).
 fn cognitive_context_for_prompt(bundle: &CognitionBundle, prompt: &str) -> Option<String> {
-    let engine = bundle.engine.as_ref()?;
-    let scope = vesper_cognition::Scope {
-        user_id: Some(
-            std::env::var("AGENT_VESPER_COGNITION_USER_ID").unwrap_or_else(|_| "local".into()),
-        ),
-        ..Default::default()
-    };
-    let req = vesper_cognition::SearchRequest {
-        query: prompt,
-        scope: &scope,
-        filters: None,
-        top_k: 5,
-        // LocalHashEmbedder produces pseudo-random vectors that yield low
-        // absolute cosine similarities even for clearly related texts (it
-        // has no semantic knowledge). With LmStudioEmbedder (real neural
-        // embeddings) the semantic signal dominates and 0.02 still filters
-        // pure noise. With LocalHashEmbedder the BM25 component dominates
-        // and any shared word clears 0.02 — so vague prompts that share
-        // even one term with a stored memory get surfaced.
-        threshold: 0.02,
-        explain: false,
-        show_expired: false,
-    };
-    let hits = match engine.search(req) {
-        Ok(hits) => hits,
-        Err(err) => {
-            // Gap 12: previously `.ok()?` silently returned None on any
-            // embedder failure (e.g. LM Studio offline at search time even
-            // though settings existed at startup). The user experienced
-            // "the AI forgot everything" with no log signal. Surface the
-            // failure to stderr so it is diagnosable. Auto-recall is
-            // disabled for this turn only — the next prompt will retry.
-            eprintln!(
-                "cognition: auto-recall skipped this turn — search failed: {err}. \
-                 (The configured embedder endpoint may be unreachable. BM25 fallback is \
-                 a future enhancement — for now no context is injected.)"
-            );
-            return None;
+    let scope = cognition_user_scope();
+    let mut hits: Vec<(&str, vesper_cognition::MemoryHit)> = Vec::new();
+    for (label, engine) in [
+        ("project", bundle.engine.as_ref()),
+        ("global", bundle.global_engine.as_ref()),
+    ] {
+        let Some(engine) = engine else { continue };
+        let request = vesper_cognition::SearchRequest {
+            query: prompt,
+            scope: &scope,
+            filters: None,
+            top_k: 5,
+            threshold: 0.02,
+            explain: false,
+            show_expired: false,
+        };
+        match engine.search(request) {
+            Ok(found) => hits.extend(found.into_iter().map(|hit| (label, hit))),
+            Err(error) => eprintln!(
+                "cognition: {label} auto-recall skipped this turn — search failed: {error}"
+            ),
         }
-    };
+    }
+    hits.sort_by(|left, right| right.1.score.total_cmp(&left.1.score));
+    hits.truncate(5);
     if hits.is_empty() {
         return None;
     }
@@ -11197,9 +11561,9 @@ fn cognitive_context_for_prompt(bundle: &CognitionBundle, prompt: &str) -> Optio
     // Truncate each hit to 200 chars; stop adding hits when budget is reached.
     let max_chars = 2000 * 4; // default 2000 tokens
     let mut chars_used = block.len();
-    for hit in &hits {
+    for (scope_label, hit) in &hits {
         let line = format!(
-            "- ({:.2}) {}\n",
+            "- [{scope_label}] ({:.2}) {}\n",
             hit.score,
             hit.memory.chars().take(200).collect::<String>()
         );
@@ -11876,6 +12240,96 @@ mod tests {
             "the recalled memory must mention the stored facts; got: {combined}"
         );
         let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn smart_memory_routing_is_global_for_identity_and_local_for_project_facts() {
+        use agent_vesper_tui::commands::CognitionScope;
+        assert_eq!(
+            smart_memory_scope("My name is Alex").0,
+            CognitionScope::Global
+        );
+        assert_eq!(
+            smart_memory_scope("I prefer concise answers").0,
+            CognitionScope::Global
+        );
+        assert_eq!(
+            smart_memory_scope("The mock server runs on port 8321").0,
+            CognitionScope::Project
+        );
+        assert_eq!(
+            smart_memory_scope("Use cargo test for this repository").0,
+            CognitionScope::Project
+        );
+        assert_eq!(
+            smart_memory_scope("An ambiguous fact").0,
+            CognitionScope::Project,
+            "uncertain memories must default conservatively to project scope"
+        );
+    }
+
+    #[test]
+    fn promotion_and_demotion_use_the_destination_id_between_scoped_stores() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let project_path = std::env::temp_dir().join(format!("vesper-project-{unique}.db"));
+        let global_path = std::env::temp_dir().join(format!("vesper-global-{unique}.db"));
+        let config = || vesper_cognition::CognitiveConfig::default();
+        let ports = || vesper_cognition::CognitionPorts {
+            embedder: Arc::new(vesper_cognition::LocalHashEmbedder::new(
+                vesper_cognition::CognitiveConfig::default().embedding_dim,
+            )),
+            extractor: Arc::new(NoOpExtractionAdapter),
+            entity_nlp: Arc::new(ZaiEntityExtractor),
+        };
+        let project = Arc::new(vesper_cognition::open(&project_path, ports(), config()).unwrap());
+        let global = Arc::new(vesper_cognition::open(&global_path, ports(), config()).unwrap());
+        let scope = vesper_cognition::Scope {
+            user_id: Some("test-user".into()),
+            ..Default::default()
+        };
+        let (events, _) = add_cognitive_memory(&project, &scope, "My name is Alex", false)
+            .expect("project add succeeds");
+        let id = events[0].id.clone();
+        let mut state = SessionState::new();
+        transfer_memory(
+            Some(&project),
+            Some(&global),
+            &scope,
+            &id,
+            "project",
+            "global",
+            &mut state,
+        );
+        assert!(project.get_all(&scope, None, 10, true).unwrap().is_empty());
+        let global_records = global.get_all(&scope, None, 10, true).unwrap();
+        assert_eq!(global_records.len(), 1);
+        assert!(global_records[0].data.contains("Alex"));
+        let global_id = global_records[0].id.clone();
+        let promoted = state.transcript.join("\n");
+        assert!(promoted.contains("project to global"));
+        assert!(promoted.contains(short_memory_id(&global_id)));
+
+        transfer_memory(
+            Some(&global),
+            Some(&project),
+            &scope,
+            &global_id,
+            "global",
+            "project",
+            &mut state,
+        );
+        assert!(global.get_all(&scope, None, 10, true).unwrap().is_empty());
+        let project_records = project.get_all(&scope, None, 10, true).unwrap();
+        assert_eq!(project_records.len(), 1);
+        assert!(project_records[0].data.contains("Alex"));
+        let demoted = state.transcript.join("\n");
+        assert!(demoted.contains("global to project"));
+        assert!(demoted.contains(short_memory_id(&project_records[0].id)));
+        let _ = std::fs::remove_file(project_path);
+        let _ = std::fs::remove_file(global_path);
     }
 
     #[test]

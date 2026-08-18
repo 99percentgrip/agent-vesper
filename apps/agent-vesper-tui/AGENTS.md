@@ -30,10 +30,10 @@ business logic.
 - `src/commands.rs` — slash-command parsing, registry, and resolution
   against the active provider's superpowers. Tier C Phase 7 (ADR 0010): the
   registry now covers the **entire** Python oracle `LOCAL_COMMANDS` surface
-  (80 distinct oracle command names, including `/export last`, + 11
-  Vesper-native = 91 commands; Vesper-native = approve, cancel, auth,
+  (80 distinct oracle command names, including `/export last`, + 14
+  Vesper-native = 94 commands; Vesper-native = approve, cancel, auth,
   lmstudio, provider, embedding, quit, remember, recall, forget,
-  interview-limit). The
+  memories, promote, demote, interview-limit). The
   `ORACLE_COMMAND_SURFACE` const table is the single source of truth for the
   migration matrix. ADR 0016 follow-up: `/embedding` (Status/Set/Clear) is
   the most recent Vesper-native addition; it parses
@@ -57,6 +57,17 @@ business logic.
   remains 4. The command, palette, tool schema, and executor share one typed
   policy, and the schema is rebuilt for every turn so the model sees the
   active value.
+  ADR 0021: cognitive memory is composed as two independent engines. The
+  existing project store remains at `AGENT_VESPER_COGNITION_ROOT` or
+  `.agent-vesper/cognition/`; the global store uses
+  `AGENT_VESPER_GLOBAL_COGNITION_ROOT`, then
+  `$XDG_DATA_HOME/agent-vesper/cognition/`, then
+  `~/.local/share/agent-vesper/cognition/`. `/remember` smart-routes stable
+  identity/preferences globally and repository facts locally, conservatively
+  defaults ambiguous text to the project, accepts `--global` / `--project`
+  (`--local`) overrides, and always echoes the chosen scope and reason.
+  `/recall` and automatic recall search both stores, `/memories` audits them,
+  and `/promote` / `/demote` move a short- or full-ID memory between them.
 - `src/dispatch.rs` — pure, terminal-free event-loop dispatch: the bridge
   between the command registry, the Plan Mode state machine, and the
   `SuperpowerOverrides` store. Owns `SessionState`, `DispatchOutcome`, and

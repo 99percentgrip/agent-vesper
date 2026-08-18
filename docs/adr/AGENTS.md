@@ -37,6 +37,9 @@ Own accepted, durable architecture and compatibility decisions for Agent Vesper.
   authenticated session routes, confined sibling assets, reusable in-process
   sessions, precise annotation targets, richer interviews, conditional HTML
   review triggering, and real-browser verification. ADR 0019 remains active.
+- ADR 0021 composes independent project and global cognitive-memory stores in
+  the TUI, with conservative smart routing, explicit overrides, visible scope
+  confirmation, lifecycle moves, and a two-scope audit surface.
 
 ## Verification
 

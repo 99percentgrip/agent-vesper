@@ -7,7 +7,10 @@ native Rust emulation of the mem0 V3 ("April 2026 new algorithm") oracle at
 `/home/alex/Projects/mem0` (pin `29fa4155`). Single-pass ADD-only extraction,
 hybrid semantic + FTS5 BM25 + entity-boost retrieval, and an embedded SQLite
 backing. This is the subsystem that backs the TUI's cognitive-memory surface
-(`/remember`, `/recall`, `/forget` once the command layer is wired).
+(`/remember`, `/recall`, `/forget`, `/memories`, `/promote`, and `/demote`).
+The crate owns one store per `CognitiveMemory` instance; ADR 0021's independent
+global and project instances and routing policy belong to the TUI composition
+boundary, not this provider-neutral engine.
 
 This crate is **independent of** `vesper-memory`: `vesper-memory` continues to
 own the append-only JSONL memory graph, learned skills, user profile, and

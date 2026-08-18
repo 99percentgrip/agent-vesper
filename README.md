@@ -23,10 +23,10 @@ Built as a native port of the [Native GLM ACP](https://github.com/99percentgrip/
 ## Features
 
 <table>
-<tr><td><b>🧠 Cognitive Memory</b></td><td>The agent extracts facts from every conversation, stores them in a local SQLite database, and <b>silently recalls relevant memories before each reply</b>. You never repeat yourself. Type <code>/remember</code> to add a fact manually, <code>/recall</code> to search, <code>/forget</code> to delete.</td></tr>
+<tr><td><b>🧠 Cognitive Memory</b></td><td>The agent extracts facts from every conversation and <b>silently recalls relevant memories before each reply</b>. <code>/remember</code> smart-routes stable identity/preferences globally and repository facts to the current project, always confirms the chosen scope, and accepts <code>--global</code> or <code>--project</code> overrides. Use <code>/memories</code> to audit both stores and <code>/promote</code>/<code>/demote</code> to correct scope later.</td></tr>
 <tr><td><b>📝 Rich Markdown TUI</b></td><td>Single-column terminal UI (Claude Code / Codex style): the Conversation panel takes the full body height and streams <b>thinking inline</b> (dim italic <code>🧠 Thinking · strategy · mode · risk</code> block, F2 to toggle), <b>live tool telemetry</b> with <code>⏺</code> action / <code>⎿</code> result glyphs, and the answer in one feed — plus syntax-highlighted code blocks, full-width user-turn role banners, an interactive centered tool-permission modal, mouse-wheel + PageUp/PageDown/Home/End scrolling with a visible scrollbar, a live slash-command palette, and <b>bracketed-paste mode</b> (multi-line clipboard content arrives as a single contiguous insertion — no premature submits on embedded newlines). Built on <code>ratatui</code> + <code>crossterm</code>.</td></tr>
 <tr><td><b>🎯 Plan Mode</b></td><td>A pure 4-phase state machine (<code>NORMAL → PLANNING → REVIEW → EXECUTING</code>) that lets the model author a plan, you review it, then it executes with bounded tool calls.</td></tr>
-<tr><td><b>🔧 87 Slash Commands</b></td><td>The complete Python oracle command surface — memory, skills, checkpoints, MCP, plugins, goals, awareness, sessions, export, CI status, and more.</td></tr>
+<tr><td><b>🔧 94 Slash Commands</b></td><td>The complete Python oracle command surface plus Vesper-native controls — scoped cognitive memory, VesperLens interview limits, embeddings, authentication, provider settings, and more.</td></tr>
 <tr><td><b>🔐 Provider-Neutral Auth</b></td><td>Credentials route through the provider layer — never hardcoded. OS keyring with owner-only Unix vault fallback. <code>/auth</code> force-rotates without restart.</td></tr>
 <tr><td><b>📦 Ed25519-Signed Plugins</b></td><td>Declarative plugin packages (permissions only — no executable code). Unsigned loading is structurally erased from <code>--release</code> builds via <code>#[cfg(debug_assertions)]</code>.</td></tr>
 <tr><td><b>🔄 Session Lineage</b></td><td>Workspace snapshots, rollback, session branching, and a bounded cron/export/clipboard/CI surface — all RAII-safe with strict <code>Drop</code> file-handle discipline.</td></tr>
@@ -99,11 +99,12 @@ Credentials are never touched by the uninstaller.
 # 1. Launch the TUI
 agent-vesper-tui
 
-# 2. Teach it who you are
+# 2. Teach it who you are (smart-routed globally with a visible confirmation)
 /remember I'm Alex, a Rust developer working on Agent Vesper
 
-# 3. Teach it your preferences
+# 3. Teach it your preferences (force either scope when needed)
 /remember I prefer conventional commits and dislike unwrapped unwrap() calls
+/remember --project The mock server runs on port 8321
 
 # 4. Ask a question — it already knows you
 What's the best way to handle errors in my codebase?
@@ -121,9 +122,12 @@ The agent silently recalls relevant memories before every reply. You don't need 
 
 | Command | Description |
 |---|---|
-| `/remember <text>` | Add a fact to the cognitive memory store |
-| `/recall <query>` | Search the cognitive memory store |
-| `/forget <id>` | Delete a cognitive memory by ID |
+| `/remember [--global\|--project] <text>` | Smart-route a fact and visibly confirm its global or project scope (`--local` aliases `--project`) |
+| `/recall [--global\|--project] <query>` | Search both cognitive stores, or restrict the scope |
+| `/forget [--global\|--project] <id>` | Delete a cognitive memory by full or displayed short ID |
+| `/memories [query]` | Audit global and project cognitive memories with scope labels and IDs |
+| `/promote <id>` | Move a project memory into global memory |
+| `/demote <id>` | Move a global memory into the current project |
 | `/memory [query]` | List project-local memory entries |
 | `/goal <text>` | Set a persistent goal |
 | `/skills` | List learned skills |
@@ -384,16 +388,41 @@ All configurable from the TUI — no restart needed:
 
 | Env Var | Default | Description |
 |---|---|---|
-| `AGENT_VESPER_COGNITION_ROOT` | `.agent-vesper/cognition/` | SQLite database location |
+| `AGENT_VESPER_COGNITION_ROOT` | `.agent-vesper/cognition/` | Current project's cognitive SQLite store (existing location retained for compatibility) |
+| `AGENT_VESPER_GLOBAL_COGNITION_ROOT` | `$XDG_DATA_HOME/agent-vesper/cognition/` or `~/.local/share/agent-vesper/cognition/` | Cross-project cognitive SQLite store |
 | `AGENT_VESPER_COGNITION_USER_ID` | `local` | Scope identifier for memory partitioning |
 | `AGENT_VESPER_COGNITION_MODEL` | `glm-4.6` | Extraction LLM model |
 | `AGENT_VESPER_COGNITION_EMBEDDING_API` | (local hash) | Set to `bigmodel` for BigModel neural embeddings (requires BigModel CN JWT auth) |
 | `AGENT_VESPER_COGNITION_EMBEDDING_MODEL` | `text-embedding-nomic-embed-text-v1.5` | LM Studio embedding model name (used when LM Studio is the active provider) |
 | `LMSTUDIO_API_KEY` | (none) | Optional bearer token for a metered LM Studio embedding endpoint |
 
-### Multi-Provider Embedding Strategy
+Smart routing sends identity and stable preference phrases (for example, “my
+name” or “I prefer”) to the global store, sends repository/runtime/build facts
+to the project store, and conservatively keeps ambiguous facts project-local.
+Every `/remember` prints the selected scope and routing reason. Explicit flags
+override the heuristic, while `/promote` and `/demote` repair a decision without
+deleting and retyping the memory. Automatic recall searches both stores.
 
-The cognitive memory engine picks its embedder from the **active chat provider**, not the project default:
+#### Scoped memory lifecycle (v0.20.45)
+
+Project memory keeps the existing `.agent-vesper/cognition/` database, so the
+upgrade does not move or rewrite prior data. Global memory uses the platform
+data directory and follows the user across projects on the same machine.
+Transfers are copy-verified before source deletion and report the destination
+ID because each store assigns its own memory ID:
+
+```text
+✓ Moved [d3b53280] from global to project memory as [40d30a6a]
+```
+
+Use the displayed destination ID for a later `/promote`, `/demote`, or
+`/forget`. `/memories [query]` shows both stores and their current IDs.
+
+### Embedding Strategy
+
+The cognitive memory engine uses the provider-independent
+`.agent-vesper/cognition/embedding.json` configuration when present. Only
+installations without that file retain the legacy active-chat-provider routing:
 
 | Active provider | Embedder | Behavior |
 |---|---|---|
@@ -401,7 +430,10 @@ The cognitive memory engine picks its embedder from the **active chat provider**
 | ZAI + `AGENT_VESPER_COGNITION_EMBEDDING_API=bigmodel` | `BigModelEmbeddingAdapter` | BigModel CN neural embeddings (requires JWT auth) |
 | ZAI (default) or no provider | `LocalHashEmbedder` | Zero-network bag-of-words fallback. Cosine only fires on lexical overlap. |
 
-**Automatic migration**: when the active embedder changes (e.g. switching providers), the engine compares the new model name against the `embedding_model` row in `cognition_meta` and re-embeds every memory + entity in chunks of 256 if they differ. The startup log shows `"cognition: re-embedded N memories and M entities to model \"...\" (768-d)."` confirming the migration ran.
+**Automatic migration**: when the configured embedder changes, the engine
+compares the new model name against the `embedding_model` row in
+`cognition_meta` and re-embeds every memory + entity in chunks of 256 if they
+differ. The startup log reports the migrated counts and target model.
 
 ### Provider-Independent Embedding Layer (ADR 0016, v0.20.14 + v0.20.15)
 
