@@ -2,6 +2,7 @@
   "name": "devops",
   "description": "SDLC review and handoff routing for verified outcomes.",
   "skills": [
+    "rust-workspace-disk-hygiene",
     "sdlc-review"
   ],
   "instruction": "Read a skill with read_skill (optionally section=...) before following it. Skill resources live under ~/.agent-vesper/memory/skills/<slug>/."
