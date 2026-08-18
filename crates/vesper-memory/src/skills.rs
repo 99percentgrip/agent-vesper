@@ -16,9 +16,11 @@ use crate::io::write_atomic;
 use crate::types::SkillSlug;
 
 /// Maximum allowed markdown body size for a single skill (in bytes).
-pub const MAX_SKILL_BYTES: usize = 24_000;
+/// Sized to admit curated reference skills (the largest migrated library
+/// document is ~72 KB) with growth headroom; raised from 24 KB.
+pub const MAX_SKILL_BYTES: usize = 128_000;
 /// Hard cap on the number of skill files the store will enumerate.
-pub const MAX_SKILL_FILES: usize = 200;
+pub const MAX_SKILL_FILES: usize = 500;
 /// Maximum number of skills referenced by one bundle.
 pub const MAX_BUNDLE_SKILLS: usize = 32;
 /// Maximum serialized size of one bundle.
@@ -311,6 +313,21 @@ mod tests {
         let body = "x".repeat(MAX_SKILL_BYTES + 1);
         let err = store.write(&slug, &body).unwrap_err();
         assert_eq!(err, MemoryError::BoundsViolated("skill body size"));
+    }
+
+    #[test]
+    fn caps_admit_curated_skill_library() {
+        // Caps were raised (24 KB / 200 files -> 128 KB / 500 files) so
+        // migrated curated reference skills — the largest observed is
+        // ~72 KB — round-trip through learn_skill/manage_skill without
+        // tripping BoundsViolated.
+        let temp = TempDir::new().unwrap();
+        let (_root, store) = store_under(&temp);
+        let slug = SkillSlug::new("curated-large").unwrap();
+        let body = format!("# Curated library skill\n\n{}", "x".repeat(72_171));
+        store.write(&slug, &body).unwrap();
+        assert!(store.read(&slug).unwrap().len() > 72_000);
+        assert_eq!(store.list().len(), 1);
     }
 
     #[test]
