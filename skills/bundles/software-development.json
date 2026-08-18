@@ -3,6 +3,7 @@
   "description": "Core engineering workflows: planning, spikes, TDD, systematic debugging, code review, and language debuggers.",
   "skills": [
     "dogfood",
+    "inspect-live-dom",
     "node-inspect-debugger",
     "plan",
     "python-debugpy",

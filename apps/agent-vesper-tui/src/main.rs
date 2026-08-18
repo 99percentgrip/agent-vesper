@@ -9995,14 +9995,17 @@ fn drain_memory_op(
                 ));
                 return;
             };
-            let summaries = store.list();
+            let mut summaries = store.list();
+            summaries.sort_by(|a, b| a.slug.cmp(&b.slug));
             if summaries.is_empty() {
                 state.transcript.push("skills: (no learned skills)".into());
             } else {
                 state
                     .transcript
                     .push(format!("skills: {} learned skill(s)", summaries.len()));
-                for summary in summaries.iter().take(50) {
+                // List every skill (sorted); the historical `.take(50)` cap
+                // silently hid curated-library skills from `/skills`.
+                for summary in summaries {
                     state
                         .transcript
                         .push(format!("  - {}: {}", summary.slug, summary.headline));
