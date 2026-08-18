@@ -45,6 +45,9 @@ subsystem that backs the Tier C Phase 8 un-stubbed commands
   exceed bounds are rejected, not silently truncated.
 - Skill bundles are validated before atomic replacement: at most 32
   validated skill slugs and 32 KiB serialized JSON per bundle.
+- Learned-skill files are bounded: the store enumerates at most 500
+  skill files and each body is at most 128 KB (raised 2026-08 so
+  migrated curated reference skills round-trip through `learn_skill`).
 
 ## Work Guidance
 
