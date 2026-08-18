@@ -11,7 +11,7 @@ Last updated: 2026-08-01
 | Persistence, memory, checkpoints, MCP, plugins, workers | IMPLEMENTED | Durable bounded stores and typed hosted/slash-command bridges; no SQLite in checkpoints; unsigned plugins compile only in debug |
 | Native TUI command surface | IMPLEMENTED | 83 registered routes including distinct `/export last`; no deferred fallback; missing routes fail closed |
 | Native TUI interaction surface | IMPLEMENTED AND LOCALLY VERIFIED | Full palette/value pickers, mouse-operable footer/rows, reasoning/activity/TODO/report panels, working-tree views, Vim, keybinds, image/screenshot, sound, QR mobile approvals, and real optional local voice pipeline |
-| Packaging/install/uninstall | IMPLEMENTED AND LOCALLY VERIFIED | Cross-platform scripts; checksum-verified local release installation for both binaries; release archives bundle the 82-skill seed library seeded non-destructively by both installers |
+| Packaging/install/uninstall | IMPLEMENTED AND LOCALLY VERIFIED | Cross-platform scripts; checksum-verified local release installation for both binaries; release archives bundle the 93-skill seed library seeded non-destructively by both installers |
 | Frozen-oracle implementation parity gate | PASSED LOCALLY | `docs/parity-audit-report.md`; AST command audit, `cargo xtask verify`, release structural audit, installer smoke, Cargo Deny, and RustSec audit are green |
 | Multi-provider architecture | READY | Core/runtime/TUI controls are provider-neutral and provider-specific catalogs stay in adapters |
 | Additional production providers | NOT CLAIMED | Z.ai is the only real production adapter currently registered; no provider/model is invented to inflate readiness |
