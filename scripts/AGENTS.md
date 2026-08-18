@@ -55,6 +55,12 @@ with each release.
 - Uninstallers never remove provider credentials. OS-keyring entries and the
   private-vault fallback are outside the installer-owned artifact set.
 - The installers call both binaries with `--version` to confirm success.
+- The installers seed the curated skill library (from the bundled
+  `skills/` archive directory) into `~/.agent-vesper/memory/`
+  non-destructively: existing files win, slugs listed in
+  `.seed-manifest` are never resurrected, and new seed skills from later
+  releases are added on upgrade. `AGENT_VESPER_MEMORY_ROOT` overrides the
+  destination. Uninstallers never touch `~/.agent-vesper/` (user data).
 
 ## Verification
 

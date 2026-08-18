@@ -1,0 +1,8 @@
+{
+  "name": "social-media",
+  "description": "Skills for interacting with social platforms and social-media workflows — posting, reading, monitoring, and account operations.",
+  "skills": [
+    "xurl"
+  ],
+  "instruction": "Read a skill with read_skill (optionally section=...) before following it. Skill resources live under ~/.agent-vesper/memory/skills/<slug>/."
+}

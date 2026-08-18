@@ -1,0 +1,8 @@
+{
+  "name": "smart-home",
+  "description": "Skills for controlling smart home devices — lights, switches, sensors, and home automation systems.",
+  "skills": [
+    "openhue"
+  ],
+  "instruction": "Read a skill with read_skill (optionally section=...) before following it. Skill resources live under ~/.agent-vesper/memory/skills/<slug>/."
+}

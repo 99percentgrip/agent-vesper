@@ -1,0 +1,10 @@
+{
+  "name": "media",
+  "description": "Skills for working with media content — YouTube transcripts, GIF search, music generation, and audio visualization.",
+  "skills": [
+    "gif-search",
+    "songsee",
+    "youtube-content"
+  ],
+  "instruction": "Read a skill with read_skill (optionally section=...) before following it. Skill resources live under ~/.agent-vesper/memory/skills/<slug>/."
+}

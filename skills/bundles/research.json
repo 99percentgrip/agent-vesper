@@ -1,0 +1,14 @@
+{
+  "name": "research",
+  "description": "Skills for academic research, paper discovery, literature review, domain reconnaissance, market data, content monitoring, and scientific knowledge retrieval.",
+  "skills": [
+    "arxiv",
+    "blocked-page-recovery",
+    "blogwatcher",
+    "competitor-news-monitor",
+    "grounded-citations",
+    "llm-wiki",
+    "research-paper-writing"
+  ],
+  "instruction": "Read a skill with read_skill (optionally section=...) before following it. Skill resources live under ~/.agent-vesper/memory/skills/<slug>/."
+}

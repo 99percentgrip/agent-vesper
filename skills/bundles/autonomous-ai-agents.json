@@ -1,0 +1,13 @@
+{
+  "name": "autonomous-ai-agents",
+  "description": "Skills for spawning and orchestrating autonomous AI coding agents and multi-agent workflows — running independent agent processes, delegating tasks, and coordinating parallel workstreams.",
+  "skills": [
+    "agent-vesper",
+    "claude-code",
+    "codex",
+    "computer-use",
+    "merge-reconciler",
+    "opencode"
+  ],
+  "instruction": "Read a skill with read_skill (optionally section=...) before following it. Skill resources live under ~/.agent-vesper/memory/skills/<slug>/."
+}

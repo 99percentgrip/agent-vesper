@@ -1,0 +1,8 @@
+{
+  "name": "note-taking",
+  "description": "Note taking skills, to save information, assist with research, and collab on multi-session planning and information sharing.",
+  "skills": [
+    "obsidian"
+  ],
+  "instruction": "Read a skill with read_skill (optionally section=...) before following it. Skill resources live under ~/.agent-vesper/memory/skills/<slug>/."
+}

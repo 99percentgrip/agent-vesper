@@ -85,6 +85,7 @@ jobs:
           mkdir -p "$staging" "$assets"
           cp "target/${{ matrix.target }}/release/agent-vesper-acp" "$staging/agent-vesper-acp"
           cp "target/${{ matrix.target }}/release/agent-vesper-tui" "$staging/agent-vesper-tui"
+          cp -r skills "$staging/skills"
           tar -czf "$assets/${{ matrix.asset }}" -C "$RUNNER_TEMP" agent-vesper-acp
           (cd "$assets" && sha256sum "${{ matrix.asset }}" > "${{ matrix.asset }}.sha256")
       - name: Package Windows archive
@@ -96,6 +97,7 @@ jobs:
           New-Item -ItemType Directory -Path $staging, $assets -Force | Out-Null
           Copy-Item "target/${{ matrix.target }}/release/agent-vesper-acp.exe" (Join-Path $staging "agent-vesper-acp.exe")
           Copy-Item "target/${{ matrix.target }}/release/agent-vesper-tui.exe" (Join-Path $staging "agent-vesper-tui.exe")
+          Copy-Item -Recurse skills (Join-Path $staging "skills")
           $archive = Join-Path $assets "${{ matrix.asset }}"
           Compress-Archive -Path $staging -DestinationPath $archive -Force
           $hash = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
