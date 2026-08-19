@@ -488,9 +488,18 @@ async fn handle_request(
             }
         }
         ClientRequest::NewSessionRequest(request) => {
+            // Client-declared MCP servers are accepted and ignored (oracle
+            // parity): the frozen Python oracle receives `mcp_servers` and
+            // never rejects a session over it, and clients such as Zed pass
+            // every configured context server on each `session/new`, so
+            // rejecting here made the agent unloadable for any user with MCP
+            // servers configured. The harness keeps its own MCP registry; no
+            // client-provided server is ever launched or advertised.
             if !request.mcp_servers.is_empty() {
-                return responder
-                    .respond_with_error(agent_client_protocol::Error::invalid_params());
+                tracing::warn!(
+                    count = request.mcp_servers.len(),
+                    "ignoring client-declared MCP servers; the harness MCP registry owns MCP"
+                );
             }
             let response = execute!(runtime.execute(command(
                 HarnessCommandPayload::CreateSession {

@@ -472,6 +472,96 @@ fn cancellation_after_reasoning_emits_no_post_cancel_content() {
     server.join().unwrap();
 }
 
+#[test]
+fn session_new_with_client_mcp_servers_creates_session() {
+    // Oracle parity: clients such as Zed attach every configured MCP server to
+    // each `session/new`. The agent must accept and ignore them (the frozen
+    // Python oracle never rejects a session over `mcp_servers`) instead of
+    // answering `-32602 Invalid params`, which made the agent unloadable in
+    // Zed for any user with MCP servers configured. No provider call happens
+    // during session creation, so no loopback fixture is needed.
+    let temp = std::env::temp_dir().join(format!("agent-vesper-mcp-parity-{}", std::process::id()));
+    std::fs::create_dir_all(&temp).unwrap();
+    let mut command = Command::new(env!("CARGO_BIN_EXE_agent-vesper-acp"));
+    command
+        .env_clear()
+        .env("HOME", &temp)
+        .env("XDG_CONFIG_HOME", temp.join("config"))
+        .env("XDG_CACHE_HOME", temp.join("cache"))
+        .env("XDG_DATA_HOME", temp.join("data"))
+        .env("XDG_STATE_HOME", temp.join("state"))
+        .env("ZAI_API_KEY", CANARY)
+        .env("AGENT_VESPER_FULL_HARNESS", "0")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    for key in critical_environment_keys() {
+        if let Ok(value) = std::env::var(key) {
+            command.env(key, value);
+        }
+    }
+    let mut child = command.spawn().unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let stdout = child.stdout.take().unwrap();
+    let (line_sender, line_receiver) = mpsc::channel();
+    let reader = thread::spawn(move || {
+        for line in BufReader::new(stdout).lines() {
+            line_sender.send(line.unwrap()).unwrap();
+        }
+    });
+
+    send(
+        &mut stdin,
+        json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1}}),
+    );
+    let initialize = response_for(&line_receiver, 1, &mut Vec::new());
+    assert_eq!(initialize["result"]["protocolVersion"], 1);
+
+    // Zed-style stdio server (untagged variant) plus a typed http server.
+    send(
+        &mut stdin,
+        json!({"jsonrpc":"2.0","id":2,"method":"session/new","params":{
+            "cwd":"/tmp",
+            "mcpServers":[
+                {"name":"github","command":"/usr/bin/npx","args":["-y","@github/mcp-server"],"env":[{"name":"GITHUB_TOKEN","value":"x"}]},
+                {"type":"http","name":"docs","url":"https://mcp.example.test/sse"}
+            ]
+        }}),
+    );
+    let mut transcript = Vec::new();
+    let session_response = response_for(&line_receiver, 2, &mut transcript);
+    assert!(
+        session_response.get("error").is_none(),
+        "session/new must not reject client-declared MCP servers: {session_response}"
+    );
+    assert!(
+        session_response["result"]["sessionId"]
+            .as_str()
+            .is_some_and(|id| !id.is_empty()),
+        "session/new must return a session id: {session_response}"
+    );
+
+    drop(stdin);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break status;
+        }
+        assert!(Instant::now() < deadline, "ACP process did not exit on EOF");
+        thread::sleep(Duration::from_millis(10));
+    };
+    assert!(status.success());
+    reader.join().unwrap();
+    let mut stderr = String::new();
+    child
+        .stderr
+        .take()
+        .unwrap()
+        .read_to_string(&mut stderr)
+        .unwrap();
+    assert!(!stderr.contains(CANARY));
+}
+
 fn send(stdin: &mut impl Write, value: Value) {
     serde_json::to_writer(&mut *stdin, &value).unwrap();
     stdin.write_all(b"\n").unwrap();

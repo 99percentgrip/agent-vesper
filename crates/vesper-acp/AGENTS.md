@@ -25,6 +25,10 @@ update mapping, and bounded asynchronous dispatch into `vesper-runtime`.
 - Corrupt, unsupported, bounded, denied, unsafe, workspace-mismatch, and
   write-failed records return sanitized request errors without terminating
   dispatch.
+- Client-declared `mcpServers` on `session/new` are accepted and ignored
+  (oracle parity): Zed attaches every configured MCP server to each session,
+  so rejecting them made the agent unloadable with `-32602`. The harness MCP
+  registry remains the sole MCP source; no client server is launched.
 - Session mode/config requests are mapped to runtime mode, reasoning, and
   permission updates; delete and logout have explicit protocol responses.
 - `AcpPromptEngine` is an optional composition port. When injected, prompt
