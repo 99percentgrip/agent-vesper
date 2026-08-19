@@ -124,18 +124,30 @@ jobs:
       - name: Run Linux sandbox conformance
         if: matrix.platform_spike == 'linux'
         shell: bash
+        timeout-minutes: 10
         env:
           RUSTC_WRAPPER: ${{ steps.sccache_check.outputs.sccache_ready == 'true' && 'sccache' || '' }}
         # GitHub-hosted runners intermittently stall indefinitely on the
-        # azure.archive.ubuntu.com mirror (observed 2026-08-19: apt silent
-        # for 55 minutes until the job was cancelled). Bound every network
-        # fetch, retry transient mirror failures, and tolerate a failed
-        # update — the runner image ships pre-populated apt lists, so the
-        # bubblewrap install still resolves from cache when the mirror is
-        # unavailable.
+        # azure.archive.ubuntu.com mirror (observed 2026-08-19: apt sat
+        # silent for 56 minutes until the 60-minute job timeout cancelled
+        # the linux-x86_64 job — Acquire::Retries/-o Timeout did NOT bound
+        # the stalled transfer). Layered bounds, outermost first:
+        # (1) skip apt entirely when the runner image already ships bwrap;
+        # (2) drop the apt-mirrors.txt indirection and force IPv4 (the
+        #     black-holed v6 first-route is the usual silent-stall cause);
+        # (3) coreutils `timeout` hard-kills apt no matter how it stalls;
+        # (4) this step's timeout-minutes caps everything after it.
+        # If bwrap is still missing the bwrap tests fail truthfully —
+        # tests are never silently skipped.
         run: |
-          sudo apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 || echo "apt update failed; falling back to the runner image's cached package lists"
-          sudo apt-get install -y bubblewrap
+          if ! command -v bwrap >/dev/null 2>&1; then
+            sudo rm -f /etc/apt/apt-mirrors.txt
+            timeout 120 sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10 -o Acquire::ForceIPv4=true \
+              || echo "apt update bounded out; falling back to the runner image's cached package lists"
+            timeout 120 sudo apt-get install -y bubblewrap \
+              || echo "apt install bounded out; continuing so a missing bwrap fails the bwrap test truthfully"
+          fi
+          command -v bwrap || echo "NOTE: bwrap unavailable - linux_bwrap tests will fail truthfully"
           cargo test --manifest-path spikes/process-sandbox/Cargo.toml --test linux_bwrap
       - name: Run macOS prepared conformance
         if: matrix.platform_spike == 'macos'
