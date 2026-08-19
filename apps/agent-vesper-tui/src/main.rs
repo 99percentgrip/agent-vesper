@@ -6235,22 +6235,15 @@ impl MemoryStores {
             Ok(value) => std::path::PathBuf::from(value),
             Err(_) => home_memory_root(),
         };
-        // Ensure the root directory exists so the stores can open it.
-        let _ = std::fs::create_dir_all(&root);
         let root_display = root.display().to_string();
-        let memory = vesper_memory::MemoryStore::open(&root).ok().map(Arc::new);
-        let skills = vesper_memory::SkillStore::open_with_global(&root, &global_memory_root)
-            .ok()
-            .map(Arc::new);
-        let profile = vesper_memory::UserProfile::open(&root).ok().map(Arc::new);
-        let awareness = vesper_memory::AwarenessLedger::open(&root)
-            .ok()
-            .map(Arc::new);
+        // Delegate to the shared harness constructor so the TUI and ACP
+        // compositions can never drift on store-open semantics again.
+        let bundle = vesper_harness::MemoryStores::open_at(&root, &global_memory_root);
         Self {
-            memory,
-            skills,
-            profile,
-            awareness,
+            memory: bundle.memory().cloned(),
+            skills: bundle.skills().cloned(),
+            profile: bundle.profile().cloned(),
+            awareness: bundle.awareness().cloned(),
             root_display,
         }
     }

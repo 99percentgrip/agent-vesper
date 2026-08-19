@@ -25,10 +25,25 @@ Z.ai and Playwright MCP server descriptors.
   ACP and TUI compositions: `execute_slash_command` resolves catalog commands
   against a host-supplied `SlashCommandContext` (durable `MemoryStores`,
   model/plan labels, mode), `/help` renders the oracle fixture text
-  byte-exactly, provider-facing switches validate into a `SessionOverrides`
-  payload the host applies at its own provider boundary, and commands only a
-  frontend can serve return `SlashCommandOutcome::Host` passthrough. The
-  catalog and parser delegate to `vesper-domain::slash_commands`.
+  byte-exactly, `/curator` runs deterministic curation against the memory
+  store, provider-facing switches validate into a `SessionOverrides` payload
+  the host applies at its own provider boundary, and commands only a
+  frontend can serve (conversation state, workflow turns, live provider
+  quota) return `SlashCommandOutcome::Host` passthrough. The catalog and
+  parser delegate to `vesper-domain::slash_commands`.
+- `src/host_commands.rs` executes the store-backed host commands
+  (`/checkpoint`, `/rollback`, `/undo`, `/export`, `/sessions`, `/lineage`,
+  `/ci`, `/plugins`, `/mcp`) on `HarnessToolService` against the same
+  durable checkpoint/MCP roots the TUI drains through, with byte-identical
+  response formats, so the ACP composition reaches TUI parity without
+  duplicating drain logic. `/checkpoint` and `/lineage` seed a session
+  lineage record named for the host session id on first use.
+- `MemoryStores::open_default` opens the project root
+  (`AGENT_VESPER_MEMORY_ROOT` → `.agent-vesper/memory/`) plus the
+  cross-project global skill layer (`AGENT_VESPER_GLOBAL_MEMORY_ROOT` →
+  `~/.agent-vesper/memory/`); `open_at` is the explicit-root constructor
+  compositions with their own root resolution share so the TUI and ACP can
+  never drift on store-open semantics again.
 - Durable roots are supplied by the composition boundary and default to the
   `.agent-vesper/` layout; no credentials are persisted by this crate.
 - The service exposes the same hosted tool definitions and behavior to ACP and

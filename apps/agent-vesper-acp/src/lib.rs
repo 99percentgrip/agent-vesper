@@ -146,6 +146,9 @@ struct AcpHarnessEngine {
     /// never persisted (oracle parity).
     overrides:
         Mutex<BTreeMap<vesper_domain::SessionId, vesper_harness::slash_commands::SessionOverrides>>,
+    /// Latest agent plan markdown per session (`/clear-plan` resets it and
+    /// republishes an empty plan so ACP clients clear their plan panel).
+    plans: Arc<std::sync::Mutex<BTreeMap<vesper_domain::SessionId, String>>>,
 }
 
 #[derive(Debug)]
@@ -196,6 +199,7 @@ impl AcpHarnessEngine {
             histories: Mutex::new(BTreeMap::new()),
             cancellations: Mutex::new(BTreeMap::new()),
             overrides: Mutex::new(BTreeMap::new()),
+            plans: Arc::new(std::sync::Mutex::new(BTreeMap::new())),
         }
     }
 
@@ -216,8 +220,14 @@ impl AcpHarnessEngine {
                 persist_turn: true,
             });
         }
-        if let Some(result) = self.try_slash_command(&request, &text).await {
-            return Ok(result);
+        // Slash commands either answer in-process (never dispatched, never
+        // persisted) or — for `/diff` and `/release` — replace the prompt
+        // with a workflow that drives a real agent turn.
+        let mut text = text;
+        match self.try_slash_command(&request, &text).await {
+            SlashFlow::Respond(result) => return Ok(result),
+            SlashFlow::Workflow(prompt) => text = prompt,
+            SlashFlow::Ordinary => {}
         }
         let message = ConversationMessage {
             id: MessageId::new(format!("acp-harness-{}", next_engine_id()))
@@ -304,6 +314,8 @@ impl AcpHarnessEngine {
             sink: request.event_sink.clone(),
             tool_seq: std::sync::atomic::AtomicU64::new(0),
             outstanding: std::sync::Mutex::new(BTreeMap::new()),
+            session_id: request.session_id.clone(),
+            plans: self.plans_shared(),
         }));
         let cancellation = Arc::new(RuntimeCancellation::new());
         self.cancellations
@@ -342,24 +354,22 @@ impl AcpHarnessEngine {
     }
 
     /// Executes one catalog slash command, or returns an oracle-parity
-    /// unknown-command response for un-catalog `/` text. Returns `None` for
-    /// ordinary prompts so the multi-turn loop runs. Slash turns never
-    /// dispatch the provider and are never persisted
-    /// (fixtures/acp/slash-command parity).
-    async fn try_slash_command(
-        &self,
-        request: &AcpPromptRequest,
-        text: &str,
-    ) -> Option<AcpPromptResult> {
+    /// unknown-command response for un-catalog `/` text. Returns
+    /// `SlashFlow::Ordinary` for ordinary prompts so the multi-turn loop
+    /// runs. Slash turns never dispatch the provider and are never persisted
+    /// (fixtures/acp/slash-command parity) — except `/diff` and `/release`,
+    /// which replace the prompt with a workflow that drives one real agent
+    /// turn (TUI parity).
+    async fn try_slash_command(&self, request: &AcpPromptRequest, text: &str) -> SlashFlow {
         use vesper_harness::slash_commands::{
             SlashCommandContext, SlashCommandOutcome, execute_slash_command,
         };
         let trimmed = text.trim();
         if !trimmed.starts_with('/') {
-            return None;
+            return SlashFlow::Ordinary;
         }
         let slash_result = |body: String| {
-            Some(AcpPromptResult {
+            SlashFlow::Respond(AcpPromptResult {
                 text: body,
                 cancelled: false,
                 persist_turn: false,
@@ -436,9 +446,183 @@ impl AcpHarnessEngine {
                 drop(map);
                 slash_result(text)
             }
-            SlashCommandOutcome::Host(_) => slash_result(host_command_text(name)),
+            SlashCommandOutcome::Host(argument) => {
+                self.host_owned_command(name, &argument, request).await
+            }
             SlashCommandOutcome::Unknown(_) => slash_result(unknown_command_text(trimmed)),
         }
+    }
+
+    /// Serves one host-owned catalog command with full TUI parity:
+    /// store-backed commands (`/checkpoint`, `/rollback`, `/undo`,
+    /// `/export`, `/sessions`, `/lineage`, `/ci`, `/plugins`, `/mcp`) run on
+    /// the shared `vesper-harness` host executor against the durable
+    /// checkpoint/MCP roots; conversation-state commands (`/compact`,
+    /// `/clear-history`, `/clear-plan`) mutate this engine's per-session
+    /// history and plan maps; `/usage` queries the live provider quota
+    /// endpoint; `/diff` and `/release` become workflow prompts for a real
+    /// agent turn.
+    async fn host_owned_command(
+        &self,
+        name: &str,
+        argument: &str,
+        request: &AcpPromptRequest,
+    ) -> SlashFlow {
+        let respond = |body: String| {
+            SlashFlow::Respond(AcpPromptResult {
+                text: body,
+                cancelled: false,
+                persist_turn: false,
+            })
+        };
+        match name {
+            "compact" => {
+                let keep = parse_compact_keep(argument);
+                let mut histories = self.histories.lock().await;
+                match histories.get_mut(&request.session_id) {
+                    Some(history) => {
+                        let dropped = history.len().saturating_sub(keep);
+                        if keep == 0 {
+                            history.clear();
+                        } else if history.len() > keep {
+                            let drain_from = history.len() - keep;
+                            history.drain(0..drain_from);
+                        }
+                        respond(format!(
+                            "compact: dropped {dropped} older message(s); kept {} recent.",
+                            history.len()
+                        ))
+                    }
+                    None => respond("compact: no conversation history yet.".to_owned()),
+                }
+            }
+            "clear-history" => {
+                let removed = self
+                    .histories
+                    .lock()
+                    .await
+                    .remove(&request.session_id)
+                    .map_or(0, |history: Vec<ConversationMessage>| history.len());
+                respond(format!(
+                    "clear-history: cleared {removed} message(s). Model and plan settings are kept."
+                ))
+            }
+            "clear-plan" => {
+                if let Ok(mut plans) = self.plans.lock() {
+                    plans.remove(&request.session_id);
+                }
+                if let Some(sink) = request.event_sink.as_ref() {
+                    sink.event(vesper_acp::AcpEngineEvent::PlanUpdated {
+                        markdown: String::new(),
+                    });
+                }
+                respond("plan: cleared (back to NORMAL).".to_owned())
+            }
+            "usage" => respond(self.usage_text().await),
+            "diff" => SlashFlow::Workflow(
+                "Run `git diff` (and `git diff --staged` if there are staged changes) \
+                 and summarize the working-tree changes: files touched, lines added / \
+                 removed, and a one-paragraph summary of what the changes do."
+                    .to_owned(),
+            ),
+            "release" => SlashFlow::Workflow(format!(
+                "Cut a {} release from this workspace. Bump the version, update the \
+                 changelog, run the full verification gate, commit, tag, and push.",
+                release_bump(argument)
+            )),
+            _ => {
+                let session_id = request.session_id.as_str().to_owned();
+                let workspace_root = workspace_root_path(&request.workspace_roots);
+                let transcript = self.transcript_lines(&request.session_id).await;
+                let hosted = Arc::clone(&self.hosted);
+                let name = name.to_owned();
+                let name_for_error = name.clone();
+                let argument = argument.to_owned();
+                let body = tokio::task::spawn_blocking(move || {
+                    hosted.execute_host_command(
+                        &name,
+                        &argument,
+                        &session_id,
+                        &workspace_root,
+                        &transcript,
+                    )
+                })
+                .await
+                .unwrap_or_else(|error| {
+                    format!("/{name_for_error} failed — host executor panicked: {error}")
+                });
+                respond(body)
+            }
+        }
+    }
+
+    /// Queries the live provider plan-quota endpoint (TUI `/usage` parity).
+    /// Only the installed GLM adapter registers a quota integration; every
+    /// other provider reports that truthfully without a network call.
+    async fn usage_text(&self) -> String {
+        if self.config.model.provider_id != provider_id() {
+            return "usage: The active provider has no registered quota integration.".to_owned();
+        }
+        let glm_config = match vesper_provider_glm::GlmConfig::from_provider_configuration(
+            &self.config.provider_configuration,
+        ) {
+            Ok(config) => config,
+            Err(error) => return format!("usage: quota configuration failed: {error}"),
+        };
+        let credential = match vesper_provider_glm::resolve_credential(
+            &vesper_provider_glm::EnvironmentCredentialSource,
+        ) {
+            Ok(credential) => credential,
+            Err(error) => return format!("usage: quota authentication failed: {error}"),
+        };
+        let session =
+            match vesper_provider_glm::GlmSession::from_config(glm_config, credential.secret) {
+                Ok(session) => session,
+                Err(error) => return format!("usage: quota session failed: {error}"),
+            };
+        match session
+            .query_plan_usage(Arc::new(RuntimeCancellation::new()))
+            .await
+        {
+            Ok(usage) => format_glm_usage(&usage),
+            Err(error) => format!("usage: quota query failed: {error}"),
+        }
+    }
+
+    /// Renders the bounded history as `role: text` lines for `/export`.
+    async fn transcript_lines(&self, session_id: &vesper_domain::SessionId) -> Vec<String> {
+        self.histories
+            .lock()
+            .await
+            .get(session_id)
+            .map(|history| {
+                history
+                    .iter()
+                    .map(|message| {
+                        let role = match &message.role {
+                            MessageRole::User => "user",
+                            MessageRole::Assistant => "assistant",
+                            MessageRole::Tool => "tool",
+                            MessageRole::ProviderOpaque(_) => "provider",
+                        };
+                        let text = message
+                            .content
+                            .iter()
+                            .filter_map(|part| match part {
+                                ContentPart::Text(text) => Some(text.as_str()),
+                                _ => None,
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        format!("{role}: {text}")
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn plans_shared(&self) -> Arc<std::sync::Mutex<BTreeMap<vesper_domain::SessionId, String>>> {
+        Arc::clone(&self.plans)
     }
 }
 
@@ -453,11 +637,22 @@ struct AcpEngineProgressPort {
     tool_seq: std::sync::atomic::AtomicU64,
     /// Outstanding started tool-call ids by tool name, most recent last.
     outstanding: std::sync::Mutex<BTreeMap<String, Vec<String>>>,
+    /// Session the turn belongs to (plan bookkeeping).
+    session_id: vesper_domain::SessionId,
+    /// Shared latest-plan map on the engine (`/clear-plan` resets it).
+    plans: Arc<std::sync::Mutex<BTreeMap<vesper_domain::SessionId, String>>>,
 }
 
 impl vesper_agent::AgentProgressPort for AcpEngineProgressPort {
     fn emit(&self, event: vesper_agent::AgentProgressEvent) {
         use vesper_acp::AcpEngineEvent;
+        // Plan bookkeeping happens even without a sink so `/clear-plan`
+        // always reflects the latest engine-tracked plan.
+        if let vesper_agent::AgentProgressEvent::PlanUpdated { markdown } = &event
+            && let Ok(mut plans) = self.plans.lock()
+        {
+            plans.insert(self.session_id.clone(), markdown.clone());
+        }
         let Some(sink) = self.sink.as_ref() else {
             return;
         };
@@ -550,18 +745,76 @@ fn unknown_command_text(command: &str) -> String {
     )
 }
 
-/// Truthful bounded response for host-owned commands this composition has
-/// not wired yet. Never a placeholder success: the command genuinely has no
-/// ACP host implementation in this binary today.
-fn host_command_text(name: &str) -> String {
-    let description = vesper_domain::ORACLE_SLASH_COMMANDS
+/// What one prompt's slash analysis decided the engine should do.
+enum SlashFlow {
+    /// Not a slash command — run the ordinary multi-turn loop.
+    Ordinary,
+    /// Answer now with this result (never dispatched, never persisted).
+    Respond(AcpPromptResult),
+    /// Replace the prompt with this workflow text and run one real agent
+    /// turn (TUI `/diff` and `/release` parity).
+    Workflow(String),
+}
+
+/// Parses the optional keep-count for `/compact [N]` (TUI parity). Defaults
+/// to 20; bounded to `[0, 1000]`.
+fn parse_compact_keep(argument: &str) -> usize {
+    if argument.trim().is_empty() {
+        return 20;
+    }
+    match argument.trim().parse::<usize>() {
+        Ok(n) => n.min(1000),
+        Err(_) => 20,
+    }
+}
+
+/// Resolves the bump level for `/release [patch|minor|major]` (TUI parity).
+fn release_bump(argument: &str) -> &'static str {
+    match argument.trim().to_ascii_lowercase().as_str() {
+        "minor" => "minor",
+        "major" => "major",
+        _ => "patch",
+    }
+}
+
+/// Resolves the workspace root for checkpoint confinement: the primary ACP
+/// workspace root when supplied, else the first root, else the process
+/// working directory.
+fn workspace_root_path(roots: &[vesper_domain::WorkspaceRoot]) -> PathBuf {
+    roots
         .iter()
-        .find(|command| command.name == name)
-        .map_or("", |command| command.description);
-    format!(
-        "/{name} ({description}) is a host-owned command and is not available in the \
-         ACP harness composition yet."
-    )
+        .find(|root| root.primary)
+        .or_else(|| roots.first())
+        .map(|root| PathBuf::from(root.path.as_str()))
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
+}
+
+/// Renders one live plan-usage report (TUI `format_glm_usage` parity).
+fn format_glm_usage(usage: &vesper_provider_glm::GlmPlanUsage) -> String {
+    let windows = usage
+        .quotas
+        .iter()
+        .map(|quota| {
+            format!(
+                "{}: used {}, remaining {}, limit {}{}",
+                quota.kind,
+                quota
+                    .used
+                    .map_or_else(|| "unknown".into(), |value| value.to_string()),
+                quota
+                    .remaining
+                    .map_or_else(|| "unknown".into(), |value| value.to_string()),
+                quota
+                    .limit
+                    .map_or_else(|| "unknown".into(), |value| value.to_string()),
+                quota
+                    .percentage
+                    .map_or_else(String::new, |value| format!(" ({value:.1}%)")),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ");
+    format!("{} quota — {windows}", usage.platform)
 }
 
 fn outcome_text(outcome: &vesper_agent::AgentTurnOutcome) -> String {
@@ -953,6 +1206,8 @@ mod tests {
             sink: Some(recording.clone()),
             tool_seq: std::sync::atomic::AtomicU64::new(0),
             outstanding: std::sync::Mutex::new(BTreeMap::new()),
+            session_id: vesper_domain::SessionId::new("sess-test").unwrap(),
+            plans: Arc::new(std::sync::Mutex::new(BTreeMap::new())),
         };
         vesper_agent::AgentProgressPort::emit(
             &port,
@@ -996,10 +1251,66 @@ mod tests {
     }
 
     #[test]
-    fn host_command_text_is_truthful_and_carries_the_catalog_description() {
-        let text = host_command_text("compact");
-        assert!(text.starts_with("/compact ("));
-        assert!(text.contains("not available in the ACP harness composition yet"));
+    fn plan_updated_events_are_recorded_per_session() {
+        let plans: Arc<std::sync::Mutex<BTreeMap<vesper_domain::SessionId, String>>> =
+            Arc::new(std::sync::Mutex::new(BTreeMap::new()));
+        let port = AcpEngineProgressPort {
+            sink: None,
+            tool_seq: std::sync::atomic::AtomicU64::new(0),
+            outstanding: std::sync::Mutex::new(BTreeMap::new()),
+            session_id: vesper_domain::SessionId::new("sess-plan").unwrap(),
+            plans: Arc::clone(&plans),
+        };
+        vesper_agent::AgentProgressPort::emit(
+            &port,
+            vesper_agent::AgentProgressEvent::PlanUpdated {
+                markdown: "## Step 1".to_owned(),
+            },
+        );
+        assert_eq!(
+            plans
+                .lock()
+                .unwrap()
+                .get(&vesper_domain::SessionId::new("sess-plan").unwrap()),
+            Some(&"## Step 1".to_owned())
+        );
+    }
+
+    #[test]
+    fn compact_and_release_helpers_match_tui_semantics() {
+        assert_eq!(parse_compact_keep(""), 20);
+        assert_eq!(parse_compact_keep("5"), 5);
+        assert_eq!(parse_compact_keep("9999"), 1000);
+        assert_eq!(parse_compact_keep("not-a-number"), 20);
+        assert_eq!(release_bump(""), "patch");
+        assert_eq!(release_bump("MINOR"), "minor");
+        assert_eq!(release_bump("major"), "major");
+    }
+
+    #[test]
+    fn workspace_root_prefers_the_primary_root() {
+        use vesper_domain::WorkspaceRoot;
+        let name = |text: &str| vesper_domain::BoundedString::<256>::new(text).unwrap();
+        let path = |text: &str| vesper_domain::BoundedString::<32768>::new(text).unwrap();
+        let roots = vec![
+            WorkspaceRoot {
+                name: name("secondary"),
+                path: path("/tmp/secondary"),
+                primary: false,
+            },
+            WorkspaceRoot {
+                name: name("primary"),
+                path: path("/tmp/primary"),
+                primary: true,
+            },
+        ];
+        assert_eq!(workspace_root_path(&roots), PathBuf::from("/tmp/primary"));
+        let only = vec![WorkspaceRoot {
+            name: name("only"),
+            path: path("/tmp/only"),
+            primary: false,
+        }];
+        assert_eq!(workspace_root_path(&only), PathBuf::from("/tmp/only"));
     }
 
     #[test]
