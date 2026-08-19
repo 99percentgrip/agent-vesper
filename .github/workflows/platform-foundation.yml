@@ -126,8 +126,15 @@ jobs:
         shell: bash
         env:
           RUSTC_WRAPPER: ${{ steps.sccache_check.outputs.sccache_ready == 'true' && 'sccache' || '' }}
+        # GitHub-hosted runners intermittently stall indefinitely on the
+        # azure.archive.ubuntu.com mirror (observed 2026-08-19: apt silent
+        # for 55 minutes until the job was cancelled). Bound every network
+        # fetch, retry transient mirror failures, and tolerate a failed
+        # update — the runner image ships pre-populated apt lists, so the
+        # bubblewrap install still resolves from cache when the mirror is
+        # unavailable.
         run: |
-          sudo apt-get update
+          sudo apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 || echo "apt update failed; falling back to the runner image's cached package lists"
           sudo apt-get install -y bubblewrap
           cargo test --manifest-path spikes/process-sandbox/Cargo.toml --test linux_bwrap
       - name: Run macOS prepared conformance

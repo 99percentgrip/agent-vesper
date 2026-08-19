@@ -26,7 +26,12 @@ platform assumptions on hosts unavailable locally.
   dependencies, and treats duplicate versions as warnings (the documented
   Stage 5 baseline) rather than failures.
 - The five-target matrix runs the Stage 4.1 real-process blocker suite with
-  bounded timeouts; Linux-only RSS evidence must not be generalized.
+  bounded timeouts; Linux-only RSS evidence must not be generalized. The
+  Linux sandbox step bounds `apt-get update` with retries and per-request
+  timeouts and tolerates a failed update (the runner image's cached package
+  lists still resolve `bubblewrap`), because the azure Ubuntu mirror has
+  stalled jobs indefinitely (observed 2026-08-19: 55 silent minutes →
+  cancelled run on commit-identical code).
 - CI validates Stage 5 coverage, read-only session/testkit conformance, and
   writer/SQLite architecture gates on all five target families.
 - `release.yml` declares a single concurrency group `release-pipeline` with
