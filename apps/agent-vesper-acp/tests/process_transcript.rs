@@ -461,6 +461,149 @@ fn empty_prompt_and_slash_commands_never_dispatch_provider() {
     reader.join().unwrap();
 }
 
+#[test]
+fn host_owned_slash_commands_reach_real_stores_with_tui_parity() {
+    // End-to-end regression for the ACP/TUI parity gap: /skills must read
+    // the cross-project global skill layer, /checkpoint + /sessions + /
+    // lineage must hit the durable checkpoint stores, /curator must curate
+    // instead of answering "unknown command", and /compact must operate on
+    // the engine's own history — no provider dispatch anywhere.
+    let tag = format!("agent-vesper-acp-parity-{}", std::process::id());
+    let temp = std::env::temp_dir().join(&tag);
+    let global_memory = temp.join("global-memory");
+    let project_memory = temp.join("project-memory");
+    let checkpoint_root = temp.join("checkpoints");
+    let mcp_root = temp.join("mcp");
+    let workspace = temp.join("workspace");
+    std::fs::create_dir_all(global_memory.join("skills")).unwrap();
+    std::fs::create_dir_all(&project_memory).unwrap();
+    std::fs::create_dir_all(&workspace).unwrap();
+    std::fs::write(
+        global_memory
+            .join("skills")
+            .join("cross-project-release.md"),
+        "---\ndescription: ship the release end to end\n---\nbody",
+    )
+    .unwrap();
+    std::fs::write(workspace.join("tracked.txt"), "parity payload").unwrap();
+
+    let mut command = Command::new(env!("CARGO_BIN_EXE_agent-vesper-acp"));
+    command
+        .env_clear()
+        .env("HOME", &temp)
+        .env("XDG_CONFIG_HOME", temp.join("config"))
+        .env("XDG_CACHE_HOME", temp.join("cache"))
+        .env("AGENT_VESPER_MEMORY_ROOT", &project_memory)
+        .env("AGENT_VESPER_GLOBAL_MEMORY_ROOT", &global_memory)
+        .env("AGENT_VESPER_CHECKPOINT_ROOT", &checkpoint_root)
+        .env("AGENT_VESPER_MCP_ROOT", &mcp_root)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    for key in critical_environment_keys() {
+        if let Ok(value) = std::env::var(key) {
+            command.env(key, value);
+        }
+    }
+    let mut child = command.spawn().unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let stdout = child.stdout.take().unwrap();
+    let (line_sender, line_receiver) = mpsc::channel();
+    let reader = thread::spawn(move || {
+        for line in BufReader::new(stdout).lines() {
+            line_sender.send(line.unwrap()).unwrap();
+        }
+    });
+
+    send(
+        &mut stdin,
+        json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1}}),
+    );
+    let _ = response_for(&line_receiver, 1, &mut Vec::new());
+    send(
+        &mut stdin,
+        json!({"jsonrpc":"2.0","id":2,"method":"session/new","params":{
+            "cwd": workspace.to_string_lossy(), "mcpServers":[]
+        }}),
+    );
+    let session = response_for(&line_receiver, 2, &mut Vec::new())["result"]["sessionId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let mut run_command = |text: &str| -> String {
+        static PROMPT_IDS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(200);
+        let id = PROMPT_IDS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        send(
+            &mut stdin,
+            json!({"jsonrpc":"2.0","id":id,"method":"session/prompt","params":{
+                "sessionId": session,
+                "prompt":[{"type":"text","text":text}]
+            }}),
+        );
+        let mut transcript = Vec::new();
+        let response = response_for(&line_receiver, id, &mut transcript);
+        assert!(
+            response.get("error").is_none(),
+            "{text} must answer normally, got {response}"
+        );
+        transcript
+            .iter()
+            .filter(|value| value["params"]["update"]["sessionUpdate"] == "agent_message_chunk")
+            .map(|value| {
+                value["params"]["update"]["content"]["text"]
+                    .as_str()
+                    .unwrap_or("")
+            })
+            .collect::<Vec<_>>()
+            .join("")
+    };
+
+    // /skills reads the GLOBAL layer — the exact regression from the field
+    // report ("used slash skills: No learned skills").
+    let skills = run_command("/skills");
+    assert!(
+        skills.contains("**Learned skills**") && skills.contains("ship the release end to end"),
+        "/skills must list global learned skills, got {skills:?}"
+    );
+
+    // /checkpoint snapshots the session workspace root through the durable
+    // ledger; /sessions and /lineage then resolve the seeded record.
+    let checkpoint = run_command("/checkpoint parity-label");
+    assert!(
+        checkpoint.starts_with("checkpoint: ") && checkpoint.contains("captured"),
+        "got {checkpoint:?}"
+    );
+    assert!(checkpoint.contains("parity-label"));
+    let sessions = run_command("/sessions");
+    assert!(
+        sessions.starts_with("sessions: 1 session(s)"),
+        "got {sessions:?}"
+    );
+    let lineage = run_command("/lineage");
+    assert!(lineage.starts_with("lineage: 1 hop(s)"), "got {lineage:?}");
+
+    // /curator is a catalog command and must curate — never the
+    // unknown-command fallback.
+    let curator = run_command("/curator");
+    assert!(curator.starts_with("curator: removed"), "got {curator:?}");
+
+    // /compact operates on the engine's own conversation state.
+    let compact = run_command("/compact");
+    assert!(compact.starts_with("compact: "), "got {compact:?}");
+
+    // /mcp and /plugins report the real (empty) registries.
+    let mcp = run_command("/mcp");
+    assert_eq!(mcp, "mcp: (no servers configured)");
+    let plugins = run_command("/plugins");
+    assert_eq!(plugins, "plugins: (no plugins loaded)");
+
+    drop(stdin);
+    wait_for_exit(&mut child);
+    reader.join().unwrap();
+    let _ = std::fs::remove_dir_all(&temp);
+}
+
 fn advertised_first_and_last<'a>(advertised: &[&'a str]) -> (&'a str, &'a str) {
     (
         advertised.first().copied().unwrap_or_default(),

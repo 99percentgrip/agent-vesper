@@ -148,6 +148,7 @@ pub fn execute_slash_command(
             SlashCommandOutcome::Text(awareness_text(name, context))
         }
         "goal" | "subgoal" => goal_outcome(name, argument, context),
+        "curator" => curator_outcome(context),
         "version" => {
             SlashCommandOutcome::Text(format!("agent-vesper-acp {}", env!("CARGO_PKG_VERSION")))
         }
@@ -292,6 +293,23 @@ fn awareness_text(name: &str, context: &SlashCommandContext<'_>) -> String {
     lines.join("\n")
 }
 
+/// Executes `/curator` — deterministic bounded skill/memory maintenance
+/// against the durable memory store (mirrors the TUI composition's
+/// `MemoryOp::Curate` drain).
+fn curator_outcome(context: &SlashCommandContext<'_>) -> SlashCommandOutcome {
+    let Some(memory) = store_memory(context) else {
+        return SlashCommandOutcome::Text(
+            "curator: memory store unavailable in this composition.".to_owned(),
+        );
+    };
+    match memory.curate() {
+        Ok((duplicates_removed, overflow_trimmed)) => SlashCommandOutcome::Text(format!(
+            "curator: removed {duplicates_removed} duplicate(s), trimmed {overflow_trimmed} overflow(s)"
+        )),
+        Err(error) => SlashCommandOutcome::Text(format!("curator: failed — {error}")),
+    }
+}
+
 /// Executes `/goal` and `/subgoal` against the durable memory store.
 fn goal_outcome(
     name: &str,
@@ -415,6 +433,32 @@ mod tests {
         match execute_slash_command("goal", "", &context()) {
             SlashCommandOutcome::Text(text) => {
                 assert!(text.contains("unavailable"));
+            }
+            other => panic!("expected text, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn curator_is_a_catalog_command_and_curates_real_stores() {
+        // Without stores the command must report unavailability — never the
+        // oracle unknown-command fallback (curator IS in the catalog).
+        match execute_slash_command("curator", "", &context()) {
+            SlashCommandOutcome::Text(text) => {
+                assert!(text.contains("unavailable"));
+            }
+            other => panic!("expected text, got {other:?}"),
+        }
+        // With a real memory store it runs deterministic curation.
+        let local = tempfile::tempdir().unwrap();
+        let global = tempfile::tempdir().unwrap();
+        let stores = MemoryStores::open_at(local.path(), global.path());
+        let context = SlashCommandContext {
+            stores: Some(&stores),
+            ..SlashCommandContext::default()
+        };
+        match execute_slash_command("curator", "", &context) {
+            SlashCommandOutcome::Text(text) => {
+                assert!(text.starts_with("curator: removed"));
             }
             other => panic!("expected text, got {other:?}"),
         }

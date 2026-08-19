@@ -156,9 +156,11 @@ impl SessionLineage {
         }
         let serialized = serde_json::to_string(&record)?;
         append_line(&Self::log_path(&self.root), &serialized)?;
-        // Rewrite to persist the parent's status change atomically.
-        Self::rewrite_log(&self.root, &state.records)?;
         state.records.push(record.clone());
+        // Rewrite to persist the parent's status change atomically. The
+        // rewrite must include the freshly appended record, otherwise it
+        // clobbers the append and the new session never reaches disk.
+        Self::rewrite_log(&self.root, &state.records)?;
         Ok(record)
     }
 
@@ -275,6 +277,37 @@ mod tests {
         assert_eq!(b.id, "sess-2");
         assert_eq!(a.name, "alpha");
         assert_eq!(b.name, "beta");
+    }
+
+    #[test]
+    fn create_persists_the_new_record_across_reopen() {
+        // Regression: the parent-status rewrite used to clobber the freshly
+        // appended record, so new sessions never reached disk and any later
+        // reopen (new process, per-command open) saw an empty lineage.
+        let temp = TempDir::new().unwrap();
+        let (root, lineage) = lineage_under(&temp);
+        let workspace = temp.path().join("workspace");
+        let created = lineage.create(None, Some("durable"), &workspace).unwrap();
+        let reopened = SessionLineage::open(&root).unwrap();
+        assert!(
+            reopened.get(&created.id).is_some(),
+            "created session must survive reopen"
+        );
+        assert_eq!(reopened.list().len(), 1);
+
+        // Child creation persists both the child AND the superseded parent.
+        let child = lineage
+            .create(Some(&created.id), Some("child"), &workspace)
+            .unwrap();
+        let reopened = SessionLineage::open(&root).unwrap();
+        assert!(
+            reopened.get(&child.id).is_some(),
+            "child must survive reopen"
+        );
+        assert_eq!(
+            reopened.get(&created.id).unwrap().status,
+            SessionStatus::Superseded
+        );
     }
 
     #[test]

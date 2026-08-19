@@ -42,19 +42,32 @@ transport, stderr-only tracing, and orderly shutdown.
 - The default ACP composition injects `AcpHarnessEngine`, which owns bounded
   per-session conversation history and routes prompts through `AgentLoop`.
   The engine executes the 28-command oracle slash catalog in-process
-  (ADR 0010 Tier C): catalog commands answer from the harness executor with
-  no provider dispatch, `/max-iterations` and model/plan switches persist as
-  per-session engine overrides, unknown `/` text answers with the oracle's
-  bounded unknown-command fallback, and host-owned commands (compact/undo/
-  diff/export/checkpoint/rollback/plugins/mcp/usage/sessions/lineage/release/
-  ci) truthfully report that no ACP host implementation exists yet. Slash
-  turns report `persist_turn == false` and never enter conversation history
-  or persisted records. The engine's progress port pairs tool started/
-  finished events by the most recently issued id per tool name. The adapter
-  injects a live ACP `session/request_permission` port for mutating tools;
-  rejection, cancellation, unavailable clients, and malformed outcomes
-  remain fail-closed. The engine injects the shared hosted Python-oracle
-  tool surface and bounded project instruction context. Set
+  (ADR 0010 Tier C) with full TUI harness parity: catalog commands answer
+  from the harness executor with no provider dispatch, `/max-iterations` and
+  model/plan switches persist as per-session engine overrides, unknown `/`
+  text answers with the oracle's bounded unknown-command fallback, and every
+  host-owned command is really wired — `/checkpoint`, `/rollback`, `/undo`,
+  `/export`, `/sessions`, `/lineage`, `/ci`, `/plugins`, and `/mcp` run on
+  the shared `vesper-harness` host-command executor against the same durable
+  checkpoint/MCP roots the TUI uses (`/checkpoint` and `/lineage` seed a
+  session lineage record named for the ACP session id); `/compact`,
+  `/clear-history`, and `/clear-plan` mutate the engine's own per-session
+  history and plan maps (`/clear-plan` republishes an empty plan update);
+  `/usage` queries the live provider quota endpoint (truthful
+  no-integration error for providers without one); `/diff` and `/release`
+  replace the prompt with the TUI's workflow text and drive one real agent
+  turn. Slash turns report `persist_turn == false` and never enter
+  conversation history or persisted records — except the `/diff` and
+  `/release` workflow turns, which persist like ordinary prompts. The
+  engine's progress port pairs tool started/finished events by the most
+  recently issued id per tool name and records the latest per-session plan
+  markdown. The adapter injects a live ACP `session/request_permission`
+  port for mutating tools; rejection, cancellation, unavailable clients,
+  and malformed outcomes remain fail-closed. The engine injects the shared
+  hosted Python-oracle tool surface and bounded project instruction
+  context, and opens `MemoryStores` with the cross-project global skill
+  layer (`AGENT_VESPER_GLOBAL_MEMORY_ROOT` → `~/.agent-vesper/memory`), so
+  `/skills` lists global learned skills exactly like the TUI. Set
   `AGENT_VESPER_FULL_HARNESS=0` only for protocol-conformance fixtures that
   must exercise the provider-neutral single-turn runtime path; production
   defaults to the full engine.

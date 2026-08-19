@@ -1948,6 +1948,39 @@ mod tests {
     use vesper_agent::ToolService;
 
     #[test]
+    fn memory_stores_read_the_cross_project_global_skill_layer() {
+        // Regression for the ACP /skills parity bug: the shared bundle must
+        // include the global skill layer exactly like the TUI composition.
+        let local = tempfile::tempdir().unwrap();
+        let global = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(global.path().join("skills")).unwrap();
+        std::fs::write(
+            global.path().join("skills").join("cross-project.md"),
+            "---\ndescription: learned anywhere\n---\nbody",
+        )
+        .unwrap();
+        let stores = MemoryStores::open_at(local.path(), global.path());
+        let skills = stores.skills().expect("skill store must open");
+        let summaries = skills.list();
+        assert!(
+            summaries
+                .iter()
+                .any(|summary| summary.slug == "cross-project"),
+            "global skills must appear in /skills, got {summaries:?}"
+        );
+        // A missing global root disables the layer instead of failing.
+        let missing = local.path().join("no-global");
+        let without_global = MemoryStores::open_at(local.path(), &missing);
+        assert!(
+            without_global
+                .skills()
+                .expect("skill store must open")
+                .list()
+                .is_empty()
+        );
+    }
+
+    #[test]
     fn shared_service_advertises_all_hosted_python_tools() {
         let service = HarnessToolService {
             stores: Arc::new(MemoryStores {
@@ -2109,6 +2142,25 @@ mod tests {
     }
 }
 
+/// Returns the cross-project global memory root: `AGENT_VESPER_GLOBAL_MEMORY_ROOT`
+/// when set, else `~/.agent-vesper/memory` (`USERPROFILE` on Windows). Never
+/// created here; a missing directory simply disables the global skill read
+/// layer (mirror of the TUI composition's `home_memory_root`).
+fn global_memory_root() -> std::path::PathBuf {
+    if let Ok(value) = std::env::var("AGENT_VESPER_GLOBAL_MEMORY_ROOT") {
+        return std::path::PathBuf::from(value);
+    }
+    let variable = if cfg!(target_os = "windows") {
+        "USERPROFILE"
+    } else {
+        "HOME"
+    };
+    let home = std::env::var(variable)
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::path::PathBuf::from("."));
+    home.join(".agent-vesper").join("memory")
+}
+
 /// Drains one [`MemoryOp`] against the durable stores, pushing the result
 /// into the transcript. Pure-with-side-effects: no async, no terminal I/O,
 /// only local filesystem reads/writes via `vesper_memory`.
@@ -2121,9 +2173,14 @@ pub struct MemoryStores {
 
 impl MemoryStores {
     /// Opens the bundle at `AGENT_VESPER_MEMORY_ROOT` (falling back to
-    /// `.agent-vesper/memory/` under the current directory). If opening any
-    /// store fails the bundle stays `None` for that store and memory
-    /// commands surface a clear error rather than crashing the TUI.
+    /// `.agent-vesper/memory/` under the current directory). The skill
+    /// store additionally reads a cross-project global layer at
+    /// `AGENT_VESPER_GLOBAL_MEMORY_ROOT` (falling back to
+    /// `~/.agent-vesper/memory/`): global skills appear after local ones,
+    /// local slugs shadow, and writes always stay project-local (parity
+    /// with the TUI composition). If opening any store fails the bundle
+    /// stays `None` for that store and memory commands surface a clear
+    /// error rather than crashing the host.
     pub fn open_default() -> Self {
         let root = match std::env::var("AGENT_VESPER_MEMORY_ROOT") {
             Ok(value) => std::path::PathBuf::from(value),
@@ -2132,10 +2189,25 @@ impl MemoryStores {
                 .join(".agent-vesper")
                 .join("memory"),
         };
+        Self::open_at(root, global_memory_root())
+    }
+
+    /// Opens the bundle at explicit roots (project + cross-project global
+    /// skill layer). Composition boundaries that resolve roots themselves
+    /// and tests use this constructor; `open_default` only resolves
+    /// environment paths.
+    pub fn open_at(
+        root: impl Into<std::path::PathBuf>,
+        global_memory_root: impl Into<std::path::PathBuf>,
+    ) -> Self {
+        let root = root.into();
+        let global_memory_root = global_memory_root.into();
         // Ensure the root directory exists so the stores can open it.
         let _ = std::fs::create_dir_all(&root);
         let memory = vesper_memory::MemoryStore::open(&root).ok().map(Arc::new);
-        let skills = vesper_memory::SkillStore::open(&root).ok().map(Arc::new);
+        let skills = vesper_memory::SkillStore::open_with_global(&root, &global_memory_root)
+            .ok()
+            .map(Arc::new);
         let profile = vesper_memory::UserProfile::open(&root).ok().map(Arc::new);
         let awareness = vesper_memory::AwarenessLedger::open(&root)
             .ok()
@@ -2196,6 +2268,7 @@ impl WorkerFactory {
     }
 }
 
+mod host_commands;
 pub mod slash_commands;
 
 pub struct HarnessToolService {
