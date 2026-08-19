@@ -40,7 +40,7 @@ overwritten or resurrected.
 ## Verification
 
 - `find skills/skills -maxdepth 1 -name '*.md' | wc -l` equals the sum of
-  bundle skill references (currently 93).
+  bundle skill references (currently 94).
 - A case-insensitive grep for the foreign harness name over
   `skills/` returns no matches (kept verbatim-free here so this gate is
   self-checking).
