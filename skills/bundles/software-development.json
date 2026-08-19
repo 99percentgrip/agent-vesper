@@ -21,6 +21,7 @@
     "subprocess-kill-in-agent-tools",
     "systematic-debugging",
     "test-driven-development",
+    "verify-parity-end-to-end",
     "verify-with-xtask-verify",
     "vesper-skill-authoring"
   ],
