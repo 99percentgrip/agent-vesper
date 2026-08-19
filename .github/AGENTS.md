@@ -28,13 +28,16 @@ platform assumptions on hosts unavailable locally.
 - The five-target matrix runs the Stage 4.1 real-process blocker suite with
   bounded timeouts; Linux-only RSS evidence must not be generalized. The
   Linux sandbox step is stall-proofed in layers: it skips `apt` entirely when
-  the runner image already ships `bwrap`, drops the `apt-mirrors.txt`
-  indirection and forces IPv4 when it must install, hard-kills every apt
-  call with coreutils `timeout` (apt's own `Acquire::Retries`/`Timeout`
-  options did NOT bound a stalled azure-mirror transfer — observed
-  2026-08-19: 56 silent minutes → 60-minute job-timeout cancellation), and
-  caps the step at `timeout-minutes: 10`. A missing bwrap fails the bwrap
-  tests truthfully; they are never silently skipped.
+  the runner image already ships `bwrap`; when it must install it REWRITES
+  (never deletes) `/etc/apt/apt-mirrors.txt` to the canonical
+  `archive.ubuntu.com` mirror — the runner's pre-populated apt lists fetch
+  through the `mirror+file:` scheme, so deleting the file breaks even cached
+  `.deb` downloads — forces IPv4, hard-kills every apt call with coreutils
+  `timeout` (apt's own `Acquire::Retries`/`Timeout` options did NOT bound a
+  stalled azure-mirror transfer — observed 2026-08-19: 56 silent minutes →
+  60-minute job-timeout cancellation), and caps the step at
+  `timeout-minutes: 10`. A missing bwrap fails the bwrap tests truthfully;
+  they are never silently skipped.
 - CI validates Stage 5 coverage, read-only session/testkit conformance, and
   writer/SQLite architecture gates on all five target families.
 - `release.yml` declares a single concurrency group `release-pipeline` with

@@ -133,16 +133,20 @@ jobs:
         # the linux-x86_64 job — Acquire::Retries/-o Timeout did NOT bound
         # the stalled transfer). Layered bounds, outermost first:
         # (1) skip apt entirely when the runner image already ships bwrap;
-        # (2) drop the apt-mirrors.txt indirection and force IPv4 (the
-        #     black-holed v6 first-route is the usual silent-stall cause);
+        # (2) REWRITE (never delete) /etc/apt/apt-mirrors.txt to the
+        #     canonical archive.ubuntu.com CDN — the runner's pre-populated
+        #     apt lists fetch through the mirror+file: scheme, so deleting
+        #     the file breaks even cached .deb downloads — and force IPv4
+        #     (the black-holed v6 first-route is the usual silent-stall
+        #     cause);
         # (3) coreutils `timeout` hard-kills apt no matter how it stalls;
         # (4) this step's timeout-minutes caps everything after it.
         # If bwrap is still missing the bwrap tests fail truthfully —
         # tests are never silently skipped.
         run: |
           if ! command -v bwrap >/dev/null 2>&1; then
-            sudo rm -f /etc/apt/apt-mirrors.txt
-            timeout 120 sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10 -o Acquire::ForceIPv4=true \
+            echo "http://archive.ubuntu.com/ubuntu" | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
+            timeout 120 sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=10 -o Acquire::ForceIPv4=true \
               || echo "apt update bounded out; falling back to the runner image's cached package lists"
             timeout 120 sudo apt-get install -y bubblewrap \
               || echo "apt install bounded out; continuing so a missing bwrap fails the bwrap test truthfully"
