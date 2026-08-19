@@ -10,8 +10,8 @@ mod vro_events;
 pub use adapter::{AcpAdapter, AcpAdapterConfig};
 pub use compat::{ACP_SDK_VERSION, ACP_WIRE_PROTOCOL, prompt_response_value};
 pub use engine::{
-    AcpPermissionDecision, AcpPermissionRequest, AcpPermissionRequester, AcpPromptEngine,
-    AcpPromptFuture, AcpPromptRequest, AcpPromptResult,
+    AcpEngineEvent, AcpEventSink, AcpPermissionDecision, AcpPermissionRequest,
+    AcpPermissionRequester, AcpPromptEngine, AcpPromptFuture, AcpPromptRequest, AcpPromptResult,
 };
 pub use mapping::truthful_initialize_response;
 pub use vro_events::{

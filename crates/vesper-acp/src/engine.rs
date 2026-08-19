@@ -10,8 +10,8 @@ use std::sync::Arc;
 
 use serde_json::Value;
 use vesper_domain::{
-    ContentPart, ConversationMessage, SessionId, SessionOperatingMode, SessionPermissionMode,
-    WorkspaceRoot,
+    ContentPart, ConversationMessage, NormalizedUsage, SessionId, SessionOperatingMode,
+    SessionPermissionMode, WorkspaceRoot,
 };
 
 /// Boxed future returned by an ACP prompt engine.
@@ -55,8 +55,69 @@ pub trait AcpPermissionRequester: Send + Sync + std::fmt::Debug {
     fn cancel(&self, _session_id: &SessionId) {}
 }
 
+/// Live progress event pushed by a streaming engine during one turn.
+///
+/// Mirrors the runtime's `HarnessEventPayload` vocabulary that the
+/// single-turn ACP path already maps to ACP session updates. Engines that
+/// stream push these through [`AcpEventSink::event`]; the adapter translates
+/// each one to the same wire shape the runtime event pump produces so ACP
+/// clients observe identical behavior on both paths.
+#[derive(Debug, Clone, PartialEq)]
+pub enum AcpEngineEvent {
+    /// Provider-visible reasoning delta.
+    ReasoningDelta {
+        /// Reasoning text fragment.
+        text: String,
+    },
+    /// User-visible assistant text delta.
+    ContentDelta {
+        /// Assistant text fragment.
+        text: String,
+    },
+    /// A named tool call started (after permission gating).
+    ToolStarted {
+        /// Stable ACP tool-call id for this call.
+        tool_call_id: String,
+        /// Harness tool name.
+        name: String,
+        /// Secret-safe argument hint (whitelisted keys only).
+        hint: String,
+        /// Full raw arguments, for the client's inspector pane.
+        arguments: Value,
+    },
+    /// A named tool call finished.
+    ToolFinished {
+        /// Stable ACP tool-call id matching the started event.
+        tool_call_id: String,
+        /// Harness tool name.
+        name: String,
+        /// Whether the call succeeded.
+        success: bool,
+        /// Bounded result note (size digest or first error line).
+        note: String,
+    },
+    /// Cumulative token usage for the whole turn.
+    Usage {
+        /// Normalized cumulative usage reported by the provider.
+        usage: NormalizedUsage,
+    },
+    /// The model replaced the task plan.
+    PlanUpdated {
+        /// Plan markdown.
+        markdown: String,
+    },
+}
+
+/// Sink the adapter supplies to a streaming engine so it can publish live
+/// ACP session updates through the adapter's bounded output flow.
+pub trait AcpEventSink: Send + Sync + std::fmt::Debug {
+    /// Publishes one event. Returns an error only for unrecoverable
+    /// transport failures; backpressure is handled inside the sink.
+    fn event(&self, event: AcpEngineEvent);
+}
+
 /// Normalized prompt request supplied to a composed engine.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct AcpPromptRequest {
     /// ACP session identity.
     pub session_id: SessionId,
@@ -72,6 +133,28 @@ pub struct AcpPromptRequest {
     pub workspace_roots: Vec<WorkspaceRoot>,
     /// Optional live ACP client permission bridge.
     pub permission_requester: Option<Arc<dyn AcpPermissionRequester>>,
+    /// Live event sink for streaming turns. When absent the engine must not
+    /// stream and should fall back to publishing only the final text.
+    pub event_sink: Option<Arc<dyn AcpEventSink>>,
+}
+
+impl std::fmt::Debug for AcpPromptRequest {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("AcpPromptRequest")
+            .field("session_id", &self.session_id)
+            .field("content", &self.content)
+            .field("history", &self.history.len())
+            .field("operating_mode", &self.operating_mode)
+            .field("permission_mode", &self.permission_mode)
+            .field("workspace_roots", &self.workspace_roots)
+            .field(
+                "has_permission_requester",
+                &self.permission_requester.is_some(),
+            )
+            .field("has_event_sink", &self.event_sink.is_some())
+            .finish()
+    }
 }
 
 /// Normalized final result. Streaming engines may emit their own updates in
@@ -82,6 +165,12 @@ pub struct AcpPromptResult {
     pub text: String,
     /// Whether the host cancelled the turn before completion.
     pub cancelled: bool,
+    /// Whether the adapter should persist this turn into the session record.
+    /// Slash-command turns set `false`: the frozen oracle echoes them to the
+    /// UI but never adds them to model-visible history or the persisted
+    /// session (fixtures/acp/slash-command expects unchanged file hashes
+    /// across a slash turn).
+    pub persist_turn: bool,
 }
 
 /// Optional full-harness prompt engine.

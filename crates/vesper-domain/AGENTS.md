@@ -17,6 +17,15 @@ Orchestrator (VRO) Phase VRO-1 domain contracts.
 - Event sequences are scoped to runtime/session/turn ownership and turn
   terminals are unique.
 - Hidden internal chain-of-thought is not a domain content requirement.
+- `src/slash_commands.rs` owns the frozen-oracle ACP slash-command catalog:
+  28 commands with byte-stable names and descriptions (verbatim from the
+  pinned oracle's `_send_available_commands`, verified against
+  `fixtures/acp/slash-command`) plus the pure case-insensitive
+  `parse_slash_command` parser. It is plain data — no stores, no I/O;
+  store-backed execution lives in `vesper-harness`. The ACP catalog is a
+  distinct oracle surface from the TUI's `LOCAL_COMMANDS` palette (79+3
+  commands); the TUI keeps its own registry rather than collapsing onto this
+  28-command subset.
 - `ToolDefinition.defer_loading` is the visibility axis for the Claude
   Code-style deferred-loading seam: when `true`, the tool stays registered for
   execution but is excluded from the registry's `definitions_for(mode)`

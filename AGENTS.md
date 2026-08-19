@@ -100,6 +100,9 @@ When the user requests a durable behavior change, record it here or in the relev
   disposable packages under `spikes/`.
 - No live provider calls or user-state writes are permitted in foundation
   verification.
+- Registry publishing follows the continuous-update contract: one open
+  `agent-vesper` PR in `agentclientprotocol/registry`, updated in place on
+  the same branch for every version bump. Never close-and-replace it.
 - Production harness work includes transactional sessions, provider-neutral
   runtime and agent loop, hosted tools, memory/checkpoints/MCP/plugins/workers,
   ACP composition, and the native TUI. Current status and evidence live in

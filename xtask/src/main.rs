@@ -507,7 +507,7 @@ fn fixtures_coverage_stage4() -> Result<(), String> {
                     | "glm.incomplete-eof-visible-output"
             );
             let temporary = match id {
-                "acp.slash-command" => Some("only real Stage 4 slash commands are accepted; the full catalog is deferred"),
+                "acp.slash-command" => Some("catalog is advertised and parsed; /help matches the oracle fixture byte-exactly; host-owned commands (compact/undo/diff/export/checkpoint/rollback/plugins/mcp/usage/sessions/lineage/release/ci) return a truthful not-available response instead of full host implementations"),
                 "acp.load-session" | "acp.resume-session" | "acp.list-session" => Some("lifecycle is current-process ephemeral; persistent behavior is deferred"),
                 _ => None,
             };

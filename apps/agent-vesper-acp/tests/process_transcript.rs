@@ -266,7 +266,7 @@ fn stdio_transcript_reaches_real_glm_adapter_with_protocol_pure_stdout() {
 }
 
 #[test]
-fn empty_prompt_and_unsupported_slash_command_never_dispatch_provider() {
+fn empty_prompt_and_slash_commands_never_dispatch_provider() {
     let temp = std::env::temp_dir().join(format!(
         "agent-vesper-stage4-no-dispatch-{}",
         std::process::id()
@@ -324,10 +324,31 @@ fn empty_prompt_and_unsupported_slash_command_never_dispatch_provider() {
         &mut stdin,
         json!({"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":"/tmp","mcpServers":[]}}),
     );
-    let session = response_for(&line_receiver, 2, &mut Vec::new())["result"]["sessionId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let mut new_session_transcript = Vec::new();
+    let session =
+        response_for(&line_receiver, 2, &mut new_session_transcript)["result"]["sessionId"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+    // Oracle parity: exactly one 28-command catalog advertisement arrives
+    // before the session/new response, in oracle registration order.
+    let advertisements: Vec<&Value> = new_session_transcript
+        .iter()
+        .filter(|value| value["params"]["update"]["sessionUpdate"] == "available_commands_update")
+        .collect();
+    assert_eq!(
+        advertisements.len(),
+        1,
+        "session/new must advertise the catalog exactly once"
+    );
+    let advertised: Vec<&str> = advertisements[0]["params"]["update"]["availableCommands"]
+        .as_array()
+        .expect("availableCommands is an array")
+        .iter()
+        .map(|command| command["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(advertised.len(), 28);
+    assert_eq!(advertised_first_and_last(&advertised), ("help", "mcp"));
     send(
         &mut stdin,
         json!({"jsonrpc":"2.0","id":3,"method":"session/prompt","params":{"sessionId":session,"prompt":[],"_meta":{"userMessageId":"empty-message"}}}),
@@ -336,18 +357,73 @@ fn empty_prompt_and_unsupported_slash_command_never_dispatch_provider() {
     assert_eq!(empty["result"]["userMessageId"], "empty-message");
     assert_eq!(empty["result"]["stopReason"], "end_turn");
 
+    // Catalog commands execute in the harness without any provider dispatch
+    // (fixtures/acp/slash-command parity: /help answers with the oracle's
+    // condensed help text as a normal end_turn response).
     send(
         &mut stdin,
-        json!({"jsonrpc":"2.0","id":4,"method":"session/prompt","params":{"sessionId":session,"prompt":[{"type":"text","text":"/future-command"}]}}),
+        json!({"jsonrpc":"2.0","id":4,"method":"session/prompt","params":{"sessionId":session,"prompt":[{"type":"text","text":"/help"}]}}),
     );
-    let slash = response_for(&line_receiver, 4, &mut Vec::new());
-    assert_eq!(slash["error"]["code"], -32601);
+    let mut help_transcript = Vec::new();
+    let help = response_for(&line_receiver, 4, &mut help_transcript);
+    assert!(
+        help.get("error").is_none(),
+        "/help must answer normally, got {help}"
+    );
+    assert_eq!(help["result"]["stopReason"], "end_turn");
+    let help_chunk = help_transcript
+        .iter()
+        .filter(|value| value["params"]["update"]["sessionUpdate"] == "agent_message_chunk")
+        .map(|value| {
+            value["params"]["update"]["content"]["text"]
+                .as_str()
+                .unwrap_or("")
+        })
+        .collect::<Vec<_>>()
+        .join("");
+    assert!(
+        help_chunk.starts_with("⌨️ **Harness Commands**"),
+        "/help must stream the oracle help text, got {help_chunk:?}"
+    );
+
+    // Unknown slash commands get the oracle's bounded unknown-command text —
+    // never a provider dispatch and never a protocol error.
+    send(
+        &mut stdin,
+        json!({"jsonrpc":"2.0","id":5,"method":"session/prompt","params":{"sessionId":session,"prompt":[{"type":"text","text":"/future-command"}]}}),
+    );
+    let mut unknown_transcript = Vec::new();
+    let unknown = response_for(&line_receiver, 5, &mut unknown_transcript);
+    assert!(
+        unknown.get("error").is_none(),
+        "unknown slash commands must answer normally, got {unknown}"
+    );
+    let unknown_chunk = unknown_transcript
+        .iter()
+        .filter(|value| value["params"]["update"]["sessionUpdate"] == "agent_message_chunk")
+        .map(|value| {
+            value["params"]["update"]["content"]["text"]
+                .as_str()
+                .unwrap_or("")
+        })
+        .collect::<Vec<_>>()
+        .join("");
+    assert!(
+        unknown_chunk.starts_with("Unknown command: /future-command"),
+        "unknown slash commands must stream the oracle fallback text, got {unknown_chunk:?}"
+    );
 
     drop(stdin);
     wait_for_exit(&mut child);
     reader.join().unwrap();
 }
 
+fn advertised_first_and_last<'a>(advertised: &[&'a str]) -> (&'a str, &'a str) {
+    (
+        advertised.first().copied().unwrap_or_default(),
+        advertised.last().copied().unwrap_or_default(),
+    )
+}
 #[test]
 fn malformed_input_exits_without_stdout_contamination() {
     let mut command = Command::new(env!("CARGO_BIN_EXE_agent-vesper-acp"));

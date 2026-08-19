@@ -41,10 +41,20 @@ transport, stderr-only tracing, and orderly shutdown.
   dispatch gate or scenario behavior.
 - The default ACP composition injects `AcpHarnessEngine`, which owns bounded
   per-session conversation history and routes prompts through `AgentLoop`.
-  The adapter injects a live ACP `session/request_permission` port for
-  mutating tools; rejection, cancellation, unavailable clients, and malformed
-  outcomes remain fail-closed. The engine injects the shared hosted
-  Python-oracle tool surface and bounded project instruction context. Set
+  The engine executes the 28-command oracle slash catalog in-process
+  (ADR 0010 Tier C): catalog commands answer from the harness executor with
+  no provider dispatch, `/max-iterations` and model/plan switches persist as
+  per-session engine overrides, unknown `/` text answers with the oracle's
+  bounded unknown-command fallback, and host-owned commands (compact/undo/
+  diff/export/checkpoint/rollback/plugins/mcp/usage/sessions/lineage/release/
+  ci) truthfully report that no ACP host implementation exists yet. Slash
+  turns report `persist_turn == false` and never enter conversation history
+  or persisted records. The engine's progress port pairs tool started/
+  finished events by the most recently issued id per tool name. The adapter
+  injects a live ACP `session/request_permission` port for mutating tools;
+  rejection, cancellation, unavailable clients, and malformed outcomes
+  remain fail-closed. The engine injects the shared hosted Python-oracle
+  tool surface and bounded project instruction context. Set
   `AGENT_VESPER_FULL_HARNESS=0` only for protocol-conformance fixtures that
   must exercise the provider-neutral single-turn runtime path; production
   defaults to the full engine.

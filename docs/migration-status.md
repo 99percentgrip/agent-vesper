@@ -7,7 +7,7 @@ Last updated: 2026-08-01
 | Reconnaissance, contracts, and frozen oracle | COMPLETE | `docs/recon/`, pinned Python oracle `bf4d4287e2e3320aa3f09015f678e6169d520045` |
 | Provider-neutral domain/runtime/agent harness | IMPLEMENTED | Typed provider registry, session supervisor, multi-turn agent loop, permission gate, progress port, and hosted tool service |
 | Z.ai GLM production adapter | IMPLEMENTED | Exact frozen six-model catalog, Coding/Standard/BigModel endpoints, auth, streaming, tools, reasoning, usage, image gating |
-| ACP executable | IMPLEMENTED | Full harness is the production default; live ACP permission requests; persisted-session ports; setup/install lifecycle |
+| ACP executable | IMPLEMENTED | Full harness is the production default; live ACP permission requests; persisted-session ports; setup/install lifecycle; 28-command oracle slash catalog advertised (new/load/resume) and executed in-process with fixture-exact `/help`, unknown-command fallback, per-session overrides, non-persisted slash turns, and streaming tool-call correlation |
 | Persistence, memory, checkpoints, MCP, plugins, workers | IMPLEMENTED | Durable bounded stores and typed hosted/slash-command bridges; no SQLite in checkpoints; unsigned plugins compile only in debug |
 | Native TUI command surface | IMPLEMENTED | 83 registered routes including distinct `/export last`; no deferred fallback; missing routes fail closed |
 | Native TUI interaction surface | IMPLEMENTED AND LOCALLY VERIFIED | Full palette/value pickers, mouse-operable footer/rows, reasoning/activity/TODO/report panels, working-tree views, Vim, keybinds, image/screenshot, sound, QR mobile approvals, and real optional local voice pipeline |

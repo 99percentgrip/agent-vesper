@@ -34,8 +34,12 @@ with each release.
   temporary directory, writes `registry/agent.json` from this repo into a
   fresh `agent-vesper/` directory, commits on a new branch, and opens a
   Pull Request titled *"Add agent-vesper: Native Rust Reasoning
-  Orchestrator"*. Idempotent: a second run with an already-open PR for the
-  same version updates the existing branch in place. The local installers
+  Orchestrator"*. CONTINUOUS-UPDATE CONTRACT (maintainer-mandated 2026-08-18):
+  there is exactly ONE long-lived open `agent-vesper` PR. Never close it to
+  open a new one; never comment that it is superseded. For every version
+  bump: PUT the updated `agent.json` to the SAME branch the open PR tracks
+  (force-push if rebased), then edit the PR title/body in place via
+  `gh api repos/agentclientprotocol/registry/pulls/<N> -X PATCH`. The local installers
   (`install.sh` / `install.ps1`) consume `registry/agent.json` from this
   repo, NOT this script. Replaces the deleted `acp_pr_439.md` payload
   (VRO-11.2: that file was stale — it claimed to be the payload for PR

@@ -29,6 +29,27 @@ update mapping, and bounded asynchronous dispatch into `vesper-runtime`.
   (oracle parity): Zed attaches every configured MCP server to each session,
   so rejecting them made the agent unloadable with `-32602`. The harness MCP
   registry remains the sole MCP source; no client server is launched.
+- Slash-command parity (ADR 0010 Tier C): `available_commands_update`
+  advertises the 28-command `vesper-domain` catalog exactly once before the
+  `session/new`, `session/load`, and `session/resume` responses; `fork`
+  advertises nothing (fixtures/acp/fork-session parity). With an injected
+  prompt engine, `/`-prefixed prompts route to the engine, which owns catalog
+  execution; without an engine they fail closed with `-32601` instead of
+  dispatching the provider. Slash turns report `AcpPromptResult.persist_turn
+  == false` and are never appended to persisted sessions (the
+  `acp.slash-command` fixture expects unchanged file hashes).
+- `AcpEngineEvent`/`AcpEventSink` are the streaming-engine vocabulary
+  (`ReasoningDelta`, `ContentDelta`, `ToolStarted`, `ToolFinished`, `Usage`,
+  `PlanUpdated`); the adapter sink maps each to the same wire shape the
+  single-turn event pump produces. Engines that lack tool-call ids pair
+  started/finished calls by the most recently issued id per tool name (the
+  agent loop executes tools strictly sequentially).
+- Session config options advertise and accept `thought_level` and
+  `permission_mode` (oracle option ids). `model`, `api_endpoint`,
+  `generation_profile`, `auxiliary_model`, and `mixture_mode` are a
+  documented gap: setting them requires provider-neutral domain commands and
+  provider-routed model-catalog plumbing that do not exist yet, and options
+  without a set path are never advertised.
 - Session mode/config requests are mapped to runtime mode, reasoning, and
   permission updates; delete and logout have explicit protocol responses.
 - `AcpPromptEngine` is an optional composition port. When injected, prompt

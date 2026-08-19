@@ -176,6 +176,7 @@ impl AcpAdapter {
                     Arc::clone(&ids),
                     output_flow.clone(),
                     prompt_engine,
+                    config.context_window,
                 ));
                 let event_connection = connection.clone();
                 let event_barriers = Arc::clone(&barriers);
@@ -283,6 +284,7 @@ async fn dispatch_requests(
     ids: Arc<AtomicU64>,
     output_flow: OutputFlow,
     prompt_engine: Option<Arc<dyn AcpPromptEngine>>,
+    context_window: u64,
 ) -> Result<(), agent_client_protocol::Error> {
     let active = Arc::new(Mutex::new(BTreeMap::<SessionId, TurnId>::new()));
     let engine_active = Arc::new(Mutex::new(BTreeSet::<SessionId>::new()));
@@ -296,6 +298,7 @@ async fn dispatch_requests(
         output_flow,
         prompt_engine,
         permission_requester,
+        context_window,
     };
     let mut prompts = JoinSet::new();
     loop {
@@ -437,6 +440,9 @@ struct RequestContext {
     output_flow: OutputFlow,
     prompt_engine: Option<Arc<dyn AcpPromptEngine>>,
     permission_requester: Arc<dyn AcpPermissionRequester>,
+    /// Adapter context-window size forwarded to engine event sinks for
+    /// `usage_update` notifications.
+    context_window: u64,
 }
 
 async fn handle_request(
@@ -454,6 +460,7 @@ async fn handle_request(
         output_flow,
         prompt_engine,
         permission_requester,
+        context_window,
     } = context;
     let InboundRequest { request, responder } = inbound;
     macro_rules! execute {
@@ -512,6 +519,12 @@ async fn handle_request(
                 return responder.respond_with_internal_error("unexpected runtime response");
             };
             let session_id = snapshot.session_id.as_str().to_owned();
+            advertise_available_commands(
+                &connection,
+                &agent_session_id(&snapshot.session_id),
+                &output_flow,
+            )
+            .await?;
             let modes = session_modes(snapshot.operating_mode);
             let config_options = session_config_options(&snapshot);
             respond_json(
@@ -534,6 +547,7 @@ async fn handle_request(
                 return responder.respond_with_internal_error("unexpected runtime response");
             };
             replay_snapshot(&connection, *snapshot, &output_flow).await?;
+            advertise_available_commands(&connection, &request.session_id, &output_flow).await?;
             let snapshot = execute!(runtime.snapshot(&id));
             respond_json(
                 responder,
@@ -554,6 +568,7 @@ async fn handle_request(
                 return responder.respond_with_internal_error("unexpected runtime response");
             };
             replay_snapshot(&connection, *snapshot, &output_flow).await?;
+            advertise_available_commands(&connection, &request.session_id, &output_flow).await?;
             let snapshot = execute!(runtime.snapshot(&session_id(&request.session_id)));
             respond_json(
                 responder,
@@ -601,6 +616,9 @@ async fn handle_request(
             let RuntimeResponse::Session(snapshot) = response else {
                 return responder.respond_with_internal_error("unexpected runtime response");
             };
+            // Oracle parity (fixtures/acp/fork-session): the fork response
+            // carries config options only; no available_commands_update is
+            // advertised for the child session.
             respond_json(
                 responder,
                 ForkSessionResponse::new(snapshot.session_id.as_str().to_owned()),
@@ -626,7 +644,13 @@ async fn handle_request(
                     agent_client_protocol::schema::v1::ContentBlock::Text(text)
                         if text.text.trim_start().starts_with('/')
                 )
+                && prompt_engine.is_none()
             {
+                // Conformance-only path (no injected engine): slash text has
+                // no executor in the provider-neutral single-turn runtime, so
+                // it fails closed instead of dispatching the provider. With a
+                // composed engine the text flows to the engine, which owns
+                // catalog execution (fixtures/acp/slash-command parity).
                 return responder
                     .respond_with_error(agent_client_protocol::Error::method_not_found());
             }
@@ -654,6 +678,7 @@ async fn handle_request(
                 let connection = connection.clone();
                 let output_flow = output_flow.clone();
                 let request_session = request.session_id.clone();
+                let engine_context_window = context_window;
                 prompts.spawn(async move {
                     let result = engine
                         .run(AcpPromptRequest {
@@ -664,6 +689,12 @@ async fn handle_request(
                             permission_mode,
                             workspace_roots,
                             permission_requester: Some(Arc::clone(&permission_requester)),
+                            event_sink: Some(Arc::new(AcpEngineEventSink {
+                                connection: connection.clone(),
+                                session_id: request_session.clone(),
+                                output_flow: output_flow.clone(),
+                                context_window: engine_context_window,
+                            })),
                         })
                         .await;
                     match result {
@@ -697,14 +728,21 @@ async fn handle_request(
                                 content: engine_content,
                                 extensions: vesper_domain::ExtensionMap::default(),
                             };
-                            if let Err(error) = save_runtime
-                                .accept_external_turn(&engine_session, user, assistant_content)
-                                .await
-                            {
-                                return responder.respond_with_error(sdk_runtime_error(error));
-                            }
-                            if let Err(error) = save_runtime.save_session(&engine_session).await {
-                                return responder.respond_with_error(sdk_runtime_error(error));
+                            // Slash-command turns report `persist_turn == false`
+                            // (oracle parity: echoed to the UI, never appended
+                            // to model-visible history or the persisted
+                            // record). Model turns persist the full exchange.
+                            if result.persist_turn {
+                                if let Err(error) = save_runtime
+                                    .accept_external_turn(&engine_session, user, assistant_content)
+                                    .await
+                                {
+                                    return responder.respond_with_error(sdk_runtime_error(error));
+                                }
+                                if let Err(error) = save_runtime.save_session(&engine_session).await
+                                {
+                                    return responder.respond_with_error(sdk_runtime_error(error));
+                                }
                             }
                             let chunk = ContentChunk::new(ContentBlock::Text(TextContent::new(
                                 result.text.as_str(),
@@ -924,6 +962,165 @@ fn respond_json(
         .respond(serde_json::to_value(value).map_err(agent_client_protocol::util::internal_error)?)
 }
 
+/// Converts a domain session id into the ACP schema id shape.
+fn agent_session_id(
+    value: &vesper_domain::SessionId,
+) -> agent_client_protocol::schema::v1::SessionId {
+    agent_client_protocol::schema::v1::SessionId::new(value.as_str())
+}
+
+/// The frozen-oracle command catalog as ACP `AvailableCommand` entries, in
+/// oracle registration order. Byte-stable names/descriptions come from
+/// `vesper-domain` so ACP advertisement, harness execution, and persisted
+/// replay share one source of truth.
+fn catalog_commands() -> Vec<agent_client_protocol::schema::v1::AvailableCommand> {
+    use agent_client_protocol::schema::v1::AvailableCommand;
+    vesper_domain::ORACLE_SLASH_COMMANDS
+        .iter()
+        .map(|command| AvailableCommand::new(command.name, command.description))
+        .collect()
+}
+
+/// Emits `available_commands_update` for one session through the adapter's
+/// bounded output flow. Called on session/new, load, and resume so every
+/// live session carries the full command surface (oracle parity: 28
+/// commands, advertised before the operation response; the fork fixture
+/// records no advertisement).
+async fn advertise_available_commands(
+    connection: &ConnectionTo<Client>,
+    session: &agent_client_protocol::schema::v1::SessionId,
+    output_flow: &OutputFlow,
+) -> Result<(), agent_client_protocol::Error> {
+    use agent_client_protocol::schema::v1::{
+        AvailableCommandsUpdate, SessionNotification, SessionUpdate,
+    };
+    let notification = SessionNotification::new(
+        session.clone(),
+        SessionUpdate::AvailableCommandsUpdate(AvailableCommandsUpdate::new(catalog_commands())),
+    );
+    connection
+        .send_notification(notification)
+        .map_err(agent_client_protocol::util::internal_error)?;
+    output_flow.wait_until_writer_accepts().await?;
+    Ok(())
+}
+
+/// Sink handed to a composed streaming engine. Each event is mapped to the
+/// same ACP wire shape the runtime event pump produces, so ACP clients see
+/// identical `agent_thought_chunk` / `agent_message_chunk` / tool-call /
+/// usage updates on the full-harness path as on the single-turn path.
+struct AcpEngineEventSink {
+    connection: ConnectionTo<Client>,
+    session_id: agent_client_protocol::schema::v1::SessionId,
+    output_flow: OutputFlow,
+    context_window: u64,
+}
+
+impl std::fmt::Debug for AcpEngineEventSink {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AcpEngineEventSink").finish_non_exhaustive()
+    }
+}
+
+impl AcpEngineEventSink {
+    fn context_window(&self) -> u64 {
+        self.context_window
+    }
+}
+
+impl AcpEngineEventSink {
+    fn publish(&self, update: agent_client_protocol::schema::v1::SessionUpdate) {
+        let connection = self.connection.clone();
+        let flow = self.output_flow.clone();
+        let session = self.session_id.clone();
+        // Fire-and-forget: the spawned task applies the adapter's bounded
+        // output-flow backpressure itself; publish() must never block the
+        // engine's synchronous event stream.
+        tokio::spawn(async move {
+            connection
+                .send_notification(agent_client_protocol::schema::v1::SessionNotification::new(
+                    session, update,
+                ))
+                .map_err(agent_client_protocol::util::internal_error)?;
+            flow.wait_until_writer_accepts().await?;
+            Ok::<(), agent_client_protocol::Error>(())
+        });
+    }
+}
+
+impl crate::engine::AcpEventSink for AcpEngineEventSink {
+    fn event(&self, event: crate::engine::AcpEngineEvent) {
+        use agent_client_protocol::schema::v1::{
+            ContentBlock, ContentChunk, SessionUpdate, TextContent, ToolCall as AcpToolCall,
+            ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, UsageUpdate,
+        };
+        match event {
+            crate::engine::AcpEngineEvent::ReasoningDelta { text } => {
+                self.publish(SessionUpdate::AgentThoughtChunk(ContentChunk::new(
+                    ContentBlock::Text(TextContent::new(text.as_str())),
+                )));
+            }
+            crate::engine::AcpEngineEvent::ContentDelta { text } => {
+                self.publish(SessionUpdate::AgentMessageChunk(ContentChunk::new(
+                    ContentBlock::Text(TextContent::new(text.as_str())),
+                )));
+            }
+            crate::engine::AcpEngineEvent::ToolStarted {
+                tool_call_id,
+                name,
+                hint,
+                arguments,
+            } => {
+                let _ = hint;
+                self.publish(SessionUpdate::ToolCall(AcpToolCall::new(
+                    tool_call_id,
+                    name,
+                )));
+                let _ = arguments;
+            }
+            crate::engine::AcpEngineEvent::ToolFinished {
+                tool_call_id,
+                name,
+                success,
+                note,
+            } => {
+                let status = if success {
+                    ToolCallStatus::Completed
+                } else {
+                    ToolCallStatus::Failed
+                };
+                self.publish(SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
+                    tool_call_id,
+                    ToolCallUpdateFields::new()
+                        .title(name)
+                        .status(status)
+                        .raw_output(serde_json::json!({ "note": note })),
+                )));
+            }
+            crate::engine::AcpEngineEvent::Usage { usage } => {
+                let used = usage
+                    .total
+                    .value
+                    .or_else(|| {
+                        usage
+                            .input
+                            .value
+                            .zip(usage.output.value)
+                            .and_then(|(a, b)| a.checked_add(b))
+                    })
+                    .unwrap_or(0);
+                self.publish(SessionUpdate::UsageUpdate(UsageUpdate::new(
+                    used,
+                    self.context_window(),
+                )));
+            }
+            crate::engine::AcpEngineEvent::PlanUpdated { markdown } => {
+                let _ = markdown;
+            }
+        }
+    }
+}
+
 fn session_modes(operating_mode: SessionOperatingMode) -> SessionModeState {
     let current = match operating_mode {
         SessionOperatingMode::Code => "code",
@@ -960,7 +1157,7 @@ fn session_config_options(snapshot: &vesper_runtime::SessionSnapshot) -> Vec<Ses
         )
         .category(SessionConfigOptionCategory::ThoughtLevel),
         SessionConfigOption::select(
-            "permission",
+            "permission_mode",
             "Permission mode",
             match snapshot.permission_mode {
                 SessionPermissionMode::Ask => "ask",

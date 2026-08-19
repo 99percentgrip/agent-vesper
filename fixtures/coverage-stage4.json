@@ -194,7 +194,7 @@
       "runtime_behavior_implemented": true,
       "scenario_id": "acp.slash-command",
       "schema_validated": true,
-      "temporary_difference": "only real Stage 4 slash commands are accepted; the full catalog is deferred",
+      "temporary_difference": "catalog is advertised and parsed; /help matches the oracle fixture byte-exactly; host-owned commands (compact/undo/diff/export/checkpoint/rollback/plugins/mcp/usage/sessions/lineage/release/ci) return a truthful not-available response instead of full host implementations",
       "test_references": [
         "vesper-acp unit tests",
         "agent-vesper-acp process_transcript"

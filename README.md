@@ -81,6 +81,8 @@ Add to Zed's `settings.json`:
 
 Restart Zed → Agent Panel → **Agent Vesper**.
 
+In Zed, typing `/` in the composer surfaces the **28-command harness catalog** (advertised via ACP `available_commands_update` on every new/load/resume): report commands (`/help`, `/status`, `/memory`, `/skills`, `/profile`, `/awareness`, `/metacognition`, `/deliberation`, `/goal`, `/subgoal`, `/sessions`, `/lineage`, `/version`) execute in-process with no model call, `/max-iterations [N]` tunes the per-turn tool cap for the session, and unknown `/` text gets the oracle's bounded fallback. Slash turns never reach the provider and are never persisted. Commands that need a host UI the ACP protocol has no surface for (compact/undo/diff/export/checkpoint/rollback/plugins/mcp/usage) answer truthfully that no ACP host implementation exists yet.
+
 ### Uninstall
 
 ```sh

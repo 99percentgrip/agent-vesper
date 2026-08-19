@@ -21,6 +21,14 @@ Z.ai and Playwright MCP server descriptors.
 
 - Every filesystem path is confined to the caller's primary workspace root
   before access.
+- `src/slash_commands.rs` owns store-backed slash-command execution for the
+  ACP and TUI compositions: `execute_slash_command` resolves catalog commands
+  against a host-supplied `SlashCommandContext` (durable `MemoryStores`,
+  model/plan labels, mode), `/help` renders the oracle fixture text
+  byte-exactly, provider-facing switches validate into a `SessionOverrides`
+  payload the host applies at its own provider boundary, and commands only a
+  frontend can serve return `SlashCommandOutcome::Host` passthrough. The
+  catalog and parser delegate to `vesper-domain::slash_commands`.
 - Durable roots are supplied by the composition boundary and default to the
   `.agent-vesper/` layout; no credentials are persisted by this crate.
 - The service exposes the same hosted tool definitions and behavior to ACP and

@@ -16,6 +16,7 @@ pub mod metadata;
 pub mod permission;
 pub mod plan;
 pub mod session;
+pub mod slash_commands;
 pub mod tool;
 pub mod usage;
 pub mod version;
@@ -55,6 +56,7 @@ pub use permission::{
 };
 pub use plan::{Plan, PlanStatus, PlanStep};
 pub use session::{ReasoningRetentionMode, SessionLineage, SessionSnapshotHeader};
+pub use slash_commands::{ORACLE_SLASH_COMMANDS, SlashCommandDescriptor, parse_slash_command};
 pub use tool::{
     CompletedToolArguments, DiffSummary, FragmentedToolCallIdentity, HarnessToolName,
     ProviderToolName, StructuredLocation, ToolCall, ToolChoiceIntent, ToolDefinition,

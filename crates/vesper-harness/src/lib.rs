@@ -2147,6 +2147,31 @@ impl MemoryStores {
             awareness,
         }
     }
+
+    /// The durable memory store backing `/memory`, `/goal`, `/subgoal`, and
+    /// the memory tools. `None` when the store failed to open.
+    #[must_use]
+    pub fn memory(&self) -> Option<&Arc<vesper_memory::MemoryStore>> {
+        self.memory.as_ref()
+    }
+
+    /// The learned-skill store backing `/skills` and the skill tools.
+    #[must_use]
+    pub fn skills(&self) -> Option<&Arc<vesper_memory::SkillStore>> {
+        self.skills.as_ref()
+    }
+
+    /// The cross-project user profile backing `/profile`.
+    #[must_use]
+    pub fn profile(&self) -> Option<&Arc<vesper_memory::UserProfile>> {
+        self.profile.as_ref()
+    }
+
+    /// The epistemic ledger backing `/awareness`-family reports.
+    #[must_use]
+    pub fn awareness(&self) -> Option<&Arc<vesper_memory::AwarenessLedger>> {
+        self.awareness.as_ref()
+    }
 }
 
 /// Memory/skills tool service injected into the agent loop.
@@ -2170,6 +2195,8 @@ impl WorkerFactory {
         Self { registry, config }
     }
 }
+
+pub mod slash_commands;
 
 pub struct HarnessToolService {
     stores: Arc<MemoryStores>,
@@ -2242,6 +2269,13 @@ impl HarnessToolService {
                 MCP_GATEWAY_PREFIX,
                 Arc::new(McpGatewayExecutor::new(plugin_root)),
             )
+    }
+
+    /// The shared durable stores backing slash-command report commands
+    /// (`/memory`, `/skills`, `/profile`, `/awareness`, `/goal`, `/subgoal`).
+    #[must_use]
+    pub fn stores(&self) -> &Arc<MemoryStores> {
+        &self.stores
     }
 
     fn read_only_worker_service(&self) -> Arc<Self> {

@@ -141,6 +141,11 @@ struct AcpHarnessEngine {
     hosted: Arc<HarnessToolService>,
     histories: Mutex<BTreeMap<vesper_domain::SessionId, Vec<ConversationMessage>>>,
     cancellations: Mutex<BTreeMap<vesper_domain::SessionId, Arc<RuntimeCancellation>>>,
+    /// Per-session slash-command overrides (`/max-iterations`, model/plan
+    /// switches). Live for the process lifetime; slash turns themselves are
+    /// never persisted (oracle parity).
+    overrides:
+        Mutex<BTreeMap<vesper_domain::SessionId, vesper_harness::slash_commands::SessionOverrides>>,
 }
 
 #[derive(Debug)]
@@ -190,6 +195,7 @@ impl AcpHarnessEngine {
             hosted,
             histories: Mutex::new(BTreeMap::new()),
             cancellations: Mutex::new(BTreeMap::new()),
+            overrides: Mutex::new(BTreeMap::new()),
         }
     }
 
@@ -207,7 +213,11 @@ impl AcpHarnessEngine {
             return Ok(AcpPromptResult {
                 text,
                 cancelled: false,
+                persist_turn: true,
             });
+        }
+        if let Some(result) = self.try_slash_command(&request, &text).await {
+            return Ok(result);
         }
         let message = ConversationMessage {
             id: MessageId::new(format!("acp-harness-{}", next_engine_id()))
@@ -227,6 +237,48 @@ impl AcpHarnessEngine {
             history.clone()
         };
         let mut config = self.config.clone();
+        {
+            let overrides = self.overrides.lock().await;
+            if let Some(session_overrides) = overrides.get(&request.session_id) {
+                if let Some(cap) = session_overrides.max_tool_iterations {
+                    config.max_tool_iterations = cap;
+                }
+                if let Some(model) = &session_overrides.model
+                    && let Ok(model_id) = ModelId::new(model.clone())
+                {
+                    let provider = config.model.provider_id.clone();
+                    config.model = runtime_model(&model_id, &provider);
+                }
+                let entries: &[(&str, Option<&String>)] = &[
+                    (
+                        "zai:endpoint-plan",
+                        session_overrides.endpoint_plan.as_ref(),
+                    ),
+                    (
+                        "zai:reasoning-mode",
+                        session_overrides.reasoning_mode.as_ref(),
+                    ),
+                    (
+                        "zai:generation-profile",
+                        session_overrides.generation_profile.as_ref(),
+                    ),
+                    (
+                        "zai:auxiliary-model",
+                        session_overrides.auxiliary_model.as_ref(),
+                    ),
+                    ("zai:mixture-mode", session_overrides.mixture_mode.as_ref()),
+                ];
+                for (key, value) in entries {
+                    if let Some(value) = value {
+                        let _ = config
+                            .provider_configuration
+                            .values
+                            .values
+                            .insert((*key).to_owned(), serde_json::json!(value));
+                    }
+                }
+            }
+        }
         if !request.workspace_roots.is_empty() {
             config.workspace_roots = request.workspace_roots;
         }
@@ -247,7 +299,12 @@ impl AcpHarnessEngine {
             hosted.build_default_registry(),
             config,
         )
-        .with_permission_port(permission_port);
+        .with_permission_port(permission_port)
+        .with_progress_port(Arc::new(AcpEngineProgressPort {
+            sink: request.event_sink.clone(),
+            tool_seq: std::sync::atomic::AtomicU64::new(0),
+            outstanding: std::sync::Mutex::new(BTreeMap::new()),
+        }));
         let cancellation = Arc::new(RuntimeCancellation::new());
         self.cancellations
             .lock()
@@ -266,6 +323,7 @@ impl AcpHarnessEngine {
             return Ok(AcpPromptResult {
                 text: String::new(),
                 cancelled: true,
+                persist_turn: true,
             });
         }
         let (outcome, history) = run_result.map_err(|error| {
@@ -279,7 +337,183 @@ impl AcpHarnessEngine {
         Ok(AcpPromptResult {
             text: outcome_text(&outcome),
             cancelled: false,
+            persist_turn: true,
         })
+    }
+
+    /// Executes one catalog slash command, or returns an oracle-parity
+    /// unknown-command response for un-catalog `/` text. Returns `None` for
+    /// ordinary prompts so the multi-turn loop runs. Slash turns never
+    /// dispatch the provider and are never persisted
+    /// (fixtures/acp/slash-command parity).
+    async fn try_slash_command(
+        &self,
+        request: &AcpPromptRequest,
+        text: &str,
+    ) -> Option<AcpPromptResult> {
+        use vesper_harness::slash_commands::{
+            SlashCommandContext, SlashCommandOutcome, execute_slash_command,
+        };
+        let trimmed = text.trim();
+        if !trimmed.starts_with('/') {
+            return None;
+        }
+        let slash_result = |body: String| {
+            Some(AcpPromptResult {
+                text: body,
+                cancelled: false,
+                persist_turn: false,
+            })
+        };
+        let Some((name, argument)) = vesper_domain::parse_slash_command(trimmed) else {
+            return slash_result(unknown_command_text(trimmed));
+        };
+        let stores = self.hosted.stores().clone();
+        let visible_messages = self
+            .histories
+            .lock()
+            .await
+            .get(&request.session_id)
+            .map_or(0, Vec::len);
+        let config_value = |key: &str| -> String {
+            self.config
+                .provider_configuration
+                .values
+                .values
+                .get(key)
+                .and_then(|value| value.as_str())
+                .unwrap_or("default")
+                .to_owned()
+        };
+        let context = SlashCommandContext {
+            stores: Some(&stores),
+            model: self.config.model.model_id.as_str().to_owned(),
+            endpoint_plan: config_value("zai:endpoint-plan"),
+            reasoning_mode: config_value("zai:reasoning-mode"),
+            permission_mode: match request.permission_mode {
+                vesper_domain::SessionPermissionMode::Ask => "ask".to_owned(),
+                vesper_domain::SessionPermissionMode::Bypass => "bypass".to_owned(),
+                vesper_domain::SessionPermissionMode::ReadOnly => "read-only".to_owned(),
+            },
+            operating_mode: request.operating_mode,
+            quota_available: false,
+            visible_messages,
+            context_window: 0,
+            tokens_used: 0,
+        };
+        match execute_slash_command(name, argument, &context) {
+            SlashCommandOutcome::Text(body) => slash_result(body),
+            SlashCommandOutcome::Override { overrides, text } => {
+                let mut map = self.overrides.lock().await;
+                let session_overrides = map.entry(request.session_id.clone()).or_default();
+                if overrides.max_tool_iterations.is_some() {
+                    session_overrides.max_tool_iterations = overrides.max_tool_iterations;
+                }
+                for (source, target) in [
+                    (overrides.model, &mut session_overrides.model),
+                    (
+                        overrides.endpoint_plan,
+                        &mut session_overrides.endpoint_plan,
+                    ),
+                    (
+                        overrides.reasoning_mode,
+                        &mut session_overrides.reasoning_mode,
+                    ),
+                    (
+                        overrides.generation_profile,
+                        &mut session_overrides.generation_profile,
+                    ),
+                    (
+                        overrides.auxiliary_model,
+                        &mut session_overrides.auxiliary_model,
+                    ),
+                    (overrides.mixture_mode, &mut session_overrides.mixture_mode),
+                ] {
+                    if source.is_some() {
+                        *target = source;
+                    }
+                }
+                drop(map);
+                slash_result(text)
+            }
+            SlashCommandOutcome::Host(_) => slash_result(host_command_text(name)),
+            SlashCommandOutcome::Unknown(_) => slash_result(unknown_command_text(trimmed)),
+        }
+    }
+}
+
+/// Bridges bounded `AgentProgressEvent`s from the agent loop into ACP
+/// session updates through the adapter's event sink. Constructed once per
+/// turn; cheap to clone. `AgentProgressEvent` carries no tool-call ids, so
+/// started ids are synthesized per name and finished events pair with the
+/// most recent outstanding id of the same name (the agent loop executes
+/// tool calls strictly sequentially).
+struct AcpEngineProgressPort {
+    sink: Option<Arc<dyn vesper_acp::AcpEventSink>>,
+    tool_seq: std::sync::atomic::AtomicU64,
+    /// Outstanding started tool-call ids by tool name, most recent last.
+    outstanding: std::sync::Mutex<BTreeMap<String, Vec<String>>>,
+}
+
+impl vesper_agent::AgentProgressPort for AcpEngineProgressPort {
+    fn emit(&self, event: vesper_agent::AgentProgressEvent) {
+        use vesper_acp::AcpEngineEvent;
+        let Some(sink) = self.sink.as_ref() else {
+            return;
+        };
+        match event {
+            vesper_agent::AgentProgressEvent::ReasoningDelta { text } => {
+                sink.event(AcpEngineEvent::ReasoningDelta {
+                    text: text.as_str().to_owned(),
+                });
+            }
+            vesper_agent::AgentProgressEvent::ContentDelta { text } => {
+                sink.event(AcpEngineEvent::ContentDelta {
+                    text: text.as_str().to_owned(),
+                });
+            }
+            vesper_agent::AgentProgressEvent::ToolStarted { name, hint } => {
+                let seq = self
+                    .tool_seq
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let tool_call_id = format!("acp-tool-{seq}");
+                if let Ok(mut outstanding) = self.outstanding.lock() {
+                    outstanding
+                        .entry(name.clone())
+                        .or_default()
+                        .push(tool_call_id.clone());
+                }
+                sink.event(AcpEngineEvent::ToolStarted {
+                    tool_call_id,
+                    name,
+                    hint,
+                    arguments: serde_json::Value::Null,
+                });
+            }
+            vesper_agent::AgentProgressEvent::ToolFinished {
+                name,
+                success,
+                note,
+            } => {
+                let paired = self
+                    .outstanding
+                    .lock()
+                    .ok()
+                    .and_then(|mut outstanding| outstanding.get_mut(&name).and_then(Vec::pop))
+                    .unwrap_or_else(|| format!("acp-tool-{name}"));
+                sink.event(AcpEngineEvent::ToolFinished {
+                    tool_call_id: paired,
+                    name,
+                    success,
+                    note,
+                });
+            }
+            vesper_agent::AgentProgressEvent::PlanUpdated { markdown } => {
+                sink.event(AcpEngineEvent::PlanUpdated { markdown });
+            }
+            vesper_agent::AgentProgressEvent::TurnStarted
+            | vesper_agent::AgentProgressEvent::ProviderTurnStarted { .. } => {}
+        }
     }
 }
 
@@ -301,6 +535,33 @@ impl AcpPromptEngine for AcpHarnessEngine {
             true
         })
     }
+}
+
+/// Oracle-parity unknown-command response for un-catalog `/` text. The list
+/// is byte-stable against the frozen oracle's `_handle_command` fallback
+/// (pinned commit bf4d4287).
+fn unknown_command_text(command: &str) -> String {
+    format!(
+        "Unknown command: {command}\nAvailable commands: /compact, /help, /clear-plan, \
+         /clear-history, /diff, /export, /status, /usage, /max-iterations, /memory, \
+         /awareness, /metacognition, /deliberation, /repository, /meta-learning, \
+         /skills, /profile, /curator, /sessions, /lineage, /goal, /subgoal, \
+         /checkpoint, /rollback, /plugins, /version, /release, /ci, /mcp"
+    )
+}
+
+/// Truthful bounded response for host-owned commands this composition has
+/// not wired yet. Never a placeholder success: the command genuinely has no
+/// ACP host implementation in this binary today.
+fn host_command_text(name: &str) -> String {
+    let description = vesper_domain::ORACLE_SLASH_COMMANDS
+        .iter()
+        .find(|command| command.name == name)
+        .map_or("", |command| command.description);
+    format!(
+        "/{name} ({description}) is a host-owned command and is not available in the \
+         ACP harness composition yet."
+    )
 }
 
 fn outcome_text(outcome: &vesper_agent::AgentTurnOutcome) -> String {
@@ -659,6 +920,86 @@ mod tests {
 
     fn model() -> QualifiedModelId {
         runtime_model(&ModelId::new("glm-5.2").unwrap(), &provider_id())
+    }
+
+    #[derive(Debug)]
+    struct RecordingEventSink(std::sync::Mutex<Vec<String>>);
+
+    impl vesper_acp::AcpEventSink for RecordingEventSink {
+        fn event(&self, event: vesper_acp::AcpEngineEvent) {
+            use vesper_acp::AcpEngineEvent;
+            let rendered = match event {
+                AcpEngineEvent::ToolStarted { tool_call_id, .. } => {
+                    format!("started:{tool_call_id}")
+                }
+                AcpEngineEvent::ToolFinished {
+                    tool_call_id,
+                    success,
+                    ..
+                } => format!("finished:{tool_call_id}:{}", success),
+                AcpEngineEvent::ReasoningDelta { .. }
+                | AcpEngineEvent::ContentDelta { .. }
+                | AcpEngineEvent::Usage { .. }
+                | AcpEngineEvent::PlanUpdated { .. } => String::new(),
+            };
+            self.0.lock().unwrap().push(rendered);
+        }
+    }
+
+    #[test]
+    fn tool_started_and_finished_pair_by_outstanding_id() {
+        let recording = Arc::new(RecordingEventSink(std::sync::Mutex::new(Vec::new())));
+        let port = AcpEngineProgressPort {
+            sink: Some(recording.clone()),
+            tool_seq: std::sync::atomic::AtomicU64::new(0),
+            outstanding: std::sync::Mutex::new(BTreeMap::new()),
+        };
+        vesper_agent::AgentProgressPort::emit(
+            &port,
+            vesper_agent::AgentProgressEvent::ToolStarted {
+                name: "read_file".to_owned(),
+                hint: "path=src/main.rs".to_owned(),
+            },
+        );
+        vesper_agent::AgentProgressPort::emit(
+            &port,
+            vesper_agent::AgentProgressEvent::ToolStarted {
+                name: "read_file".to_owned(),
+                hint: "path=src/lib.rs".to_owned(),
+            },
+        );
+        vesper_agent::AgentProgressPort::emit(
+            &port,
+            vesper_agent::AgentProgressEvent::ToolFinished {
+                name: "read_file".to_owned(),
+                success: true,
+                note: "43 lines".to_owned(),
+            },
+        );
+        let events = recording.0.lock().unwrap().clone();
+        assert_eq!(
+            events,
+            vec![
+                "started:acp-tool-0".to_owned(),
+                "started:acp-tool-1".to_owned(),
+                "finished:acp-tool-1:true".to_owned(),
+            ]
+        );
+    }
+
+    #[test]
+    fn unknown_command_text_matches_oracle_fallback_format() {
+        let text = unknown_command_text("/future-command");
+        assert!(text.starts_with("Unknown command: /future-command\n"));
+        assert!(text.contains("/max-iterations, /memory"));
+        assert!(text.ends_with("/version, /release, /ci, /mcp"));
+    }
+
+    #[test]
+    fn host_command_text_is_truthful_and_carries_the_catalog_description() {
+        let text = host_command_text("compact");
+        assert!(text.starts_with("/compact ("));
+        assert!(text.contains("not available in the ACP harness composition yet"));
     }
 
     #[test]
