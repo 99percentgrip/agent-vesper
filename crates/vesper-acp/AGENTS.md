@@ -30,14 +30,21 @@ update mapping, and bounded asynchronous dispatch into `vesper-runtime`.
   so rejecting them made the agent unloadable with `-32602`. The harness MCP
   registry remains the sole MCP source; no client server is launched.
 - Slash-command parity (ADR 0010 Tier C): `available_commands_update`
-  advertises the 28-command `vesper-domain` catalog exactly once before the
-  `session/new`, `session/load`, and `session/resume` responses; `fork`
-  advertises nothing (fixtures/acp/fork-session parity). With an injected
-  prompt engine, `/`-prefixed prompts route to the engine, which owns catalog
-  execution; without an engine they fail closed with `-32601` instead of
-  dispatching the provider. Slash turns report `AcpPromptResult.persist_turn
-  == false` and are never appended to persisted sessions (the
-  `acp.slash-command` fixture expects unchanged file hashes).
+  advertises the 28-command `vesper-domain` catalog exactly once for
+  `session/new`, `session/load`, and `session/resume`; `fork` advertises
+  nothing (fixtures/acp/fork-session parity). On `session/new` the
+  notification is sent only AFTER the response — clients such as Zed
+  register the session when the response is processed and drop
+  `session/update` notifications for unregistered sessions ("unknown
+  session"), so a pre-response advertisement never reached the Zed
+  slash-command menu. Load/resume sessions are already registered
+  client-side, so those advertisements stay before the response (replay
+  ordering). With an injected prompt engine, `/`-prefixed prompts route to
+  the engine, which owns catalog execution; without an engine they fail
+  closed with `-32601` instead of dispatching the provider. Slash turns
+  report `AcpPromptResult.persist_turn == false` and are never appended to
+  persisted sessions (the `acp.slash-command` fixture expects unchanged
+  file hashes).
 - `AcpEngineEvent`/`AcpEventSink` are the streaming-engine vocabulary
   (`ReasoningDelta`, `ContentDelta`, `ToolStarted`, `ToolFinished`, `Usage`,
   `PlanUpdated`); the adapter sink maps each to the same wire shape the

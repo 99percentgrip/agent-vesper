@@ -518,21 +518,26 @@ async fn handle_request(
             let RuntimeResponse::Session(snapshot) = response else {
                 return responder.respond_with_internal_error("unexpected runtime response");
             };
-            let session_id = snapshot.session_id.as_str().to_owned();
-            advertise_available_commands(
-                &connection,
-                &agent_session_id(&snapshot.session_id),
-                &output_flow,
-            )
-            .await?;
             let modes = session_modes(snapshot.operating_mode);
             let config_options = session_config_options(&snapshot);
+            let session_id = snapshot.session_id.as_str().to_owned();
+            // The catalog advertisement must FOLLOW the session/new response:
+            // ACP clients register the session only once the response is
+            // processed, and Zed drops `session/update` notifications for
+            // unregistered sessions ("unknown session"). Advertising before
+            // the response left the Zed slash-command menu permanently empty.
             respond_json(
                 responder,
                 NewSessionResponse::new(session_id)
                     .modes(modes)
                     .config_options(config_options),
+            )?;
+            advertise_available_commands(
+                &connection,
+                &agent_session_id(&snapshot.session_id),
+                &output_flow,
             )
+            .await
         }
         ClientRequest::LoadSessionRequest(request) => {
             let id = session_id(&request.session_id);
@@ -984,8 +989,12 @@ fn catalog_commands() -> Vec<agent_client_protocol::schema::v1::AvailableCommand
 /// Emits `available_commands_update` for one session through the adapter's
 /// bounded output flow. Called on session/new, load, and resume so every
 /// live session carries the full command surface (oracle parity: 28
-/// commands, advertised before the operation response; the fork fixture
-/// records no advertisement).
+/// commands). On session/new the notification is sent only AFTER the
+/// response: clients such as Zed drop `session/update` notifications for
+/// sessions they have not registered yet, so a pre-response advertisement
+/// never reached the slash-command menu. Load/resume sessions are already
+/// registered client-side, so those advertisements stay before the response
+/// (replay ordering); the fork fixture records no advertisement.
 async fn advertise_available_commands(
     connection: &ConnectionTo<Client>,
     session: &agent_client_protocol::schema::v1::SessionId,

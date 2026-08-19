@@ -128,6 +128,28 @@ fn stdio_transcript_reaches_real_glm_adapter_with_protocol_pure_stdout() {
         .unwrap()
         .to_owned();
 
+    // The catalog advertisement follows the session/new response; consume it
+    // here so the later prompt-turn transcript assertion sees only turn
+    // updates (clients drop pre-response advertisements, so this ordering is
+    // the shipped contract).
+    let advertisement = loop {
+        let line = line_receiver
+            .recv_timeout(Duration::from_secs(5))
+            .expect("catalog advertisement after session/new response");
+        assert!(!line.contains(CANARY), "secret reached ACP stdout");
+        let value: Value = serde_json::from_str(&line).expect("stdout contained non-JSON text");
+        if value["params"]["update"]["sessionUpdate"] == "available_commands_update" {
+            break value;
+        }
+    };
+    assert_eq!(
+        advertisement["params"]["update"]["availableCommands"]
+            .as_array()
+            .map(|commands| commands.len()),
+        Some(28),
+        "the post-response advertisement carries the full 28-command catalog"
+    );
+
     send(
         &mut stdin,
         json!({
@@ -330,16 +352,37 @@ fn empty_prompt_and_slash_commands_never_dispatch_provider() {
             .as_str()
             .unwrap()
             .to_owned();
-    // Oracle parity: exactly one 28-command catalog advertisement arrives
-    // before the session/new response, in oracle registration order.
-    let advertisements: Vec<&Value> = new_session_transcript
+    // Client-registration contract: no catalog advertisement may precede the
+    // session/new response — ACP clients register the session only when the
+    // response is processed and drop `session/update` notifications for
+    // unregistered sessions (Zed: "unknown session"), which left the
+    // slash-command menu permanently empty.
+    let pre_response_ads = new_session_transcript
         .iter()
         .filter(|value| value["params"]["update"]["sessionUpdate"] == "available_commands_update")
-        .collect();
+        .count();
+    assert_eq!(
+        pre_response_ads, 0,
+        "session/new must not advertise before the response; clients drop unknown-session updates"
+    );
+    let mut advertisements: Vec<Value> = Vec::new();
+    for _ in 0..8 {
+        let line = line_receiver
+            .recv_timeout(Duration::from_secs(5))
+            .expect("catalog advertisement after the session/new response");
+        assert!(!line.contains(CANARY), "secret reached ACP stdout");
+        let value: Value = serde_json::from_str(&line).expect("stdout contained non-JSON text");
+        if value["params"]["update"]["sessionUpdate"] == "available_commands_update" {
+            advertisements.push(value.clone());
+            break;
+        }
+    }
+    // Oracle parity: exactly one 28-command catalog advertisement arrives
+    // immediately after the session/new response, in oracle registration order.
     assert_eq!(
         advertisements.len(),
         1,
-        "session/new must advertise the catalog exactly once"
+        "session/new must advertise the catalog exactly once, after the response"
     );
     let advertised: Vec<&str> = advertisements[0]["params"]["update"]["availableCommands"]
         .as_array()

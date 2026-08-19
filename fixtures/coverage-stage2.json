@@ -1,5 +1,5 @@
 {
-  "fixture_index_sha256": "d09edfe2169df49e0cfef9a66083a7df046651f441deb0e78bc0c855dec6db7a",
+  "fixture_index_sha256": "461b1a0a425cce7ef48ca18d8719fdcf37181082ea62ad28ae39c6a381bd3647",
   "generated_by": "cargo xtask fixtures coverage --stage 2",
   "scenarios": [
     {

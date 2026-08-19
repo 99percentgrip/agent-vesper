@@ -482,7 +482,7 @@ mod tests {
         assert_eq!(corpus.category_counts().values().sum::<usize>(), 76);
         assert_eq!(
             corpus.index_sha256().unwrap(),
-            "d09edfe2169df49e0cfef9a66083a7df046651f441deb0e78bc0c855dec6db7a"
+            "461b1a0a425cce7ef48ca18d8719fdcf37181082ea62ad28ae39c6a381bd3647"
         );
     }
 
