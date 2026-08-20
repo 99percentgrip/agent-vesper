@@ -961,7 +961,8 @@ impl ProviderProfile {
                 // LM Studio: local/LAN OpenAI-compatible server. The optional
                 // API key comes from LMSTUDIO_API_KEY; no credential gate.
                 return Ok(Self {
-                    provider_configuration: crate::lmstudio_provider::LmStudioFactory::default_configuration(),
+                    provider_configuration:
+                        crate::lmstudio_provider::LmStudioFactory::default_configuration(),
                     model: ModelId::new("local-model").map_err(|_| ())?,
                     endpoint: EndpointId::new("lmstudio-local").map_err(|_| ())?,
                 });
@@ -1280,10 +1281,7 @@ pub async fn run_multi_provider(initial: &str) -> Result<(), ()> {
             .await
             .map(|d| d.display_name.as_str().to_owned())
             .unwrap_or_else(|| id.as_str().to_owned());
-        let authenticated = providers
-            .credential_present(&id)
-            .await
-            .unwrap_or(false);
+        let authenticated = providers.credential_present(&id).await.unwrap_or(false);
         registered.push((id.as_str().to_owned(), display, authenticated));
     }
 

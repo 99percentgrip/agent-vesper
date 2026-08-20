@@ -466,7 +466,13 @@ pub(crate) fn multi_provider_control_surface(
             })
         });
     // Re-attach the GLM current-value resolvers on top of the provider one.
-    for id in ["model", "api_endpoint", "generation_profile", "auxiliary_model", "mixture_mode"] {
+    for id in [
+        "model",
+        "api_endpoint",
+        "generation_profile",
+        "auxiliary_model",
+        "mixture_mode",
+    ] {
         surface = surface.with_current_resolver(id, move |configuration| {
             let key = match id {
                 "model" => "zai:model",
@@ -495,11 +501,9 @@ pub(crate) fn apply_provider_selection(
 ) -> Option<AppliedSelection> {
     match provider {
         "zai" => {
-            let mut next = crate::ProviderProfile::for_identity(
-                &ProviderId::new("zai").ok()?,
-            )
-            .ok()?
-            .provider_configuration;
+            let mut next = crate::ProviderProfile::for_identity(&ProviderId::new("zai").ok()?)
+                .ok()?
+                .provider_configuration;
             // Preserve any explicit GLM overrides the user set before.
             for key in [
                 "zai:model",
@@ -517,10 +521,7 @@ pub(crate) fn apply_provider_selection(
                 .values
                 .values
                 .insert(ACTIVE_PROVIDER_KEY.to_owned(), serde_json::json!("zai"));
-            let model = ModelId::new(
-                config_str(&next, "zai:model").unwrap_or("glm-5.3"),
-            )
-            .ok()?;
+            let model = ModelId::new(config_str(&next, "zai:model").unwrap_or("glm-5.3")).ok()?;
             Some(AppliedSelection {
                 model: Some(QualifiedModelId {
                     provider_id: ProviderId::new("zai").ok()?,
@@ -531,10 +532,10 @@ pub(crate) fn apply_provider_selection(
         }
         "lmstudio" => {
             let mut next = crate::lmstudio_provider::LmStudioFactory::default_configuration();
-            let _ = next
-                .values
-                .values
-                .insert(ACTIVE_PROVIDER_KEY.to_owned(), serde_json::json!("lmstudio"));
+            let _ = next.values.values.insert(
+                ACTIVE_PROVIDER_KEY.to_owned(),
+                serde_json::json!("lmstudio"),
+            );
             let model = ModelId::new("local-model").ok()?;
             Some(AppliedSelection {
                 model: Some(QualifiedModelId {
@@ -775,15 +776,17 @@ mod tests {
     #[test]
     fn multi_provider_surface_lists_providers_with_auth_status() {
         let configuration = default_configuration();
-        let surface = multi_provider_control_surface(
-            &configuration,
-            &registered_providers(false),
-        );
+        let surface = multi_provider_control_surface(&configuration, &registered_providers(false));
         let provider = surface.control("provider").expect("provider control");
         assert_eq!(provider.current_value, "zai");
         assert_eq!(provider.options.len(), 2);
         let zai = &provider.options[0];
-        assert!(zai.description.as_deref().unwrap_or("").contains("NOT authenticated"));
+        assert!(
+            zai.description
+                .as_deref()
+                .unwrap_or("")
+                .contains("NOT authenticated")
+        );
         let lmstudio = &provider.options[1];
         assert!(
             lmstudio
@@ -800,10 +803,7 @@ mod tests {
     #[test]
     fn multi_provider_surface_switches_to_lmstudio() {
         let configuration = default_configuration();
-        let surface = multi_provider_control_surface(
-            &configuration,
-            &registered_providers(true),
-        );
+        let surface = multi_provider_control_surface(&configuration, &registered_providers(true));
         let applied = surface
             .apply(&configuration, "provider", "lmstudio")
             .expect("provider switch applies");
@@ -816,10 +816,7 @@ mod tests {
     #[test]
     fn multi_provider_surface_switches_back_to_zai_preserving_overrides() {
         let configuration = default_configuration();
-        let surface = multi_provider_control_surface(
-            &configuration,
-            &registered_providers(true),
-        );
+        let surface = multi_provider_control_surface(&configuration, &registered_providers(true));
         // Simulate runtime merge semantics: the session config ACCUMULATES
         // value overlays (the runtime merges onto its own envelope; provider
         // switches never remove keys). A switch to lmstudio overlays nothing
@@ -833,7 +830,10 @@ mod tests {
             .expect("provider switch");
         // Runtime merge: overlay lm's values onto the existing session keys.
         for (key, value) in lm.configuration.values.values.iter() {
-            let _ = session.values.values.insert((*key).to_owned(), value.clone());
+            let _ = session
+                .values
+                .values
+                .insert((*key).to_owned(), value.clone());
         }
         let applied = surface
             .apply(&session, "provider", "zai")
