@@ -10,9 +10,10 @@ use std::sync::Arc;
 
 use serde_json::Value;
 use vesper_domain::{
-    ContentPart, ConversationMessage, NormalizedUsage, SessionId, SessionOperatingMode,
-    SessionPermissionMode, WorkspaceRoot,
+    ContentPart, ConversationMessage, NormalizedUsage, QualifiedModelId, SessionId,
+    SessionOperatingMode, SessionPermissionMode, WorkspaceRoot,
 };
+use vesper_runtime::ProviderConfiguration;
 
 /// Boxed future returned by an ACP prompt engine.
 pub type AcpPromptFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -131,6 +132,13 @@ pub struct AcpPromptRequest {
     pub permission_mode: SessionPermissionMode,
     /// ACP workspace roots.
     pub workspace_roots: Vec<WorkspaceRoot>,
+    /// Session-scoped provider configuration snapshot from the runtime
+    /// (reflects `session/set_config_option` model/plan selections). A
+    /// composed engine merges it over its own defaults so footer controls
+    /// take effect on the very next turn.
+    pub provider_configuration: Option<ProviderConfiguration>,
+    /// Session-scoped model selection from the runtime (qualified id).
+    pub model: Option<QualifiedModelId>,
     /// Optional live ACP client permission bridge.
     pub permission_requester: Option<Arc<dyn AcpPermissionRequester>>,
     /// Live event sink for streaming turns. When absent the engine must not
@@ -148,6 +156,8 @@ impl std::fmt::Debug for AcpPromptRequest {
             .field("operating_mode", &self.operating_mode)
             .field("permission_mode", &self.permission_mode)
             .field("workspace_roots", &self.workspace_roots)
+            .field("provider_configuration", &self.provider_configuration)
+            .field("model", &self.model)
             .field(
                 "has_permission_requester",
                 &self.permission_requester.is_some(),

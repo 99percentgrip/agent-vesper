@@ -42,6 +42,7 @@ use vesper_runtime::{
 
 use crate::{
     compat::prompt_response_value,
+    controls::SessionControlSurface,
     engine::{
         AcpPermissionDecision, AcpPermissionRequest, AcpPermissionRequester, AcpPromptEngine,
         AcpPromptRequest,
@@ -54,17 +55,26 @@ use crate::{
 
 const INBOUND_CAPACITY: usize = 32;
 
-/// ACP adapter configuration with no provider-specific fields.
+/// ACP adapter configuration.
+///
+/// The provider-routed session control surface (`controls`) supplies the
+/// config options advertised on `session/new`/`load`/`resume`/`set` and the
+/// values accepted by `session/set_config_option`. Without it only the
+/// runtime-modeled `thought_level` and `permission_mode` options exist
+/// (provider-neutral fallback).
 #[derive(Debug, Clone)]
 pub struct AcpAdapterConfig {
     /// Context size exposed through ACP usage updates.
     pub context_window: u64,
+    /// Provider-routed session control surface (model, plan, reasoning dial).
+    pub controls: Option<SessionControlSurface>,
 }
 
 impl Default for AcpAdapterConfig {
     fn default() -> Self {
         Self {
             context_window: 202_752,
+            controls: None,
         }
     }
 }
@@ -177,6 +187,7 @@ impl AcpAdapter {
                     output_flow.clone(),
                     prompt_engine,
                     config.context_window,
+                    config.controls,
                 ));
                 let event_connection = connection.clone();
                 let event_barriers = Arc::clone(&barriers);
@@ -285,6 +296,7 @@ async fn dispatch_requests(
     output_flow: OutputFlow,
     prompt_engine: Option<Arc<dyn AcpPromptEngine>>,
     context_window: u64,
+    controls: Option<SessionControlSurface>,
 ) -> Result<(), agent_client_protocol::Error> {
     let active = Arc::new(Mutex::new(BTreeMap::<SessionId, TurnId>::new()));
     let engine_active = Arc::new(Mutex::new(BTreeSet::<SessionId>::new()));
@@ -299,6 +311,7 @@ async fn dispatch_requests(
         prompt_engine,
         permission_requester,
         context_window,
+        controls,
     };
     let mut prompts = JoinSet::new();
     loop {
@@ -443,6 +456,9 @@ struct RequestContext {
     /// Adapter context-window size forwarded to engine event sinks for
     /// `usage_update` notifications.
     context_window: u64,
+    /// Provider-routed session control surface advertised as ACP config
+    /// options (`None` keeps the provider-neutral fallbacks).
+    controls: Option<SessionControlSurface>,
 }
 
 async fn handle_request(
@@ -461,6 +477,7 @@ async fn handle_request(
         prompt_engine,
         permission_requester,
         context_window,
+        controls,
     } = context;
     let InboundRequest { request, responder } = inbound;
     macro_rules! execute {
@@ -519,7 +536,7 @@ async fn handle_request(
                 return responder.respond_with_internal_error("unexpected runtime response");
             };
             let modes = session_modes(snapshot.operating_mode);
-            let config_options = session_config_options(&snapshot);
+            let config_options = session_config_options(&snapshot, controls.as_ref());
             let session_id = snapshot.session_id.as_str().to_owned();
             // The catalog advertisement must FOLLOW the session/new response:
             // ACP clients register the session only once the response is
@@ -558,7 +575,7 @@ async fn handle_request(
                 responder,
                 LoadSessionResponse::new()
                     .modes(session_modes(snapshot.operating_mode))
-                    .config_options(session_config_options(&snapshot)),
+                    .config_options(session_config_options(&snapshot, controls.as_ref())),
             )
         }
         ClientRequest::ResumeSessionRequest(request) => {
@@ -579,7 +596,7 @@ async fn handle_request(
                 responder,
                 ResumeSessionResponse::new()
                     .modes(session_modes(snapshot.operating_mode))
-                    .config_options(session_config_options(&snapshot)),
+                    .config_options(session_config_options(&snapshot, controls.as_ref())),
             )
         }
         ClientRequest::ListSessionsRequest(request) => {
@@ -673,6 +690,8 @@ async fn handle_request(
                 let operating_mode = snapshot.operating_mode;
                 let permission_mode = snapshot.permission_mode;
                 let history = snapshot.history.clone();
+                let provider_configuration = Some(snapshot.provider_configuration.clone());
+                let engine_model = Some(snapshot.model.clone());
                 let engine_session = session.clone();
                 let engine_content = content.clone();
                 let engine_message_id = message_id.clone();
@@ -693,6 +712,8 @@ async fn handle_request(
                             operating_mode,
                             permission_mode,
                             workspace_roots,
+                            provider_configuration,
+                            model: engine_model,
                             permission_requester: Some(Arc::clone(&permission_requester)),
                             event_sink: Some(Arc::new(AcpEngineEventSink {
                                 connection: connection.clone(),
@@ -885,7 +906,9 @@ async fn handle_request(
                     let permission_mode = match value.as_str() {
                         "ask" => SessionPermissionMode::Ask,
                         "bypass" => SessionPermissionMode::Bypass,
-                        "read-only" | "readonly" => SessionPermissionMode::ReadOnly,
+                        // `read` is the advertised oracle value id; the harness
+                        // aliases are accepted for older clients.
+                        "read" | "read-only" | "readonly" => SessionPermissionMode::ReadOnly,
                         _ => {
                             return responder.respond_with_error(
                                 agent_client_protocol::Error::invalid_params()
@@ -923,17 +946,58 @@ async fn handle_request(
                     }
                 }
                 _ => {
-                    return responder.respond_with_error(
-                        agent_client_protocol::Error::invalid_params()
-                            .data(json!({"reason": "unsupported-session-config-option"})),
-                    );
+                    // Provider-routed options (model picker, API plan,
+                    // generation profile, …) are accepted only when the
+                    // injected control surface contributed them; the value
+                    // must be one of the provider's own options.
+                    let Some(surface) = controls.as_ref() else {
+                        return responder.respond_with_error(
+                            agent_client_protocol::Error::invalid_params().data(json!({
+                                "reason": "unsupported-session-config-option"
+                            })),
+                        );
+                    };
+                    let Some(value) = value else {
+                        return responder.respond_with_error(
+                            agent_client_protocol::Error::invalid_params().data(json!({
+                                "reason": "session-config-option-requires-value"
+                            })),
+                        );
+                    };
+                    if !surface.accepts(&config_id, &value) {
+                        return responder.respond_with_error(
+                            agent_client_protocol::Error::invalid_params().data(json!({
+                                "reason": "unsupported-session-config-value"
+                            })),
+                        );
+                    }
+                    let snapshot = execute!(runtime.snapshot(&session));
+                    let Some(applied) =
+                        surface.apply(&snapshot.provider_configuration, &config_id, &value)
+                    else {
+                        return responder.respond_with_error(
+                            agent_client_protocol::Error::invalid_params().data(json!({
+                                "reason": "unsupported-session-config-option"
+                            })),
+                        );
+                    };
+                    let configuration = applied.configuration;
+                    let model = applied.model;
+                    HarnessCommandPayload::UpdateProviderConfiguration {
+                        session_id: Some(session.clone()),
+                        configuration: configuration.values.clone(),
+                        model,
+                    }
                 }
             };
             execute!(runtime.execute(command(payload, next_text_id(&ids, "config"))));
             let snapshot = execute!(runtime.snapshot(&session));
             respond_json(
                 responder,
-                SetSessionConfigOptionResponse::new(session_config_options(&snapshot)),
+                SetSessionConfigOptionResponse::new(session_config_options(
+                    &snapshot,
+                    controls.as_ref(),
+                )),
             )
         }
         ClientRequest::DeleteSessionRequest(request) => {
@@ -1144,42 +1208,75 @@ fn session_modes(operating_mode: SessionOperatingMode) -> SessionModeState {
     )
 }
 
-fn session_config_options(snapshot: &vesper_runtime::SessionSnapshot) -> Vec<SessionConfigOption> {
+/// Provider-routed session control surface advertised as ACP config options
+/// (see [`crate::controls::SessionControlSurface`]).
+fn session_config_options(
+    snapshot: &vesper_runtime::SessionSnapshot,
+    surface: Option<&crate::controls::SessionControlSurface>,
+) -> Vec<SessionConfigOption> {
+    let mut options = Vec::new();
+    if let Some(surface) = surface {
+        options.extend(surface.acp_config_options(snapshot));
+    } else {
+        // No provider-routed surface: keep the provider-neutral fallbacks.
+        options.push(thought_level_option(snapshot));
+    }
+    options.push(permission_option(snapshot));
+    options
+}
+
+/// Provider-neutral `thought_level` fallback used only when no provider-routed
+/// surface was injected. Mirrors the oracle dial but without current-value
+/// tracking beyond the session reasoning override.
+fn thought_level_option(snapshot: &vesper_runtime::SessionSnapshot) -> SessionConfigOption {
     let thought_level = snapshot
         .reasoning
         .as_ref()
         .and_then(|reasoning| reasoning.mode.as_ref())
         .map(|mode| mode.as_str().to_owned())
-        .unwrap_or_else(|| "default".to_owned());
-    vec![
-        SessionConfigOption::select(
-            "thought_level",
-            "Thought level",
-            SessionConfigValueId::new(thought_level),
-            vec![
-                SessionConfigSelectOption::new("default", "Default"),
-                SessionConfigSelectOption::new("disabled", "Disabled"),
-                SessionConfigSelectOption::new("enabled", "Enabled"),
-                SessionConfigSelectOption::new("high", "High"),
-                SessionConfigSelectOption::new("max", "Maximum"),
-            ],
-        )
-        .category(SessionConfigOptionCategory::ThoughtLevel),
-        SessionConfigOption::select(
-            "permission_mode",
-            "Permission mode",
-            match snapshot.permission_mode {
-                SessionPermissionMode::Ask => "ask",
-                SessionPermissionMode::Bypass => "bypass",
-                SessionPermissionMode::ReadOnly => "read-only",
-            },
-            vec![
-                SessionConfigSelectOption::new("ask", "Ask"),
-                SessionConfigSelectOption::new("bypass", "Bypass"),
-                SessionConfigSelectOption::new("read-only", "Read only"),
-            ],
-        ),
-    ]
+        .unwrap_or_else(|| "enabled".to_owned());
+    SessionConfigOption::select(
+        "thought_level",
+        "Reasoning",
+        SessionConfigValueId::new(thought_level),
+        vec![
+            SessionConfigSelectOption::new("disabled", "Off")
+                .description("No reasoning — fast responses for simple tasks"),
+            SessionConfigSelectOption::new("enabled", "Standard")
+                .description("Full reasoning traces streamed live"),
+            SessionConfigSelectOption::new("high", "Deep · High")
+                .description("Deeper multi-step reasoning for complex tasks"),
+            SessionConfigSelectOption::new("max", "Deep · Max")
+                .description("Maximum reasoning depth — deepest analysis"),
+        ],
+    )
+    .description("Live reasoning trace level")
+    .category(SessionConfigOptionCategory::ThoughtLevel)
+}
+
+fn permission_option(snapshot: &vesper_runtime::SessionSnapshot) -> SessionConfigOption {
+    let (current, read_only_value) = match snapshot.permission_mode {
+        SessionPermissionMode::Ask => ("ask", "read"),
+        SessionPermissionMode::Bypass => ("bypass", "read"),
+        // Oracle value for read-only is `read`; the harness mode is
+        // `read-only`. Advertise `read` so both agree.
+        SessionPermissionMode::ReadOnly => ("read", "read"),
+    };
+    SessionConfigOption::select(
+        "permission_mode",
+        "Permissions",
+        SessionConfigValueId::new(current),
+        vec![
+            SessionConfigSelectOption::new("ask", "Ask")
+                .description("Approve file edits and commands before they run"),
+            SessionConfigSelectOption::new("bypass", "Bypass")
+                .description("Auto-approve everything — no prompts"),
+            SessionConfigSelectOption::new(read_only_value, "Read Only")
+                .description("Block all file edits and commands — read-only mode"),
+        ],
+    )
+    .description("Tool execution permission mode")
+    .category(SessionConfigOptionCategory::Other("permissions".to_owned()))
 }
 
 async fn replay_snapshot(

@@ -68,6 +68,13 @@ pub enum AgentProgressEvent {
     },
     /// The model replaced the current task plan.
     PlanUpdated { markdown: String },
+    /// Cumulative provider token usage for the running turn arrived.
+    /// Frontends render this as a live token/context indicator.
+    UsageUpdated {
+        /// Normalized cumulative usage reported by the provider. Boxed to
+        /// keep the shared progress-event enum small.
+        usage: Box<vesper_domain::NormalizedUsage>,
+    },
 }
 
 /// Argument keys whose values are safe to surface in the UI telemetry
@@ -674,6 +681,11 @@ async fn consume_stream(
             Ok(ProviderStreamEvent::ToolCallCompleted(call)) => {
                 flush_text_buffer(&mut text_buffer, &mut parts);
                 calls.push(call);
+            }
+            Ok(ProviderStreamEvent::Usage(usage)) => {
+                progress.emit(AgentProgressEvent::UsageUpdated {
+                    usage: Box::new(usage),
+                });
             }
             Ok(ProviderStreamEvent::Completed {
                 finish: terminal, ..

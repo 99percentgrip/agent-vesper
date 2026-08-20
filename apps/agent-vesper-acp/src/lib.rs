@@ -3,6 +3,8 @@
 
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
+mod controls;
+
 use tokio::sync::Mutex;
 use vesper_acp::{
     AcpAdapter, AcpAdapterConfig, AcpPermissionDecision, AcpPermissionRequest,
@@ -71,7 +73,15 @@ where
         None => runtime,
     };
     let runtime = Arc::new(runtime);
-    let adapter = AcpAdapter::new(runtime, AcpAdapterConfig::default());
+    let adapter = AcpAdapter::new(
+        runtime,
+        AcpAdapterConfig {
+            context_window: controls::glm_context_window(&profile.provider_configuration),
+            controls: Some(controls::glm_control_surface(
+                &profile.provider_configuration,
+            )),
+        },
+    );
     let adapter = if full_harness_enabled() {
         let agent_config = vesper_agent::AgentLoopConfig {
             provider_id: provider.clone(),
@@ -247,6 +257,23 @@ impl AcpHarnessEngine {
             history.clone()
         };
         let mut config = self.config.clone();
+        // Runtime session state first: footer selectors (ACP
+        // `session/set_config_option`) land in the runtime snapshot, and the
+        // adapter forwards that snapshot here. Merge those provider values
+        // and the session model over the engine defaults so a footer pick
+        // takes effect on the very next turn.
+        if let Some(session_configuration) = request.provider_configuration.clone() {
+            for (key, value) in session_configuration.values.values.iter() {
+                let _ = config
+                    .provider_configuration
+                    .values
+                    .values
+                    .insert(key.to_owned(), value.clone());
+            }
+        }
+        if let Some(session_model) = request.model.clone() {
+            config.model = session_model;
+        }
         {
             let overrides = self.overrides.lock().await;
             if let Some(session_overrides) = overrides.get(&request.session_id) {
@@ -386,18 +413,22 @@ impl AcpHarnessEngine {
             .get(&request.session_id)
             .map_or(0, Vec::len);
         let config_value = |key: &str| -> String {
-            self.config
+            request
                 .provider_configuration
-                .values
-                .values
-                .get(key)
+                .as_ref()
+                .and_then(|configuration| configuration.values.values.get(key))
+                .or_else(|| self.config.provider_configuration.values.values.get(key))
                 .and_then(|value| value.as_str())
                 .unwrap_or("default")
                 .to_owned()
         };
         let context = SlashCommandContext {
             stores: Some(&stores),
-            model: self.config.model.model_id.as_str().to_owned(),
+            model: request
+                .model
+                .as_ref()
+                .map(|model| model.model_id.as_str().to_owned())
+                .unwrap_or_else(|| self.config.model.model_id.as_str().to_owned()),
             endpoint_plan: config_value("zai:endpoint-plan"),
             reasoning_mode: config_value("zai:reasoning-mode"),
             permission_mode: match request.permission_mode {
@@ -705,6 +736,9 @@ impl vesper_agent::AgentProgressPort for AcpEngineProgressPort {
             }
             vesper_agent::AgentProgressEvent::PlanUpdated { markdown } => {
                 sink.event(AcpEngineEvent::PlanUpdated { markdown });
+            }
+            vesper_agent::AgentProgressEvent::UsageUpdated { usage } => {
+                sink.event(AcpEngineEvent::Usage { usage: *usage });
             }
             vesper_agent::AgentProgressEvent::TurnStarted
             | vesper_agent::AgentProgressEvent::ProviderTurnStarted { .. } => {}

@@ -51,12 +51,22 @@ update mapping, and bounded asynchronous dispatch into `vesper-runtime`.
   single-turn event pump produces. Engines that lack tool-call ids pair
   started/finished calls by the most recently issued id per tool name (the
   agent loop executes tools strictly sequentially).
-- Session config options advertise and accept `thought_level` and
-  `permission_mode` (oracle option ids). `model`, `api_endpoint`,
-  `generation_profile`, `auxiliary_model`, and `mixture_mode` are a
-  documented gap: setting them requires provider-neutral domain commands and
-  provider-routed model-catalog plumbing that do not exist yet, and options
-  without a set path are never advertised.
+- Session config options: `thought_level` and `permission_mode` remain
+  built-in runtime-modeled options (oracle option ids; the permission
+  control advertises the oracle value `read`, which the setter accepts).
+  Provider-owned footer controls (`model`, `api_endpoint`,
+  `generation_profile`, `auxiliary_model`, `mixture_mode`) flow through
+  `controls.rs`'s provider-neutral `SessionControlSurface` injected via
+  `AcpAdapterConfig::controls`: the composition boundary contributes the
+  descriptors (contribution order is the render order — model first),
+  per-control live current-value resolvers read from the session envelope,
+  and a provider-owned apply closure maps a validated `(id, value)` onto a
+  merged envelope plus an optional new model. The adapter validates every
+  selection against the contributed options (fail-closed
+  `unsupported-session-config-value` for invented values), dispatches the
+  runtime `UpdateProviderConfiguration` command, and re-advertises the
+  options from the fresh snapshot on `session/new`/`load`/`resume`/`set`.
+  Without an injected surface only the two built-in options exist.
 - Session mode/config requests are mapped to runtime mode, reasoning, and
   permission updates; delete and logout have explicit protocol responses.
 - `AcpPromptEngine` is an optional composition port. When injected, prompt

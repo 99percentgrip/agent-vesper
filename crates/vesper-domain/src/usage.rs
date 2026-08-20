@@ -76,7 +76,7 @@ pub struct EstimatedCost {
 }
 
 /// Provider-neutral usage record. Provider fields remain namespaced metadata.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NormalizedUsage {
     /// Delta versus cumulative semantics.
     pub mode: UsageMode,

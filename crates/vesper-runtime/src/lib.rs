@@ -14,6 +14,7 @@ pub use persistence::{RuntimeSessionReads, RuntimeSessionWrites};
 pub use registry::ProviderRegistry;
 pub use session::{SessionSnapshot, SessionTurnResult};
 pub use supervisor::{RuntimeDefaults, RuntimeEventReceiver, RuntimeResponse, RuntimeSupervisor};
+pub use vesper_provider::ProviderConfiguration;
 pub use vesper_sessions::{
     AvailableCommandDescriptor, ReplayError, ReplayFuture, ReplayMessage, ReplayMetadata,
     ReplayPlan, ReplayPlanEntry, ReplayPlanPriority, ReplayPlanStatus, ReplaySink, ReplayUpdate,
