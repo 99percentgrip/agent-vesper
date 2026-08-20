@@ -233,7 +233,7 @@ fn glm_superpowers() -> Vec<vesper_provider::SuperpowerDescriptor> {
         // Model selector: applies to the whole session.
         SuperpowerDescriptor {
             id: BoundedString::new("zai:model").expect("bounded superpower id"),
-            provider_id,
+            provider_id: provider_id.clone(),
             display_name: BoundedString::new("Model").expect("bounded display"),
             kind: SuperpowerKind::Choice,
             scope: SuperpowerScope::Session,
@@ -250,6 +250,85 @@ fn glm_superpowers() -> Vec<vesper_provider::SuperpowerDescriptor> {
                 .collect(),
             command_alias: Some(BoundedString::new("model").expect("bounded alias")),
             help: Some(BoundedString::new("Switch the active Z.ai model.").expect("bounded help")),
+        },
+        // API endpoint plan selector (PRD provider-capability-gating FR-2):
+        // advertisement source for the harness `/plan` session control. The
+        // harness keeps the `SessionConfig` outcome; the descriptor supplies
+        // the panel row and the allowed value set, and
+        // `GlmSuperpowerPolicy` owns plan-change reactions.
+        SuperpowerDescriptor {
+            id: BoundedString::new("zai:plan").expect("bounded superpower id"),
+            provider_id: provider_id.clone(),
+            display_name: BoundedString::new("API plan").expect("bounded display"),
+            kind: SuperpowerKind::Choice,
+            scope: SuperpowerScope::Session,
+            default_value: SuperpowerValue::Choice {
+                value: BoundedString::new("coding").expect("bounded value"),
+            },
+            allowed_values: ["coding", "standard", "bigmodel"]
+                .into_iter()
+                .map(|raw| SuperpowerValue::Choice {
+                    value: BoundedString::new(raw).expect("bounded value"),
+                })
+                .collect(),
+            command_alias: Some(BoundedString::new("plan").expect("bounded alias")),
+            help: Some(
+                BoundedString::new("Z.ai endpoint plan (coding/standard/bigmodel).")
+                    .expect("bounded help"),
+            ),
+        },
+        // Generation style selector: advertisement source for the harness
+        // `/generation` session control.
+        SuperpowerDescriptor {
+            id: BoundedString::new("zai:generation").expect("bounded superpower id"),
+            provider_id: provider_id.clone(),
+            display_name: BoundedString::new("Generation style").expect("bounded display"),
+            kind: SuperpowerKind::Choice,
+            scope: SuperpowerScope::Session,
+            default_value: SuperpowerValue::Choice {
+                value: BoundedString::new("balanced").expect("bounded value"),
+            },
+            allowed_values: ["balanced", "precise", "exploratory"]
+                .into_iter()
+                .map(|raw| SuperpowerValue::Choice {
+                    value: BoundedString::new(raw).expect("bounded value"),
+                })
+                .collect(),
+            command_alias: Some(BoundedString::new("generation").expect("bounded alias")),
+            help: Some(
+                BoundedString::new("Sampling style (balanced/precise/exploratory).")
+                    .expect("bounded help"),
+            ),
+        },
+        // Auxiliary model selector: advertisement source for the harness
+        // `/auxiliary` session control. `allowed_values` advertises `main`
+        // plus the static catalog; `GlmSuperpowerPolicy::valid_choices`
+        // narrows to models eligible on the active plan (non-vision), so the
+        // harness never reproduces GLM predicates.
+        SuperpowerDescriptor {
+            id: BoundedString::new("zai:auxiliary").expect("bounded superpower id"),
+            provider_id,
+            display_name: BoundedString::new("Auxiliary model").expect("bounded display"),
+            kind: SuperpowerKind::Choice,
+            scope: SuperpowerScope::Session,
+            default_value: SuperpowerValue::Choice {
+                value: BoundedString::new("main").expect("bounded value"),
+            },
+            allowed_values: std::iter::once(SuperpowerValue::Choice {
+                value: BoundedString::new("main").expect("bounded value"),
+            })
+            .chain(GlmCatalog::snapshot().models.into_iter().map(|model| {
+                SuperpowerValue::Choice {
+                    value: BoundedString::new(model.model.model_id.as_str())
+                        .expect("catalog model ids are bounded"),
+                }
+            }))
+            .collect(),
+            command_alias: Some(BoundedString::new("auxiliary").expect("bounded alias")),
+            help: Some(
+                BoundedString::new("Bounded auxiliary work model (policy-filtered).")
+                    .expect("bounded help"),
+            ),
         },
     ]
 }
@@ -332,6 +411,81 @@ mod tests {
                     && descriptor.id.as_str() != "zai:interleaved-thinking"),
             "the split effort/thinking controls must be collapsed (ADR 0009)"
         );
+    }
+
+    #[test]
+    fn plan_generation_auxiliary_descriptors_advertise_session_scales() {
+        // PRD provider-capability-gating FR-2: the harness `/plan`,
+        // `/generation`, and `/auxiliary` controls are advertised here so the
+        // panel and value palettes derive from the active provider's surface.
+        let descriptors = glm_superpowers();
+
+        let plan = descriptors
+            .iter()
+            .find(|descriptor| descriptor.id.as_str() == "zai:plan")
+            .expect("plan descriptor advertised");
+        assert_eq!(
+            plan.command_alias.as_ref().map(|alias| alias.as_str()),
+            Some("plan")
+        );
+        assert_eq!(plan.scope, SuperpowerScope::Session);
+        let plan_values: Vec<&str> = plan
+            .allowed_values
+            .iter()
+            .filter_map(|value| match value {
+                SuperpowerValue::Choice { value } => Some(value.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(plan_values, ["coding", "standard", "bigmodel"]);
+
+        let generation = descriptors
+            .iter()
+            .find(|descriptor| descriptor.id.as_str() == "zai:generation")
+            .expect("generation descriptor advertised");
+        assert_eq!(
+            generation
+                .command_alias
+                .as_ref()
+                .map(|alias| alias.as_str()),
+            Some("generation")
+        );
+        let generation_values: Vec<&str> = generation
+            .allowed_values
+            .iter()
+            .filter_map(|value| match value {
+                SuperpowerValue::Choice { value } => Some(value.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(generation_values, ["balanced", "precise", "exploratory"]);
+
+        let auxiliary = descriptors
+            .iter()
+            .find(|descriptor| descriptor.id.as_str() == "zai:auxiliary")
+            .expect("auxiliary descriptor advertised");
+        assert_eq!(
+            auxiliary.command_alias.as_ref().map(|alias| alias.as_str()),
+            Some("auxiliary")
+        );
+        let auxiliary_values: Vec<&str> = auxiliary
+            .allowed_values
+            .iter()
+            .filter_map(|value| match value {
+                SuperpowerValue::Choice { value } => Some(value.as_str()),
+                _ => None,
+            })
+            .collect();
+        // `main` first, then every catalog model; plan/vision narrowing is
+        // the policy's job (`GlmSuperpowerPolicy::valid_choices`).
+        assert_eq!(auxiliary_values.first(), Some(&"main"));
+        let snapshot = GlmCatalog::snapshot();
+        let catalog_ids: Vec<&str> = snapshot
+            .models
+            .iter()
+            .map(|model| model.model.model_id.as_str())
+            .collect();
+        assert_eq!(&auxiliary_values[1..], &catalog_ids[..]);
     }
 
     #[test]

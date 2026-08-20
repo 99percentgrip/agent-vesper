@@ -11,6 +11,10 @@
 //!
 //! - [`plan_mode`] — pure 4-phase Plan Mode state machine (NORMAL → PLANNING
 //!   → REVIEW → EXECUTING) mirroring the Python oracle's `PLAN_MODE_PROMPT`.
+//! - [`capabilities`] — fail-closed per-model capability index
+//!   (`ModelCapabilityIndex`) over the active provider's catalog snapshot;
+//!   gates image input, adviser eligibility, and advertised effort levels
+//!   (PRD `docs/provider-capability-gating-prd.md`).
 //! - [`commands`] — slash-command parsing, registry, and resolution.
 //! - [`superpowers`] — provider-native superpower surface + override store.
 //! - [`dispatch`] — pure event-loop dispatch: the bridge between the command
@@ -26,6 +30,7 @@
 //! and verification.
 
 pub mod auth_hub;
+pub mod capabilities;
 pub mod commands;
 pub mod dispatch;
 pub mod lmstudio_hub;
@@ -38,6 +43,7 @@ pub mod ui;
 pub use auth_hub::{
     AuthHubAction, AuthHubState, AuthProvider, StartupRoute, render_auth_hub, startup_route,
 };
+pub use capabilities::{CapabilityDenial, ModelCapabilityIndex};
 pub use commands::{
     CommandIntent, CommandOutcome, CommandRegistry, DEFAULT_INTERVIEW_QUESTION_LIMIT,
     InterviewQuestionLimit, MAX_INTERVIEW_QUESTIONS, MediaOp, PlanGesture,

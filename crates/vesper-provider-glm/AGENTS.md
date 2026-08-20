@@ -43,6 +43,17 @@ quota normalization, and legacy GLM compatibility translation.
   (`glm-5.3` + `glm-5.2`). Loopback conformance fixtures are captured against
   `glm-5.2` and pin it explicitly in `configured_session`/`fixture_request` —
   they prove wire parity, not the default model.
+- PRD `provider-capability-gating` FR-2: `factory.rs` advertises the full
+  session-control surface as superpower descriptors — `zai:plan` (alias
+  `plan`: coding/standard/bigmodel), `zai:generation` (alias `generation`:
+  balanced/precise/exploratory), and `zai:auxiliary` (alias `auxiliary`:
+  `main` + every catalog model). The harness consumes these for its
+  `/plan` / `/generation` / `/auxiliary` rows and value palettes.
+  `policy.rs` (`GlmSuperpowerPolicy`) owns the choice rules: `auxiliary`
+  keeps `main` plus plan-available non-vision models, `mixture` narrows
+  tool-capable candidates to non-vision plan-available advisers, and
+  `validate` rejects ineligible auxiliary selections. GLM predicates never
+  leak into the TUI.
 
 ## Verification
 

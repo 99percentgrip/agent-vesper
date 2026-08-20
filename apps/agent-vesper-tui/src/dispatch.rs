@@ -1168,8 +1168,39 @@ mod integration_tests {
         }
     }
 
+    fn plan_descriptor() -> SuperpowerDescriptor {
+        // Mirrors the `zai:plan` descriptor GLM advertises (PRD
+        // provider-capability-gating FR-2) so `/plan` resolves from the
+        // surface exactly as it does in production.
+        SuperpowerDescriptor {
+            id: BoundedString::new("zai:plan").unwrap(),
+            provider_id: provider(),
+            display_name: BoundedString::new("API plan").unwrap(),
+            kind: SuperpowerKind::Choice,
+            scope: SuperpowerScope::Session,
+            default_value: SuperpowerValue::Choice {
+                value: BoundedString::new("coding").unwrap(),
+            },
+            allowed_values: ["coding", "standard", "bigmodel"]
+                .into_iter()
+                .map(|raw| SuperpowerValue::Choice {
+                    value: BoundedString::new(raw).unwrap(),
+                })
+                .collect(),
+            command_alias: Some(BoundedString::new("plan").unwrap()),
+            help: None,
+        }
+    }
+
     fn surface() -> ProviderSuperpowerSurface {
-        ProviderSuperpowerSurface::new(provider(), vec![reasoning_descriptor(), model_descriptor()])
+        ProviderSuperpowerSurface::new(
+            provider(),
+            vec![
+                reasoning_descriptor(),
+                model_descriptor(),
+                plan_descriptor(),
+            ],
+        )
     }
 
     fn registry() -> CommandRegistry {

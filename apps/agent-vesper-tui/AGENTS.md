@@ -86,6 +86,14 @@ business logic.
 - `src/superpowers.rs` — `ProviderSuperpowerSurface` and
   `SuperpowerOverrides`, the pure projection the TUI keeps of the active
   provider's advertised descriptors.
+- `src/capabilities.rs` — fail-closed per-model capability index
+  (`ModelCapabilityIndex` + `CapabilityDenial`) over the active provider's
+  catalog snapshot (PRD `docs/provider-capability-gating-prd.md`). Gates
+  image input (`accepts_image`), tool/adviser eligibility
+  (`adviser_candidates`), advertised reasoning levels, and exact context
+  limits. `Unknown`, missing models, and empty advertised media-type lists
+  deny with provider-neutral reasons mirroring
+  `vesper_provider::resolve_support` (`Unknown` + `Require` → `Reject`).
 - `src/ui.rs` — `TerminalRenderer` trait, `ViewModel`, `StubRenderer` for
   tests, and the production `render_to_frame` ratatui/crossterm backend.
   **Current layout:** the bottom Reasoning panel and Activity strip stay
@@ -152,10 +160,21 @@ business logic.
   `LmStudioSession` wires the local/LAN model server as a real runtime
   provider (`ProviderFactory`, `ModelCatalog`, `ProviderSuperpowers`,
   `ProviderCredentialPort`), so it appears in `/provider` selection,
-  `/model` lists the server's loaded model, and chat dispatches through the
+  `/model` lists the server's models, and chat dispatches through the
   standard `AgentLoop` (SSE streaming with reasoning-content telemetry for
   Qwen3/DeepSeek-R1-style local reasoning models). The binary owns the
   `reqwest::Client`; no foundational crate imports HTTP.
+  PRD `provider-capability-gating` P5: the catalog fetches the verified
+  native `GET /api/v1/models` schema (lmstudio-ai docs
+  `1_developer/2_rest/list.md` — evidence in the PRD) into a shared cache;
+  `ProviderCapabilities` are mapped ONLY from reported fields (vision /
+  trained_for_tool_use / reasoning.allowed_options / max_context_length),
+  unreported fields stay `Unknown` (fail-closed), and embedding models are
+  skipped. Advertised superpowers derive from the cache: the model selector
+  lists cached LLMs, and a thinking dial appears ONLY when the pinned model
+  reports `reasoning.allowed_options` with those exact labels — the former
+  unconditional `disabled/enabled/high` dial never reached the wire and is
+  removed (an unbacked control is worse than an absent one).
   VRO-5.3 also ships [`ReqwestLmStudioTransport`] — a `reqwest::Client`-backed
   implementation of the `LmStudioTransport` trait port that the VRO
   `LmStudioReactAgent` uses for `next_action` calls. This is the
@@ -451,6 +470,18 @@ business logic.
   dynamically against the active provider's advertised descriptors at
   dispatch time, so the same command surface works for any registered
   provider.
+- PRD `provider-capability-gating` — **dynamic capability gating**:
+  provider feature controls are advertisement- and capability-driven, never
+  name-checked. `/settings` rows and value palettes derive from the active
+  provider's advertised `SuperpowerDescriptor`s (by `command_alias`),
+  narrowed by its `SuperpowerPolicy::valid_choices` for the active plan +
+  model; a provider that does not advertise a control hides it. Image
+  paste, mixture-of-agents advisers, and auxiliary eligibility consult the
+  session's `ModelCapabilityIndex` (built at the composition boundary for
+  the active provider) and fail closed. No frontend path may call a
+  concrete provider's catalog or match on a provider id; concrete adapters
+  appear only in composition wiring (`register_default_providers`,
+  `provider_configuration_for`, `capability_index_for`).
 - Mutating agent tools run under the injected one-time `ApprovalBroker`; the
   TUI displays one pending request and resolves it only on `/approve` or
   `/cancel`. A closed channel fails closed. `@file`, `@folder`, `@diff`, and

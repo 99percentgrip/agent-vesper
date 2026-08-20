@@ -145,13 +145,24 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
         .map_err(|error| format!("invalid provider id: {error}"))?;
 
     let registry = Arc::new(vesper_runtime::ProviderRegistry::new());
-    register_default_providers(&registry)
+    let lm_factory = register_default_providers(&registry)
         .await
         .map_err(|error| format!("provider registration failed: {error:?}"))?;
     if !registry.contains(&provider_id).await {
         return Err(format!(
             "provider `{provider_id}` is not installed; this build ships the Z.ai adapter"
         ));
+    }
+
+    // PRD P5: when LM Studio is the active provider, refresh its native
+    // model catalog (5s best-effort) BEFORE building the surface and the
+    // capability index, so advertised controls and capability gating derive
+    // from live per-model data. An unreachable server leaves the cache empty
+    // and every gated feature disabled truthfully.
+    if provider_id.as_str() == agent_vesper_tui::LmStudioFactory::provider_id_str()
+        && let Err(error) = lm_factory.refresh_catalog().await
+    {
+        tracing::warn!(target: "lmstudio", %error, "native model catalog unavailable; capability-gated features stay disabled");
     }
 
     let startup = query_startup_view(&registry, &provider_id).await;
@@ -289,6 +300,7 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
         // Pure dispatch state lives in the library so the full Plan Mode
         // lifecycle is unit-testable; the binary only owns the input buffer
         // and the in-flight agent-turn channel.
+        capabilities: capability_index_for(&provider_id, &lm_factory),
         state: SessionState::new(),
         input: String::new(),
         conversation: Vec::new(),
@@ -495,7 +507,7 @@ fn save_provider_preference(provider: &str) -> Result<(), String> {
 
 async fn register_default_providers(
     registry: &vesper_runtime::ProviderRegistry,
-) -> Result<(), vesper_runtime::RuntimeError> {
+) -> Result<agent_vesper_tui::LmStudioFactory, vesper_runtime::RuntimeError> {
     // Production ships only credential-backed provider adapters. Deterministic
     // adapters belong in tests and must never appear as user-selectable models.
     let glm = vesper_provider_glm::GlmFactory::default();
@@ -543,7 +555,9 @@ async fn register_default_providers(
             vesper_provider::PermissiveSuperpowerPolicy,
         )
         .await?;
-    Ok(())
+    // The retained handle shares the factory's catalog cache, so the caller
+    // can refresh it before querying the advertised surface (PRD P5).
+    Ok(factory)
 }
 
 /// Mutable per-session state held across the event loop.
@@ -558,6 +572,12 @@ async fn register_default_providers(
 struct TuiSession {
     policy: Arc<dyn vesper_provider::SuperpowerPolicy>,
     provider_ids: Vec<(String, String)>,
+    /// Per-model capability index for the ACTIVE provider (PRD
+    /// provider-capability-gating): fail-closed gates for image input,
+    /// mixture advisers, and advertised effort levels. Rebuilt with the
+    /// surface and policy at startup; provider switching goes through a
+    /// preference save + restart, so the triple always matches.
+    capabilities: agent_vesper_tui::ModelCapabilityIndex,
     /// Pure dispatch state (plan, overrides, transcript, status).
     state: SessionState,
     /// In-progress input line being typed by the driver.
@@ -2187,6 +2207,7 @@ fn refresh_command_menu(
         registry,
         surface,
         &*session.policy,
+        &session.capabilities,
         &session.provider_ids,
         &session.state,
     );
@@ -2208,6 +2229,7 @@ fn command_palette_candidates(
     registry: &CommandRegistry,
     surface: &ProviderSuperpowerSurface,
     policy: &dyn vesper_provider::SuperpowerPolicy,
+    capabilities: &agent_vesper_tui::ModelCapabilityIndex,
     provider_ids: &[(String, String)],
     state: &SessionState,
 ) -> Vec<(String, String)> {
@@ -2239,7 +2261,8 @@ fn command_palette_candidates(
     if command == "/interview-limit" {
         return interview_limit_argument_candidates(argument);
     }
-    if let Some(choices) = session_setting_candidates(command, state, surface) {
+    if let Some(choices) = session_setting_candidates(command, state, surface, policy, capabilities)
+    {
         let query = argument.trim().to_ascii_lowercase();
         return choices
             .into_iter()
@@ -2381,10 +2404,110 @@ fn interview_limit_argument_candidates(argument: &str) -> Vec<(String, String)> 
         .collect()
 }
 
+/// Labels of the values a provider advertises under `alias`, narrowed by the
+/// active provider's `SuperpowerPolicy` for the current session state
+/// (PRD FR-3). `None` when the provider does not advertise the control.
+fn advertised_policy_labels(
+    surface: &ProviderSuperpowerSurface,
+    policy: &dyn vesper_provider::SuperpowerPolicy,
+    alias: &str,
+    active_plan: &str,
+    active_model: &str,
+) -> Option<Vec<String>> {
+    let descriptor = surface.by_alias(alias)?;
+    let filtered =
+        policy.valid_choices(alias, &descriptor.allowed_values, active_plan, active_model);
+    Some(filtered.iter().map(superpower_value_text).collect())
+}
+
+/// The active model id resolved the same way the palette's superpower path
+/// resolves it: the session override, else the descriptor default.
+fn active_model_label(state: &SessionState, surface: &ProviderSuperpowerSurface) -> String {
+    let default = surface
+        .by_alias("model")
+        .and_then(|descriptor| match &descriptor.default_value {
+            SuperpowerValue::Choice { value } => Some(value.as_str().to_string()),
+            _ => None,
+        })
+        .unwrap_or_default();
+    active_superpower_choice(state, surface, "model").unwrap_or(default)
+}
+
+/// Mixture-of-agents adviser models eligible for the current session: the
+/// capability index's tool-capable candidates, narrowed by the active
+/// provider's policy (PRD FR-6/D5 — e.g. GLM drops vision models and
+/// off-plan models). Provider-neutral by construction.
+fn mixture_advisers(
+    state: &SessionState,
+    surface: &ProviderSuperpowerSurface,
+    policy: &dyn vesper_provider::SuperpowerPolicy,
+    capabilities: &agent_vesper_tui::ModelCapabilityIndex,
+) -> Vec<String> {
+    let active_model = active_model_label(state, surface);
+    let candidates = capabilities.adviser_candidates(&active_model);
+    let advertised: Vec<SuperpowerValue> = candidates
+        .iter()
+        .map(|model| SuperpowerValue::Choice {
+            value: BoundedString::new(model.as_str()).expect("catalog model ids are bounded"),
+        })
+        .collect();
+    policy
+        .valid_choices(
+            "mixture",
+            &advertised,
+            &state.controls.endpoint_plan,
+            &active_model,
+        )
+        .iter()
+        .map(superpower_value_text)
+        .collect()
+}
+
+/// Pure image-queue gate (PRD FR-5): every queued image must be accepted by
+/// the active model's advertised vision capability. Fails closed with the
+/// adapter's own denial reason — provider- and model-routed.
+fn validate_queued_images(
+    capabilities: &agent_vesper_tui::ModelCapabilityIndex,
+    model: &str,
+    pending: &[QueuedImage],
+) -> Result<(), String> {
+    for image in pending {
+        capabilities
+            .accepts_image(model, &image.descriptor.media_type)
+            .map_err(|denial| format!("{} image(s) queued, but {denial}", pending.len()))?;
+    }
+    Ok(())
+}
+
+/// Pure mixture-adviser resolution (PRD FR-6): the policy-narrowed adviser
+/// list for the session (bounded to two), an empty list when mixture is off,
+/// or a truthful error when mixture is on but no adviser is eligible.
+fn mixture_reference_models(
+    state: &SessionState,
+    surface: &ProviderSuperpowerSurface,
+    policy: &dyn vesper_provider::SuperpowerPolicy,
+    capabilities: &agent_vesper_tui::ModelCapabilityIndex,
+) -> Result<Vec<String>, String> {
+    if state.controls.mixture_mode != "enabled" {
+        return Ok(Vec::new());
+    }
+    let advisers = mixture_advisers(state, surface, policy, capabilities);
+    if advisers.is_empty() {
+        return Err(
+            "Mixture of Agents is enabled, but the active provider advertises no \
+             eligible adviser model; disable it with `/mixture off`."
+                .into(),
+        );
+    }
+    Ok(advisers.into_iter().take(2).collect())
+}
+
 fn session_setting_candidates(
     command: &str,
     state: &SessionState,
     surface: &ProviderSuperpowerSurface,
+    policy: &dyn vesper_provider::SuperpowerPolicy,
+    capabilities: &agent_vesper_tui::ModelCapabilityIndex,
 ) -> Option<Vec<(String, String)>> {
     if command == "/history" {
         return Some(session_history_candidates());
@@ -2417,127 +2540,188 @@ fn session_setting_candidates(
                 .collect(),
         );
     }
-    let is_glm = surface.provider_id().as_str() == "zai";
-    let choices: Vec<(&str, String)> = match command {
+    // PRD provider-capability-gating FR-1: rows and values derive from what
+    // the ACTIVE provider advertises (by command alias) plus the capability
+    // index — never from a provider-name check. Not advertised ⇒ no row;
+    // ineligible ⇒ disabled row / omitted value.
+    let active_plan = state.controls.endpoint_plan.as_str();
+    let active_model = active_model_label(state, surface);
+    let choices: Vec<(String, String)> = match command {
         "/settings" => {
-            let mut settings = vec![
+            let mut settings: Vec<(String, String)> = vec![
                 (
-                    "/permission",
+                    "/permission".to_string(),
                     format!("Permissions · current {:?}", state.controls.permission_mode),
                 ),
                 (
-                    "/mode",
+                    "/mode".to_string(),
                     format!("Session mode · current {:?}", state.controls.operating_mode),
                 ),
                 (
-                    "/theme",
+                    "/theme".to_string(),
                     format!("Visual theme · current {}", state.preferences.theme),
                 ),
             ];
-            if is_glm {
-                settings.splice(
-                    0..0,
-                    [
-                        (
-                            "/plan",
-                            format!("API plan · current {}", state.controls.endpoint_plan),
-                        ),
-                        ("/thinking", "Reasoning depth".into()),
-                        ("/model", "Primary GLM model".into()),
-                        (
-                            "/generation",
-                            format!(
-                                "Generation style · current {}",
-                                state.controls.generation_profile
-                            ),
-                        ),
-                        (
-                            "/auxiliary",
-                            format!(
-                                "Auxiliary model · current {}",
-                                state.controls.auxiliary_model
-                            ),
-                        ),
-                        (
-                            "/mixture",
-                            format!(
-                                "Mixture of Agents · current {}",
-                                state.controls.mixture_mode
-                            ),
-                        ),
-                    ],
-                );
+            let mut provider_rows: Vec<(String, String)> = Vec::new();
+            if surface.by_alias("plan").is_some() {
+                provider_rows.push((
+                    "/plan".to_string(),
+                    format!("API plan · current {active_plan}"),
+                ));
             }
+            if surface.by_alias("thinking").is_some() {
+                provider_rows.push(("/thinking".to_string(), "Reasoning depth".into()));
+            }
+            if surface.by_alias("model").is_some() {
+                provider_rows.push(("/model".to_string(), "Primary model".into()));
+            }
+            if surface.by_alias("generation").is_some() {
+                provider_rows.push((
+                    "/generation".to_string(),
+                    format!(
+                        "Generation style · current {}",
+                        state.controls.generation_profile
+                    ),
+                ));
+            }
+            if surface.by_alias("auxiliary").is_some() {
+                provider_rows.push((
+                    "/auxiliary".to_string(),
+                    format!(
+                        "Auxiliary model · current {}",
+                        state.controls.auxiliary_model
+                    ),
+                ));
+            }
+            if surface.by_alias("mixture").is_some() || !capabilities.is_empty() {
+                // Harness-owned control: available exactly when the active
+                // provider fields at least one eligible adviser model.
+                if mixture_advisers(state, surface, policy, capabilities).is_empty() {
+                    provider_rows.push((
+                        "/mixture".to_string(),
+                        "Mixture of Agents · unavailable (no eligible adviser models)".into(),
+                    ));
+                } else {
+                    provider_rows.push((
+                        "/mixture".to_string(),
+                        format!(
+                            "Mixture of Agents · current {}",
+                            state.controls.mixture_mode
+                        ),
+                    ));
+                }
+            }
+            settings.splice(0..0, provider_rows);
             settings
         }
-        "/plan" | "/api-plan" | "/endpoint" if is_glm => vec![
-            (
-                "coding",
-                "Coding Plan · subscription · text models · api.z.ai/api/coding/paas/v4".into(),
-            ),
-            (
-                "standard",
-                "Standard API · pay-as-you-go · text + vision · api.z.ai/api/paas/v4".into(),
-            ),
-            (
-                "bigmodel",
-                "BigModel CN · text + vision · open.bigmodel.cn/api/paas/v4".into(),
-            ),
-        ],
+        "/plan" | "/api-plan" | "/endpoint" => {
+            let labels =
+                advertised_policy_labels(surface, policy, "plan", active_plan, &active_model)?;
+            labels
+                .into_iter()
+                .map(|value| {
+                    let description = match value.as_str() {
+                        "coding" => {
+                            "Coding Plan · subscription · text models · api.z.ai/api/coding/paas/v4"
+                        }
+                        "standard" => {
+                            "Standard API · pay-as-you-go · text + vision · api.z.ai/api/paas/v4"
+                        }
+                        "bigmodel" => "BigModel CN · text + vision · open.bigmodel.cn/api/paas/v4",
+                        other => {
+                            // A provider advertising its own plan scale keeps
+                            // its values fully usable with a neutral label.
+                            let _ = other;
+                            "Advertised API plan"
+                        }
+                    };
+                    (value, description.to_string())
+                })
+                .collect()
+        }
         "/permission" => vec![
-            ("ask", "Ask before edits and commands".into()),
-            ("read", "Read Only — block mutations and commands".into()),
+            ("ask".to_string(), "Ask before edits and commands".into()),
             (
-                "bypass",
+                "read".to_string(),
+                "Read Only — block mutations and commands".into(),
+            ),
+            (
+                "bypass".to_string(),
                 "Bypass — auto-approve permitted operations".into(),
             ),
         ],
         "/mode" => vec![
-            ("ask", "Ask / explain — read-only tool surface".into()),
-            ("code", "Code / act — full tool surface".into()),
+            (
+                "ask".to_string(),
+                "Ask / explain — read-only tool surface".into(),
+            ),
+            ("code".to_string(), "Code / act — full tool surface".into()),
         ],
         "/max-iterations" => vec![
-            ("10", "Short bounded run".into()),
-            ("25", "Medium bounded run".into()),
-            ("50", "Oracle default".into()),
-            ("100", "Long bounded run".into()),
-            ("200", "Maximum accepted cap".into()),
+            ("10".to_string(), "Short bounded run".into()),
+            ("25".to_string(), "Medium bounded run".into()),
+            ("50".to_string(), "Oracle default".into()),
+            ("100".to_string(), "Long bounded run".into()),
+            ("200".to_string(), "Maximum accepted cap".into()),
         ],
-        "/generation" if is_glm => vec![
-            ("balanced", "Balanced — provider defaults".into()),
-            ("precise", "Precise — temperature 0.7".into()),
-            ("exploratory", "Exploratory — top-p 0.98".into()),
-        ],
-        "/auxiliary" if is_glm => {
-            let mut values = vec![("main", "Use the primary model".into())];
-            if let Some(descriptor) = surface.by_alias("model") {
-                for value in &descriptor.allowed_values {
-                    if let SuperpowerValue::Choice { value } = value
-                        && vesper_provider_glm::GlmCatalog::supports_plan(
-                            value.as_str(),
-                            selected_glm_plan(&state.controls.endpoint_plan),
-                        )
-                        && !vesper_provider_glm::GlmCatalog::is_vision_model(value.as_str())
-                    {
-                        values.push((value.as_str(), "Use for bounded auxiliary work".into()));
-                    }
-                }
+        "/generation" => {
+            let labels = advertised_policy_labels(
+                surface,
+                policy,
+                "generation",
+                active_plan,
+                &active_model,
+            )?;
+            labels
+                .into_iter()
+                .map(|value| {
+                    let description = match value.as_str() {
+                        "balanced" => "Balanced — provider defaults",
+                        "precise" => "Precise — temperature 0.7",
+                        "exploratory" => "Exploratory — top-p 0.98",
+                        _ => "Advertised generation style",
+                    };
+                    (value, description.to_string())
+                })
+                .collect()
+        }
+        "/auxiliary" => {
+            let labels =
+                advertised_policy_labels(surface, policy, "auxiliary", active_plan, &active_model)?;
+            labels
+                .into_iter()
+                .map(|value| {
+                    let description = if value == "main" {
+                        "Use the primary model"
+                    } else {
+                        "Use for bounded auxiliary work"
+                    };
+                    (value, description.to_string())
+                })
+                .collect()
+        }
+        "/mixture" => {
+            // Harness-owned scale; `enabled` is offered exactly when the
+            // active provider fields at least one eligible adviser (PRD
+            // FR-6) — a single-model provider sees `off` only.
+            let mut values = vec![(
+                "off".to_string(),
+                "Off — use the acting model directly".to_string(),
+            )];
+            if !mixture_advisers(state, surface, policy, capabilities).is_empty() {
+                values.push((
+                    "enabled".to_string(),
+                    "Reference review — use independent advisers".to_string(),
+                ));
             }
             values
         }
-        "/mixture" if is_glm => vec![
-            ("off", "Off — use the acting model directly".into()),
-            (
-                "enabled",
-                "Reference review — use independent advisers".into(),
-            ),
-        ],
         "/theme" => vec![
-            ("vesper", "Vesper dark".into()),
-            ("ansi", "Terminal ANSI".into()),
-            ("light", "High-contrast light".into()),
-            ("dracula", "Dracula".into()),
-            ("nord", "Nord".into()),
+            ("vesper".to_string(), "Vesper dark".into()),
+            ("ansi".to_string(), "Terminal ANSI".into()),
+            ("light".to_string(), "High-contrast light".into()),
+            ("dracula".to_string(), "Dracula".into()),
+            ("nord".to_string(), "Nord".into()),
         ],
         _ => return None,
     };
@@ -2546,7 +2730,7 @@ fn session_setting_candidates(
             .into_iter()
             .map(|(value, description)| {
                 let full = if value.starts_with('/') {
-                    value.to_string()
+                    value
                 } else {
                     format!("{command} {value}")
                 };
@@ -2554,14 +2738,6 @@ fn session_setting_candidates(
             })
             .collect(),
     )
-}
-
-fn selected_glm_plan(value: &str) -> vesper_provider_glm::GlmPlan {
-    match value {
-        "standard" => vesper_provider_glm::GlmPlan::Standard,
-        "bigmodel" => vesper_provider_glm::GlmPlan::BigModel,
-        _ => vesper_provider_glm::GlmPlan::Coding,
-    }
 }
 
 fn superpower_value_text(value: &SuperpowerValue) -> String {
@@ -4054,6 +4230,36 @@ fn model_id_for_provider(provider_id: &ProviderId) -> Result<ModelId, String> {
     ModelId::new(id).map_err(|error| format!("invalid model id {id:?}: {error}"))
 }
 
+/// Builds the per-model capability index for the active provider from the
+/// provider's own catalog at the composition boundary (PRD
+/// provider-capability-gating D1). Concrete adapter references are allowed
+/// here — this is registration/composition wiring, not frontend logic; the
+/// index itself and every consumer stay provider-neutral and fail closed.
+fn capability_index_for(
+    provider_id: &ProviderId,
+    lm_factory: &agent_vesper_tui::LmStudioFactory,
+) -> agent_vesper_tui::ModelCapabilityIndex {
+    match provider_id.as_str() {
+        // GLM: the frozen static catalog already carries per-model
+        // ProviderCapabilities (vision, tools, reasoning levels).
+        "zai" => agent_vesper_tui::ModelCapabilityIndex::from_descriptors(
+            vesper_provider_glm::GlmCatalog::snapshot().models,
+        ),
+        // LM Studio: the shared native-catalog cache (refreshed at startup,
+        // PRD P5). No cache (unreachable server) ⇒ empty index ⇒ every
+        // capability-gated feature disabled truthfully — never guessed.
+        other if other == agent_vesper_tui::LmStudioFactory::provider_id_str() => {
+            match lm_factory.cached_snapshot() {
+                Some(snapshot) => {
+                    agent_vesper_tui::ModelCapabilityIndex::from_descriptors(snapshot.models)
+                }
+                None => agent_vesper_tui::ModelCapabilityIndex::empty(),
+            }
+        }
+        _ => agent_vesper_tui::ModelCapabilityIndex::empty(),
+    }
+}
+
 fn default_endpoint_for_provider(provider_id: &ProviderId) -> Result<EndpointId, String> {
     let endpoint = match provider_id.as_str() {
         "zai" => "zai-coding",
@@ -4090,18 +4296,14 @@ fn spawn_agent_turn(
     cognition: &CognitionBundle,
 ) -> Result<(), String> {
     let config = turn_configuration(agent, &session.state, surface)?;
-    if !session.pending_images.is_empty() {
-        let model = config.model.model_id.as_str();
-        if !vesper_provider_glm::GlmCatalog::is_vision_model(model) {
-            return Err(format!(
-                "{} image(s) queued, but `{model}` is not a direct vision model; select Standard/BigModel and GLM-5V-Turbo, GLM-4.5V, or GLM-4.6V",
-                session.pending_images.len()
-            ));
-        }
-        if session.state.controls.endpoint_plan == "coding" {
-            return Err("Direct vision requires Standard API or BigModel CN.".into());
-        }
-    }
+    // PRD FR-5: image input is gated by the ACTIVE model's advertised
+    // vision capability (fail-closed) — provider- and model-routed, with
+    // the adapter's own denial reason, never a provider-name check.
+    validate_queued_images(
+        &session.capabilities,
+        config.model.model_id.as_str(),
+        &session.pending_images,
+    )?;
     let images = session
         .pending_images
         .iter()
@@ -4119,26 +4321,16 @@ fn spawn_agent_turn(
     }
     session.conversation.push(user.clone());
     let history = session.conversation.clone();
-    let mixture_enabled =
-        session.state.controls.mixture_mode == "enabled" && config.provider_id.as_str() == "zai";
-    let reference_models = if mixture_enabled {
-        vesper_provider_glm::GlmCatalog::snapshot()
-            .models
-            .into_iter()
-            .map(|descriptor| descriptor.model.model_id.as_str().to_owned())
-            .filter(|model| {
-                model != config.model.model_id.as_str()
-                    && !vesper_provider_glm::GlmCatalog::is_vision_model(model)
-                    && vesper_provider_glm::GlmCatalog::supports_plan(
-                        model,
-                        selected_glm_plan(&session.state.controls.endpoint_plan),
-                    )
-            })
-            .take(2)
-            .collect::<Vec<_>>()
-    } else {
-        Vec::new()
-    };
+    // PRD FR-6: mixture advisers come from the capability index (tool-capable
+    // models other than the active one), narrowed by the active provider's
+    // policy — no provider-name check, no concrete-catalog call. Enabling
+    // mixture without eligible advisers is rejected truthfully.
+    let reference_models = mixture_reference_models(
+        &session.state,
+        surface,
+        session.policy.as_ref(),
+        &session.capabilities,
+    )?;
     let adviser_source = user_text.clone();
     let adviser_config = config.clone();
     let original_user = user.clone();
@@ -5103,11 +5295,9 @@ fn render_context_breakdown(
     surface: &ProviderSuperpowerSurface,
 ) -> Result<Vec<String>, String> {
     let config = turn_configuration(agent, &session.state, surface)?;
-    let context_size = vesper_provider_glm::GlmCatalog::find(config.model.model_id.as_str())
-        .and_then(|descriptor| match descriptor.capabilities.limits {
-            vesper_provider::SupportLevel::Native { details } => details.context_tokens,
-            _ => None,
-        })
+    let context_size = session
+        .capabilities
+        .context_window(config.model.model_id.as_str())
         .ok_or_else(|| {
             format!(
                 "active provider did not publish a context limit for `{}`",
@@ -11755,6 +11945,25 @@ mod tests {
                         "glm-4.6v",
                     ],
                 ),
+                descriptor("zai:plan", "plan", &["coding", "standard", "bigmodel"]),
+                descriptor(
+                    "zai:generation",
+                    "generation",
+                    &["balanced", "precise", "exploratory"],
+                ),
+                descriptor(
+                    "zai:auxiliary",
+                    "auxiliary",
+                    &[
+                        "main",
+                        "glm-5.3",
+                        "glm-5.2",
+                        "glm-4.7",
+                        "glm-5v-turbo",
+                        "glm-4.5v",
+                        "glm-4.6v",
+                    ],
+                ),
             ],
         )
     }
@@ -11850,6 +12059,218 @@ mod tests {
         assert_eq!(manual, None);
     }
 
+    /// GLM-catalog-backed capability index for palette/gating tests (PRD
+    /// provider-capability-gating P3): the same fail-closed index the
+    /// binary builds for the `zai` provider.
+    fn palette_capabilities() -> agent_vesper_tui::ModelCapabilityIndex {
+        agent_vesper_tui::ModelCapabilityIndex::from_descriptors(
+            vesper_provider_glm::GlmCatalog::snapshot().models,
+        )
+    }
+
+    /// An LM-Studio-shaped surface: advertises only `model` + `thinking`
+    /// superpowers (as `LmStudioFactory` does) and carries no per-model
+    /// capability data yet (empty index — fail-closed).
+    fn lmstudio_shaped_surface() -> ProviderSuperpowerSurface {
+        use vesper_provider::{SuperpowerDescriptor, SuperpowerKind, SuperpowerScope};
+        let provider_id = ProviderId::new("lmstudio").unwrap();
+        let descriptor = |id: &str, alias: &str, values: &[&str]| SuperpowerDescriptor {
+            id: BoundedString::new(id).unwrap(),
+            provider_id: provider_id.clone(),
+            display_name: BoundedString::new(alias).unwrap(),
+            kind: SuperpowerKind::Choice,
+            scope: SuperpowerScope::Session,
+            default_value: SuperpowerValue::Choice {
+                value: BoundedString::new(values[0]).unwrap(),
+            },
+            allowed_values: values
+                .iter()
+                .map(|value| SuperpowerValue::Choice {
+                    value: BoundedString::new(*value).unwrap(),
+                })
+                .collect(),
+            command_alias: Some(BoundedString::new(alias).unwrap()),
+            help: None,
+        };
+        ProviderSuperpowerSurface::new(
+            provider_id.clone(),
+            vec![
+                descriptor("lmstudio:reasoning", "thinking", &["disabled", "enabled"]),
+                descriptor("lmstudio:model", "model", &["qwen3-8b"]),
+            ],
+        )
+    }
+
+    fn queued_image(media_type: &str) -> QueuedImage {
+        QueuedImage {
+            descriptor: vesper_domain::ImageDescriptor {
+                media_type: media_type.to_string(),
+                source: vesper_domain::MediaSource::Reference {
+                    reference: "data".into(),
+                },
+                alt_text: None,
+            },
+            path: std::path::PathBuf::from("image.png"),
+            encoded: String::new(),
+        }
+    }
+
+    #[test]
+    fn settings_rows_derive_from_the_advertised_surface_not_a_provider_name() {
+        // GLM-shaped surface: every advertised control appears.
+        let glm_rows = session_setting_candidates(
+            "/settings",
+            &SessionState::new(),
+            &palette_surface(),
+            &vesper_provider_glm::GlmSuperpowerPolicy,
+            &palette_capabilities(),
+        )
+        .expect("settings rows");
+        let glm_labels: Vec<&str> = glm_rows.iter().map(|(l, _)| l.as_str()).collect();
+        for expected in [
+            "/plan",
+            "/thinking",
+            "/model",
+            "/generation",
+            "/auxiliary",
+            "/mixture",
+        ] {
+            assert!(
+                glm_labels.contains(&expected),
+                "GLM settings must show {expected}"
+            );
+        }
+
+        // LM-Studio-shaped surface: only the advertised controls appear —
+        // plan/generation/auxiliary/mixture rows are absent (hidden, not
+        // failing), and no provider-name check decided this.
+        let lm_rows = session_setting_candidates(
+            "/settings",
+            &SessionState::new(),
+            &lmstudio_shaped_surface(),
+            &vesper_provider::PermissiveSuperpowerPolicy,
+            &agent_vesper_tui::ModelCapabilityIndex::empty(),
+        )
+        .expect("settings rows");
+        let lm_labels: Vec<&str> = lm_rows.iter().map(|(l, _)| l.as_str()).collect();
+        assert!(lm_labels.contains(&"/thinking"));
+        assert!(lm_labels.contains(&"/model"));
+        for absent in ["/plan", "/generation", "/auxiliary", "/mixture"] {
+            assert!(
+                !lm_labels.contains(&absent),
+                "{absent} must be hidden for a provider that does not advertise it"
+            );
+        }
+    }
+
+    #[test]
+    fn plan_generation_and_auxiliary_values_require_advertisement() {
+        // GLM surface + policy + catalog index: values come from the
+        // descriptors, policy-narrowed (glm-4.5v excluded from auxiliary).
+        let state = SessionState::new();
+        let surface = palette_surface();
+        let policy = &vesper_provider_glm::GlmSuperpowerPolicy;
+        let caps = palette_capabilities();
+        let auxiliary = session_setting_candidates("/auxiliary", &state, &surface, policy, &caps)
+            .expect("auxiliary values");
+        let aux_values: Vec<&str> = auxiliary.iter().map(|(v, _)| v.as_str()).collect();
+        assert!(aux_values.contains(&"/auxiliary main"));
+        assert!(
+            !aux_values.contains(&"/auxiliary glm-4.5v"),
+            "vision models are not auxiliary-eligible"
+        );
+
+        // A provider without the advertisement gets NO values (palette
+        // silent) — the error text lives in command resolution.
+        assert!(
+            session_setting_candidates(
+                "/plan",
+                &state,
+                &lmstudio_shaped_surface(),
+                &vesper_provider::PermissiveSuperpowerPolicy,
+                &agent_vesper_tui::ModelCapabilityIndex::empty(),
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn mixture_values_and_spawn_gate_are_capability_routed() {
+        let surface = palette_surface();
+        let policy = &vesper_provider_glm::GlmSuperpowerPolicy;
+        let caps = palette_capabilities();
+
+        // GLM: multiple tool-capable models → off + enabled.
+        let mixture =
+            session_setting_candidates("/mixture", &SessionState::new(), &surface, policy, &caps)
+                .expect("mixture values");
+        let values: Vec<&str> = mixture.iter().map(|(v, _)| v.as_str()).collect();
+        assert_eq!(values, vec!["/mixture off", "/mixture enabled"]);
+
+        // Single-model provider (empty index): only `off` is offered…
+        let lm_surface = lmstudio_shaped_surface();
+        let lm_caps = agent_vesper_tui::ModelCapabilityIndex::empty();
+        let lm_mixture = session_setting_candidates(
+            "/mixture",
+            &SessionState::new(),
+            &lm_surface,
+            &vesper_provider::PermissiveSuperpowerPolicy,
+            &lm_caps,
+        )
+        .expect("mixture values");
+        let lm_values: Vec<&str> = lm_mixture.iter().map(|(v, _)| v.as_str()).collect();
+        assert_eq!(lm_values, vec!["/mixture off"]);
+
+        // …and enabling mixture without advisers is rejected truthfully at
+        // turn dispatch (no provider-name check involved).
+        let mut lm_state = SessionState::new();
+        lm_state.controls.mixture_mode = "enabled".into();
+        let error = mixture_reference_models(
+            &lm_state,
+            &lm_surface,
+            &vesper_provider::PermissiveSuperpowerPolicy,
+            &lm_caps,
+        )
+        .expect_err("no eligible adviser must reject");
+        assert!(error.contains("no eligible adviser model"));
+
+        // GLM with mixture enabled resolves real advisers (model-routed,
+        // bounded to two, vision models excluded via the policy).
+        let mut glm_state = SessionState::new();
+        glm_state.controls.mixture_mode = "enabled".into();
+        let advisers = mixture_reference_models(&glm_state, &surface, policy, &caps)
+            .expect("GLM fields eligible advisers");
+        assert_eq!(advisers.len(), 2);
+        assert!(!advisers.contains(&"glm-4.5v".to_string()));
+    }
+
+    #[test]
+    fn image_gate_follows_the_active_models_advertised_vision() {
+        let caps = palette_capabilities();
+        // A vision-capable GLM model accepts a queued PNG.
+        assert!(validate_queued_images(&caps, "glm-4.5v", &[queued_image("image/png")]).is_ok());
+        // A text-only model rejects with the adapter's own denial reason —
+        // no provider-branded guidance, no name check.
+        let denial = validate_queued_images(&caps, "glm-5.3", &[queued_image("image/png")])
+            .expect_err("text-only model must reject image input");
+        assert!(
+            denial.contains("image(s) queued"),
+            "denial names the queue: {denial}"
+        );
+        // A provider without capability data (LM Studio today) fails closed.
+        let lm = agent_vesper_tui::ModelCapabilityIndex::empty();
+        let closed = validate_queued_images(&lm, "qwen3-8b", &[queued_image("image/png")])
+            .expect_err("unadvertised capability must deny");
+        assert!(
+            closed.contains("qwen3-8b"),
+            "denial names the active model: {closed}"
+        );
+        // A vision model still rejects an unadvertised media type.
+        let media = validate_queued_images(&caps, "glm-4.5v", &[queued_image("image/gif")])
+            .expect_err("unlisted media type must deny");
+        assert!(media.contains("image/gif"));
+    }
+
     #[test]
     fn palette_starts_in_oracle_order_and_exposes_every_command() {
         let registry = CommandRegistry::stage_11b();
@@ -11858,6 +12279,7 @@ mod tests {
             &registry,
             &palette_surface(),
             &vesper_provider_glm::GlmSuperpowerPolicy,
+            &palette_capabilities(),
             &[],
             &SessionState::new(),
         );
@@ -11879,6 +12301,7 @@ mod tests {
             &registry,
             &surface,
             &vesper_provider_glm::GlmSuperpowerPolicy,
+            &palette_capabilities(),
             &[],
             &state,
         );
@@ -11890,6 +12313,7 @@ mod tests {
                 &registry,
                 &surface,
                 &vesper_provider_glm::GlmSuperpowerPolicy,
+                &palette_capabilities(),
                 &[],
                 &state
             )[0]
@@ -11905,6 +12329,7 @@ mod tests {
                 &registry,
                 &surface,
                 &vesper_provider_glm::GlmSuperpowerPolicy,
+                &palette_capabilities(),
                 &[],
                 &state
             )[0]
@@ -11918,6 +12343,7 @@ mod tests {
                 &registry,
                 &surface,
                 &vesper_provider_glm::GlmSuperpowerPolicy,
+                &palette_capabilities(),
                 &[],
                 &state
             )[0]
@@ -11930,6 +12356,7 @@ mod tests {
                 &registry,
                 &surface,
                 &vesper_provider_glm::GlmSuperpowerPolicy,
+                &palette_capabilities(),
                 &[],
                 &state
             )[0]
@@ -11948,6 +12375,7 @@ mod tests {
             &registry,
             &surface,
             &vesper_provider_glm::GlmSuperpowerPolicy,
+            &palette_capabilities(),
             &[],
             &state,
         );
@@ -11963,6 +12391,7 @@ mod tests {
             &registry,
             &surface,
             &vesper_provider_glm::GlmSuperpowerPolicy,
+            &palette_capabilities(),
             &[],
             &state,
         );
@@ -11982,6 +12411,7 @@ mod tests {
             &registry,
             &surface,
             &vesper_provider_glm::GlmSuperpowerPolicy,
+            &palette_capabilities(),
             &[],
             &state,
         );
@@ -11994,6 +12424,7 @@ mod tests {
             &registry,
             &surface,
             &vesper_provider_glm::GlmSuperpowerPolicy,
+            &palette_capabilities(),
             &[],
             &state,
         );
@@ -12011,6 +12442,7 @@ mod tests {
             &registry,
             &surface,
             &vesper_provider_glm::GlmSuperpowerPolicy,
+            &palette_capabilities(),
             &[],
             &state,
         );
@@ -12733,6 +13165,7 @@ mod tests {
         let mut session = TuiSession {
             policy: std::sync::Arc::new(vesper_provider::PermissiveSuperpowerPolicy),
             provider_ids: vec![("zai".into(), "Z.ai".into())],
+            capabilities: agent_vesper_tui::ModelCapabilityIndex::empty(),
             state: SessionState::new(),
             input: String::new(),
             conversation: Vec::new(),
@@ -12788,6 +13221,7 @@ mod tests {
         let mut session = TuiSession {
             policy: std::sync::Arc::new(vesper_provider::PermissiveSuperpowerPolicy),
             provider_ids: vec![("zai".into(), "Z.ai".into())],
+            capabilities: agent_vesper_tui::ModelCapabilityIndex::empty(),
             state: SessionState::new(),
             input: String::new(),
             conversation: Vec::new(),
@@ -12841,6 +13275,7 @@ mod tests {
         let mut session = TuiSession {
             policy: std::sync::Arc::new(vesper_provider::PermissiveSuperpowerPolicy),
             provider_ids: vec![("zai".into(), "Z.ai".into())],
+            capabilities: agent_vesper_tui::ModelCapabilityIndex::empty(),
             state: SessionState::new(),
             input: String::new(),
             conversation: Vec::new(),
@@ -14002,6 +14437,7 @@ mod tests {
             policy: Arc::new(vesper_provider::PermissiveSuperpowerPolicy)
                 as Arc<dyn vesper_provider::SuperpowerPolicy>,
             provider_ids: Vec::new(),
+            capabilities: agent_vesper_tui::ModelCapabilityIndex::empty(),
             state: SessionState::new(),
             input: String::new(),
             conversation: Vec::new(),
@@ -14400,6 +14836,7 @@ mod tests {
             &registry,
             &surface,
             &policy,
+            &agent_vesper_tui::ModelCapabilityIndex::empty(),
             &providers,
             &state,
         );

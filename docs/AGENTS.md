@@ -20,6 +20,10 @@ Own durable project documentation and evidence-backed engineering records.
   replay evidence, disk invariance, governance, and Stage 6 readiness.
 - Root documentation files own current architecture, workspace, dependency,
   security, contribution, migration status, and full-harness parity evidence.
+- Root PRD files (`*-prd.md`) own accepted phased requirement documents
+  (e.g. `agent-vesper-reasoning-orchestrator-prd.md`,
+  `provider-capability-gating-prd.md`); implementation evidence for their
+  phases lands in the owning stage/foundation/adapter directories.
 
 ## Local Contracts
 

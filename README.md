@@ -392,17 +392,19 @@ with `AGENT_VESPER_GLOBAL_MEMORY_ROOT`.
 
 ## Configuration
 
-All configurable from the TUI — no restart needed:
+All configurable from the TUI — no restart needed. Every provider control is **advertisement-driven and capability-gated** (`docs/provider-capability-gating-prd.md`): rows appear only when the active provider advertises them, value lists come from the provider's own descriptors narrowed by its policy for the active model, and unsupported features (image input on non-vision models, Mixture of Agents without eligible advisers, thinking on models that report no reasoning options) are disabled or hidden with truthful reasons — never a provider-name check:
 
 | Option | Values | Description |
 |---|---|---|
-| **Model** | GLM-5.3, GLM-5.2, GLM-5-Turbo, GLM-4.7 (+ vision models) | Model list syncs to the selected API plan; GLM-5.3 is the default flagship |
-| **Reasoning Depth** | Off, Enabled, High, Max | Session-scoped GLM thinking depth (provider superpower; `/thinking`) |
+| **Model** | GLM: GLM-5.3, GLM-5.2, GLM-5-Turbo, GLM-4.7 (+ vision models) · LM Studio: live `/api/v1/models` list | Model list comes from the active provider's catalog, filtered by plan (GLM) or reported availability (LM Studio) |
+| **Reasoning Depth** | GLM: Off, Enabled, High, Max (deep levels on deep-reasoning models only) · LM Studio: only the model's reported reasoning options | Provider superpower (`/thinking`); value set is policy-filtered per active model |
 | **Reasoning Mode (VRO)** | Auto, Fast, Balanced, Deep, Maximum, Off | VRO orchestrator mode override (`/reasoning set mode=…`); see [Reasoning Orchestrator](#reasoning-orchestrator-vro) |
 | **VesperLens interview limit** | Auto or 1–12 (default 4) | Session-scoped maximum for `request_human_input`; `/interview-limit` reports or changes it |
-| **API Plan** | Coding, Standard, BigModel (CN) | Switch endpoints |
+| **API Plan** | Coding, Standard, BigModel (CN) | GLM endpoint plan (advertised by the GLM adapter; hidden for providers without plans) |
 | **Permissions** | Ask, Read Only, Bypass | Gate destructive tools |
-| **Generation** | Balanced, Precise, Exploratory | Temperature / sampling strategy |
+| **Generation** | Balanced, Precise, Exploratory | Temperature / sampling strategy (advertised by the provider) |
+| **Auxiliary Model** | Main + eligible models | Bounded auxiliary work model; ineligible (vision / off-plan) values are policy-filtered out |
+| **Mixture of Agents** | Off, Enabled | Enabled only when the active provider fields eligible adviser models (tool-capable, non-vision); single-model providers see Off only |
 
 ### Cognitive Memory Configuration
 

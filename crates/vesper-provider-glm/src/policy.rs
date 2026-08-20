@@ -100,6 +100,44 @@ impl SuperpowerPolicy for GlmSuperpowerPolicy {
                 })
                 .cloned()
                 .collect(),
+            // `/plan` and `/generation` are structurally constrained by their
+            // advertised scales; the policy passes them through unchanged.
+            "plan" | "generation" => advertised.to_vec(),
+            // `/auxiliary`: `main` always; catalog models only when they are
+            // available on the active API plan and are not vision models
+            // (vision models are not auxiliary-eligible).
+            "auxiliary" => {
+                let plan = Self::plan(active_plan);
+                advertised
+                    .iter()
+                    .filter(|value| match Self::choice_label(value) {
+                        Some("main") => true,
+                        Some(model) => {
+                            GlmCatalog::supports_plan(model, plan)
+                                && !GlmCatalog::is_vision_model(model)
+                        }
+                        None => false,
+                    })
+                    .cloned()
+                    .collect()
+            }
+            // Mixture-of-agents advisers (PRD FR-6/D5): the harness sends
+            // tool-capable catalog candidates; GLM narrows to non-vision
+            // models available on the active plan.
+            "mixture" => {
+                let plan = Self::plan(active_plan);
+                advertised
+                    .iter()
+                    .filter(|value| match Self::choice_label(value) {
+                        Some(model) => {
+                            GlmCatalog::supports_plan(model, plan)
+                                && !GlmCatalog::is_vision_model(model)
+                        }
+                        None => false,
+                    })
+                    .cloned()
+                    .collect()
+            }
             // Every other alias: no constraint.
             _ => advertised.to_vec(),
         }
@@ -119,6 +157,24 @@ impl SuperpowerPolicy for GlmSuperpowerPolicy {
             return Err(format!(
                 "Model `{model}` is unavailable on the {active_plan} API plan."
             ));
+        }
+        // `/auxiliary` mirrors `valid_choices`: `main` always eligible;
+        // catalog models only when plan-available and non-vision.
+        if alias == "auxiliary"
+            && let Some(model) = Self::choice_label(value)
+            && model != "main"
+        {
+            let plan = Self::plan(active_plan);
+            if !GlmCatalog::supports_plan(model, plan) {
+                return Err(format!(
+                    "Auxiliary model `{model}` is unavailable on the {active_plan} API plan."
+                ));
+            }
+            if GlmCatalog::is_vision_model(model) {
+                return Err(format!(
+                    "Vision model `{model}` is not eligible for auxiliary work."
+                ));
+            }
         }
         Ok(())
     }
@@ -323,6 +379,74 @@ mod tests {
             policy
                 .validate("effort", &choice("anything"), "", "")
                 .is_ok()
+        );
+    }
+
+    fn labels(values: &[SuperpowerValue]) -> Vec<&str> {
+        values
+            .iter()
+            .filter_map(|v| GlmSuperpowerPolicy::choice_label(v))
+            .collect()
+    }
+
+    #[test]
+    fn auxiliary_choices_keep_main_and_filter_vision_and_plan() {
+        let policy = GlmSuperpowerPolicy;
+        let advertised = vec![choice("main"), choice("glm-5.3"), choice("glm-4.5v")];
+        // Coding plan: glm-4.5v excluded (off-plan and vision).
+        let coding = policy.valid_choices("auxiliary", &advertised, "coding", "");
+        assert_eq!(labels(&coding), vec!["main", "glm-5.3"]);
+        // Standard plan: glm-4.5v is plan-available but still vision → excluded.
+        let standard = policy.valid_choices("auxiliary", &advertised, "standard", "");
+        assert_eq!(labels(&standard), vec!["main", "glm-5.3"]);
+    }
+
+    #[test]
+    fn auxiliary_validate_rejects_vision_and_off_plan_models() {
+        let policy = GlmSuperpowerPolicy;
+        assert!(
+            policy
+                .validate("auxiliary", &choice("main"), "coding", "")
+                .is_ok()
+        );
+        assert!(
+            policy
+                .validate("auxiliary", &choice("glm-5.3"), "coding", "")
+                .is_ok()
+        );
+        // Vision models are never auxiliary-eligible, whatever the plan.
+        assert!(
+            policy
+                .validate("auxiliary", &choice("glm-4.5v"), "standard", "")
+                .is_err()
+        );
+        assert!(
+            policy
+                .validate("auxiliary", &choice("glm-4.5v"), "coding", "")
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn mixture_choices_exclude_vision_and_off_plan_advisers() {
+        let policy = GlmSuperpowerPolicy;
+        let advertised = advertised_models();
+        let coding = policy.valid_choices("mixture", &advertised, "coding", "");
+        assert_eq!(labels(&coding), vec!["glm-5.3", "glm-5.2"]);
+        // Vision models stay excluded from text-adviser duty on every plan.
+        let standard = policy.valid_choices("mixture", &advertised, "standard", "");
+        assert_eq!(labels(&standard), vec!["glm-5.3", "glm-5.2"]);
+    }
+
+    #[test]
+    fn plan_and_generation_choices_pass_through_advertised_scales() {
+        let policy = GlmSuperpowerPolicy;
+        let plans = vec![choice("coding"), choice("standard"), choice("bigmodel")];
+        assert_eq!(policy.valid_choices("plan", &plans.clone(), "", ""), plans);
+        let styles = vec![choice("balanced"), choice("precise"), choice("exploratory")];
+        assert_eq!(
+            policy.valid_choices("generation", &styles.clone(), "", ""),
+            styles
         );
     }
 }

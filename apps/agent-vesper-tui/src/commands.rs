@@ -799,12 +799,13 @@ impl CommandRegistry {
                     }
                 }
             }
-            "plan" | "api-plan" | "endpoint" => resolve_glm_session_choice(
+            "plan" | "api-plan" | "endpoint" => resolve_advertised_choice(
                 active_provider,
+                superpowers,
                 name,
                 argument,
                 SessionConfigKey::EndpointPlan,
-                &["coding", "standard", "bigmodel"],
+                "plan",
             ),
             "approve" => {
                 if plan_state.phase() != crate::plan_mode::PlanPhase::Review {
@@ -937,31 +938,26 @@ impl CommandRegistry {
                 SessionConfigKey::OperatingMode,
                 &["ask", "code"],
             ),
-            "generation" => resolve_glm_session_choice(
+            "generation" => resolve_advertised_choice(
                 active_provider,
+                superpowers,
                 name,
                 argument,
                 SessionConfigKey::GenerationProfile,
-                &["balanced", "precise", "exploratory"],
+                "generation",
             ),
-            "auxiliary" => resolve_glm_session_choice(
+            "auxiliary" => resolve_advertised_choice(
                 active_provider,
+                superpowers,
                 name,
                 argument,
                 SessionConfigKey::AuxiliaryModel,
-                &[
-                    "main",
-                    "glm-5.3",
-                    "glm-5.2",
-                    "glm-5-turbo",
-                    "glm-4.7",
-                    "glm-5v-turbo",
-                    "glm-4.5v",
-                    "glm-4.6v",
-                ],
+                "auxiliary",
             ),
-            "mixture" => resolve_glm_session_choice(
-                active_provider,
+            // Mixture-of-agents is a harness-owned control: the off/enabled
+            // scale is structural, and adviser eligibility is capability- and
+            // policy-gated in the palette and at turn dispatch (PRD FR-6).
+            "mixture" => resolve_session_choice(
                 name,
                 argument,
                 SessionConfigKey::MixtureMode,
@@ -1771,18 +1767,41 @@ fn resolve_session_choice(
     CommandOutcome::SessionConfig { key, value }
 }
 
-fn resolve_glm_session_choice(
-    _active_provider: &ProviderId,
+fn resolve_advertised_choice(
+    active_provider: &ProviderId,
+    superpowers: &[SuperpowerDescriptor],
     command: &str,
     argument: &str,
     key: SessionConfigKey,
-    allowed: &[&str],
+    alias: &str,
 ) -> CommandOutcome {
-    // Provider-routed: the command resolves for any provider. The dispatch
-    // handler's `policy.on_plan_change(...).owns_plans` gate rejects the
-    // endpoint-plan change at execution time for providers that don't own
-    // plans — no hardcoded provider match arm here.
-    resolve_session_choice(command, argument, key, allowed)
+    // Provider-routed (PRD provider-capability-gating FR-1/FR-2): the values
+    // of a harness session control come from the descriptor the ACTIVE
+    // provider advertises under `alias`. Providers that do not advertise the
+    // control get a truthful "not available" error instead of a foreign
+    // provider's value list; the provider's `SuperpowerPolicy` validates the
+    // change at dispatch. No provider match arm here.
+    let Some(descriptor) = superpowers.iter().find(|descriptor| {
+        descriptor.provider_id == *active_provider
+            && descriptor
+                .command_alias
+                .as_ref()
+                .map(|bounded| bounded.as_str())
+                .is_some_and(|bounded| bounded == alias)
+    }) else {
+        return CommandOutcome::Error(format!(
+            "/{command} is not available on the active provider."
+        ));
+    };
+    let allowed: Vec<&str> = descriptor
+        .allowed_values
+        .iter()
+        .filter_map(|value| match value {
+            SuperpowerValue::Choice { value } => Some(value.as_str()),
+            _ => None,
+        })
+        .collect();
+    resolve_session_choice(command, argument, key, &allowed)
 }
 
 // ===========================================================================
@@ -2519,6 +2538,13 @@ mod tests {
                 prd: "ship the matrix".into()
             }
         );
+        // PRD provider-capability-gating FR-1: `/plan` values come from the
+        // descriptor the active provider advertises. Advertised → resolves to
+        // the harness EndpointPlan control with the advertised scale.
+        let advertised = vec![choice_descriptor(
+            "plan",
+            &["coding", "standard", "bigmodel"],
+        )];
         for alias in ["plan", "api-plan", "endpoint"] {
             let registry = CommandRegistry::stage_11b();
             let plan_state = PlanState::default();
@@ -2530,7 +2556,7 @@ mod tests {
                 },
                 &plan_state,
                 &provider,
-                &[],
+                &advertised,
             );
             assert_eq!(
                 outcome,
@@ -2538,9 +2564,87 @@ mod tests {
                     key: SessionConfigKey::EndpointPlan,
                     value: "standard".into()
                 },
-                "/{alias} should select the API endpoint plan"
+                "/{alias} should select the advertised API endpoint plan"
             );
         }
+        // Not advertised (e.g. a provider without endpoint plans) → truthful
+        // error, never a foreign provider's value list.
+        let registry = CommandRegistry::stage_11b();
+        let plan_state = PlanState::default();
+        let provider = provider();
+        let outcome = registry.resolve(
+            &CommandIntent::Slash {
+                name: "plan".into(),
+                argument: "standard".into(),
+            },
+            &plan_state,
+            &provider,
+            &[],
+        );
+        assert_eq!(
+            outcome,
+            CommandOutcome::Error("/plan is not available on the active provider.".into())
+        );
+    }
+
+    #[test]
+    fn generation_and_auxiliary_require_advertised_values() {
+        let registry = CommandRegistry::stage_11b();
+        let plan_state = PlanState::default();
+        let provider = provider();
+        let advertised = vec![
+            choice_descriptor("generation", &["balanced", "precise", "exploratory"]),
+            choice_descriptor("auxiliary", &["main", "glm-5.3"]),
+        ];
+        assert_eq!(
+            registry.resolve(
+                &CommandIntent::parse("/generation precise"),
+                &plan_state,
+                &provider,
+                &advertised
+            ),
+            CommandOutcome::SessionConfig {
+                key: SessionConfigKey::GenerationProfile,
+                value: "precise".into()
+            }
+        );
+        assert_eq!(
+            registry.resolve(
+                &CommandIntent::parse("/auxiliary glm-5.3"),
+                &plan_state,
+                &provider,
+                &advertised
+            ),
+            CommandOutcome::SessionConfig {
+                key: SessionConfigKey::AuxiliaryModel,
+                value: "glm-5.3".into()
+            }
+        );
+        // A value outside the advertised scale is rejected.
+        assert_eq!(
+            registry.resolve(
+                &CommandIntent::parse("/auxiliary glm-4.5v"),
+                &plan_state,
+                &provider,
+                &advertised
+            ),
+            CommandOutcome::Error(
+                "Invalid /auxiliary value `glm-4.5v`. Allowed: main, glm-5.3".into()
+            )
+        );
+        // Mixture stays harness-owned and structural.
+        assert_eq!(
+            registry.resolve(
+                &CommandIntent::parse("/mixture enabled"),
+                &plan_state,
+                &provider,
+                &advertised
+            ),
+            CommandOutcome::SessionConfig {
+                key: SessionConfigKey::MixtureMode,
+                value: "enabled".into()
+            }
+        );
     }
 
     #[test]
