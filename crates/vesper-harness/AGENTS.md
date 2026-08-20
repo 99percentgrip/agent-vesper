@@ -38,6 +38,15 @@ Z.ai and Playwright MCP server descriptors.
   response formats, so the ACP composition reaches TUI parity without
   duplicating drain logic. `/checkpoint` and `/lineage` seed a session
   lineage record named for the host session id on first use.
+- Checkpoints/lineage are OPT-IN per composition:
+  `HarnessToolService::new_with_checkpoint_gate(..., checkpoints_enabled)`
+  (the plain `new` keeps the historical enabled default for the TUI). A
+  gated service never creates the checkpoint or lineage directories at
+  construction, never spawns the cron scheduler, and answers the five
+  checkpoint-family commands with the truthful
+  `AGENT_VESPER_ENABLE_CHECKPOINTS` opt-in notice. The ACP host builds
+  gated-by-default (root AGENTS.md contract); `/ci` and `/export` remain
+  available either way.
 - `MemoryStores::open_default` opens the project root
   (`AGENT_VESPER_MEMORY_ROOT` → `.agent-vesper/memory/`) plus the
   cross-project global skill layer (`AGENT_VESPER_GLOBAL_MEMORY_ROOT` →

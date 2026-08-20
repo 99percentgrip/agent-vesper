@@ -103,6 +103,17 @@ When the user requests a durable behavior change, record it here or in the relev
 - Registry publishing follows the continuous-update contract: one open
   `agent-vesper` PR in `agentclientprotocol/registry`, updated in place on
   the same branch for every version bump. Never close-and-replace it.
+- TUI↔ACP host parity: any host-agnostic capability shipped in the TUI
+  (cognitive memory, reasoning orchestration, tool/system-prompt behavior,
+  slash-command surface) MUST also be wired into `agent-vesper-acp`, and
+  mirrored files (`lmstudio_provider.rs`, `cognition.rs`) must be ported
+  together. Documented, justified exclusions (interactive-terminal or
+  browser-only UX) live in `apps/agent-vesper-acp/AGENTS.md`.
+- Durable session checkpoints and lineage are OPT-IN in the ACP host:
+  default OFF, enabled only by `AGENT_VESPER_ENABLE_CHECKPOINTS=1` or an
+  explicit `AGENT_VESPER_CHECKPOINT_ROOT`. The auto-spawned ACP process
+  must never create `.agent-vesper/` durable state in arbitrary project
+  directories by default.
 - Production harness work includes transactional sessions, provider-neutral
   runtime and agent loop, hosted tools, memory/checkpoints/MCP/plugins/workers,
   ACP composition, and the native TUI. Current status and evidence live in

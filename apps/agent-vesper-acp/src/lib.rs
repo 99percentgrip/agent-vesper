@@ -4,6 +4,7 @@
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 mod controls;
+mod cognition;
 mod lmstudio_provider;
 
 use tokio::sync::Mutex;
@@ -96,16 +97,19 @@ where
             Arc::clone(&providers),
             agent_config.clone(),
         ));
-        let hosted = Arc::new(HarnessToolService::new(
+        let hosted = Arc::new(HarnessToolService::new_with_checkpoint_gate(
             Arc::new(MemoryStores::open_default()),
-            checkpoint_root_path(),
+            checkpoint_gate().unwrap_or_default(),
             mcp_root_path(),
             Some(worker_factory),
+            checkpoint_gate().is_some(),
         ));
         let engine = Arc::new(AcpHarnessEngine::new(
             Arc::clone(&providers),
             agent_config,
             hosted,
+            open_cognition_bundle(provider.as_str()).await,
+            vro_orchestrator(),
         ));
         adapter.with_prompt_engine(engine)
     } else {
@@ -131,6 +135,82 @@ fn checkpoint_root_path() -> PathBuf {
         .unwrap_or_else(|_| default_agent_root("checkpoints"))
 }
 
+/// Opens the cognitive-memory bundle on the blocking pool: the adapters
+/// construct `reqwest::blocking` clients, and reqwest 0.13 forbids that
+/// inside an async context (ClientHandle::new aborts with "Cannot drop a
+/// runtime…" — caught live by the persistence process suite). Falls back
+/// to a truthful all-stores-unavailable bundle if the open task fails.
+async fn open_cognition_bundle(active_provider: &str) -> cognition::CognitionBundle {
+    let provider_token = active_provider.to_owned();
+    tokio::task::spawn_blocking(move || {
+        cognition::CognitionBundle::open_default(
+            Arc::new(vesper_provider_glm::EnvironmentCredentialSource),
+            &provider_token,
+        )
+    })
+    .await
+    .unwrap_or_else(|_| cognition::CognitionBundle::open_disabled())
+}
+
+/// Checkpoints and session lineage are OPT-IN in the ACP composition
+/// (user-mandated default-off): Zed spawns this process silently inside
+/// arbitrary project directories, and an always-on durable store littered
+/// `.agent-vesper/` state — and up to 50 × 10 MiB of snapshots — in every
+/// project it touched. Users enable it explicitly with
+/// `AGENT_VESPER_ENABLE_CHECKPOINTS=1` or by setting a concrete
+/// `AGENT_VESPER_CHECKPOINT_ROOT`; the TUI host keeps its always-on default
+/// because it is user-launched interactively.
+fn checkpoint_gate() -> Option<PathBuf> {
+    let explicit_root = std::env::var("AGENT_VESPER_CHECKPOINT_ROOT").is_ok();
+    let enabled = std::env::var("AGENT_VESPER_ENABLE_CHECKPOINTS")
+        .map(|value| {
+            !matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "0" | "false" | "no"
+            )
+        })
+        .unwrap_or(false);
+    (enabled || explicit_root).then(checkpoint_root_path)
+}
+
+/// Pure VRO dispatch decision (TUI `react_dispatch_for` spirit): only
+/// non-Direct, non-ReAct strategies go through the orchestrator. Direct
+/// profiles answer through the plain loop; ToolGroundedReact stays on the
+/// loop too because this host's tools already execute inside it (no
+/// browser React interview surface).
+fn should_orchestrate(
+    vro_enabled: bool,
+    mode: vesper_domain::ReasoningMode,
+    strategy: vesper_domain::ReasoningStrategy,
+) -> bool {
+    use vesper_domain::{ReasoningMode, ReasoningStrategy};
+    vro_enabled
+        && mode != ReasoningMode::Off
+        && !matches!(strategy, ReasoningStrategy::Direct | ReasoningStrategy::ToolGroundedReact)
+}
+
+/// Whether VRO orchestration is enabled for this process
+/// (`AGENT_VESPER_VRO_ENABLED=1`).
+fn vro_enabled_from_env() -> bool {
+    std::env::var("AGENT_VESPER_VRO_ENABLED")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+}
+
+/// VRO orchestrator: opt-in via `AGENT_VESPER_VRO_ENABLED=1`, exactly like
+/// the TUI composition. Disabled (the default) keeps every turn on the
+/// direct AgentLoop — zero behavior change.
+fn vro_orchestrator() -> vesper_agent::VroOrchestrator {
+    if vro_enabled_from_env() {
+        vesper_agent::VroOrchestrator::new(vesper_domain::ReasoningConfig {
+            enabled: true,
+            ..Default::default()
+        })
+    } else {
+        vesper_agent::VroOrchestrator::disabled()
+    }
+}
+
 fn mcp_root_path() -> PathBuf {
     std::env::var("AGENT_VESPER_MCP_ROOT")
         .map(PathBuf::from)
@@ -150,6 +230,16 @@ struct AcpHarnessEngine {
     registry: Arc<ProviderRegistry>,
     config: vesper_agent::AgentLoopConfig,
     hosted: Arc<HarnessToolService>,
+    /// Cognitive-memory bundle (Stage 16 / ADR 0015 + 0016) shared with the
+    /// TUI's durable stores. Powers the `/remember` family and silent
+    /// pre-reply recall injection.
+    cognition: Arc<cognition::CognitionBundle>,
+    /// VRO orchestrator (opt-in via `AGENT_VESPER_VRO_ENABLED=1`, TUI
+    /// parity). `disabled()` keeps every turn on the direct AgentLoop.
+    vro: vesper_agent::VroOrchestrator,
+    /// Per-session `/reasoning set mode=` overrides (VRO-8).
+    reasoning_overrides:
+        Mutex<BTreeMap<vesper_domain::SessionId, Option<vesper_domain::ReasoningMode>>>,
     histories: Mutex<BTreeMap<vesper_domain::SessionId, Vec<ConversationMessage>>>,
     cancellations: Mutex<BTreeMap<vesper_domain::SessionId, Arc<RuntimeCancellation>>>,
     /// Per-session slash-command overrides (`/max-iterations`, model/plan
@@ -202,16 +292,209 @@ impl AcpHarnessEngine {
         registry: Arc<ProviderRegistry>,
         config: vesper_agent::AgentLoopConfig,
         hosted: Arc<HarnessToolService>,
+        cognition: cognition::CognitionBundle,
+        vro: vesper_agent::VroOrchestrator,
     ) -> Self {
         Self {
             registry,
             config,
             hosted,
+            cognition: Arc::new(cognition),
+            vro,
+            reasoning_overrides: Mutex::new(BTreeMap::new()),
             histories: Mutex::new(BTreeMap::new()),
             cancellations: Mutex::new(BTreeMap::new()),
             overrides: Mutex::new(BTreeMap::new()),
             plans: Arc::new(std::sync::Mutex::new(BTreeMap::new())),
         }
+    }
+
+    /// Effective VRO mode for a session: a `/reasoning set mode=` override
+    /// when present, else `Auto`.
+    async fn effective_reasoning_mode(
+        &self,
+        session_id: &vesper_domain::SessionId,
+    ) -> vesper_domain::ReasoningMode {
+        self.reasoning_overrides
+            .lock()
+            .await
+            .get(session_id)
+            .copied()
+            .flatten()
+            .unwrap_or_default()
+    }
+
+    /// `/reasoning` — status or `set mode=<auto|fast|balanced|deep|maximum|off>`
+    /// (VRO-8 slash surface, TUI parity). The override lives for the
+    /// process lifetime of the session, exactly like the TUI's session
+    /// override.
+    async fn reasoning_command(
+        &self,
+        session_id: &vesper_domain::SessionId,
+        argument: &str,
+    ) -> String {
+        let argument = argument.trim();
+        let enabled = vro_enabled_from_env();
+        if let Some(mode_token) = argument
+            .strip_prefix("set mode=")
+            .or_else(|| argument.strip_prefix("mode="))
+        {
+            let Some(mode) = parse_reasoning_mode(mode_token) else {
+                return format!(
+                    "reasoning: unknown mode `{mode_token}`. Valid: auto, fast, balanced, \
+                     deep, maximum, off."
+                );
+            };
+            self.reasoning_overrides
+                .lock()
+                .await
+                .insert(session_id.clone(), Some(mode));
+            return format!(
+                "reasoning: mode set to {mode_token} for this session. The next turn uses \
+                 it; `off` bypasses orchestration entirely."
+            );
+        }
+        let current = self.effective_reasoning_mode(session_id).await;
+        format!(
+            "reasoning: mode={current:?} (session), VRO enabled={enabled}. Set with \
+             /reasoning set mode=<auto|fast|balanced|deep|maximum|off>."
+        )
+    }
+
+    /// Runs one orchestrated turn when VRO is enabled and the profiled
+    /// strategy benefits from orchestration (TUI `spawn_vro_turn` parity,
+    /// awaited inline). Direct and ToolGroundedReact profiles stay on the
+    /// plain AgentLoop path (the latter because ACP has no browser React
+    /// interview surface; its tools already run inside the loop).
+    #[allow(clippy::too_many_arguments)]
+    async fn run_vro_turn(
+        &self,
+        request: &AcpPromptRequest,
+        config: vesper_agent::AgentLoopConfig,
+        user_text: &str,
+        mode: vesper_domain::ReasoningMode,
+        sink: Option<Arc<vesper_cognition::CognitiveMemory>>,
+    ) -> Result<AcpPromptResult, String> {
+        use vesper_domain::{OutcomeStatus, PrivacyMode, ReasoningRequest, RequestId};
+        let hosted = Arc::clone(&self.hosted);
+        let permission_port: Arc<dyn vesper_agent::PermissionPort> = request
+            .permission_requester
+            .as_ref()
+            .map(|requester| {
+                Arc::new(AcpHarnessPermissionPort {
+                    requester: Arc::clone(requester),
+                    session_id: request.session_id.clone(),
+                }) as Arc<dyn vesper_agent::PermissionPort>
+            })
+            .unwrap_or_else(|| Arc::new(vesper_agent::DenyPermissionPort));
+        let loop_engine = vesper_agent::AgentLoop::new(
+            Arc::clone(&self.registry),
+            hosted.build_default_registry(),
+            config,
+        )
+        .with_permission_port(permission_port)
+        .with_progress_port(Arc::new(AcpEngineProgressPort {
+            sink: request.event_sink.clone(),
+            tool_seq: std::sync::atomic::AtomicU64::new(0),
+            outstanding: std::sync::Mutex::new(BTreeMap::new()),
+            session_id: request.session_id.clone(),
+            plans: self.plans_shared(),
+        }));
+        let generator = AcpCandidateGenerator {
+            agent: loop_engine.clone(),
+        };
+        let reasoning_request = ReasoningRequest {
+            request_id: RequestId::new(format!("acp-vro-{}", next_engine_id()))
+                .map_err(|_| "request id bound exceeded".to_owned())?,
+            session_id: request.session_id.clone(),
+            user_message: user_text.to_owned(),
+            context_refs: vec![],
+            mode,
+            risk_hint: None,
+            budget_override: None,
+            privacy_mode: PrivacyMode::Private,
+        };
+        let root = workspace_root_path(&self.config.workspace_roots);
+        let seed = next_engine_id();
+        // VRO-7 learning sink: successful complex turns persist sanitized
+        // procedural recipes into the project cognitive store.
+        let procedural_sink = sink.map(cognition::CognitionProceduralSink);
+        let sink_ref: Option<&dyn vesper_agent::vro::ProceduralMemorySink> = procedural_sink
+            .as_ref()
+            .map(|sink| sink as &dyn vesper_agent::vro::ProceduralMemorySink);
+        let strategy_header = self.vro.profile(user_text);
+        if let Some(event_sink) = request.event_sink.as_ref() {
+            event_sink.event(vesper_acp::AcpEngineEvent::ReasoningDelta {
+                text: format!(
+                    "🧩 VRO strategy: {:?} · mode: {mode:?} · seed: {seed}",
+                    strategy_header.recommended_strategy
+                ),
+            });
+        }
+        let outcome = self
+            .vro
+            .execute_with_learning(
+                &reasoning_request,
+                &generator,
+                &root,
+                None,
+                None,
+                None,
+                None,
+                None,
+                seed,
+                &[],
+                sink_ref,
+                &vesper_agent::vro::WorkflowExtractor::new(),
+                &rfc3339_now(),
+            )
+            .await;
+        let content = outcome
+            .final_output
+            .as_ref()
+            .and_then(|value| value.get("content").and_then(|c| c.as_str()).map(String::from))
+            .unwrap_or_else(|| match outcome.status {
+                OutcomeStatus::Succeeded => "(VRO: empty output)".into(),
+                OutcomeStatus::Failed => {
+                    format!("VRO failed: {}", outcome.unresolved_risks.join("; "))
+                }
+                OutcomeStatus::BudgetExceeded => "VRO: budget exhausted".into(),
+                other => format!("VRO: {other:?}"),
+            });
+        if outcome.status == OutcomeStatus::Succeeded
+            && outcome.cost.model_calls > 0
+            && let Some(event_sink) = request.event_sink.as_ref()
+        {
+            event_sink.event(vesper_acp::AcpEngineEvent::ReasoningDelta {
+                text: format!(
+                    "**✓ LEARNED** Workflow extracted ({} step(s)) and saved to cognitive \
+                     memory.",
+                    outcome.cost.model_calls
+                ),
+            });
+        }
+        // Persist the turn like an ordinary prompt: assistant reply joins
+        // the session history (the user message is already there).
+        let assistant = ConversationMessage {
+            id: MessageId::new(format!("acp-vro-{}", next_engine_id()))
+                .map_err(|_| "message id bound exceeded".to_owned())?,
+            role: MessageRole::Assistant,
+            content: vec![ContentPart::Text(
+                vesper_domain::ContentText::new(content.clone())
+                    .map_err(|_| "prompt too large".to_owned())?,
+            )],
+            extensions: ExtensionMap::default(),
+        };
+        let mut histories = self.histories.lock().await;
+        histories
+            .entry(request.session_id.clone())
+            .or_default()
+            .push(assistant);
+        Ok(AcpPromptResult {
+            text: content,
+            cancelled: false,
+            persist_turn: true,
+        })
     }
 
     async fn run_inner(&self, request: AcpPromptRequest) -> Result<AcpPromptResult, String> {
@@ -245,15 +528,37 @@ impl AcpHarnessEngine {
                 .map_err(|_| "message id bound exceeded".to_owned())?,
             role: MessageRole::User,
             content: vec![ContentPart::Text(
-                vesper_domain::ContentText::new(text).map_err(|_| "prompt too large".to_owned())?,
+                vesper_domain::ContentText::new(text.clone())
+                    .map_err(|_| "prompt too large".to_owned())?,
             )],
             extensions: ExtensionMap::default(),
         };
+        // Pre-dispatch cognitive context injection (ADR 0015, TUI parity):
+        // silently append auto-recalled memories to the user message before
+        // the provider call; the original content is restored into history
+        // after the run so memory context is never persisted. Runs on the
+        // blocking pool: a network embedder (BM25→Hybrid auto-upgrade path)
+        // must never execute inside an async worker.
+        let original_content = message.content.clone();
+        let mut message = message;
+        let recall_bundle = Arc::clone(&self.cognition);
+        let recall_prompt = text.clone();
+        let recall_context = tokio::task::spawn_blocking(move || {
+            cognition::cognitive_context_for_prompt(recall_bundle.as_ref(), &recall_prompt)
+        })
+        .await
+        .ok()
+        .flatten();
+        if let Some(context) = recall_context
+            && let Ok(extra) = vesper_domain::ContentText::new(context)
+        {
+            message.content.push(ContentPart::Text(extra));
+        }
         let history = {
             let mut histories = self.histories.lock().await;
             let history = histories
                 .entry(request.session_id.clone())
-                .or_insert(request.history);
+                .or_insert_with(|| request.history.clone());
             history.push(message);
             history.clone()
         };
@@ -325,9 +630,34 @@ impl AcpHarnessEngine {
             }
         }
         if !request.workspace_roots.is_empty() {
-            config.workspace_roots = request.workspace_roots;
+            config.workspace_roots = request.workspace_roots.clone();
         }
-        config.system_instructions = vesper_agent::project_instructions(&config.workspace_roots);
+        config.system_instructions = {
+            let mut instructions = vesper_agent::project_instructions(&config.workspace_roots);
+            // VRO-11.5 tool-enforcement mandate + cognitive capability
+            // primer (TUI parity — see the doc comments on each helper).
+            instructions.push(tool_enforcement_instruction());
+            instructions.push(cognitive_capability_instruction());
+            instructions
+        };
+        // VRO dispatch (TUI parity): when orchestration is enabled for this
+        // process and the profiled strategy benefits from it, route the turn
+        // through the orchestrator instead of the direct loop. `Direct`
+        // profiles and `off` mode stay on the plain loop; `ToolGroundedReact`
+        // also stays on the loop because this host registers the tools the
+        // loop already executes (no browser React interview surface here).
+        let effective_mode = self.effective_reasoning_mode(&request.session_id).await;
+        let profile = self.vro.profile(&text);
+        if should_orchestrate(
+            vro_enabled_from_env(),
+            effective_mode,
+            profile.recommended_strategy,
+        ) {
+            let sink = self.cognition.engine.clone();
+            return self
+                .run_vro_turn(&request, config, &text, effective_mode, sink)
+                .await;
+        }
         let hosted = Arc::clone(&self.hosted);
         let permission_port: Arc<dyn vesper_agent::PermissionPort> = request
             .permission_requester
@@ -377,6 +707,16 @@ impl AcpHarnessEngine {
             tracing::debug!("harness prompt failed: {error:?}");
             "harness prompt failed".to_owned()
         })?;
+        // TUI parity: restore the original user content so the injected
+        // cognitive-memory context never lands in persisted history.
+        let mut history = history;
+        if let Some(latest_user) = history
+            .iter_mut()
+            .rev()
+            .find(|message| message.role == MessageRole::User)
+        {
+            latest_user.content = original_content;
+        }
         self.histories
             .lock()
             .await
@@ -410,6 +750,43 @@ impl AcpHarnessEngine {
                 persist_turn: false,
             })
         };
+        // Vesper-native surface FIRST: the domain parser below only
+        // recognizes the frozen 28-command oracle catalog, so the TUI-parity
+        // commands (/remember, /recall, /forget, /memories, /promote,
+        // /demote, /embedding, /reasoning) are split here. They answer
+        // in-process against the same durable stores the TUI uses and are
+        // never persisted as turns.
+        if let Some(rest) = trimmed.strip_prefix('/') {
+            let (raw_name, raw_argument) = match rest.split_once(char::is_whitespace) {
+                Some((name, argument)) => (name, argument.trim()),
+                None => (rest, ""),
+            };
+            let lowered = raw_name.to_ascii_lowercase();
+            if cognition::is_cognition_command(lowered.as_str()) {
+                // Blocking-pool: the bundle's adapters use
+                // `reqwest::blocking` clients, which must never run (or
+                // drop) inside an async worker; extraction may also take
+                // up to 60s of real HTTP.
+                let bundle = Arc::clone(&self.cognition);
+                let command = lowered.clone();
+                let argument = raw_argument.to_owned();
+                let body = tokio::task::spawn_blocking(move || {
+                    cognition::execute_cognition_slash(&command, &argument, bundle.as_ref())
+                })
+                .await
+                .ok()
+                .flatten();
+                if let Some(body) = body {
+                    return slash_result(body);
+                }
+            }
+            if lowered == "reasoning" {
+                let body = self
+                    .reasoning_command(&request.session_id, raw_argument)
+                    .await;
+                return slash_result(body);
+            }
+        }
         let Some((name, argument)) = vesper_domain::parse_slash_command(trimmed) else {
             return slash_result(unknown_command_text(trimmed));
         };
@@ -859,11 +1236,195 @@ fn format_glm_usage(usage: &vesper_provider_glm::GlmPlanUsage) -> String {
     format!("{} quota — {windows}", usage.platform)
 }
 
+/// Static system-prompt instruction mirroring the TUI's
+/// `tool_enforcement_instruction` (VRO-11.5). The ACP tool registry exposes
+/// `write_file` and `update_plan`, so the mandate names those only — the
+/// TUI-only `request_human_review`/`request_human_input` lines are
+/// intentionally absent because this host does not register those tools.
+fn tool_enforcement_instruction() -> vesper_domain::SystemInstruction {
+    let body = "### Tool Execution Enforcement\n\
+When asked to generate code, UI, or artifacts, you MUST execute the write_file \
+tool within the same turn. Do NOT output your plan and yield to the user. \
+Execute the tools immediately.\n\
+- Producing a file by printing its content in the chat is NOT completing the \
+task: write it with write_file (content, not a placeholder).\n\
+- The only exception is Plan mode, where you present the plan through the \
+update_plan tool instead of mutating files.\n\
+- For ANY multi-step task, maintain a live TODO list the user can see: call \
+the update_plan tool with your task list at the START of the turn and again \
+after each milestone (marking items completed/in_progress). Never narrate a \
+plan in prose when update_plan is available.";
+    vesper_domain::SystemInstruction {
+        content: vec![ContentPart::Text(
+            vesper_domain::ContentText::new(body).expect("bounded system instruction"),
+        )],
+        cache_stable: true,
+        extensions: ExtensionMap::default(),
+    }
+}
+
+/// Static cognitive-memory capability instruction (TUI parity — the exact
+/// same text, so both hosts prime the model identically).
+fn cognitive_capability_instruction() -> vesper_domain::SystemInstruction {
+    let body = "### Cognitive Memory\n\
+You are running inside the Agent Vesper harness, which provides a local SQLite-backed \
+cognitive memory system. The harness silently recalls relevant memories from past \
+conversations and appends them to your context before each reply. \
+Therefore:\n\
+- You HAVE long-term memory across sessions. NEVER tell the user 'I have no memory', \
+'I do not retain information', 'I am stateless', 'I don't have access to past \
+conversations', or any variation of that claim. These statements are FALSE.\n\
+- If recalled memories appear under 'Relevant context from cognitive memory', treat \
+them as authoritative facts about the user and prior work.\n\
+- If no memories appear for a given prompt, do NOT announce that you lack memory. \
+Answer normally. The harness only injects memories when they are relevant to the \
+current turn — silence does not mean memory is empty.\n\
+- If the user asks 'do you remember me' or similar, respond as a memory-enabled \
+assistant: refer to any recalled facts, and if none were auto-recalled, say you \
+may not have any stored memories about that specific topic yet rather than \
+disavowing memory entirely.\n\
+- The user can manage memory explicitly via /remember, /recall, /forget, /memories, \
+/promote, and /demote. /remember supports --global and --project and always \
+confirms the selected scope.";
+    vesper_domain::SystemInstruction {
+        content: vec![ContentPart::Text(
+            vesper_domain::ContentText::new(body).expect("bounded system instruction"),
+        )],
+        cache_stable: true,
+        extensions: ExtensionMap::default(),
+    }
+}
+
+/// Parses the six VRO-8 mode tokens (TUI `parse_reasoning_mode` parity).
+fn parse_reasoning_mode(value: &str) -> Option<vesper_domain::ReasoningMode> {
+    use vesper_domain::ReasoningMode::*;
+    match value.trim().to_ascii_lowercase().as_str() {
+        "auto" => Some(Auto),
+        "fast" => Some(Fast),
+        "balanced" => Some(Balanced),
+        "deep" => Some(Deep),
+        "maximum" | "max" => Some(Maximum),
+        "off" => Some(Off),
+        _ => None,
+    }
+}
+
+/// UTC RFC3339 timestamp for the current wall clock (days-from-civil
+/// inverse, Howard Hinnant's algorithm) — supplies VRO-7's
+/// `extracted_at` without pulling a date crate into the ACP composition.
+fn rfc3339_now() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0);
+    let days = (secs / 86_400) as i64;
+    let rem = secs % 86_400;
+    let (hour, minute, second) = (rem / 3_600, (rem % 3_600) / 60, rem % 60);
+    // civil_from_days
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    format!("{y:04}-{m:02}-{d:02}T{hour:02}:{minute:02}:{second:02}Z")
+}
+
+/// Bridges the shared [`vesper_agent::AgentLoop`] into VRO's generation seam
+/// (TUI `AgentCandidateGenerator` parity: corrections become repair
+/// feedback, the outcome text becomes the candidate payload).
+struct AcpCandidateGenerator {
+    agent: vesper_agent::AgentLoop,
+}
+
+impl vesper_agent::vro::CandidateGenerator for AcpCandidateGenerator {
+    fn generate<'a>(
+        &'a self,
+        prompt: &'a str,
+        corrections: &'a [vesper_domain::VerificationFinding],
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = vesper_agent::vro::GeneratedCandidate> + Send + 'a>,
+    > {
+        use vesper_domain::{
+            ContentText, InferenceCost, MessageId, MessageRole, SessionOperatingMode,
+            SessionPermissionMode,
+        };
+        Box::pin(async move {
+            let mut full_prompt = prompt.to_string();
+            if !corrections.is_empty() {
+                full_prompt.push_str("\n\nYour previous attempt failed verification. Fix these:\n");
+                for (index, finding) in corrections.iter().enumerate() {
+                    let location = finding
+                        .location
+                        .as_deref()
+                        .map(|l| format!(" ({l})"))
+                        .unwrap_or_default();
+                    full_prompt.push_str(&format!(
+                        "{}. [{}] {}{location}\n",
+                        index + 1,
+                        match finding.severity {
+                            vesper_domain::VerificationSeverity::Critical => "critical",
+                            vesper_domain::VerificationSeverity::Error => "error",
+                            vesper_domain::VerificationSeverity::Warning => "warning",
+                            vesper_domain::VerificationSeverity::Info => "info",
+                        },
+                        finding.message
+                    ));
+                }
+            }
+            let message = ConversationMessage {
+                id: MessageId::new("vro-generate").expect("valid"),
+                role: MessageRole::User,
+                content: vec![ContentPart::Text(
+                    ContentText::new(full_prompt)
+                        .unwrap_or_else(|_| ContentText::new("(error)").expect("bounded")),
+                )],
+                extensions: ExtensionMap::default(),
+            };
+            let outcome = self
+                .agent
+                .run_prompt(message, SessionOperatingMode::Code, SessionPermissionMode::Ask)
+                .await;
+            match outcome {
+                Ok(vesper_agent::AgentTurnOutcome::Completed {
+                    assistant_content, ..
+                }) => {
+                    let text: String = assistant_content
+                        .iter()
+                        .filter_map(|part| match part {
+                            ContentPart::Text(text) => Some(text.as_str().to_string()),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>()
+                        .join("");
+                    vesper_agent::vro::GeneratedCandidate {
+                        output: serde_json::json!({"content": text}),
+                        cost: InferenceCost::default(),
+                    }
+                }
+                _ => vesper_agent::vro::GeneratedCandidate {
+                    output: serde_json::json!({"error": "generation failed"}),
+                    cost: InferenceCost::default(),
+                },
+            }
+        })
+    }
+
+    fn boxed_clone(&self) -> Box<dyn vesper_agent::vro::CandidateGenerator> {
+        Box::new(AcpCandidateGenerator {
+            agent: self.agent.clone(),
+        })
+    }
+}
+
 fn outcome_text(outcome: &vesper_agent::AgentTurnOutcome) -> String {
     match outcome {
         vesper_agent::AgentTurnOutcome::Completed {
-            assistant_content, ..
-        } => assistant_content
+            assistant_content, ..        } => assistant_content
             .iter()
             .filter_map(|part| match part {
                 ContentPart::Text(text) => Some(text.as_str()),
@@ -1338,16 +1899,19 @@ pub async fn run_multi_provider(initial: &str) -> Result<(), ()> {
             Arc::clone(&providers),
             agent_config.clone(),
         ));
-        let hosted = Arc::new(HarnessToolService::new(
+        let hosted = Arc::new(HarnessToolService::new_with_checkpoint_gate(
             Arc::new(MemoryStores::open_default()),
-            checkpoint_root_path(),
+            checkpoint_gate().unwrap_or_default(),
             mcp_root_path(),
             Some(worker_factory),
+            checkpoint_gate().is_some(),
         ));
         let engine = Arc::new(AcpHarnessEngine::new(
             Arc::clone(&providers),
             agent_config,
             hosted,
+            open_cognition_bundle(initial_id.as_str()).await,
+            vro_orchestrator(),
         ));
         adapter.with_prompt_engine(engine)
     } else {
@@ -1428,6 +1992,55 @@ fn selected_provider_token() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn vro_dispatch_decision_mirrors_tui_semantics() {
+        use vesper_domain::{ReasoningMode, ReasoningStrategy as S};
+        // Disabled orchestrator: never orchestrate.
+        assert!(!should_orchestrate(false, ReasoningMode::Auto, S::GenerateVerifyRepair));
+        // Off mode bypasses orchestration entirely.
+        assert!(!should_orchestrate(true, ReasoningMode::Off, S::GenerateVerifyRepair));
+        // Direct and ToolGroundedReact stay on the plain loop.
+        assert!(!should_orchestrate(true, ReasoningMode::Auto, S::Direct));
+        assert!(!should_orchestrate(
+            true,
+            ReasoningMode::Auto,
+            S::ToolGroundedReact
+        ));
+        // Complex strategies orchestrate.
+        assert!(should_orchestrate(true, ReasoningMode::Auto, S::GenerateVerifyRepair));
+        assert!(should_orchestrate(
+            true,
+            ReasoningMode::Deep,
+            S::ProposerCriticAdjudicator
+        ));
+    }
+
+    #[test]
+    fn reasoning_mode_tokens_parse_like_the_tui() {
+        use vesper_domain::ReasoningMode;
+        assert_eq!(parse_reasoning_mode("auto"), Some(ReasoningMode::Auto));
+        assert_eq!(parse_reasoning_mode("FAST"), Some(ReasoningMode::Fast));
+        assert_eq!(parse_reasoning_mode("max"), Some(ReasoningMode::Maximum));
+        assert_eq!(parse_reasoning_mode("off"), Some(ReasoningMode::Off));
+        assert_eq!(parse_reasoning_mode("turbo"), None);
+        assert_eq!(parse_reasoning_mode(" balanced "), Some(ReasoningMode::Balanced));
+    }
+
+    #[test]
+    fn rfc3339_now_has_valid_shape() {
+        let stamp = rfc3339_now();
+        // YYYY-MM-DDTHH:MM:SSZ — 20 chars, digits and separators only.
+        assert_eq!(stamp.len(), 20, "{stamp}");
+        assert_eq!(&stamp[4..5], "-");
+        assert_eq!(&stamp[7..8], "-");
+        assert_eq!(&stamp[10..11], "T");
+        assert_eq!(&stamp[13..14], ":");
+        assert_eq!(&stamp[16..17], ":");
+        assert!(stamp.ends_with('Z'));
+        let year: u32 = stamp[..4].parse().expect("year");
+        assert!((2026..=2100).contains(&year), "{stamp}");
+    }
 
     #[derive(Debug)]
     struct FakePermissionRequester(AcpPermissionDecision);

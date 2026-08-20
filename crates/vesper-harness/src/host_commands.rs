@@ -59,6 +59,18 @@ impl HarnessToolService {
         workspace_root: &Path,
         transcript: &[String],
     ) -> String {
+        // Checkpoint-family commands are opt-in (see
+        // `new_with_checkpoint_gate`). When the composition disabled the
+        // subsystem, answer truthfully instead of creating durable state.
+        if !self.checkpoints_enabled
+            && matches!(name, "checkpoint" | "rollback" | "undo" | "sessions" | "lineage")
+        {
+            return format!(
+                "/{name}: session checkpoints and lineage are disabled by default in this \
+                 composition. Set AGENT_VESPER_ENABLE_CHECKPOINTS=1 (or \
+                 AGENT_VESPER_CHECKPOINT_ROOT) and restart the agent to enable them."
+            );
+        }
         match name {
             "checkpoint" => self.checkpoint_command(argument, session_id, workspace_root),
             "rollback" => self.rollback_command(argument, session_id, workspace_root),
@@ -589,6 +601,73 @@ mod tests {
             mcp.to_path_buf(),
             None,
         )
+    }
+
+    #[test]
+    fn checkpoint_gate_disables_durable_state_and_answers_truthfully() {
+        let root = tempfile::tempdir().unwrap();
+        let checkpoints = root.path().join("checkpoints");
+        let mcp = root.path().join("mcp");
+        let local_memory = tempfile::tempdir().unwrap();
+        let global_memory = tempfile::tempdir().unwrap();
+        let service = HarnessToolService::new_with_checkpoint_gate(
+            Arc::new(crate::MemoryStores::open_at(
+                local_memory.path(),
+                global_memory.path(),
+            )),
+            checkpoints.clone(),
+            mcp.clone(),
+            None,
+            false,
+        );
+        let workspace = tempfile::tempdir().unwrap();
+        for command in ["checkpoint", "rollback", "undo", "sessions", "lineage"] {
+            let output = service.execute_host_command(
+                command,
+                "",
+                "sess-gated",
+                workspace.path(),
+                &[],
+            );
+            assert!(
+                output.contains("disabled by default"),
+                "/{command} should explain the opt-in, got: {output}"
+            );
+            assert!(
+                output.contains("AGENT_VESPER_ENABLE_CHECKPOINTS=1"),
+                "/{command} should name the enabling variable, got: {output}"
+            );
+        }
+        // Read-only and separate-subsystem commands stay functional.
+        assert!(service.execute_host_command("ci", "", "s", workspace.path(), &[]).starts_with("ci:"));
+        assert!(service.execute_host_command("plugins", "list", "s", workspace.path(), &[]).len() > 4);
+        // The gate must not create the durable checkpoint root.
+        assert!(
+            !checkpoints.exists(),
+            "gated service must not create the checkpoint root"
+        );
+    }
+
+    #[test]
+    fn checkpoint_gate_enabled_path_still_creates_the_roots() {
+        let root = tempfile::tempdir().unwrap();
+        let checkpoints = root.path().join("checkpoints");
+        let local_memory = tempfile::tempdir().unwrap();
+        let global_memory = tempfile::tempdir().unwrap();
+        let _service = HarnessToolService::new_with_checkpoint_gate(
+            Arc::new(crate::MemoryStores::open_at(
+                local_memory.path(),
+                global_memory.path(),
+            )),
+            checkpoints.clone(),
+            root.path().join("mcp"),
+            None,
+            true,
+        );
+        assert!(
+            checkpoints.exists(),
+            "enabled service creates the checkpoint root"
+        );
     }
 
     fn workspace_with_file(tag: &str) -> (tempfile::TempDir, std::path::PathBuf) {

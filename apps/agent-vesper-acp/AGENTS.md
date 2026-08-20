@@ -46,6 +46,10 @@ transport, stderr-only tracing, and orderly shutdown.
   dispatch gate or scenario behavior.
 - The default ACP composition injects `AcpHarnessEngine`, which owns bounded
   per-session conversation history and routes prompts through `AgentLoop`.
+  The engine also owns the TUI-parity feature surface (see the parity
+  contract below): the cognitive-memory bundle, VRO orchestration, the
+  tool-enforcement and cognitive-capability system instructions, and the
+  silent pre-reply memory recall injection.
   The composition also injects the multi-provider footer control surface
   (`src/controls.rs`): the adapter advertises `provider` (TUI `/provider`
   parity — lists every registered adapter with live credential status in
@@ -83,9 +87,11 @@ transport, stderr-only tracing, and orderly shutdown.
   text answers with the oracle's bounded unknown-command fallback, and every
   host-owned command is really wired — `/checkpoint`, `/rollback`, `/undo`,
   `/export`, `/sessions`, `/lineage`, `/ci`, `/plugins`, and `/mcp` run on
-  the shared `vesper-harness` host-command executor against the same durable
-  checkpoint/MCP roots the TUI uses (`/checkpoint` and `/lineage` seed a
-  session lineage record named for the ACP session id); `/compact`,
+  the shared `vesper-harness` host-command executor; the checkpoint-family
+  commands are opt-in per the gating contract above (when enabled, they run
+  against the same durable checkpoint/MCP roots the TUI uses, and
+  `/checkpoint` and `/lineage` seed a session lineage record named for the
+  ACP session id); `/compact`,
   `/clear-history`, and `/clear-plan` mutate the engine's own per-session
   history and plan maps (`/clear-plan` republishes an empty plan update);
   `/usage` queries the live provider quota endpoint (truthful
@@ -106,6 +112,55 @@ transport, stderr-only tracing, and orderly shutdown.
   `AGENT_VESPER_FULL_HARNESS=0` only for protocol-conformance fixtures that
   must exercise the provider-neutral single-turn runtime path; production
   defaults to the full engine.
+
+## TUI↔ACP Parity Contract
+
+Every host-agnostic capability shipped in the TUI MUST also be wired here
+(root `AGENTS.md` Project Contracts). Current ledger:
+
+- **Cognitive memory** (`src/cognition.rs`, mirrored from the TUI binary):
+  `CognitionBundle::open_default` opens the SAME durable stores as the TUI
+  (project `.agent-vesper/cognition/` + global
+  `~/.local/share/agent-vesper/cognition/`), honors the same
+  `embedding.json` (ADR 0016) source selection (local / lmstudio /
+  bigmodel / provider-routed), routes extraction Zai → LM Studio → NoOp,
+  and re-embeds on embedder-model change. Surface: silent pre-reply recall
+  injection (restored out of history before persist, TUI parity), the
+  `/remember` `/recall` `/forget` `/memories` `/promote` `/demote`
+  `/embedding` slash family, the `cognitive_capability_instruction`, and
+  the VRO-7 procedural-memory learning sink. Changes to this module MUST
+  be mirrored into the TUI copy (and vice versa) — the
+  `mirror-adapter-copies` rule.
+- **VRO reasoning orchestration**: opt-in via `AGENT_VESPER_VRO_ENABLED=1`
+  (TUI parity). `should_orchestrate` routes non-Direct, non-ReAct profiles
+  through `VroOrchestrator::execute_with_learning` with an
+  `AcpCandidateGenerator` bridging the shared `AgentLoop`; `/reasoning set
+  mode=<auto|fast|balanced|deep|maximum|off>` overrides the profiler
+  per-session; strategy and ✓ LEARNED notices surface as
+  `ReasoningDelta` events (the client's reasoning channel).
+- **Tool-enforcement instruction**: `tool_enforcement_instruction()` (TUI
+  VRO-11.5 text minus the `request_human_review`/`request_human_input`
+  lines — this host does not register those tools).
+- **Justified exclusions** (host-specific UX): TUI rendering niceties
+  (single-column layout, markdown renderer, scrollbar, bracketed paste,
+  F-keys), push-to-talk voice (interactive terminal capture),
+  VesperLens browser interview + `request_human_review`/`request_human_input`
+  tools (browser-only UX; a future ACP mapping needs an owner design
+  decision), `/interview-limit` (VesperLens-scoped), and the 67 oracle
+  catalog commands the TUI answers through its private registry — the ACP
+  answers the shared 28-command catalog the harness executor owns.
+
+## Checkpoints and Lineage Are Opt-In
+
+`/checkpoint`, `/rollback`, `/undo`, `/sessions`, and `/lineage` are
+DISABLED by default in this composition (root contract): the shared
+`HarnessToolService` is built with `new_with_checkpoint_gate(..., false)`
+unless `AGENT_VESPER_ENABLE_CHECKPOINTS` is truthy or
+`AGENT_VESPER_CHECKPOINT_ROOT` is set explicitly. Gated commands answer
+with the opt-in notice and the service creates no durable
+checkpoint/lineage directories at boot. `/ci` stays available (read-only);
+`/export` writes an explicit user-requested file only. The TUI host keeps
+its always-on default because it is user-launched interactively.
 
 ## Verification
 

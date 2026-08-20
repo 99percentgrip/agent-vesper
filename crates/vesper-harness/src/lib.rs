@@ -1995,6 +1995,7 @@ mod tests {
             trusted_publishers: vesper_mcp::TrustedPublishers::new(),
             plugin_root: PathBuf::new(),
             session_root: PathBuf::new(),
+            checkpoints_enabled: true,
             worker_factory: None,
             cron_abort: None,
         };
@@ -2280,6 +2281,9 @@ pub struct HarnessToolService {
     trusted_publishers: vesper_mcp::TrustedPublishers,
     plugin_root: std::path::PathBuf,
     session_root: std::path::PathBuf,
+    /// Whether the checkpoint/lineage subsystem may create durable state.
+    /// See [`HarnessToolService::new_with_checkpoint_gate`].
+    checkpoints_enabled: bool,
     worker_factory: Option<Arc<WorkerFactory>>,
     cron_abort: Option<tokio::task::AbortHandle>,
 }
@@ -2299,22 +2303,49 @@ impl HarnessToolService {
         plugin_root: std::path::PathBuf,
         worker_factory: Option<Arc<WorkerFactory>>,
     ) -> Self {
-        let _ = std::fs::create_dir_all(&cron_root);
+        Self::new_with_checkpoint_gate(stores, cron_root, plugin_root, worker_factory, true)
+    }
+
+    /// Like [`new`](Self::new), but with an explicit checkpoint opt-in.
+    ///
+    /// `checkpoints_enabled: false` builds the service WITHOUT creating the
+    /// checkpoint (`cron_root`) or lineage (`session_root`) directories and
+    /// without spawning the cron scheduler; every checkpoint-family host
+    /// command then answers with the opt-in notice instead of touching disk.
+    /// Plugins and MCP stay fully functional either way. The ACP composition
+    /// defaults this to OFF: Zed spawns the agent silently inside arbitrary
+    /// project directories, and an always-on store littered `.agent-vesper/`
+    /// state (and up to 50 × 10 MiB of snapshots per project) everywhere.
+    #[must_use]
+    pub fn new_with_checkpoint_gate(
+        stores: Arc<MemoryStores>,
+        cron_root: std::path::PathBuf,
+        plugin_root: std::path::PathBuf,
+        worker_factory: Option<Arc<WorkerFactory>>,
+        checkpoints_enabled: bool,
+    ) -> Self {
         let _ = std::fs::create_dir_all(&plugin_root);
         let session_root = session_root_path();
-        let _ = std::fs::create_dir_all(&session_root);
+        if checkpoints_enabled {
+            let _ = std::fs::create_dir_all(&cron_root);
+            let _ = std::fs::create_dir_all(&session_root);
+        }
         let trusted_publishers = load_trusted_publishers(&plugin_root);
         let plugin_loader =
             vesper_mcp::PluginLoader::open(&plugin_root, trusted_publishers.clone())
                 .ok()
                 .map(Arc::new);
-        let cron_abort = worker_factory.as_ref().and_then(|factory| {
-            tokio::runtime::Handle::try_current().ok().map(|handle| {
-                handle
-                    .spawn(run_cron_scheduler(cron_root.clone(), (**factory).clone()))
-                    .abort_handle()
+        let cron_abort = if checkpoints_enabled {
+            worker_factory.as_ref().and_then(|factory| {
+                tokio::runtime::Handle::try_current().ok().map(|handle| {
+                    handle
+                        .spawn(run_cron_scheduler(cron_root.clone(), (**factory).clone()))
+                        .abort_handle()
+                })
             })
-        });
+        } else {
+            None
+        };
         Self {
             stores,
             core: Arc::new(ToolRegistry::parity_default()),
@@ -2323,6 +2354,7 @@ impl HarnessToolService {
             trusted_publishers,
             plugin_root,
             session_root,
+            checkpoints_enabled,
             worker_factory,
             cron_abort,
         }
@@ -2360,6 +2392,7 @@ impl HarnessToolService {
             trusted_publishers: self.trusted_publishers.clone(),
             plugin_root: self.plugin_root.clone(),
             session_root: self.session_root.clone(),
+            checkpoints_enabled: self.checkpoints_enabled,
             worker_factory: None,
             cron_abort: None,
         })
