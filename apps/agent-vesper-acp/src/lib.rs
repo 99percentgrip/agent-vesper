@@ -3,8 +3,8 @@
 
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
-mod controls;
 mod cognition;
+mod controls;
 mod lmstudio_provider;
 
 use tokio::sync::Mutex;
@@ -186,7 +186,10 @@ fn should_orchestrate(
     use vesper_domain::{ReasoningMode, ReasoningStrategy};
     vro_enabled
         && mode != ReasoningMode::Off
-        && !matches!(strategy, ReasoningStrategy::Direct | ReasoningStrategy::ToolGroundedReact)
+        && !matches!(
+            strategy,
+            ReasoningStrategy::Direct | ReasoningStrategy::ToolGroundedReact
+        )
 }
 
 /// Whether VRO orchestration is enabled for this process
@@ -452,7 +455,12 @@ impl AcpHarnessEngine {
         let content = outcome
             .final_output
             .as_ref()
-            .and_then(|value| value.get("content").and_then(|c| c.as_str()).map(String::from))
+            .and_then(|value| {
+                value
+                    .get("content")
+                    .and_then(|c| c.as_str())
+                    .map(String::from)
+            })
             .unwrap_or_else(|| match outcome.status {
                 OutcomeStatus::Succeeded => "(VRO: empty output)".into(),
                 OutcomeStatus::Failed => {
@@ -1387,7 +1395,11 @@ impl vesper_agent::vro::CandidateGenerator for AcpCandidateGenerator {
             };
             let outcome = self
                 .agent
-                .run_prompt(message, SessionOperatingMode::Code, SessionPermissionMode::Ask)
+                .run_prompt(
+                    message,
+                    SessionOperatingMode::Code,
+                    SessionPermissionMode::Ask,
+                )
                 .await;
             match outcome {
                 Ok(vesper_agent::AgentTurnOutcome::Completed {
@@ -1424,7 +1436,8 @@ impl vesper_agent::vro::CandidateGenerator for AcpCandidateGenerator {
 fn outcome_text(outcome: &vesper_agent::AgentTurnOutcome) -> String {
     match outcome {
         vesper_agent::AgentTurnOutcome::Completed {
-            assistant_content, ..        } => assistant_content
+            assistant_content, ..
+        } => assistant_content
             .iter()
             .filter_map(|part| match part {
                 ContentPart::Text(text) => Some(text.as_str()),
@@ -1997,9 +2010,17 @@ mod tests {
     fn vro_dispatch_decision_mirrors_tui_semantics() {
         use vesper_domain::{ReasoningMode, ReasoningStrategy as S};
         // Disabled orchestrator: never orchestrate.
-        assert!(!should_orchestrate(false, ReasoningMode::Auto, S::GenerateVerifyRepair));
+        assert!(!should_orchestrate(
+            false,
+            ReasoningMode::Auto,
+            S::GenerateVerifyRepair
+        ));
         // Off mode bypasses orchestration entirely.
-        assert!(!should_orchestrate(true, ReasoningMode::Off, S::GenerateVerifyRepair));
+        assert!(!should_orchestrate(
+            true,
+            ReasoningMode::Off,
+            S::GenerateVerifyRepair
+        ));
         // Direct and ToolGroundedReact stay on the plain loop.
         assert!(!should_orchestrate(true, ReasoningMode::Auto, S::Direct));
         assert!(!should_orchestrate(
@@ -2008,7 +2029,11 @@ mod tests {
             S::ToolGroundedReact
         ));
         // Complex strategies orchestrate.
-        assert!(should_orchestrate(true, ReasoningMode::Auto, S::GenerateVerifyRepair));
+        assert!(should_orchestrate(
+            true,
+            ReasoningMode::Auto,
+            S::GenerateVerifyRepair
+        ));
         assert!(should_orchestrate(
             true,
             ReasoningMode::Deep,
@@ -2024,7 +2049,10 @@ mod tests {
         assert_eq!(parse_reasoning_mode("max"), Some(ReasoningMode::Maximum));
         assert_eq!(parse_reasoning_mode("off"), Some(ReasoningMode::Off));
         assert_eq!(parse_reasoning_mode("turbo"), None);
-        assert_eq!(parse_reasoning_mode(" balanced "), Some(ReasoningMode::Balanced));
+        assert_eq!(
+            parse_reasoning_mode(" balanced "),
+            Some(ReasoningMode::Balanced)
+        );
     }
 
     #[test]

@@ -63,7 +63,10 @@ impl HarnessToolService {
         // `new_with_checkpoint_gate`). When the composition disabled the
         // subsystem, answer truthfully instead of creating durable state.
         if !self.checkpoints_enabled
-            && matches!(name, "checkpoint" | "rollback" | "undo" | "sessions" | "lineage")
+            && matches!(
+                name,
+                "checkpoint" | "rollback" | "undo" | "sessions" | "lineage"
+            )
         {
             return format!(
                 "/{name}: session checkpoints and lineage are disabled by default in this \
@@ -622,13 +625,8 @@ mod tests {
         );
         let workspace = tempfile::tempdir().unwrap();
         for command in ["checkpoint", "rollback", "undo", "sessions", "lineage"] {
-            let output = service.execute_host_command(
-                command,
-                "",
-                "sess-gated",
-                workspace.path(),
-                &[],
-            );
+            let output =
+                service.execute_host_command(command, "", "sess-gated", workspace.path(), &[]);
             assert!(
                 output.contains("disabled by default"),
                 "/{command} should explain the opt-in, got: {output}"
@@ -639,8 +637,17 @@ mod tests {
             );
         }
         // Read-only and separate-subsystem commands stay functional.
-        assert!(service.execute_host_command("ci", "", "s", workspace.path(), &[]).starts_with("ci:"));
-        assert!(service.execute_host_command("plugins", "list", "s", workspace.path(), &[]).len() > 4);
+        assert!(
+            service
+                .execute_host_command("ci", "", "s", workspace.path(), &[])
+                .starts_with("ci:")
+        );
+        assert!(
+            service
+                .execute_host_command("plugins", "list", "s", workspace.path(), &[])
+                .len()
+                > 4
+        );
         // The gate must not create the durable checkpoint root.
         assert!(
             !checkpoints.exists(),

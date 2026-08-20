@@ -148,11 +148,9 @@ impl vesper_cognition::EmbeddingPort for BigModelEmbeddingAdapter {
                 "HTTP {status} - {body_text}"
             )));
         }
-        let parsed: serde_json::Value = response
-            .json()
-            .map_err(|e| {
-                vesper_cognition::CognitionError::Embedding(format!("JSON parse failed: {e}"))
-            })?;
+        let parsed: serde_json::Value = response.json().map_err(|e| {
+            vesper_cognition::CognitionError::Embedding(format!("JSON parse failed: {e}"))
+        })?;
         let vector = parsed["data"][0]["embedding"].as_array().ok_or_else(|| {
             vesper_cognition::CognitionError::Embedding(format!(
                 "missing data[0].embedding in response: {parsed}"
@@ -216,11 +214,9 @@ impl LmStudioEmbedder {
                 "HTTP {status} - {body_text}"
             )));
         }
-        let parsed: serde_json::Value = response
-            .json()
-            .map_err(|e| {
-                vesper_cognition::CognitionError::Embedding(format!("JSON parse failed: {e}"))
-            })?;
+        let parsed: serde_json::Value = response.json().map_err(|e| {
+            vesper_cognition::CognitionError::Embedding(format!("JSON parse failed: {e}"))
+        })?;
         let vec = parsed["data"][0]["embedding"]
             .as_array()
             .ok_or_else(|| {
@@ -341,11 +337,9 @@ impl vesper_cognition::ExtractionLlmPort for ZaiExtractionAdapter {
                 "HTTP {status} - {body_text}"
             )));
         }
-        let parsed: serde_json::Value = response
-            .json()
-            .map_err(|e| {
-                vesper_cognition::CognitionError::Extraction(format!("JSON parse failed: {e}"))
-            })?;
+        let parsed: serde_json::Value = response.json().map_err(|e| {
+            vesper_cognition::CognitionError::Extraction(format!("JSON parse failed: {e}"))
+        })?;
         parsed["choices"][0]["message"]["content"]
             .as_str()
             .map(str::to_string)
@@ -407,11 +401,9 @@ impl vesper_cognition::ExtractionLlmPort for LmStudioExtractionAdapter {
                 "HTTP {status} - {body_text}"
             )));
         }
-        let parsed: serde_json::Value = response
-            .json()
-            .map_err(|e| {
-                vesper_cognition::CognitionError::Extraction(format!("JSON parse failed: {e}"))
-            })?;
+        let parsed: serde_json::Value = response.json().map_err(|e| {
+            vesper_cognition::CognitionError::Extraction(format!("JSON parse failed: {e}"))
+        })?;
         parsed["choices"][0]["message"]["content"]
             .as_str()
             .map(str::to_string)
@@ -534,7 +526,9 @@ fn build_independent_embedder(
                 .unwrap_or_else(|| "text-embedding-nomic-embed-text-v1.5".to_string());
             (
                 Arc::new(LmStudioEmbedder::from_explicit_settings(
-                    endpoint, model, cfg.api_key.clone(),
+                    endpoint,
+                    model,
+                    cfg.api_key.clone(),
                 )) as Arc<dyn vesper_cognition::EmbeddingPort>,
                 cfg.dimension,
                 vesper_cognition::SearchMode::BM25Only,
@@ -656,23 +650,23 @@ impl CognitionBundle {
 
         let embedding_config = EmbeddingConfig::load(&root);
         let default_dim = vesper_cognition::CognitiveConfig::default().embedding_dim;
-        let (embedder, probed_dim, search_mode_hint) = if
-            embedding_config.overrides_provider_routing() {
-            build_independent_embedder(&embedding_config, default_dim, &credential_source)
-        } else {
-            let (embedder, dim) = build_provider_routed_embedder(
-                &credential_source,
-                active_provider,
-                default_dim,
-                lm_settings.as_ref(),
-            );
-            let initial_mode = if active_provider == "lmstudio" {
-                vesper_cognition::SearchMode::BM25Only
+        let (embedder, probed_dim, search_mode_hint) =
+            if embedding_config.overrides_provider_routing() {
+                build_independent_embedder(&embedding_config, default_dim, &credential_source)
             } else {
-                vesper_cognition::SearchMode::Hybrid
+                let (embedder, dim) = build_provider_routed_embedder(
+                    &credential_source,
+                    active_provider,
+                    default_dim,
+                    lm_settings.as_ref(),
+                );
+                let initial_mode = if active_provider == "lmstudio" {
+                    vesper_cognition::SearchMode::BM25Only
+                } else {
+                    vesper_cognition::SearchMode::Hybrid
+                };
+                (embedder, dim, initial_mode)
             };
-            (embedder, dim, initial_mode)
-        };
 
         let mut config = vesper_cognition::CognitiveConfig::default();
         if let Some(dim) = probed_dim {
@@ -681,35 +675,34 @@ impl CognitionBundle {
 
         let zai_cred_ok =
             vesper_provider_glm::resolve_credential(credential_source.as_ref()).is_ok();
-        let extractor: Arc<dyn vesper_cognition::ExtractionLlmPort> = if active_provider
-            == "lmstudio"
-        {
-            lm_settings
-                .clone()
-                .map(|(base, model)| {
-                    let arc: Arc<dyn vesper_cognition::ExtractionLlmPort> =
-                        Arc::new(LmStudioExtractionAdapter::new(base, model));
-                    arc
-                })
-                .unwrap_or_else(|| {
-                    if zai_cred_ok {
-                        Arc::new(ZaiExtractionAdapter::new(Arc::clone(&credential_source)))
-                    } else {
-                        Arc::new(NoOpExtractionAdapter)
-                    }
-                })
-        } else if zai_cred_ok {
-            Arc::new(ZaiExtractionAdapter::new(Arc::clone(&credential_source)))
-        } else {
-            lm_settings
-                .clone()
-                .map(|(base, model)| {
-                    let arc: Arc<dyn vesper_cognition::ExtractionLlmPort> =
-                        Arc::new(LmStudioExtractionAdapter::new(base, model));
-                    arc
-                })
-                .unwrap_or_else(|| Arc::new(NoOpExtractionAdapter))
-        };
+        let extractor: Arc<dyn vesper_cognition::ExtractionLlmPort> =
+            if active_provider == "lmstudio" {
+                lm_settings
+                    .clone()
+                    .map(|(base, model)| {
+                        let arc: Arc<dyn vesper_cognition::ExtractionLlmPort> =
+                            Arc::new(LmStudioExtractionAdapter::new(base, model));
+                        arc
+                    })
+                    .unwrap_or_else(|| {
+                        if zai_cred_ok {
+                            Arc::new(ZaiExtractionAdapter::new(Arc::clone(&credential_source)))
+                        } else {
+                            Arc::new(NoOpExtractionAdapter)
+                        }
+                    })
+            } else if zai_cred_ok {
+                Arc::new(ZaiExtractionAdapter::new(Arc::clone(&credential_source)))
+            } else {
+                lm_settings
+                    .clone()
+                    .map(|(base, model)| {
+                        let arc: Arc<dyn vesper_cognition::ExtractionLlmPort> =
+                            Arc::new(LmStudioExtractionAdapter::new(base, model));
+                        arc
+                    })
+                    .unwrap_or_else(|| Arc::new(NoOpExtractionAdapter))
+            };
 
         let ports = vesper_cognition::CognitionPorts {
             embedder,
@@ -736,10 +729,16 @@ impl CognitionBundle {
         }
         // Record the active embedder identity so the OTHER host (TUI ↔ ACP)
         // can detect a swap and re-embed on its next open (Gap 11 semantics).
-        for engine in [engine.as_ref(), global_engine.as_ref()].into_iter().flatten() {
+        for engine in [engine.as_ref(), global_engine.as_ref()]
+            .into_iter()
+            .flatten()
+        {
             let active_model = engine.embedder_model_name();
             let stored_model = engine.get_meta("embedding_model").ok().flatten();
-            if stored_model.as_deref().is_none_or(|stored| stored != active_model) {
+            if stored_model
+                .as_deref()
+                .is_none_or(|stored| stored != active_model)
+            {
                 if stored_model.is_some() {
                     // Model changed since the last open (possibly by the
                     // other host): re-embed with the active embedder so the
@@ -772,7 +771,11 @@ impl CognitionBundle {
     pub fn embedding_status_text(&self) -> String {
         let cfg = EmbeddingConfig::load(&self.root);
         let source = cfg.source.as_deref().unwrap_or("(provider-routed)");
-        let engine_state = if self.engine.is_some() { "open" } else { "unavailable" };
+        let engine_state = if self.engine.is_some() {
+            "open"
+        } else {
+            "unavailable"
+        };
         format!(
             "cognition embedding:\n  source: {source}\n  engine: {engine_state}\n  project \
              store: {}\n  global store: {}\n  changes: edit {} (applies on next start), \
@@ -823,7 +826,10 @@ fn smart_memory_scope(text: &str) -> (CognitionScope, &'static str) {
         "across projects",
     ];
     if global_signals.iter().any(|signal| lower.contains(signal)) {
-        return (CognitionScope::Global, "identity or stable preference detected");
+        return (
+            CognitionScope::Global,
+            "identity or stable preference detected",
+        );
     }
     (CognitionScope::Project, "repository or task-specific fact")
 }
@@ -983,7 +989,12 @@ fn cognition_scope_and_body(argument: &str) -> Result<(CognitionScope, String), 
     Ok((scope, body.join(" ")))
 }
 
-fn audit_text(engine: Option<&Arc<vesper_cognition::CognitiveMemory>>, query: Option<&str>, heading: &str, scope: &vesper_cognition::Scope) -> String {
+fn audit_text(
+    engine: Option<&Arc<vesper_cognition::CognitiveMemory>>,
+    query: Option<&str>,
+    heading: &str,
+    scope: &vesper_cognition::Scope,
+) -> String {
     let mut out = format!("{heading}:\n");
     let Some(engine) = engine else {
         out.push_str("  unavailable\n");
@@ -1347,9 +1358,8 @@ impl vesper_agent::vro::ProceduralMemorySink for CognitionProceduralSink {
         procedure: &'a vesper_agent::vro::ProceduralMemory,
     ) -> std::pin::Pin<
         Box<
-            dyn std::future::Future<
-                    Output = Result<String, vesper_agent::vro::LearningError>,
-                > + Send
+            dyn std::future::Future<Output = Result<String, vesper_agent::vro::LearningError>>
+                + Send
                 + 'a,
         >,
     > {
@@ -1380,17 +1390,12 @@ impl vesper_agent::vro::ProceduralMemorySink for CognitionProceduralSink {
                     custom_instructions: None,
                     observation_date: None,
                 };
-                engine
-                    .add(request)
-                    .map(|_| id.clone())
-                    .map_err(|error| {
-                        vesper_agent::vro::LearningError::SinkRejected(error.to_string())
-                    })
+                engine.add(request).map(|_| id.clone()).map_err(|error| {
+                    vesper_agent::vro::LearningError::SinkRejected(error.to_string())
+                })
             })
             .await
-            .map_err(|error| {
-                vesper_agent::vro::LearningError::SinkRejected(error.to_string())
-            })?
+            .map_err(|error| vesper_agent::vro::LearningError::SinkRejected(error.to_string()))?
         })
     }
 }
@@ -1460,12 +1465,16 @@ mod tests {
 
     #[test]
     fn scope_flags_reject_conflicts_and_unknowns() {
-        assert!(cognition_scope_and_body("--global --project x")
-            .unwrap_err()
-            .contains("only one"));
-        assert!(cognition_scope_and_body("--bogus x")
-            .unwrap_err()
-            .contains("unknown memory scope flag"));
+        assert!(
+            cognition_scope_and_body("--global --project x")
+                .unwrap_err()
+                .contains("only one")
+        );
+        assert!(
+            cognition_scope_and_body("--bogus x")
+                .unwrap_err()
+                .contains("unknown memory scope flag")
+        );
         let (scope, body) = cognition_scope_and_body("--global my name is Alex").unwrap();
         assert_eq!(scope, CognitionScope::Global);
         assert_eq!(body, "my name is Alex");
@@ -1561,12 +1570,16 @@ mod tests {
     #[test]
     fn usage_errors_are_truthful() {
         let bundle = bundle_under_temp_root("local");
-        assert!(execute_cognition_slash("remember", "", &bundle)
-            .unwrap()
-            .contains("usage:"));
-        assert!(execute_cognition_slash("recall", "", &bundle)
-            .unwrap()
-            .contains("usage:"));
+        assert!(
+            execute_cognition_slash("remember", "", &bundle)
+                .unwrap()
+                .contains("usage:")
+        );
+        assert!(
+            execute_cognition_slash("recall", "", &bundle)
+                .unwrap()
+                .contains("usage:")
+        );
     }
 
     #[tokio::test]

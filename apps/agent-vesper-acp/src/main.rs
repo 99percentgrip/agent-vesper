@@ -87,9 +87,7 @@ fn print_help() {
     eprintln!(
         "    AGENT_VESPER_ENABLE_CHECKPOINTS      Opt in to /checkpoint, /rollback, /undo, /sessions, /lineage (default: off)"
     );
-    eprintln!(
-        "    AGENT_VESPER_VRO_ENABLED=1           Opt in to reasoning orchestration (VRO)"
-    );
+    eprintln!("    AGENT_VESPER_VRO_ENABLED=1           Opt in to reasoning orchestration (VRO)");
     eprintln!("    --setup                               Store a Z.ai API key without printing it");
     eprintln!("    --check-auth                          Check configured Z.ai credentials");
 }
