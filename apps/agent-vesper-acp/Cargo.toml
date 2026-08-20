@@ -20,22 +20,22 @@ tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 serde_json.workspace = true
-vesper-acp = { path = "../../crates/vesper-acp", version = "=0.20.61" }
-vesper-agent = { path = "../../crates/vesper-agent", version = "=0.20.61" }
-vesper-cognition = { path = "../../crates/vesper-cognition", version = "=0.20.61" }
-vesper-config = { path = "../../crates/vesper-config", version = "=0.20.61" }
-vesper-domain = { path = "../../crates/vesper-domain", version = "=0.20.61" }
-vesper-harness = { path = "../../crates/vesper-harness", version = "=0.20.61" }
-vesper-provider = { path = "../../crates/vesper-provider", version = "=0.20.61" }
-vesper-provider-glm = { path = "../../crates/vesper-provider-glm", version = "=0.20.61" }
-vesper-provider-synthetic = { path = "../../crates/vesper-provider-synthetic", version = "=0.20.61", optional = true }
-vesper-runtime = { path = "../../crates/vesper-runtime", version = "=0.20.61" }
-vesper-sessions = { path = "../../crates/vesper-sessions", version = "=0.20.61" }
+vesper-acp = { path = "../../crates/vesper-acp", version = "=0.20.62" }
+vesper-agent = { path = "../../crates/vesper-agent", version = "=0.20.62" }
+vesper-cognition = { path = "../../crates/vesper-cognition", version = "=0.20.62" }
+vesper-config = { path = "../../crates/vesper-config", version = "=0.20.62" }
+vesper-domain = { path = "../../crates/vesper-domain", version = "=0.20.62" }
+vesper-harness = { path = "../../crates/vesper-harness", version = "=0.20.62" }
+vesper-provider = { path = "../../crates/vesper-provider", version = "=0.20.62" }
+vesper-provider-glm = { path = "../../crates/vesper-provider-glm", version = "=0.20.62" }
+vesper-provider-synthetic = { path = "../../crates/vesper-provider-synthetic", version = "=0.20.62", optional = true }
+vesper-runtime = { path = "../../crates/vesper-runtime", version = "=0.20.62" }
+vesper-sessions = { path = "../../crates/vesper-sessions", version = "=0.20.62" }
 
 [dev-dependencies]
 sha2.workspace = true
 tempfile.workspace = true
-vesper-security = { path = "../../crates/vesper-security", version = "=0.20.61" }
+vesper-security = { path = "../../crates/vesper-security", version = "=0.20.62" }
 
 [[bin]]
 name = "agent-vesper-acp"

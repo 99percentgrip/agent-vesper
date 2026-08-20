@@ -244,7 +244,13 @@ struct AcpHarnessEngine {
     reasoning_overrides:
         Mutex<BTreeMap<vesper_domain::SessionId, Option<vesper_domain::ReasoningMode>>>,
     histories: Mutex<BTreeMap<vesper_domain::SessionId, Vec<ConversationMessage>>>,
-    cancellations: Mutex<BTreeMap<vesper_domain::SessionId, Arc<RuntimeCancellation>>>,
+    /// In-flight cancellations per session. A session may run CONCURRENT
+    /// turns (mid-turn slash prompts spawn alongside a running turn), so
+    /// this is a set — a plain session→cancel map made a second turn
+    /// overwrite the first's entry, sending `session/cancel` to the WRONG
+    /// turn (the replacement instead of the interrupted one). Removal is by
+    /// `Arc::ptr_eq` so each turn cleans up exactly its own entry.
+    cancellations: Mutex<BTreeMap<vesper_domain::SessionId, Vec<Arc<RuntimeCancellation>>>>,
     /// Per-session slash-command overrides (`/max-iterations`, model/plan
     /// switches). Live for the process lifetime; slash turns themselves are
     /// never persisted (oracle parity).
@@ -694,7 +700,9 @@ impl AcpHarnessEngine {
         self.cancellations
             .lock()
             .await
-            .insert(request.session_id.clone(), Arc::clone(&cancellation));
+            .entry(request.session_id.clone())
+            .or_default()
+            .push(Arc::clone(&cancellation));
         let run_result = loop_engine
             .run_prompt_with_history_with_cancellation(
                 history,
@@ -703,7 +711,12 @@ impl AcpHarnessEngine {
                 cancellation.clone(),
             )
             .await;
-        self.cancellations.lock().await.remove(&request.session_id);
+        self.cancellations
+            .lock()
+            .await
+            .entry(request.session_id.clone())
+            .or_default()
+            .retain(|entry| !Arc::ptr_eq(entry, &cancellation));
         if cancellation.is_cancelled() {
             return Ok(AcpPromptResult {
                 text: String::new(),
@@ -1149,12 +1162,18 @@ impl AcpPromptEngine for AcpHarnessEngine {
 
     fn cancel<'a>(&'a self, session_id: &'a vesper_domain::SessionId) -> AcpPromptFuture<'a, bool> {
         Box::pin(async move {
-            let Some(cancellation) = self.cancellations.lock().await.get(session_id).cloned()
-            else {
-                return false;
-            };
-            cancellation.cancel();
-            true
+            // Cancel EVERY in-flight turn for the session: concurrent turns
+            // (mid-turn slash + running prompt) each own an entry, and the
+            // cancel must reach all of them — never just the latest.
+            match self.cancellations.lock().await.get(session_id) {
+                Some(entries) => {
+                    for entry in entries {
+                        entry.cancel();
+                    }
+                    !entries.is_empty()
+                }
+                None => false,
+            }
         })
     }
 }

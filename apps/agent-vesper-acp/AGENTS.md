@@ -162,6 +162,28 @@ checkpoint/lineage directories at boot. `/ci` stays available (read-only);
 `/export` writes an explicit user-requested file only. The TUI host keeps
 its always-on default because it is user-launched interactively.
 
+## Mid-Turn Slash Grace (CANCEL_GRACE)
+
+Editors interrupt a running turn by sending `session/cancel` immediately
+followed by the new prompt — even when that "prompt" is an informational
+slash command. The adapter holds engine-session cancels for 400ms
+(`CANCEL_GRACE` in `crates/vesper-acp/src/adapter.rs`): a prompt from
+`CONCURRENT_SAFE_SLASH_COMMANDS` (`/status`, `/usage`, `/max-iterations`,
+`/memory`, `/skills`, `/reasoning`, the cognition family, … — read-only
+reports and next-turn overrides whose stores are independent of the live
+turn) arrives inside the window and ABORTS the cancel, so the turn keeps
+working while the slash answers concurrently and its text lands in the
+session context. Mutating/turn-driving commands (`/compact`,
+`/clear-history`, `/checkpoint`, `/diff`, `/release`, `/plugins`, `/mcp`,
+…), any non-slash prompt, and grace expiry still perform the cancel.
+`tokio::select!` is `biased` with notifications polled first so the
+cancel+prompt pair is always evaluated together. The engine tracks
+in-flight cancellations as a per-session SET (`Arc::ptr_eq` removal,
+cancel-all on `session/cancel`) — concurrent turns on one session must
+never overwrite each other's cancellation entry. Regression suite:
+`apps/agent-vesper-acp/tests/midturn_slash_grace.rs` (real binary, slow
+loopback provider).
+
 ## Verification
 
 - Run process transcript tests with isolated environment roots.

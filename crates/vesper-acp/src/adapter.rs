@@ -5,6 +5,7 @@ use std::{
         Arc, Mutex as StdMutex,
         atomic::{AtomicU64, Ordering},
     },
+    time::Instant,
 };
 
 use agent_client_protocol::{
@@ -285,6 +286,76 @@ impl TerminalBarriers {
     }
 }
 
+/// How long a `session/cancel` for an ENGINE-ACTIVE session is held before
+/// it is executed (mid-turn slash grace).
+///
+/// Editors (Zed) interrupt a running turn by sending `session/cancel`
+/// immediately followed by the new prompt — even when that "prompt" is an
+/// informational slash command like `/status` or `/usage` that can be
+/// answered without touching the turn. Executing such a cancel would stop
+/// the user's work for no benefit. Within this grace window a prompt whose
+/// sole text part is a [`CONCURRENT_SAFE_SLASH_COMMANDS`] command aborts
+/// the pending cancel (the turn keeps running and the slash answers
+/// concurrently); any other prompt, or grace expiry, executes the cancel.
+const CANCEL_GRACE: std::time::Duration = std::time::Duration::from_millis(400);
+
+/// Slash commands that may be answered while an engine turn keeps running.
+///
+/// Membership rule: read-only reports, next-turn overrides, and commands
+/// whose durable stores are independent of the live turn. Deliberately
+/// EXCLUDED: commands that mutate conversation/session state or drive a
+/// real turn (`compact`, `clear-history`, `clear-plan`, `undo`,
+/// `checkpoint`, `rollback`, `export`, `diff`, `release`) and subprocess/
+/// registry mutators (`plugins`, `mcp`) — those must stop the world.
+const CONCURRENT_SAFE_SLASH_COMMANDS: &[&str] = &[
+    "status",
+    "usage",
+    "version",
+    "help",
+    "memory",
+    "skills",
+    "profile",
+    "awareness",
+    "metacognition",
+    "deliberation",
+    "curator",
+    "max-iterations",
+    "goal",
+    "subgoal",
+    "sessions",
+    "lineage",
+    "ci",
+    // Vesper-native cognitive-memory surface (durable stores are
+    // independent of the running turn).
+    "remember",
+    "recall",
+    "forget",
+    "memories",
+    "promote",
+    "demote",
+    "embedding",
+    // Per-session reasoning-mode override (applies to the next turn).
+    "reasoning",
+];
+
+/// True when `text` is a single slash command that can be answered
+/// concurrently with a running engine turn (see
+/// [`CONCURRENT_SAFE_SLASH_COMMANDS`]).
+fn is_concurrent_safe_slash(text: &str) -> bool {
+    let trimmed = text.trim();
+    let Some(rest) = trimmed.strip_prefix('/') else {
+        return false;
+    };
+    let first = rest.split_whitespace().next().unwrap_or("");
+    if first.is_empty() {
+        return false;
+    }
+    let lowered = first.to_ascii_lowercase();
+    CONCURRENT_SAFE_SLASH_COMMANDS
+        .iter()
+        .any(|command| *command == lowered)
+}
+
 #[allow(clippy::too_many_arguments)] // bounded protocol-dispatch composition boundary
 async fn dispatch_requests(
     runtime: Arc<RuntimeSupervisor>,
@@ -300,12 +371,14 @@ async fn dispatch_requests(
 ) -> Result<(), agent_client_protocol::Error> {
     let active = Arc::new(Mutex::new(BTreeMap::<SessionId, TurnId>::new()));
     let engine_active = Arc::new(Mutex::new(BTreeSet::<SessionId>::new()));
+    let pending_cancels = Arc::new(Mutex::new(BTreeMap::<SessionId, Instant>::new()));
     let permission_requester = Arc::new(AcpClientPermissionRequester::new(connection.clone()));
     let context = RequestContext {
         connection,
         barriers,
         active: Arc::clone(&active),
         engine_active: Arc::clone(&engine_active),
+        pending_cancels: Arc::clone(&pending_cancels),
         ids,
         output_flow,
         prompt_engine,
@@ -315,7 +388,48 @@ async fn dispatch_requests(
     };
     let mut prompts = JoinSet::new();
     loop {
+        // Earliest pending grace cancel: fires the expiry branch below.
+        // Recomputed every iteration so any add/remove resets the timer.
+        // The lock is taken and RELEASED synchronously — the timer future
+        // must never hold the guard across its await, or a prompt arriving
+        // in this same task would self-deadlock on the grace lookup.
+        let next_grace_deadline = pending_cancels.lock().await.values().min().copied();
+        let cancel_timer = async {
+            match next_grace_deadline {
+                Some(deadline) => {
+                    tokio::time::sleep_until(tokio::time::Instant::from_std(deadline)).await
+                }
+                None => std::future::pending().await,
+            }
+        };
+        tokio::pin!(cancel_timer);
+        // `biased` + notifications-first: an editor sends cancel IMMEDIATELY
+        // before its replacement/slash prompt. Polling the notification
+        // branch first guarantees the pending cancel is registered before
+        // the prompt's grace resolution runs, so the pair is always
+        // evaluated together — never cancel-after-the-fact against the
+        // replacement turn.
         tokio::select! {
+            biased;
+            notification = notifications.recv() => {
+                let Some(notification) = notification else { break };
+                if let ClientNotification::CancelNotification(cancel) = notification {
+                    let session = session_id(&cancel.session_id);
+                    if engine_active.lock().await.contains(&session) {
+                        // Mid-turn slash grace (see CANCEL_GRACE): editors
+                        // interrupt-then-prompt. Hold the cancel briefly;
+                        // a safe slash prompt for this session will drop it
+                        // and keep the turn running, everything else (or
+                        // expiry) performs it.
+                        pending_cancels
+                            .lock()
+                            .await
+                            .insert(session, Instant::now() + CANCEL_GRACE);
+                    } else {
+                        perform_session_cancel(&runtime, &context, session).await;
+                    }
+                }
+            }
             request = requests.recv() => {
                 let Some(request) = request else { break };
                 handle_request(
@@ -325,26 +439,18 @@ async fn dispatch_requests(
                     &mut prompts,
                 ).await?;
             }
-            notification = notifications.recv() => {
-                let Some(notification) = notification else { break };
-                if let ClientNotification::CancelNotification(cancel) = notification {
-                    let session = session_id(&cancel.session_id);
-                    context.permission_requester.cancel(&session);
-                    if let Some(engine) = context.prompt_engine.as_ref()
-                        && engine_active.lock().await.contains(&session)
-                    {
-                        let _ = engine.cancel(&session).await;
-                    }
-                    if let Some(turn) = active.lock().await.get(&session).cloned() {
-                        let command = command(
-                            HarnessCommandPayload::CancelTurn {
-                                session_id: session,
-                                turn_id: turn,
-                            },
-                            next_text_id(&context.ids, "cancel"),
-                        );
-                        let _ = runtime.execute(command).await;
-                    }
+            _ = &mut cancel_timer => {
+                let now = Instant::now();
+                let expired: Vec<SessionId> = pending_cancels
+                    .lock()
+                    .await
+                    .iter()
+                    .filter(|(_, deadline)| **deadline <= now)
+                    .map(|(session, _)| session.clone())
+                    .collect();
+                for session in expired {
+                    pending_cancels.lock().await.remove(&session);
+                    perform_session_cancel(&runtime, &context, session).await;
                 }
             }
             joined = prompts.join_next(), if !prompts.is_empty() => {
@@ -449,6 +555,10 @@ struct RequestContext {
     barriers: Arc<TerminalBarriers>,
     active: Arc<Mutex<BTreeMap<SessionId, TurnId>>>,
     engine_active: Arc<Mutex<BTreeSet<SessionId>>>,
+    /// Engine-turn cancels held inside the [`CANCEL_GRACE`] window, keyed by
+    /// session (deadline as value). A safe slash prompt for the session
+    /// removes the entry (turn survives); anything else executes it.
+    pending_cancels: Arc<Mutex<BTreeMap<SessionId, Instant>>>,
     ids: Arc<AtomicU64>,
     output_flow: OutputFlow,
     prompt_engine: Option<Arc<dyn AcpPromptEngine>>,
@@ -461,17 +571,72 @@ struct RequestContext {
     controls: Option<SessionControlSurface>,
 }
 
+/// Executes one session cancel end to end: permission-request cancellation,
+/// engine-turn cancellation, and the runtime `CancelTurn` command for the
+/// tracked runtime turn. Shared by the immediate path, the grace-expiry
+/// path, and the interrupt-on-non-slash-prompt path.
+async fn perform_session_cancel(
+    runtime: &RuntimeSupervisor,
+    context: &RequestContext,
+    session: SessionId,
+) {
+    context.permission_requester.cancel(&session);
+    if let Some(engine) = context.prompt_engine.as_ref()
+        && context.engine_active.lock().await.contains(&session)
+    {
+        let _ = engine.cancel(&session).await;
+    }
+    if let Some(turn) = context.active.lock().await.get(&session).cloned() {
+        let command = command(
+            HarnessCommandPayload::CancelTurn {
+                session_id: session,
+                turn_id: turn,
+            },
+            next_text_id(&context.ids, "cancel"),
+        );
+        let _ = runtime.execute(command).await;
+    }
+}
+
 async fn handle_request(
     runtime: Arc<RuntimeSupervisor>,
     inbound: InboundRequest,
     context: RequestContext,
     prompts: &mut JoinSet<Result<(), agent_client_protocol::Error>>,
 ) -> Result<(), agent_client_protocol::Error> {
+    let InboundRequest { request, responder } = inbound;
+    // Mid-turn slash grace (see [`CANCEL_GRACE`]): resolve a cancel that an
+    // editor sent immediately before this prompt. A safe slash command
+    // aborts the pending cancel so the running engine turn keeps working
+    // and this prompt answers concurrently; any other prompt is a genuine
+    // interrupt — perform the cancel before dispatching it.
+    if let ClientRequest::PromptRequest(prompt) = &request {
+        let prompt_session = session_id(&prompt.session_id);
+        if context
+            .pending_cancels
+            .lock()
+            .await
+            .remove(&prompt_session)
+            .is_some()
+        {
+            let slash_text = match prompt.prompt.first() {
+                Some(agent_client_protocol::schema::v1::ContentBlock::Text(text)) => {
+                    Some(text.text.clone())
+                }
+                _ => None,
+            };
+            let keep_turn = matches!(&slash_text, Some(text) if is_concurrent_safe_slash(text));
+            if !keep_turn {
+                perform_session_cancel(&runtime, &context, prompt_session).await;
+            }
+        }
+    }
     let RequestContext {
         connection,
         barriers,
         active,
         engine_active,
+        pending_cancels: _,
         ids,
         output_flow,
         prompt_engine,
@@ -479,7 +644,6 @@ async fn handle_request(
         context_window,
         controls,
     } = context;
-    let InboundRequest { request, responder } = inbound;
     macro_rules! execute {
         ($future:expr) => {
             match $future.await {
@@ -1578,5 +1742,70 @@ mod replay_tests {
             });
             assert!(replay_notifications("session", &update).is_empty());
         }
+    }
+}
+
+#[cfg(test)]
+mod slash_grace_tests {
+    use super::is_concurrent_safe_slash;
+
+    #[test]
+    fn informational_commands_are_safe_mid_turn() {
+        for command in [
+            "/status",
+            "/usage",
+            "/max-iterations 250",
+            "/version",
+            "/help",
+            "/memory",
+            "/skills",
+            "/profile",
+            "/awareness",
+            "/curator",
+            "/goal ship the release",
+            "/remember --global my name is Alex",
+            "/recall project layout",
+            "/reasoning set mode=deep",
+            "/memories",
+        ] {
+            assert!(
+                is_concurrent_safe_slash(command),
+                "`{command}` must be safe mid-turn"
+            );
+        }
+    }
+
+    #[test]
+    fn mutating_and_turn_driving_commands_are_not_safe() {
+        for command in [
+            "/compact",
+            "/clear-history",
+            "/clear-plan",
+            "/undo",
+            "/checkpoint ship",
+            "/rollback 3",
+            "/export /tmp/out.md",
+            "/diff",
+            "/release minor",
+            "/plugins load x",
+            "/mcp add srv",
+        ] {
+            assert!(
+                !is_concurrent_safe_slash(command),
+                "`{command}` must stop the world"
+            );
+        }
+    }
+
+    #[test]
+    fn non_slash_text_and_edge_cases_are_not_safe() {
+        assert!(!is_concurrent_safe_slash("status"));
+        assert!(!is_concurrent_safe_slash("just a normal prompt"));
+        assert!(!is_concurrent_safe_slash("/"));
+        // Leading/trailing whitespace is trimmed: still a slash command.
+        assert!(is_concurrent_safe_slash("  /status"));
+        assert!(is_concurrent_safe_slash("  /status  extra"));
+        // Unknown command names are not in the safe set.
+        assert!(!is_concurrent_safe_slash("/totally-unknown"));
     }
 }
