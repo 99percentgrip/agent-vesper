@@ -13,6 +13,13 @@
 // needed here, so the rest of `support` is permitted to be dead code in this
 // test binary.
 #![allow(dead_code)]
+// The proof boots the release binary with `AGENT_VESPER_PROVIDER=synthetic`,
+// which the composition accepts only under the `integration-test-harness`
+// feature (the synthetic adapter must never be selectable in production
+// builds). Without the feature the child process exits immediately, so the
+// whole file compiles out; the canonical `--all-features` verification runs
+// it unchanged.
+#![cfg(feature = "integration-test-harness")]
 
 use std::{
     io::{BufRead, BufReader, Write},

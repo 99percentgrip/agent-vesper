@@ -298,6 +298,54 @@ add regression tests so earlier guarantees cannot silently regress.
   body; never close-and-replace). Shipped text contains no oracle real name.
 - AC: release published; local binaries report `0.20.59`; Registry PR
   updated; CI green on HEAD.
+- **Status: SHIPPED** (HEAD `250abdc`; 1140 tests green; 4 CI workflows
+  success; Registry PR updated; local install verified).
+
+### P9 — Final audit: ACP-side dynamic gating (the PRD's deferred item)
+- **Audit findings (the §3 deferral note "picker already descriptor-driven"
+  was wrong):**
+  - **A1** `multi_provider_control_surface` appended the frozen GLM control
+    set for EVERY acting provider — a Zed footer on LM Studio advertised
+    GLM models/plans/thinking/generation/auxiliary/mixture.
+  - **A2** Functional misroute: picking a GLM model while LM Studio acted
+    wrote `zai:model` into the lmstudio envelope and
+    `session_model_override` returned `lmstudio:<glm-model>` → next turn
+    dispatched a nonexistent model to the local server.
+  - **A3** `context_window` used `glm_context_window` for every provider —
+    LM Studio sessions reported GLM's frozen 1M to the Zed token counter.
+  - **A4** The ACP's `lmstudio_provider.rs` is a separate adapter copy that
+    missed all of P5: `ProviderCapabilities::default()` (all `Unknown`),
+    the unbacked `disabled/enabled/high` thinking dial, no native catalog.
+  - **A5** (pre-existing, found during audit) `tests/provider_selection.rs`
+    failed outside `--all-features` because the synthetic boot token is
+    feature-gated in the composition but the test binary was not.
+- **Fix (v0.20.60):** `controls.rs` advertises the ACTING provider's
+  controls only (GLM full set for `zai`; a truthful live-catalog `model`
+  picker — pinned model fallback — for `lmstudio`; nothing else), rejects
+  GLM-only selections fail-closed while another provider acts, and derives
+  `context_window` from the acting provider (LM Studio advertised
+  `max_context_length`, conservative 8K floor when unadvertised). P5 was
+  ported to the ACP adapter copy (native `/api/v1/models` fetch, verified
+  schema mapping, truthful capabilities, catalog-driven superpowers without
+  the unbacked dial, shared catalog cache across the registered factory
+  clones, boot-time refresh when LM Studio acts first). The A5 test is
+  `integration-test-harness`-gated (canonical `--all-features` run
+  unchanged).
+- **Race audit:** the new catalog cache is boot-refresh-then-read-only
+  (`Arc<RwLock<..>>`, short critical sections, no reentrancy); the ACP
+  surface is immutable post-construction with pure closures over runtime
+  snapshots; the TUI capability index is built once with synchronous
+  pre-spawn gates. No new race conditions.
+- **Known residual (documented, not a misroute):** the surface is baked at
+  construction (SDK shape), so a mid-session zai→lmstudio switch keeps the
+  GLM rows visible in the client until the next session/new — their
+  selections are rejected fail-closed meanwhile; and LM Studio
+  model/thinking picks update the engine's acting model while the wire
+  request still carries the factory-pinned model id (pre-existing adapter
+  shape shared with the TUI path).
+- AC: ACP lib+process suites green under `--all-features`; plain
+  `cargo test -p agent-vesper-acp` green; workspace 1148/0; shipped as
+  v0.20.60.
 
 ## 8. Test plan
 
@@ -329,4 +377,10 @@ add regression tests so earlier guarantees cannot silently regress.
 
 - Registry-level `ModelCatalog` accessor — revisit at third real provider.
 - LM Studio `ProviderCapabilities` beyond P5-verified fields.
-- ACP-side dynamic gating audit (picker already descriptor-driven).
+- ~~ACP-side dynamic gating audit~~ — CLOSED by P9 (the audit found and
+  fixed real gaps; see P9).
+- Mid-session surface rebaking after a provider switch (SDK
+  `SessionControlSurface` is baked at construction; fail-closed rejection
+  covers the window) and wire-level model selection for the LM Studio
+  adapter (engine acting model updates; the request still carries the
+  pinned id) — both documented in P9.

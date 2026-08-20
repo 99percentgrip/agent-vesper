@@ -9,21 +9,20 @@ use std::sync::Arc;
 use std::task::Context;
 
 use futures_util::StreamExt;
-use vesper_agent::providers::lmstudio::{
-    ChatMessage, LmStudioConfig, build_chat_request, build_models_request, parse_models_response,
-};
+use vesper_agent::providers::lmstudio::{ChatMessage, LmStudioConfig, build_chat_request};
 use vesper_domain::{
     BoundedString, ContentPart, ContentText, ErrorCategory, ErrorInfo, ExtensionMap, FinishOutcome,
     MessageRole, ModelId, ProviderId, QualifiedModelId, RedactedDiagnostics, Retryability,
     SafeMessage,
 };
 use vesper_provider::{
-    AuthenticationMethodDescriptor, CancellationSignal, CredentialError, ModelCatalog,
-    ModelCatalogProvenance, ModelCatalogSnapshot, ModelDescriptor, ProviderCapabilities,
-    ProviderConfiguration, ProviderCredentialPort, ProviderDescriptor, ProviderError,
-    ProviderEventStream, ProviderFactory, ProviderFuture, ProviderRequest, ProviderSession,
-    ProviderStreamEvent, ProviderSuperpowers, SuperpowerDescriptor, SuperpowerKind,
-    SuperpowerScope, SuperpowerValue,
+    AuthenticationMethodDescriptor, CancellationSignal, CredentialError, MediaCapability,
+    ModelCatalog, ModelCatalogProvenance, ModelCatalogSnapshot, ModelDescriptor, ModelLimits,
+    ProviderCapabilities, ProviderConfiguration, ProviderCredentialPort, ProviderDescriptor,
+    ProviderError, ProviderEventStream, ProviderFactory, ProviderFuture, ProviderRequest,
+    ProviderSession, ProviderStreamEvent, ProviderSuperpowers, ReasoningCapability,
+    SuperpowerDescriptor, SuperpowerKind, SuperpowerScope, SuperpowerValue, SupportLevel,
+    ToolCapability,
 };
 
 const ID: &str = "lmstudio";
@@ -61,6 +60,12 @@ pub(crate) struct LmStudioFactory {
     config: LmStudioConfig,
     model: String,
     client: reqwest::Client,
+    /// Shared native-catalog cache (PRD provider-capability-gating P5):
+    /// filled by `refresh_catalog`/`ModelCatalog::models` from the verified
+    /// `GET /api/v1/models` schema; the composition boundary reads it so
+    /// advertised footer controls derive from live model data. `None` ⇒
+    /// fail-closed surface. Clones share the same cache handle.
+    catalog: std::sync::Arc<std::sync::RwLock<Option<ModelCatalogSnapshot>>>,
 }
 
 impl LmStudioFactory {
@@ -76,6 +81,7 @@ impl LmStudioFactory {
                 .timeout(std::time::Duration::from_secs(120))
                 .build()
                 .unwrap_or_default(),
+            catalog: std::sync::Arc::new(std::sync::RwLock::new(None)),
         }
     }
 
@@ -84,6 +90,52 @@ impl LmStudioFactory {
     #[allow(dead_code)]
     pub(crate) fn provider_id_str() -> &'static str {
         ID
+    }
+
+    /// The pinned/acting local model id from the persisted settings.
+    #[must_use]
+    pub(crate) fn pinned_model(&self) -> &str {
+        &self.model
+    }
+
+    /// The cached native-catalog snapshot, when one has been fetched.
+    #[must_use]
+    pub(crate) fn cached_snapshot(&self) -> Option<ModelCatalogSnapshot> {
+        self.catalog.read().expect("catalog lock poisoned").clone()
+    }
+
+    /// Fetches LM Studio's native model catalog (`GET /api/v1/models`) and
+    /// refreshes the shared cache. Verified response schema: LM Studio
+    /// developer docs `1_developer/2_rest/list.md` (capabilities: vision /
+    /// trained_for_tool_use / reasoning.allowed_options; max_context_length)
+    /// — evidence recorded in PRD provider-capability-gating P5. Best-effort
+    /// at startup: errors leave the previous cache (fail-closed when none).
+    pub(crate) async fn refresh_catalog(&self) -> Result<ModelCatalogSnapshot, String> {
+        let url = native_models_url(&self.config.api_base_url);
+        let mut request = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(5))
+            .build()
+            .unwrap_or_default()
+            .get(&url);
+        if let Some(key) = self.config.api_key.as_ref() {
+            request = request.bearer_auth(key.secret());
+        }
+        let response = request
+            .send()
+            .await
+            .map_err(|error| format!("/api/v1/models HTTP: {error}"))?;
+        let status = response.status();
+        let body: serde_json::Value = response
+            .json()
+            .await
+            .map_err(|error| format!("/api/v1/models body: {error}"))?;
+        if !status.is_success() {
+            return Err(format!("/api/v1/models HTTP {status}"));
+        }
+        let snapshot =
+            snapshot_from_native(&body, &self.id).map_err(|error| format!("parse: {error}"))?;
+        *self.catalog.write().expect("catalog lock poisoned") = Some(snapshot.clone());
+        Ok(snapshot)
     }
 
     /// Minimal default configuration (the session ignores it — it uses the
@@ -99,19 +151,6 @@ impl LmStudioFactory {
                 values: ExtensionMap::default(),
             },
         }
-    }
-
-    fn req_headers(&self, headers: &[(String, String)]) -> reqwest::header::HeaderMap {
-        let mut map = reqwest::header::HeaderMap::new();
-        for (name, value) in headers {
-            if let (Ok(n), Ok(v)) = (
-                reqwest::header::HeaderName::from_bytes(name.as_bytes()),
-                reqwest::header::HeaderValue::from_str(value),
-            ) {
-                map.append(n, v);
-            }
-        }
-        map
     }
 }
 
@@ -317,85 +356,224 @@ impl ModelCatalog for LmStudioFactory {
         &'a self,
         _cancellation: Arc<dyn CancellationSignal>,
     ) -> ProviderFuture<'a, Result<ModelCatalogSnapshot, ProviderError>> {
-        Box::pin(async move {
-            let req = build_models_request(&self.config);
-            let resp = self
-                .client
-                .get(&req.url)
-                .headers(self.req_headers(&req.headers))
-                .send()
-                .await
-                .map_err(|e| err(format!("/models HTTP: {e}")))?;
-            let body: serde_json::Value = resp
-                .json()
-                .await
-                .map_err(|e| err(format!("/models body: {e}")))?;
-            let discovered =
-                parse_models_response(&body).map_err(|e| err(format!("/models parse: {e}")))?;
-            let descriptors = discovered
-                .iter()
-                .map(|m| ModelDescriptor {
-                    model: QualifiedModelId {
-                        provider_id: self.id.clone(),
-                        model_id: ModelId::new(&m.id).expect("model id is bounded"),
-                    },
-                    display_name: BoundedString::new(&m.id).expect("bounded"),
-                    capabilities: ProviderCapabilities::default(),
-                    metadata: ExtensionMap::default(),
-                })
-                .collect::<Vec<_>>();
-            Ok(ModelCatalogSnapshot {
-                models: descriptors,
-                provenance: ModelCatalogProvenance::Discovered,
-                expires_at_unix_ms: None,
-            })
-        })
+        Box::pin(async move { self.refresh_catalog().await.map_err(err) })
     }
+}
+
+// ---------------------------------------------------------------------------
+// Native /api/v1/models catalog mapping (PRD provider-capability-gating P5).
+// Mirrors the TUI adapter copy: verified schema, fail-closed capabilities.
+// ---------------------------------------------------------------------------
+
+/// Derives the native models URL from the OpenAI-compat base (typically
+/// `http://host:1234/v1`): strips a trailing `/v1` or `/api/v0` segment and
+/// appends the verified native path.
+fn native_models_url(api_base_url: &str) -> String {
+    let trimmed = api_base_url.trim_end_matches('/');
+    let root = trimmed
+        .strip_suffix("/v1")
+        .or_else(|| trimmed.strip_suffix("/api/v0"))
+        .unwrap_or(trimmed);
+    format!("{root}/api/v1/models")
+}
+
+/// Builds a model's typed capabilities from one verified native entry.
+/// Every unreported field stays `Unknown` (fail-closed); reported-absent
+/// capabilities become `Unsupported` with the adapter's own reason.
+fn capabilities_from_native(entry: &serde_json::Value) -> ProviderCapabilities {
+    let mut capabilities = ProviderCapabilities::default();
+    if let Some(context) = entry.get("max_context_length").and_then(|v| v.as_u64()) {
+        capabilities.limits = SupportLevel::Native {
+            details: ModelLimits {
+                context_tokens: Some(context),
+                output_tokens: None,
+                exact: true,
+            },
+        };
+    }
+    let Some(reported) = entry.get("capabilities") else {
+        return capabilities;
+    };
+    match reported.get("vision").and_then(|v| v.as_bool()) {
+        Some(true) => {
+            capabilities.vision = SupportLevel::Native {
+                details: MediaCapability {
+                    media_types: vec!["image/png".into(), "image/jpeg".into(), "image/webp".into()],
+                    maximum_items: None,
+                    references: false,
+                    inline_data: true,
+                },
+            };
+        }
+        Some(false) => {
+            capabilities.vision = SupportLevel::Unsupported {
+                reason: BoundedString::new("model does not support image inputs")
+                    .expect("bounded reason"),
+            };
+        }
+        None => {}
+    }
+    match reported
+        .get("trained_for_tool_use")
+        .and_then(|v| v.as_bool())
+    {
+        Some(true) => {
+            capabilities.tools = SupportLevel::Native {
+                details: ToolCapability {
+                    schema_dialect: "lmstudio.openai-chat-completions.tools-v1".into(),
+                    choice_modes: Vec::new(),
+                    parallel: false,
+                    streamed_arguments: false,
+                },
+            };
+        }
+        Some(false) => {
+            capabilities.tools = SupportLevel::Unsupported {
+                reason: BoundedString::new("model was not trained for tool use")
+                    .expect("bounded reason"),
+            };
+        }
+        None => {}
+    }
+    if let Some(options) = reported
+        .get("reasoning")
+        .and_then(|r| r.get("allowed_options"))
+        .and_then(|v| v.as_array())
+    {
+        let effort_levels: Vec<String> = options
+            .iter()
+            .filter_map(|option| option.as_str().map(str::to_string))
+            .collect();
+        if !effort_levels.is_empty() {
+            capabilities.reasoning = SupportLevel::Native {
+                details: ReasoningCapability {
+                    effort_levels,
+                    visible_modes: vec!["provider-visible".into()],
+                },
+            };
+        }
+    }
+    capabilities
+}
+
+/// Parses a verified native `GET /api/v1/models` body into a catalog
+/// snapshot. Embedding models are skipped (they are not chat models).
+fn snapshot_from_native(
+    body: &serde_json::Value,
+    provider: &ProviderId,
+) -> Result<ModelCatalogSnapshot, String> {
+    let entries = body
+        .get("models")
+        .and_then(|m| m.as_array())
+        .ok_or_else(|| "response missing `models` array".to_string())?;
+    let mut models = Vec::new();
+    for entry in entries {
+        if entry.get("type").and_then(|t| t.as_str()) != Some("llm") {
+            continue;
+        }
+        let key = entry
+            .get("key")
+            .and_then(|k| k.as_str())
+            .ok_or_else(|| "model entry missing `key`".to_string())?;
+        let display = entry
+            .get("display_name")
+            .and_then(|d| d.as_str())
+            .unwrap_or(key);
+        models.push(ModelDescriptor {
+            model: QualifiedModelId {
+                provider_id: provider.clone(),
+                model_id: ModelId::new(key).map_err(|e| format!("model id `{key}`: {e}"))?,
+            },
+            display_name: BoundedString::new(display)
+                .map_err(|_| format!("display name too long for `{key}`"))?,
+            capabilities: capabilities_from_native(entry),
+            metadata: ExtensionMap::default(),
+        });
+    }
+    Ok(ModelCatalogSnapshot {
+        models,
+        provenance: ModelCatalogProvenance::Discovered,
+        expires_at_unix_ms: None,
+    })
 }
 
 impl ProviderSuperpowers for LmStudioFactory {
     fn superpowers(&self) -> Vec<SuperpowerDescriptor> {
-        vec![
-            SuperpowerDescriptor {
-                id: BoundedString::new("lmstudio:model").expect("bounded"),
-                provider_id: self.id.clone(),
-                display_name: BoundedString::new("Model").expect("bounded"),
-                kind: SuperpowerKind::Choice,
-                scope: SuperpowerScope::Session,
-                default_value: SuperpowerValue::Choice {
+        // PRD P5: advertised controls derive from the cached native catalog.
+        // No cache ⇒ only the pinned-model selector; a thinking dial is
+        // advertised ONLY when the pinned model reports reasoning options
+        // (verified `reasoning.allowed_options`). The former unconditional
+        // disabled/enabled/high dial never reached the wire and is removed —
+        // an unbacked control is worse than an absent one.
+        let snapshot = self.cached_snapshot();
+        let mut values: Vec<SuperpowerValue> = Vec::new();
+        if let Some(snapshot) = snapshot.as_ref() {
+            for descriptor in &snapshot.models {
+                values.push(SuperpowerValue::Choice {
+                    value: BoundedString::new(descriptor.model.model_id.as_str())
+                        .expect("catalog model ids are bounded"),
+                });
+            }
+        }
+        if !values.iter().any(|value| matches!(value, SuperpowerValue::Choice { value } if value.as_str() == self.model))
+        {
+            values.insert(
+                0,
+                SuperpowerValue::Choice {
                     value: BoundedString::new(&self.model).expect("bounded"),
                 },
-                allowed_values: vec![SuperpowerValue::Choice {
-                    value: BoundedString::new(&self.model).expect("bounded"),
-                }],
-                command_alias: Some(BoundedString::new("model").expect("bounded")),
-                help: Some(
-                    BoundedString::new("The model loaded on the LM Studio server.")
-                        .expect("bounded"),
-                ),
+            );
+        }
+        let mut descriptors = vec![SuperpowerDescriptor {
+            id: BoundedString::new("lmstudio:model").expect("bounded"),
+            provider_id: self.id.clone(),
+            display_name: BoundedString::new("Model").expect("bounded"),
+            kind: SuperpowerKind::Choice,
+            scope: SuperpowerScope::Session,
+            default_value: SuperpowerValue::Choice {
+                value: BoundedString::new(&self.model).expect("bounded"),
             },
-            SuperpowerDescriptor {
+            allowed_values: values,
+            command_alias: Some(BoundedString::new("model").expect("bounded")),
+            help: Some(
+                BoundedString::new("A model available on the LM Studio server.").expect("bounded"),
+            ),
+        }];
+        // Thinking dial: only when the pinned (active) model reports its own
+        // allowed reasoning options — labels travel verbatim (off/on/low/
+        // medium/high per the verified schema).
+        if let Some(snapshot) = snapshot.as_ref()
+            && let Some(active) = snapshot
+                .models
+                .iter()
+                .find(|d| d.model.model_id.as_str() == self.model)
+            && let SupportLevel::Native { details } = &active.capabilities.reasoning
+            && !details.effort_levels.is_empty()
+        {
+            descriptors.push(SuperpowerDescriptor {
                 id: BoundedString::new("lmstudio:reasoning").expect("bounded"),
                 provider_id: self.id.clone(),
                 display_name: BoundedString::new("Thinking").expect("bounded"),
                 kind: SuperpowerKind::Choice,
                 scope: SuperpowerScope::Session,
                 default_value: SuperpowerValue::Choice {
-                    value: BoundedString::new("disabled").expect("bounded"),
+                    value: BoundedString::new(details.effort_levels[0].as_str()).expect("bounded"),
                 },
-                allowed_values: ["disabled", "enabled", "high"]
-                    .into_iter()
-                    .map(|v| SuperpowerValue::Choice {
-                        value: BoundedString::new(v).expect("bounded"),
+                allowed_values: details
+                    .effort_levels
+                    .iter()
+                    .map(|label| SuperpowerValue::Choice {
+                        value: BoundedString::new(label.as_str()).expect("bounded"),
                     })
                     .collect(),
                 command_alias: Some(BoundedString::new("thinking").expect("bounded")),
                 help: Some(
-                    BoundedString::new("Toggle reasoning/thinking mode for the loaded model.")
+                    BoundedString::new("Reasoning options reported by this model.")
                         .expect("bounded"),
                 ),
-            },
-        ]
+            });
+        }
+        descriptors
     }
 }
 
@@ -553,5 +731,170 @@ mod tests {
             "local-model",
         );
         assert!(factory.credential_present().unwrap_or(false));
+    }
+
+    // ------------------------------------------------------------------
+    // PRD provider-capability-gating P5: verified native /api/v1/models
+    // schema (lmstudio-ai/docs 1_developer/2_rest/list.md).
+    // ------------------------------------------------------------------
+
+    fn native_body() -> serde_json::Value {
+        serde_json::json!({
+            "models": [
+                {
+                    "type": "llm",
+                    "publisher": "google",
+                    "key": "google/gemma-4-26b-a4b",
+                    "display_name": "Gemma 4 26B A4B",
+                    "max_context_length": 262144,
+                    "capabilities": {
+                        "vision": true,
+                        "trained_for_tool_use": true,
+                        "reasoning": {
+                            "allowed_options": ["off", "on"],
+                            "default": "on"
+                        }
+                    }
+                },
+                {
+                    "type": "llm",
+                    "publisher": "deepseek",
+                    "key": "deepseek-r1",
+                    "display_name": "DeepSeek R1",
+                    "max_context_length": 131072,
+                    "capabilities": {
+                        "vision": false,
+                        "trained_for_tool_use": true,
+                        "reasoning": {"allowed_options": ["on"], "default": "on"}
+                    }
+                },
+                {
+                    "type": "embedding",
+                    "publisher": "gaianet",
+                    "key": "text-embedding-nomic-embed-text-v1.5-embedding",
+                    "display_name": "Nomic Embed Text v1.5"
+                }
+            ]
+        })
+    }
+
+    #[test]
+    fn native_models_url_strips_compat_suffixes() {
+        assert_eq!(
+            native_models_url("http://localhost:1234/v1"),
+            "http://localhost:1234/api/v1/models"
+        );
+        assert_eq!(
+            native_models_url("http://192.168.1.10:1234/v1/"),
+            "http://192.168.1.10:1234/api/v1/models"
+        );
+        assert_eq!(
+            native_models_url("http://localhost:1234"),
+            "http://localhost:1234/api/v1/models"
+        );
+    }
+
+    #[test]
+    fn snapshot_from_native_maps_capabilities_and_skips_embeddings() {
+        let snapshot = snapshot_from_native(&native_body(), &pid()).expect("parsed");
+        assert_eq!(snapshot.models.len(), 2, "embedding models are skipped");
+        assert_eq!(snapshot.provenance, ModelCatalogProvenance::Discovered);
+
+        let gemma = &snapshot.models[0];
+        assert_eq!(gemma.model.model_id.as_str(), "google/gemma-4-26b-a4b");
+        assert!(matches!(
+            &gemma.capabilities.vision,
+            SupportLevel::Native { .. }
+        ));
+        assert!(matches!(
+            &gemma.capabilities.tools,
+            SupportLevel::Native { .. }
+        ));
+        match &gemma.capabilities.reasoning {
+            SupportLevel::Native { details } => {
+                assert_eq!(details.effort_levels, vec!["off", "on"])
+            }
+            other => panic!("expected native reasoning, got {other:?}"),
+        }
+        match &gemma.capabilities.limits {
+            SupportLevel::Native { details } => {
+                assert_eq!(details.context_tokens, Some(262144))
+            }
+            other => panic!("expected native limits, got {other:?}"),
+        }
+
+        let deepseek = &snapshot.models[1];
+        match &deepseek.capabilities.vision {
+            SupportLevel::Unsupported { reason } => {
+                assert_eq!(reason.as_str(), "model does not support image inputs")
+            }
+            other => panic!("expected unsupported vision, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn superpowers_follow_the_cached_catalog_and_reasoning_evidence() {
+        let config = LmStudioConfig::new("http://localhost:1234/v1").unwrap();
+        let factory = LmStudioFactory::new(config, "deepseek-r1");
+        // No cache: only the pinned-model selector; NO thinking dial (the
+        // former unconditional disabled/enabled/high dial was never sent on
+        // the wire — an unbacked control is removed, PRD P5).
+        let cold = factory.superpowers();
+        assert_eq!(cold.len(), 1);
+        assert!(cold[0].id.as_str() == "lmstudio:model");
+
+        // With the cache: model lists every LLM; the thinking dial appears
+        // only for the pinned model that reports reasoning options, with the
+        // model's own labels.
+        *factory.catalog.write().expect("catalog lock poisoned") =
+            Some(snapshot_from_native(&native_body(), &pid()).expect("parsed"));
+        let warm = factory.superpowers();
+        assert_eq!(warm.len(), 2);
+        let model = warm
+            .iter()
+            .find(|d| d.id.as_str() == "lmstudio:model")
+            .unwrap();
+        let labels: Vec<&str> = model
+            .allowed_values
+            .iter()
+            .filter_map(|v| match v {
+                SuperpowerValue::Choice { value } => Some(value.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert!(labels.contains(&"google/gemma-4-26b-a4b"));
+        assert!(labels.contains(&"deepseek-r1"));
+        let thinking = warm
+            .iter()
+            .find(|d| d.id.as_str() == "lmstudio:reasoning")
+            .unwrap();
+        let thinking_labels: Vec<&str> = thinking
+            .allowed_values
+            .iter()
+            .filter_map(|v| match v {
+                SuperpowerValue::Choice { value } => Some(value.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            thinking_labels,
+            vec!["on"],
+            "the pinned model's own options only"
+        );
+    }
+
+    #[test]
+    fn fail_closed_when_capabilities_are_absent() {
+        let body = serde_json::json!({
+            "models": [
+                {"type": "llm", "key": "bare-model", "display_name": "Bare"}
+            ]
+        });
+        let snapshot = snapshot_from_native(&body, &pid()).expect("parsed");
+        let bare = &snapshot.models[0];
+        assert!(matches!(bare.capabilities.vision, SupportLevel::Unknown));
+        assert!(matches!(bare.capabilities.tools, SupportLevel::Unknown));
+        assert!(matches!(bare.capabilities.reasoning, SupportLevel::Unknown));
+        assert!(matches!(bare.capabilities.limits, SupportLevel::Unknown));
     }
 }

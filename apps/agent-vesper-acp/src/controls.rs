@@ -397,14 +397,50 @@ fn session_model_override(configuration: &ProviderConfiguration) -> Option<Quali
 /// Builds the multi-provider surface: a `provider` picker (with auth status)
 /// prepended to the active provider's GLM controls.
 ///
+/// One LM Studio model entry for the footer `model` control. The
+/// composition boundary supplies these from the adapter's cached native
+/// catalog (`GET /api/v1/models`, PRD provider-capability-gating P5); the
+/// list must contain at least the pinned model (fail-closed otherwise).
+#[derive(Clone)]
+pub(crate) struct LmStudioControlModel {
+    /// Model id as routed to the server (`key`).
+    pub id: String,
+    /// Human-readable display name.
+    pub name: String,
+    /// Advertised `max_context_length` in tokens, when reported.
+    pub context_window: Option<u64>,
+}
+/// Conservative context-window floor for LM Studio models that did not
+/// advertise `max_context_length` (server offline / older schema): an
+/// UNDER-estimate keeps the client token counter fail-safe and never
+/// inherits GLM's frozen 1M default (PRD P5 fail-closed).
+const LMSTUDIO_UNADVERTISED_CONTEXT_FLOOR: u64 = 8192;
+
+/// Resolves the session's acting provider id: the explicit
+/// `vesper:active-provider` overlay after a footer switch, else the
+/// envelope identity. Runtime merge semantics keep `zai:` keys alive after
+/// a switch, so the envelope identity alone is NOT authoritative.
+fn active_provider_of(configuration: &ProviderConfiguration) -> &str {
+    config_str(configuration, ACTIVE_PROVIDER_KEY)
+        .unwrap_or_else(|| configuration.provider_id.as_str())
+}
+
 /// Mirrors the TUI's `/provider` switcher + `/auth` gate: descriptions show
 /// each provider's authentication status, and switching changes the session's
 /// acting model `provider_id` so the next turn dispatches to the selected
 /// adapter. LM Studio needs no credential (local server, optional key); GLM
 /// requires `ZAI_API_KEY` or a stored credential (set via `--setup`).
+///
+/// PRD provider-capability-gating: the non-provider controls are advertised
+/// for the ACTING provider only — GLM's controls (model/plan/thinking/
+/// generation/auxiliary/mixture) when acting on `zai`, a truthful LM Studio
+/// model picker when acting on `lmstudio`, nothing else. GLM-only
+/// selections made while another provider is acting are rejected
+/// fail-closed (apply returns `None`), never silently misrouted.
 pub(crate) fn multi_provider_control_surface(
     configuration: &ProviderConfiguration,
     registered: &[(String, String, bool)],
+    lm_models: &[LmStudioControlModel],
 ) -> SessionControlSurface {
     let mut controls = Vec::new();
 
@@ -437,10 +473,50 @@ pub(crate) fn multi_provider_control_surface(
         options: provider_options,
     });
 
-    // GLM controls follow (ignored by other providers on dispatch).
-    let glm = glm_control_surface(configuration);
-    for control in glm.all() {
-        controls.push(control.clone());
+    let lm_models = lm_models.to_vec();
+    match active_provider_of(configuration) {
+        // GLM acting: today's full oracle-parity control set.
+        "zai" => {
+            let glm = glm_control_surface(configuration);
+            for control in glm.all() {
+                controls.push(control.clone());
+            }
+        }
+        // LM Studio acting: ONLY the truthful model picker — no GLM plans,
+        // thinking dial, generation, auxiliary, or mixture machinery (the
+        // OpenAI-compatible wire we send carries none of them; advertising
+        // them would be unbacked controls).
+        "lmstudio" => {
+            let options = lm_models
+                .iter()
+                .map(|model| AcpControlOption {
+                    value: model.id.clone(),
+                    name: model.name.clone(),
+                    description: Some(
+                        model
+                            .context_window
+                            .map(|tokens| format!("Local model · {tokens} token context"))
+                            .unwrap_or_else(|| "Local model".to_owned()),
+                    ),
+                })
+                .collect::<Vec<_>>();
+            let current = config_str(configuration, "lmstudio:model")
+                .map(str::to_owned)
+                .or_else(|| lm_models.first().map(|model| model.id.clone()))
+                .unwrap_or_else(|| "local-model".to_owned());
+            controls.push(AcpSessionControl {
+                id: "model".to_owned(),
+                name: "Model".to_owned(),
+                description: Some(
+                    "LM Studio model on the local/LAN server (live catalog)".to_owned(),
+                ),
+                category: AcpControlCategory::Model,
+                current_value: current,
+                options,
+            });
+        }
+        // Unknown acting provider: fail-closed — the picker alone.
+        _ => {}
     }
 
     let mut surface = SessionControlSurface::new(controls)
@@ -448,26 +524,67 @@ pub(crate) fn multi_provider_control_surface(
             // The acting provider rides as an explicit value once the user
             // has switched; before any switch the envelope identity IS the
             // acting provider.
-            Some(
-                config_str(configuration, ACTIVE_PROVIDER_KEY)
-                    .unwrap_or_else(|| configuration.provider_id.as_str())
-                    .to_owned(),
-            )
+            Some(active_provider_of(configuration).to_owned())
         })
-        .with_apply(|configuration, option_id, value| {
+        .with_current_resolver("model", move |configuration| {
+            if active_provider_of(configuration) == "lmstudio" {
+                return config_str(configuration, "lmstudio:model").map(str::to_owned);
+            }
+            let mixture = config_str(configuration, "zai:mixture-mode").unwrap_or("off");
+            if mixture == "enabled" {
+                return Some(MOA_PICKER_VALUE.to_owned());
+            }
+            config_str(configuration, "zai:model")
+                .or_else(|| config_str(configuration, "zai:model-id"))
+                .map(str::to_owned)
+        })
+        .with_apply(move |configuration, option_id, value| {
             if option_id == PROVIDER_CONTROL_ID {
                 return apply_provider_selection(configuration, value);
             }
-            apply_glm_config_selection(configuration, option_id, value).map(|configuration| {
-                AppliedSelection {
-                    model: session_model_override(&configuration),
-                    configuration,
+            match active_provider_of(configuration) {
+                "zai" => apply_glm_config_selection(configuration, option_id, value).map(
+                    |configuration| AppliedSelection {
+                        model: session_model_override(&configuration),
+                        configuration,
+                    },
+                ),
+                "lmstudio" => {
+                    // Only the advertised local model list is accepted; the
+                    // GLM-only controls are rejected fail-closed while LM
+                    // Studio is acting (never a silent cross-provider route).
+                    if option_id == "model"
+                        && let Some(entry) = lm_models.iter().find(|model| model.id == value)
+                        && let Ok(model_id) = ModelId::new(entry.id.clone())
+                    {
+                        let mut next = configuration.clone();
+                        let values = &mut next.values.values;
+                        values
+                            .insert("lmstudio:model".to_owned(), serde_json::json!(&entry.id))
+                            .ok()?;
+                        values
+                            .insert(
+                                ACTIVE_PROVIDER_KEY.to_owned(),
+                                serde_json::json!("lmstudio"),
+                            )
+                            .ok()?;
+                        return Some(AppliedSelection {
+                            model: Some(QualifiedModelId {
+                                provider_id: ProviderId::new("lmstudio").ok()?,
+                                model_id,
+                            }),
+                            configuration: next,
+                        });
+                    }
+                    None
                 }
-            })
+                _ => None,
+            }
         });
-    // Re-attach the GLM current-value resolvers on top of the provider one.
+    // Re-attach the GLM current-value resolvers on top of the provider and
+    // model ones (they read `zai:` keys; absent while LM Studio acts, so the
+    // resolver yields `None` and the baked static value is advertised).
     for id in [
-        "model",
         "api_endpoint",
         "generation_profile",
         "auxiliary_model",
@@ -475,7 +592,6 @@ pub(crate) fn multi_provider_control_surface(
     ] {
         surface = surface.with_current_resolver(id, move |configuration| {
             let key = match id {
-                "model" => "zai:model",
                 "api_endpoint" => "zai:endpoint-plan",
                 "generation_profile" => "zai:generation-profile",
                 "auxiliary_model" => "zai:auxiliary-model",
@@ -486,6 +602,30 @@ pub(crate) fn multi_provider_control_surface(
         });
     }
     surface
+}
+
+/// Truthful session context window for the multi-provider composition:
+/// GLM's frozen per-model size when acting on `zai`; the LM Studio model's
+/// advertised `max_context_length` when acting on `lmstudio` (conservative
+/// floor when unadvertised — never GLM's 1M).
+pub(crate) fn multi_provider_context_window(
+    configuration: &ProviderConfiguration,
+    lm_models: &[LmStudioControlModel],
+) -> u64 {
+    if active_provider_of(configuration) == "lmstudio" {
+        let acting = config_str(configuration, "lmstudio:model")
+            .map(str::to_owned)
+            .or_else(|| lm_models.first().map(|model| model.id.clone()));
+        return acting
+            .and_then(|model| {
+                lm_models
+                    .iter()
+                    .find(|entry| entry.id == model)
+                    .and_then(|entry| entry.context_window)
+            })
+            .unwrap_or(LMSTUDIO_UNADVERTISED_CONTEXT_FLOOR);
+    }
+    glm_context_window(configuration)
 }
 
 /// Applies a provider switch onto the session configuration: returns the
@@ -776,7 +916,11 @@ mod tests {
     #[test]
     fn multi_provider_surface_lists_providers_with_auth_status() {
         let configuration = default_configuration();
-        let surface = multi_provider_control_surface(&configuration, &registered_providers(false));
+        let surface = multi_provider_control_surface(
+            &configuration,
+            &registered_providers(false),
+            &lm_models(),
+        );
         let provider = surface.control("provider").expect("provider control");
         assert_eq!(provider.current_value, "zai");
         assert_eq!(provider.options.len(), 2);
@@ -803,7 +947,11 @@ mod tests {
     #[test]
     fn multi_provider_surface_switches_to_lmstudio() {
         let configuration = default_configuration();
-        let surface = multi_provider_control_surface(&configuration, &registered_providers(true));
+        let surface = multi_provider_control_surface(
+            &configuration,
+            &registered_providers(true),
+            &lm_models(),
+        );
         let applied = surface
             .apply(&configuration, "provider", "lmstudio")
             .expect("provider switch applies");
@@ -816,7 +964,11 @@ mod tests {
     #[test]
     fn multi_provider_surface_switches_back_to_zai_preserving_overrides() {
         let configuration = default_configuration();
-        let surface = multi_provider_control_surface(&configuration, &registered_providers(true));
+        let surface = multi_provider_control_surface(
+            &configuration,
+            &registered_providers(true),
+            &lm_models(),
+        );
         // Simulate runtime merge semantics: the session config ACCUMULATES
         // value overlays (the runtime merges onto its own envelope; provider
         // switches never remove keys). A switch to lmstudio overlays nothing
@@ -859,5 +1011,151 @@ mod tests {
         // accepts() gate would already filter these, but the apply must stay
         // fail-closed for direct calls).
         assert!(apply_provider_selection(&configuration, "not-a-provider").is_none());
+    }
+
+    fn lm_models() -> Vec<LmStudioControlModel> {
+        vec![
+            LmStudioControlModel {
+                id: "qwen3-8b".to_owned(),
+                name: "Qwen3 8B".to_owned(),
+                context_window: Some(40_960),
+            },
+            LmStudioControlModel {
+                id: "deepseek-r1".to_owned(),
+                name: "DeepSeek R1".to_owned(),
+                context_window: Some(131_072),
+            },
+        ]
+    }
+
+    fn lmstudio_session_configuration() -> ProviderConfiguration {
+        // A session acting on lmstudio: the runtime merge overlay keeps the
+        // zai: keys alive but carries the explicit active-provider stamp.
+        let mut session = default_configuration();
+        let lm = crate::lmstudio_provider::LmStudioFactory::default_configuration();
+        for (key, value) in lm.values.values.iter() {
+            let _ = session
+                .values
+                .values
+                .insert((*key).to_owned(), value.clone());
+        }
+        session.provider_id = lm.provider_id;
+        session
+            .values
+            .values
+            .insert(
+                super::ACTIVE_PROVIDER_KEY.to_owned(),
+                serde_json::json!("lmstudio"),
+            )
+            .expect("bounded key");
+        session
+    }
+
+    #[test]
+    fn multi_provider_surface_advertises_only_lmstudio_controls_when_acting_on_lmstudio() {
+        // PRD provider-capability-gating: when LM Studio is the acting
+        // provider, ONLY the provider picker + truthful local model list are
+        // advertised — no GLM plans/thinking/generation/auxiliary/mixture.
+        let surface = multi_provider_control_surface(
+            &lmstudio_session_configuration(),
+            &registered_providers(true),
+            &lm_models(),
+        );
+        let model = surface.control("model").expect("local model picker");
+        assert_eq!(model.current_value, "qwen3-8b");
+        let values: Vec<&str> = model.options.iter().map(|o| o.value.as_str()).collect();
+        assert_eq!(values, vec!["qwen3-8b", "deepseek-r1"]);
+        for absent in [
+            "thought_level",
+            "api_endpoint",
+            "generation_profile",
+            "auxiliary_model",
+            "mixture_mode",
+        ] {
+            assert!(
+                surface.control(absent).is_none(),
+                "{absent} must not be advertised while LM Studio acts"
+            );
+        }
+    }
+
+    #[test]
+    fn lmstudio_model_selection_routes_to_the_lmstudio_identity() {
+        let session = lmstudio_session_configuration();
+        let surface =
+            multi_provider_control_surface(&session, &registered_providers(true), &lm_models());
+        let applied = surface
+            .apply(&session, "model", "deepseek-r1")
+            .expect("local model applies");
+        let model = applied.model.expect("model override");
+        assert_eq!(model.provider_id.as_str(), "lmstudio");
+        assert_eq!(model.model_id.as_str(), "deepseek-r1");
+        assert_eq!(
+            applied
+                .configuration
+                .values
+                .values
+                .get("lmstudio:model")
+                .and_then(|v| v.as_str()),
+            Some("deepseek-r1")
+        );
+        assert_eq!(
+            applied
+                .configuration
+                .values
+                .values
+                .get(super::ACTIVE_PROVIDER_KEY)
+                .and_then(|v| v.as_str()),
+            Some("lmstudio")
+        );
+    }
+
+    #[test]
+    fn glm_only_selections_are_rejected_fail_closed_while_lmstudio_acts() {
+        // Runtime-merge state after a zai → lmstudio switch: zai: keys are
+        // still present, but GLM-only controls must NOT apply (the old code
+        // silently wrote zai: values and produced a cross-provider model).
+        let session = lmstudio_session_configuration();
+        let surface =
+            multi_provider_control_surface(&session, &registered_providers(true), &lm_models());
+        assert!(surface.apply(&session, "thought_level", "max").is_none());
+        assert!(
+            surface
+                .apply(&session, "api_endpoint", "standard")
+                .is_none()
+        );
+        assert!(
+            surface
+                .apply(&session, "auxiliary_model", "glm-5.2")
+                .is_none()
+        );
+        assert!(surface.apply(&session, "mixture_mode", "enabled").is_none());
+        // A GLM model value is not in the acting provider's advertised set.
+        assert!(surface.apply(&session, "model", "glm-5-turbo").is_none());
+    }
+
+    #[test]
+    fn multi_provider_context_window_follows_the_acting_provider() {
+        // GLM acting: frozen 1M for the flagship.
+        assert_eq!(
+            multi_provider_context_window(&default_configuration(), &lm_models()),
+            1_000_000
+        );
+        // LM Studio acting: the advertised per-model size…
+        let session = lmstudio_session_configuration();
+        assert_eq!(
+            multi_provider_context_window(&session, &lm_models()),
+            40_960
+        );
+        // …the conservative floor when unadvertised — never GLM's 1M.
+        let bare = vec![LmStudioControlModel {
+            id: "bare".to_owned(),
+            name: "Bare".to_owned(),
+            context_window: None,
+        }];
+        assert_eq!(
+            multi_provider_context_window(&session, &bare),
+            super::LMSTUDIO_UNADVERTISED_CONTEXT_FLOOR
+        );
     }
 }

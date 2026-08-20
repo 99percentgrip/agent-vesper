@@ -47,24 +47,35 @@ transport, stderr-only tracing, and orderly shutdown.
 - The default ACP composition injects `AcpHarnessEngine`, which owns bounded
   per-session conversation history and routes prompts through `AgentLoop`.
   The composition also injects the multi-provider footer control surface
-  (`src/controls.rs`, derived from the frozen GLM oracle catalog): the
-  adapter advertises `provider` (TUI `/provider` parity — lists every
-  registered adapter with live credential status in each description;
-  switching stamps `vesper:active-provider` into the session envelope and
-  swaps the acting `QualifiedModelId` so the next turn dispatches to the
-  selected adapter; GLM keeps its `zai:` overrides across round trips;
-  unauthenticated GLM descriptions tell the user to run `--setup`),
-  `model` (MoA picker first, then the plan's models),
-  `thought_level` (deep levels only on deep-reasoning models),
-  `api_endpoint`, `generation_profile`, `auxiliary_model`, `mixture_mode`,
-  and `permission_mode` as ACP `sessionConfigOptions` on
-  `session/new`/`load`/`resume`/`set`, and `session/set_config_option`
-  selections are validated against that surface, dispatched to the runtime
-  `UpdateProviderConfiguration` command, and applied to the engine's turn
-  configuration (footer picks take effect on the next turn; engine
-  slash-command overrides layer on top). The adapter's `context_window`
-  follows the frozen per-model context sizes so the Zed token counter
-  (`usage_update`) sizes against the selected model.
+  (`src/controls.rs`): the adapter advertises `provider` (TUI `/provider`
+  parity — lists every registered adapter with live credential status in
+  each description; switching stamps `vesper:active-provider` into the
+  session envelope and swaps the acting `QualifiedModelId` so the next turn
+  dispatches to the selected adapter; GLM keeps its `zai:` overrides across
+  round trips; unauthenticated GLM descriptions tell the user to run
+  `--setup`) plus the controls of the **acting provider only** (PRD
+  `docs/provider-capability-gating-prd.md`): when `zai` acts, the full
+  oracle-parity GLM set — `model` (MoA picker first, then the plan's
+  models), `thought_level` (deep levels only on deep-reasoning models),
+  `api_endpoint`, `generation_profile`, `auxiliary_model`, `mixture_mode`;
+  when `lmstudio` acts, ONLY a truthful `model` picker fed by the adapter's
+  cached native `/api/v1/models` catalog (verified LM Studio schema: live
+  model ids, advertised context sizes; the pinned settings model always
+  present as the offline fallback; no GLM plans/thinking/generation/
+  auxiliary/mixture controls — the OpenAI-compatible wire carries none of
+  them). GLM-only selections made while another provider acts are rejected
+  fail-closed (never a silent cross-provider route). `permission_mode` is
+  always advertised. Selections are validated against that surface,
+  dispatched to the runtime `UpdateProviderConfiguration` command, and
+  applied to the engine's turn configuration (footer picks take effect on
+  the next turn; engine slash-command overrides layer on top). The
+  adapter's `context_window` follows the acting provider — GLM's frozen
+  per-model sizes for `zai`, the LM Studio model's advertised
+  `max_context_length` for `lmstudio` (conservative 8K floor when
+  unadvertised; never GLM's 1M for a local model) — so the Zed token
+  counter (`usage_update`) sizes against the selected model.
+  `tests/provider_selection.rs` is `integration-test-harness`-gated: the
+  synthetic boot token it uses exists only under that feature.
   The engine executes the 28-command oracle slash catalog in-process
   (ADR 0010 Tier C) with full TUI harness parity: catalog commands answer
   from the harness executor with no provider dispatch, `/max-iterations` and

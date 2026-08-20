@@ -1211,15 +1211,17 @@ pub async fn run_multi_provider(initial: &str) -> Result<(), ()> {
         .await
         .map_err(|_| ())?;
 
-    // LM Studio (local/LAN): registered always so the picker lists it.
-    let lmstudio = lmstudio_provider::factory_from_settings();
-    let lmstudio_superpowers = lmstudio_provider::factory_from_settings();
-    let lmstudio_credentials = lmstudio_provider::factory_from_settings();
+    // LM Studio (local/LAN): registered always so the picker lists it. One
+    // factory handle is cloned into all three roles so they share the
+    // native-catalog cache (PRD provider-capability-gating P5); the
+    // retained handle refreshes it at startup and feeds the truthful footer
+    // model list.
+    let lm_factory = lmstudio_provider::factory_from_settings();
     providers
         .register_with_all(
-            lmstudio,
-            lmstudio_superpowers,
-            lmstudio_credentials,
+            lm_factory.clone(),
+            lm_factory.clone(),
+            lm_factory.clone(),
             vesper_provider::PermissiveSuperpowerPolicy,
         )
         .await
@@ -1247,6 +1249,25 @@ pub async fn run_multi_provider(initial: &str) -> Result<(), ()> {
 
     let profile = ProviderProfile::for_identity(&initial_id)?;
     let qualified_model = runtime_model(&profile.model, &initial_id);
+
+    // PRD provider-capability-gating P5: when LM Studio is the acting
+    // provider at boot, refresh its native model catalog (5s best-effort)
+    // BEFORE building the footer surface so the model picker lists the
+    // server's real models. An unreachable server leaves the cache empty and
+    // the picker falls back to the pinned model — never invented entries.
+    if initial_id.as_str() == "lmstudio"
+        && let Err(error) = lm_factory.refresh_catalog().await
+    {
+        tracing::warn!(
+            target: "lmstudio",
+            %error,
+            "native model catalog unavailable; the local model picker falls back to the pinned model"
+        );
+    }
+    // Truthful footer model entries: live catalog models (advertised context
+    // included), with the pinned model guaranteed present.
+    let lm_controls = lm_control_models(&lm_factory);
+
     let session_reads = session_reads_from_environment(&qualified_model).map_err(|_| ())?;
     let session_writes = session_writes_from_environment().map_err(|_| ())?;
     let runtime = RuntimeSupervisor::new(
@@ -1288,10 +1309,19 @@ pub async fn run_multi_provider(initial: &str) -> Result<(), ()> {
     let adapter = AcpAdapter::new(
         runtime,
         AcpAdapterConfig {
-            context_window: controls::glm_context_window(&profile.provider_configuration),
+            // PRD provider-capability-gating: the context window follows the
+            // ACTING provider — GLM's frozen per-model size for `zai`, the
+            // LM Studio model's advertised `max_context_length` (with a
+            // conservative floor) for `lmstudio`. Never GLM's 1M for a local
+            // model.
+            context_window: controls::multi_provider_context_window(
+                &profile.provider_configuration,
+                &lm_controls,
+            ),
             controls: Some(controls::multi_provider_control_surface(
                 &profile.provider_configuration,
                 &registered,
+                &lm_controls,
             )),
         },
     );
@@ -1324,6 +1354,50 @@ pub async fn run_multi_provider(initial: &str) -> Result<(), ()> {
         adapter
     };
     adapter.run_stdio().await.map_err(|_| ())
+}
+
+/// Projects the LM Studio factory's cached native catalog into the footer
+/// `model` control entries (id, display name, advertised context window).
+/// The pinned model is always present (inserted first when the catalog does
+/// not contain it), so the picker never offers an invented entry and never
+/// comes up empty (PRD provider-capability-gating P5).
+fn lm_control_models(
+    factory: &lmstudio_provider::LmStudioFactory,
+) -> Vec<controls::LmStudioControlModel> {
+    use vesper_provider::SupportLevel;
+    let pinned = factory.pinned_model().to_owned();
+    let mut out: Vec<controls::LmStudioControlModel> = factory
+        .cached_snapshot()
+        .map(|snapshot| {
+            snapshot
+                .models
+                .into_iter()
+                .map(|descriptor| {
+                    let context_window = match &descriptor.capabilities.limits {
+                        SupportLevel::Native { details }
+                        | SupportLevel::Emulated { details, .. } => details.context_tokens,
+                        SupportLevel::Unsupported { .. } | SupportLevel::Unknown => None,
+                    };
+                    controls::LmStudioControlModel {
+                        id: descriptor.model.model_id.as_str().to_owned(),
+                        name: descriptor.display_name.as_str().to_owned(),
+                        context_window,
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    if !out.iter().any(|model| model.id == pinned) {
+        out.insert(
+            0,
+            controls::LmStudioControlModel {
+                id: pinned,
+                name: "Pinned local model".to_owned(),
+                context_window: None,
+            },
+        );
+    }
+    out
 }
 
 /// Boots the composition with an explicitly resolved provider token.
