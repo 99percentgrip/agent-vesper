@@ -313,6 +313,7 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
         reasoning: String::new(),
         live_response: String::new(),
         turn_started: None,
+        turn_tokens: None,
         last_report: Vec::new(),
         pending_images: Vec::new(),
         last_image: None,
@@ -632,6 +633,9 @@ struct TuiSession {
     live_response: String,
     /// Turn start time used for the in-memory completion report.
     turn_started: Option<std::time::Instant>,
+    /// Latest cumulative provider token usage for the running turn:
+    /// `(total, input, output)`. Reset to `None` between turns.
+    turn_tokens: Option<(u64, u64, u64)>,
     /// Last structured completion report rendered in the sidebar.
     last_report: Vec<String>,
     /// Images encoded and queued for the next direct-vision provider turn.
@@ -5874,6 +5878,19 @@ fn apply_agent_progress(progress: AgentProgressEvent, session: &mut TuiSession) 
             push_activity(
                 session,
                 format!("☑ TODO updated ({} task(s))", session.state.task_plan.len()),
+            );
+        }
+        AgentProgressEvent::UsageUpdated { usage } => {
+            // Live token counter: cumulative provider usage for the running
+            // turn, mirrored into the activity strip (the run summary
+            // repeats the totals on completion).
+            let total = usage.total.value.unwrap_or(0);
+            let input = usage.input.value.unwrap_or(0);
+            let output = usage.output.value.unwrap_or(0);
+            session.turn_tokens = Some((total, input, output));
+            push_activity(
+                session,
+                format!("Σ tokens {total} · in {input} · out {output}"),
             );
         }
     }
@@ -12740,6 +12757,7 @@ mod tests {
             reasoning: String::new(),
             live_response: String::new(),
             turn_started: None,
+            turn_tokens: None,
             last_report: Vec::new(),
             pending_images: Vec::new(),
             last_image: None,
@@ -12794,6 +12812,7 @@ mod tests {
             reasoning: String::new(),
             live_response: String::new(),
             turn_started: None,
+            turn_tokens: None,
             last_report: Vec::new(),
             pending_images: Vec::new(),
             last_image: None,
@@ -12846,6 +12865,7 @@ mod tests {
             reasoning: String::new(),
             live_response: String::new(),
             turn_started: None,
+            turn_tokens: None,
             last_report: Vec::new(),
             pending_images: Vec::new(),
             last_image: None,
@@ -14006,6 +14026,7 @@ mod tests {
             reasoning: String::new(),
             live_response: String::new(),
             turn_started: None,
+            turn_tokens: None,
             last_report: Vec::new(),
             pending_images: Vec::new(),
             last_image: None,

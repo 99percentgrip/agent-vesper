@@ -14,11 +14,11 @@ use tokio::{
 use vesper_domain::{
     BoundedString, ContentPart, ConversationMessage, CorrelationId, EndpointId, EventId,
     EventSchemaVersion, EventSequence, ExtensionMap, FinishOutcome, HarnessCommand,
-    HarnessCommandPayload, HarnessEvent, HarnessEventPayload, MessageId, MessageRole,
+    HarnessCommandPayload, HarnessEvent, HarnessEventPayload, MessageId, MessageRole, ProviderId,
     ProviderRequestId, QualifiedModelId, ReasoningRetention, Revision, RuntimeAuthenticationMethod,
     RuntimeCapability, SafeMessage, SessionId, SessionListFilter, SessionOperatingMode,
     SessionPermissionMode, SessionSummary, SystemInstruction, ToolChoiceIntent, TurnId,
-    WorkspaceRoot,
+    VersionedExtensionEnvelope, WorkspaceRoot,
 };
 use vesper_provider::{
     FallbackPolicy, ProviderConfiguration, ProviderRequest, ProviderStreamContract,
@@ -326,12 +326,32 @@ impl RuntimeSupervisor {
                     .await?;
                 Ok(RuntimeResponse::Accepted)
             }
+            HarnessCommandPayload::UpdateProviderConfiguration {
+                session_id,
+                configuration,
+                model,
+            } => {
+                // Session-scoped provider configuration updates are applied to
+                // the session snapshot so subsequent turns and ACP config
+                // options reflect the new model/plan. Runtime-wide updates
+                // (`session_id == None`) remain unsupported at this tier.
+                let Some(session_id) = session_id else {
+                    return Err(RuntimeError::UnsupportedCommand);
+                };
+                self.update_provider_configuration(
+                    &session_id,
+                    &configuration,
+                    model.as_ref(),
+                    command.expected_revision,
+                )
+                .await?;
+                Ok(RuntimeResponse::Accepted)
+            }
             HarnessCommandPayload::RequestRuntimeShutdown => {
                 self.shutdown(command.correlation_id).await?;
                 Ok(RuntimeResponse::Shutdown)
             }
             HarnessCommandPayload::ExecuteSlashCommand { .. }
-            | HarnessCommandPayload::UpdateProviderConfiguration { .. }
             | HarnessCommandPayload::UpdateRuntimeConfiguration { .. }
             | HarnessCommandPayload::ProvidePermissionDecision { .. } => {
                 Err(RuntimeError::UnsupportedCommand)
@@ -779,6 +799,31 @@ impl RuntimeSupervisor {
         receiver.await.map_err(|_| RuntimeError::ChannelClosed)?
     }
 
+    /// Applies a session-scoped provider configuration overlay, optionally
+    /// replacing the session's model. The overlay entries are validated by
+    /// the owning provider adapter (registry round-trip) before the session
+    /// state changes.
+    async fn update_provider_configuration(
+        &self,
+        session_id: &SessionId,
+        configuration: &VersionedExtensionEnvelope,
+        model: Option<&QualifiedModelId>,
+        expected_revision: Option<Revision>,
+    ) -> Result<(), RuntimeError> {
+        let handle = self.handle(session_id).await?;
+        let (sender, receiver) = oneshot::channel();
+        handle
+            .request(SessionCommand::UpdateProviderConfig {
+                overlay: configuration.values.clone(),
+                model: model.cloned(),
+                expected_revision,
+                response: sender,
+            })
+            .await
+            .map_err(|_| RuntimeError::SessionClosed(session_id.clone()))?;
+        receiver.await.map_err(|_| RuntimeError::ChannelClosed)?
+    }
+
     async fn update_roots(
         &self,
         session_id: &SessionId,
@@ -964,6 +1009,18 @@ enum SessionCommand {
         expected_revision: Option<Revision>,
         response: oneshot::Sender<Result<(), RuntimeError>>,
     },
+    /// Apply a session-scoped provider-configuration overlay (validated by the
+    /// owning provider adapter before it reaches this point). Each overlay
+    /// entry overwrites the matching key in the session's provider envelope;
+    /// keys are opaque to the runtime.
+    UpdateProviderConfig {
+        /// Opaque provider-owned overlay keys and values.
+        overlay: ExtensionMap,
+        /// Replacement acting model when the selection changed it.
+        model: Option<QualifiedModelId>,
+        expected_revision: Option<Revision>,
+        response: oneshot::Sender<Result<(), RuntimeError>>,
+    },
     AddRoots {
         roots: Vec<WorkspaceRoot>,
         response: oneshot::Sender<Result<(), RuntimeError>>,
@@ -1083,6 +1140,50 @@ impl SessionActor {
                     }
                     self.increment_revision();
                     Ok(())
+                };
+                let _ = response.send(result);
+            }
+            SessionCommand::UpdateProviderConfig {
+                overlay,
+                model,
+                expected_revision,
+                response,
+            } => {
+                // Session-scoped provider configuration updates are overlay
+                // merges onto the current envelope (composition boundaries
+                // send only the changed keys) and keep the session's
+                // provider identity fixed: a config option never migrates
+                // the session to another provider. A model overlay is
+                // applied only when the merged envelope still validates
+                // against the owning adapter, so the session model and the
+                // provider envelope can never drift apart.
+                let result = if expected_revision.is_some_and(|value| value != self.state.revision)
+                {
+                    Err(RuntimeError::RevisionConflict {
+                        expected: expected_revision.expect("checked"),
+                        actual: self.state.revision,
+                    })
+                } else {
+                    let merged =
+                        merge_provider_configuration(&self.state.provider_configuration, overlay);
+                    if merged.provider_id != self.state.provider_id {
+                        Err(RuntimeError::UnknownProvider)
+                    } else if let Ok(()) = validate_provider_configuration(
+                        &self.providers,
+                        &merged.provider_id,
+                        &merged,
+                    )
+                    .await
+                    {
+                        self.state.provider_configuration = merged;
+                        if let Some(model) = model {
+                            self.state.model = model;
+                        }
+                        self.increment_revision();
+                        Ok(())
+                    } else {
+                        Err(RuntimeError::Provider)
+                    }
                 };
                 let _ = response.send(result);
             }
@@ -1476,6 +1577,44 @@ async fn run_turn(input: TurnInput) -> Result<SessionTurnResult, RuntimeError> {
 /// session override, else the runtime default — so a `/thinking max` command
 /// changes only the effort, not unrelated reasoning policy. `None` clears the
 /// override so subsequent turns fall back to the runtime default.
+/// Merges a session-scoped provider overlay onto the current configuration.
+///
+/// Overlay keys overwrite matching keys in the current envelope; keys the
+/// provider did not contribute stay untouched. The merged provider identity
+/// must equal the session's provider (callers reject a mismatch) so a config
+/// option never migrates a session to another provider.
+fn merge_provider_configuration(
+    current: &ProviderConfiguration,
+    overlay: ExtensionMap,
+) -> ProviderConfiguration {
+    let mut merged = current.clone();
+    for (key, value) in overlay.iter() {
+        // Keys already held by an `ExtensionMap` passed namespace validation,
+        // so re-insertion of the same key cannot fail; a failure here would
+        // indicate a domain bug, and ignoring it keeps the merged envelope at
+        // worst missing one (already present) key.
+        let _ = merged.values.values.insert(key.to_owned(), value.clone());
+    }
+    merged
+}
+
+/// Validates a merged provider configuration by constructing a throwaway
+/// provider session from it. Mirrors `validate_provider_authentication`:
+/// the provider adapter owns all validation logic; the runtime never
+/// interprets provider keys.
+async fn validate_provider_configuration(
+    providers: &ProviderRegistry,
+    provider_id: &ProviderId,
+    configuration: &ProviderConfiguration,
+) -> Result<(), RuntimeError> {
+    let cancellation: Arc<dyn vesper_provider::CancellationSignal> =
+        Arc::new(RuntimeCancellation::new());
+    providers
+        .create_session(provider_id, configuration, cancellation)
+        .await
+        .map(|_| ())
+}
+
 fn build_reasoning_override(
     mode: Option<BoundedString<128>>,
     current: Option<ReasoningIntent>,

@@ -3,8 +3,8 @@ use std::collections::BTreeSet;
 
 use crate::{
     BoundedString, CommandId, CommandSchemaVersion, ContentPart, CorrelationId, ExtensionMap,
-    MessageId, PermissionOutcome, PermissionRequestId, Revision, SessionId, SessionOperatingMode,
-    SessionPermissionMode, VersionedExtensionEnvelope,
+    MessageId, PermissionOutcome, PermissionRequestId, QualifiedModelId, Revision, SessionId,
+    SessionOperatingMode, SessionPermissionMode, VersionedExtensionEnvelope,
 };
 
 /// Adapter-neutral runtime capability negotiated during initialization.
@@ -205,6 +205,9 @@ pub enum HarnessCommandPayload {
         session_id: Option<SessionId>,
         /// Provider-owned data.
         configuration: VersionedExtensionEnvelope,
+        /// New session model when the configuration change replaces it
+        /// (e.g. the ACP `model` picker). `None` keeps the current model.
+        model: Option<QualifiedModelId>,
     },
     /// Apply runtime-owned configuration.
     UpdateRuntimeConfiguration {

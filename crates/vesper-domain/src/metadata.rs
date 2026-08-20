@@ -9,7 +9,7 @@ const MAX_EXTENSION_BYTES: usize = 64 * 1024;
 const MAX_EXTENSION_DEPTH: usize = 16;
 
 /// Namespaced extension values that foundational contracts preserve but do not interpret.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ExtensionMap(BTreeMap<String, Value>);
 
 /// Bounded owner namespace for versioned opaque metadata.

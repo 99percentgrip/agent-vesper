@@ -49,6 +49,16 @@ provider turns, and acceptance of pure converted session state.
   command (ADR 0009). `drive_prompt` sources each turn's `ProviderRequest.reasoning`
   from the snapshot override, falling back to the runtime default when none is
   set. The mode label is opaque/provider-neutral at the command boundary.
+- Sessions also carry a **session-scoped provider configuration overlay**
+  mutated by the `UpdateProviderConfiguration` command: the caller sends a
+  fully merged provider envelope (plus an optional replacement model); the
+  actor merges the overlay onto the session's envelope, rejects any provider
+  identity change, validates the merged configuration through a throwaway
+  `ProviderRegistry::create_session` round-trip (the owning adapter is the
+  only validator — the runtime never interprets provider keys), then bumps
+  the session revision. Runtime-wide updates (`session_id == None`) remain
+  unsupported. This is the path ACP footer selectors (model picker, API
+  plan, generation profile) use to take effect on the next turn.
 
 ## Verification
 

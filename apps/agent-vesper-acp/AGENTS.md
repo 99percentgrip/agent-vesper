@@ -41,6 +41,19 @@ transport, stderr-only tracing, and orderly shutdown.
   dispatch gate or scenario behavior.
 - The default ACP composition injects `AcpHarnessEngine`, which owns bounded
   per-session conversation history and routes prompts through `AgentLoop`.
+  The composition also injects the provider-routed footer control surface
+  (`src/controls.rs`, derived from the frozen GLM oracle catalog): the
+  adapter advertises `model` (MoA picker first, then the plan's models),
+  `thought_level` (deep levels only on deep-reasoning models),
+  `api_endpoint`, `generation_profile`, `auxiliary_model`, `mixture_mode`,
+  and `permission_mode` as ACP `sessionConfigOptions` on
+  `session/new`/`load`/`resume`/`set`, and `session/set_config_option`
+  selections are validated against that surface, dispatched to the runtime
+  `UpdateProviderConfiguration` command, and applied to the engine's turn
+  configuration (footer picks take effect on the next turn; engine
+  slash-command overrides layer on top). The adapter's `context_window`
+  follows the frozen per-model context sizes so the Zed token counter
+  (`usage_update`) sizes against the selected model.
   The engine executes the 28-command oracle slash catalog in-process
   (ADR 0010 Tier C) with full TUI harness parity: catalog commands answer
   from the harness executor with no provider dispatch, `/max-iterations` and

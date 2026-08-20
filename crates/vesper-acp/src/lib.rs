@@ -3,12 +3,17 @@
 
 mod adapter;
 mod compat;
+pub mod controls;
 mod engine;
 mod mapping;
 mod vro_events;
 
 pub use adapter::{AcpAdapter, AcpAdapterConfig};
 pub use compat::{ACP_SDK_VERSION, ACP_WIRE_PROTOCOL, prompt_response_value};
+pub use controls::{
+    AcpControlCategory, AcpControlOption, AcpSessionControl, AppliedSelection,
+    SessionControlSurface,
+};
 pub use engine::{
     AcpEngineEvent, AcpEventSink, AcpPermissionDecision, AcpPermissionRequest,
     AcpPermissionRequester, AcpPromptEngine, AcpPromptFuture, AcpPromptRequest, AcpPromptResult,
