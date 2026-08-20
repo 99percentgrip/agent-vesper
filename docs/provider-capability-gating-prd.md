@@ -345,7 +345,9 @@ add regression tests so earlier guarantees cannot silently regress.
   shape shared with the TUI path).
 - AC: ACP lib+process suites green under `--all-features`; plain
   `cargo test -p agent-vesper-acp` green; workspace 1148/0; shipped as
-  v0.20.60.
+  v0.20.60 (HEAD `4460b86` — tag re-pointed after the c4b563a staging miss;
+  clippy `-D warnings` 0 errors; architecture 22 packages; 4/4 CI workflows
+  success on the shipped SHA; local binaries verified at `0.20.60`).
 
 ## 8. Test plan
 
