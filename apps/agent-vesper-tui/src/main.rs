@@ -308,6 +308,8 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
         trajectory_rx: None,
         agent_task: None,
         agent_running: false,
+        queued_prompt: None,
+        usage_rx: None,
         approval_rx,
         pending_approval: None,
         mobile_server: None,
@@ -606,6 +608,15 @@ struct TuiSession {
     /// `true` while an agent turn is in flight — drives the "WORKING..."
     /// status banner. Cleared as soon as the receiver yields (or aborts).
     agent_running: bool,
+    /// Mid-turn queued prompt (Claude Code parity): a free-text prompt or
+    /// workflow submitted while a turn is running is QUEUED here and fires
+    /// as soon as the turn completes — never silently dropped.
+    queued_prompt: Option<String>,
+    /// Receiver for an in-flight `/usage` quota query. Deliberately
+    /// SEPARATE from `agent_rx` so the query can answer while an agent
+    /// turn keeps streaming (it previously deferred until the turn ended
+    /// because it hijacked the agent channel).
+    usage_rx: Option<mpsc::UnboundedReceiver<AgentEvent>>,
     /// Host-side one-time approval requests emitted by the agent loop.
     approval_rx: mpsc::UnboundedReceiver<vesper_agent::PermissionRequest>,
     /// The request currently displayed to the driver, if any.
@@ -1042,6 +1053,27 @@ async fn drive_loop(
         // is non-blocking (`try_recv`); if the turn is still running we just
         // fall through and render the in-flight banner.
         drain_agent_event(session);
+        // Mid-turn queued prompt (Claude Code parity): a prompt submitted
+        // while a turn was running fires the moment that turn completes.
+        if !session.agent_running
+            && session.queued_prompt.is_some()
+            && session.state.phase() == PlanPhase::Normal
+            && let Some(text) = session.queued_prompt.take()
+        {
+            spawn_submitted_prompt(
+                agent,
+                agent_tools,
+                &approval_port_for_react,
+                vro,
+                surface,
+                cognition_bundle,
+                text,
+                session,
+            );
+        }
+        // `/usage` quota answer — independent channel, answers even while
+        // an agent turn keeps streaming.
+        drain_usage_event(session);
         // VRO-5.3 (PRD §11.6): drain any live ReAct trajectory entries from
         // the in-flight `execute_react` turn so the Conversation panel
         // renders the Action/Observation cycle inline as it happens.
@@ -1656,7 +1688,7 @@ async fn drive_loop(
                 {
                     session.state.status = Some(error);
                 }
-                if session.state.pending_provider_usage && !session.agent_running {
+                if session.state.pending_provider_usage {
                     session.state.pending_provider_usage = false;
                     if let Err(error) = spawn_usage_query(agent, session, surface) {
                         session.state.status = Some(error);
@@ -1687,120 +1719,30 @@ async fn drive_loop(
                 // prompt (only one prompt fires per Enter).
                 let workflow_prompt = session.state.pending_prompt.take();
                 let prompt_to_spawn = workflow_prompt.or(prompt_text);
-                if let Some(text) = prompt_to_spawn
-                    && !session.agent_running
+                // Mid-turn submit (Claude Code parity): while a turn is
+                // running, a free-text prompt or workflow is QUEUED and
+                // fires the moment the turn completes — the running work is
+                // never interrupted for it and the message is never
+                // silently dropped.
+                if session.agent_running
+                    && let Some(text) = prompt_to_spawn.as_ref()
+                {
+                    session.queued_prompt = Some(text.clone());
+                    session.state.status =
+                        Some("Queued — runs when the current turn finishes.".into());
+                } else if let Some(text) = prompt_to_spawn
                     && session.state.phase() == PlanPhase::Normal
                 {
-                    let root =
-                        std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-                    match vesper_agent::expand_references(&root, &text) {
-                        Ok(expanded) => {
-                            // Rebuild the hosted-tool projection for this turn
-                            // so `request_human_input` advertises the live
-                            // `/interview-limit` policy. The service Arc is the
-                            // same executor used by direct and ReAct paths.
-                            let turn_agent = Arc::new(
-                                agent.as_ref().clone().with_tool_registry(
-                                    ToolRegistry::parity_default()
-                                        .with_service(Arc::clone(agent_tools)),
-                                ),
-                            );
-                            // VRO-8 (PRD §8.1): compute the diagnostic
-                            // projection before the turn spawns so the
-                            // Reasoning Panel shows the chosen strategy /
-                            // budget / risk at the top while the turn runs.
-                            // Only populated when VRO is enabled (the
-                            // orchestrator's profile is the source of truth
-                            // for the strategy decision).
-                            session.reasoning_diagnostics = if vro.enabled() {
-                                Some(compute_reasoning_diagnostics(
-                                    vro,
-                                    &expanded,
-                                    session.state.reasoning_mode_override,
-                                ))
-                            } else {
-                                None
-                            };
-                            // VRO dispatch: if enabled and profiled as
-                            // non-Direct, use the VRO orchestrator instead
-                            // of the direct AgentLoop. Otherwise, the direct
-                            // path is unchanged.
-                            //
-                            // VRO-8 (PRD §8.1): honor a manual
-                            // `/reasoning set mode=<X>` override. `Off`
-                            // routes through the direct AgentLoop (matching
-                            // `ReasoningMode::Off`'s documented contract);
-                            // any other forced mode drives the VRO turn with
-                            // that mode's budget preset, regardless of what
-                            // the TaskProfiler would auto-recommend.
-                            //
-                            // VRO-5.3: when the profiled strategy is
-                            // `ToolGroundedReact` AND a real `LmStudioReactAgent`
-                            // bundle is available (LM Studio settings are
-                            // configured), route to `execute_react` (the live
-                            // tool-grounded ReAct loop) instead of the GVR
-                            // baseline. The decision is factored into
-                            // `react_dispatch_for` for unit-testability.
-                            let effective_mode = session.state.effective_reasoning_mode();
-                            let should_vro = vro.enabled()
-                                && vro.route(&expanded, effective_mode)
-                                    == vesper_agent::VroRoutingDecision::Orchestrate;
-                            if should_vro {
-                                let profile = vro.profile(&expanded);
-                                let react_available = !load_lmstudio_settings().is_empty();
-                                match react_dispatch_for(
-                                    profile.recommended_strategy,
-                                    react_available,
-                                ) {
-                                    ReactDispatchDecision::React => {
-                                        if let Err(error) = spawn_vro_react_turn(
-                                            vro,
-                                            &turn_agent,
-                                            agent_tools,
-                                            Arc::clone(&approval_port_for_react),
-                                            expanded,
-                                            session,
-                                        ) {
-                                            session.state.status = Some(error);
-                                        }
-                                    }
-                                    ReactDispatchDecision::Orchestrate => {
-                                        if let Err(error) =
-                                            spawn_vro_turn(vro, &turn_agent, expanded, session)
-                                        {
-                                            session.state.status = Some(error);
-                                        }
-                                    }
-                                    ReactDispatchDecision::Direct => {
-                                        // Profiled as Direct despite routing to
-                                        // Orchestrate — fall through to the
-                                        // direct AgentLoop path.
-                                        if let Err(error) = spawn_agent_turn(
-                                            &turn_agent,
-                                            expanded,
-                                            session,
-                                            surface,
-                                            cognition_bundle,
-                                        ) {
-                                            session.state.status = Some(error);
-                                        }
-                                    }
-                                }
-                            } else if let Err(error) = spawn_agent_turn(
-                                &turn_agent,
-                                expanded,
-                                session,
-                                surface,
-                                cognition_bundle,
-                            ) {
-                                session.state.status = Some(error);
-                            }
-                        }
-                        Err(error) => {
-                            session.state.status =
-                                Some(format!("context expansion failed: {error}"));
-                        }
-                    }
+                    spawn_submitted_prompt(
+                        agent,
+                        agent_tools,
+                        &approval_port_for_react,
+                        vro,
+                        surface,
+                        cognition_bundle,
+                        text,
+                        session,
+                    );
                 }
                 // Phase 8 (ADR 0011): drain any pending memory op against the
                 // durable vesper_memory stores. The op was stashed by
@@ -2196,7 +2138,9 @@ fn refresh_command_menu(
     registry: &CommandRegistry,
     surface: &ProviderSuperpowerSurface,
 ) {
-    if session.agent_running || !session.input.trim_start().starts_with('/') {
+    // Slash autocomplete stays available while a turn runs: informational
+    // commands answer mid-turn (ACP grace parity) and free text queues.
+    if !session.input.trim_start().starts_with('/') {
         session.command_matches.clear();
         session.command_selected = 0;
         return;
@@ -4453,6 +4397,118 @@ fn spawn_agent_turn(
     Ok(())
 }
 
+/// Spawns one submitted prompt/workflow turn (direct loop, VRO orchestrate,
+/// or tool-grounded ReAct). Shared by the Enter submit path and the
+/// mid-turn queued-prompt drain so both take the identical dispatch path.
+#[allow(clippy::too_many_arguments)] // single-call composition boundary
+fn spawn_submitted_prompt(
+    agent: &Arc<AgentLoop>,
+    agent_tools: &Arc<dyn vesper_agent::ToolService>,
+    approval_port_for_react: &Arc<dyn vesper_agent::PermissionPort>,
+    vro: &vesper_agent::VroOrchestrator,
+    surface: &ProviderSuperpowerSurface,
+    cognition_bundle: &CognitionBundle,
+    text: String,
+    session: &mut TuiSession,
+) {
+    let root = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    match vesper_agent::expand_references(&root, &text) {
+        Ok(expanded) => {
+            // Rebuild the hosted-tool projection for this turn
+            // so `request_human_input` advertises the live
+            // `/interview-limit` policy. The service Arc is the
+            // same executor used by direct and ReAct paths.
+            let turn_agent = Arc::new(agent.as_ref().clone().with_tool_registry(
+                ToolRegistry::parity_default().with_service(Arc::clone(agent_tools)),
+            ));
+            // VRO-8 (PRD §8.1): compute the diagnostic
+            // projection before the turn spawns so the
+            // Reasoning Panel shows the chosen strategy /
+            // budget / risk at the top while the turn runs.
+            // Only populated when VRO is enabled (the
+            // orchestrator's profile is the source of truth
+            // for the strategy decision).
+            session.reasoning_diagnostics = if vro.enabled() {
+                Some(compute_reasoning_diagnostics(
+                    vro,
+                    &expanded,
+                    session.state.reasoning_mode_override,
+                ))
+            } else {
+                None
+            };
+            // VRO dispatch: if enabled and profiled as
+            // non-Direct, use the VRO orchestrator instead
+            // of the direct AgentLoop. Otherwise, the direct
+            // path is unchanged.
+            //
+            // VRO-8 (PRD §8.1): honor a manual
+            // `/reasoning set mode=<X>` override. `Off`
+            // routes through the direct AgentLoop (matching
+            // `ReasoningMode::Off`'s documented contract);
+            // any other forced mode drives the VRO turn with
+            // that mode's budget preset, regardless of what
+            // the TaskProfiler would auto-recommend.
+            //
+            // VRO-5.3: when the profiled strategy is
+            // `ToolGroundedReact` AND a real `LmStudioReactAgent`
+            // bundle is available (LM Studio settings are
+            // configured), route to `execute_react` (the live
+            // tool-grounded ReAct loop) instead of the GVR
+            // baseline. The decision is factored into
+            // `react_dispatch_for` for unit-testability.
+            let effective_mode = session.state.effective_reasoning_mode();
+            let should_vro = vro.enabled()
+                && vro.route(&expanded, effective_mode)
+                    == vesper_agent::VroRoutingDecision::Orchestrate;
+            if should_vro {
+                let profile = vro.profile(&expanded);
+                let react_available = !load_lmstudio_settings().is_empty();
+                match react_dispatch_for(profile.recommended_strategy, react_available) {
+                    ReactDispatchDecision::React => {
+                        if let Err(error) = spawn_vro_react_turn(
+                            vro,
+                            &turn_agent,
+                            agent_tools,
+                            Arc::clone(approval_port_for_react),
+                            expanded,
+                            session,
+                        ) {
+                            session.state.status = Some(error);
+                        }
+                    }
+                    ReactDispatchDecision::Orchestrate => {
+                        if let Err(error) = spawn_vro_turn(vro, &turn_agent, expanded, session) {
+                            session.state.status = Some(error);
+                        }
+                    }
+                    ReactDispatchDecision::Direct => {
+                        // Profiled as Direct despite routing to
+                        // Orchestrate — fall through to the
+                        // direct AgentLoop path.
+                        if let Err(error) = spawn_agent_turn(
+                            &turn_agent,
+                            expanded,
+                            session,
+                            surface,
+                            cognition_bundle,
+                        ) {
+                            session.state.status = Some(error);
+                        }
+                    }
+                }
+            } else if let Err(error) =
+                spawn_agent_turn(&turn_agent, expanded, session, surface, cognition_bundle)
+            {
+                session.state.status = Some(error);
+            }
+        }
+        Err(error) => {
+            session.state.status = Some(format!("context expansion failed: {error}"));
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // VRO dispatch bridge: wires the VRO orchestrator into the live TUI.
 // ---------------------------------------------------------------------------
@@ -5440,8 +5496,10 @@ fn spawn_usage_query(
             .map_err(|error| format!("quota authentication failed: {error}"))?;
     let provider = vesper_provider_glm::GlmSession::from_config(glm_config, credential.secret)
         .map_err(|error| format!("quota session failed: {error}"))?;
+    // Own channel — NOT the agent channel: the quota query answers even
+    // while an agent turn keeps streaming (`/usage` mid-turn, ACP parity).
     let (tx, rx) = mpsc::unbounded_channel::<AgentEvent>();
-    let task = tokio::spawn(async move {
+    tokio::spawn(async move {
         let event = match provider
             .query_plan_usage(Arc::new(vesper_runtime::RuntimeCancellation::new()))
             .await
@@ -5455,12 +5513,30 @@ fn spawn_usage_query(
         };
         let _ = tx.send(event);
     });
-    session.agent_task = Some(task);
-    session.agent_rx = Some(rx);
-    session.agent_running = true;
-    session.turn_started = Some(std::time::Instant::now());
+    session.usage_rx = Some(rx);
     session.state.status = Some("Querying live Z.ai quota…".into());
     Ok(())
+}
+
+/// Drains a completed `/usage` quota query into the transcript. The query
+/// owns `usage_rx`, so it answers even while an agent turn keeps streaming.
+fn drain_usage_event(session: &mut TuiSession) {
+    let Some(rx) = session.usage_rx.as_mut() else {
+        return;
+    };
+    match rx.try_recv() {
+        Ok(AgentEvent::Usage { summary }) => {
+            session.usage_rx = None;
+            session.state.transcript.push(summary);
+            session.state.status = None;
+        }
+        Ok(_) => {}
+        Err(mpsc::error::TryRecvError::Empty) => {}
+        Err(mpsc::error::TryRecvError::Disconnected) => {
+            session.usage_rx = None;
+            session.state.status = Some("quota query aborted.".into());
+        }
+    }
 }
 
 fn format_glm_usage(usage: &vesper_provider_glm::GlmPlanUsage) -> String {
@@ -13172,6 +13248,8 @@ mod tests {
             agent_rx: None,
             trajectory_rx: None,
             agent_task: None,
+            queued_prompt: None,
+            usage_rx: None,
             agent_running: true,
             approval_rx: mpsc::unbounded_channel().1,
             pending_approval: None,
@@ -13228,6 +13306,8 @@ mod tests {
             agent_rx: None,
             trajectory_rx: None,
             agent_task: None,
+            queued_prompt: None,
+            usage_rx: None,
             agent_running: true,
             approval_rx: mpsc::unbounded_channel().1,
             pending_approval: None,
@@ -13282,6 +13362,8 @@ mod tests {
             agent_rx: None,
             trajectory_rx: None,
             agent_task: None,
+            queued_prompt: None,
+            usage_rx: None,
             agent_running: true,
             approval_rx: mpsc::unbounded_channel().1,
             pending_approval: None,
@@ -14444,6 +14526,8 @@ mod tests {
             agent_rx: None,
             trajectory_rx: None,
             agent_task: None,
+            queued_prompt: None,
+            usage_rx: None,
             agent_running: false,
             approval_rx,
             pending_approval: None,
@@ -15368,5 +15452,117 @@ mod tests {
             "ToolFinished failure must show ✗: {:?}",
             session.live_trajectory
         );
+    }
+
+    // ------------------------------------------------------------------
+    // Mid-turn slash + queued-prompt regression suite (ACP grace parity)
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn drain_usage_event_pushes_the_summary_and_clears_status() {
+        let mut session = fresh_tui_session_for_trajectory_tests();
+        let (tx, rx) = mpsc::unbounded_channel();
+        tx.send(AgentEvent::Usage {
+            summary: "zai quota — five_hour: used 12%".into(),
+        })
+        .unwrap();
+        session.usage_rx = Some(rx);
+        session.state.status = Some("Querying live Z.ai quota…".into());
+        drain_usage_event(&mut session);
+        assert!(
+            session
+                .state
+                .transcript
+                .iter()
+                .any(|line| line.contains("five_hour: used 12%"))
+        );
+        assert!(session.state.status.is_none(), "status must clear");
+        assert!(session.usage_rx.is_none(), "receiver consumed");
+    }
+
+    #[test]
+    fn drain_usage_event_reports_aborted_channel() {
+        let mut session = fresh_tui_session_for_trajectory_tests();
+        let (tx, rx) = mpsc::unbounded_channel::<AgentEvent>();
+        drop(tx);
+        session.usage_rx = Some(rx);
+        drain_usage_event(&mut session);
+        assert!(
+            session
+                .state
+                .status
+                .as_deref()
+                .is_some_and(|status| status.contains("aborted"))
+        );
+        assert!(session.usage_rx.is_none());
+    }
+
+    #[test]
+    fn usage_channel_is_separate_from_the_running_turn_channel() {
+        // The contract behind mid-turn /usage: the quota query owns its own
+        // receiver, so answering it can never replace or consume the
+        // running turn's event channel.
+        let mut session = fresh_tui_session_for_trajectory_tests();
+        let (turn_tx, turn_rx) = mpsc::unbounded_channel::<AgentEvent>();
+        session.agent_rx = Some(turn_rx);
+        session.agent_running = true;
+        let (usage_tx, usage_rx) = mpsc::unbounded_channel::<AgentEvent>();
+        session.usage_rx = Some(usage_rx);
+        // Deliver on BOTH channels: each must stay independently readable.
+        turn_tx
+            .send(AgentEvent::Usage {
+                summary: "turn-still-streaming".into(),
+            })
+            .unwrap();
+        usage_tx
+            .send(AgentEvent::Usage {
+                summary: "quota-answer".into(),
+            })
+            .unwrap();
+        drain_usage_event(&mut session);
+        assert!(
+            session
+                .state
+                .transcript
+                .iter()
+                .any(|line| line.contains("quota-answer"))
+        );
+        assert!(
+            session.agent_running,
+            "the quota answer must not end the turn"
+        );
+        let turn_event = session.agent_rx.as_mut().unwrap().try_recv();
+        assert!(
+            turn_event.is_ok(),
+            "the turn channel must remain the turn's own: {turn_event:?}"
+        );
+    }
+
+    #[test]
+    fn command_palette_stays_available_mid_turn() {
+        // Informational slash commands answer while a turn runs, so the
+        // autocomplete must not vanish mid-turn either.
+        let mut session = fresh_tui_session_for_trajectory_tests();
+        let registry = CommandRegistry::stage_11b();
+        let surface = palette_surface();
+        session.agent_running = true;
+        session.input = "/sta".into();
+        refresh_command_menu(&mut session, &registry, &surface);
+        assert!(
+            session
+                .command_matches
+                .iter()
+                .any(|(candidate, _)| candidate == "/status"),
+            "palette must offer /status mid-turn: {:?}",
+            session.command_matches
+        );
+    }
+
+    #[test]
+    fn queued_prompt_slot_holds_the_mid_turn_submit() {
+        let mut session = fresh_tui_session_for_trajectory_tests();
+        assert!(session.queued_prompt.is_none());
+        session.queued_prompt = Some("follow-up question".into());
+        assert_eq!(session.queued_prompt.as_deref(), Some("follow-up question"));
     }
 }

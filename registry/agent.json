@@ -1,7 +1,7 @@
 {
   "id": "agent-vesper",
   "name": "Agent Vesper",
-  "version": "0.20.62",
+  "version": "0.20.63",
   "description": "Agent Vesper — a Rust-native ACP coding-agent runtime featuring the Vesper Reasoning Orchestrator (VRO), transactional sessions, hosted tools, provider-routed authentication, and a mem0-equivalent cognitive memory engine. The release bundle includes a native TUI with visible global/project memory routing, explicit scope overrides, a two-scope audit view, and verified promote/demote lifecycle controls. The ACP v1 stdio server currently ships the real Z.ai GLM adapter on a provider-neutral architecture, installable in Zed and other ACP-compatible editors.",
   "repository": "https://github.com/99percentgrip/agent-vesper",
   "website": "https://github.com/99percentgrip/agent-vesper",
@@ -12,23 +12,23 @@
   "distribution": {
     "binary": {
       "darwin-x86_64": {
-        "archive": "https://github.com/99percentgrip/agent-vesper/releases/download/v0.20.62/agent-vesper-acp-darwin-x86_64.tar.gz",
+        "archive": "https://github.com/99percentgrip/agent-vesper/releases/download/v0.20.63/agent-vesper-acp-darwin-x86_64.tar.gz",
         "cmd": "./agent-vesper-acp/agent-vesper-acp"
       },
       "darwin-aarch64": {
-        "archive": "https://github.com/99percentgrip/agent-vesper/releases/download/v0.20.62/agent-vesper-acp-darwin-aarch64.tar.gz",
+        "archive": "https://github.com/99percentgrip/agent-vesper/releases/download/v0.20.63/agent-vesper-acp-darwin-aarch64.tar.gz",
         "cmd": "./agent-vesper-acp/agent-vesper-acp"
       },
       "linux-x86_64": {
-        "archive": "https://github.com/99percentgrip/agent-vesper/releases/download/v0.20.62/agent-vesper-acp-linux-x86_64.tar.gz",
+        "archive": "https://github.com/99percentgrip/agent-vesper/releases/download/v0.20.63/agent-vesper-acp-linux-x86_64.tar.gz",
         "cmd": "./agent-vesper-acp/agent-vesper-acp"
       },
       "linux-aarch64": {
-        "archive": "https://github.com/99percentgrip/agent-vesper/releases/download/v0.20.62/agent-vesper-acp-linux-aarch64.tar.gz",
+        "archive": "https://github.com/99percentgrip/agent-vesper/releases/download/v0.20.63/agent-vesper-acp-linux-aarch64.tar.gz",
         "cmd": "./agent-vesper-acp/agent-vesper-acp"
       },
       "windows-x86_64": {
-        "archive": "https://github.com/99percentgrip/agent-vesper/releases/download/v0.20.62/agent-vesper-acp-windows-x86_64.zip",
+        "archive": "https://github.com/99percentgrip/agent-vesper/releases/download/v0.20.63/agent-vesper-acp-windows-x86_64.zip",
         "cmd": "./agent-vesper-acp/agent-vesper-acp.exe"
       }
     }

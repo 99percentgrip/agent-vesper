@@ -651,6 +651,18 @@ business logic.
   PRD §8.1 mode list is authoritative — `parse_reasoning_mode` rejects
   every invented mode with a usage error listing all six.
 
+## Mid-Turn Submits (queued prompts + instant slash answers)
+
+While an agent turn is running (`agent_running`): informational slash
+commands keep answering instantly (dispatch is pure transcript work);
+`/usage` runs on its OWN channel (`usage_rx`, drained by
+`drain_usage_event`) instead of hijacking the agent channel, so the quota
+answer lands mid-turn; the slash-command palette stays visible; and a
+free-text prompt or workflow submit is QUEUED (`queued_prompt`) and fired
+by the main loop through the shared `spawn_submitted_prompt` path the
+moment the turn completes — never silently dropped, never interrupting the
+work (ACP mid-turn-slash-grace parity; see `apps/agent-vesper-acp/AGENTS.md`).
+
 ## Verification
 
 - Run `cargo test -p agent-vesper-tui --lib`.
