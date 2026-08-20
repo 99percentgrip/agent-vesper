@@ -26,24 +26,35 @@ transport, stderr-only tracing, and orderly shutdown.
   `AGENT_VESPER_SESSION_ROOT`) and must be absolute with an existing parent;
   `AGENT_VESPER_SESSION_WRITE_MAX_BYTES` bounds the record size.
 - Provider selection is a composition-boundary concern resolved before the
-  runtime is constructed. Production accepts the installed `glm`/`zai`
-  adapter. The deterministic synthetic adapter is reachable only through the
+  runtime is constructed. Production registers BOTH real adapters (Z.ai GLM
+  + LM Studio) in every boot so the ACP `provider` footer picker (TUI
+  `/provider` parity) can switch between them mid-session. The initial
+  acting provider comes from the `--provider` flag or
+  `AGENT_VESPER_PROVIDER` (accepted tokens: `glm`/`zai`, `lmstudio`). The
+  deterministic synthetic adapter is reachable only through the
   `integration-test-harness` feature and must never be advertised as a real
   provider or model. The runtime stays provider-neutral; provider-specific
   configuration, credential overrides, and endpoint identity apply only to
   the selected adapter.
 - The default endpoint assigned to freshly created sessions is injected by the
   composition boundary so persisted records carry a stable endpoint identity:
-  `zai-coding` for the GLM adapter and `synthetic` for the synthetic adapter.
+  `zai-coding` for the GLM adapter, `lmstudio-local` for the LM Studio
+  adapter, and `synthetic` for the synthetic adapter.
   The runtime stays provider-neutral.
 - The non-default `integration-test-harness` feature may compose generic
   synchronization wrappers, but the default release binary must not contain a
   dispatch gate or scenario behavior.
 - The default ACP composition injects `AcpHarnessEngine`, which owns bounded
   per-session conversation history and routes prompts through `AgentLoop`.
-  The composition also injects the provider-routed footer control surface
+  The composition also injects the multi-provider footer control surface
   (`src/controls.rs`, derived from the frozen GLM oracle catalog): the
-  adapter advertises `model` (MoA picker first, then the plan's models),
+  adapter advertises `provider` (TUI `/provider` parity — lists every
+  registered adapter with live credential status in each description;
+  switching stamps `vesper:active-provider` into the session envelope and
+  swaps the acting `QualifiedModelId` so the next turn dispatches to the
+  selected adapter; GLM keeps its `zai:` overrides across round trips;
+  unauthenticated GLM descriptions tell the user to run `--setup`),
+  `model` (MoA picker first, then the plan's models),
   `thought_level` (deep levels only on deep-reasoning models),
   `api_endpoint`, `generation_profile`, `auxiliary_model`, `mixture_mode`,
   and `permission_mode` as ACP `sessionConfigOptions` on

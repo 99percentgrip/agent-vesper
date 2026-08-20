@@ -67,6 +67,8 @@ dependencies = [
 name = "agent-vesper-acp"
 version = "0.20.57"
 dependencies = [
+ "futures-util",
+ "reqwest",
  "serde_json",
  "sha2 0.11.0",
  "tokio",

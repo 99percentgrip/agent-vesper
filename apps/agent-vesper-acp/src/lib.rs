@@ -4,6 +4,7 @@
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 mod controls;
+mod lmstudio_provider;
 
 use tokio::sync::Mutex;
 use vesper_acp::{
@@ -272,6 +273,13 @@ impl AcpHarnessEngine {
             }
         }
         if let Some(session_model) = request.model.clone() {
+            // Provider switch (ACP `provider` footer picker): the session
+            // model carries the acting provider id after a provider switch;
+            // sync the loop's dispatch identity so the next turn routes to
+            // the selected adapter (TUI `/provider` parity). The model
+            // envelope follows the same identity so the adapter sees a
+            // consistent (provider, model) pair.
+            config.provider_id = session_model.provider_id.clone();
             config.model = session_model;
         }
         {
@@ -949,6 +957,15 @@ impl ProviderProfile {
                     endpoint: EndpointId::new("synthetic").map_err(|_| ())?,
                 });
             }
+            if provider.as_str() == "lmstudio" {
+                // LM Studio: local/LAN OpenAI-compatible server. The optional
+                // API key comes from LMSTUDIO_API_KEY; no credential gate.
+                return Ok(Self {
+                    provider_configuration: crate::lmstudio_provider::LmStudioFactory::default_configuration(),
+                    model: ModelId::new("local-model").map_err(|_| ())?,
+                    endpoint: EndpointId::new("lmstudio-local").map_err(|_| ())?,
+                });
+            }
             Err(())
         }
     }
@@ -1162,22 +1179,170 @@ const fn home_variable() -> &'static str {
 
 /// Runs the normal release composition with the provider selected by
 /// `AGENT_VESPER_PROVIDER` (default `glm`).
+///
+/// Both production adapters (Z.ai GLM + LM Studio) are registered so the
+/// ACP `provider` footer picker (TUI `/provider` parity) can switch between
+/// them mid-session. The selected provider is the initial acting provider.
 pub async fn run() -> Result<(), ()> {
-    boot(&selected_provider_token()).await
+    run_multi_provider(&selected_provider_token()).await
+}
+
+/// Boots the multi-provider composition: registers every production adapter,
+/// then resolves the initial acting provider from the token.
+///
+/// TUI parity: the provider registry matches the TUI's
+/// `register_default_providers` surface (GLM with full superpowers/credentials/
+/// policy + LM Studio as the local/LAN adapter), and the ACP footer exposes a
+/// `provider` dropdown with per-provider auth status descriptions. Switching
+/// providers takes effect on the next turn; unauthenticated providers are
+/// still selectable but each turn fails fast with the credential error until
+/// the user authenticates (`--setup` for GLM, `LMSTUDIO_API_KEY` is optional).
+pub async fn run_multi_provider(initial: &str) -> Result<(), ()> {
+    let providers = Arc::new(ProviderRegistry::new());
+
+    // Z.ai GLM (production default): full superpowers + credentials + policy.
+    let glm = GlmFactory::default();
+    let glm_superpowers = GlmFactory::default();
+    let glm_credentials = GlmFactory::default();
+    let glm_policy = vesper_provider_glm::GlmSuperpowerPolicy;
+    providers
+        .register_with_all(glm, glm_superpowers, glm_credentials, glm_policy)
+        .await
+        .map_err(|_| ())?;
+
+    // LM Studio (local/LAN): registered always so the picker lists it.
+    let lmstudio = lmstudio_provider::factory_from_settings();
+    let lmstudio_superpowers = lmstudio_provider::factory_from_settings();
+    let lmstudio_credentials = lmstudio_provider::factory_from_settings();
+    providers
+        .register_with_all(
+            lmstudio,
+            lmstudio_superpowers,
+            lmstudio_credentials,
+            vesper_provider::PermissiveSuperpowerPolicy,
+        )
+        .await
+        .map_err(|_| ())?;
+
+    // Feature-gated synthetic reference adapter (test-only).
+    #[cfg(feature = "integration-test-harness")]
+    {
+        let synthetic = SyntheticFactory::default();
+        let synthetic_superpowers = SyntheticFactory::default();
+        providers
+            .register_with_superpowers(synthetic, synthetic_superpowers)
+            .await
+            .map_err(|_| ())?;
+    }
+
+    // Resolve the initial acting provider (fail closed on unknown tokens).
+    let initial_id = match initial {
+        "glm" | "zai" => ProviderId::new("zai").map_err(|_| ())?,
+        "lmstudio" => ProviderId::new("lmstudio").map_err(|_| ())?,
+        #[cfg(feature = "integration-test-harness")]
+        "synthetic" => vesper_provider_synthetic::provider_id(),
+        _ => return Err(()),
+    };
+
+    let profile = ProviderProfile::for_identity(&initial_id)?;
+    let qualified_model = runtime_model(&profile.model, &initial_id);
+    let session_reads = session_reads_from_environment(&qualified_model).map_err(|_| ())?;
+    let session_writes = session_writes_from_environment().map_err(|_| ())?;
+    let runtime = RuntimeSupervisor::new(
+        Arc::clone(&providers),
+        RuntimeDefaults {
+            provider_configuration: profile.provider_configuration.clone(),
+            model: qualified_model.clone(),
+            endpoint: profile.endpoint,
+            system_instructions: Vec::new(),
+            reasoning: None,
+            sampling: None,
+            maximum_output_tokens: None,
+        },
+    );
+    let runtime = match session_reads {
+        Some(reads) => runtime.with_session_reads(Arc::new(reads)),
+        None => runtime,
+    };
+    let runtime = match session_writes {
+        Some(writes) => runtime.with_session_writes(writes),
+        None => runtime,
+    };
+    let runtime = Arc::new(runtime);
+
+    // Build the picker's provider list with live auth status (TUI parity:
+    // the TUI auth hub gates missing credentials; the ACP picker surfaces
+    // the status in descriptions so the user knows to run --setup).
+    let mut registered: Vec<(String, String, bool)> = Vec::new();
+    for id in providers.provider_ids().await {
+        let display = providers
+            .descriptor(&id)
+            .await
+            .map(|d| d.display_name.as_str().to_owned())
+            .unwrap_or_else(|| id.as_str().to_owned());
+        let authenticated = providers
+            .credential_present(&id)
+            .await
+            .unwrap_or(false);
+        registered.push((id.as_str().to_owned(), display, authenticated));
+    }
+
+    let adapter = AcpAdapter::new(
+        runtime,
+        AcpAdapterConfig {
+            context_window: controls::glm_context_window(&profile.provider_configuration),
+            controls: Some(controls::multi_provider_control_surface(
+                &profile.provider_configuration,
+                &registered,
+            )),
+        },
+    );
+    let adapter = if full_harness_enabled() {
+        let agent_config = vesper_agent::AgentLoopConfig {
+            provider_id: initial_id.clone(),
+            provider_configuration: profile.provider_configuration.clone(),
+            model: qualified_model,
+            system_instructions: Vec::new(),
+            workspace_roots: Vec::new(),
+            max_tool_iterations: vesper_agent::DEFAULT_MAX_TOOL_ITERATIONS,
+        };
+        let worker_factory = Arc::new(WorkerFactory::new(
+            Arc::clone(&providers),
+            agent_config.clone(),
+        ));
+        let hosted = Arc::new(HarnessToolService::new(
+            Arc::new(MemoryStores::open_default()),
+            checkpoint_root_path(),
+            mcp_root_path(),
+            Some(worker_factory),
+        ));
+        let engine = Arc::new(AcpHarnessEngine::new(
+            Arc::clone(&providers),
+            agent_config,
+            hosted,
+        ));
+        adapter.with_prompt_engine(engine)
+    } else {
+        adapter
+    };
+    adapter.run_stdio().await.map_err(|_| ())
 }
 
 /// Boots the composition with an explicitly resolved provider token.
 ///
 /// The composition boundary keeps the runtime provider-neutral: it maps a
-/// provider token to the matching concrete factory. `glm`/`zai` boot the Z.ai
-/// GLM adapter (the production default). Under `integration-test-harness` only,
-/// `synthetic` boots the deterministic reference adapter. Unknown production
-/// tokens fail closed with a startup error rather than an ambiguous default.
+/// provider token to the initial acting factory. `glm`/`zai` boot the Z.ai
+/// GLM adapter (the production default), `lmstudio` boots the local/LAN
+/// adapter. Under `integration-test-harness` only, `synthetic` boots the
+/// deterministic reference adapter. Unknown production tokens fail closed
+/// with a startup error rather than an ambiguous default. Every production
+/// boot registers ALL adapters so the ACP `provider` picker can switch
+/// between them mid-session (TUI `/provider` parity).
 pub async fn boot(provider: &str) -> Result<(), ()> {
     match provider {
-        "glm" | "zai" => run_with_factory(GlmFactory::default()).await,
+        "glm" | "zai" | "lmstudio" => run_multi_provider(provider).await,
         #[cfg(feature = "integration-test-harness")]
-        "synthetic" => run_with_factory(SyntheticFactory::default()).await,
+        "synthetic" => run_multi_provider(provider).await,
         _ => Err(()),
     }
 }

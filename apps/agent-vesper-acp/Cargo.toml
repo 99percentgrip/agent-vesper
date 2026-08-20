@@ -11,6 +11,8 @@ publish = false
 integration-test-harness = ["dep:vesper-provider-synthetic"]
 
 [dependencies]
+futures-util.workspace = true
+reqwest.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true

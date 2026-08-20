@@ -108,12 +108,14 @@ fn footer_controls_are_advertised_and_settable_end_to_end() {
     let session_response = response_for(&line_receiver, 2, &mut Vec::new());
     let session = session_response["result"]["sessionId"].as_str().unwrap();
 
-    // The full footer surface is advertised on session/new: model picker
-    // first (oracle parity), then reasoning, plan, generation style,
-    // auxiliary model, MoA, and permissions.
+    // The full footer surface is advertised on session/new: provider picker
+    // first (TUI /provider parity), then model picker (oracle parity),
+    // reasoning, plan, generation style, auxiliary model, MoA, and
+    // permissions.
     assert_eq!(
         option_ids(&session_response),
         [
+            "provider",
             "model",
             "thought_level",
             "api_endpoint",
@@ -122,6 +124,15 @@ fn footer_controls_are_advertised_and_settable_end_to_end() {
             "mixture_mode",
             "permission_mode",
         ]
+    );
+    let provider = option(&session_response, "provider");
+    assert_eq!(
+        provider["currentValue"], "zai",
+        "the initial acting provider is zai"
+    );
+    assert!(
+        option_values(&session_response, "provider").contains(&"lmstudio".to_owned()),
+        "LM Studio is registered and selectable from the provider picker"
     );
     let model = option(&session_response, "model");
     assert_eq!(model["category"], "model");
@@ -212,6 +223,59 @@ fn footer_controls_are_advertised_and_settable_end_to_end() {
     assert_eq!(
         rejected["error"]["data"]["reason"],
         "unsupported-session-config-value"
+    );
+
+    // Provider picker (TUI /provider parity): switching to lmstudio changes
+    // the advertised provider current value; switching back to zai restores
+    // the GLM identity with the preserved model override (glm-5.2 set above).
+    send(
+        &mut stdin,
+        json!({
+            "jsonrpc":"2.0","id":7,"method":"session/set_config_option",
+            "params":{"sessionId":session,"configId":"provider","value":"lmstudio"}
+        }),
+    );
+    let provider_set = response_for(&line_receiver, 7, &mut Vec::new());
+    assert!(
+        provider_set.get("error").is_none(),
+        "provider switch failed: {provider_set}"
+    );
+    assert_eq!(
+        option(&provider_set, "provider")["currentValue"],
+        "lmstudio",
+        "the advertised acting provider follows the footer selection"
+    );
+    send(
+        &mut stdin,
+        json!({
+            "jsonrpc":"2.0","id":8,"method":"session/set_config_option",
+            "params":{"sessionId":session,"configId":"provider","value":"zai"}
+        }),
+    );
+    let provider_back = response_for(&line_receiver, 8, &mut Vec::new());
+    assert!(
+        provider_back.get("error").is_none(),
+        "provider switch back failed: {provider_back}"
+    );
+    assert_eq!(option(&provider_back, "provider")["currentValue"], "zai");
+    assert_eq!(
+        option(&provider_back, "model")["currentValue"],
+        "glm-5.2",
+        "the pre-switch model override survives the provider round trip"
+    );
+
+    // Unadvertised provider ids are rejected fail-closed.
+    send(
+        &mut stdin,
+        json!({
+            "jsonrpc":"2.0","id":9,"method":"session/set_config_option",
+            "params":{"sessionId":session,"configId":"provider","value":"not-a-provider"}
+        }),
+    );
+    let provider_rejected = response_for(&line_receiver, 9, &mut Vec::new());
+    assert!(
+        provider_rejected.get("error").is_some(),
+        "invented provider must be rejected: {provider_rejected}"
     );
 
     drop(stdin);
