@@ -73,13 +73,24 @@ Add to Zed's `settings.json`:
   "agent_servers": {
     "agent-vesper": {
       "command": "agent-vesper-acp",
-      "env": { "ZAI_API_KEY": "<your-key>" }
+      "env": {
+        "ZAI_API_KEY": "<your-key>",
+        "AGENT_VESPER_ENABLE_SESSION_READS": "1",
+        "AGENT_VESPER_ENABLE_SESSION_WRITES": "1"
+      }
     }
   }
 }
 ```
 
 Restart Zed → Agent Panel → **Agent Vesper**.
+
+Both session flags are required for durable editor chats: writes transactionally
+save completed turns, while reads let a new ACP process list, load, and resume
+them after Zed restarts. On Linux the default store is
+`$XDG_DATA_HOME/agent-vesper/sessions/` (normally
+`~/.local/share/agent-vesper/sessions/`). Checkpoints remain a separate,
+explicit opt-in and are not required for chat persistence.
 
 The chat footer carries the full multi-provider selector surface (advertised via ACP `sessionConfigOptions` on `session/new`/`load`/`resume`/`set`): **Provider** (TUI `/provider` parity — lists every registered adapter with live credential status; Z.ai GLM + LM Studio are both registered in every boot; switching swaps the acting provider for the next turn, GLM keeps its overrides across round trips, and unauthenticated GLM descriptions tell the user to run `--setup`) plus the controls of the **acting provider only** (dynamic capability gating, `docs/provider-capability-gating-prd.md`): when Z.ai GLM acts — **Model** (Mixture-of-Agents picker first, then the plan's models), **Reasoning** (Off/Standard, Deep·High/Deep·Max only on deep-reasoning models), **API Plan**, **Generation Style**, **Auxiliary Model**, **Mixture of Agents**; when LM Studio acts — ONLY a truthful **Model** picker fed by the server's live `/api/v1/models` catalog (verified LM Studio schema: live model ids, advertised context sizes; the pinned settings model always present as the offline fallback). **Permissions** (ask/bypass/read) is always advertised. GLM-only selections made while LM Studio acts are rejected fail-closed (never a silent cross-provider route). Every selection is validated against the provider's own surface (invented values are rejected fail-closed) and takes effect on the very next turn; the **token counter** follows the acting provider — GLM's frozen per-model context windows, the LM Studio model's advertised `max_context_length` (conservative floor when unadvertised, never GLM's 1M) — through live `usage_update` notifications.
 
