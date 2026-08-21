@@ -20,6 +20,70 @@ use support::{
 };
 
 #[test]
+fn full_harness_streams_ordered_content_once_before_end_turn() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let request = read_http_request(&mut stream);
+        assert!(request.contains("ordered-production-stream"));
+        let body = concat!(
+            "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"think-1 \"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"think-2\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\"alpha \"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\"beta \"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\"gamma\"},\"finish_reason\":\"stop\"}],",
+            "\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":3,\"total_tokens\":5}}\n\n",
+            "data: [DONE]\n\n"
+        );
+        write_sse(&mut stream, body);
+    });
+
+    let cognition = tempfile::tempdir().unwrap();
+    let global_cognition = tempfile::tempdir().unwrap();
+    std::fs::write(
+        cognition.path().join("embedding.json"),
+        r#"{"source":"local"}"#,
+    )
+    .unwrap();
+    let mut process = ProcessHarness::spawn_with_environment(
+        address,
+        [
+            ("AGENT_VESPER_FULL_HARNESS", "1".to_owned()),
+            ("AGENT_VESPER_VRO_ENABLED", "0".to_owned()),
+            (
+                "AGENT_VESPER_COGNITION_ROOT",
+                cognition.path().display().to_string(),
+            ),
+            (
+                "AGENT_VESPER_GLOBAL_COGNITION_ROOT",
+                global_cognition.path().display().to_string(),
+            ),
+        ],
+    );
+    let session = process.initialize_and_new_session();
+    process.prompt(
+        9,
+        &session,
+        "ordered-production-stream",
+        "ordered-production-message",
+    );
+    let response = process.response(9);
+    assert_eq!(response["result"]["stopReason"], "end_turn");
+    assert_eq!(
+        update_texts(process.transcript(), "agent_thought_chunk"),
+        ["think-1 ", "think-2"]
+    );
+    assert_eq!(
+        update_texts(process.transcript(), "agent_message_chunk"),
+        ["alpha ", "beta ", "gamma"]
+    );
+    assert_eq!(terminal_count(process.transcript(), 9), 1);
+    process.finish();
+    server.join().unwrap();
+}
+
+#[test]
 fn retry_before_visible_output_uses_two_requests_and_one_terminal() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();

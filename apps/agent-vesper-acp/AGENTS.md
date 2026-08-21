@@ -187,6 +187,9 @@ loopback provider).
 ## Verification
 
 - Run process transcript tests with isolated environment roots.
+- Run the full-harness ordered-stream regression; it must preserve reasoning
+  and content delta order, emit final content exactly once, and accept every
+  update at the physical writer before `end_turn`.
 - Run `process_blockers` with `--all-features`; the guarded test driver is
   unavailable otherwise.
 - Verify stdout purity and stderr secret-canary absence.

@@ -3,7 +3,7 @@ use std::{
     path::PathBuf,
     sync::{
         Arc, Mutex as StdMutex,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::Instant,
 };
@@ -868,6 +868,12 @@ async fn handle_request(
                 let request_session = request.session_id.clone();
                 let engine_context_window = context_window;
                 prompts.spawn(async move {
+                    let event_sink = Arc::new(AcpEngineEventSink::new(
+                        connection.clone(),
+                        request_session.clone(),
+                        output_flow.clone(),
+                        engine_context_window,
+                    ));
                     let result = engine
                         .run(AcpPromptRequest {
                             session_id: engine_session.clone(),
@@ -879,16 +885,12 @@ async fn handle_request(
                             provider_configuration,
                             model: engine_model,
                             permission_requester: Some(Arc::clone(&permission_requester)),
-                            event_sink: Some(Arc::new(AcpEngineEventSink {
-                                connection: connection.clone(),
-                                session_id: request_session.clone(),
-                                output_flow: output_flow.clone(),
-                                context_window: engine_context_window,
-                            })),
+                            event_sink: Some(event_sink.clone()),
                         })
                         .await;
                     match result {
                         Ok(result) => {
+                            event_sink.drain().await?;
                             engine_active_task.lock().await.remove(&engine_session);
                             if result.cancelled {
                                 return responder.respond(prompt_response_value(
@@ -934,16 +936,18 @@ async fn handle_request(
                                     return responder.respond_with_error(sdk_runtime_error(error));
                                 }
                             }
-                            let chunk = ContentChunk::new(ContentBlock::Text(TextContent::new(
-                                result.text.as_str(),
-                            )));
-                            connection
-                                .send_notification(SessionNotification::new(
-                                    request_session,
-                                    SessionUpdate::AgentMessageChunk(chunk),
-                                ))
-                                .map_err(agent_client_protocol::util::internal_error)?;
-                            output_flow.wait_until_writer_accepts().await?;
+                            if !event_sink.streamed_content() {
+                                let chunk = ContentChunk::new(ContentBlock::Text(
+                                    TextContent::new(result.text.as_str()),
+                                ));
+                                connection
+                                    .send_notification(SessionNotification::new(
+                                        request_session,
+                                        SessionUpdate::AgentMessageChunk(chunk),
+                                    ))
+                                    .map_err(agent_client_protocol::util::internal_error)?;
+                                output_flow.wait_until_writer_accepts().await?;
+                            }
                             responder.respond(prompt_response_value(
                                 agent_client_protocol::schema::v1::StopReason::EndTurn,
                                 &response_message_id,
@@ -1251,6 +1255,8 @@ struct AcpEngineEventSink {
     session_id: agent_client_protocol::schema::v1::SessionId,
     output_flow: OutputFlow,
     context_window: u64,
+    tail: StdMutex<Option<oneshot::Receiver<Result<(), String>>>>,
+    streamed_content: AtomicBool,
 }
 
 impl std::fmt::Debug for AcpEngineEventSink {
@@ -1260,28 +1266,83 @@ impl std::fmt::Debug for AcpEngineEventSink {
 }
 
 impl AcpEngineEventSink {
+    fn new(
+        connection: ConnectionTo<Client>,
+        session_id: agent_client_protocol::schema::v1::SessionId,
+        output_flow: OutputFlow,
+        context_window: u64,
+    ) -> Self {
+        Self {
+            connection,
+            session_id,
+            output_flow,
+            context_window,
+            tail: StdMutex::new(None),
+            streamed_content: AtomicBool::new(false),
+        }
+    }
+
     fn context_window(&self) -> u64 {
         self.context_window
     }
-}
 
-impl AcpEngineEventSink {
+    fn streamed_content(&self) -> bool {
+        self.streamed_content.load(Ordering::Acquire)
+    }
+
     fn publish(&self, update: agent_client_protocol::schema::v1::SessionUpdate) {
         let connection = self.connection.clone();
         let flow = self.output_flow.clone();
         let session = self.session_id.clone();
-        // Fire-and-forget: the spawned task applies the adapter's bounded
-        // output-flow backpressure itself; publish() must never block the
-        // engine's synchronous event stream.
+        let (completion_sender, completion_receiver) = oneshot::channel();
+        let previous = self
+            .tail
+            .lock()
+            .expect("ACP event-tail mutex poisoned")
+            .replace(completion_receiver);
+        // AcpEventSink is synchronous, so each update owns an async task. The
+        // completion chain keeps those tasks strictly ordered and lets the
+        // prompt path drain physical-writer acceptance before end_turn.
         tokio::spawn(async move {
-            connection
-                .send_notification(agent_client_protocol::schema::v1::SessionNotification::new(
-                    session, update,
-                ))
-                .map_err(agent_client_protocol::util::internal_error)?;
-            flow.wait_until_writer_accepts().await?;
-            Ok::<(), agent_client_protocol::Error>(())
+            let result = if let Some(previous) = previous {
+                previous
+                    .await
+                    .unwrap_or_else(|_| Err("ordered ACP event task ended early".to_owned()))
+            } else {
+                Ok(())
+            };
+            let result = match result {
+                Ok(()) => match connection.send_notification(
+                    agent_client_protocol::schema::v1::SessionNotification::new(session, update),
+                ) {
+                    Ok(()) => flow
+                        .wait_until_writer_accepts()
+                        .await
+                        .map_err(|error| error.to_string()),
+                    Err(error) => Err(error.to_string()),
+                },
+                Err(error) => Err(error),
+            };
+            let _ = completion_sender.send(result);
         });
+    }
+
+    async fn drain(&self) -> Result<(), agent_client_protocol::Error> {
+        let tail = self
+            .tail
+            .lock()
+            .expect("ACP event-tail mutex poisoned")
+            .take();
+        let Some(tail) = tail else {
+            return Ok(());
+        };
+        tail.await
+            .map_err(|_| {
+                agent_client_protocol::util::internal_error(
+                    "ordered ACP event task ended before completion",
+                )
+            })?
+            .map_err(agent_client_protocol::util::internal_error)
     }
 }
 
@@ -1298,6 +1359,7 @@ impl crate::engine::AcpEventSink for AcpEngineEventSink {
                 )));
             }
             crate::engine::AcpEngineEvent::ContentDelta { text } => {
+                self.streamed_content.store(true, Ordering::Release);
                 self.publish(SessionUpdate::AgentMessageChunk(ContentChunk::new(
                     ContentBlock::Text(TextContent::new(text.as_str())),
                 )));

@@ -48,7 +48,11 @@ update mapping, and bounded asynchronous dispatch into `vesper-runtime`.
 - `AcpEngineEvent`/`AcpEventSink` are the streaming-engine vocabulary
   (`ReasoningDelta`, `ContentDelta`, `ToolStarted`, `ToolFinished`, `Usage`,
   `PlanUpdated`); the adapter sink maps each to the same wire shape the
-  single-turn event pump produces. Engines that lack tool-call ids pair
+  single-turn event pump produces. Full-harness updates are serialized in
+  emission order and drained through physical-writer acceptance before the
+  terminal response. A streamed content turn must not append the complete
+  final text again; engines with no content deltas retain the one-chunk final
+  fallback. Engines that lack tool-call ids pair
   started/finished calls by the most recently issued id per tool name (the
   agent loop executes tools strictly sequentially).
 - Session config options: `thought_level` and `permission_mode` remain
