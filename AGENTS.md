@@ -107,8 +107,10 @@ When the user requests a durable behavior change, record it here or in the relev
   behavior change shipped in either host (cognitive memory, reasoning
   orchestration, streaming/finalization, tool/system-prompt behavior, or
   slash-command surface) MUST be evaluated and wired into the other host in
-  the same change. Mirrored files (`lmstudio_provider.rs`, `cognition.rs`)
-  must be ported together. Documented, justified host-specific exclusions
+  the same change. Shared model-facing cognition instructions and the
+  host-neutral slash-command catalog live in foundation crates and are
+  enforced by cross-host registration/advertisement tests; composition
+  adapters remain host-specific. Documented, justified host-specific exclusions
   (interactive-terminal, ACP-protocol, or browser-only UX) live in the
   affected app's nearest `AGENTS.md`.
 - Durable session checkpoints and lineage are OPT-IN in the ACP host:

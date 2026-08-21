@@ -2971,6 +2971,19 @@ mod tests {
     }
 
     #[test]
+    fn shared_host_parity_commands_are_registered_in_tui() {
+        for command in vesper_domain::HOST_PARITY_SLASH_COMMANDS {
+            assert!(
+                ORACLE_COMMAND_SURFACE
+                    .iter()
+                    .any(|entry| entry.name == command.name),
+                "shared host-neutral command /{} is missing from TUI",
+                command.name
+            );
+        }
+    }
+
+    #[test]
     fn phase9_checkpoint_commands_resolve_to_checkpoint_ops() {
         // Phase 9 (ADR 0012): the 13 checkpoint/session/loop/export/copy/ci
         // commands must resolve to a real `Checkpoint(CheckpointOp)` outcome

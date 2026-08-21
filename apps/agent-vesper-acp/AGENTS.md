@@ -122,7 +122,7 @@ transport, stderr-only tracing, and orderly shutdown.
 Every host-agnostic capability shipped in the TUI MUST also be wired here
 (root `AGENTS.md` Project Contracts). Current ledger:
 
-- **Cognitive memory** (`src/cognition.rs`, mirrored from the TUI binary):
+- **Cognitive memory** (`src/cognition.rs`, ACP composition of the shared engine):
   `CognitionBundle::open_default` opens the SAME durable stores as the TUI
   (project `.agent-vesper/cognition/` + global
   `~/.local/share/agent-vesper/cognition/`), honors the same
@@ -131,10 +131,12 @@ Every host-agnostic capability shipped in the TUI MUST also be wired here
   and re-embeds on embedder-model change. Surface: silent pre-reply recall
   injection (restored out of history before persist, TUI parity), the
   `/remember` `/recall` `/forget` `/memories` `/promote` `/demote`
-  `/embedding` slash family, the `cognitive_capability_instruction`, and
+  `/embedding` slash family (including live `/embedding set` and
+  `/embedding clear`), the shared `cognitive_capability_instruction`, and
   the VRO-7 procedural-memory learning sink. Changes to this module MUST
-  be mirrored into the TUI copy (and vice versa) — the
-  `mirror-adapter-copies` rule.
+  be evaluated in the TUI composition (and vice versa). The model-facing
+  instruction and 12-command host-parity catalog are shared foundation
+  constants with registration/advertisement tests.
 - **VRO reasoning orchestration**: opt-in via `AGENT_VESPER_VRO_ENABLED=1`
   (TUI parity). `should_orchestrate` routes non-Direct, non-ReAct profiles
   through `VroOrchestrator::execute_with_learning` with an
@@ -150,9 +152,9 @@ Every host-agnostic capability shipped in the TUI MUST also be wired here
   F-keys), push-to-talk voice (interactive terminal capture),
   VesperLens browser interview + `request_human_review`/`request_human_input`
   tools (browser-only UX; a future ACP mapping needs an owner design
-  decision), `/interview-limit` (VesperLens-scoped), and the 67 oracle
-  catalog commands the TUI answers through its private registry — the ACP
-  answers the shared 28-command catalog the harness executor owns.
+  decision), `/interview-limit` (VesperLens-scoped), and terminal-only
+  catalog commands. ACP advertises the frozen 28-command compatibility
+  catalog plus the shared implemented host-neutral extension catalog.
 
 ## Checkpoints and Lineage Are Opt-In
 

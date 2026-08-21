@@ -56,7 +56,9 @@ pub use permission::{
 };
 pub use plan::{Plan, PlanStatus, PlanStep};
 pub use session::{ReasoningRetentionMode, SessionLineage, SessionSnapshotHeader};
-pub use slash_commands::{ORACLE_SLASH_COMMANDS, SlashCommandDescriptor, parse_slash_command};
+pub use slash_commands::{
+    HOST_PARITY_SLASH_COMMANDS, ORACLE_SLASH_COMMANDS, SlashCommandDescriptor, parse_slash_command,
+};
 pub use tool::{
     CompletedToolArguments, DiffSummary, FragmentedToolCallIdentity, HarnessToolName,
     ProviderToolName, StructuredLocation, ToolCall, ToolChoiceIntent, ToolDefinition,

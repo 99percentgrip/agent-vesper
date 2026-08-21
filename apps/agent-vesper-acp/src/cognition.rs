@@ -1,8 +1,9 @@
 #![allow(clippy::too_many_lines)]
 //! ACP-side cognitive-memory composition (Stage 16 / ADR 0015 + ADR 0016).
 //!
-//! This module is the ACP mirror of the TUI's `CognitionBundle`
-//! (`apps/agent-vesper-tui/src/main.rs`). Both hosts open the SAME durable
+//! This module is the ACP composition of the shared cognition engine; the TUI
+//! owns its own host composition in `apps/agent-vesper-tui/src/main.rs`.
+//! Both hosts open the SAME durable
 //! stores — project-local `.agent-vesper/cognition/cognition.db` and the
 //! user-global `~/.local/share/agent-vesper/cognition/cognition.db` — with
 //! the same embedder selection (`embedding.json`, ADR 0016) and the same
@@ -10,7 +11,7 @@
 //! ACP host and vice versa. Keeping the two copies behaviorally identical
 //! is a standing DOX contract (`apps/agent-vesper-acp/AGENTS.md`).
 //!
-//! Differences from the TUI copy (documented, deliberate):
+//! Host-specific differences (documented, deliberate):
 //! - No background embedder probe thread: the engine starts in the same
 //!   initial search mode the TUI would pick and auto-upgrades to `Hybrid`
 //!   on the first successful embed call.
@@ -476,6 +477,7 @@ pub struct CognitionBundle {
     global_root_display: String,
     project_display: String,
     root: std::path::PathBuf,
+    credential_source: Arc<dyn vesper_provider_glm::GlmCredentialSource>,
 }
 
 pub fn global_cognition_root() -> std::path::PathBuf {
@@ -622,6 +624,7 @@ impl CognitionBundle {
             global_root_display: "(unavailable)".to_owned(),
             project_display: "(unavailable)".to_owned(),
             root: std::path::PathBuf::new(),
+            credential_source: Arc::new(vesper_provider_glm::EnvironmentCredentialSource),
         }
     }
 
@@ -749,7 +752,7 @@ impl CognitionBundle {
                     }
                 }
                 let dim = probed_dim.unwrap_or(default_dim);
-                let _ = engine.set_meta("embedding_model", active_model);
+                let _ = engine.set_meta("embedding_model", &active_model);
                 let _ = engine.set_meta("embedding_dim", &dim.to_string());
             }
         }
@@ -760,7 +763,42 @@ impl CognitionBundle {
             global_root_display,
             project_display,
             root,
+            credential_source,
         }
+    }
+
+    #[must_use]
+    pub fn is_enabled(&self) -> bool {
+        self.engine.is_some() || self.global_engine.is_some()
+    }
+
+    fn apply_embedding_config(&self, config: &EmbeddingConfig) -> Result<(usize, usize), String> {
+        let default_dim = vesper_cognition::CognitiveConfig::default().embedding_dim;
+        let (embedder, detected_dim, mode) =
+            build_independent_embedder(config, default_dim, &self.credential_source);
+        let dimension = detected_dim.or(config.dimension).unwrap_or(default_dim);
+        let mut memories = 0;
+        let mut entities = 0;
+        for engine in [self.engine.as_ref(), self.global_engine.as_ref()]
+            .into_iter()
+            .flatten()
+        {
+            engine
+                .replace_embedder(Arc::clone(&embedder), dimension, mode)
+                .map_err(|error| error.to_string())?;
+            let (memory_count, entity_count) = engine
+                .reembed_everything()
+                .map_err(|error| error.to_string())?;
+            memories += memory_count;
+            entities += entity_count;
+            engine
+                .set_meta("embedding_model", embedder.model_name())
+                .map_err(|error| error.to_string())?;
+            engine
+                .set_meta("embedding_dim", &dimension.to_string())
+                .map_err(|error| error.to_string())?;
+        }
+        Ok((memories, entities))
     }
 
     pub fn global_root_display(&self) -> &str {
@@ -1086,6 +1124,8 @@ pub fn execute_cognition_slash(
             bundle.embedding_status_text()
         } else if let Some(rest) = argument.trim().strip_prefix("set ") {
             embedding_set_text(bundle, rest.trim())
+        } else if argument.trim() == "clear" {
+            embedding_clear_text(bundle)
         } else if argument.trim() == "set" {
             "cognition: usage: /embedding set source=<local|lmstudio|bigmodel> \
              [endpoint=...] [model=...] [api_key=...] [dimension=...]"
@@ -1093,7 +1133,7 @@ pub fn execute_cognition_slash(
         } else {
             format!(
                 "cognition: unknown /embedding argument `{}`. Use /embedding alone for \
-                 status or /embedding set key=value...",
+                 status, /embedding set key=value..., or /embedding clear",
                 argument.trim()
             )
         }),
@@ -1335,12 +1375,33 @@ fn embedding_set_text(bundle: &CognitionBundle, argument: &str) -> String {
     let path = bundle.root.join("embedding.json");
     let body = serde_json::to_string_pretty(&config).unwrap_or_else(|_| "{}".into());
     match std::fs::write(&path, body) {
+        Ok(()) => match bundle.apply_embedding_config(&config) {
+            Ok((memories, entities)) => format!(
+                "✓ Embedding config saved to {} and activated now; re-embedded \
+                 {memories} memories and {entities} entities.",
+                path.display()
+            ),
+            Err(error) => format!(
+                "cognition: config saved to {}, but live activation failed: {error}. \
+                 Existing recall remains available in BM25-only mode.",
+                path.display()
+            ),
+        },
+        Err(error) => format!("cognition: /embedding set failed: {error}"),
+    }
+}
+
+fn embedding_clear_text(bundle: &CognitionBundle) -> String {
+    let path = bundle.root.join("embedding.json");
+    match std::fs::remove_file(&path) {
         Ok(()) => format!(
-            "✓ Embedding config saved to {}. It applies the next time the agent starts \
-             (both the TUI and ACP hosts read this file).",
+            "✓ Removed {}. Provider-routed embedding selection resumes on the next start.",
             path.display()
         ),
-        Err(error) => format!("cognition: /embedding set failed: {error}"),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            "cognition: embedding config is already clear.".to_owned()
+        }
+        Err(error) => format!("cognition: /embedding clear failed: {error}"),
     }
 }
 

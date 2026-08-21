@@ -20,7 +20,7 @@ or types.
 ## Ownership
 
 - `src/lib.rs` — public re-exports, `CognitiveMemory` facade, `CognitiveConfig`,
-  and the `open()` entry point.
+  the shared model-facing capability instruction, and the `open()` entry point.
 - `src/error.rs` — `CognitionError` (sanitized; never leaks paths, payloads,
   or secrets).
 - `src/types.rs` — public value types: `Message`, `Scope`, `Attribution`,
@@ -93,6 +93,10 @@ or types.
   `entity_boosts`; leaving them on the old dimension silently zeroes every
   boost after a swap (Gap 7 — fixed). On per-row failure the migration
   aborts with a partial-state log (Gap 6 — fixed).
+- **Live embedder replacement**: `CognitiveMemory::replace_embedder` atomically
+  replaces the adapter and expected vector dimension for subsequent calls.
+  Both production hosts invoke it before `reembed_everything`; setting an
+  embedding configuration must never merely probe an unused adapter.
 - **Batched embedding in migration** (`v0.20.13`, Gap 3): `reembed_all`
   and `reembed_all_entities` use `embed_batch` in chunks of 256 instead of
   per-item `embed()`. N memories → ceil(N/256) HTTP round-trips. The
