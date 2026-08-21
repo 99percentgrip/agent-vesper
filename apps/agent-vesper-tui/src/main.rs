@@ -4096,26 +4096,7 @@ plan in prose when update_plan is available.";
 /// prompt, the model must NOT announce "I don't have memory" or "I am
 /// stateless" — it must just answer normally.
 fn cognitive_capability_instruction() -> SystemInstruction {
-    let body = "### Cognitive Memory\n\
-You are running inside the Agent Vesper harness, which provides a local SQLite-backed \
-cognitive memory system. The harness silently recalls relevant memories from past \
-conversations and appends them to your context before each reply. \
-Therefore:\n\
-- You HAVE long-term memory across sessions. NEVER tell the user 'I have no memory', \
-'I do not retain information', 'I am stateless', 'I don't have access to past \
-conversations', or any variation of that claim. These statements are FALSE.\n\
-- If recalled memories appear under 'Relevant context from cognitive memory', treat \
-them as authoritative facts about the user and prior work.\n\
-- If no memories appear for a given prompt, do NOT announce that you lack memory. \
-Answer normally. The harness only injects memories when they are relevant to the \
-current turn — silence does not mean memory is empty.\n\
-- If the user asks 'do you remember me' or similar, respond as a memory-enabled \
-assistant: refer to any recalled facts, and if none were auto-recalled, say you \
-may not have any stored memories about that specific topic yet rather than \
-disavowing memory entirely.\n\
-- The user can manage memory explicitly via /remember, /recall, /forget, /memories, \
-/promote, and /demote. /remember supports --global and --project and always \
-confirms the selected scope.";
+    let body = vesper_cognition::COGNITIVE_CAPABILITY_INSTRUCTION;
     SystemInstruction {
         content: vec![ContentPart::Text(
             ContentText::new(body).expect("bounded system instruction"),
@@ -7126,7 +7107,7 @@ impl CognitionBundle {
             // swaps are rare (the file rarely changes), so migrations are
             // genuinely rare — not on every provider switch.
             let needs_migration = match (&stored_model, &stored_dim_first) {
-                (Some(stored), _) if stored != active_model => true,
+                (Some(stored), _) if stored != &active_model => true,
                 (None, Some(stored_d)) => *stored_d != active_dim,
                 (None, None) => false, // empty store; just record the model
                 _ => false,
@@ -7151,7 +7132,7 @@ impl CognitionBundle {
                                 active_model
                             );
                         }
-                        let _ = engine.set_meta("embedding_model", active_model);
+                        let _ = engine.set_meta("embedding_model", &active_model);
                         let _ = engine.set_meta("embedding_dim", &active_dim.to_string());
                         // ADR 0016: if migration succeeded, the embedder is
                         // reachable — upgrade to Hybrid.
@@ -7168,7 +7149,7 @@ impl CognitionBundle {
                     }
                 }
             } else if stored_model.is_none() {
-                let _ = engine.set_meta("embedding_model", active_model);
+                let _ = engine.set_meta("embedding_model", &active_model);
                 let _ = engine.set_meta("embedding_dim", &active_dim.to_string());
             }
             let _ = search_mode_hint; // already applied above
@@ -7191,7 +7172,7 @@ impl CognitionBundle {
                     }
                 }
             }
-            let _ = engine.set_meta("embedding_model", active_model);
+            let _ = engine.set_meta("embedding_model", &active_model);
             let _ = engine.set_meta("embedding_dim", &active_dim.to_string());
             Some(engine)
         })();
@@ -11851,11 +11832,12 @@ fn apply_embedding_set(
     // auto-upgrades on first successful embed.
     let default_dim = vesper_cognition::CognitiveConfig::default().embedding_dim;
     if cfg.overrides_provider_routing() {
-        let (new_embedder, _probed_dim, initial_mode) = CognitionBundle::build_independent_embedder(
+        let (new_embedder, probed_dim, initial_mode) = CognitionBundle::build_independent_embedder(
             &cfg,
             default_dim,
             &bundle.credential_source,
         );
+        let active_dim = probed_dim.or(cfg.dimension).unwrap_or(default_dim);
         state.transcript.push(format!(
             "embedding: hot-reload starting in {:?} mode; background probe will upgrade to Hybrid if reachable.",
             initial_mode
@@ -11867,7 +11849,28 @@ fn apply_embedding_set(
             .collect();
         if !engines.is_empty() {
             for engine in &engines {
-                engine.set_search_mode(initial_mode);
+                if let Err(error) =
+                    engine.replace_embedder(Arc::clone(&new_embedder), active_dim, initial_mode)
+                {
+                    state.transcript.push(format!(
+                        "embedding: live adapter replacement failed: {error}"
+                    ));
+                    state.status = Some(format!("embedding activation failed: {error}"));
+                    return;
+                }
+                match engine.reembed_everything() {
+                    Ok((memories, entities)) => state.transcript.push(format!(
+                        "embedding: activated now; re-embedded {memories} memories and \
+                         {entities} entities."
+                    )),
+                    Err(error) => {
+                        engine.set_search_mode(vesper_cognition::SearchMode::BM25Only);
+                        state.transcript.push(format!(
+                            "embedding: live migration failed ({error}); recall remains \
+                             available in BM25-only mode."
+                        ));
+                    }
+                }
             }
             // Spawn a probe that uses the new embedder. On success it flips
             // the engine to Hybrid; on failure it leaves BM25Only in place

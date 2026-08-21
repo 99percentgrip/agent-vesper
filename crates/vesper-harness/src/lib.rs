@@ -2173,6 +2173,59 @@ pub struct MemoryStores {
 }
 
 impl MemoryStores {
+    /// Renders the host-neutral durable reports shared by TUI and ACP.
+    #[must_use]
+    pub fn parity_report(&self, name: &str) -> Option<String> {
+        let kind = match name {
+            "repository" => Some(vesper_memory::MemoryKind::Repository),
+            "meta-learning" => Some(vesper_memory::MemoryKind::MetaLearning),
+            "observability" => Some(vesper_memory::MemoryKind::Observability),
+            "journey" => {
+                let memory_count = self
+                    .memory
+                    .as_ref()
+                    .map_or(0, |store| store.list(None).len());
+                let skill_count = self.skills.as_ref().map_or(0, |store| store.list().len());
+                let mut output = format!(
+                    "journey: {memory_count} memory entry/entries, {skill_count} learned skill(s)"
+                );
+                if let Some(store) = self.memory.as_ref() {
+                    let mut entries = store.list(None);
+                    entries.sort_by_key(|entry| entry.created_at);
+                    for entry in entries.iter().take(20) {
+                        output.push_str(&format!(
+                            "\n  [{}] {}: {}",
+                            entry.kind.as_str(),
+                            entry.id,
+                            entry.summary.chars().take(80).collect::<String>()
+                        ));
+                    }
+                }
+                return Some(output);
+            }
+            _ => return None,
+        };
+        let Some(ledger) = self.awareness.as_ref() else {
+            return Some(format!("{name}: awareness ledger unavailable"));
+        };
+        let records = ledger.list(kind);
+        let mut output = if records.is_empty() {
+            format!("{name}: (no records)")
+        } else {
+            format!("{name}: {} record(s)", records.len())
+        };
+        for record in records.iter().take(50) {
+            output.push_str(&format!(
+                "\n  [{}] {} ({:?}): {}",
+                record.kind.as_str(),
+                record.id,
+                record.status,
+                record.summary.chars().take(80).collect::<String>()
+            ));
+        }
+        Some(output)
+    }
+
     /// Opens the bundle at `AGENT_VESPER_MEMORY_ROOT` (falling back to
     /// `.agent-vesper/memory/` under the current directory). The skill
     /// store additionally reads a cross-project global layer at

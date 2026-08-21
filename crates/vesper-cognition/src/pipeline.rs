@@ -60,6 +60,8 @@ pub struct CognitiveMemory {
     store: CognitiveStore,
     ports: crate::ports::CognitionPorts,
     config: crate::CognitiveConfig,
+    embedder: std::sync::RwLock<std::sync::Arc<dyn crate::ports::EmbeddingPort>>,
+    embedding_dim: std::sync::atomic::AtomicUsize,
     /// Live search mode (Gap 10 elimination, ADR 0016). `Hybrid` runs the
     /// full semantic + BM25 + entity-boost pipeline. `BM25Only` skips every
     /// embedding call and degrades to keyword-only recall — used when the
@@ -107,6 +109,8 @@ impl CognitiveMemory {
     ) -> Self {
         Self {
             store,
+            embedder: std::sync::RwLock::new(std::sync::Arc::clone(&ports.embedder)),
+            embedding_dim: std::sync::atomic::AtomicUsize::new(config.embedding_dim),
             ports,
             config,
             search_mode: std::sync::atomic::AtomicU8::new(SearchMode::Hybrid.to_u8()),
@@ -127,6 +131,35 @@ impl CognitiveMemory {
     pub fn set_search_mode(&self, mode: SearchMode) {
         self.search_mode
             .store(mode.to_u8(), std::sync::atomic::Ordering::SeqCst);
+    }
+
+    fn active_embedder(&self) -> std::sync::Arc<dyn crate::ports::EmbeddingPort> {
+        self.embedder
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    /// Replaces the live embedder used by subsequent memory operations.
+    pub fn replace_embedder(
+        &self,
+        embedder: std::sync::Arc<dyn crate::ports::EmbeddingPort>,
+        embedding_dim: usize,
+        search_mode: SearchMode,
+    ) -> Result<()> {
+        if embedding_dim == 0 {
+            return Err(CognitionError::InvalidArgument(
+                "embedding dimension must be greater than zero",
+            ));
+        }
+        *self
+            .embedder
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = embedder;
+        self.embedding_dim
+            .store(embedding_dim, std::sync::atomic::Ordering::SeqCst);
+        self.set_search_mode(search_mode);
+        Ok(())
     }
 
     /// V3 8-phase ADD-only pipeline. Returns the ADD events.
@@ -245,12 +278,13 @@ impl CognitiveMemory {
             seen_hashes.insert(hash.clone());
             let embedding = match embeddings_map.get(&mem.text) {
                 Some(v) => v.clone(),
-                None => self.ports.embedder.embed(&mem.text, EmbedAction::Add)?,
+                None => self.active_embedder().embed(&mem.text, EmbedAction::Add)?,
             };
             // Validate embedding dim.
-            if embedding.len() != self.config.embedding_dim {
+            let expected_dim = self.embedding_dim.load(std::sync::atomic::Ordering::SeqCst);
+            if embedding.len() != expected_dim {
                 return Err(CognitionError::EmbeddingDimension {
-                    expected: self.config.embedding_dim,
+                    expected: expected_dim,
                     actual: embedding.len(),
                 });
             }
@@ -415,7 +449,9 @@ impl CognitiveMemory {
             if msg.role == "system" {
                 continue;
             }
-            let embedding = self.ports.embedder.embed(&msg.content, EmbedAction::Add)?;
+            let embedding = self
+                .active_embedder()
+                .embed(&msg.content, EmbedAction::Add)?;
             let id = uuid::Uuid::new_v4().to_string();
             let extras = req.extras.cloned().unwrap_or_default();
             let attributed = crate::nlp::attribution_for_role(&msg.role);
@@ -466,7 +502,7 @@ impl CognitiveMemory {
             .map(|m| m.content.as_str())
             .collect::<Vec<_>>()
             .join("\n");
-        self.ports.embedder.embed(&joined, EmbedAction::Search)
+        self.active_embedder().embed(&joined, EmbedAction::Search)
     }
 
     fn link_entities_for_memory(&self, memory_id: &str, text: &str, scope: &Scope) -> Result<()> {
@@ -477,7 +513,7 @@ impl CognitiveMemory {
             if key.is_empty() || !seen.insert(key) {
                 continue;
             }
-            let emb = self.ports.embedder.embed(&cand.text, EmbedAction::Add)?;
+            let emb = self.active_embedder().embed(&cand.text, EmbedAction::Add)?;
             self.store.upsert_entity(&cand, memory_id, scope, &emb)?;
         }
         Ok(())
@@ -519,7 +555,7 @@ impl CognitiveMemory {
         // don't retry the failing endpoint, (b) log ONCE per process, and
         // (c) fall through to BM25-only for THIS turn. The next successful
         // embedder call upgrades back to Hybrid.
-        let query_embedding = match self.ports.embedder.embed(req.query, EmbedAction::Search) {
+        let query_embedding = match self.active_embedder().embed(req.query, EmbedAction::Search) {
             Ok(v) => v,
             Err(err) => {
                 self.downgrade_to_bm25_only_once(&err);
@@ -587,7 +623,10 @@ impl CognitiveMemory {
                 if key.is_empty() || !seen.insert(key) {
                     continue;
                 }
-                match self.ports.embedder.embed(&cand.text, EmbedAction::Search) {
+                match self
+                    .active_embedder()
+                    .embed(&cand.text, EmbedAction::Search)
+                {
                     Ok(emb) => deduped.push((cand.clone(), emb)),
                     Err(err) => {
                         // Entity embedding failure is non-fatal — degrade
@@ -757,10 +796,12 @@ impl CognitiveMemory {
         let new_lemmatized = lemmatize_for_bm25(new_text);
         let new_hash = md5_hex(new_text);
         let new_embedding = if text.is_some() {
-            self.ports.embedder.embed(new_text, EmbedAction::Update)?
+            self.active_embedder()
+                .embed(new_text, EmbedAction::Update)?
         } else {
             // Reuse existing embedding by re-embedding the unchanged text.
-            self.ports.embedder.embed(new_text, EmbedAction::Update)?
+            self.active_embedder()
+                .embed(new_text, EmbedAction::Update)?
         };
         let merged_extras_json: Option<String> = extras_patch.map(|patch| {
             let mut merged = existing.extras.clone();
@@ -845,8 +886,8 @@ impl CognitiveMemory {
 
     /// Returns the active embedder's model name (Gap 11). Default trait impl
     /// returns `"unknown"`; concrete embedders override.
-    pub fn embedder_model_name(&self) -> &str {
-        self.ports.embedder.model_name()
+    pub fn embedder_model_name(&self) -> String {
+        self.active_embedder().model_name().to_owned()
     }
 
     /// Re-embeds every stored memory using the currently-wired embedder.
@@ -878,7 +919,10 @@ impl CognitiveMemory {
         let mut count = 0;
         for chunk in targets.chunks(BATCH_SIZE) {
             let texts: Vec<&str> = chunk.iter().map(|(_, d)| d.as_str()).collect();
-            let embeddings = match self.ports.embedder.embed_batch(&texts, EmbedAction::Update) {
+            let embeddings = match self
+                .active_embedder()
+                .embed_batch(&texts, EmbedAction::Update)
+            {
                 Ok(v) => v,
                 Err(err) => {
                     eprintln!(
@@ -919,7 +963,10 @@ impl CognitiveMemory {
         let mut count = 0;
         for chunk in targets.chunks(BATCH_SIZE) {
             let texts: Vec<&str> = chunk.iter().map(|(_, d)| d.as_str()).collect();
-            let embeddings = match self.ports.embedder.embed_batch(&texts, EmbedAction::Update) {
+            let embeddings = match self
+                .active_embedder()
+                .embed_batch(&texts, EmbedAction::Update)
+            {
                 Ok(v) => v,
                 Err(err) => {
                     eprintln!(
@@ -971,7 +1018,7 @@ impl CognitiveMemory {
         if text.is_empty() {
             return Err(CognitionError::ExtractionParse);
         }
-        let embedding = self.ports.embedder.embed(text, EmbedAction::Add)?;
+        let embedding = self.active_embedder().embed(text, EmbedAction::Add)?;
         let now = chrono::Utc::now().to_rfc3339();
         let id = uuid::Uuid::new_v4().to_string();
         let extras = BTreeMap::new();
@@ -1720,6 +1767,39 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let engine = build_engine(&dir, 8, r#"{"memory":[]}"#);
         assert_eq!(engine.embedder_model_name(), "unknown");
+    }
+
+    #[test]
+    fn live_embedder_replacement_changes_adapter_and_dimension() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine = build_engine(&dir, 8, r#"{"memory":[]}"#);
+        let replacement: Arc<dyn EmbeddingPort> = Arc::new(crate::LocalHashEmbedder::new(16));
+        engine
+            .replace_embedder(replacement, 16, SearchMode::Hybrid)
+            .unwrap();
+        assert_eq!(engine.embedder_model_name(), "local-hash-embedder");
+        let scope = Scope {
+            user_id: Some("u".into()),
+            ..Scope::default()
+        };
+        let messages = [Message {
+            role: "user".into(),
+            content: "live replacement works".into(),
+            name: None,
+        }];
+        let events = engine
+            .add(AddRequest {
+                messages: &messages,
+                scope: &scope,
+                extras: None,
+                expiration_date: None,
+                infer: false,
+                custom_instructions: None,
+                observation_date: None,
+            })
+            .unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(engine.stored_embedding_dimension().unwrap(), Some(16));
     }
 
     // ===== ADR 0016 regression tests (SearchMode + BM25Only fallback) =====

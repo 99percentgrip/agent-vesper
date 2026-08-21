@@ -125,6 +125,49 @@ fn safe_slash_during_editor_interrupt_keeps_the_turn_running() {
     );
 }
 
+/// `/usage` has its own provider/quota path, so cover it directly rather
+/// than relying on the generic `/status` classifier regression.
+#[test]
+fn usage_during_editor_interrupt_keeps_the_turn_running() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let _server = serve_one_slow_completion(
+        listener,
+        Duration::from_millis(1500),
+        "usage-survivor-complete",
+    );
+    let mut process = ProcessHarness::spawn_with_environment(
+        address,
+        [("AGENT_VESPER_FULL_HARNESS", "1".to_owned())],
+    );
+    let session = process.initialize_and_new_session();
+    process.prompt(
+        40,
+        &session,
+        "slow quota-adjacent work",
+        "slow-usage-message",
+    );
+    thread::sleep(Duration::from_millis(400));
+    cancel(&mut process, &session);
+    process.prompt(41, &session, "/usage", "usage-message");
+
+    let usage = process.response(41);
+    assert_eq!(usage["result"]["stopReason"], "end_turn", "{usage}");
+    let turn = process.response(40);
+    assert_eq!(turn["result"]["stopReason"], "end_turn", "{turn}");
+    let texts = support::update_texts(process.transcript(), "agent_message_chunk");
+    assert!(
+        texts.iter().any(|text| text.contains("usage:")),
+        "{texts:?}"
+    );
+    assert!(
+        texts
+            .iter()
+            .any(|text| text.contains("usage-survivor-complete")),
+        "{texts:?}"
+    );
+}
+
 /// A genuine stop (cancel with NO follow-up prompt) must still cancel once
 /// the grace window expires — the grace only exists for the slash case.
 #[test]

@@ -565,6 +565,10 @@ business logic.
   under `AGENT_VESPER_MEMORY_ROOT` or `.agent-vesper/memory/`) and drains
   the op synchronously after dispatch (these are local filesystem
   reads/writes — fast enough not to block the UI).
+- Host-neutral command parity is declared by
+  `vesper_domain::HOST_PARITY_SLASH_COMMANDS`; the TUI registry test must
+  contain every shared entry. `/embedding set` replaces the live adapter and
+  migrates vectors in both hosts; probing an unused adapter is not sufficient.
 - ADR 0012 (Tier C Phase 9): the 13 checkpoint/session/loop/export/copy/ci
   commands (`/sessions-new`, `/sessions`, `/lineage`, `/branch`,
   `/rename`, `/checkpoint`, `/rollback`, `/rewind`, `/undo`, `/loop`,

@@ -82,6 +82,7 @@ where
             controls: Some(controls::glm_control_surface(
                 &profile.provider_configuration,
             )),
+            additional_commands: vesper_domain::HOST_PARITY_SLASH_COMMANDS.to_vec(),
         },
     );
     let adapter = if full_harness_enabled() {
@@ -651,7 +652,9 @@ impl AcpHarnessEngine {
             // VRO-11.5 tool-enforcement mandate + cognitive capability
             // primer (TUI parity — see the doc comments on each helper).
             instructions.push(tool_enforcement_instruction());
-            instructions.push(cognitive_capability_instruction());
+            if self.cognition.is_enabled() {
+                instructions.push(cognitive_capability_instruction());
+            }
             instructions
         };
         // VRO dispatch (TUI parity): when orchestration is enabled for this
@@ -807,6 +810,9 @@ impl AcpHarnessEngine {
                     .await;
                 return slash_result(body);
             }
+            if let Some(body) = self.hosted.stores().parity_report(lowered.as_str()) {
+                return slash_result(body);
+            }
         }
         let Some((name, argument)) = vesper_domain::parse_slash_command(trimmed) else {
             return slash_result(unknown_command_text(trimmed));
@@ -955,7 +961,7 @@ impl AcpHarnessEngine {
                 }
                 respond("plan: cleared (back to NORMAL).".to_owned())
             }
-            "usage" => respond(self.usage_text().await),
+            "usage" => respond(self.usage_text(request).await),
             "diff" => SlashFlow::Workflow(
                 "Run `git diff` (and `git diff --staged` if there are staged changes) \
                  and summarize the working-tree changes: files touched, lines added / \
@@ -996,16 +1002,21 @@ impl AcpHarnessEngine {
     /// Queries the live provider plan-quota endpoint (TUI `/usage` parity).
     /// Only the installed GLM adapter registers a quota integration; every
     /// other provider reports that truthfully without a network call.
-    async fn usage_text(&self) -> String {
-        if self.config.model.provider_id != provider_id() {
+    async fn usage_text(&self, request: &AcpPromptRequest) -> String {
+        let active_model = request.model.as_ref().unwrap_or(&self.config.model);
+        if active_model.provider_id != provider_id() {
             return "usage: The active provider has no registered quota integration.".to_owned();
         }
-        let glm_config = match vesper_provider_glm::GlmConfig::from_provider_configuration(
-            &self.config.provider_configuration,
-        ) {
-            Ok(config) => config,
-            Err(error) => return format!("usage: quota configuration failed: {error}"),
-        };
+        let active_configuration = request
+            .provider_configuration
+            .as_ref()
+            .unwrap_or(&self.config.provider_configuration);
+        let glm_config =
+            match vesper_provider_glm::GlmConfig::from_provider_configuration(active_configuration)
+            {
+                Ok(config) => config,
+                Err(error) => return format!("usage: quota configuration failed: {error}"),
+            };
         let credential = match vesper_provider_glm::resolve_credential(
             &vesper_provider_glm::EnvironmentCredentialSource,
         ) {
@@ -1293,26 +1304,7 @@ plan in prose when update_plan is available.";
 /// Static cognitive-memory capability instruction (TUI parity — the exact
 /// same text, so both hosts prime the model identically).
 fn cognitive_capability_instruction() -> vesper_domain::SystemInstruction {
-    let body = "### Cognitive Memory\n\
-You are running inside the Agent Vesper harness, which provides a local SQLite-backed \
-cognitive memory system. The harness silently recalls relevant memories from past \
-conversations and appends them to your context before each reply. \
-Therefore:\n\
-- You HAVE long-term memory across sessions. NEVER tell the user 'I have no memory', \
-'I do not retain information', 'I am stateless', 'I don't have access to past \
-conversations', or any variation of that claim. These statements are FALSE.\n\
-- If recalled memories appear under 'Relevant context from cognitive memory', treat \
-them as authoritative facts about the user and prior work.\n\
-- If no memories appear for a given prompt, do NOT announce that you lack memory. \
-Answer normally. The harness only injects memories when they are relevant to the \
-current turn — silence does not mean memory is empty.\n\
-- If the user asks 'do you remember me' or similar, respond as a memory-enabled \
-assistant: refer to any recalled facts, and if none were auto-recalled, say you \
-may not have any stored memories about that specific topic yet rather than \
-disavowing memory entirely.\n\
-- The user can manage memory explicitly via /remember, /recall, /forget, /memories, \
-/promote, and /demote. /remember supports --global and --project and always \
-confirms the selected scope.";
+    let body = vesper_cognition::COGNITIVE_CAPABILITY_INSTRUCTION;
     vesper_domain::SystemInstruction {
         content: vec![ContentPart::Text(
             vesper_domain::ContentText::new(body).expect("bounded system instruction"),
@@ -1916,6 +1908,7 @@ pub async fn run_multi_provider(initial: &str) -> Result<(), ()> {
                 &registered,
                 &lm_controls,
             )),
+            additional_commands: vesper_domain::HOST_PARITY_SLASH_COMMANDS.to_vec(),
         },
     );
     let adapter = if full_harness_enabled() {

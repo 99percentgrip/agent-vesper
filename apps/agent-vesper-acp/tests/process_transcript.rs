@@ -146,8 +146,8 @@ fn stdio_transcript_reaches_real_glm_adapter_with_protocol_pure_stdout() {
         advertisement["params"]["update"]["availableCommands"]
             .as_array()
             .map(|commands| commands.len()),
-        Some(28),
-        "the post-response advertisement carries the full 28-command catalog"
+        Some(40),
+        "the post-response advertisement carries frozen plus host-parity commands"
     );
 
     send(
@@ -377,8 +377,8 @@ fn empty_prompt_and_slash_commands_never_dispatch_provider() {
             break;
         }
     }
-    // Oracle parity: exactly one 28-command catalog advertisement arrives
-    // immediately after the session/new response, in oracle registration order.
+    // The production composition appends 12 implemented host-parity commands
+    // after the 28 frozen entries and advertises the combined catalog once.
     assert_eq!(
         advertisements.len(),
         1,
@@ -390,8 +390,8 @@ fn empty_prompt_and_slash_commands_never_dispatch_provider() {
         .iter()
         .map(|command| command["name"].as_str().unwrap())
         .collect();
-    assert_eq!(advertised.len(), 28);
-    assert_eq!(advertised_first_and_last(&advertised), ("help", "mcp"));
+    assert_eq!(advertised.len(), 40);
+    assert_eq!(advertised_first_and_last(&advertised), ("help", "journey"));
     send(
         &mut stdin,
         json!({"jsonrpc":"2.0","id":3,"method":"session/prompt","params":{"sessionId":session,"prompt":[],"_meta":{"userMessageId":"empty-message"}}}),

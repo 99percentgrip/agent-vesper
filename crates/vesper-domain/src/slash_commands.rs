@@ -141,6 +141,60 @@ pub const ORACLE_SLASH_COMMANDS: [SlashCommandDescriptor; 28] = [
     },
 ];
 
+/// Host-neutral Vesper extensions implemented by both production hosts.
+/// Kept separate from the frozen oracle catalog so compatibility fixtures
+/// remain byte-stable while ACP clients can discover the real added surface.
+pub const HOST_PARITY_SLASH_COMMANDS: [SlashCommandDescriptor; 12] = [
+    SlashCommandDescriptor {
+        name: "remember",
+        description: "Save a fact to cognitive memory",
+    },
+    SlashCommandDescriptor {
+        name: "recall",
+        description: "Search cognitive memory",
+    },
+    SlashCommandDescriptor {
+        name: "forget",
+        description: "Delete a cognitive memory by id prefix",
+    },
+    SlashCommandDescriptor {
+        name: "memories",
+        description: "Audit project and global cognitive memories",
+    },
+    SlashCommandDescriptor {
+        name: "promote",
+        description: "Copy a project memory to global scope",
+    },
+    SlashCommandDescriptor {
+        name: "demote",
+        description: "Move a global memory to project scope",
+    },
+    SlashCommandDescriptor {
+        name: "embedding",
+        description: "Show, set, or clear cognitive embedding configuration",
+    },
+    SlashCommandDescriptor {
+        name: "reasoning",
+        description: "Show or set the reasoning orchestration mode",
+    },
+    SlashCommandDescriptor {
+        name: "repository",
+        description: "Show repository-intelligence metadata",
+    },
+    SlashCommandDescriptor {
+        name: "meta-learning",
+        description: "Show metacognitive-learning candidates",
+    },
+    SlashCommandDescriptor {
+        name: "observability",
+        description: "Show secret-safe local reliability metrics",
+    },
+    SlashCommandDescriptor {
+        name: "journey",
+        description: "Show the durable memory and skill timeline",
+    },
+];
+
 /// Parses raw prompt text into a catalog command name + argument, or `None`
 /// when the text does not start with a catalog command. Case-insensitive on
 /// the command name; the argument is passed through verbatim (trimmed).

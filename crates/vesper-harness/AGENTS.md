@@ -31,6 +31,9 @@ Z.ai and Playwright MCP server descriptors.
   frontend can serve (conversation state, workflow turns, live provider
   quota) return `SlashCommandOutcome::Host` passthrough. The catalog and
   parser delegate to `vesper-domain::slash_commands`.
+- `MemoryStores::parity_report` owns the shared read-only repository,
+  meta-learning, observability, and journey renderings used by ACP and
+  available to the TUI composition.
 - `src/host_commands.rs` executes the store-backed host commands
   (`/checkpoint`, `/rollback`, `/undo`, `/export`, `/sessions`, `/lineage`,
   `/ci`, `/plugins`, `/mcp`) on `HarnessToolService` against the same

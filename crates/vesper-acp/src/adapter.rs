@@ -69,6 +69,9 @@ pub struct AcpAdapterConfig {
     pub context_window: u64,
     /// Provider-routed session control surface (model, plan, reasoning dial).
     pub controls: Option<SessionControlSurface>,
+    /// Additional implemented host-neutral commands advertised after the
+    /// frozen oracle catalog.
+    pub additional_commands: Vec<vesper_domain::SlashCommandDescriptor>,
 }
 
 impl Default for AcpAdapterConfig {
@@ -76,6 +79,7 @@ impl Default for AcpAdapterConfig {
         Self {
             context_window: 202_752,
             controls: None,
+            additional_commands: Vec::new(),
         }
     }
 }
@@ -189,6 +193,7 @@ impl AcpAdapter {
                     prompt_engine,
                     config.context_window,
                     config.controls,
+                    config.additional_commands,
                 ));
                 let event_connection = connection.clone();
                 let event_barriers = Arc::clone(&barriers);
@@ -336,6 +341,10 @@ const CONCURRENT_SAFE_SLASH_COMMANDS: &[&str] = &[
     "embedding",
     // Per-session reasoning-mode override (applies to the next turn).
     "reasoning",
+    "repository",
+    "meta-learning",
+    "observability",
+    "journey",
 ];
 
 /// True when `text` is a single slash command that can be answered
@@ -368,6 +377,7 @@ async fn dispatch_requests(
     prompt_engine: Option<Arc<dyn AcpPromptEngine>>,
     context_window: u64,
     controls: Option<SessionControlSurface>,
+    additional_commands: Vec<vesper_domain::SlashCommandDescriptor>,
 ) -> Result<(), agent_client_protocol::Error> {
     let active = Arc::new(Mutex::new(BTreeMap::<SessionId, TurnId>::new()));
     let engine_active = Arc::new(Mutex::new(BTreeSet::<SessionId>::new()));
@@ -385,6 +395,7 @@ async fn dispatch_requests(
         permission_requester,
         context_window,
         controls,
+        additional_commands,
     };
     let mut prompts = JoinSet::new();
     loop {
@@ -569,6 +580,7 @@ struct RequestContext {
     /// Provider-routed session control surface advertised as ACP config
     /// options (`None` keeps the provider-neutral fallbacks).
     controls: Option<SessionControlSurface>,
+    additional_commands: Vec<vesper_domain::SlashCommandDescriptor>,
 }
 
 /// Executes one session cancel end to end: permission-request cancellation,
@@ -643,6 +655,7 @@ async fn handle_request(
         permission_requester,
         context_window,
         controls,
+        additional_commands,
     } = context;
     macro_rules! execute {
         ($future:expr) => {
@@ -717,6 +730,7 @@ async fn handle_request(
                 &connection,
                 &agent_session_id(&snapshot.session_id),
                 &output_flow,
+                &additional_commands,
             )
             .await
         }
@@ -733,7 +747,13 @@ async fn handle_request(
                 return responder.respond_with_internal_error("unexpected runtime response");
             };
             replay_snapshot(&connection, *snapshot, &output_flow).await?;
-            advertise_available_commands(&connection, &request.session_id, &output_flow).await?;
+            advertise_available_commands(
+                &connection,
+                &request.session_id,
+                &output_flow,
+                &additional_commands,
+            )
+            .await?;
             let snapshot = execute!(runtime.snapshot(&id));
             respond_json(
                 responder,
@@ -754,7 +774,13 @@ async fn handle_request(
                 return responder.respond_with_internal_error("unexpected runtime response");
             };
             replay_snapshot(&connection, *snapshot, &output_flow).await?;
-            advertise_available_commands(&connection, &request.session_id, &output_flow).await?;
+            advertise_available_commands(
+                &connection,
+                &request.session_id,
+                &output_flow,
+                &additional_commands,
+            )
+            .await?;
             let snapshot = execute!(runtime.snapshot(&session_id(&request.session_id)));
             respond_json(
                 responder,
@@ -1210,11 +1236,18 @@ fn agent_session_id(
 /// oracle registration order. Byte-stable names/descriptions come from
 /// `vesper-domain` so ACP advertisement, harness execution, and persisted
 /// replay share one source of truth.
-fn catalog_commands() -> Vec<agent_client_protocol::schema::v1::AvailableCommand> {
+fn catalog_commands(
+    additional: &[vesper_domain::SlashCommandDescriptor],
+) -> Vec<agent_client_protocol::schema::v1::AvailableCommand> {
     use agent_client_protocol::schema::v1::AvailableCommand;
     vesper_domain::ORACLE_SLASH_COMMANDS
         .iter()
         .map(|command| AvailableCommand::new(command.name, command.description))
+        .chain(
+            additional
+                .iter()
+                .map(|command| AvailableCommand::new(command.name, command.description)),
+        )
         .collect()
 }
 
@@ -1231,19 +1264,48 @@ async fn advertise_available_commands(
     connection: &ConnectionTo<Client>,
     session: &agent_client_protocol::schema::v1::SessionId,
     output_flow: &OutputFlow,
+    additional_commands: &[vesper_domain::SlashCommandDescriptor],
 ) -> Result<(), agent_client_protocol::Error> {
     use agent_client_protocol::schema::v1::{
         AvailableCommandsUpdate, SessionNotification, SessionUpdate,
     };
     let notification = SessionNotification::new(
         session.clone(),
-        SessionUpdate::AvailableCommandsUpdate(AvailableCommandsUpdate::new(catalog_commands())),
+        SessionUpdate::AvailableCommandsUpdate(AvailableCommandsUpdate::new(catalog_commands(
+            additional_commands,
+        ))),
     );
     connection
         .send_notification(notification)
         .map_err(agent_client_protocol::util::internal_error)?;
     output_flow.wait_until_writer_accepts().await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod command_catalog_tests {
+    use super::*;
+
+    #[test]
+    fn frozen_catalog_stays_exact_and_extensions_append() {
+        assert_eq!(catalog_commands(&[]).len(), 28);
+        let commands = catalog_commands(&vesper_domain::HOST_PARITY_SLASH_COMMANDS);
+        assert_eq!(commands.len(), 40);
+        let json = serde_json::to_value(commands).unwrap();
+        let names: Vec<_> = json
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|value| value.get("name").and_then(serde_json::Value::as_str))
+            .collect();
+        for command in vesper_domain::HOST_PARITY_SLASH_COMMANDS {
+            assert!(
+                names.contains(&command.name),
+                "/{} was not advertised",
+                command.name
+            );
+        }
+    }
 }
 
 /// Sink handed to a composed streaming engine. Each event is mapped to the

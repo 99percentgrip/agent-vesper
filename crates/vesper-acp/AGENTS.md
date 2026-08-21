@@ -71,6 +71,10 @@ update mapping, and bounded asynchronous dispatch into `vesper-runtime`.
   runtime `UpdateProviderConfiguration` command, and re-advertises the
   options from the fresh snapshot on `session/new`/`load`/`resume`/`set`.
   Without an injected surface only the two built-in options exist.
+- `AcpAdapterConfig::additional_commands` appends only composition-implemented
+  host-neutral commands to the frozen 28-entry compatibility catalog. The
+  default remains exactly 28 for oracle fixtures; production ACP appends the
+  shared host-parity catalog and advertises it on new/load/resume.
 - Session mode/config requests are mapped to runtime mode, reasoning, and
   permission updates; delete and logout have explicit protocol responses.
 - `AcpPromptEngine` is an optional composition port. When injected, prompt
