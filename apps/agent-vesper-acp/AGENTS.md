@@ -25,6 +25,10 @@ transport, stderr-only tracing, and orderly shutdown.
   Vesper read root (`AGENT_VESPER_SESSION_WRITE_ROOT` or
   `AGENT_VESPER_SESSION_ROOT`) and must be absolute with an existing parent;
   `AGENT_VESPER_SESSION_WRITE_MAX_BYTES` bounds the record size.
+- Durable editor-chat registration must enable both session writes and Agent
+  Vesper session reads; writes commit completed turns, while reads provide
+  list/load/resume after the editor launches a fresh ACP process. Checkpoint
+  enablement is independent and is not required for conversation persistence.
 - Provider selection is a composition-boundary concern resolved before the
   runtime is constructed. Production registers BOTH real adapters (Z.ai GLM
   + LM Studio) in every boot so the ACP `provider` footer picker (TUI

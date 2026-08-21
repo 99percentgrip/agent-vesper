@@ -13347,7 +13347,7 @@ mod tests {
     }
 
     #[test]
-    fn drain_agent_event_streams_reasoning_and_content_into_session_buffers() {
+    fn drain_agent_event_orders_streaming_and_finalizes_visible_content_once() {
         // Closes the loop on the UI binding: progress events emitted by the
         // agent loop must land in `session.reasoning` / `session.live_response`,
         // which `ViewModel.reasoning` / `ViewModel.live_response` clone each
@@ -13399,16 +13399,46 @@ mod tests {
             text: ContentText::new("thinking…").unwrap(),
         }));
         let _ = tx.send(AgentEvent::Progress(AgentProgressEvent::ContentDelta {
-            text: ContentText::new("answering…").unwrap(),
+            text: ContentText::new("answering ").unwrap(),
+        }));
+        let _ = tx.send(AgentEvent::Progress(AgentProgressEvent::ContentDelta {
+            text: ContentText::new("in order…").unwrap(),
         }));
         session.agent_rx = Some(rx);
         drain_agent_event(&mut session);
 
         assert_eq!(session.reasoning, "thinking…");
-        assert_eq!(session.live_response, "answering…");
+        assert_eq!(session.live_response, "answering in order…");
         assert!(
             session.agent_running,
             "no Completed event arrived, so the turn stays in flight"
+        );
+        let _ = tx.send(AgentEvent::Completed {
+            outcome: AgentTurnOutcome::Completed {
+                assistant_content: vec![ContentPart::Text(
+                    ContentText::new("answering in order…").unwrap(),
+                )],
+                iterations: 1,
+                tool_results: Vec::new(),
+                plan: None,
+            },
+            history: Vec::new(),
+        });
+        drain_agent_event(&mut session);
+
+        assert!(
+            !session.agent_running,
+            "terminal event hides the live region"
+        );
+        assert_eq!(
+            session
+                .state
+                .transcript
+                .iter()
+                .filter(|line| line.as_str() == "assistant: answering in order…")
+                .count(),
+            1,
+            "the finalized assistant answer appears exactly once"
         );
         drop(tx);
     }

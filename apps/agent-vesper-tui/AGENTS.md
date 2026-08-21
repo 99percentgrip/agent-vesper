@@ -139,6 +139,11 @@ business logic.
   that want Depth / Branches / Models / Repairs. The binary populates
   `ViewModel.reasoning_diagnostics` before each VRO turn; `None` (the
   default) renders a plain `🧠 Thinking…` header.
+- Live agent progress and terminal completion share one FIFO per-turn mpsc
+  channel. Reasoning/content deltas must remain ordered, and terminal
+  finalization must replace the visible streaming region with exactly one
+  transcript copy of the assistant answer; never spawn independent
+  per-delta delivery tasks.
 - `src/markdown.rs` — self-contained, streaming-safe markdown → ratatui
   `Line` renderer. Re-parses the buffered assistant text every frame so
   partial syntax degrades gracefully: open inline markers (`**bold` with no
