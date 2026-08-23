@@ -47,6 +47,21 @@
 //! [`check_tool_permission`]: crate::permission::check_tool_permission
 //! [`PermissionPort`]: crate::permission::PermissionPort
 //! [`VroOrchestrator::execute_react`]: super::VroOrchestrator::execute_react
+//!
+//! ## Loop Guard (VRO-12, PRD `docs/result-aware-loop-detection-prd.md`)
+//!
+//! A [`LoopDetector`] sliding window (last 5 executed tools) is consulted at
+//! the OBSERVE step of every successful invocation. Failures
+//! (`ToolInvocationError`) and Read-Before-Write rejections are never
+//! recorded — a broken tool must not be classified as a stuck model. The
+//! ladder: [`LoopVerdict::Clear`] (normal), [`LoopVerdict::Warn`]
+//! (result is pushed, then a `[VRO-12 Loop Guard]` nudge observation is
+//! appended so the model changes strategy), [`LoopVerdict::Block`]
+//! (result text is replaced with the override message and the blocked
+//! attempt does NOT consume a `max_tool_calls` unit, mirroring the
+//! Read-Before-Write precedent), [`LoopVerdict::Break`] (circuit breaker:
+//! the turn halts with `BudgetExceeded` and a named risk, partial
+//! trajectory still returned).
 
 use std::future::Future;
 use std::pin::Pin;
@@ -58,6 +73,8 @@ use vesper_domain::{
     StructuredOutput, ToolCall, ToolCallId, ToolExecutionClass, ToolId, VerificationStatus,
     VerificationSummary,
 };
+
+use super::loop_detector::{LoopDetector, LoopGuardAction};
 
 // ---------------------------------------------------------------------------
 // Trajectory (PRD §11.6: "appending the state to the context on each turn")
@@ -399,6 +416,7 @@ pub async fn run_tool_grounded_react_with_trajectory(
     let mut tool_calls = 0u32;
     let mut has_read_evidence = false;
     let mut unresolved_risks: Vec<String> = Vec::new();
+    let mut loop_detector = LoopDetector::new();
     let max_model_calls = budget.max_model_calls.max(1);
     let max_tool_calls = budget.max_tool_calls;
 
@@ -483,10 +501,42 @@ pub async fn run_tool_grounded_react_with_trajectory(
                         if is_read_only {
                             has_read_evidence = true;
                         }
-                        trajectory.push(TrajectoryEntry::Observation {
-                            text,
-                            success: true,
-                        });
+                        match loop_detector.record(&name, &arguments, &text) {
+                            LoopGuardAction::Clear => {
+                                trajectory.push(TrajectoryEntry::Observation {
+                                    text,
+                                    success: true,
+                                });
+                            }
+                            LoopGuardAction::Warn(warning) => {
+                                trajectory.push(TrajectoryEntry::Observation {
+                                    text,
+                                    success: true,
+                                });
+                                trajectory.push(TrajectoryEntry::Observation {
+                                    text: warning.message,
+                                    success: false,
+                                });
+                            }
+                            LoopGuardAction::Block(message) => {
+                                tool_calls = tool_calls.saturating_sub(1);
+                                trajectory.push(TrajectoryEntry::Observation {
+                                    text: message,
+                                    success: false,
+                                });
+                            }
+                            LoopGuardAction::Break(reason) => {
+                                unresolved_risks.push(reason);
+                                return (
+                                    build_budget_exceeded(
+                                        model_calls,
+                                        tool_calls,
+                                        unresolved_risks,
+                                    ),
+                                    std::mem::take(&mut trajectory),
+                                );
+                            }
+                        }
                     }
                     Err(error) => {
                         // Directive 2 + 4: structured failure observation,

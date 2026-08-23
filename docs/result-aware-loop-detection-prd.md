@@ -1,0 +1,309 @@
+# VRO-12 — Result-Aware Loop Detection (PRD)
+
+Status: IMPLEMENTED · Phase VRO-12 · Owner: `crates/vesper-agent`
+Predecessor: VRO-11 (ADR 0017, VesperLens) · Family: Vesper Reasoning
+Orchestrator (`docs/agent-vesper-reasoning-orchestrator-prd.md`)
+
+Reference model: `zeroclaw` @ `d5b69f54ee8eab90c5142093cc87010b7ee3bf62`,
+`crates/zeroclaw-runtime/src/agent/loop_detector.rs` (data-only structural
+reference; no code copied, no dependency introduced; the repo was never
+executed — read exclusively via `sed`/`grep`).
+
+---
+
+## 1. Executive Summary
+
+A tool-grounded agent that repeats itself is the most expensive failure mode
+in the harness: every redundant THINK→ACT→OBSERVE cycle burns provider
+tokens, wall-clock budget (`max_wall_time_ms`, VRO-9), and tool-call budget
+(`max_tool_calls`) while producing zero state change. The existing Vesper
+ReAct loop (`crates/vesper-agent/src/vro/react.rs`) halts only on *quantity*
+ceilings — iteration counts — which fire after the damage is done and say
+nothing about *quality*. An agent that calls the same tool with the same
+arguments five times, or ping-pongs between two tools, or retries a failing
+probe with different arguments but byte-identical results, runs to its
+numeric ceiling at full token cost.
+
+VRO-12 adds **result-aware loop detection**: a deterministic, allocation-
+bounded sliding window over the last **5** executed (tool, args-hash,
+result-hash) triples, evaluated after every OBSERVE step of the VRO ReAct
+loop. Three patterns are classified — **Exact Repeat**, **Ping-Pong**,
+**No-Progress** — and each escalates through a three-step ladder: *warn*
+(system nudge injected into the trajectory), *block* (result replaced, no
+budget consumed), *break* (loop halts with a `BudgetExceeded` outcome and a
+named cause).
+
+Objective: **stop token-burning loops at the first classifiable evidence,
+before the numeric ceilings fire, with zero behavior change to any path that
+is not the VRO-orchestrated ReAct loop.**
+
+Measured floor at draft time: **1193 test functions workspace-wide (336 in
+`vesper-agent`)**, all green at HEAD. The directive's "1028+ tests remain
+green" is already superseded; §6 encodes the real gate.
+
+---
+
+## 2. Architectural Constraints
+
+### 2.1 Hard constraints
+
+| # | Constraint | Enforcement |
+|---|---|---|
+| C1 | **Zero new dependencies.** `VecDeque` is `std::collections`; result/args hashing uses `sha2`, already a `vesper-agent` dependency (VRO-7 deterministic procedure IDs, `crates/vesper-agent/Cargo.toml`). | `Cargo.toml` diff must be empty; `cargo xtask architecture` dependency-direction scan must stay green. |
+| C2 | **Window = `VecDeque<ToolCallRecord>` holding the last 5 executed tools** (directive-fixed). | Unit test pins capacity: 8 recorded calls ⇒ internal length ≤ 5. |
+| C3 | **Host parity:** the same detector protects both ReAct and the shared direct `AgentLoop` used by ACP and TUI; non-ReAct orchestration strategies remain unchanged. | ReAct integration tests plus a direct-loop regression prove both paths stop a saturated repeat before the numeric cap. |
+| C4 | **No seam changes.** `ReactAgent`, `ToolInvoker`, and every public orchestrator signature stay byte-identical. The intervention enters through the existing trajectory channel (`TrajectoryEntry::Observation`) — the same self-correction channel Read-Before-Write already uses. | `git diff` on trait/`pub fn` signatures must be empty. |
+| C5 | **Determinism.** No clocks, no randomness, no `DefaultHasher` (not stability-guaranteed across Rust releases). Hashes are SHA-256 digests truncated to `u64` (first 8 bytes, big-endian). | Unit tests are pure-function; no `Instant`/`SystemTime` in `src/vro/loop_detector.rs`. |
+| C6 | **Allocation-bounded.** One `ToolCallRecord` push per tool call; window eviction is `pop_front`; no per-record heap growth beyond the fixed 5-entry ring. Hash input is the bounded result `String` the invoker already produced. | Review-only (mirrors VRO-7 `hash_value` precedent: allocation shape argued in code, equality classes pinned by test). |
+
+### 2.2 Detection keys
+
+`ToolCallRecord { name: String, args_hash: u64, result_hash: u64 }`
+
+- **args_hash** = `SHA-256(canonical_json(args))[0..8]`. Canonical form is
+  `serde_json::to_string(args)`; under the workspace's default `serde_json`
+  feature set, `Map` is a `BTreeMap`, so object keys serialize in sorted
+  order — two calls differing only in key order hash identically. A guard
+  test pins this. (Divergence from the reference, which hand-rolls a
+  streaming sorted-key walker because it enables `preserve_order`-adjacent
+  features; we do not, so `to_string` is already canonical.)
+- **result_hash** = `SHA-256(result_text)[0..8]`. Numeric/text distinction
+  is inherited from JSON serialization (`0` vs `0.0` vs `"0"` serialize to
+  distinct strings — the same collision class the reference patches with
+  length-prefixed canonical text; serialization gives it to us for free).
+- **Recorded only on successful invocations.** A failed invocation
+  (`ToolInvocationError::*`) already produces a structured failure
+  observation the model must react to; recording failures would conflate
+  "model stuck" with "tool broken". Mirrors the reference
+  (`results_collect.rs`: failures ⇒ `LoopDetectionResult::Ok`, no record).
+- **Read-Before-Write rejections are never recorded.** They are synthesized
+  by the loop before reaching the invoker (react.rs: they do not consume
+  `max_tool_calls`); they are policy feedback, not executed tools.
+
+### 2.3 Placement
+
+New module `crates/vesper-agent/src/vro/loop_detector.rs` (pure, no I/O,
+`#![forbid(unsafe_code)]` inherited). `react.rs` constructs one guard at loop
+entry and consults it at the OBSERVE step. Mirrors the VRO-10 placement
+pattern of `rate_limit.rs` / `repair.rs`: a self-contained detector module
+wired into exactly one loop.
+
+---
+
+## 3. State Machine Flow
+
+Interception point: **post-observation** — after the `ToolInvoker` returns
+and before the next THINK cycle, at the same site where
+`trajectory.push(TrajectoryEntry::Observation { .. })` occurs
+(react.rs:456–496 family).
+
+```
+            ┌──────────────── VRO ReAct loop (react.rs) ────────────────┐
+            │                                                            │
+   THINK ───┤ ReactAgent::next_action(prompt, &trajectory)               │
+            │   └─ Finish ──────────────────────────────► Succeeded      │
+            │   └─ CallTool { name, arguments }                          │
+            │        │                                                   │
+   ACT ─────┤   invoker.invoke(name, &arguments)                         │
+            │        │  Read-Before-Write reject ──► synthetic obs       │
+            │        │                      (NOT recorded, no budget)    │
+            │        ▼                                                   │
+   OBSERVE ─┤◄═ VRO-12 INTERCEPT ════════════════════════════════════════│
+            │  guard.record(name, &args, &result)  [success only]        │
+            │        │                                                   │
+            │        ├─ Clear ───────► push Observation; continue        │
+            │        ├─ Warn ────────► push Observation (real result),   │
+            │        │                  push synthetic nudge Observation │
+            │        ├─ Block ───────► push Observation (replaced text), │
+            │        │                  NO max_tool_calls consumed       │
+            │        └─ Break ───────► halt: BudgetExceeded + named risk │
+            └────────────────────────────────────────────────────────────┘
+```
+
+Detectors run in fixed escalation order (most severe classification first),
+evaluated over the 5-entry window after each successful record:
+
+1. **Exact Repeat** — trailing run of identical `(name, args_hash)`.
+   - run ≥ 3 ⇒ `Warn`
+   - run ≥ 4 ⇒ `Block`
+   - run ≥ 5 (window saturated) ⇒ `Break`
+2. **Ping-Pong** — the entire window alternates `A, B, A, B, A` with
+   `A ≠ B` (tool *names*; args may vary — a name-level pattern is the
+   signal).
+   - pattern present ⇒ `Warn`
+   - pattern present AND a prior Warn for the same `(A, B)` pair is still
+     inside the window ⇒ `Block`
+   - pattern present AND an Exact-Repeat `Break` condition is also met ⇒
+     `Break` (degrades to detector 1)
+   - *Adaptation note:* the reference detects ping-pong on a 20-entry window
+     at ≥ 4 full cycles (8 entries). A 5-entry window (C2, directive-fixed)
+     can see at most 2 full cycles + 1 confirming entry, so cycle counting is
+     replaced by whole-window pattern matching plus in-window escalation
+     state. Thresholds are re-derived for the fixed window, not inherited.
+3. **No-Progress** — ≥ 4 entries in the window share `(name, result_hash)`
+   while exposing ≥ 2 distinct `args_hash` values (if all args are
+   identical, detector 1 owns the case — the reference's separation, kept).
+   Counted with `filter`, **not** `take_while`: an unrelated interleaved
+   call must not reset the streak (the reference's 43-near-duplicate-calls
+   lesson).
+   - count ≥ 4 ⇒ `Warn`; ≥ 5 with prior Warn in-window ⇒ `Block`;
+     saturation (5/5 identical results) ⇒ `Break`.
+
+Escalation state is a small in-window record of the last emitted
+intervention (pattern kind + pair/.tool identity) — no cross-turn memory,
+no growth: it is part of the fixed-size guard struct and resets when the
+evidence pattern leaves the window.
+
+`Break` maps to the loop's existing halt semantics: return
+`ReasoningOutcome { status: BudgetExceeded, unresolved_risks:
+["VRO-12 loop guard: <pattern>, <tool(s)>, <counts>"] }` — the same shape
+`max_tool_calls` exhaustion produces (react.rs:434–436), so hosts need no
+new handling. `run_tool_grounded_react_with_trajectory` still returns the
+partial trajectory on `Break` (VRO-7 extraction keeps working).
+
+---
+
+## 4. Intervention Strategy
+
+The nudge is a synthetic `TrajectoryEntry::Observation` appended
+immediately after the real result, prefixed `[VRO-12 Loop Guard]`, and is
+the **only** context mutation VRO-12 performs. It rides the exact channel
+Read-Before-Write already uses, so every `ReactAgent` implementation
+(including `LmStudioReactAgent`) sees it with zero adapter changes.
+
+Warn text (per pattern):
+
+- Exact Repeat: `[VRO-12 Loop Guard] You have called '{tool}' {n} times in
+  a row with identical arguments and it returned the same result. Repeating
+  it again will be blocked. State what the repeated results prove, then take
+  a different action or Finish.`
+- Ping-Pong: `[VRO-12 Loop Guard] '{A}' and '{B}' have alternated for the
+  entire recent window without new state. Choose a different strategy,
+  change the arguments substantively, or Finish with what you have.`
+- No-Progress: `[VRO-12 Loop Guard] '{tool}' has returned byte-identical
+  output across {n} differently-argued probes. The information source is
+  exhausted. Stop probing it; reason from the observations already
+  collected, or Finish.`
+
+Block replaces the result text with
+`[VRO-12 Loop Guard — BLOCKED] '{tool}' suppressed: {pattern}. {guidance}`
+and — mirroring Read-Before-Write — the blocked attempt does **not** consume
+a `max_tool_calls` unit (it never influenced the model's next decision with
+new information). Break terminates with the named risk note (§3).
+
+Rationale for the ladder: the reference's production telemetry shows the
+Warn nudge alone breaks most loops (the model gets an explicit instruction
+to change strategy); Block exists for the model that ignores the nudge;
+Break exists for the pathological case where both fail. Escalation is
+evidence-driven, never time-driven — Vesper has no wall-clock detector by
+design (C5), unlike the reference's separate `min_elapsed_secs` gate which
+we deliberately do not port (it exists there to protect long-running
+browser workflows; Vesper's ReAct budgets are already wall-clock bounded by
+VRO-9).
+
+---
+
+## 5. Non-Goals
+
+- No detection inside non-ReAct orchestration strategies. The shared direct
+  `agent_loop.rs` path is intentionally covered to enforce ACP↔TUI parity.
+- No new `ReasoningConfig` / `vesper-domain` surface. Thresholds are
+  module-local constants in `loop_guard.rs` (the `react.rs` precedent for
+  loop-local policy constants).
+- No cross-turn or cross-session loop memory; no persistence; no telemetry
+  port (the `AgentProgressPort` already surfaces outcomes).
+- No time-gated identical-output abort (reference's
+  `check_identical_output_abort`): redundant with VRO-9 wall-clock ceilings
+  and incompatible with C5 determinism.
+- No fuzzy/similarity matching. Hash equality only — near-duplicate text is
+  out of scope and honestly absent.
+
+---
+
+## 6. Verification
+
+Canonical gate (must be run and green before merge):
+
+1. `cargo test -p vesper-agent` — all existing **336** tests green, plus the
+   new suite below.
+2. `cargo test --workspace --all-features` — workspace floor **≥ 1193 test
+   functions** (measured at HEAD; the directive's "1028+" is already
+   exceeded — the gate is *no regression below the measured floor*, not the
+   stale number).
+3. `cargo xtask verify` — fmt + Clippy `-D warnings` + workspace tests +
+   architecture scan (`vesper-agent` dependency direction must still pass
+   with an empty `Cargo.toml` diff).
+4. `git diff -- crates/vesper-agent/src/vro/react.rs` reviewed for the C4
+   signature freeze.
+
+Required new unit tests (deterministic fakes — the existing `react.rs`
+scripted-agent/invoker pattern, cf. `budget()` helper and
+`loop_halts_when_max_tool_calls_is_exhausted`):
+
+**Window mechanics** — (W1) 8 recorded calls ⇒ window length ≤ 5.
+**Canonical hashing** — (H1) `{"a":1,"b":2}` ≡ `{"b":2,"a":1}` (same
+args_hash); (H2) `0` ≢ `0.0` ≢ `"0"` (distinct result/args hashes);
+(H3) `["ab","c"]` ≢ `["a","bc"]`.
+**Exact Repeat** — (E1) run of 3 ⇒ Warn + trajectory contains nudge + loop
+continues and can still Finish; (E2) run of 4 ⇒ Block + result replaced +
+`max_tool_calls` not consumed; (E3) run of 5 ⇒ Break +
+`BudgetExceeded` + risk note names the tool and count; (E4) with-trajectory
+variant still returns the partial trajectory on Break.
+**Ping-Pong** — (P1) `A,B,A,B,A` ⇒ Warn; (P2) `A,B,B,A,A` ⇒ Clear;
+(P3) sustained after Warn ⇒ Block.
+**No-Progress** — (N1) 4 same-tool same-result entries with ≥ 2 distinct
+args ⇒ Warn; (N2) interleaved unrelated call does not reset the count
+(`filter` semantics); (N3) all-identical args stays classified as Exact
+Repeat, not No-Progress.
+**Recording rules** — (R1) invoker `Err` ⇒ not recorded; (R2) Read-
+Before-Write rejection ⇒ not recorded, no budget consumed.
+**Zero-breakage gold** — (Z1) guard disabled ⇒ trajectory byte-identical to
+pre-VRO-12 for the same scripted run; (Z2) a non-looping successful ReAct
+turn (distinct tools/results) produces no `[VRO-12` bytes anywhere.
+
+Soak/property additions (follow the `tests/soak_test.rs` `#[ignore]`
+pattern): (S1) 200-call adversarial mixed workload ⇒ guard memory bounded
+(window never exceeds 5; no growth), all classifications deterministic
+across two identical runs.
+
+---
+
+## 7. Evidence Appendix (recon, all paths verified this session)
+
+**agent-vesper** (`/home/Alex/Projects/agent-vesper`, clean at HEAD):
+
+- `crates/vesper-agent/src/vro/mod.rs:115` — `VroOrchestrator`; VRO-1..VRO-7
+  entry points (`execute`, `execute_with_judge`, `execute_react`,
+  `execute_with_critic_adjudicator`, `execute_with_learning`).
+- `crates/vesper-agent/src/vro/react.rs` — the loop this PRD instruments:
+  trajectory pushes at 456/460/477/486/496; halt semantics at 402–436;
+  Read-Before-Write synthetic-observation precedent; test patterns at
+  695–767.
+- `crates/vesper-agent/src/vro/rate_limit.rs`, `repair.rs` — the VRO-10
+  placement precedent (self-contained detector wired into one loop;
+  `RepairController::is_repeated_attempt` is the existing single-shot
+  signature-repeat check VRO-12 generalizes).
+- `crates/vesper-agent/Cargo.toml` — `sha2.workspace = true` (VRO-7) ⇒ C1
+  satisfiable with an empty diff.
+- `crates/vesper-agent/AGENTS.md` — ownership + verification gates cited in
+  §6.
+- VRO numbering: ADR 0017 = VRO-11 ⇒ VRO-12 free.
+- Test counts: `grep -c '#\[test\]|#\[tokio::test\]'`-equivalent shell
+  census: 1193 workspace / 336 vesper-agent.
+
+**zeroclaw** (`/home/Alex/Projects/zeroclaw` @ `d5b69f5`, read-only data):
+
+- `crates/zeroclaw-runtime/src/agent/loop_detector.rs` (1002 lines) —
+  `LoopDetectorConfig` (enabled/window 20/repeats 3), `ToolCallRecord`
+  {name, args_hash, result_hash}, `VecDeque` window, detectors in
+  escalation order, Warning→Block→Break ladder, canonical JSON walker with
+  the `0` vs `0.0` `Number::hash` collision patch, `filter`-based
+  no-progress counting.
+- `crates/zeroclaw-runtime/src/agent/turn/mod.rs:524–528, 1373–1395` —
+  construction + post-collection wiring.
+- `crates/zeroclaw-runtime/src/agent/turn/results_collect.rs:159–230` —
+  record-on-success-only, `loop_ignore_tools` exclusion, nudge injection
+  via system message, Break ⇒ bail.
+- `crates/zeroclaw-config/src/schema.rs:6017–6070` — shipped defaults
+  (enabled=true, window=20, repeats=3) and the exact-repeat / ping-pong /
+  no-progress taxonomy named verbatim.

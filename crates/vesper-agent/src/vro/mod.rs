@@ -29,6 +29,9 @@
 pub mod executor;
 pub mod learning;
 pub mod lens_integration;
+pub mod loop_detector;
+#[cfg(test)]
+mod loop_detector_tests;
 pub mod orchestrator;
 pub mod profiler;
 pub mod rate_limit;

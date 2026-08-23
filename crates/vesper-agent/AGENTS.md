@@ -46,6 +46,12 @@ the multi-turn, tool-executing layer above it.
   turn: when an executor returns `ToolResult.injected_tools`, the loop
   merges them (deduplicated by `ToolId` or `harness_name`) into the
   advertised pool so the next iteration advertises them to the model.
+  Provider terminal outcomes other than a normal `Stop` are classified as
+  `AgentLoopError::Incomplete` and must never be reported by a host as a
+  completed implementation. The same bounded VRO-12 result-aware loop guard
+  used by ReAct also protects this direct path: warnings are fed back through
+  tool results, persistent repeats are blocked, and a saturated exact-repeat
+  or no-progress window fails truthfully with `LoopDetected`.
 - `src/vro/mod.rs` — Vesper Reasoning Orchestrator (VRO) scaffolding.
   `VroOrchestrator` holds a `ReasoningConfig` (from `vesper-domain`), a
   `TaskProfiler`, and a shared `VerifierRegistry` (behind an `Arc` so the
@@ -137,6 +143,12 @@ the multi-turn, tool-executing layer above it.
   self-correct. Zero-breakage: only invoked via `execute_react` /
   `execute_with_learning`; `Direct`, `GenerateVerifyRepair`, and parallel
   paths never reach this code.
+- `src/vro/loop_detector.rs` — VRO-12 deterministic result-aware loop guard.
+  Retains at most five successful `(tool, args hash, result hash)` records and
+  detects exact repeats, tool ping-pong, and differently-argued probes that
+  return identical results. ReAct and the shared direct `AgentLoop` both use
+  its warning/block/break ladder; failed tools and policy rejections are not
+  recorded.
 - `src/vro/orchestrator.rs` — VRO-2.3 Generate-Verify-Repair loop (PRD §11.3,
   §10.9). `CandidateGenerator` trait (async object-safe via boxed `Send`
   future; **`boxed_clone` is required** so VRO-4's parallel executor can give

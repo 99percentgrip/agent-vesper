@@ -14,8 +14,8 @@ serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
-vesper-domain = { path = "../vesper-domain", version = "=0.20.65" }
-vesper-runtime = { path = "../vesper-runtime", version = "=0.20.65" }
+vesper-domain = { path = "../vesper-domain", version = "=0.20.66" }
+vesper-runtime = { path = "../vesper-runtime", version = "=0.20.66" }
 
 [dev-dependencies]
 tokio-util.workspace = true

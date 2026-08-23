@@ -34,6 +34,7 @@ use crate::permission::{
     DenyPermissionPort, PermissionDecision, PermissionPort, check_tool_permission,
 };
 use crate::registry::ToolRegistry;
+use crate::vro::loop_detector::{LoopDetector, LoopGuardAction};
 
 /// Live, bounded progress emitted while an agent turn is running.
 ///
@@ -234,6 +235,14 @@ pub enum AgentLoopError {
     /// The stream ended without a terminal event.
     #[error("provider stream ended without a terminal outcome")]
     StreamWithoutTerminal,
+    /// The provider ended without a normal stop after exhausting or refusing
+    /// generation. Treating this as `Completed` would make hosts falsely
+    /// report a truncated or interrupted implementation as successful.
+    #[error("provider ended before task completion: {0:?}")]
+    Incomplete(FinishOutcome),
+    /// The model persisted in a deterministic repeated/no-progress tool loop.
+    #[error("tool loop stopped: {0}")]
+    LoopDetected(String),
 }
 
 /// The Tier C multi-turn agent loop.
@@ -365,6 +374,7 @@ impl AgentLoop {
         let mut tool_results: Vec<ToolResult> = Vec::new();
         let mut plan: Option<String> = None;
         let mut iteration: u32 = 0;
+        let mut loop_detector = LoopDetector::new();
 
         loop {
             if iteration >= self.config.max_tool_iterations {
@@ -395,6 +405,9 @@ impl AgentLoop {
             });
 
             if tool_calls.is_empty() {
+                if !matches!(finish, FinishOutcome::Stop) {
+                    return Err(AgentLoopError::Incomplete(finish));
+                }
                 return Ok((
                     AgentTurnOutcome::Completed {
                         assistant_content: assistant_parts,
@@ -425,8 +438,24 @@ impl AgentLoop {
                 let outcome = self
                     .gate_and_execute(&call, &context, &advertised_tools)
                     .await;
-                let output = outcome.text;
+                let mut output = outcome.text;
                 let injected = outcome.injected;
+                let execution_succeeded = !output.starts_with("tool error:")
+                    && !output.starts_with("permission denied:")
+                    && !output.starts_with("unknown tool:");
+                if execution_succeeded {
+                    match loop_detector.record(&tool_name, &call.arguments, &output) {
+                        LoopGuardAction::Clear => {}
+                        LoopGuardAction::Warn(warning) => {
+                            output.push_str("\n\n");
+                            output.push_str(&warning.message);
+                        }
+                        LoopGuardAction::Block(message) => output = message,
+                        LoopGuardAction::Break(reason) => {
+                            return Err(AgentLoopError::LoopDetected(reason));
+                        }
+                    }
+                }
                 // Phase 5: capture the model-generated plan when the model
                 // emits `update_plan`, so callers (the TUI) can drive the
                 // PLANNING → REVIEW transition without a human-authored body.
@@ -436,9 +465,8 @@ impl AgentLoop {
                         markdown: output.clone(),
                     });
                 }
-                let success = !output.starts_with("tool error:")
-                    && !output.starts_with("permission denied:")
-                    && !output.starts_with("unknown tool:");
+                let success =
+                    execution_succeeded && !output.starts_with("[SYSTEM OVERRIDE: LOOP BLOCKED");
                 let note = tool_result_note(&output, success);
                 self.progress_port.emit(AgentProgressEvent::ToolFinished {
                     name: tool_name,

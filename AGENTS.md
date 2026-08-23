@@ -88,10 +88,11 @@ When the user requests a durable behavior change, record it here or in the relev
   migration gates.
 - Never advertise invented providers, models, API plans, reasoning modes, or
   UI controls. Provider-specific values come from the owning real adapter and
-  the frozen oracle; production currently registers only Z.ai.
+  the frozen oracle; production currently registers Z.ai and LM Studio.
 - “Multi-provider” means the provider-neutral registry/runtime architecture
-  until another real adapter has authentication, catalog, transport, fixtures,
-  and CI evidence. It must not be presented as multiple available providers.
+  plus the real registered adapters. Z.ai and LM Studio are currently
+  available; no additional provider may be claimed before it has
+  authentication, catalog, transport, fixtures, and CI evidence.
 - A feature may be called impossible or excluded only after checking the
   frozen oracle and current primary documentation and recording concrete
   technical evidence. Missing dependencies must fail truthfully; placeholders

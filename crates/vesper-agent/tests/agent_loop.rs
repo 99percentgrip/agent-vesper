@@ -8,10 +8,11 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::json;
 use vesper_agent::{
-    AgentLoop, AgentLoopConfig, AgentProgressEvent, AgentProgressPort, AgentTurnOutcome,
-    DEFAULT_MAX_TOOL_ITERATIONS, ToolContext, ToolError, ToolExecutor, ToolFuture, ToolRegistry,
-    ToolResult, ToolService, schema_definition,
+    AgentLoop, AgentLoopConfig, AgentLoopError, AgentProgressEvent, AgentProgressPort,
+    AgentTurnOutcome, DEFAULT_MAX_TOOL_ITERATIONS, ToolContext, ToolError, ToolExecutor,
+    ToolFuture, ToolRegistry, ToolResult, ToolService, schema_definition,
 };
+
 use vesper_domain::{
     BoundedString, ContentPart, ContentText, ConversationMessage, ExtensionMap, FinishOutcome,
     MessageId, MessageRole, MessageRole::User, ProviderId, QualifiedModelId, ReasoningKind,
@@ -129,6 +130,88 @@ fn config(provider_id: &ProviderId, max_iterations: u32) -> AgentLoopConfig {
         workspace_roots: Vec::new(),
         max_tool_iterations: max_iterations,
     }
+}
+
+#[tokio::test]
+async fn non_stop_terminal_is_not_reported_as_completed() {
+    let provider_id = provider();
+    let fake = FakeProviderSession::with_scripts([Ok(vec![
+        Ok(content_delta("partial implementation")),
+        Ok(completed(FinishOutcome::OutputLimit)),
+    ])]);
+    let registry = Arc::new(ProviderRegistry::new());
+    registry
+        .register(FakeFactory {
+            id: provider_id.clone(),
+            session: fake,
+        })
+        .await
+        .unwrap();
+
+    let error = AgentLoop::new(
+        registry,
+        ToolRegistry::parity_default(),
+        config(&provider_id, 10),
+    )
+    .run_prompt(
+        user_message("implement the change"),
+        SessionOperatingMode::Code,
+        SessionPermissionMode::Ask,
+    )
+    .await
+    .expect_err("an output-limited response must not masquerade as completion");
+
+    assert!(matches!(
+        error,
+        AgentLoopError::Incomplete(FinishOutcome::OutputLimit)
+    ));
+}
+
+#[tokio::test]
+async fn direct_loop_stops_repeated_identical_tool_calls_before_iteration_cap() {
+    let provider_id = provider();
+    let repeated = || {
+        Ok(vec![
+            Ok(ProviderStreamEvent::ToolCallCompleted(read_file_call())),
+            Ok(completed(FinishOutcome::ToolCalls)),
+        ])
+    };
+    let fake = FakeProviderSession::with_scripts([
+        repeated(),
+        repeated(),
+        repeated(),
+        repeated(),
+        repeated(),
+    ]);
+    let registry = Arc::new(ProviderRegistry::new());
+    registry
+        .register(FakeFactory {
+            id: provider_id.clone(),
+            session: fake,
+        })
+        .await
+        .unwrap();
+
+    let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(root.path().join("src")).unwrap();
+    std::fs::write(root.path().join("src/lib.rs"), "fn main() {}\n").unwrap();
+    let mut agent_config = config(&provider_id, 20);
+    agent_config.workspace_roots = vec![vesper_domain::WorkspaceRoot {
+        name: BoundedString::new("workspace").unwrap(),
+        path: BoundedString::new(root.path().to_string_lossy().to_string()).unwrap(),
+        primary: true,
+    }];
+
+    let error = AgentLoop::new(registry, ToolRegistry::parity_default(), agent_config)
+        .run_prompt(
+            user_message("keep rereading forever"),
+            SessionOperatingMode::Code,
+            SessionPermissionMode::Ask,
+        )
+        .await
+        .expect_err("the direct loop guard must break before the numeric cap");
+
+    assert!(matches!(error, AgentLoopError::LoopDetected(reason) if reason.contains("VRO-12")));
 }
 
 #[tokio::test]

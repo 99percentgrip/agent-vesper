@@ -1411,7 +1411,7 @@ impl AcpEngineEventSink {
 impl crate::engine::AcpEventSink for AcpEngineEventSink {
     fn event(&self, event: crate::engine::AcpEngineEvent) {
         use agent_client_protocol::schema::v1::{
-            ContentBlock, ContentChunk, SessionUpdate, TextContent, ToolCall as AcpToolCall,
+            ContentBlock, ContentChunk, Plan, SessionUpdate, TextContent, ToolCall as AcpToolCall,
             ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, UsageUpdate,
         };
         match event {
@@ -1476,9 +1476,77 @@ impl crate::engine::AcpEventSink for AcpEngineEventSink {
                 )));
             }
             crate::engine::AcpEngineEvent::PlanUpdated { markdown } => {
-                let _ = markdown;
+                self.publish(SessionUpdate::Plan(Plan::new(plan_entries_from_markdown(
+                    &markdown,
+                ))));
             }
         }
+    }
+}
+
+/// Converts the canonical `update_plan` markdown artifact into ACP's
+/// structured plan update so editor clients can render their native TODO UI.
+fn plan_entries_from_markdown(markdown: &str) -> Vec<agent_client_protocol::schema::v1::PlanEntry> {
+    use agent_client_protocol::schema::v1::{PlanEntry, PlanEntryPriority, PlanEntryStatus};
+
+    markdown
+        .lines()
+        .filter_map(|line| {
+            let (marker, remainder) = if let Some(rest) = line.strip_prefix("[x] ") {
+                (PlanEntryStatus::Completed, rest)
+            } else if let Some(rest) = line.strip_prefix("[~] ") {
+                (PlanEntryStatus::InProgress, rest)
+            } else if let Some(rest) = line.strip_prefix("[ ] ") {
+                (PlanEntryStatus::Pending, rest)
+            } else {
+                return None;
+            };
+            let (_, after_number) = remainder.split_once(' ')?;
+            let (metadata, content) = after_number.split_once(' ')?;
+            let priority = match metadata
+                .strip_prefix('(')
+                .and_then(|value| value.strip_suffix(')'))
+                .and_then(|value| value.rsplit_once('/'))
+                .map(|(_, priority)| priority)
+            {
+                Some("high") => PlanEntryPriority::High,
+                Some("low") => PlanEntryPriority::Low,
+                _ => PlanEntryPriority::Medium,
+            };
+            Some(PlanEntry::new(content, priority, marker))
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod live_plan_tests {
+    use agent_client_protocol::schema::v1::{PlanEntryPriority, PlanEntryStatus};
+
+    use super::plan_entries_from_markdown;
+
+    #[test]
+    fn canonical_markdown_maps_to_native_acp_todo_entries() {
+        let entries = plan_entries_from_markdown(
+            "# Plan\n\n[x] #1 (completed/high) Inspect lifecycle\n\
+             [~] #2 (in_progress/medium) Fix ACP mapping\n\
+             [ ] #3 (pending/low) Run regression tests\n",
+        );
+
+        assert_eq!(entries.len(), 3);
+        assert_eq!(entries[0].content, "Inspect lifecycle");
+        assert_eq!(entries[0].priority, PlanEntryPriority::High);
+        assert_eq!(entries[0].status, PlanEntryStatus::Completed);
+        assert_eq!(entries[1].content, "Fix ACP mapping");
+        assert_eq!(entries[1].status, PlanEntryStatus::InProgress);
+        assert_eq!(entries[2].content, "Run regression tests");
+        assert_eq!(entries[2].priority, PlanEntryPriority::Low);
+        assert_eq!(entries[2].status, PlanEntryStatus::Pending);
+    }
+
+    #[test]
+    fn cleared_or_taskless_markdown_maps_to_an_empty_plan() {
+        assert!(plan_entries_from_markdown("").is_empty());
+        assert!(plan_entries_from_markdown("# Plan\n\n_(no tasks)_\n").is_empty());
     }
 }
 

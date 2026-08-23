@@ -50,7 +50,10 @@ update mapping, and bounded asynchronous dispatch into `vesper-runtime`.
   `PlanUpdated`); the adapter sink maps each to the same wire shape the
   single-turn event pump produces. Full-harness updates are serialized in
   emission order and drained through physical-writer acceptance before the
-  terminal response. A streamed content turn must not append the complete
+  terminal response. Live `PlanUpdated` markdown is converted to structured
+  ACP `plan` entries (including status and priority) so editor clients render
+  their native TODO surface; an empty plan publishes an empty entry list.
+  A streamed content turn must not append the complete
   final text again; engines with no content deltas retain the one-chunk final
   fallback. Engines that lack tool-call ids pair
   started/finished calls by the most recently issued id per tool name (the
