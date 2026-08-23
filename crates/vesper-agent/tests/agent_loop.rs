@@ -93,6 +93,21 @@ fn read_file_call() -> ToolCall {
     }
 }
 
+fn update_plan_call(id: &str, status: &str) -> ToolCall {
+    ToolCall {
+        id: ToolCallId::new(id).unwrap(),
+        tool_id: ToolId::new("update_plan").unwrap(),
+        arguments: json!({
+            "tasks": [{
+                "content": "Produce the final report",
+                "status": status,
+                "priority": "high"
+            }]
+        }),
+        extensions: ExtensionMap::default(),
+    }
+}
+
 fn content_delta(text: &str) -> ProviderStreamEvent {
     ProviderStreamEvent::ContentDelta {
         stream_id: BoundedString::new("content").unwrap(),
@@ -165,6 +180,89 @@ async fn non_stop_terminal_is_not_reported_as_completed() {
         error,
         AgentLoopError::Incomplete(FinishOutcome::OutputLimit)
     ));
+}
+
+#[tokio::test]
+async fn normal_stop_with_open_plan_continues_until_plan_is_completed() {
+    let provider_id = provider();
+    let fake = FakeProviderSession::with_scripts([
+        Ok(vec![
+            Ok(ProviderStreamEvent::ToolCallCompleted(update_plan_call(
+                "plan-open",
+                "in_progress",
+            ))),
+            Ok(completed(FinishOutcome::ToolCalls)),
+        ]),
+        Ok(vec![
+            Ok(content_delta("I will stop before the report.")),
+            Ok(completed(FinishOutcome::Stop)),
+        ]),
+        Ok(vec![
+            Ok(ProviderStreamEvent::ToolCallCompleted(update_plan_call(
+                "plan-done",
+                "completed",
+            ))),
+            Ok(completed(FinishOutcome::ToolCalls)),
+        ]),
+        Ok(vec![
+            Ok(content_delta("Final audit report.")),
+            Ok(completed(FinishOutcome::Stop)),
+        ]),
+    ]);
+    let requests = fake.clone();
+    let registry = Arc::new(ProviderRegistry::new());
+    registry
+        .register(FakeFactory {
+            id: provider_id.clone(),
+            session: fake,
+        })
+        .await
+        .unwrap();
+
+    let root = tempfile::tempdir().unwrap();
+    let mut agent_config = config(&provider_id, 10);
+    agent_config.workspace_roots = vec![vesper_domain::WorkspaceRoot {
+        name: BoundedString::new("workspace").unwrap(),
+        path: BoundedString::new(root.path().to_string_lossy().to_string()).unwrap(),
+        primary: true,
+    }];
+    let (outcome, history) = AgentLoop::new(registry, ToolRegistry::parity_default(), agent_config)
+        .run_prompt_with_history(
+            vec![user_message("audit every requirement")],
+            SessionOperatingMode::Code,
+            SessionPermissionMode::Bypass,
+        )
+        .await
+        .expect("an open plan must continue to its completed report");
+
+    assert!(matches!(
+        outcome,
+        AgentTurnOutcome::Completed {
+            assistant_content,
+            ..
+        } if assistant_content.iter().any(|part| matches!(
+            part,
+            ContentPart::Text(text) if text.as_str() == "Final audit report."
+        ))
+    ));
+    let captured = requests.requests();
+    assert_eq!(captured.len(), 4, "the premature stop must trigger a retry");
+    assert!(captured[2].messages.iter().any(|message| {
+        message.content.iter().any(|part| {
+            matches!(
+                part,
+                ContentPart::Text(text) if text.as_str().contains("active plan still has")
+            )
+        })
+    }));
+    assert!(history.iter().all(|message| {
+        !message.content.iter().any(|part| {
+            matches!(
+                part,
+                ContentPart::Text(text) if text.as_str().contains("[SYSTEM CONTINUATION]")
+            )
+        })
+    }));
 }
 
 #[tokio::test]

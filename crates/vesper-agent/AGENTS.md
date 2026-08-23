@@ -48,7 +48,11 @@ the multi-turn, tool-executing layer above it.
   advertised pool so the next iteration advertises them to the model.
   Provider terminal outcomes other than a normal `Stop` are classified as
   `AgentLoopError::Incomplete` and must never be reported by a host as a
-  completed implementation. The same bounded VRO-12 result-aware loop guard
+  completed implementation. A normal `Stop` while the latest native plan
+  still contains pending or in-progress tasks triggers a bounded internal
+  continuation turn; the synthetic continuation is removed from returned
+  host history, and the ordinary iteration cap remains the hard stop. The
+  same bounded VRO-12 result-aware loop guard
   used by ReAct also protects this direct path: warnings are fed back through
   tool results, persistent repeats are blocked, and a saturated exact-repeat
   or no-progress window fails truthfully with `LoopDetected`.

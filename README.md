@@ -48,7 +48,7 @@ curl -fsSL https://github.com/99percentgrip/agent-vesper/raw/main/scripts/instal
 Or pin a version:
 
 ```sh
-AGENT_VESPER_VERSION=0.20.67 sh scripts/install.sh
+AGENT_VESPER_VERSION=0.20.68 sh scripts/install.sh
 ```
 
 ### Windows (PowerShell)
@@ -111,7 +111,9 @@ are reported as incomplete turns instead of false successful completion. ACP
 preserves a bounded safe reason—such as context limit, quota/rate category,
 malformed stream, or loop detection—in Zed's error details instead of reducing
 every failure to `harness engine failed`; the TUI surfaces the same typed loop
-failures directly.
+failures directly. When a provider tries to end normally while the latest
+native plan still has pending or in-progress items, the shared ACP/TUI loop
+issues a bounded internal continuation and does not accept the turn as done.
 
 ### Uninstall
 

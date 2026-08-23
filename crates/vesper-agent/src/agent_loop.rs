@@ -408,6 +408,12 @@ impl AgentLoop {
                 if !matches!(finish, FinishOutcome::Stop) {
                     return Err(AgentLoopError::Incomplete(finish));
                 }
+                if plan_has_open_items(plan.as_deref()) {
+                    messages.push(plan_continuation_message(&ids));
+                    iteration += 1;
+                    continue;
+                }
+                messages.retain(|message| !is_plan_continuation_message(message));
                 return Ok((
                     AgentTurnOutcome::Completed {
                         assistant_content: assistant_parts,
@@ -609,6 +615,42 @@ impl AgentLoop {
             }
         }
     }
+}
+
+const PLAN_CONTINUATION_EXTENSION: &str = "vesper:internal-plan-continuation";
+
+fn plan_has_open_items(plan: Option<&str>) -> bool {
+    plan.is_some_and(|markdown| {
+        markdown.lines().any(|line| {
+            let line = line.trim_start();
+            line.starts_with("[ ]") || line.starts_with("[~]")
+        })
+    })
+}
+
+fn plan_continuation_message(ids: &IdGenerator) -> ConversationMessage {
+    let mut extensions = ExtensionMap::default();
+    extensions
+        .insert(PLAN_CONTINUATION_EXTENSION, serde_json::Value::Bool(true))
+        .expect("static extension key and bounded value");
+    ConversationMessage {
+        id: ids.message(),
+        role: MessageRole::User,
+        content: vec![ContentPart::Text(
+            ContentText::new(
+                "[SYSTEM CONTINUATION] The active plan still has pending or in-progress items. Continue autonomously, complete the remaining work, update the plan statuses, run required verification, and only then provide the final report.",
+            )
+            .expect("static bounded continuation"),
+        )],
+        extensions,
+    }
+}
+
+fn is_plan_continuation_message(message: &ConversationMessage) -> bool {
+    matches!(
+        message.extensions.get(PLAN_CONTINUATION_EXTENSION),
+        Some(serde_json::Value::Bool(true))
+    )
 }
 
 /// One tool call's outcome after passing the permission gate.
