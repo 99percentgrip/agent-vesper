@@ -66,13 +66,16 @@ agent-vesper-tui                   # Launch the TUI
 
 ### Install in Zed
 
-Add to Zed's `settings.json`:
+Until the upstream ACP Registry submission is merged, register the installed
+binary as a **custom agent**. Add this to Zed's `settings.json`:
 
 ```json
 {
   "agent_servers": {
     "agent-vesper": {
+      "type": "custom",
       "command": "agent-vesper-acp",
+      "args": [],
       "env": {
         "ZAI_API_KEY": "<your-key>",
         "AGENT_VESPER_ENABLE_SESSION_READS": "1",
@@ -83,7 +86,9 @@ Add to Zed's `settings.json`:
 }
 ```
 
-Restart Zed → Agent Panel → **Agent Vesper**.
+Zed normally reloads this setting immediately. Open a new thread from the
+Agent Panel and select **Agent Vesper**. If an older Zed process retains stale
+registry state, restart Zed once.
 
 Both session flags are required for durable editor chats: writes transactionally
 save completed turns, while reads let a new ACP process list, load, and resume
@@ -297,7 +302,7 @@ VRO-11.2 originally introduced an orchestrator seam. ADR 0020 supersedes the unu
 - **`LensReviewPort` trait** (`crates/vesper-agent/src/vro/lens_integration.rs`) — abstracts the lens so the orchestrator stays pure. The composition boundary (TUI binary) supplies a concrete impl wrapping `VesperLens::review_artifact`. Includes `NoOpLensReviewPort` (returns `LensFeedback::default()` immediately, no I/O).
 - **No dormant final-output interception.** `VroOrchestrator::with_lens_port` and `maybe_review_html_artifact` were removed because they had no production caller and contradicted explicit invocation.
 - **`feedback_as_context_message(&feedback)`** — token-frugal context-injection renderer (verdict + notes + numbered annotations). The host injects this as a `role: Tool` message so the next model turn can apply the human's corrections (PRD §4).
-- **Registry launch.** New `scripts/publish_to_acp_registry.sh` opens (or updates) a **brand-new** `agent-vesper` PR against `agentclientprotocol/registry`. The legacy `scripts/acp_pr_439.md` is deleted — PR #439 belongs to the `native-glm-acp` Python project and is intentionally left untouched.
+- **Registry launch.** `scripts/publish_to_acp_registry.sh` updates the one long-lived `agent-vesper` PR against `agentclientprotocol/registry` in place. Until that PR is merged, Zed users register the installed binary as a custom agent. The legacy `scripts/acp_pr_439.md` is deleted — PR #439 belongs to the `native-glm-acp` Python project and is intentionally left untouched.
 
 ### VRO-11.3 — TUI & UX Hotfix (Bracketed Paste, Live Telemetry, Autocomplete Disconnect, File-Save Interceptor)
 

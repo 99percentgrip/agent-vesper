@@ -118,7 +118,8 @@ try {
     Write-Host "  agent-vesper-acp --setup          (optional non-interactive setup)"
     Write-Host "  set ZAI_API_KEY=<your Z.ai key>   (optional environment override)"
     Write-Host ""
-    Write-Host "Then register Agent Vesper as an ACP agent in Zed (see README 'Install in Zed')."
+    Write-Host "Then register the installed binary as a custom ACP agent in Zed (see README 'Install in Zed')."
+    Write-Host "Use 'type': 'custom' until the upstream ACP Registry PR is merged."
 } finally {
     Remove-Item -LiteralPath $temporary -Recurse -Force -ErrorAction SilentlyContinue
 }

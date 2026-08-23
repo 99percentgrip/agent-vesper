@@ -53,6 +53,9 @@ with each release.
 - SHA-256 verification is mandatory; a missing/mismatched checksum fails the
   install.
 - Installed launchers invoke their bundled binary verbatim and add no behavior.
+- Until the public ACP Registry PR is merged, installer completion guidance
+  directs Zed users to register the installed launcher with `type: custom`;
+  it must not imply that the agent is already discoverable from the registry.
 - Credentials are not stored by the installer. First-run guidance leads with
   the TUI's Agent Vesper Authentication screen and also documents `agent-vesper-acp --setup` and
   the optional `ZAI_API_KEY` environment override.
@@ -74,6 +77,8 @@ with each release.
 - `uninstall.ps1` runs under Windows PowerShell 5.1+ and PowerShell 7.
 - After install, both `--version` commands print the workspace version and both
   binaries are reachable on `PATH`.
+- Installer completion output identifies custom Zed registration as the
+  pre-registry path.
 
 ## Child DOX Index
 
