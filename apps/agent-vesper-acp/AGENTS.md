@@ -50,6 +50,11 @@ transport, stderr-only tracing, and orderly shutdown.
   dispatch gate or scenario behavior.
 - The default ACP composition injects `AcpHarnessEngine`, which owns bounded
   per-session conversation history and routes prompts through `AgentLoop`.
+  Agent-loop failures are projected into bounded safe classifications (for
+  example context limit, rate/quota category, interrupted stream, or loop
+  detection) before crossing the ACP boundary; never collapse all failures
+  into an unactionable generic harness error and never expose raw provider
+  payloads.
   The engine also owns the TUI-parity feature surface (see the parity
   contract below): the cognitive-memory bundle, VRO orchestration, the
   tool-enforcement and cognitive-capability system instructions, and the

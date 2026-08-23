@@ -728,8 +728,9 @@ impl AcpHarnessEngine {
             });
         }
         let (outcome, history) = run_result.map_err(|error| {
-            tracing::debug!("harness prompt failed: {error:?}");
-            "harness prompt failed".to_owned()
+            let safe_error = safe_agent_loop_error(&error);
+            tracing::warn!(error = %safe_error, "harness prompt failed");
+            safe_error
         })?;
         // TUI parity: restore the original user content so the injected
         // cognitive-memory context never lands in persisted history.
@@ -1071,6 +1072,43 @@ impl AcpHarnessEngine {
 
     fn plans_shared(&self) -> Arc<std::sync::Mutex<BTreeMap<vesper_domain::SessionId, String>>> {
         Arc::clone(&self.plans)
+    }
+}
+
+/// Converts an agent-loop failure into bounded, user-actionable text without
+/// exposing provider payloads, tool arguments, paths, or conversation data.
+fn safe_agent_loop_error(error: &vesper_agent::AgentLoopError) -> String {
+    use vesper_agent::AgentLoopError;
+    use vesper_domain::FinishOutcome;
+
+    match error {
+        AgentLoopError::ProviderSetup(_) => "provider session setup failed".to_owned(),
+        AgentLoopError::ProviderTurn(error) => {
+            format!("provider turn failed: {:?}", error.info.category)
+        }
+        AgentLoopError::StreamWithoutTerminal => {
+            "provider stream ended without a terminal response".to_owned()
+        }
+        AgentLoopError::Incomplete(outcome) => match outcome {
+            FinishOutcome::OutputLimit => "provider output limit reached".to_owned(),
+            FinishOutcome::ContextLimit => "provider context limit reached".to_owned(),
+            FinishOutcome::Safety => "provider safety policy stopped generation".to_owned(),
+            FinishOutcome::Cancelled => "provider turn was cancelled".to_owned(),
+            FinishOutcome::NetworkInterruptionAfterVisibleOutput => {
+                "provider network interrupted after partial output".to_owned()
+            }
+            FinishOutcome::ProviderError => "provider reported a generation error".to_owned(),
+            FinishOutcome::ProtocolError => "provider protocol response was malformed".to_owned(),
+            FinishOutcome::UnknownProviderValue { .. } => {
+                "provider returned an unknown terminal status".to_owned()
+            }
+            FinishOutcome::Stop | FinishOutcome::ToolCalls => {
+                "agent turn ended in an inconsistent state".to_owned()
+            }
+        },
+        AgentLoopError::LoopDetected(_) => {
+            "repeated tool loop detected; the turn was stopped safely".to_owned()
+        }
     }
 }
 
@@ -2017,6 +2055,22 @@ fn selected_provider_token() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn agent_loop_failures_keep_safe_actionable_classification() {
+        assert_eq!(
+            safe_agent_loop_error(&vesper_agent::AgentLoopError::Incomplete(
+                vesper_domain::FinishOutcome::ContextLimit,
+            )),
+            "provider context limit reached"
+        );
+        assert_eq!(
+            safe_agent_loop_error(&vesper_agent::AgentLoopError::LoopDetected(
+                "secret-bearing detector details".to_owned(),
+            )),
+            "repeated tool loop detected; the turn was stopped safely"
+        );
+    }
 
     #[test]
     fn vro_dispatch_decision_mirrors_tui_semantics() {

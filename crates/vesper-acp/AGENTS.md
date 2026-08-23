@@ -87,7 +87,10 @@ update mapping, and bounded asynchronous dispatch into `vesper-runtime`.
   `session/request_permission` bridge to injected engines; cancellation
   resolves any pending approval and the engine must fail closed on rejection
   or a missing bridge. Without an injected engine, the runtime single-turn
-  path remains available for protocol conformance.
+  path remains available for protocol conformance. Engine failures must be
+  pre-sanitized, bounded, actionable classifications; the adapter preserves
+  that safe reason in ACP error data instead of flattening every failure to a
+  generic `harness engine failed` message.
 - `vro_events.rs` (VRO-10, PRD §16) owns the VRO status-event vocabulary
   surfacing orchestrator phase transitions to upstream ACP clients. The
   `VroEvent` enum mirrors the 13 PRD §16 event names (`reasoning.profiled`,

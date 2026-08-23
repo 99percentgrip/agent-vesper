@@ -48,7 +48,7 @@ curl -fsSL https://github.com/99percentgrip/agent-vesper/raw/main/scripts/instal
 Or pin a version:
 
 ```sh
-AGENT_VESPER_VERSION=0.20.66 sh scripts/install.sh
+AGENT_VESPER_VERSION=0.20.67 sh scripts/install.sh
 ```
 
 ### Windows (PowerShell)
@@ -107,7 +107,11 @@ Both hosts use the shared result-aware loop guard: repeated identical calls,
 tool ping-pong, and differently-argued probes returning the same result are
 warned, blocked, and eventually stopped before they burn the full iteration
 budget. Output/context limits, safety stops, and interrupted provider streams
-are reported as incomplete turns instead of false successful completion.
+are reported as incomplete turns instead of false successful completion. ACP
+preserves a bounded safe reason—such as context limit, quota/rate category,
+malformed stream, or loop detection—in Zed's error details instead of reducing
+every failure to `harness engine failed`; the TUI surfaces the same typed loop
+failures directly.
 
 ### Uninstall
 

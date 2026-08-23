@@ -983,9 +983,7 @@ async fn handle_request(
                             engine_active_task.lock().await.remove(&engine_session);
                             tracing::warn!(error = %error, "harness engine failed");
                             responder.respond_with_error(
-                                agent_client_protocol::util::internal_error(
-                                    "harness engine failed",
-                                ),
+                                agent_client_protocol::util::internal_error(error),
                             )
                         }
                     }
