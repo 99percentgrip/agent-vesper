@@ -525,8 +525,8 @@ pub async fn run_tool_grounded_react_with_trajectory(
                                     success: false,
                                 });
                             }
-                            LoopGuardAction::Break(reason) => {
-                                unresolved_risks.push(reason);
+                            LoopGuardAction::Break(breakage) => {
+                                unresolved_risks.push(breakage.message);
                                 return (
                                     build_budget_exceeded(
                                         model_calls,

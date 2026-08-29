@@ -1502,8 +1502,14 @@ fn outcome_text(outcome: &vesper_agent::AgentTurnOutcome) -> String {
             })
             .collect::<Vec<_>>()
             .join("\n"),
-        vesper_agent::AgentTurnOutcome::MaxIterationsReached { iterations } => {
-            format!("agent reached the bounded tool-iteration limit ({iterations})")
+        vesper_agent::AgentTurnOutcome::MaxIterationsReached { iterations, plan } => {
+            if plan.is_some() {
+                format!(
+                    "agent reached the ultimate bounded tool-iteration limit ({iterations}) with unfinished native-plan items"
+                )
+            } else {
+                format!("agent reached the bounded tool-iteration limit ({iterations})")
+            }
         }
         vesper_agent::AgentTurnOutcome::Interrupted {
             assistant_content,

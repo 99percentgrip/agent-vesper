@@ -26,9 +26,9 @@ thiserror.workspace = true
 tokio = { workspace = true, features = ["net", "io-util"] }
 tracing.workspace = true
 uuid.workspace = true
-vesper-domain = { path = "../vesper-domain", version = "=0.20.69" }
-vesper-provider = { path = "../vesper-provider", version = "=0.20.69" }
-vesper-runtime = { path = "../vesper-runtime", version = "=0.20.69" }
+vesper-domain = { path = "../vesper-domain", version = "=0.20.70" }
+vesper-provider = { path = "../vesper-provider", version = "=0.20.70" }
+vesper-runtime = { path = "../vesper-runtime", version = "=0.20.70" }
 
 [dev-dependencies]
 # VRO-9 (Directive 3): live HTTP integration tests for the ReAct loop drive
@@ -38,7 +38,7 @@ vesper-runtime = { path = "../vesper-runtime", version = "=0.20.69" }
 reqwest.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
-vesper-testkit = { path = "../vesper-testkit", version = "=0.20.69" }
+vesper-testkit = { path = "../vesper-testkit", version = "=0.20.70" }
 
 [lints]
 workspace = true

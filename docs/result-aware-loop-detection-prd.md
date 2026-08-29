@@ -1,6 +1,8 @@
 # VRO-12 — Result-Aware Loop Detection (PRD)
 
 Status: IMPLEMENTED · Phase VRO-12 · Owner: `crates/vesper-agent`
+Audit: 2026-08-30 evidence-based audit complete — see
+`docs/result-aware-loop-detection-audit-report.md` and §8 below.
 Predecessor: VRO-11 (ADR 0017, VesperLens) · Family: Vesper Reasoning
 Orchestrator (`docs/agent-vesper-reasoning-orchestrator-prd.md`)
 
@@ -52,7 +54,7 @@ green" is already superseded; §6 encodes the real gate.
 | C1 | **Zero new dependencies.** `VecDeque` is `std::collections`; result/args hashing uses `sha2`, already a `vesper-agent` dependency (VRO-7 deterministic procedure IDs, `crates/vesper-agent/Cargo.toml`). | `Cargo.toml` diff must be empty; `cargo xtask architecture` dependency-direction scan must stay green. |
 | C2 | **Window = `VecDeque<ToolCallRecord>` holding the last 5 executed tools** (directive-fixed). | Unit test pins capacity: 8 recorded calls ⇒ internal length ≤ 5. |
 | C3 | **Host parity:** the same detector protects both ReAct and the shared direct `AgentLoop` used by ACP and TUI; non-ReAct orchestration strategies remain unchanged. | ReAct integration tests plus a direct-loop regression prove both paths stop a saturated repeat before the numeric cap. |
-| C4 | **No seam changes.** `ReactAgent`, `ToolInvoker`, and every public orchestrator signature stay byte-identical. The intervention enters through the existing trajectory channel (`TrajectoryEntry::Observation`) — the same self-correction channel Read-Before-Write already uses. | `git diff` on trait/`pub fn` signatures must be empty. |
+| C4 | **No loop-mechanics seam changes.** `ReactAgent`, `ToolInvoker`, and every public orchestrator signature stay byte-identical. The intervention enters through the existing trajectory channel (`TrajectoryEntry::Observation`) — the same self-correction channel Read-Before-Write already uses. *(Audit note: `LoopGuardAction::Break` was widened from `Break(String)` to `Break(LoopBreak)` — a payload refinement inside the guard's own module that removes the last string-prefix classification coupling; every trait, orchestrator entry point, and `pub fn` signature on `ReactAgent`/`ToolInvoker`/`run_tool_grounded_react*` is unchanged.)* | `git diff` on trait/`pub fn` signatures must be empty; the only type added is `LoopBreak` inside `loop_detector.rs`. |
 | C5 | **Determinism.** No clocks, no randomness, no `DefaultHasher` (not stability-guaranteed across Rust releases). Hashes are SHA-256 digests truncated to `u64` (first 8 bytes, big-endian). | Unit tests are pure-function; no `Instant`/`SystemTime` in `src/vro/loop_detector.rs`. |
 | C6 | **Allocation-bounded.** One `ToolCallRecord` push per tool call; window eviction is `pop_front`; no per-record heap growth beyond the fixed 5-entry ring. Hash input is the bounded result `String` the invoker already produced. | Review-only (mirrors VRO-7 `hash_value` precedent: allocation shape argued in code, equality classes pinned by test). |
 
@@ -238,33 +240,137 @@ Canonical gate (must be run and green before merge):
 
 Required new unit tests (deterministic fakes — the existing `react.rs`
 scripted-agent/invoker pattern, cf. `budget()` helper and
-`loop_halts_when_max_tool_calls_is_exhausted`):
+`loop_halts_when_max_tool_calls_is_exhausted`). All are present; names map
+to the labels above:
 
-**Window mechanics** — (W1) 8 recorded calls ⇒ window length ≤ 5.
-**Canonical hashing** — (H1) `{"a":1,"b":2}` ≡ `{"b":2,"a":1}` (same
-args_hash); (H2) `0` ≢ `0.0` ≢ `"0"` (distinct result/args hashes);
-(H3) `["ab","c"]` ≢ `["a","bc"]`.
-**Exact Repeat** — (E1) run of 3 ⇒ Warn + trajectory contains nudge + loop
-continues and can still Finish; (E2) run of 4 ⇒ Block + result replaced +
-`max_tool_calls` not consumed; (E3) run of 5 ⇒ Break +
-`BudgetExceeded` + risk note names the tool and count; (E4) with-trajectory
-variant still returns the partial trajectory on Break.
-**Ping-Pong** — (P1) `A,B,A,B,A` ⇒ Warn; (P2) `A,B,B,A,A` ⇒ Clear;
-(P3) sustained after Warn ⇒ Block.
-**No-Progress** — (N1) 4 same-tool same-result entries with ≥ 2 distinct
-args ⇒ Warn; (N2) interleaved unrelated call does not reset the count
-(`filter` semantics); (N3) all-identical args stays classified as Exact
-Repeat, not No-Progress.
-**Recording rules** — (R1) invoker `Err` ⇒ not recorded; (R2) Read-
-Before-Write rejection ⇒ not recorded, no budget consumed.
-**Zero-breakage gold** — (Z1) guard disabled ⇒ trajectory byte-identical to
-pre-VRO-12 for the same scripted run; (Z2) a non-looping successful ReAct
-turn (distinct tools/results) produces no `[VRO-12` bytes anywhere.
+- **Window mechanics (W1)** — `window_retains_at_most_five_records_after_many_calls`
+  (also pins that the retained five are the *newest* five).
+- **Canonical hashing** — `args_hash_is_invariant_under_object_key_reordering`
+  (H1); `hash_distinguishes_zero_float_and_string_zero` (H2);
+  `hash_distinguishes_adjacent_string_concatenations` (H3).
+- **Exact Repeat** — `exact_repeat_warns_at_three_identical_calls` (E1, Warn +
+  nudge + loop continues); `exact_repeat_blocks_at_four_identical_calls` and
+  `react_loop_block_does_not_consume_tool_budget` (E2, Block + replacement +
+  no `max_tool_calls` consumption);
+  `exact_repeat_breaks_when_window_saturates` +
+  `react_loop_breaks_on_repeat_pattern` (E3, Break + `BudgetExceeded` + named
+  risk); `with_trajectory_variant_returns_partial_trajectory_on_break` (E4).
+- **Ping-Pong** — `ping_pong_warns_on_full_window_alternation` (P1);
+  `ping_pong_negative_case_abbaa_is_clear` (P2);
+  `ping_pong_blocks_when_pattern_persists_after_warn` (P3).
+- **No-Progress** — `react_loop_no_progress_breaks_identical_empty_results`
+  and `no_progress_interleaved_call_does_not_reset_the_count` (N1/N2,
+  `filter` semantics); `identical_args_stay_exact_repeat_not_no_progress`
+  (N3).
+- **Recording rules** — `failed_invocations_are_not_recorded_by_the_loop`
+  (R1); `read_before_write_rejections_are_not_recorded_and_consume_no_budget`
+  (R2, asserts `tool_calls == 0` by exact cost arithmetic, not token counts).
+- **Zero-breakage gold** — Z1 is **not implementable** without inventing a
+  disable switch (see decision D2); its testable core is
+  `non_looping_react_turn_produces_no_loop_guard_text` (Z2): a non-looping
+  successful ReAct turn (distinct tools/results) produces no `[VRO-12` bytes
+  anywhere.
 
 Soak/property additions (follow the `tests/soak_test.rs` `#[ignore]`
 pattern): (S1) 200-call adversarial mixed workload ⇒ guard memory bounded
 (window never exceeds 5; no growth), all classifications deterministic
 across two identical runs.
+
+---
+
+## 6.5 Audit Outcomes and Binding Decisions (2026-08-29)
+
+A full evidence-based audit of every §6 requirement against production code
+and tests was performed after the initial IMPLEMENTED claim. Findings and
+decisions below are binding; the audit evidence lives in
+`docs/result-aware-loop-detection-audit-report.md`.
+
+### Gaps found and closed
+
+| Requirement | Finding | Resolution |
+|---|---|---|
+| W1 | No test recorded more than 5 calls, so the window bound was never exercised. | Added `window_retains_at_most_five_records_after_many_calls` (8 calls ⇒ `len() == 5`). |
+| H1 | No canonical-JSON key-order test existed despite PRD §2.2 claiming "a guard test pins this". | Added `args_hash_is_invariant_under_object_key_reordering`. |
+| H2 | No `0` / `0.0` / `"0"` distinction test existed. | Added `hash_distinguishes_zero_float_and_string_zero`. |
+| H3 | No `["ab","c"]` vs `["a","bc"]` test existed. | Added `hash_distinguishes_adjacent_string_concatenations`. |
+| E4 | `with_trajectory_variant_returns_partial_trajectory_on_break` absent; only the non-trajectory Break path was covered. | Added the test; asserts non-empty trajectory plus a real (Action, success Observation) pair. |
+| P2 | The negative `A,B,B,A,A` case was never tested. | Added `ping_pong_negative_case_abbaa_is_clear`. |
+| N2 | The interleaved-call `filter`-semantics claim had no test. | Added `no_progress_interleaved_call_does_not_reset_the_count`. |
+| N3 | The "identical args stay Exact Repeat" separation had no test. | Added `identical_args_stay_exact_repeat_not_no_progress`. |
+| R1 | Failure-exclusion was asserted nowhere. | Added `failed_invocations_are_not_recorded_by_the_loop` (turn halts on the numeric ceiling; zero VRO-12 bytes). |
+| R2 | Read-Before-Write exclusion and its zero-budget property were untested. | Added `read_before_write_rejections_are_not_recorded_and_consume_no_budget`. |
+| Z2 | The no-intervention gold case was untested. | Added `non_looping_react_turn_produces_no_loop_guard_text`. |
+| S1 | The 200-call soak did not exist. | Added `soak_loop_detector_200_call_mixed_workload_bounded_and_deterministic`. |
+| C3 | Only the Break tier of the direct `AgentLoop` path was tested; Warn/Block parity was unproven. | Added `direct_loop_surfaces_loop_guard_warning_without_failing_the_turn` and `direct_loop_blocks_fourth_identical_call_without_counting_it_as_success`. |
+
+### String-prefix couplings removed (typed state)
+
+Two load-bearing string-prefix comparisons existed between the loop-detector
+intervention text and unrelated consumers. Both are replaced with typed
+state:
+
+1. `LoopGuardAction::Break(String)` → `LoopGuardAction::Break(LoopBreak)`,
+   where `LoopBreak { pattern: LoopPattern, message: String }`. The direct
+   `AgentLoop` test now classifies via the typed `LoopPattern` instead of
+   `reason.contains("VRO-12")`, and both loops still surface
+   `breakage.message` as the human-readable `unresolved_risks` /
+   `AgentLoopError::LoopDetected` note.
+2. The direct loop's success classification
+   (`!output.starts_with("[SYSTEM OVERRIDE: LOOP BLOCKED")`) → a typed
+   `blocked_by_loop_guard: bool` set only by the `LoopGuardAction::Block`
+   arm. The guard's message wording can no longer silently decouple from
+   success classification.
+
+Note: the pre-existing `"tool error:"` / `"permission denied:"` /
+`"unknown tool:"` prefixes in `agent_loop.rs` are the harness's own
+`GateOutcome` text contract, produced and consumed inside the same module;
+they are out of VRO-12 scope and were left alone.
+
+### PRD-vs-implementation differences, resolved
+
+- **Ping-pong thresholds.** §3 specifies Warn on the whole-window pattern,
+  Block only after a prior in-window Warn for the same pair, and Break only
+  by degradation to Exact Repeat. The implementation matches this exactly
+  (see `ping_pong_warns_on_full_window_alternation`,
+  `ping_pong_blocks_when_pattern_persists_after_warn`,
+  `ping_pong_breaks_when_alternation_fills_every_slot`). The reference's
+  20-entry/4-cycle thresholds are **not** portable to a directive-fixed
+  5-entry window; §3's adaptation note already documents this and the
+  implementation is the evidence-backed reading. No change.
+- **No-progress escalation.** §3 states Warn ≥ 4, Block ≥ 5 *with prior
+  in-window Warn*, Break at 5/5 saturation. In a 5-slot window, a 5-count
+  **is** saturation, so the Block tier is unreachable and is subsumed by
+  Break. The implementation encodes exactly this (Warn at 4, Break at 5).
+  This is recorded here as the accepted reading rather than changed.
+- **Intervention text.** §4 quotes bare `[VRO-12 Loop Guard]` strings. The
+  implementation prefixes Warn with `[Loop Detection Warning]` and Block
+  with `[SYSTEM OVERRIDE: LOOP BLOCKED. YOU MUST CHANGE STRATEGY.]`. These
+  prefixes do **not** appear in the zeroclaw reference or in the frozen
+  Python oracle (verified by grep in both). They are Vesper-local phrasing
+  intended to make the escalation tier legible to the model; they are kept,
+  and §4's quoted strings are understood to be the *body* following the
+  tier prefix. No behavioural requirement depends on the exact prefix since
+  the typed-state change above removed all prefix-based classification.
+- **Z1 (disabled-guard byte-identical gold) is obsolete as written.** There
+  is no disable switch, `ReasoningConfig` surface, or configuration seam for
+  the detector — and §5 explicitly forbids adding one. The reference's
+  `LoopDetectorConfig.enabled` exists because that repo derives it from a
+  runtime `PacingConfig`; Vesper has no such seam and adding one solely to
+  satisfy a test would violate §5 and the project's no-invented-surface
+  rule. Z1's *intent* — zero behavior change on non-looping paths — is
+  honored and proven by Z2 (`non_looping_react_turn_produces_no_loop_guard_text`):
+  when no pattern fires the guard performs no context mutation, so the
+  trajectory is identical by construction. Z1 is therefore retired in favor
+  of Z2 and this decision is recorded here.
+
+### Verification floor
+
+Measured after this audit: **1235** workspace test functions
+(**398** in `vesper-agent`), exceeding the §6 floor of 1193/336.
+`cargo fmt`, `cargo clippy --workspace --all-targets --all-features
+-D warnings`, `cargo xtask architecture`, and `cargo xtask verify` are all
+green. `git diff` on `crates/vesper-agent/Cargo.toml` is empty (C1) and no
+public `ReactAgent` / `ToolInvoker` / orchestrator signature changed (C4).
 
 ---
 

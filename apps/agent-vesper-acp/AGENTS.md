@@ -59,6 +59,9 @@ transport, stderr-only tracing, and orderly shutdown.
   text and plan remain in history/persistence, while the bounded diagnostic
   states the cause and whether recovery was withheld because a tool call had
   started.
+  Native plans continue across up to four ordinary iteration segments without
+  a user-authored rescue prompt; an ultimate-cap outcome must state that work
+  remains and retain the latest plan.
   The engine also owns the TUI-parity feature surface (see the parity
   contract below): the cognitive-memory bundle, VRO orchestration, the
   tool-enforcement and cognitive-capability system instructions, and the

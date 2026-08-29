@@ -6055,7 +6055,7 @@ fn build_completion_report(session: &mut TuiSession, event: &AgentEvent) {
             format!("Elapsed         {elapsed:.1}s"),
         ],
         AgentEvent::Completed {
-            outcome: AgentTurnOutcome::MaxIterationsReached { iterations },
+            outcome: AgentTurnOutcome::MaxIterationsReached { iterations, .. },
             ..
         } => vec![
             "✗ Iteration cap reached".into(),
@@ -6204,7 +6204,7 @@ fn record_agent_event(session: &TuiSession, event: &AgentEvent) {
                     ("tool_count", tool_results.len().to_string()),
                 ],
             ),
-            AgentTurnOutcome::MaxIterationsReached { iterations } => session.telemetry.record(
+            AgentTurnOutcome::MaxIterationsReached { iterations, .. } => session.telemetry.record(
                 "turn.max_iterations",
                 &session.session_id,
                 [
@@ -6422,12 +6422,17 @@ fn apply_agent_event(event: AgentEvent, state: &mut SessionState) {
                     state.status = Some("agent turn complete.".into());
                 }
             }
-            AgentTurnOutcome::MaxIterationsReached { iterations } => {
+            AgentTurnOutcome::MaxIterationsReached { iterations, plan } => {
                 state
                     .status
                     .replace(format!("agent hit the {iterations}-iteration safety cap."));
                 state.transcript.push(format!(
-                    "agent: stopped at the {iterations}-iteration safety cap."
+                    "agent: stopped at the {iterations}-iteration ultimate safety cap{}.",
+                    if plan.is_some() {
+                        " with unfinished native-plan work"
+                    } else {
+                        ""
+                    }
                 ));
             }
             AgentTurnOutcome::Interrupted {
@@ -9556,7 +9561,7 @@ fn outcome_text(outcome: &AgentTurnOutcome) -> String {
             })
             .collect::<Vec<_>>()
             .join("\n"),
-        AgentTurnOutcome::MaxIterationsReached { iterations } => {
+        AgentTurnOutcome::MaxIterationsReached { iterations, .. } => {
             format!("worker reached the {iterations}-iteration safety cap")
         }
         AgentTurnOutcome::Interrupted {
@@ -13336,7 +13341,10 @@ mod tests {
         let mut state = SessionState::new();
         apply_agent_event(
             AgentEvent::Completed {
-                outcome: AgentTurnOutcome::MaxIterationsReached { iterations: 50 },
+                outcome: AgentTurnOutcome::MaxIterationsReached {
+                    iterations: 50,
+                    plan: None,
+                },
                 history: Vec::new(),
             },
             &mut state,

@@ -63,6 +63,8 @@ Z.ai and Playwright MCP server descriptors.
 - Provider-backed worker outcome rendering preserves partial content and the
   typed interruption diagnostic from the shared agent loop; workers never
   silently report an interrupted generation as complete.
+- Provider-backed workers render ultimate iteration-cap outcomes explicitly;
+  unfinished native-plan work is never reported as completed.
 - First-party MCP presets are not persisted and cannot be shadowed by custom
   registry entries. Web and reader calls use the configured Z.ai API-key
   environment; vision paths are workspace-confined; browser actions are an

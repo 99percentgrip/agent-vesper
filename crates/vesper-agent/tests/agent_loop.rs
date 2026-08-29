@@ -271,7 +271,10 @@ async fn normal_stop_with_open_plan_continues_until_plan_is_completed() {
         .unwrap();
 
     let root = tempfile::tempdir().unwrap();
-    let mut agent_config = config(&provider_id, 10);
+    // A two-iteration segment is deliberately smaller than this four-turn
+    // workflow. The open native plan must extend the bounded run without a
+    // user-authored "continue" prompt.
+    let mut agent_config = config(&provider_id, 2);
     agent_config.workspace_roots = vec![vesper_domain::WorkspaceRoot {
         name: BoundedString::new("workspace").unwrap(),
         path: BoundedString::new(root.path().to_string_lossy().to_string()).unwrap(),
@@ -314,6 +317,57 @@ async fn normal_stop_with_open_plan_continues_until_plan_is_completed() {
             )
         })
     }));
+}
+
+#[tokio::test]
+async fn unfinished_plan_stops_truthfully_at_the_ultimate_segment_cap() {
+    let provider_id = provider();
+    let mut scripts = vec![Ok(vec![
+        Ok(ProviderStreamEvent::ToolCallCompleted(update_plan_call(
+            "still-open",
+            "in_progress",
+        ))),
+        Ok(completed(FinishOutcome::ToolCalls)),
+    ])];
+    scripts.extend((0..7).map(|_| {
+        Ok(vec![
+            Ok(content_delta("premature stop")),
+            Ok(completed(FinishOutcome::Stop)),
+        ])
+    }));
+    let fake = FakeProviderSession::with_scripts(scripts);
+    let registry = Arc::new(ProviderRegistry::new());
+    registry
+        .register(FakeFactory {
+            id: provider_id.clone(),
+            session: fake,
+        })
+        .await
+        .unwrap();
+
+    let root = tempfile::tempdir().unwrap();
+    let mut agent_config = config(&provider_id, 2);
+    agent_config.workspace_roots = vec![vesper_domain::WorkspaceRoot {
+        name: BoundedString::new("workspace").unwrap(),
+        path: BoundedString::new(root.path().to_string_lossy().to_string()).unwrap(),
+        primary: true,
+    }];
+    let outcome = AgentLoop::new(registry, ToolRegistry::parity_default(), agent_config)
+        .run_prompt(
+            user_message("finish the plan autonomously"),
+            SessionOperatingMode::Code,
+            SessionPermissionMode::Bypass,
+        )
+        .await
+        .unwrap();
+
+    match outcome {
+        AgentTurnOutcome::MaxIterationsReached {
+            iterations: 8,
+            plan: Some(_),
+        } => {}
+        other => panic!("expected unfinished plan at the 8-turn ultimate cap, got {other:?}"),
+    }
 }
 
 #[tokio::test]
@@ -360,7 +414,180 @@ async fn direct_loop_stops_repeated_identical_tool_calls_before_iteration_cap() 
         .await
         .expect_err("the direct loop guard must break before the numeric cap");
 
-    assert!(matches!(error, AgentLoopError::LoopDetected(reason) if reason.contains("VRO-12")));
+    // Classified structurally: the guard names its pattern (exact repeat on
+    // `read_file`), never a bare string match on the tool-result prefix.
+    assert!(
+        matches!(
+            &error,
+            AgentLoopError::LoopDetected(reason) if reason.contains("VRO-12 loop guard: exact repeat")
+        ),
+        "LoopDetected must carry the typed VRO-12 exact-repeat cause, got {error:?}"
+    );
+}
+
+#[tokio::test]
+async fn direct_loop_surfaces_loop_guard_warning_without_failing_the_turn() {
+    // Three identical read_file calls trip the VRO-12 Warn tier. The turn
+    // must NOT be aborted (only Break does that); the model then stops, so
+    // the turn completes with the nudge visible in the tool result and a
+    // `success == false` progress event (the blocked/replaced result is not
+    // a successful observation).
+    let provider_id = provider();
+    let repeated = || {
+        Ok(vec![
+            Ok(ProviderStreamEvent::ToolCallCompleted(read_file_call())),
+            Ok(completed(FinishOutcome::ToolCalls)),
+        ])
+    };
+    let fake = FakeProviderSession::with_scripts([
+        repeated(),
+        repeated(),
+        repeated(),
+        Ok(vec![
+            Ok(content_delta("done")),
+            Ok(completed(FinishOutcome::Stop)),
+        ]),
+    ]);
+    let registry = Arc::new(ProviderRegistry::new());
+    registry
+        .register(FakeFactory {
+            id: provider_id.clone(),
+            session: fake,
+        })
+        .await
+        .unwrap();
+
+    let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(root.path().join("src")).unwrap();
+    std::fs::write(root.path().join("src/lib.rs"), "fn main() {}\n").unwrap();
+    let mut agent_config = config(&provider_id, 20);
+    agent_config.workspace_roots = vec![vesper_domain::WorkspaceRoot {
+        name: BoundedString::new("workspace").unwrap(),
+        path: BoundedString::new(root.path().to_string_lossy().to_string()).unwrap(),
+        primary: true,
+    }];
+
+    let progress = Arc::new(RecordingProgressPort::default());
+    let (outcome, history) = AgentLoop::new(registry, ToolRegistry::parity_default(), agent_config)
+        .with_progress_port(progress.clone())
+        .run_prompt_with_history(
+            vec![user_message("read then summarize")],
+            SessionOperatingMode::Code,
+            SessionPermissionMode::Ask,
+        )
+        .await
+        .expect("the Warn tier must not abort the turn");
+
+    assert!(matches!(outcome, AgentTurnOutcome::Completed { .. }));
+    let events = progress.events.lock().unwrap();
+    let finished: Vec<&AgentProgressEvent> = events
+        .iter()
+        .filter(|event| matches!(event, AgentProgressEvent::ToolFinished { .. }))
+        .collect();
+    assert_eq!(finished.len(), 3, "all three calls produced results");
+    // Every read_file observation is a success (Warn appends the nudge to
+    // the real result; it does not replace it), and the nudge text is
+    // visible to the model in the tool-result message.
+    for event in finished {
+        let AgentProgressEvent::ToolFinished { name, success, .. } = event else {
+            unreachable!();
+        };
+        assert_eq!(name, "read_file");
+        assert!(success, "Warn keeps the real result: {event:?}");
+    }
+    let nudge_seen = history.iter().any(|message| {
+        message.content.iter().any(|part| {
+            matches!(part, ContentPart::Text(text) if text.as_str().contains("[VRO-12 Loop Guard]"))
+        })
+    });
+    assert!(
+        nudge_seen,
+        "the Warn nudge must be visible to the model in the tool result"
+    );
+}
+
+#[tokio::test]
+async fn direct_loop_blocks_fourth_identical_call_without_counting_it_as_success() {
+    // Fourth identical call trips the VRO-12 Block tier: the result text is
+    // replaced by the guard override and the progress event must report
+    // `success == false` WITHOUT any string-prefix parsing at the call site
+    // (typed `blocked_by_loop_guard` flag).
+    let provider_id = provider();
+    let repeated = || {
+        Ok(vec![
+            Ok(ProviderStreamEvent::ToolCallCompleted(read_file_call())),
+            Ok(completed(FinishOutcome::ToolCalls)),
+        ])
+    };
+    let fake = FakeProviderSession::with_scripts([
+        repeated(),
+        repeated(),
+        repeated(),
+        repeated(),
+        Ok(vec![
+            Ok(content_delta("stopped")),
+            Ok(completed(FinishOutcome::Stop)),
+        ]),
+    ]);
+    let registry = Arc::new(ProviderRegistry::new());
+    registry
+        .register(FakeFactory {
+            id: provider_id.clone(),
+            session: fake,
+        })
+        .await
+        .unwrap();
+
+    let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(root.path().join("src")).unwrap();
+    std::fs::write(root.path().join("src/lib.rs"), "fn main() {}\n").unwrap();
+    let mut agent_config = config(&provider_id, 20);
+    agent_config.workspace_roots = vec![vesper_domain::WorkspaceRoot {
+        name: BoundedString::new("workspace").unwrap(),
+        path: BoundedString::new(root.path().to_string_lossy().to_string()).unwrap(),
+        primary: true,
+    }];
+
+    let progress = Arc::new(RecordingProgressPort::default());
+    let (outcome, history) = AgentLoop::new(registry, ToolRegistry::parity_default(), agent_config)
+        .with_progress_port(progress.clone())
+        .run_prompt_with_history(
+            vec![user_message("reread four times")],
+            SessionOperatingMode::Code,
+            SessionPermissionMode::Ask,
+        )
+        .await
+        .expect("the Block tier must not abort the turn either");
+
+    assert!(matches!(outcome, AgentTurnOutcome::Completed { .. }));
+    let events = progress.events.lock().unwrap();
+    let mut finished_iter = events.iter().filter_map(|event| match event {
+        AgentProgressEvent::ToolFinished { name, success, .. } => Some((name.as_str(), *success)),
+        _ => None,
+    });
+    let (first, second, third, fourth) = (
+        finished_iter.next().unwrap(),
+        finished_iter.next().unwrap(),
+        finished_iter.next().unwrap(),
+        finished_iter.next().unwrap(),
+    );
+    assert_eq!(first, ("read_file", true));
+    assert_eq!(second, ("read_file", true));
+    assert_eq!(third, ("read_file", true));
+    assert_eq!(
+        fourth,
+        ("read_file", false),
+        "the blocked (replaced) result must be classified as not-success"
+    );
+    let override_seen = history.iter().any(|message| {
+        message.content.iter().any(|part| {
+            matches!(
+                part,
+                ContentPart::Text(text) if text.as_str().contains("[SYSTEM OVERRIDE: LOOP BLOCKED")
+            )
+        })
+    });
+    assert!(override_seen, "the Block override must reach the model");
 }
 
 #[tokio::test]
@@ -549,7 +776,7 @@ async fn loop_trips_the_max_iterations_safety_cap() {
         .await
         .unwrap();
     match outcome {
-        AgentTurnOutcome::MaxIterationsReached { iterations } => {
+        AgentTurnOutcome::MaxIterationsReached { iterations, .. } => {
             assert_eq!(
                 iterations, 2,
                 "the cap must trip exactly at max_tool_iterations"

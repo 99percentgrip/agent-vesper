@@ -78,9 +78,12 @@ pub enum LoopGuardAction {
     /// The result must be replaced with the override text; the blocked
     /// attempt does NOT consume a `max_tool_calls` unit (PRD §4).
     Block(String),
-    /// Circuit breaker: halt the turn (`BudgetExceeded`) with the named
-    /// cause as an `unresolved_risks` entry (PRD §3).
-    Break(String),
+    /// Circuit breaker: halt the turn (`BudgetExceeded` / `LoopDetected`)
+    /// with the named cause as an `unresolved_risks` entry (PRD §3).
+    ///
+    /// The payload is a typed [`LoopBreak`] so callers can classify the
+    /// outcome structurally instead of matching on message prefixes.
+    Break(LoopBreak),
 }
 
 /// Which pattern fired, with the evidence counts used to phrase the nudge.
@@ -119,6 +122,31 @@ impl LoopPattern {
             Self::ExactRepeat { .. } => "exact repeat",
             Self::PingPong { .. } => "ping-pong",
             Self::NoProgress { .. } => "no-progress",
+        }
+    }
+}
+
+/// Why the detector broke the turn: the pattern plus the tool(s) involved.
+/// Carried alongside the risk note so hosts and tests can classify a
+/// [`LoopGuardAction::Break`] by type instead of matching on message text
+/// (PRD §3 named-cause contract; the text remains for human-readable
+/// `unresolved_risks`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoopBreak {
+    /// Pattern that fired.
+    pub pattern: LoopPattern,
+    /// Full human-readable risk note (`"VRO-12 loop guard: …"`), suitable
+    /// for `ReasoningOutcome::unresolved_risks` /
+    /// `AgentLoopError::LoopDetected`.
+    pub message: String,
+}
+
+impl LoopBreak {
+    /// Builds a Break payload from a pattern and a risk-note suffix.
+    fn new(pattern: LoopPattern, detail: String) -> Self {
+        Self {
+            pattern,
+            message: format!("VRO-12 loop guard: {detail}"),
         }
     }
 }
@@ -269,12 +297,13 @@ impl LoopDetector {
             run,
         };
         if run >= LOOP_WINDOW_SIZE {
-            Some(LoopGuardAction::Break(format!(
-                "VRO-12 loop guard: {}, tool '{}', {} consecutive identical calls \
-                 (window saturated)",
-                pattern.name(),
-                last.name,
-                run
+            Some(LoopGuardAction::Break(LoopBreak::new(
+                pattern,
+                format!(
+                    "exact repeat, tool '{}', {run} consecutive identical calls \
+                     (window saturated)",
+                    last.name
+                ),
             )))
         } else if run >= EXACT_REPEAT_BLOCK {
             Some(LoopGuardAction::Block(format!(
@@ -417,12 +446,13 @@ impl LoopDetector {
             distinct_args,
         };
         if count >= LOOP_WINDOW_SIZE {
-            Some(LoopGuardAction::Break(format!(
-                "VRO-12 loop guard: {}, tool '{}', {} differently-argued calls with \
-                 byte-identical results (window saturated)",
-                pattern.name(),
-                last.name,
-                count
+            Some(LoopGuardAction::Break(LoopBreak::new(
+                pattern,
+                format!(
+                    "no-progress, tool '{}', {count} differently-argued calls with \
+                     byte-identical results (window saturated)",
+                    last.name
+                ),
             )))
         } else {
             self.warned = Some(WarnState::NoProgress {

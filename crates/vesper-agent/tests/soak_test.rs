@@ -45,6 +45,12 @@
 //!    repair attempts (each with a distinct finding message) record 50
 //!    signatures; the test asserts the controller does not retain more
 //!    than the most recent signature.
+//! 6. **VRO-12 loop detector stays bounded and deterministic over 200
+//!    calls** (PRD `docs/result-aware-loop-detection-prd.md` §6 S1): an
+//!    adversarial mixed workload (exact repeats, ping-pong, no-progress,
+//!    healthy resets) run 200 times against two detectors simultaneously
+//!    must keep every window ≤ 5 entries, produce identical actions at
+//!    every step (determinism), and actually fire all three tiers.
 
 #![cfg(test)]
 
@@ -421,4 +427,122 @@ async fn soak_mixed_long_session_50_turns_no_state_corruption() {
     // tracker is unblocked, and we observed exactly one 429.
     assert_eq!(tracker.observed_429_count(), 1);
     assert!(!tracker.is_blocked());
+}
+
+// ---------------------------------------------------------------------------
+// VRO-12 (PRD §6 S1) — 200-call bounded/deterministic loop-detector soak
+// ---------------------------------------------------------------------------
+
+/// PRD §6 S1: a 200-call adversarial mixed workload through the VRO-12 loop
+/// detector. Proves:
+///
+/// - **Memory bounded:** the sliding window never exceeds
+///   [`LOOP_WINDOW_SIZE`] (5) records, no matter how many calls are recorded.
+/// - **Determinism:** two detectors fed the identical 200-call script produce
+///   the identical action at every step (no clocks, no randomness, no
+///   unstable hashing).
+///
+/// The workload deliberately mixes all three pattern families (exact repeats,
+/// ping-pong, no-progress probes) with healthy distinct calls so the detector
+/// cycles through every escalation and reset path under sustained load.
+///
+/// Follows this file's `#[ignore]` convention: 200 iterations × 2 detectors
+/// is a soak axis, not a CI gate.
+#[tokio::test]
+#[ignore = "VRO-12 §6 S1 soak test: 200 iterations; run with --ignored"]
+async fn soak_loop_detector_200_call_mixed_workload_bounded_and_deterministic() {
+    use vesper_agent::vro::loop_detector::{LOOP_WINDOW_SIZE, LoopDetector, LoopGuardAction};
+
+    const CALLS: usize = 200;
+
+    /// Deterministic 200-call adversarial script. `i` indexes the call.
+    /// The mix cycles through: healthy distinct calls, exact-repeat runs,
+    /// ping-pong alternation, and no-progress differently-argued probes.
+    fn script(i: usize) -> (&'static str, serde_json::Value, String) {
+        match i % 20 {
+            // Healthy: distinct tool, distinct args, distinct result.
+            0 | 1 => (
+                "search_files",
+                serde_json::json!({"pattern": format!("f{i}.rs")}),
+                format!("hits-{i}"),
+            ),
+            // Exact repeat: same tool, same args, same result.
+            2..=6 => (
+                "grep",
+                serde_json::json!({"pattern": "struct Foo"}),
+                "src/foo.rs:12:pub struct Foo".to_string(),
+            ),
+            // Ping-pong: two tools alternating with varied args.
+            7 => (
+                "read_file",
+                serde_json::json!({"path": format!("src/{i}.rs")}),
+                "fn a() {}".to_string(),
+            ),
+            8 => (
+                "list_directory",
+                serde_json::json!({"path": format!("src/{i}")}),
+                "a.rs\nb.rs".to_string(),
+            ),
+            9 => (
+                "read_file",
+                serde_json::json!({"path": format!("src/{i}.rs")}),
+                "fn b() {}".to_string(),
+            ),
+            10 => (
+                "list_directory",
+                serde_json::json!({"path": format!("src/{i}")}),
+                "c.rs\nd.rs".to_string(),
+            ),
+            // No-progress: same tool, different args, identical result.
+            11..=15 => (
+                "grep",
+                serde_json::json!({"pattern": format!("needle-{i}")}),
+                "no matches found".to_string(),
+            ),
+            // Healthy again to reset every pattern before the next cycle.
+            _ => (
+                "read_file",
+                serde_json::json!({"path": format!("distinct-{i}.rs")}),
+                format!("unique body {i}"),
+            ),
+        }
+    }
+
+    let mut detectors = [LoopDetector::new(), LoopDetector::new()];
+    let mut warn_count = 0usize;
+    let mut block_count = 0usize;
+    let mut break_count = 0usize;
+
+    for i in 0..CALLS {
+        let (name, args, result) = script(i);
+        // Every recorded step must keep both windows bounded at 5.
+        let actions: Vec<LoopGuardAction> = detectors
+            .iter_mut()
+            .map(|d| d.record(name, &args, &result))
+            .collect();
+        for detector in &detectors {
+            assert!(
+                detector.len() <= LOOP_WINDOW_SIZE,
+                "window must stay bounded at {LOOP_WINDOW_SIZE} after call {i}; got {}",
+                detector.len()
+            );
+        }
+        // Determinism: both detectors must agree at every single step.
+        assert_eq!(
+            actions[0], actions[1],
+            "detectors diverged at call {i}: {actions:?}"
+        );
+        match &actions[0] {
+            LoopGuardAction::Clear => {}
+            LoopGuardAction::Warn(_) => warn_count += 1,
+            LoopGuardAction::Block(_) => block_count += 1,
+            LoopGuardAction::Break(_) => break_count += 1,
+        }
+    }
+
+    // The workload is adversarial by construction, so the guard must have
+    // actually fired — otherwise this soak would prove nothing.
+    assert!(warn_count > 0, "adversarial workload must produce warns");
+    assert!(block_count > 0, "adversarial workload must produce blocks");
+    assert!(break_count > 0, "adversarial workload must produce breaks");
 }

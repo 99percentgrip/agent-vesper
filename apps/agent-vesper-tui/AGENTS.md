@@ -446,6 +446,11 @@ business logic.
 
 ## Local Contracts
 
+- Native plans share the agent loop's four-segment bounded autonomous
+  continuation with ACP. If the ultimate cap is reached, status, transcript,
+  telemetry, and worker rendering must identify the stop rather than imply
+  completion.
+
 - Stdout carries only terminal escapes via crossterm; no ACP/JSON-RPC may
   appear there. Tracing goes to stderr only.
 - The crate depends on `vesper-auth`, `vesper-domain`, `vesper-provider`,

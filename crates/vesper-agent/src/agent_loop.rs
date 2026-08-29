@@ -179,6 +179,9 @@ impl AgentProgressPort for NoopProgressPort {
 
 /// Hard upper bound on tool iterations when the caller omits one.
 pub const DEFAULT_MAX_TOOL_ITERATIONS: u32 = 50;
+/// Maximum number of ordinary iteration-cap segments an unfinished native
+/// plan may consume autonomously before the ultimate safety stop.
+pub const MAX_PLAN_CONTINUATION_SEGMENTS: u32 = 4;
 /// Maximum retained messages in one provider request. Hosts may keep the
 /// complete history separately; the loop compacts the request window before
 /// dispatch so a long-lived session cannot grow without bound.
@@ -220,6 +223,8 @@ pub enum AgentTurnOutcome {
     MaxIterationsReached {
         /// Iterations executed when the cap tripped.
         iterations: u32,
+        /// Latest native plan when the cap interrupted unfinished work.
+        plan: Option<String>,
     },
     /// Visible output was preserved, but the provider stream ended before a
     /// terminal response and automatic continuation was unsafe or exhausted.
@@ -391,13 +396,27 @@ impl AgentLoop {
         let mut tool_results: Vec<ToolResult> = Vec::new();
         let mut plan: Option<String> = None;
         let mut iteration: u32 = 0;
+        let mut iteration_limit = self.config.max_tool_iterations;
+        let ultimate_plan_limit = self
+            .config
+            .max_tool_iterations
+            .saturating_mul(MAX_PLAN_CONTINUATION_SEGMENTS);
         let mut loop_detector = LoopDetector::new();
 
         loop {
-            if iteration >= self.config.max_tool_iterations {
+            if iteration >= iteration_limit {
+                if plan_has_open_items(plan.as_deref()) && iteration_limit < ultimate_plan_limit {
+                    iteration_limit = iteration_limit
+                        .saturating_add(self.config.max_tool_iterations)
+                        .min(ultimate_plan_limit);
+                    messages.retain(|message| !is_plan_continuation_message(message));
+                    messages.push(plan_continuation_message(&ids));
+                    continue;
+                }
                 return Ok((
                     AgentTurnOutcome::MaxIterationsReached {
                         iterations: iteration,
+                        plan,
                     },
                     messages,
                 ));
@@ -444,6 +463,7 @@ impl AgentLoop {
                     return Err(AgentLoopError::Incomplete(finish));
                 }
                 if plan_has_open_items(plan.as_deref()) {
+                    messages.retain(|message| !is_plan_continuation_message(message));
                     messages.push(plan_continuation_message(&ids));
                     iteration += 1;
                     continue;
@@ -484,6 +504,14 @@ impl AgentLoop {
                 let execution_succeeded = !output.starts_with("tool error:")
                     && !output.starts_with("permission denied:")
                     && !output.starts_with("unknown tool:");
+                // Whether the model saw a *real* successful tool result for
+                // this call. A VRO-12 Block replaces the result text, so the
+                // observation the model acted on was the guard's override —
+                // not a successful execution. Tracked as a typed flag rather
+                // than re-parsing the output prefix so the guard's message
+                // wording can never silently decouple from success
+                // classification.
+                let mut blocked_by_loop_guard = false;
                 if execution_succeeded {
                     match loop_detector.record(&tool_name, &call.arguments, &output) {
                         LoopGuardAction::Clear => {}
@@ -491,9 +519,12 @@ impl AgentLoop {
                             output.push_str("\n\n");
                             output.push_str(&warning.message);
                         }
-                        LoopGuardAction::Block(message) => output = message,
-                        LoopGuardAction::Break(reason) => {
-                            return Err(AgentLoopError::LoopDetected(reason));
+                        LoopGuardAction::Block(message) => {
+                            output = message;
+                            blocked_by_loop_guard = true;
+                        }
+                        LoopGuardAction::Break(breakage) => {
+                            return Err(AgentLoopError::LoopDetected(breakage.message));
                         }
                     }
                 }
@@ -506,8 +537,7 @@ impl AgentLoop {
                         markdown: output.clone(),
                     });
                 }
-                let success =
-                    execution_succeeded && !output.starts_with("[SYSTEM OVERRIDE: LOOP BLOCKED");
+                let success = execution_succeeded && !blocked_by_loop_guard;
                 let note = tool_result_note(&output, success);
                 self.progress_port.emit(AgentProgressEvent::ToolFinished {
                     name: tool_name,

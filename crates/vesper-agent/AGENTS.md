@@ -56,7 +56,9 @@ the multi-turn, tool-executing layer above it.
   normal `Stop` while the latest native plan
   still contains pending or in-progress tasks triggers a bounded internal
   continuation turn; the synthetic continuation is removed from returned
-  host history, and the ordinary iteration cap remains the hard stop. The
+  host history. Reaching an ordinary iteration segment with open items extends
+  autonomously for at most four total segments; the ultimate cap returns the
+  unfinished plan explicitly. Unplanned loops retain the single-segment cap. The
   same bounded VRO-12 result-aware loop guard
   used by ReAct also protects this direct path: warnings are fed back through
   tool results, persistent repeats are blocked, and a saturated exact-repeat
@@ -157,7 +159,12 @@ the multi-turn, tool-executing layer above it.
   detects exact repeats, tool ping-pong, and differently-argued probes that
   return identical results. ReAct and the shared direct `AgentLoop` both use
   its warning/block/break ladder; failed tools and policy rejections are not
-  recorded.
+  recorded. Public surface: `LoopDetector`, `LoopGuardAction`
+  (`Clear`/`Warn`/`Block`/`Break`), `LoopBreak` (typed circuit-breaker
+  payload: `pattern` + `message`), `LoopPattern`, `LoopWarning`, and the
+  threshold constants. Hosts and tests classify a Break by the typed
+  `LoopBreak::pattern`, never by matching message text; the direct loop
+  tracks a Block as a typed flag rather than re-parsing the output prefix.
 - `src/vro/orchestrator.rs` — VRO-2.3 Generate-Verify-Repair loop (PRD §11.3,
   §10.9). `CandidateGenerator` trait (async object-safe via boxed `Send`
   future; **`boxed_clone` is required** so VRO-4's parallel executor can give
@@ -523,8 +530,9 @@ the multi-turn, tool-executing layer above it.
 
 ## Work Guidance
 
-- The loop is bounded by `max_tool_iterations`; every iteration is exactly one
-  `ProviderSession::start`. Multi-turn conversation state is supplied and
+- The loop is bounded by `max_tool_iterations`; an active unfinished native
+  plan may consume at most four such segments without user intervention.
+  Every iteration is exactly one `ProviderSession::start`. Multi-turn conversation state is supplied and
   returned by the host through `run_prompt_with_history`; it never lives in
   provider session state.
 - Permission denials and unknown/failed tools are fed back to the model as

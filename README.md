@@ -48,7 +48,7 @@ curl -fsSL https://github.com/99percentgrip/agent-vesper/raw/main/scripts/instal
 Or pin a version:
 
 ```sh
-AGENT_VESPER_VERSION=0.20.69 sh scripts/install.sh
+AGENT_VESPER_VERSION=0.20.70 sh scripts/install.sh
 ```
 
 ### Windows (PowerShell)
@@ -119,6 +119,10 @@ Output/context limits and safety stops remain incomplete rather than false
 successes. When a provider tries to end normally while the latest
 native plan still has pending or in-progress items, the shared ACP/TUI loop
 issues a bounded internal continuation and does not accept the turn as done.
+An unfinished plan also crosses ordinary iteration-cap boundaries
+automatically for up to four bounded segments (200 turns at the default);
+unplanned loops still stop at 50. Reaching the ultimate ceiling is displayed
+explicitly with the unfinished plan instead of silently ending the workflow.
 
 ### Uninstall
 

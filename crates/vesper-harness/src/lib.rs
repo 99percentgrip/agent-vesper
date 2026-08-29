@@ -1369,7 +1369,7 @@ fn outcome_text(outcome: &AgentTurnOutcome) -> String {
             })
             .collect::<Vec<_>>()
             .join("\n"),
-        AgentTurnOutcome::MaxIterationsReached { iterations } => {
+        AgentTurnOutcome::MaxIterationsReached { iterations, .. } => {
             format!("worker reached the {iterations}-iteration safety cap")
         }
         AgentTurnOutcome::Interrupted {

@@ -118,6 +118,11 @@ When the user requests a durable behavior change, record it here or in the relev
   output and session history. Automatic recovery is bounded and permitted
   only when no ambiguous tool-call fragment exists; neither host may replay a
   possibly side-effecting tool call.
+- Users must not have to babysit an active native plan with repeated
+  "continue" prompts. A normal provider stop or an ordinary iteration-segment
+  boundary while plan items remain open triggers bounded autonomous
+  continuation; only the ultimate safety ceiling may terminate unfinished
+  work, and both hosts must surface that condition explicitly with the plan.
 - Durable session checkpoints and lineage are OPT-IN in the ACP host:
   default OFF, enabled only by `AGENT_VESPER_ENABLE_CHECKPOINTS=1` or an
   explicit `AGENT_VESPER_CHECKPOINT_ROOT`. The auto-spawned ACP process
