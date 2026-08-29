@@ -197,3 +197,68 @@ or registry changes.
   it would change `GateOutcome`'s shape and is deliberately out of scope here.
 - The soak test is `#[ignore]`-gated per the module's convention; it ran green
   under `--ignored` but does not gate CI.
+
+## 8. Re-audit addendum (2026-08-30)
+
+A second evidence-based pass re-verified every requirement and audited the
+first pass's *own* tests for strength. Three weaknesses in the audit's own new
+tests were found; fixing one of them exposed a **real production bug**.
+
+### 8.1 Weak tests found in the first audit pass (now fixed)
+
+1. **H1 was vacuous.** It compared two separate detectors' *second* records.
+   Both return `Clear` whether or not canonicalization works, so the assertion
+   could never fail and pinned nothing. Rewritten as a single detector driven
+   through the escalation ladder: `{"a":1,"b":2}`, `{"b":2,"a":1}`,
+   `{"a":1,"b":2}` must Warn Exact-Repeat at run=3. Non-canonical hashing
+   yields run=1 at the third record (Block/`Clear`), so the test now fails
+   loudly if key order ever leaks into the hash.
+2. **H2 only discriminated the full three-way collision.** If only `0`≡`0.0`
+   collided, the sequence `0, 0.0, "0"` still never forms a run of 3 and the
+   test passed vacuously. Rewritten to test each pair separately (`0` vs
+   `0.0`; `0.0` vs `"0"`; `0` vs `"0"`) plus a positive control (three truly
+   identical args must Warn).
+3. **Block-budget test used `total_tokens < 40`**, the exact token-count-as-
+   proxy pattern the directive forbids. Rewritten to exact cost arithmetic:
+   `model_calls == 5`, `tool_calls` consumed `== 4`, `total_tokens == 9`
+   (`model + tool`), where 9 — not 10 — is the observable Block refund.
+
+### 8.2 Production bug found and fixed: canonicalization broke under `--all-features`
+
+The first audit claimed H1's behavior "existed" because `serde_json::Map` is a
+`BTreeMap` without `preserve_order`. That claim was **wrong**: under
+`--all-features` (the `cargo xtask verify` gate), a dev-only dependency chain
+(`vesper-testkit → jsonschema → serde_json/preserve_order`) makes `Map`
+insertion-ordered (`IndexMap`), so `serde_json::to_string(args)` stopped being
+key-order-stable exactly where the canonical verify gate runs. The latent bug
+was invisible because the original H1 test was vacuous.
+
+Fix: `hash_args` now canonicalizes via an explicit recursive walk (sorted
+object keys, no whitespace) — the same approach the codebase already uses in
+`strategies.rs::normalize_output` for the identical `preserve_order` hazard.
+The fix is feature-flag-independent. The strengthened H1 test pins it as a
+regression guard.
+
+**Lesson recorded:** an audit's own tests must be audited for vacuity, and any
+claim of the form "X is canonical because feature F is off" must be tested
+under the configuration where F is actually off *and* on.
+
+### 8.3 Corrected verification evidence
+
+| Command | Result |
+|---|---|
+| `cargo test -p vesper-agent --lib loop_detector` (default) | 24 passed |
+| `cargo test -p vesper-agent --lib` (default) | 358 passed |
+| `cargo test -p vesper-agent --lib` (`--all-features`) | 358 passed |
+| `cargo test -p vesper-agent --test agent_loop` | 17 passed |
+| `cargo test -p vesper-agent --test soak_test -- --ignored` | 6 passed |
+| `cargo fmt --all -- --check` | clean |
+| `cargo clippy --workspace --all-targets --all-features -- -D warnings` | clean |
+| `cargo xtask architecture` | 22 packages |
+| `cargo xtask verify` | **exit 0** |
+| Workspace / vesper-agent test-fn census | 1236 / 399 (floors 1193 / 336) |
+
+No live provider calls. No commits, pushes, version bumps, releases, or
+registry changes. The working tree at re-audit close holds only the two files
+changed in this pass (`loop_detector.rs`, `loop_detector_tests.rs`) plus the
+pre-existing untracked `.agent/` directory.

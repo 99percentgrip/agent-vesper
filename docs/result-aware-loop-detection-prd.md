@@ -62,13 +62,17 @@ green" is already superseded; §6 encodes the real gate.
 
 `ToolCallRecord { name: String, args_hash: u64, result_hash: u64 }`
 
-- **args_hash** = `SHA-256(canonical_json(args))[0..8]`. Canonical form is
-  `serde_json::to_string(args)`; under the workspace's default `serde_json`
-  feature set, `Map` is a `BTreeMap`, so object keys serialize in sorted
-  order — two calls differing only in key order hash identically. A guard
-  test pins this. (Divergence from the reference, which hand-rolls a
-  streaming sorted-key walker because it enables `preserve_order`-adjacent
-  features; we do not, so `to_string` is already canonical.)
+- **args_hash** = `SHA-256(canonical_json(args))[0..8]`. Canonical form is an
+  **explicit recursive walk** (`canonical_json`) that sorts object keys and
+  emits no whitespace — mirroring `normalize_output`. This is REQUIRED, not
+  an optimization: under `--all-features` (the `cargo xtask verify` gate), a
+  dev-only dependency chain (`vesper-testkit → jsonschema →
+  serde_json/preserve_order`) makes `Map` insertion-ordered, so plain
+  `serde_json::to_string` is **not** key-order-stable across feature
+  configurations and two calls differing only in key order would hash
+  differently. The explicit walk is feature-independent and pinned by a
+  guard test. (Divergence from the reference, which hand-rolls a streaming
+  sorted-key walker for the same reason.)
 - **result_hash** = `SHA-256(result_text)[0..8]`. Numeric/text distinction
   is inherited from JSON serialization (`0` vs `0.0` vs `"0"` serialize to
   distinct strings — the same collision class the reference patches with

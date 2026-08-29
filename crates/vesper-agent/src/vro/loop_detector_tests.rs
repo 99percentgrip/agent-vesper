@@ -351,20 +351,32 @@ async fn react_loop_block_does_not_consume_tool_budget() {
     .collect::<Vec<_>>();
     let agent = OrderedScriptedAgent::new(decisions);
     let invoker = StaticInvoker::with_read("read_file", "fixed body");
+    // Generous tool budget so the numeric ceiling never fires and only the
+    // guard ends the turn. Trace with the refund:
+    //   THINK 1..3 -> dispatch, tool_calls = 3, records 1..3 (Clear, Clear, Warn)
+    //   THINK 4    -> dispatch (tool_calls = 4), record 4 = Block => refunded to 3
+    //   THINK 5    -> dispatch (tool_calls = 4), record 5 = Break (window saturated)
+    // Exact accounting, not a token-count proxy: build_budget_exceeded sets
+    // total_tokens = model_calls + tool_calls = 5 + 4 = 9. WITHOUT the
+    // refund the fourth dispatch would stand and the total would be 10 —
+    // so 9 (not 10) is the observable proof that the blocked attempt was
+    // never charged to max_tool_calls.
     let outcome =
         run_tool_grounded_react("reread forever", &agent, &invoker, budget(20, 20), true).await;
-    // Cost accounting must NOT count blocked attempts as dispatched tools
-    // beyond what actually ran.
-    assert!(
-        outcome.cost.total_tokens < 40,
-        "blocked attempts must not inflate cost: {:?}",
-        outcome.cost
-    );
     assert!(
         outcome
             .unresolved_risks
             .iter()
-            .any(|r| r.contains("VRO-12"))
+            .any(|r| r.contains("VRO-12 loop guard")),
+        "the guard must end the turn, not the numeric ceiling; got {:?}",
+        outcome.unresolved_risks
+    );
+    assert_eq!(outcome.cost.model_calls, 5);
+    assert_eq!(
+        outcome.cost.total_tokens, 9,
+        "model_calls (5) + tool_calls (4): the blocked 4th dispatch must be \
+         refunded — 10 would mean it was charged; got {:?}",
+        outcome.cost
     );
 }
 
@@ -464,39 +476,71 @@ fn window_retains_at_most_five_records_after_many_calls() {
 
 #[test]
 fn args_hash_is_invariant_under_object_key_reordering() {
-    // PRD §2.2 / H1: {"a":1,"b":2} === {"b":2,"a":1}.
-    let mut first = LoopDetector::new();
-    first.record("grep", &json!({"a": 1, "b": 2}), "r");
-    let mut second = LoopDetector::new();
-    second.record("grep", &json!({"b": 2, "a": 1}), "r");
-    // Two distinct detectors fed key-reordered args must classify the same
-    // call as identical: the trailing run count is what the exact-repeat
-    // detector uses, so re-recording the SAME args in both detectors must
-    // produce the same escalation. Cheapest structural proof: re-record and
-    // compare the actions.
-    let a = first.record("grep", &json!({"a": 1, "b": 2}), "r");
-    let b = second.record("grep", &json!({"b": 2, "a": 1}), "r");
-    assert_eq!(
-        a, b,
-        "key-reordered args must hash identically (H1); got {a:?} vs {b:?}"
+    // PRD §2.2 / H1: {"a":1,"b":2} === {"b":2,"a":1}. The hash is the only
+    // thing feeding the exact-repeat run counter, so the discriminating
+    // observation is ESCALATION: three calls whose args differ ONLY in key
+    // order must escalate through the exact-repeat ladder exactly like
+    // three byte-identical calls would. (Comparing two detectors' second
+    // record is vacuous — both return Clear either way.)
+    let mut d = LoopDetector::new();
+    // First insertion order.
+    let a1 = d.record("grep", &json!({"a": 1, "b": 2}), "r");
+    // Reversed insertion order, same logical object.
+    let a2 = d.record("grep", &json!({"b": 2, "a": 1}), "r");
+    // Back to the first order: the run is now 3 IF AND ONLY IF the two
+    // orderings hashed identically.
+    let a3 = d.record("grep", &json!({"a": 1, "b": 2}), "r");
+    assert!(matches!(a1, LoopGuardAction::Clear));
+    assert!(matches!(a2, LoopGuardAction::Clear));
+    assert!(
+        matches!(
+            &a3,
+            LoopGuardAction::Warn(w) if matches!(
+                w.pattern,
+                LoopPattern::ExactRepeat { ref tool, run: 3 } if tool == "grep"
+            )
+        ),
+        "key-reordered args must hash identically and escalate the run to 3 (H1); got {a3:?}"
     );
 }
 
 #[test]
 fn hash_distinguishes_zero_float_and_string_zero() {
-    // PRD §2.2 / H2: 0 !== 0.0 !== "0". These are args-hash distinctions:
-    // three calls with args 0, 0.0, and "0" must NOT collapse into one
-    // exact-repeat run of 3.
+    // PRD §2.2 / H2: 0 !== 0.0 !== "0". Each PAIR must be distinct: testing
+    // only the full three-way sequence is vacuous, because a single
+    // collision (0 === 0.0) would still leave the run at 2 and never warn.
+    // Each pair is followed by two repeats of the FIRST member so a pair
+    // collision forms a run of 3 (Warn) and a pair distinction stays Clear.
+    // Zero triples are the classic args-hash collision (the reference
+    // patches it with length-prefixed canonical text; JSON serialization
+    // gives us the distinction for free).
+    let cases: [(&str, serde_json::Value, serde_json::Value); 3] = [
+        ("int vs float", json!(0), json!(0.0)),
+        ("float vs string", json!(0.0), json!("0")),
+        ("int vs string", json!(0), json!("0")),
+    ];
+    for (label, first, second) in cases {
+        let mut d = LoopDetector::new();
+        let a1 = d.record("probe", &first, "r");
+        let _ = d.record("probe", &second, "r");
+        let a3 = d.record("probe", &first, "r");
+        assert!(
+            matches!(a1, LoopGuardAction::Clear) && matches!(a3, LoopGuardAction::Clear),
+            "{label}: {first:?} and {second:?} must be distinct argument hashes, so \
+             no exact-repeat run of 3 may form; got {a1:?} then {a3:?}"
+        );
+    }
+    // Positive control: the same construction WITH a genuine repeat must
+    // Warn, proving the harness above can fail and is not vacuous.
     let mut d = LoopDetector::new();
-    let a1 = d.record("probe", &json!(0), "r");
-    let a2 = d.record("probe", &json!(0.0), "r");
-    let a3 = d.record("probe", &json!("0"), "r");
+    let _ = d.record("probe", &json!(0), "r");
+    let _ = d.record("probe", &json!(0), "r");
     assert!(
-        matches!(a1, LoopGuardAction::Clear)
-            && matches!(a2, LoopGuardAction::Clear)
-            && matches!(a3, LoopGuardAction::Clear),
-        "0, 0.0, and \"0\" are three distinct argument hashes, so no \
-         exact-repeat run may form; got {a1:?}, {a2:?}, {a3:?}"
+        matches!(
+            d.record("probe", &json!(0), "sql"),
+            LoopGuardAction::Warn(w) if matches!(w.pattern, LoopPattern::ExactRepeat { .. })
+        ),
+        "control: three identical integer-zero calls must Warn"
     );
 }
 

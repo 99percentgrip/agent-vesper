@@ -190,14 +190,55 @@ fn hash_bytes(prefix: &[u8], payload: &[u8]) -> u64 {
     u64::from_be_bytes(first8)
 }
 
-/// Hash of a JSON arguments value. `serde_json::to_string` is canonical here
-/// because the workspace `serde_json` has no `preserve_order` feature
-/// (`Map` is a `BTreeMap`): object keys serialize sorted, so key order does
-/// not change the digest. Serialization failure (non-finite floats) hashes
-/// the empty payload — still deterministic.
+/// Hash of a JSON arguments value.
+///
+/// Canonical form is produced by an explicit recursive walk that sorts object
+/// keys and emits no whitespace — the same approach as
+/// [`crate::vro::strategies::normalize_output`]. This is REQUIRED: under
+/// `--all-features` (the `cargo xtask verify` gate), an upstream dev-only
+/// dependency chain enables `serde_json`'s `preserve_order` feature, which
+/// makes `Value::Object` insertion-ordered, so `serde_json::to_string` is NOT
+/// key-order-stable across feature configurations. The explicit walk is
+/// independent of that flag (regression-pinned by
+/// `args_hash_is_invariant_under_object_key_reordering`). Nested objects and
+/// arrays recurse. Serialization failure (non-finite floats) hashes the empty
+/// payload — still deterministic.
 fn hash_args(args: &Value) -> u64 {
-    let canonical = serde_json::to_string(args).unwrap_or_default();
-    hash_bytes(b"vro12-args", canonical.as_bytes())
+    hash_bytes(b"vro12-args", canonical_json(args).as_bytes())
+}
+
+/// Feature-independent canonical JSON: recursively sorted object keys, no
+/// whitespace. Mirrors `normalize_output`'s canonicalization.
+fn canonical_json(value: &Value) -> String {
+    match value {
+        Value::Object(map) => {
+            let mut keys: Vec<&String> = map.keys().collect();
+            keys.sort_unstable();
+            let mut out = String::from("{");
+            for (i, key) in keys.iter().enumerate() {
+                if i > 0 {
+                    out.push(',');
+                }
+                out.push_str(&serde_json::to_string(key).unwrap_or_else(|_| "\"\"".into()));
+                out.push(':');
+                out.push_str(&canonical_json(&map[*key]));
+            }
+            out.push('}');
+            out
+        }
+        Value::Array(items) => {
+            let mut out = String::from("[");
+            for (i, item) in items.iter().enumerate() {
+                if i > 0 {
+                    out.push(',');
+                }
+                out.push_str(&canonical_json(item));
+            }
+            out.push(']');
+            out
+        }
+        scalar => serde_json::to_string(scalar).unwrap_or_default(),
+    }
 }
 
 /// Hash of a tool's bounded result text.
