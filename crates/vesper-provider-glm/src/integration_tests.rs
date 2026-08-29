@@ -474,10 +474,13 @@ fn plans(scenario: &str) -> Vec<Plan> {
             ..Plan::default()
         }],
         "glm.incomplete-eof-no-output" => vec![Plan::default(); 4],
-        "glm.incomplete-eof-visible-output" => vec![Plan {
-            parts: vec![part(sse(chunk(Some("partial"), None, None, None)))],
-            ..Plan::default()
-        }],
+        "glm.incomplete-eof-visible-output" => vec![
+            Plan {
+                parts: vec![part(sse(chunk(Some("partial"), None, None, None)))],
+                ..Plan::default()
+            },
+            success("rest"),
+        ],
         "glm.retryable-status" => vec![
             Plan {
                 status: 503,
@@ -686,10 +689,12 @@ async fn run_all_twenty_one_authoritative_glm_scenarios_execute_against_loopback
                 assert!(terminal(&events).is_none());
             }
             "glm.incomplete-eof-visible-output" => {
-                assert_eq!(content(&events), "partial");
+                assert_eq!(content(&events), "partialrest");
+                assert_eq!(terminal(&events), Some(&FinishOutcome::Stop));
+                assert_eq!(captured[1].body["messages"][0]["content"], "partial");
                 assert_eq!(
-                    terminal(&events),
-                    Some(&FinishOutcome::NetworkInterruptionAfterVisibleOutput)
+                    captured[1].body["messages"][1]["content"],
+                    "Continue exactly where you left off. Do not repeat or summarize."
                 );
             }
             "glm.cancel-before-headers" => {
@@ -978,5 +983,189 @@ async fn run_cancellation_wins_during_backoff_continuation_and_tool_assembly() {
         if index == 0 {
             assert_eq!(records.lock().unwrap().len(), 1);
         }
+    }
+}
+
+#[tokio::test]
+async fn partial_tool_call_interruption_is_preserved_but_never_replayed() {
+    let partial_tool = Plan {
+        parts: vec![part(sse(chunk(
+            Some("before tool"),
+            None,
+            Some(json!([{
+                "index": 0,
+                "id": "call-1",
+                "function": {"name": "write_file", "arguments": "{\"path\":"}
+            }])),
+            None,
+        )))],
+        ..Plan::default()
+    };
+    let (url, records, server_task) = server(vec![partial_tool]).await;
+    let events = collect(
+        &configured_session(&url, 3),
+        request(true),
+        Cancellation::new(),
+    )
+    .await;
+    server_task.abort();
+
+    assert_eq!(
+        records.lock().unwrap().len(),
+        1,
+        "ambiguous call must not replay"
+    );
+    assert_eq!(content(&events), "before tool");
+    assert_eq!(
+        terminal(&events),
+        Some(&FinishOutcome::StreamInterrupted {
+            cause: vesper_domain::StreamInterruptionCause::RemoteEof,
+            tool_call_started: true,
+        })
+    );
+    assert!(
+        events
+            .iter()
+            .all(|event| !matches!(event, Ok(ProviderStreamEvent::ToolCallCompleted(_))))
+    );
+}
+
+#[tokio::test]
+async fn complete_tool_call_before_clean_eof_is_emitted_exactly_once_without_replay() {
+    let complete_tool = Plan {
+        parts: vec![part(sse(chunk(
+            None,
+            None,
+            Some(json!([{
+                "index": 0,
+                "id": "call-stable",
+                "function": {"name": "read_file", "arguments": "{\"path\":\"a.rs\"}"}
+            }])),
+            None,
+        )))],
+        ..Plan::default()
+    };
+    let (url, records, server_task) = server(vec![complete_tool]).await;
+    let events = collect(
+        &configured_session(&url, 3),
+        request(true),
+        Cancellation::new(),
+    )
+    .await;
+    server_task.abort();
+
+    assert_eq!(records.lock().unwrap().len(), 1);
+    let calls = events
+        .iter()
+        .filter_map(|event| match event.as_ref().ok()? {
+            ProviderStreamEvent::ToolCallCompleted(call) => Some(call),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].id.as_str(), "call-stable");
+    assert_eq!(calls[0].arguments, json!({"path": "a.rs"}));
+    assert_eq!(terminal(&events), Some(&FinishOutcome::ToolCalls));
+}
+
+#[tokio::test]
+async fn repeated_safe_interruptions_stop_at_the_bounded_continuation_limit() {
+    let plans = (0..3)
+        .map(|index| Plan {
+            parts: vec![part(sse(chunk(
+                Some(&format!("part-{index}")),
+                None,
+                None,
+                None,
+            )))],
+            ..Plan::default()
+        })
+        .collect();
+    let (url, records, server_task) = server(plans).await;
+    let events = collect(
+        &configured_session(&url, 2),
+        request(false),
+        Cancellation::new(),
+    )
+    .await;
+    server_task.abort();
+
+    assert_eq!(records.lock().unwrap().len(), 3);
+    assert_eq!(content(&events), "part-0part-1part-2");
+    assert_eq!(
+        terminal(&events),
+        Some(&FinishOutcome::StreamInterrupted {
+            cause: vesper_domain::StreamInterruptionCause::RemoteEof,
+            tool_call_started: false,
+        })
+    );
+}
+
+#[tokio::test]
+async fn active_stream_is_not_cut_off_by_the_old_three_minute_policy_shape() {
+    let plan = Plan {
+        parts: vec![
+            part(sse(chunk(Some("active-1"), None, None, None))),
+            delayed(40, sse(chunk(Some("active-2"), None, None, Some("stop")))),
+            part(b"data: [DONE]\n".to_vec()),
+        ],
+        ..Plan::default()
+    };
+    let (url, _, server_task) = server(vec![plan]).await;
+    let mut session = configured_session(&url, 2);
+    session.config.request_timeout = Duration::from_millis(250);
+    session.config.read_timeout = Duration::from_millis(100);
+    let events = collect(&session, request(false), Cancellation::new()).await;
+    server_task.abort();
+
+    assert_eq!(content(&events), "active-1active-2");
+    assert_eq!(terminal(&events), Some(&FinishOutcome::Stop));
+}
+
+#[tokio::test]
+async fn generation_deadline_and_read_inactivity_remain_distinct() {
+    for (deadline, read, expected) in [
+        (
+            Duration::from_millis(40),
+            Duration::from_secs(1),
+            vesper_domain::StreamInterruptionCause::GenerationDeadline,
+        ),
+        (
+            Duration::from_secs(1),
+            Duration::from_millis(40),
+            vesper_domain::StreamInterruptionCause::ReadInactivity,
+        ),
+    ] {
+        let plan = Plan {
+            parts: vec![
+                part(sse(chunk(Some("visible"), None, None, None))),
+                delayed(200, sse(chunk(Some("late"), None, None, Some("stop")))),
+            ],
+            ..Plan::default()
+        };
+        let (url, records, server_task) = server(vec![plan]).await;
+        let config = GlmConfig {
+            model: ModelId::new("glm-5.2").unwrap(),
+            endpoint: GlmEndpoint::custom(&url, true, true).unwrap(),
+            continuation_limit: 0,
+            connect_timeout: Duration::from_secs(1),
+            request_timeout: deadline,
+            read_timeout: read,
+            ..GlmConfig::default()
+        };
+        let session =
+            GlmSession::from_config(config, SecretValue::new("VESPER_SYNTHETIC_CANARY")).unwrap();
+        let events = collect(&session, request(false), Cancellation::new()).await;
+        server_task.abort();
+
+        assert_eq!(records.lock().unwrap().len(), 1);
+        assert_eq!(content(&events), "visible");
+        assert_eq!(
+            terminal(&events),
+            Some(&FinishOutcome::StreamInterrupted {
+                cause: expected,
+                tool_call_started: false,
+            })
+        );
     }
 }

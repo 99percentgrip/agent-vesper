@@ -128,7 +128,7 @@ pub(crate) fn stop_reason(outcome: &FinishOutcome) -> StopReason {
         FinishOutcome::Cancelled => StopReason::Cancelled,
         FinishOutcome::OutputLimit
         | FinishOutcome::ContextLimit
-        | FinishOutcome::NetworkInterruptionAfterVisibleOutput
+        | FinishOutcome::StreamInterrupted { .. }
         | FinishOutcome::ProviderError
         | FinishOutcome::ProtocolError
         | FinishOutcome::Safety

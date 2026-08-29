@@ -48,7 +48,12 @@ the multi-turn, tool-executing layer above it.
   advertised pool so the next iteration advertises them to the model.
   Provider terminal outcomes other than a normal `Stop` are classified as
   `AgentLoopError::Incomplete` and must never be reported by a host as a
-  completed implementation. A normal `Stop` while the latest native plan
+  completed implementation. The exception is a typed visible
+  `StreamInterrupted` terminal: it returns `AgentTurnOutcome::Interrupted`
+  with partial assistant content, cause, tool-call ambiguity, completed
+  results, and current plan; returned history commits the partial assistant
+  message so hosts cannot display output the engine subsequently forgets. A
+  normal `Stop` while the latest native plan
   still contains pending or in-progress tasks triggers a bounded internal
   continuation turn; the synthetic continuation is removed from returned
   host history, and the ordinary iteration cap remains the hard stop. The

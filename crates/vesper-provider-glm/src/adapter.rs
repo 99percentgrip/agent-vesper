@@ -11,7 +11,8 @@ use serde_json::{Value, json};
 use tokio::sync::mpsc;
 use vesper_domain::{
     BoundedString, ContentPart, ContentText, ErrorCategory, ExtensionMap, FinishOutcome,
-    NormalizedUsage, ProviderResponseId, Retryability, SafeMessage, ToolId, UsageMode,
+    NormalizedUsage, ProviderResponseId, Retryability, SafeMessage, StreamInterruptionCause,
+    ToolId, UsageMode,
 };
 use vesper_provider::{
     CancellationSignal, ProviderError, ProviderEventStream, ProviderRequest, ProviderSession,
@@ -225,19 +226,94 @@ impl Operation {
                     let _ = self.completed(FinishOutcome::Cancelled, metadata).await;
                     return;
                 }
-                Err(Terminal::Interrupted { visible, usage }) if visible => {
-                    if let Some(usage) = usage
+                Err(Terminal::Interrupted { cause, state }) if state.visible => {
+                    total_content.push_str(&state.content);
+                    total_reasoning.push_str(&state.reasoning);
+                    if let Some(usage) = state.usage.as_ref()
                         && self
-                            .record_usage(&mut aggregate_usage, &usage, true)
+                            .record_usage(&mut aggregate_usage, usage, true)
                             .await
                             .is_err()
                     {
                         return;
                     }
+                    if !state.has_tool_fragments() && continuation_count < continuation_limit {
+                        continuation_count += 1;
+                        let mut metadata = ExtensionMap::default();
+                        metadata
+                            .insert(
+                                "zai:interruption-recovery",
+                                json!({
+                                    "attempt": continuation_count,
+                                    "cause": interruption_label(cause),
+                                }),
+                            )
+                            .expect("bounded interruption metadata");
+                        if self
+                            .send(Ok(ProviderStreamEvent::Warning {
+                                message: SafeMessage::new(
+                                    "GLM stream interrupted; safely continuing from partial output",
+                                )
+                                .expect("bounded static warning"),
+                                metadata,
+                            }))
+                            .await
+                            .is_err()
+                        {
+                            return;
+                        }
+                        body = continuation_body(
+                            &self.serialized.body,
+                            &original_messages,
+                            &total_content,
+                            &total_reasoning,
+                            self.serialized.preserve_thinking,
+                        );
+                        continue;
+                    }
+                    if matches!(cause, StreamInterruptionCause::RemoteEof)
+                        && state.tool_calls_complete()
+                    {
+                        let mut state = state;
+                        for event in
+                            match state.complete_tool_events(&self.request.request_id, &tool_ids) {
+                                Ok(events) => events,
+                                Err(error) => {
+                                    let _ = self.send(Err(adapter_error(&error, true))).await;
+                                    return;
+                                }
+                            }
+                        {
+                            if self.send(Ok(event)).await.is_err() {
+                                return;
+                            }
+                        }
+                        let mut metadata = ExtensionMap::default();
+                        metadata
+                            .insert("zai:terminal", json!("complete-tool-call-before-eof"))
+                            .expect("bounded terminal metadata");
+                        let _ = self.completed(FinishOutcome::ToolCalls, metadata).await;
+                        return;
+                    }
+                    let tool_call_started = state.has_tool_fragments();
+                    let mut metadata = ExtensionMap::default();
+                    metadata
+                        .insert(
+                            "vesper:stream-interruption",
+                            json!({
+                                "cause": interruption_label(cause),
+                                "tool_call_started": tool_call_started,
+                                "recovery_attempts": continuation_count,
+                            }),
+                        )
+                        .expect("bounded interruption metadata");
                     let _ = self
                         .completed(
-                            FinishOutcome::NetworkInterruptionAfterVisibleOutput,
-                            ExtensionMap::default(),
+                            FinishOutcome::StreamInterrupted {
+                                cause,
+                                tool_call_started,
+                            },
+                            metadata,
                         )
                         .await;
                     return;
@@ -339,20 +415,22 @@ impl Operation {
                     return Err(Terminal::Cancelled { visible });
                 }
                 Err(AttemptFailure::ConsumerDropped) => return Err(Terminal::ConsumerDropped),
-                Err(AttemptFailure::Incomplete(state)) if state.visible => {
-                    return Err(Terminal::Interrupted {
-                        visible: true,
-                        usage: state.usage,
-                    });
+                Err(AttemptFailure::Interrupted { cause, state }) if state.visible => {
+                    return Err(Terminal::Interrupted { cause, state });
                 }
                 Err(
                     AttemptFailure::Transport { visible: true }
                     | AttemptFailure::Timeout { visible: true },
                 ) => {
-                    return Err(Terminal::Interrupted {
-                        visible: true,
-                        usage: None,
-                    });
+                    return Err(Terminal::Error(provider_error(
+                        ErrorCategory::Transport,
+                        Retryability::Never,
+                        true,
+                        "GLM stream transport failed after visible output",
+                        Some("legacy-visible-interruption"),
+                        None,
+                        None,
+                    )));
                 }
                 Err(AttemptFailure::Http {
                     status,
@@ -387,7 +465,7 @@ impl Operation {
                     self.backoff(delay).await?;
                 }
                 Err(
-                    AttemptFailure::Incomplete(_)
+                    AttemptFailure::Interrupted { .. }
                     | AttemptFailure::Transport { visible: false }
                     | AttemptFailure::Timeout { visible: false },
                 ) => {
@@ -510,11 +588,20 @@ enum Terminal {
         visible: bool,
     },
     Interrupted {
-        visible: bool,
-        usage: Option<vesper_domain::NormalizedUsage>,
+        cause: StreamInterruptionCause,
+        state: Box<AttemptState>,
     },
     Error(ProviderError),
     ConsumerDropped,
+}
+
+const fn interruption_label(cause: StreamInterruptionCause) -> &'static str {
+    match cause {
+        StreamInterruptionCause::GenerationDeadline => "generation-deadline",
+        StreamInterruptionCause::ReadInactivity => "read-inactivity",
+        StreamInterruptionCause::RemoteEof => "remote-eof",
+        StreamInterruptionCause::Transport => "transport",
+    }
 }
 
 /// Frozen exact continuation prompt owned only by the GLM adapter.

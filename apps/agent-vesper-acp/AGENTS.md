@@ -55,6 +55,10 @@ transport, stderr-only tracing, and orderly shutdown.
   detection) before crossing the ACP boundary; never collapse all failures
   into an unactionable generic harness error and never expose raw provider
   payloads.
+  Interrupted outcomes are transactional prompt responses: partial assistant
+  text and plan remain in history/persistence, while the bounded diagnostic
+  states the cause and whether recovery was withheld because a tool call had
+  started.
   The engine also owns the TUI-parity feature surface (see the parity
   contract below): the cognitive-memory bundle, VRO orchestration, the
   tool-enforcement and cognitive-capability system instructions, and the

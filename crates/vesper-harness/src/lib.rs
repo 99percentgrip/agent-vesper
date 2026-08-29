@@ -1372,6 +1372,29 @@ fn outcome_text(outcome: &AgentTurnOutcome) -> String {
         AgentTurnOutcome::MaxIterationsReached { iterations } => {
             format!("worker reached the {iterations}-iteration safety cap")
         }
+        AgentTurnOutcome::Interrupted {
+            assistant_content,
+            cause,
+            tool_call_started,
+            ..
+        } => {
+            let partial = assistant_content
+                .iter()
+                .filter_map(|part| match part {
+                    ContentPart::Text(text) => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            let suffix = format!(
+                "[Agent Vesper: provider stream interrupted ({cause:?}); tool_call_started={tool_call_started}.]"
+            );
+            if partial.is_empty() {
+                suffix
+            } else {
+                format!("{partial}\n\n{suffix}")
+            }
+        }
     }
 }
 

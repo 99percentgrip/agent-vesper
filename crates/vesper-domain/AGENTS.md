@@ -16,6 +16,9 @@ Orchestrator (VRO) Phase VRO-1 domain contracts.
 - Legacy GLM names may appear only in the explicit compatibility module.
 - Event sequences are scoped to runtime/session/turn ownership and turn
   terminals are unique.
+- `FinishOutcome::StreamInterrupted` carries a provider-neutral classified
+  cause plus the tool-call ambiguity bit; transports must not collapse
+  deadline, inactivity, remote EOF, and transport failures into one label.
 - Hidden internal chain-of-thought is not a domain content requirement.
 - `src/slash_commands.rs` owns the frozen-oracle ACP slash-command catalog:
   28 commands with byte-stable names and descriptions (verbatim from the

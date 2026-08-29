@@ -106,7 +106,7 @@ fn attempt_error(error: AttemptFailure) -> ProviderError {
             None,
             None,
         ),
-        AttemptFailure::Transport { .. } | AttemptFailure::Incomplete(_) => provider_error(
+        AttemptFailure::Transport { .. } | AttemptFailure::Interrupted { .. } => provider_error(
             ErrorCategory::Transport,
             Retryability::Never,
             false,

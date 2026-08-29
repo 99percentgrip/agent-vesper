@@ -114,6 +114,10 @@ When the user requests a durable behavior change, record it here or in the relev
   adapters remain host-specific. Documented, justified host-specific exclusions
   (interactive-terminal, ACP-protocol, or browser-only UX) live in the
   affected app's nearest `AGENTS.md`.
+- Provider-stream interruptions must preserve already-visible assistant
+  output and session history. Automatic recovery is bounded and permitted
+  only when no ambiguous tool-call fragment exists; neither host may replay a
+  possibly side-effecting tool call.
 - Durable session checkpoints and lineage are OPT-IN in the ACP host:
   default OFF, enabled only by `AGENT_VESPER_ENABLE_CHECKPOINTS=1` or an
   explicit `AGENT_VESPER_CHECKPOINT_ROOT`. The auto-spawned ACP process

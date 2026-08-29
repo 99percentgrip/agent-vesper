@@ -41,7 +41,7 @@ pub use error::{
 pub use event::{
     EventLog, EventSequence, EventSequenceError, HarnessEvent, HarnessEventPayload, SessionSummary,
 };
-pub use finish::FinishOutcome;
+pub use finish::{FinishOutcome, StreamInterruptionCause};
 pub use goal::{Goal, GoalStatus};
 pub use ids::{
     CandidateId, CheckpointRef, CommandId, CorrelationId, EndpointId, EventId, GoalId, IdError,

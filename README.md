@@ -48,7 +48,7 @@ curl -fsSL https://github.com/99percentgrip/agent-vesper/raw/main/scripts/instal
 Or pin a version:
 
 ```sh
-AGENT_VESPER_VERSION=0.20.68 sh scripts/install.sh
+AGENT_VESPER_VERSION=0.20.69 sh scripts/install.sh
 ```
 
 ### Windows (PowerShell)
@@ -106,12 +106,17 @@ Zed displays the same live pending/in-progress/completed TODO state as the TUI.
 Both hosts use the shared result-aware loop guard: repeated identical calls,
 tool ping-pong, and differently-argued probes returning the same result are
 warned, blocked, and eventually stopped before they burn the full iteration
-budget. Output/context limits, safety stops, and interrupted provider streams
-are reported as incomplete turns instead of false successful completion. ACP
-preserves a bounded safe reason—such as context limit, quota/rate category,
-malformed stream, or loop detection—in Zed's error details instead of reducing
-every failure to `harness engine failed`; the TUI surfaces the same typed loop
-failures directly. When a provider tries to end normally while the latest
+budget. Z.ai streaming uses separate connection, read-inactivity, and 30-minute
+absolute generation bounds, so an active Deep/Max response is no longer killed
+by a three-minute whole-request timeout. If a stream ends after reasoning or
+assistant text but before any tool call, Vesper preserves that state and
+continues automatically within a bounded budget. A fully assembled tool call
+at clean EOF is emitted once with its stable ID; partial or otherwise ambiguous
+tool calls are never replayed. If recovery is unsafe or exhausted, ACP and TUI
+both persist and display the partial assistant output, native plan, exact safe
+cause (deadline, inactivity, remote EOF, or transport), and ambiguity status.
+Output/context limits and safety stops remain incomplete rather than false
+successes. When a provider tries to end normally while the latest
 native plan still has pending or in-progress items, the shared ACP/TUI loop
 issues a bounded internal continuation and does not accept the turn as done.
 

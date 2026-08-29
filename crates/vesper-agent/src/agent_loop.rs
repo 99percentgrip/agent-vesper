@@ -221,6 +221,23 @@ pub enum AgentTurnOutcome {
         /// Iterations executed when the cap tripped.
         iterations: u32,
     },
+    /// Visible output was preserved, but the provider stream ended before a
+    /// terminal response and automatic continuation was unsafe or exhausted.
+    Interrupted {
+        /// Partial user-visible assistant content committed to session history.
+        assistant_content: Vec<ContentPart>,
+        /// Classified provider-neutral interruption source.
+        cause: vesper_domain::StreamInterruptionCause,
+        /// True when replay/continuation was withheld because any tool-call
+        /// fragment had already appeared on the wire.
+        tool_call_started: bool,
+        /// Provider turns executed before interruption.
+        iterations: u32,
+        /// Every tool result completed before the interrupted provider turn.
+        tool_results: Vec<ToolResult>,
+        /// Most recently published native plan.
+        plan: Option<String>,
+    },
 }
 
 /// Why an agent loop failed.
@@ -405,6 +422,24 @@ impl AgentLoop {
             });
 
             if tool_calls.is_empty() {
+                if let FinishOutcome::StreamInterrupted {
+                    cause,
+                    tool_call_started,
+                } = finish
+                {
+                    messages.retain(|message| !is_plan_continuation_message(message));
+                    return Ok((
+                        AgentTurnOutcome::Interrupted {
+                            assistant_content: assistant_parts,
+                            cause,
+                            tool_call_started,
+                            iterations: iteration + 1,
+                            tool_results,
+                            plan,
+                        },
+                        messages,
+                    ));
+                }
                 if !matches!(finish, FinishOutcome::Stop) {
                     return Err(AgentLoopError::Incomplete(finish));
                 }

@@ -144,6 +144,10 @@ business logic.
   finalization must replace the visible streaming region with exactly one
   transcript copy of the assistant answer; never spawn independent
   per-delta delivery tasks.
+- Shared `AgentTurnOutcome::Interrupted` is rendered and recorded as an
+  explicit interrupted terminal while preserving partial assistant content,
+  current plan, and conversation history; it must not become a generic failure
+  or ordinary completion.
 - `src/markdown.rs` — self-contained, streaming-safe markdown → ratatui
   `Line` renderer. Re-parses the buffered assistant text every frame so
   partial syntax degrades gracefully: open inline markers (`**bold` with no

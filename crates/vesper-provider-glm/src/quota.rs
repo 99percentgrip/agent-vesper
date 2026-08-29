@@ -116,7 +116,7 @@ fn attempt_to_error(error: AttemptFailure) -> ProviderError {
             None,
             None,
         ),
-        AttemptFailure::Transport { .. } | AttemptFailure::Incomplete(_) => provider_error(
+        AttemptFailure::Transport { .. } | AttemptFailure::Interrupted { .. } => provider_error(
             vesper_domain::ErrorCategory::Transport,
             vesper_domain::Retryability::Never,
             false,

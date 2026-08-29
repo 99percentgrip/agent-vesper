@@ -60,6 +60,9 @@ Z.ai and Playwright MCP server descriptors.
   `.agent-vesper/` layout; no credentials are persisted by this crate.
 - The service exposes the same hosted tool definitions and behavior to ACP and
   TUI, avoiding frontend-specific parity drift.
+- Provider-backed worker outcome rendering preserves partial content and the
+  typed interruption diagnostic from the shared agent loop; workers never
+  silently report an interrupted generation as complete.
 - First-party MCP presets are not persisted and cannot be shadowed by custom
   registry entries. Web and reader calls use the configured Z.ai API-key
   environment; vision paths are workspace-confined; browser actions are an

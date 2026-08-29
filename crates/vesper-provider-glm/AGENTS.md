@@ -22,7 +22,14 @@ quota normalization, and legacy GLM compatibility translation.
   serialization, errors, events, or fixtures.
 - Do not expose HTTP or GLM wire types through neutral provider ports.
 - Emit no event after terminal completion or cancellation.
-- Never retry after visible output.
+- Never replay after visible output. Reasoning/content-only interruptions use
+  the adapter's bounded continuation request with accumulated assistant state;
+  partial tool calls stop safely, while a fully assembled call at clean remote
+  EOF is emitted once with its stable ID.
+- Streaming uses independent connect, read-inactivity, and absolute-generation
+  bounds. The default absolute generation ceiling is 30 minutes; active Deep/
+  Max streams are not terminated by the former three-minute whole-request
+  timeout.
 
 ## Work Guidance
 

@@ -293,7 +293,8 @@ pub struct GlmConfig {
     pub continuation_limit: u32,
     /// Connect timeout.
     pub connect_timeout: Duration,
-    /// Whole request timeout.
+    /// Absolute streaming-generation safety ceiling. Streaming activity does
+    /// not reset this bound; `read_timeout` independently bounds inactivity.
     pub request_timeout: Duration,
     /// Read-inactivity timeout.
     pub read_timeout: Duration,
@@ -310,7 +311,7 @@ impl Default for GlmConfig {
             generation_profile: GlmGenerationProfile::Balanced,
             continuation_limit: 20,
             connect_timeout: Duration::from_secs(10),
-            request_timeout: Duration::from_secs(180),
+            request_timeout: Duration::from_secs(30 * 60),
             read_timeout: Duration::from_secs(180),
             user_agent: format!("agent-vesper/{}", env!("CARGO_PKG_VERSION")),
         }

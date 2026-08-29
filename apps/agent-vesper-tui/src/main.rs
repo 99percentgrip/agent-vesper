@@ -6063,6 +6063,25 @@ fn build_completion_report(session: &mut TuiSession, event: &AgentEvent) {
             format!("TODO progress   {completed}/{total}"),
             format!("Elapsed         {elapsed:.1}s"),
         ],
+        AgentEvent::Completed {
+            outcome:
+                AgentTurnOutcome::Interrupted {
+                    cause,
+                    tool_call_started,
+                    iterations,
+                    tool_results,
+                    ..
+                },
+            ..
+        } => vec![
+            "⚠ Provider stream interrupted".into(),
+            format!("Cause           {cause:?}"),
+            format!("Tool ambiguous  {tool_call_started}"),
+            format!("Provider turns  {iterations}"),
+            format!("Tool results    {}", tool_results.len()),
+            format!("TODO progress   {completed}/{total}"),
+            format!("Elapsed         {elapsed:.1}s"),
+        ],
         AgentEvent::Failed(error) => vec![
             "✗ Agent turn failed".into(),
             format!("Error           {error}"),
@@ -6190,6 +6209,21 @@ fn record_agent_event(session: &TuiSession, event: &AgentEvent) {
                 &session.session_id,
                 [
                     ("status", "max_iterations".to_owned()),
+                    ("iterations", iterations.to_string()),
+                ],
+            ),
+            AgentTurnOutcome::Interrupted {
+                cause,
+                tool_call_started,
+                iterations,
+                ..
+            } => session.telemetry.record(
+                "turn.interrupted",
+                &session.session_id,
+                [
+                    ("status", "interrupted".to_owned()),
+                    ("cause", format!("{cause:?}")),
+                    ("tool_call_started", tool_call_started.to_string()),
                     ("iterations", iterations.to_string()),
                 ],
             ),
@@ -6395,6 +6429,31 @@ fn apply_agent_event(event: AgentEvent, state: &mut SessionState) {
                 state.transcript.push(format!(
                     "agent: stopped at the {iterations}-iteration safety cap."
                 ));
+            }
+            AgentTurnOutcome::Interrupted {
+                assistant_content,
+                cause,
+                tool_call_started,
+                plan,
+                ..
+            } => {
+                for part in &assistant_content {
+                    if let ContentPart::Text(text) = part {
+                        state.transcript.push(format!("assistant: {text}"));
+                    }
+                }
+                if let Some(body) = plan.as_deref() {
+                    apply_task_plan(state, body);
+                }
+                state.status = Some(if tool_call_started {
+                    format!(
+                        "provider stream interrupted ({cause:?}); recovery withheld because a tool call had started."
+                    )
+                } else {
+                    format!(
+                        "provider stream interrupted ({cause:?}) after bounded recovery was exhausted."
+                    )
+                });
             }
         },
         AgentEvent::Failed(error) => {
@@ -9499,6 +9558,35 @@ fn outcome_text(outcome: &AgentTurnOutcome) -> String {
             .join("\n"),
         AgentTurnOutcome::MaxIterationsReached { iterations } => {
             format!("worker reached the {iterations}-iteration safety cap")
+        }
+        AgentTurnOutcome::Interrupted {
+            assistant_content,
+            cause,
+            tool_call_started,
+            ..
+        } => {
+            let partial = assistant_content
+                .iter()
+                .filter_map(|part| match part {
+                    ContentPart::Text(text) => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            let note = if *tool_call_started {
+                format!(
+                    "[Agent Vesper: provider stream interrupted ({cause:?}); recovery withheld because a tool call had started.]"
+                )
+            } else {
+                format!(
+                    "[Agent Vesper: provider stream interrupted ({cause:?}) after bounded recovery was exhausted.]"
+                )
+            };
+            if partial.is_empty() {
+                note
+            } else {
+                format!("{partial}\n\n{note}")
+            }
         }
     }
 }
@@ -13208,6 +13296,39 @@ mod tests {
                 .any(|line| line.contains("Hello, agent.")),
             "assistant text must hit the transcript"
         );
+    }
+
+    #[test]
+    fn apply_agent_event_preserves_interrupted_partial_text_and_plan() {
+        let mut state = SessionState::new();
+        let event = AgentEvent::Completed {
+            outcome: AgentTurnOutcome::Interrupted {
+                assistant_content: vec![ContentPart::Text(
+                    ContentText::new("partial tui answer").unwrap(),
+                )],
+                cause: vesper_domain::StreamInterruptionCause::GenerationDeadline,
+                tool_call_started: false,
+                iterations: 1,
+                tool_results: Vec::new(),
+                plan: Some("[~] (in_progress/high) finish verification".into()),
+            },
+            history: Vec::new(),
+        };
+        apply_agent_event(event, &mut state);
+        assert!(
+            state
+                .transcript
+                .iter()
+                .any(|line| line.contains("partial tui answer"))
+        );
+        assert!(
+            state
+                .status
+                .as_deref()
+                .unwrap_or_default()
+                .contains("GenerationDeadline")
+        );
+        assert!(!state.task_plan.is_empty());
     }
 
     #[test]

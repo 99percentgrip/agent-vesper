@@ -16,8 +16,9 @@ use vesper_agent::{
 use vesper_domain::{
     BoundedString, ContentPart, ContentText, ConversationMessage, ExtensionMap, FinishOutcome,
     MessageId, MessageRole, MessageRole::User, ProviderId, QualifiedModelId, ReasoningKind,
-    ReasoningRetention, SchemaVersion, SessionOperatingMode, SessionPermissionMode, ToolCall,
-    ToolCallId, ToolDefinition, ToolExecutionClass, ToolId, VersionedExtensionEnvelope,
+    ReasoningRetention, SchemaVersion, SessionOperatingMode, SessionPermissionMode,
+    StreamInterruptionCause, ToolCall, ToolCallId, ToolDefinition, ToolExecutionClass, ToolId,
+    VersionedExtensionEnvelope,
 };
 use vesper_provider::{
     CancellationSignal, ProviderConfiguration, ProviderError, ProviderFactory, ProviderFuture,
@@ -180,6 +181,56 @@ async fn non_stop_terminal_is_not_reported_as_completed() {
         error,
         AgentLoopError::Incomplete(FinishOutcome::OutputLimit)
     ));
+}
+
+#[tokio::test]
+async fn interrupted_visible_turn_returns_and_commits_partial_history() {
+    let provider_id = provider();
+    let fake = FakeProviderSession::with_scripts([Ok(vec![
+        Ok(content_delta("preserved partial answer")),
+        Ok(completed(FinishOutcome::StreamInterrupted {
+            cause: StreamInterruptionCause::RemoteEof,
+            tool_call_started: true,
+        })),
+    ])]);
+    let registry = Arc::new(ProviderRegistry::new());
+    registry
+        .register(FakeFactory {
+            id: provider_id.clone(),
+            session: fake,
+        })
+        .await
+        .unwrap();
+
+    let (outcome, history) = AgentLoop::new(
+        registry,
+        ToolRegistry::parity_default(),
+        config(&provider_id, 10),
+    )
+    .run_prompt_with_history(
+        vec![user_message("implement safely")],
+        SessionOperatingMode::Code,
+        SessionPermissionMode::Ask,
+    )
+    .await
+    .expect("an interrupted visible turn is a preserved terminal state");
+
+    assert!(matches!(
+        outcome,
+        AgentTurnOutcome::Interrupted {
+            cause: StreamInterruptionCause::RemoteEof,
+            tool_call_started: true,
+            ..
+        }
+    ));
+    assert_eq!(history.len(), 2);
+    assert_eq!(history[1].role, MessageRole::Assistant);
+    assert_eq!(
+        history[1].content,
+        vec![ContentPart::Text(
+            ContentText::new("preserved partial answer").unwrap()
+        )]
+    );
 }
 
 #[tokio::test]

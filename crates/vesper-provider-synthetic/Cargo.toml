@@ -10,8 +10,8 @@ publish = false
 [dependencies]
 futures-core.workspace = true
 serde_json.workspace = true
-vesper-domain = { path = "../vesper-domain", version = "=0.20.68" }
-vesper-provider = { path = "../vesper-provider", version = "=0.20.68" }
+vesper-domain = { path = "../vesper-domain", version = "=0.20.69" }
+vesper-provider = { path = "../vesper-provider", version = "=0.20.69" }
 
 [dev-dependencies]
 futures-util.workspace = true

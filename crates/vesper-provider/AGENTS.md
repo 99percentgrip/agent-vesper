@@ -12,6 +12,10 @@ continuation, fallback, and error contracts.
 - Capability fallback is typed and observable.
 - Streams must have ordered events, exactly one terminal state, explicit
   visible-output tracking, and no plain replay after visible output.
+- A provider may issue a bounded continuation from accumulated visible state
+  only before any tool-call fragment appears. Complete calls recovered at a
+  clean EOF keep their stable ID and are emitted once; ambiguous calls are
+  terminal interruptions and are never replayed.
 - Provider cancellation views are owned and remain usable for the lifetime of a
   returned stream.
 - Explicit unsupported controls fail during request validation before dispatch.

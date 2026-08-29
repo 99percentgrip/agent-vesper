@@ -229,6 +229,25 @@ impl AttemptState {
             .values()
             .any(|accumulator| !accumulator.name.is_empty())
     }
+
+    /// Whether any tool-call fragment was observed, including an id or
+    /// arguments received before the provider supplied the tool name.
+    pub(crate) fn has_tool_fragments(&self) -> bool {
+        !self.tool_calls.is_empty()
+    }
+
+    /// Whether every observed tool call is fully name-resolved and carries a
+    /// complete JSON argument value. This is intentionally stricter than
+    /// `has_tool_calls`: only a clean remote EOF may promote this state to a
+    /// single `ToolCalls` terminal without replaying the request.
+    pub(crate) fn tool_calls_complete(&self) -> bool {
+        !self.tool_calls.is_empty()
+            && self.tool_calls.values().all(|call| {
+                !call.name.is_empty()
+                    && (call.arguments.is_empty()
+                        || serde_json::from_str::<Value>(&call.arguments).is_ok())
+            })
+    }
 }
 
 fn append_bounded(
@@ -342,7 +361,10 @@ pub(crate) fn finish_outcome(value: Option<&str>) -> FinishOutcome {
         Some("context_length_exceeded") => FinishOutcome::ContextLimit,
         Some("content_filter") | Some("safety") => FinishOutcome::Safety,
         Some("cancelled") => FinishOutcome::Cancelled,
-        Some("network_error") => FinishOutcome::NetworkInterruptionAfterVisibleOutput,
+        Some("network_error") => FinishOutcome::StreamInterrupted {
+            cause: vesper_domain::StreamInterruptionCause::Transport,
+            tool_call_started: false,
+        },
         Some(value) => FinishOutcome::UnknownProviderValue {
             raw: value.to_owned(),
         },

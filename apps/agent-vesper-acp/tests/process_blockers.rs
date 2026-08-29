@@ -181,7 +181,7 @@ fn output_limit_continuation_is_one_acp_turn_with_cumulative_usage() {
 }
 
 #[test]
-fn post_output_interruption_does_not_replay_and_session_recovers() {
+fn post_output_interruption_continues_from_partial_state_and_session_recovers() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
     let requests = Arc::new(AtomicUsize::new(0));
@@ -197,24 +197,29 @@ fn post_output_interruption_does_not_replay_and_session_recovers() {
         let _ = read_http_request(&mut second);
         observed.fetch_add(1, Ordering::SeqCst);
         write_sse(&mut second, &successful_body("recovered"));
+
+        let (mut third, _) = listener.accept().unwrap();
+        let _ = read_http_request(&mut third);
+        observed.fetch_add(1, Ordering::SeqCst);
+        write_sse(&mut third, &successful_body("next-turn-ok"));
     });
 
     let mut process = ProcessHarness::spawn(address);
     let session = process.initialize_and_new_session();
     process.prompt(12, &session, "interrupt-vector", "interrupt-message");
     let interrupted = process.response(12);
-    assert_eq!(interrupted["result"]["stopReason"], "refusal");
+    assert_eq!(interrupted["result"]["stopReason"], "end_turn");
     assert_eq!(
         update_texts(process.transcript(), "agent_message_chunk"),
-        ["partial-visible"]
+        ["partial-visible", "recovered"]
     );
-    assert_eq!(requests.load(Ordering::SeqCst), 1);
+    assert_eq!(requests.load(Ordering::SeqCst), 2);
+    assert_eq!(terminal_count(process.transcript(), 12), 1);
 
     process.prompt(13, &session, "recovery-vector", "recovery-message");
     let recovered = process.response(13);
     assert_eq!(recovered["result"]["stopReason"], "end_turn");
-    assert_eq!(requests.load(Ordering::SeqCst), 2);
-    assert_eq!(terminal_count(process.transcript(), 12), 1);
+    assert_eq!(requests.load(Ordering::SeqCst), 3);
     assert_eq!(terminal_count(process.transcript(), 13), 1);
     process.finish();
     server.join().unwrap();

@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
 use reqwest::{Client, Response};
 use tokio::sync::mpsc;
-use vesper_domain::{ProviderRequestId, ToolId};
+use vesper_domain::{ProviderRequestId, StreamInterruptionCause, ToolId};
 use vesper_provider::{CancellationSignal, ProviderError, ProviderStreamEvent};
 use vesper_security::SecretValue;
 
@@ -22,7 +22,6 @@ impl GlmHttpClient {
     pub(crate) fn build(config: &GlmConfig) -> Result<Self, GlmAdapterError> {
         let client = Client::builder()
             .connect_timeout(config.connect_timeout)
-            .timeout(config.request_timeout)
             .read_timeout(config.read_timeout)
             .user_agent(&config.user_agent)
             .redirect(reqwest::redirect::Policy::none())
@@ -72,8 +71,15 @@ impl GlmHttpClient {
         if !response.status().is_success() {
             return Err(non_success(response, cancellation).await);
         }
-        self.consume_response(response, request_id, tool_ids, cancellation, sender)
-            .await
+        self.consume_response(
+            response,
+            request_id,
+            tool_ids,
+            cancellation,
+            sender,
+            config.request_timeout,
+        )
+        .await
     }
 
     pub(crate) async fn post_json(
@@ -87,7 +93,11 @@ impl GlmHttpClient {
             .endpoint
             .chat_completions_url()
             .map_err(AttemptFailure::Adapter)?;
-        let mut request = self.client.post(url).json(body);
+        let mut request = self
+            .client
+            .post(url)
+            .timeout(config.request_timeout)
+            .json(body);
         if config.endpoint.attach_inference_auth() {
             request = request.bearer_auth(credential.expose().as_str());
         }
@@ -120,6 +130,7 @@ impl GlmHttpClient {
         let request = self
             .client
             .get(url)
+            .timeout(config.request_timeout)
             // Frozen quota monitor requires the raw API key, not Bearer.
             .header(reqwest::header::AUTHORIZATION, credential.expose().as_str())
             .header(reqwest::header::ACCEPT_LANGUAGE, "en-US,en")
@@ -147,21 +158,37 @@ impl GlmHttpClient {
         tool_ids: &BTreeMap<String, ToolId>,
         cancellation: Arc<dyn CancellationSignal>,
         sender: &mpsc::Sender<Result<ProviderStreamEvent, ProviderError>>,
+        generation_deadline: Duration,
     ) -> Result<AttemptState, AttemptFailure> {
         let mut parser = SseParser::default();
         let mut state = AttemptState::default();
+        let deadline = tokio::time::sleep(generation_deadline);
+        tokio::pin!(deadline);
         loop {
             let chunk = tokio::select! {
                 _ = wait_cancelled(Arc::clone(&cancellation)) => {
                     return Err(AttemptFailure::Cancelled { visible: state.visible });
                 }
-                chunk = response.chunk() => chunk.map_err(|error| {
-                    if error.is_timeout() {
-                        AttemptFailure::Timeout { visible: state.visible }
-                    } else {
-                        AttemptFailure::Transport { visible: state.visible }
+                () = &mut deadline => {
+                    return Err(AttemptFailure::Interrupted {
+                        cause: StreamInterruptionCause::GenerationDeadline,
+                        state: Box::new(state),
+                    });
+                }
+                chunk = response.chunk() => match chunk {
+                    Ok(chunk) => chunk,
+                    Err(error) => {
+                        let cause = if error.is_timeout() {
+                            StreamInterruptionCause::ReadInactivity
+                        } else {
+                            StreamInterruptionCause::Transport
+                        };
+                        return Err(AttemptFailure::Interrupted {
+                            cause,
+                            state: Box::new(state),
+                        });
                     }
-                })?,
+                },
             };
             let Some(chunk) = chunk else {
                 break;
@@ -203,7 +230,10 @@ impl GlmHttpClient {
             }
             Ok(state)
         } else {
-            Err(AttemptFailure::Incomplete(Box::new(state)))
+            Err(AttemptFailure::Interrupted {
+                cause: StreamInterruptionCause::RemoteEof,
+                state: Box::new(state),
+            })
         }
     }
 }
@@ -352,11 +382,14 @@ pub(crate) enum AttemptFailure {
     Transport {
         visible: bool,
     },
+    Interrupted {
+        cause: StreamInterruptionCause,
+        state: Box<AttemptState>,
+    },
     Http {
         status: u16,
         retry_after: Option<String>,
     },
-    Incomplete(Box<AttemptState>),
     Adapter(GlmAdapterError),
     ConsumerDropped,
 }

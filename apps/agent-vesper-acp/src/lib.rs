@@ -1094,9 +1094,17 @@ fn safe_agent_loop_error(error: &vesper_agent::AgentLoopError) -> String {
             FinishOutcome::ContextLimit => "provider context limit reached".to_owned(),
             FinishOutcome::Safety => "provider safety policy stopped generation".to_owned(),
             FinishOutcome::Cancelled => "provider turn was cancelled".to_owned(),
-            FinishOutcome::NetworkInterruptionAfterVisibleOutput => {
-                "provider network interrupted after partial output".to_owned()
-            }
+            FinishOutcome::StreamInterrupted {
+                cause,
+                tool_call_started,
+            } => format!(
+                "provider stream interrupted ({cause:?}) after partial output{}",
+                if *tool_call_started {
+                    "; automatic recovery withheld because a tool call had started"
+                } else {
+                    ""
+                }
+            ),
             FinishOutcome::ProviderError => "provider reported a generation error".to_owned(),
             FinishOutcome::ProtocolError => "provider protocol response was malformed".to_owned(),
             FinishOutcome::UnknownProviderValue { .. } => {
@@ -1497,6 +1505,39 @@ fn outcome_text(outcome: &vesper_agent::AgentTurnOutcome) -> String {
         vesper_agent::AgentTurnOutcome::MaxIterationsReached { iterations } => {
             format!("agent reached the bounded tool-iteration limit ({iterations})")
         }
+        vesper_agent::AgentTurnOutcome::Interrupted {
+            assistant_content,
+            cause,
+            tool_call_started,
+            ..
+        } => interrupted_outcome_text(assistant_content, *cause, *tool_call_started),
+    }
+}
+
+fn interrupted_outcome_text(
+    assistant_content: &[ContentPart],
+    cause: vesper_domain::StreamInterruptionCause,
+    tool_call_started: bool,
+) -> String {
+    let partial = assistant_content
+        .iter()
+        .filter_map(|part| match part {
+            ContentPart::Text(text) => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let reason = if tool_call_started {
+        format!(
+            "Provider stream interrupted ({cause:?}); automatic recovery was withheld because a tool call had started."
+        )
+    } else {
+        format!("Provider stream interrupted ({cause:?}) after bounded recovery was exhausted.")
+    };
+    if partial.is_empty() {
+        reason
+    } else {
+        format!("{partial}\n\n[Agent Vesper: {reason}]")
     }
 }
 
@@ -2070,6 +2111,24 @@ mod tests {
             )),
             "repeated tool loop detected; the turn was stopped safely"
         );
+    }
+
+    #[test]
+    fn interrupted_outcome_preserves_partial_text_and_safe_cause() {
+        let outcome = vesper_agent::AgentTurnOutcome::Interrupted {
+            assistant_content: vec![ContentPart::Text(
+                vesper_domain::ContentText::new("partial answer").unwrap(),
+            )],
+            cause: vesper_domain::StreamInterruptionCause::ReadInactivity,
+            tool_call_started: true,
+            iterations: 2,
+            tool_results: Vec::new(),
+            plan: Some("[~] continue".into()),
+        };
+        let text = outcome_text(&outcome);
+        assert!(text.starts_with("partial answer"));
+        assert!(text.contains("ReadInactivity"));
+        assert!(text.contains("tool call had started"));
     }
 
     #[test]
