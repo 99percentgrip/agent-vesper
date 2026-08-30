@@ -27,7 +27,7 @@ exclude = ["spikes/*"]
 resolver = "3"
 
 [workspace.package]
-version = "0.20.73"
+version = "0.20.74"
 authors = ["Aleksejs Kozlitins"]
 edition = "2024"
 rust-version = "1.88"
@@ -36,6 +36,8 @@ license = "Apache-2.0"
 [workspace.dependencies]
 agent-client-protocol = { version = "=2.0.0", default-features = false, features = ["unstable_auth_methods", "unstable_session_fork"] }
 base64 = { version = "=0.22.1" }
+arboard = { version = "=3.6.1", features = ["wayland-data-control"] }
+image = { version = "=0.25.10", default-features = false, features = ["png"] }
 rand = { version = "=0.8.7" }
 qrcode = { version = "=0.14.1", default-features = false }
 clap = { version = "=4.6.4", default-features = false, features = ["derive", "error-context", "help", "std", "usage"] }

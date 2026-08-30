@@ -608,6 +608,15 @@ business logic.
   keybinding, accessibility, Vim, and terminal-integration exclusions are now
   concrete native operations. Tests iterate the complete registry and reject
   any hidden missing route.
+- Clipboard image paste is an interactive-terminal-only host capability, so it
+  has no ACP protocol twin. Plain Ctrl+V reads native bitmap data through the
+  platform clipboard and normalizes it to PNG; terminal bracketed paste and
+  clipboard text share one path-aware ingestion route so an existing
+  PNG/JPEG/WebP/AVIF path is queued through the established image pipeline
+  instead of being parsed as a slash command. Undocumented AVIF upload is
+  prohibited: pasted AVIF files are normalized locally with ImageMagick or
+  ffmpeg, while copied bitmap pixels need no external converter. Normal text,
+  multiline text, and real slash commands remain composer input.
 - Footer and palette rows are mouse-operable while TUI mouse capture is active.
   F4 cycles bounded real Changes/Git/Diff/Files/GitHub views. F5 uses the same
   optional `arecord`/`afrecord` plus local `faster-whisper` contract as the

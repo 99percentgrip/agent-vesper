@@ -1219,13 +1219,7 @@ async fn drive_loop(
             if session.pending_approval.is_some() {
                 continue;
             }
-            let cursor = session
-                .state
-                .preferences
-                .composer_cursor
-                .min(session.input.len());
-            session.input.insert_str(cursor, &text);
-            session.state.preferences.composer_cursor = cursor + text.len();
+            ingest_pasted_text(&text, session);
             refresh_command_menu(session, registry_commands, surface);
             continue;
         }
@@ -1306,6 +1300,17 @@ async fn drive_loop(
                     // Swallow everything else while the modal is up.
                 }
             }
+            continue;
+        }
+        // Crossterm receives Ctrl+V as an ordinary key event; terminals only
+        // synthesize Event::Paste for their own paste binding (commonly
+        // Ctrl+Shift+V). Read the native clipboard here so the conventional
+        // application-level Ctrl+V works too. Image data takes precedence;
+        // text falls through to the same path-aware ingestion used by
+        // bracketed paste.
+        if matches!(code, KeyCode::Char('v')) && ctrl {
+            paste_native_clipboard(session);
+            refresh_command_menu(session, registry_commands, surface);
             continue;
         }
         if let Some(action) = bound_action(&session.keybindings, code, modifiers) {
@@ -3865,9 +3870,91 @@ fn execute_media_op(operation: MediaOp, session: &mut TuiSession) -> Result<(), 
     }
 }
 
-fn queue_image(path: &std::path::Path, session: &mut TuiSession) -> Result<(), String> {
-    use base64::Engine as _;
+fn insert_composer_text(text: &str, session: &mut TuiSession) {
+    let cursor = session
+        .state
+        .preferences
+        .composer_cursor
+        .min(session.input.len());
+    session.input.insert_str(cursor, text);
+    session.state.preferences.composer_cursor = cursor + text.len();
+}
 
+fn pasted_image_path(text: &str) -> Option<std::path::PathBuf> {
+    let value = text.trim();
+    if value.is_empty() || value.contains(['\n', '\r']) {
+        return None;
+    }
+    let value = value
+        .strip_prefix('"')
+        .and_then(|value| value.strip_suffix('"'))
+        .or_else(|| {
+            value
+                .strip_prefix('\'')
+                .and_then(|value| value.strip_suffix('\''))
+        })
+        .unwrap_or(value);
+    let path = std::path::PathBuf::from(value);
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(str::to_ascii_lowercase)?;
+    matches!(extension.as_str(), "avif" | "png" | "jpg" | "jpeg" | "webp").then_some(path)
+}
+
+fn ingest_pasted_text(text: &str, session: &mut TuiSession) {
+    if let Some(path) = pasted_image_path(text).filter(|path| path.is_file()) {
+        if let Err(error) = queue_image(&path, session) {
+            session.state.status = Some(format!("Image paste failed: {error}"));
+        }
+    } else {
+        insert_composer_text(text, session);
+    }
+}
+
+fn paste_native_clipboard(session: &mut TuiSession) {
+    let result = (|| {
+        let mut clipboard = arboard::Clipboard::new().map_err(|error| error.to_string())?;
+        if let Ok(image) = clipboard.get_image() {
+            return queue_clipboard_image(image.width, image.height, image.bytes.as_ref(), session);
+        }
+        let text = clipboard.get_text().map_err(|error| error.to_string())?;
+        ingest_pasted_text(&text, session);
+        Ok(())
+    })();
+    if let Err(error) = result {
+        session.state.status = Some(format!("Clipboard paste failed: {error}"));
+    }
+}
+
+fn queue_clipboard_image(
+    width: usize,
+    height: usize,
+    rgba: &[u8],
+    session: &mut TuiSession,
+) -> Result<(), String> {
+    let expected = width
+        .checked_mul(height)
+        .and_then(|pixels| pixels.checked_mul(4))
+        .ok_or_else(|| "clipboard image dimensions overflow".to_string())?;
+    if width == 0 || height == 0 || expected != rgba.len() || expected > 80_000_000 {
+        return Err("clipboard image is empty, malformed, or exceeds 20 megapixels".into());
+    }
+    let image = image::RgbaImage::from_raw(width as u32, height as u32, rgba.to_vec())
+        .ok_or_else(|| "clipboard returned malformed RGBA image data".to_string())?;
+    let mut cursor = std::io::Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgba8(image)
+        .write_to(&mut cursor, image::ImageFormat::Png)
+        .map_err(|error| format!("could not encode clipboard image as PNG: {error}"))?;
+    queue_image_bytes(
+        cursor.into_inner(),
+        "image/png",
+        std::path::PathBuf::from("clipboard.png"),
+        session,
+    )
+}
+
+fn queue_image(path: &std::path::Path, session: &mut TuiSession) -> Result<(), String> {
     let path = if path.is_absolute() {
         path.to_path_buf()
     } else {
@@ -3875,12 +3962,78 @@ fn queue_image(path: &std::path::Path, session: &mut TuiSession) -> Result<(), S
             .map_err(|error| error.to_string())?
             .join(path)
     };
-    let bytes = std::fs::read(&path).map_err(|error| error.to_string())?;
-    if bytes.is_empty() || bytes.len() > 3_000_000 {
-        return Err("image must be between 1 byte and 3,000,000 bytes".into());
+    let mut bytes = std::fs::read(&path).map_err(|error| error.to_string())?;
+    if bytes.is_empty() || bytes.len() > 25_000_000 {
+        return Err("source image must be between 1 byte and 25,000,000 bytes".into());
     }
-    let media_type = image_media_type(&bytes)
-        .ok_or_else(|| "only PNG, JPEG, and WebP images are supported".to_string())?;
+    let media_type = if let Some(media_type) = image_media_type(&bytes) {
+        media_type
+    } else {
+        bytes = normalize_image_to_png(&path)?;
+        "image/png"
+    };
+    queue_image_bytes(bytes, media_type, path, session)
+}
+
+fn normalize_image_to_png(path: &std::path::Path) -> Result<Vec<u8>, String> {
+    let candidates: &[(&str, &[&str])] = &[
+        ("magick", &["png:-"]),
+        ("convert", &["png:-"]),
+        (
+            "ffmpeg",
+            &[
+                "-loglevel",
+                "error",
+                "-f",
+                "image2pipe",
+                "-vcodec",
+                "png",
+                "-",
+            ],
+        ),
+    ];
+    let mut attempted = Vec::new();
+    for (program, trailing_arguments) in candidates {
+        let mut command = std::process::Command::new(program);
+        if *program == "ffmpeg" {
+            command.arg("-i").arg(path).args(*trailing_arguments);
+        } else {
+            command.arg(path).args(*trailing_arguments);
+        }
+        match command.output() {
+            Ok(output)
+                if output.status.success()
+                    && image_media_type(&output.stdout) == Some("image/png") =>
+            {
+                return Ok(output.stdout);
+            }
+            Ok(output) => attempted.push(format!("{program} exited with {}", output.status)),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => attempted.push(format!("{program}: {error}")),
+        }
+    }
+    let detail = if attempted.is_empty() {
+        "no local AVIF converter is installed (ImageMagick or ffmpeg)".to_string()
+    } else {
+        attempted.join("; ")
+    };
+    Err(format!(
+        "the provider accepts PNG/JPEG/WebP; could not normalize `{}` to PNG: {detail}. Copy the image pixels instead of the file to paste it directly",
+        path.display()
+    ))
+}
+
+fn queue_image_bytes(
+    bytes: Vec<u8>,
+    media_type: &'static str,
+    path: std::path::PathBuf,
+    session: &mut TuiSession,
+) -> Result<(), String> {
+    use base64::Engine as _;
+
+    if bytes.is_empty() || bytes.len() > 3_000_000 {
+        return Err("normalized image must be between 1 byte and 3,000,000 bytes".into());
+    }
     let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
     let reference = format!("data:{media_type};base64,{encoded}");
     let queued = QueuedImage {
@@ -15729,5 +15882,50 @@ mod tests {
         assert!(session.queued_prompt.is_none());
         session.queued_prompt = Some("follow-up question".into());
         assert_eq!(session.queued_prompt.as_deref(), Some("follow-up question"));
+    }
+
+    #[test]
+    fn pasted_image_paths_are_distinguished_from_slash_commands() {
+        assert_eq!(
+            pasted_image_path("/tmp/reference.avif"),
+            Some(std::path::PathBuf::from("/tmp/reference.avif"))
+        );
+        assert_eq!(
+            pasted_image_path("\"/tmp/reference image.PNG\""),
+            Some(std::path::PathBuf::from("/tmp/reference image.PNG"))
+        );
+        assert_eq!(pasted_image_path("/status"), None);
+        assert_eq!(pasted_image_path("ordinary prompt"), None);
+        assert_eq!(pasted_image_path("/tmp/a.png\n/tmp/b.png"), None);
+    }
+
+    #[test]
+    fn clipboard_rgba_is_encoded_and_queued_as_png() {
+        let mut session = fresh_tui_session_for_trajectory_tests();
+        queue_clipboard_image(1, 1, &[0x11, 0x22, 0x33, 0xff], &mut session).unwrap();
+        assert_eq!(session.pending_images.len(), 1);
+        assert_eq!(session.pending_images[0].descriptor.media_type, "image/png");
+        assert!(session.pending_images[0].encoded.starts_with("iVBOR"));
+        assert!(session.input.is_empty());
+    }
+
+    #[test]
+    fn bracketed_paste_queues_existing_image_path_without_touching_composer() {
+        use base64::Engine as _;
+
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("reference.png");
+        std::fs::write(
+            &path,
+            base64::engine::general_purpose::STANDARD
+                .decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
+                .unwrap(),
+        )
+        .unwrap();
+        let mut session = fresh_tui_session_for_trajectory_tests();
+        ingest_pasted_text(path.to_str().unwrap(), &mut session);
+        assert_eq!(session.pending_images.len(), 1);
+        assert!(session.input.is_empty());
+        assert!(!session.state.status.as_deref().unwrap().contains("failed"));
     }
 }
