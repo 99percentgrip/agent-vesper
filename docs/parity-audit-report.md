@@ -48,6 +48,7 @@ constructed in the renderer.
 | Adapter model | Context | Eligible plans | Capability |
 | --- | ---: | --- | --- |
 | `glm-5.3` | 1,000,000 | Coding, Standard, BigModel | Flagship; deep reasoning |
+| `glm-5.3-flash` | 1,000,000 | Coding, Standard | Native multimodal image input; thinking enabled; max effort supported |
 | `glm-5.2` | 1,000,000 | Coding, Standard, BigModel | Flagship line; deep reasoning |
 | `glm-5-turbo` | 200,000 | Coding, Standard, BigModel | Text |
 | `glm-4.7` | 200,000 | Coding, Standard, BigModel | Text |
@@ -63,8 +64,19 @@ constructed in the renderer.
 
 Direct image input is rejected unless both the chosen plan and model advertise
 vision support. The reasoning picker exposes only adapter-supported values;
-Deep High and Deep Max are restricted to the flagship line (`glm-5.3`,
-`glm-5.2`).
+Deep High and Deep Max are restricted to the documented per-model capability
+set: `glm-5.3`/`glm-5.2` expose both, while `glm-5.3-flash` exposes Max and
+requires thinking to remain enabled.
+
+As verified against the
+[Z.ai GLM-5.3-Flash guide](https://docs.z.ai/guides/vlm/glm-5.3-flash) on 2026-08-30,
+`glm-5.3-flash` accepts text, image, video, and file input and emits text. The
+current provider-neutral domain transports direct image input; ACP and TUI
+therefore expose and test its image path (including Base64 data URLs) without
+claiming unimplemented direct video/file attachment UI. Z.ai documents no
+capability-bearing model-list API, so the adapter remains the evidence-backed
+catalog authority; both hosts now consume it instead of maintaining duplicate
+tables.
 
 ## Harness and interaction matrix
 

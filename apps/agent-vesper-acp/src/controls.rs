@@ -16,6 +16,7 @@ use vesper_acp::{
 };
 use vesper_domain::{ModelId, ProviderId, QualifiedModelId};
 use vesper_provider::ProviderConfiguration;
+use vesper_provider_glm::{GlmCatalog, GlmModelInfo, GlmPlan};
 
 /// Stable id of the provider-switching control option.
 pub(crate) const PROVIDER_CONTROL_ID: &str = "provider";
@@ -28,84 +29,6 @@ pub(crate) const ACTIVE_PROVIDER_KEY: &str = "vesper:active-provider";
 
 /// Synthetic MoA picker value (oracle `MOA_PICKER_VALUE`). NOT a real model id.
 const MOA_PICKER_VALUE: &str = "__moa__";
-
-/// Frozen oracle per-model display data, in oracle `MODELS` order.
-struct FrozenModelDisplay {
-    id: &'static str,
-    name: &'static str,
-    description: &'static str,
-    context_window: &'static str,
-    /// Plans this model is available on (oracle `plans` lists).
-    plans: &'static [&'static str],
-    vision: bool,
-    deep_reasoning: bool,
-}
-
-const MODELS: &[FrozenModelDisplay] = &[
-    FrozenModelDisplay {
-        id: "glm-5.3",
-        name: "GLM-5.3 (Flagship)",
-        description: "Latest flagship — advanced complex software engineering, agent tasks, and emergent cybersecurity capabilities",
-        context_window: "1M",
-        plans: &["coding", "standard", "bigmodel"],
-        vision: false,
-        deep_reasoning: true,
-    },
-    FrozenModelDisplay {
-        id: "glm-5.2",
-        name: "GLM-5.2",
-        description: "Previous flagship — maximum reasoning, coding, and long-horizon agentic tasks",
-        context_window: "1M",
-        plans: &["coding", "standard", "bigmodel"],
-        vision: false,
-        deep_reasoning: true,
-    },
-    FrozenModelDisplay {
-        id: "glm-5-turbo",
-        name: "GLM-5-Turbo",
-        description: "Flagship model optimized for speed",
-        context_window: "200K",
-        plans: &["coding", "standard", "bigmodel"],
-        vision: false,
-        deep_reasoning: false,
-    },
-    FrozenModelDisplay {
-        id: "glm-4.7",
-        name: "GLM-4.7",
-        description: "Balanced model for daily development and routine tasks",
-        context_window: "200K",
-        plans: &["coding", "standard", "bigmodel"],
-        vision: false,
-        deep_reasoning: false,
-    },
-    FrozenModelDisplay {
-        id: "glm-5v-turbo",
-        name: "GLM-5V-Turbo (Vision Coding)",
-        description: "Multimodal coding model for screenshots, video, UI, and agent workflows",
-        context_window: "200K",
-        plans: &["standard", "bigmodel"],
-        vision: true,
-        deep_reasoning: false,
-    },
-    FrozenModelDisplay {
-        id: "glm-4.5v",
-        name: "GLM-4.5V (Vision)",
-        description: "Vision-capable model for screenshots, diagrams, and charts",
-        context_window: "65K",
-        plans: &["standard", "bigmodel"],
-        vision: true,
-        deep_reasoning: false,
-    },
-    FrozenModelDisplay {
-        id: "glm-4.6v",
-        name: "GLM-4.6V (Vision)",
-        description: "Vision model with improved OCR and image understanding",
-        context_window: "131K",
-        plans: &["standard", "bigmodel"],
-        vision: true,
-        deep_reasoning: false,
-    },
-];
 
 /// Frozen API plans (oracle `API_ENDPOINTS`).
 const API_ENDPOINTS: &[(&str, &str, &str)] = &[
@@ -167,10 +90,23 @@ const GENERATION_PROFILES: &[(&str, &str, &str)] = &[
 ];
 
 /// Returns the frozen model entries available on `plan`.
-fn models_for_plan(plan: &str) -> impl Iterator<Item = &FrozenModelDisplay> {
-    MODELS
+fn models_for_plan(plan: &str) -> impl Iterator<Item = &'static GlmModelInfo> {
+    let plan = match plan {
+        "standard" => GlmPlan::Standard,
+        "bigmodel" => GlmPlan::BigModel,
+        _ => GlmPlan::Coding,
+    };
+    GlmCatalog::entries()
         .iter()
-        .filter(move |model| model.plans.contains(&plan))
+        .filter(move |model| model.supports_plan(plan))
+}
+
+fn context_label(tokens: u64) -> String {
+    if tokens.is_multiple_of(1_000_000) {
+        format!("{}M", tokens / 1_000_000)
+    } else {
+        format!("{}K", tokens / 1_000)
+    }
 }
 
 /// Returns the thought levels available for `model` (oracle
@@ -178,13 +114,9 @@ fn models_for_plan(plan: &str) -> impl Iterator<Item = &FrozenModelDisplay> {
 fn thought_levels_for_model(
     model: &str,
 ) -> impl Iterator<Item = &'static (&'static str, &'static str, &'static str)> {
-    let deep = MODELS
-        .iter()
-        .find(|entry| entry.id == model)
-        .is_some_and(|entry| entry.deep_reasoning);
     THOUGHT_LEVELS
         .iter()
-        .filter(move |(id, _, _)| matches!(*id, "disabled" | "enabled") || deep)
+        .filter(move |(id, _, _)| GlmCatalog::supports_reasoning_mode(model, id))
 }
 
 /// Reads one `zai:` string value from the provider configuration envelope.
@@ -222,12 +154,12 @@ pub(crate) fn glm_control_surface(configuration: &ProviderConfiguration) -> Sess
     }];
     for entry in models_for_plan(plan) {
         model_options.push(AcpControlOption {
-            value: entry.id.to_owned(),
-            name: entry.name.to_owned(),
+            value: entry.id().to_owned(),
+            name: entry.display().to_owned(),
             description: Some(format!(
                 "{} ({context} context)",
-                entry.description,
-                context = entry.context_window
+                entry.description(),
+                context = context_label(entry.context_tokens())
             )),
         });
     }
@@ -307,10 +239,10 @@ pub(crate) fn glm_control_surface(configuration: &ProviderConfiguration) -> Sess
             "Use the coding model when needed; otherwise use local fallbacks".to_owned(),
         ),
     }];
-    for entry in models_for_plan(plan).filter(|entry| !entry.vision) {
+    for entry in models_for_plan(plan).filter(|entry| !entry.is_vision()) {
         auxiliary_options.push(AcpControlOption {
-            value: entry.id.to_owned(),
-            name: entry.name.to_owned(),
+            value: entry.id().to_owned(),
+            name: entry.display().to_owned(),
             description: Some(
                 "Use for titles, compression, recall, evaluation, and workers".to_owned(),
             ),
@@ -695,13 +627,10 @@ pub(crate) fn glm_context_window(configuration: &ProviderConfiguration) -> u64 {
     let model = config_str(configuration, "zai:model")
         .or_else(|| config_str(configuration, "zai:model-id"))
         .unwrap_or("glm-5.3");
-    match model {
-        "glm-5.3" | "glm-5.2" => 1_000_000,
-        "glm-5v-turbo" => 200_000,
-        "glm-4.5v" => 65_536,
-        "glm-4.6v" => 131_072,
-        _ => 200_000,
-    }
+    GlmCatalog::entries()
+        .iter()
+        .find(|entry| entry.id() == model)
+        .map_or(200_000, GlmModelInfo::context_tokens)
 }
 
 /// Applies one `(config option id, value)` selection onto the provider
@@ -730,6 +659,18 @@ pub(crate) fn apply_glm_config_selection(
                 values
                     .insert("zai:model".to_owned(), serde_json::json!(value))
                     .ok()?;
+                let reasoning =
+                    config_str(configuration, "zai:reasoning-mode").unwrap_or("enabled");
+                if !GlmCatalog::supports_reasoning_mode(value, reasoning) {
+                    let fallback = if value == "glm-5.3-flash" {
+                        "max"
+                    } else {
+                        "enabled"
+                    };
+                    values
+                        .insert("zai:reasoning-mode".to_owned(), serde_json::json!(fallback))
+                        .ok()?;
+                }
             }
             Some(next)
         }
@@ -785,6 +726,16 @@ mod tests {
                 "mixture_mode"
             ]
         );
+        let model = surface
+            .all()
+            .find(|control| control.id == "model")
+            .expect("model control");
+        assert!(
+            model
+                .options
+                .iter()
+                .any(|option| option.value == "glm-5.3-flash")
+        );
         let model = surface.control("model").expect("model control");
         assert_eq!(model.current_value, "glm-5.3");
         assert_eq!(model.options[0].value, "__moa__");
@@ -792,7 +743,7 @@ mod tests {
     }
 
     #[test]
-    fn coding_plan_excludes_vision_models() {
+    fn coding_plan_excludes_only_vision_models_not_documented_for_coding() {
         let surface = glm_control_surface(&default_configuration());
         let model = surface.control("model").expect("model control");
         assert!(
@@ -878,6 +829,31 @@ mod tests {
                 .and_then(|v| v.as_str()),
             Some("max")
         );
+    }
+
+    #[test]
+    fn flash_model_selection_repairs_incompatible_reasoning() {
+        let mut configuration = default_configuration();
+        configuration
+            .values
+            .values
+            .insert("zai:reasoning-mode", serde_json::json!("disabled"))
+            .unwrap();
+        let next = apply_glm_config_selection(&configuration, "model", "glm-5.3-flash")
+            .expect("flash applies");
+        assert_eq!(config_str(&next, "zai:reasoning-mode"), Some("max"));
+        assert_eq!(glm_context_window(&next), 1_000_000);
+        let flash_surface = glm_control_surface(&next);
+        let thought = flash_surface
+            .all()
+            .find(|control| control.id == "thought_level")
+            .expect("thinking control");
+        let choices: Vec<&str> = thought
+            .options
+            .iter()
+            .map(|option| option.value.as_str())
+            .collect();
+        assert_eq!(choices, vec!["enabled", "max"]);
     }
 
     #[test]

@@ -44,12 +44,17 @@ quota normalization, and legacy GLM compatibility translation.
   `SuperpowerValue` into the runtime reasoning-mode label; `serialize_request`
   already turns `request.reasoning.mode` into the wire `reasoning_effort` /
   `thinking` pair.
-- Model registry lives in `catalog.rs` (`FrozenModel` table). `glm-5.3` is the
-  current flagship and the adapter default; deep reasoning (`high`/`max`) gates
-  on the flagship line via `catalog::supports_deep_reasoning`
-  (`glm-5.3` + `glm-5.2`). Loopback conformance fixtures are captured against
+- Model registry lives in `catalog.rs` (`GlmModelInfo` table) and is the shared
+  catalog source for ACP and TUI. `glm-5.3` is the current flagship and adapter
+  default. `glm-5.3-flash` is a 1M-context, 128K-output native multimodal model
+  on the documented Coding/Standard Z.ai plans; it accepts URL/Base64 image
+  blocks and exposes only its documented `enabled`/`max` reasoning modes.
+  Loopback conformance fixtures are captured against
   `glm-5.2` and pin it explicitly in `configured_session`/`fixture_request` —
   they prove wire parity, not the default model.
+- Z.ai currently documents no capability-bearing model-discovery endpoint.
+  Keep catalog updates adapter-owned and evidence-backed; never infer plan,
+  vision, limits, or reasoning from a remotely returned model id.
 - PRD `provider-capability-gating` FR-2: `factory.rs` advertises the full
   session-control surface as superpower descriptors — `zai:plan` (alias
   `plan`: coding/standard/bigmodel), `zai:generation` (alias `generation`:

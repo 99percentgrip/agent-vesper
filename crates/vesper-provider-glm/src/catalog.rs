@@ -13,7 +13,7 @@ use vesper_provider::{
 use crate::{GlmPlan, error::cancelled_error, provider_id};
 
 #[derive(Clone, Copy)]
-struct FrozenModel {
+pub struct GlmModelInfo {
     id: &'static str,
     display: &'static str,
     description: &'static str,
@@ -21,14 +21,52 @@ struct FrozenModel {
     output: u64,
     plans: &'static [GlmPlan],
     vision: bool,
-    deep_reasoning: bool,
+    reasoning_levels: &'static [&'static str],
+}
+
+impl GlmModelInfo {
+    #[must_use]
+    pub const fn id(&self) -> &'static str {
+        self.id
+    }
+    #[must_use]
+    pub const fn display(&self) -> &'static str {
+        self.display
+    }
+    #[must_use]
+    pub const fn description(&self) -> &'static str {
+        self.description
+    }
+    #[must_use]
+    pub const fn context_tokens(&self) -> u64 {
+        self.context
+    }
+    #[must_use]
+    pub fn supports_plan(&self, plan: GlmPlan) -> bool {
+        self.plans.contains(&plan)
+    }
+    #[must_use]
+    pub const fn is_vision(&self) -> bool {
+        self.vision
+    }
+    #[must_use]
+    pub const fn reasoning_levels(&self) -> &'static [&'static str] {
+        self.reasoning_levels
+    }
 }
 
 const ALL_PLANS: &[GlmPlan] = &[GlmPlan::Coding, GlmPlan::Standard, GlmPlan::BigModel];
 const API_PLANS: &[GlmPlan] = &[GlmPlan::Standard, GlmPlan::BigModel];
+const FLASH_PLANS: &[GlmPlan] = &[GlmPlan::Coding, GlmPlan::Standard];
+const STANDARD_REASONING: &[&str] = &["disabled", "enabled"];
+const DEEP_REASONING: &[&str] = &["disabled", "enabled", "high", "max"];
+// GLM-5.3-Flash requires thinking.type=enabled. The model guide explicitly
+// recommends reasoning_effort=max, while the effort-less enabled form is also
+// valid. Do not advertise the unsupported disabled mode or undocumented high.
+const FLASH_REASONING: &[&str] = &["enabled", "max"];
 
-const MODELS: &[FrozenModel] = &[
-    FrozenModel {
+const MODELS: &[GlmModelInfo] = &[
+    GlmModelInfo {
         id: "glm-5.3",
         display: "GLM-5.3 (Flagship)",
         description: "Latest flagship — advanced complex software engineering, agent tasks, and emergent cybersecurity",
@@ -36,9 +74,19 @@ const MODELS: &[FrozenModel] = &[
         output: 128_000,
         plans: ALL_PLANS,
         vision: false,
-        deep_reasoning: true,
+        reasoning_levels: DEEP_REASONING,
     },
-    FrozenModel {
+    GlmModelInfo {
+        id: "glm-5.3-flash",
+        display: "GLM-5.3-Flash (Multimodal)",
+        description: "Fast native multimodal coding and agent model with visual understanding",
+        context: 1_000_000,
+        output: 128_000,
+        plans: FLASH_PLANS,
+        vision: true,
+        reasoning_levels: FLASH_REASONING,
+    },
+    GlmModelInfo {
         id: "glm-5.2",
         display: "GLM-5.2",
         description: "Flagship reasoning, coding, and long-horizon agentic tasks",
@@ -46,9 +94,9 @@ const MODELS: &[FrozenModel] = &[
         output: 128_000,
         plans: ALL_PLANS,
         vision: false,
-        deep_reasoning: true,
+        reasoning_levels: DEEP_REASONING,
     },
-    FrozenModel {
+    GlmModelInfo {
         id: "glm-5-turbo",
         display: "GLM-5-Turbo",
         description: "Flagship model optimized for speed",
@@ -56,9 +104,9 @@ const MODELS: &[FrozenModel] = &[
         output: 128_000,
         plans: ALL_PLANS,
         vision: false,
-        deep_reasoning: false,
+        reasoning_levels: STANDARD_REASONING,
     },
-    FrozenModel {
+    GlmModelInfo {
         id: "glm-4.7",
         display: "GLM-4.7",
         description: "Balanced model for daily development and routine tasks",
@@ -66,9 +114,9 @@ const MODELS: &[FrozenModel] = &[
         output: 128_000,
         plans: ALL_PLANS,
         vision: false,
-        deep_reasoning: false,
+        reasoning_levels: STANDARD_REASONING,
     },
-    FrozenModel {
+    GlmModelInfo {
         id: "glm-5v-turbo",
         display: "GLM-5V-Turbo (Vision Coding)",
         description: "Multimodal coding model for screenshots, video, UI, and agent workflows",
@@ -76,9 +124,9 @@ const MODELS: &[FrozenModel] = &[
         output: 128_000,
         plans: API_PLANS,
         vision: true,
-        deep_reasoning: false,
+        reasoning_levels: STANDARD_REASONING,
     },
-    FrozenModel {
+    GlmModelInfo {
         id: "glm-4.5v",
         display: "GLM-4.5V (Vision)",
         description: "Vision-capable model for screenshots, diagrams, and charts",
@@ -86,9 +134,9 @@ const MODELS: &[FrozenModel] = &[
         output: 16_384,
         plans: API_PLANS,
         vision: true,
-        deep_reasoning: false,
+        reasoning_levels: STANDARD_REASONING,
     },
-    FrozenModel {
+    GlmModelInfo {
         id: "glm-4.6v",
         display: "GLM-4.6V (Vision)",
         description: "Vision model with improved OCR and image understanding",
@@ -96,7 +144,7 @@ const MODELS: &[FrozenModel] = &[
         output: 32_768,
         plans: API_PLANS,
         vision: true,
-        deep_reasoning: false,
+        reasoning_levels: STANDARD_REASONING,
     },
 ];
 
@@ -105,6 +153,12 @@ const MODELS: &[FrozenModel] = &[
 pub struct GlmCatalog;
 
 impl GlmCatalog {
+    /// Returns the adapter-owned model data used by both composition hosts.
+    #[must_use]
+    pub fn entries() -> &'static [GlmModelInfo] {
+        MODELS
+    }
+
     /// Returns a static catalog snapshot.
     #[must_use]
     pub fn snapshot() -> ModelCatalogSnapshot {
@@ -138,6 +192,15 @@ impl GlmCatalog {
             .find(|entry| entry.id == model)
             .is_some_and(|entry| entry.vision)
     }
+
+    /// Returns whether a model accepts the adapter's combined reasoning mode.
+    #[must_use]
+    pub fn supports_reasoning_mode(model: &str, mode: &str) -> bool {
+        MODELS
+            .iter()
+            .find(|entry| entry.id == model)
+            .is_some_and(|entry| entry.reasoning_levels.contains(&mode))
+    }
 }
 
 impl ModelCatalog for GlmCatalog {
@@ -155,7 +218,7 @@ impl ModelCatalog for GlmCatalog {
     }
 }
 
-fn descriptor(model: &FrozenModel) -> ModelDescriptor {
+fn descriptor(model: &GlmModelInfo) -> ModelDescriptor {
     let mut metadata = ExtensionMap::default();
     metadata
         .insert(
@@ -166,11 +229,6 @@ fn descriptor(model: &FrozenModel) -> ModelDescriptor {
             }),
         )
         .expect("bounded static catalog metadata");
-    let reasoning_levels = if model.deep_reasoning {
-        vec!["disabled", "enabled", "high", "max"]
-    } else {
-        vec!["disabled", "enabled"]
-    };
     let capabilities = ProviderCapabilities {
         limits: SupportLevel::Native {
             details: ModelLimits {
@@ -181,7 +239,11 @@ fn descriptor(model: &FrozenModel) -> ModelDescriptor {
         },
         reasoning: SupportLevel::Native {
             details: ReasoningCapability {
-                effort_levels: reasoning_levels.iter().map(ToString::to_string).collect(),
+                effort_levels: model
+                    .reasoning_levels
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect(),
                 visible_modes: vec!["provider-visible".into()],
             },
         },
@@ -203,7 +265,7 @@ fn descriptor(model: &FrozenModel) -> ModelDescriptor {
                     media_types: vec!["image/png".into(), "image/jpeg".into(), "image/webp".into()],
                     maximum_items: None,
                     references: true,
-                    inline_data: false,
+                    inline_data: true,
                 },
             }
         } else {
@@ -308,13 +370,14 @@ pub(crate) fn model_output_limit(model: &str) -> Option<u64> {
         .map(|entry| entry.output)
 }
 
-/// Returns whether a frozen model supports the deep reasoning effort levels
-/// (`high`/`max`). Currently the flagship line: `glm-5.3` and `glm-5.2`.
+/// Returns whether a frozen model supports an extended reasoning effort level.
 pub(crate) fn supports_deep_reasoning(model: &str) -> bool {
     MODELS
         .iter()
         .find(|entry| entry.id == model)
-        .is_some_and(|entry| entry.deep_reasoning)
+        .is_some_and(|entry| {
+            entry.reasoning_levels.contains(&"high") || entry.reasoning_levels.contains(&"max")
+        })
 }
 
 #[cfg(test)]
@@ -326,21 +389,21 @@ mod tests {
     #[test]
     fn frozen_catalog_and_plan_eligibility_match_source() {
         let snapshot = GlmCatalog::snapshot();
-        assert_eq!(snapshot.models.len(), 7);
+        assert_eq!(snapshot.models.len(), 8);
         assert_eq!(snapshot.provenance, ModelCatalogProvenance::Static);
         assert!(model_supports_plan("glm-5.3", GlmPlan::Coding));
         assert!(model_supports_plan("glm-5.2", GlmPlan::Coding));
+        assert!(model_supports_plan("glm-5.3-flash", GlmPlan::Coding));
         assert!(!model_supports_plan("glm-4.5v", GlmPlan::Coding));
         assert!(model_supports_plan("glm-4.5v", GlmPlan::Standard));
         assert_eq!(model_output_limit("glm-4.5v"), Some(16_384));
     }
 
     #[test]
-    fn deep_reasoning_gates_on_the_flagship_line_only() {
-        // High/max reasoning effort is a flagship capability: glm-5.3 (the
-        // current flagship) and glm-5.2 (its post-training predecessor).
+    fn extended_reasoning_follows_per_model_capabilities() {
         assert!(supports_deep_reasoning("glm-5.3"));
         assert!(supports_deep_reasoning("glm-5.2"));
+        assert!(supports_deep_reasoning("glm-5.3-flash"));
         assert!(!supports_deep_reasoning("glm-5-turbo"));
         assert!(!supports_deep_reasoning("glm-5v-turbo"));
         assert!(!supports_deep_reasoning("glm-4.7"));
@@ -353,6 +416,21 @@ mod tests {
         let legacy = GlmCatalog::find("glm-5.2").expect("glm-5.2 stays selectable");
         assert_eq!(legacy.display_name.as_str(), "GLM-5.2");
         assert_eq!(model_output_limit("glm-5.3"), Some(128_000));
+        let flash = GlmCatalog::find("glm-5.3-flash").expect("flash model is registered");
+        assert_eq!(model_output_limit("glm-5.3-flash"), Some(128_000));
+        assert!(matches!(
+            flash.capabilities.vision,
+            SupportLevel::Native { .. }
+        ));
+        assert!(!GlmCatalog::supports_reasoning_mode(
+            "glm-5.3-flash",
+            "disabled"
+        ));
+        assert!(GlmCatalog::supports_reasoning_mode(
+            "glm-5.3-flash",
+            "enabled"
+        ));
+        assert!(GlmCatalog::supports_reasoning_mode("glm-5.3-flash", "max"));
     }
 
     #[test]

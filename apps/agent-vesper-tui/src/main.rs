@@ -12421,6 +12421,9 @@ mod tests {
         let caps = palette_capabilities();
         // A vision-capable GLM model accepts a queued PNG.
         assert!(validate_queued_images(&caps, "glm-4.5v", &[queued_image("image/png")]).is_ok());
+        assert!(
+            validate_queued_images(&caps, "glm-5.3-flash", &[queued_image("image/png")]).is_ok()
+        );
         // A text-only model rejects with the adapter's own denial reason —
         // no provider-branded guidance, no name check.
         let denial = validate_queued_images(&caps, "glm-5.3", &[queued_image("image/png")])

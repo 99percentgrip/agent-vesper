@@ -67,7 +67,10 @@ transport, stderr-only tracing, and orderly shutdown.
   tool-enforcement and cognitive-capability system instructions, and the
   silent pre-reply memory recall injection.
   The composition also injects the multi-provider footer control surface
-  (`src/controls.rs`): the adapter advertises `provider` (TUI `/provider`
+  (`src/controls.rs`). GLM model presentation, plan eligibility, context
+  limits, vision, and reasoning choices derive from
+  `vesper-provider-glm::GlmCatalog` (no app-local model table). The adapter
+  advertises `provider` (TUI `/provider`
   parity — lists every registered adapter with live credential status in
   each description; switching stamps `vesper:active-provider` into the
   session envelope and swaps the acting `QualifiedModelId` so the next turn

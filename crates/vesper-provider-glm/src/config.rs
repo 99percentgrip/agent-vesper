@@ -254,6 +254,17 @@ pub enum GlmReasoningMode {
     Max,
 }
 
+impl GlmReasoningMode {
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::Disabled => "disabled",
+            Self::Enabled => "enabled",
+            Self::High => "high",
+            Self::Max => "max",
+        }
+    }
+}
+
 /// Frozen sampling profiles.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -339,13 +350,10 @@ impl GlmConfig {
                 Err(GlmAdapterError::UnknownModel)
             };
         }
-        if matches!(
-            self.reasoning,
-            GlmReasoningMode::High | GlmReasoningMode::Max
-        ) && !crate::catalog::supports_deep_reasoning(self.model.as_str())
+        if !crate::GlmCatalog::supports_reasoning_mode(self.model.as_str(), self.reasoning.as_str())
         {
             return Err(GlmAdapterError::Configuration(
-                "high and max reasoning require glm-5.3 or glm-5.2",
+                "reasoning mode is unavailable for the selected model",
             ));
         }
         Ok(())

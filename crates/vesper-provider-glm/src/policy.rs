@@ -25,12 +25,9 @@ use crate::{GlmCatalog, GlmPlan, catalog::supports_deep_reasoning};
 pub struct GlmSuperpowerPolicy;
 
 /// The current GLM flagship model — the fallback when the active model is
-/// unavailable on a new plan. Deep reasoning (`high`/`max`) is gated on the
-/// flagship line via [`supports_deep_reasoning`] (`glm-5.3` and `glm-5.2`).
+/// unavailable on a new plan. Extended reasoning follows the catalog's
+/// per-model capability set.
 const FLAGSHIP_MODEL: &str = "glm-5.3";
-
-/// Advertised `thinking` choices that are always available regardless of model.
-const BASE_THINKING: &[&str] = &["disabled", "enabled"];
 
 /// Advertised `thinking` choices that only deep-reasoning models support.
 const EXTENDED_THINKING: &[&str] = &["high", "max"];
@@ -86,17 +83,14 @@ impl SuperpowerPolicy for GlmSuperpowerPolicy {
                     .cloned()
                     .collect()
             }
-            // `/thinking`: `disabled`/`enabled` always; `high`/`max` only on
-            // the deep-reasoning flagship line.
+            // `/thinking`: expose only the modes documented for this model.
+            // In particular GLM-5.3-Flash permits enabled/max but not disabled.
             "thinking" => advertised
                 .iter()
                 .filter(|value| {
-                    let Some(label) = Self::choice_label(value) else {
-                        return false;
-                    };
-                    BASE_THINKING.contains(&label)
-                        || (supports_deep_reasoning(active_model)
-                            && EXTENDED_THINKING.contains(&label))
+                    Self::choice_label(value).is_some_and(|label| {
+                        GlmCatalog::supports_reasoning_mode(active_model, label)
+                    })
                 })
                 .cloned()
                 .collect(),
@@ -189,20 +183,33 @@ impl SuperpowerPolicy for GlmSuperpowerPolicy {
         // a `thinking` reset to `enabled` — but only when the current thinking
         // is `high` or `max` (those are flagship-only modes the new model
         // cannot honor).
-        if alias == "model"
-            && Self::choice_label(value).is_some_and(|model| !supports_deep_reasoning(model))
-        {
-            vec![SuperpowerSideEffect {
+        if alias != "model" {
+            return Vec::new();
+        }
+        let Some(model) = Self::choice_label(value) else {
+            return Vec::new();
+        };
+        if model == "glm-5.3-flash" {
+            return vec![SuperpowerSideEffect {
+                target_alias: "thinking".to_string(),
+                new_value: Self::thinking_choice("max"),
+                apply_only_if_current_in: ["disabled", "high"]
+                    .iter()
+                    .map(|label| Self::thinking_choice(label))
+                    .collect(),
+            }];
+        }
+        if !supports_deep_reasoning(model) {
+            return vec![SuperpowerSideEffect {
                 target_alias: "thinking".to_string(),
                 new_value: Self::thinking_choice("enabled"),
                 apply_only_if_current_in: EXTENDED_THINKING
                     .iter()
                     .map(|label| Self::thinking_choice(label))
                     .collect(),
-            }]
-        } else {
-            Vec::new()
+            }];
         }
+        Vec::new()
     }
 
     fn on_plan_change(
@@ -289,7 +296,7 @@ mod tests {
     }
 
     #[test]
-    fn thinking_choices_restrict_to_base_unless_flagship_line() {
+    fn thinking_choices_follow_each_models_documented_set() {
         let policy = GlmSuperpowerPolicy;
         // Non-deep-reasoning active model: only disabled/enabled.
         let non_flag = policy.valid_choices("thinking", &advertised_thinking(), "", "glm-4.5v");
@@ -311,6 +318,13 @@ mod tests {
                 "{flagship} must expose deep reasoning"
             );
         }
+
+        let flash = policy.valid_choices("thinking", &advertised_thinking(), "", "glm-5.3-flash");
+        let flash_labels: Vec<&str> = flash
+            .iter()
+            .filter_map(|value| GlmSuperpowerPolicy::choice_label(value))
+            .collect();
+        assert_eq!(flash_labels, vec!["enabled", "max"]);
     }
 
     #[test]
@@ -331,7 +345,7 @@ mod tests {
     }
 
     #[test]
-    fn on_change_cascades_thinking_reset_only_outside_the_flagship_line() {
+    fn on_change_repairs_incompatible_thinking_modes() {
         let policy = GlmSuperpowerPolicy;
         // Switching to glm-4.5v cascades a thinking reset (guarded by high/max).
         let effects = policy.on_change("model", &choice("glm-4.5v"), "");
@@ -351,6 +365,14 @@ mod tests {
                 "{flagship} must keep deep thinking"
             );
         }
+
+        let flash = policy.on_change("model", &choice("glm-5.3-flash"), "");
+        assert_eq!(flash.len(), 1);
+        assert_eq!(flash[0].new_value, choice("max"));
+        assert_eq!(
+            flash[0].apply_only_if_current_in,
+            vec![choice("disabled"), choice("high")]
+        );
     }
 
     #[test]

@@ -337,11 +337,9 @@ fn validate_reasoning_for_model(
     reasoning: GlmReasoningMode,
     model: &str,
 ) -> Result<(), GlmAdapterError> {
-    if matches!(reasoning, GlmReasoningMode::High | GlmReasoningMode::Max)
-        && !crate::catalog::supports_deep_reasoning(model)
-    {
+    if !GlmCatalog::supports_reasoning_mode(model, reasoning.as_str()) {
         Err(GlmAdapterError::UnsupportedRequest(
-            "high and max reasoning require glm-5.3 or glm-5.2",
+            "reasoning mode is unavailable for the selected model",
         ))
     } else {
         Ok(())
@@ -693,6 +691,37 @@ mod tests {
             serialized.body["thinking"]["type"],
             json!("enabled"),
             "max reasoning keeps thinking enabled"
+        );
+    }
+
+    #[test]
+    fn flash_serializes_multimodal_base64_with_required_thinking() {
+        let mut request = base_request();
+        request.model.model_id = vesper_domain::ModelId::new("glm-5.3-flash").unwrap();
+        request.messages[0]
+            .content
+            .push(ContentPart::Image(ImageDescriptor {
+                media_type: "image/png".into(),
+                source: MediaSource::Reference {
+                    reference: "data:image/png;base64,AA==".into(),
+                },
+                alt_text: None,
+            }));
+        request.reasoning.as_mut().unwrap().mode =
+            Some(vesper_domain::BoundedString::new("max").unwrap());
+        let config = GlmConfig {
+            model: vesper_domain::ModelId::new("glm-5.3-flash").unwrap(),
+            reasoning: GlmReasoningMode::Max,
+            ..GlmConfig::default()
+        };
+
+        let body = serialize_request(&request, &config).unwrap().body;
+        assert_eq!(body["thinking"]["type"], "enabled");
+        assert_eq!(body["reasoning_effort"], "max");
+        assert_eq!(body["messages"][0]["content"][1]["type"], "image_url");
+        assert_eq!(
+            body["messages"][0]["content"][1]["image_url"]["url"],
+            "data:image/png;base64,AA=="
         );
     }
 

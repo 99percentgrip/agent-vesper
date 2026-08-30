@@ -30,7 +30,7 @@ pub use auth::{
     AuthStoreError, EnvironmentCredentialSource, GlmCredentialSource, ResolvedCredential,
     StaticCredentialSource, credentials_path, resolve_credential, store_api_key, store_api_key_at,
 };
-pub use catalog::GlmCatalog;
+pub use catalog::{GlmCatalog, GlmModelInfo};
 pub use compatibility::{LegacyGlmConfiguration, translate_legacy_settings};
 pub use config::{GlmConfig, GlmEndpoint, GlmGenerationProfile, GlmPlan, GlmReasoningMode};
 pub use error::GlmAdapterError;

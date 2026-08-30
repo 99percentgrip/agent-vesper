@@ -139,8 +139,15 @@ fn footer_controls_are_advertised_and_settable_end_to_end() {
     assert_eq!(model["currentValue"], "glm-5.3");
     assert_eq!(
         option_values(&session_response, "model"),
-        ["__moa__", "glm-5.3", "glm-5.2", "glm-5-turbo", "glm-4.7"],
-        "coding plan excludes vision models and leads with the MoA picker"
+        [
+            "__moa__",
+            "glm-5.3",
+            "glm-5.3-flash",
+            "glm-5.2",
+            "glm-5-turbo",
+            "glm-4.7"
+        ],
+        "coding plan includes its documented native-multimodal Flash model and leads with MoA"
     );
     let thought = option(&session_response, "thought_level");
     assert_eq!(thought["category"], "thought_level");
