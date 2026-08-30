@@ -22,6 +22,8 @@ platform assumptions on hosts unavailable locally.
   suite) plus a documentation-structure check.
 - The supply-chain job runs `cargo audit` and `cargo deny --all-features check`
   with pinned tool versions (`cargo-audit 0.22.2`, `cargo-deny 0.20.2`).
+- `cargo deny` permits the OSI-approved Boost Software License (`BSL-1.0`),
+  required by the native Windows clipboard backend.
 - `deny.toml` enforces allowed licenses, bans SQLite crates and wildcard
   dependencies, and treats duplicate versions as warnings (the documented
   Stage 5 baseline) rather than failures.

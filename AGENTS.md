@@ -106,6 +106,9 @@ When the user requests a durable behavior change, record it here or in the relev
   disposable packages under `spikes/`.
 - No live provider calls or user-state writes are permitted in foundation
   verification.
+- Supply-chain license policy permits the OSI-approved `BSL-1.0` for native
+  platform integrations such as the Windows clipboard backend; advisory,
+  source, and wildcard-dependency gates remain fail-closed.
 - Registry publishing follows the continuous-update contract: one open
   `agent-vesper` PR in `agentclientprotocol/registry`, updated in place on
   the same branch for every version bump. Never close-and-replace it.
