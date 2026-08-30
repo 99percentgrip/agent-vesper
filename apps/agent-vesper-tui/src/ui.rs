@@ -189,6 +189,9 @@ pub struct ViewModel {
     pub transcript: Vec<String>,
     /// Current input buffer (for echo).
     pub input: String,
+    /// Pending image attachment labels rendered before the editable text.
+    /// The binary owns the image bytes; the renderer receives labels only.
+    pub composer_attachments: Vec<String>,
     /// One-line status / error / notice.
     pub status: Option<String>,
     /// Slash-command palette entries matching the current input.
@@ -542,11 +545,28 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
 
     // Composer. Keep a visible insertion point: the old renderer hid the
     // terminal cursor, which made the input look like a static mockup.
-    let input_value = if model.input.is_empty() {
-        "> Type a prompt or / for commands".to_string()
+    let mut composer_spans = vec![Span::styled(
+        "› ",
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
+    )];
+    for attachment in &model.composer_attachments {
+        composer_spans.push(Span::styled(
+            format!("{attachment} "),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ));
+    }
+    if model.input.is_empty() && model.composer_attachments.is_empty() {
+        composer_spans.push(Span::styled(
+            "Type a prompt or / for commands",
+            Style::default().fg(Color::DarkGray),
+        ));
     } else {
-        format!("> {}", model.input)
-    };
+        composer_spans.push(Span::raw(model.input.clone()));
+    }
     let composer_title = if model.preferences.vim {
         format!(
             " Composer · VIM {} ",
@@ -556,7 +576,7 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
         " Composer ".into()
     };
     frame.render_widget(
-        Paragraph::new(input_value).block(
+        Paragraph::new(Line::from(composer_spans)).block(
             Block::default()
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
@@ -569,6 +589,11 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
         .x
         .saturating_add(
             1 + 2
+                + model
+                    .composer_attachments
+                    .iter()
+                    .map(|label| label.chars().count() as u16 + 1)
+                    .sum::<u16>()
                 + model.input[..model.preferences.composer_cursor.min(model.input.len())]
                     .chars()
                     .count() as u16,

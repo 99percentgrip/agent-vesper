@@ -1094,6 +1094,7 @@ async fn drive_loop(
             overrides: session.state.overrides.clone(),
             transcript: session.state.transcript.clone(),
             input: session.input.clone(),
+            composer_attachments: composer_attachment_labels(&session.pending_images),
             status: session.state.status.clone(),
             command_menu: session.command_matches.clone(),
             command_menu_selected: session.command_selected,
@@ -1783,10 +1784,16 @@ async fn drive_loop(
                 }
             }
             KeyCode::Backspace => {
-                composer_backspace(
-                    &mut session.input,
-                    &mut session.state.preferences.composer_cursor,
-                );
+                if session.state.preferences.composer_cursor == 0
+                    && !session.pending_images.is_empty()
+                {
+                    remove_last_pending_image(session);
+                } else {
+                    composer_backspace(
+                        &mut session.input,
+                        &mut session.state.preferences.composer_cursor,
+                    );
+                }
                 refresh_command_menu(session, registry_commands, surface);
             }
             KeyCode::Left => {
@@ -4052,13 +4059,30 @@ fn queue_image_bytes(
     };
     session.pending_images.push(queued.clone());
     session.last_image = Some(queued);
-    session.state.transcript.push(format!(
-        "image queued: {} ({media_type}, {} pending)",
-        path.display(),
+    session.state.status = Some(format!(
+        "Attached [Image #{}] for the next vision-model prompt.",
         session.pending_images.len()
     ));
-    session.state.status = Some("Image queued for the next vision-model prompt.".into());
     Ok(())
+}
+
+fn composer_attachment_labels(images: &[QueuedImage]) -> Vec<String> {
+    (1..=images.len())
+        .map(|index| format!("[Image #{index}]"))
+        .collect()
+}
+
+fn remove_last_pending_image(session: &mut TuiSession) {
+    if session.pending_images.pop().is_some() {
+        session.state.status = Some(if session.pending_images.is_empty() {
+            "Removed image attachment.".into()
+        } else {
+            format!(
+                "Removed image attachment; {} still pending.",
+                session.pending_images.len()
+            )
+        });
+    }
 }
 
 fn image_media_type(bytes: &[u8]) -> Option<&'static str> {
@@ -15907,6 +15931,30 @@ mod tests {
         assert_eq!(session.pending_images[0].descriptor.media_type, "image/png");
         assert!(session.pending_images[0].encoded.starts_with("iVBOR"));
         assert!(session.input.is_empty());
+        assert_eq!(
+            composer_attachment_labels(&session.pending_images),
+            ["[Image #1]"]
+        );
+        assert!(session.state.transcript.is_empty());
+    }
+
+    #[test]
+    fn composer_image_chips_are_numbered_and_backspace_removes_the_last() {
+        let mut session = fresh_tui_session_for_trajectory_tests();
+        queue_clipboard_image(1, 1, &[0x11, 0x22, 0x33, 0xff], &mut session).unwrap();
+        queue_clipboard_image(1, 1, &[0x44, 0x55, 0x66, 0xff], &mut session).unwrap();
+        assert_eq!(
+            composer_attachment_labels(&session.pending_images),
+            ["[Image #1]", "[Image #2]"]
+        );
+
+        remove_last_pending_image(&mut session);
+        assert_eq!(
+            composer_attachment_labels(&session.pending_images),
+            ["[Image #1]"]
+        );
+        remove_last_pending_image(&mut session);
+        assert!(session.pending_images.is_empty());
     }
 
     #[test]

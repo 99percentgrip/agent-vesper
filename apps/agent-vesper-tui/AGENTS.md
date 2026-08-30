@@ -124,6 +124,12 @@ business logic.
   User turns (`user:` prefix) render as plain markdown with a compact cyan
   `›` prompt marker; assistant turns remain unboxed. Legacy full-width and
   asymmetric chat-bubble backgrounds are prohibited. The interactive
+  Pending vision images render as numbered `[Image #N]` attachment chips at
+  the start of the Composer, matching Codex/Claude attachment UX; queuing an
+  image must not add a synthetic line to conversation history. Backspace at
+  the start of the editable text removes the last pending image. The chips
+  are a render-only projection of the existing `pending_images` payload and
+  disappear when that payload is consumed by submission.
   `render_permission_modal` overlays a centered `Clear` + bordered dialog
   (`PermissionModal`/`PermissionChoice` exported from `lib.rs`) whenever
   `ViewModel::pending_permission` is set; the binary's event loop intercepts
