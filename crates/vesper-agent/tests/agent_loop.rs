@@ -15,14 +15,15 @@ use vesper_agent::{
 
 use vesper_domain::{
     BoundedString, ContentPart, ContentText, ConversationMessage, ExtensionMap, FinishOutcome,
-    MessageId, MessageRole, MessageRole::User, ProviderId, QualifiedModelId, ReasoningKind,
-    ReasoningRetention, SchemaVersion, SessionOperatingMode, SessionPermissionMode,
-    StreamInterruptionCause, ToolCall, ToolCallId, ToolDefinition, ToolExecutionClass, ToolId,
-    VersionedExtensionEnvelope,
+    ImageDescriptor, MediaSource, MessageId, MessageRole, MessageRole::User, ProviderId,
+    QualifiedModelId, ReasoningKind, ReasoningRetention, SchemaVersion, SessionOperatingMode,
+    SessionPermissionMode, StreamInterruptionCause, ToolCall, ToolCallId, ToolDefinition,
+    ToolExecutionClass, ToolId, VersionedExtensionEnvelope,
 };
 use vesper_provider::{
-    CancellationSignal, ProviderConfiguration, ProviderError, ProviderFactory, ProviderFuture,
-    ProviderStreamEvent,
+    CancellationSignal, CapabilityContext, CatalogCapabilityAdvisor, MediaCapability,
+    ModelCapabilityIndex, ModelDescriptor, ProviderCapabilities, ProviderConfiguration,
+    ProviderError, ProviderFactory, ProviderFuture, ProviderStreamEvent, SupportLevel,
 };
 use vesper_runtime::ProviderRegistry;
 use vesper_testkit::{FakeProviderSession, ScriptedProviderResponse};
@@ -181,6 +182,64 @@ async fn non_stop_terminal_is_not_reported_as_completed() {
         error,
         AgentLoopError::Incomplete(FinishOutcome::OutputLimit)
     ));
+}
+
+#[tokio::test]
+async fn image_bearing_history_is_refused_before_provider_dispatch() {
+    let provider_id = provider();
+    let fake = FakeProviderSession::with_scripts([]);
+    let registry = Arc::new(ProviderRegistry::new());
+    registry
+        .register(FakeFactory {
+            id: provider_id.clone(),
+            session: fake,
+        })
+        .await
+        .unwrap();
+    let descriptor = ModelDescriptor {
+        model: QualifiedModelId {
+            provider_id: provider_id.clone(),
+            model_id: vesper_domain::ModelId::new("fixture-model").unwrap(),
+        },
+        display_name: BoundedString::new("Fixture text model").unwrap(),
+        capabilities: ProviderCapabilities {
+            vision: SupportLevel::<MediaCapability>::Unknown,
+            ..ProviderCapabilities::default()
+        },
+        metadata: ExtensionMap::default(),
+    };
+    let advisor = Arc::new(CatalogCapabilityAdvisor::new(
+        ModelCapabilityIndex::from_descriptors(vec![descriptor]),
+    ));
+    let mut history = vec![user_message("earlier image")];
+    history[0].content.push(ContentPart::Image(ImageDescriptor {
+        media_type: "image/png".into(),
+        source: MediaSource::Reference {
+            reference: "attachment-1".into(),
+        },
+        alt_text: None,
+    }));
+    history.push(user_message("follow-up after a manual model switch"));
+
+    let error = AgentLoop::new(
+        registry,
+        ToolRegistry::parity_default(),
+        config(&provider_id, 10),
+    )
+    .with_capability_advisor(advisor, CapabilityContext::default())
+    .run_prompt_with_history(
+        history,
+        SessionOperatingMode::Code,
+        SessionPermissionMode::Ask,
+    )
+    .await
+    .expect_err("image history must fail closed for an unreported model");
+
+    let AgentLoopError::CapabilityRequired(suggestion) = error else {
+        panic!("expected typed capability outcome");
+    };
+    assert_eq!(suggestion.current_model.model_id.as_str(), "fixture-model");
+    assert!(suggestion.reason.as_str().contains("fixture-model"));
 }
 
 #[tokio::test]
@@ -1076,6 +1135,83 @@ impl ToolService for DiscoveringToolService {
                 .with_injected_tools(vec![injected]))
         })
     }
+}
+
+struct ImageReturningToolService;
+
+impl ToolService for ImageReturningToolService {
+    fn definitions(&self) -> Vec<ToolDefinition> {
+        vec![schema_definition(
+            "capture_image",
+            "Return a captured image.",
+            ToolExecutionClass::ReadOnly,
+            &[],
+        )]
+    }
+
+    fn execute<'a>(
+        &'a self,
+        _call: &'a ToolCall,
+        _context: &'a ToolContext,
+    ) -> ToolFuture<'a, Result<ToolResult, ToolError>> {
+        Box::pin(async move {
+            ToolResult::new("captured")?.with_media(vec![ContentPart::Image(ImageDescriptor {
+                media_type: "image/png".into(),
+                source: MediaSource::Reference {
+                    reference: "tool-image-1".into(),
+                },
+                alt_text: None,
+            })])
+        })
+    }
+}
+
+#[tokio::test]
+async fn tool_returned_image_is_gated_before_the_next_provider_turn() {
+    let provider_id = provider();
+    let call = ToolCall {
+        id: ToolCallId::new("capture-1").unwrap(),
+        tool_id: ToolId::new("capture_image").unwrap(),
+        arguments: json!({}),
+        extensions: ExtensionMap::default(),
+    };
+    let fake = FakeProviderSession::with_scripts([Ok(vec![
+        Ok(ProviderStreamEvent::ToolCallCompleted(call)),
+        Ok(completed(FinishOutcome::ToolCalls)),
+    ])]);
+    let registry = Arc::new(ProviderRegistry::new());
+    registry
+        .register(FakeFactory {
+            id: provider_id.clone(),
+            session: fake,
+        })
+        .await
+        .unwrap();
+    let descriptor = ModelDescriptor {
+        model: QualifiedModelId {
+            provider_id: provider_id.clone(),
+            model_id: vesper_domain::ModelId::new("fixture-model").unwrap(),
+        },
+        display_name: BoundedString::new("Fixture text model").unwrap(),
+        capabilities: ProviderCapabilities::default(),
+        metadata: ExtensionMap::default(),
+    };
+    let tools = ToolRegistry::parity_default().with_service(Arc::new(ImageReturningToolService));
+    let error = AgentLoop::new(registry, tools, config(&provider_id, 10))
+        .with_capability_advisor(
+            Arc::new(CatalogCapabilityAdvisor::new(
+                ModelCapabilityIndex::from_descriptors(vec![descriptor]),
+            )),
+            CapabilityContext::default(),
+        )
+        .run_prompt(
+            user_message("capture it"),
+            SessionOperatingMode::Code,
+            SessionPermissionMode::Ask,
+        )
+        .await
+        .expect_err("tool-returned image must be gated before iteration two");
+    assert!(matches!(error, AgentLoopError::CapabilityRequired(_)));
 }
 
 #[tokio::test]

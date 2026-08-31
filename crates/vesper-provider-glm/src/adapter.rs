@@ -16,7 +16,7 @@ use vesper_domain::{
 };
 use vesper_provider::{
     CancellationSignal, ProviderError, ProviderEventStream, ProviderRequest, ProviderSession,
-    ProviderStreamEvent,
+    ProviderStreamEvent, requirement_for_messages,
 };
 use vesper_security::SecretValue;
 
@@ -435,25 +435,44 @@ impl Operation {
                 Err(AttemptFailure::Http {
                     status,
                     retry_after,
+                    unsupported_content,
                 }) => {
                     if !RetryPolicy::status_is_retryable(status)
                         || !self.retry.permits_retry(attempt)
                     {
-                        return Err(Terminal::Error(provider_error(
-                            if status == 429 {
-                                ErrorCategory::QuotaOrRate
-                            } else if RetryPolicy::status_is_retryable(status) {
-                                ErrorCategory::TransientHttp
-                            } else {
-                                ErrorCategory::InvalidRequest
-                            },
+                        let category = if unsupported_content {
+                            ErrorCategory::UnsupportedCapability
+                        } else if status == 429 {
+                            ErrorCategory::QuotaOrRate
+                        } else if RetryPolicy::status_is_retryable(status) {
+                            ErrorCategory::TransientHttp
+                        } else {
+                            ErrorCategory::InvalidRequest
+                        };
+                        let mut error = provider_error(
+                            category,
                             Retryability::Never,
                             false,
-                            "GLM request failed",
-                            Some("http-error"),
+                            if unsupported_content {
+                                "GLM rejected an unsupported content type"
+                            } else {
+                                "GLM request failed"
+                            },
+                            Some(if unsupported_content {
+                                "unsupported-content"
+                            } else {
+                                "http-error"
+                            }),
                             Some(status),
                             None,
-                        )));
+                        );
+                        if unsupported_content
+                            && let Some(requirement) =
+                                requirement_for_messages(&self.request.messages)
+                        {
+                            error = error.with_unsupported_requirement(&requirement);
+                        }
+                        return Err(Terminal::Error(error));
                     }
                     let delay = self.retry.delay(
                         attempt,

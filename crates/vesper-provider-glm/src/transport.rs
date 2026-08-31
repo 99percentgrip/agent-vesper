@@ -314,10 +314,17 @@ async fn non_success(
     }
     // Decode only to exercise bounded replacement behavior. The raw provider
     // body is never retained in errors, events, tracing, or fixtures.
-    let _safe_discarded_prefix = String::from_utf8_lossy(&prefix);
+    let safe_discarded_prefix = String::from_utf8_lossy(&prefix).to_ascii_lowercase();
+    let unsupported_content = (safe_discarded_prefix.contains("image")
+        || safe_discarded_prefix.contains("content type")
+        || safe_discarded_prefix.contains("multimodal"))
+        && (safe_discarded_prefix.contains("unsupported")
+            || safe_discarded_prefix.contains("not support")
+            || safe_discarded_prefix.contains("not allowed"));
     AttemptFailure::Http {
         status,
         retry_after,
+        unsupported_content,
     }
 }
 
@@ -389,6 +396,7 @@ pub(crate) enum AttemptFailure {
     Http {
         status: u16,
         retry_after: Option<String>,
+        unsupported_content: bool,
     },
     Adapter(GlmAdapterError),
     ConsumerDropped,

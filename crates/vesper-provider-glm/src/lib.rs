@@ -35,7 +35,7 @@ pub use compatibility::{LegacyGlmConfiguration, translate_legacy_settings};
 pub use config::{GlmConfig, GlmEndpoint, GlmGenerationProfile, GlmPlan, GlmReasoningMode};
 pub use error::GlmAdapterError;
 pub use factory::{GLM_REASONING_MODES, GlmFactory, reasoning_mode_for_superpower};
-pub use policy::GlmSuperpowerPolicy;
+pub use policy::{GlmCapabilityAdvisor, GlmSuperpowerPolicy};
 pub use quota::{GlmPlanUsage, GlmQuotaWindow};
 pub use request::{SerializedGlmRequest, serialize_auxiliary_request, serialize_request};
 pub use retry::{JitterSource, RetryPolicy, SystemJitter, parse_retry_after};

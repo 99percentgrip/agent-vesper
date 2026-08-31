@@ -11,9 +11,12 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use vesper_domain::{
-    ContentText, ConversationMessage, SessionOperatingMode, SessionPermissionMode, ToolCall,
-    ToolDefinition, WorkspaceRoot,
+    ContentPart, ContentText, ConversationMessage, SessionOperatingMode, SessionPermissionMode,
+    ToolCall, ToolDefinition, WorkspaceRoot,
 };
+
+/// Maximum media parts one tool result may contribute to provider history.
+pub const MAX_TOOL_MEDIA_PARTS: usize = 8;
 use vesper_provider::CancellationSignal;
 
 /// Boxed executor future (runtime-agnostic, like the provider ports).
@@ -68,6 +71,10 @@ pub struct ToolResult {
     /// next loop iteration advertises them to the model. Defaults to empty
     /// for backward compatibility.
     pub injected_tools: Vec<ToolDefinition>,
+    /// Bounded provider-visible media returned by the tool. Only image parts
+    /// are currently accepted; the authoritative agent gate evaluates them
+    /// before the next provider request.
+    pub media: Vec<ContentPart>,
 }
 
 impl ToolResult {
@@ -77,6 +84,7 @@ impl ToolResult {
         Ok(Self {
             text: ContentText::new(text).map_err(ToolError::output_boundary)?,
             injected_tools: Vec::new(),
+            media: Vec::new(),
         })
     }
 
@@ -86,6 +94,21 @@ impl ToolResult {
     pub fn with_injected_tools(mut self, tools: Vec<ToolDefinition>) -> Self {
         self.injected_tools = tools;
         self
+    }
+
+    /// Attaches bounded image parts returned by a hosted tool.
+    pub fn with_media(mut self, media: Vec<ContentPart>) -> Result<Self, ToolError> {
+        if media.len() > MAX_TOOL_MEDIA_PARTS
+            || media
+                .iter()
+                .any(|part| !matches!(part, ContentPart::Image(_)))
+        {
+            return Err(ToolError::Failed(
+                "tool media must contain at most 8 image parts".into(),
+            ));
+        }
+        self.media = media;
+        Ok(self)
     }
 }
 

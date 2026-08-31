@@ -330,6 +330,8 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
         turn_tokens: None,
         last_report: Vec::new(),
         pending_images: Vec::new(),
+        pending_capability_switch: None,
+        confirmed_capability_switch: false,
         last_image: None,
         working_tree_view: None,
         working_tree_lines: Vec::new(),
@@ -671,6 +673,10 @@ struct TuiSession {
     last_report: Vec<String>,
     /// Images encoded and queued for the next direct-vision provider turn.
     pending_images: Vec<QueuedImage>,
+    /// Preserved prompt and catalog-verified choices awaiting explicit consent.
+    pending_capability_switch: Option<PendingCapabilitySwitch>,
+    /// A consented suggestion awaiting runtime round-trip validation.
+    confirmed_capability_switch: bool,
     /// Most recently queued/captured image for `/image-render`.
     last_image: Option<QueuedImage>,
     /// F4 working-tree view index; `None` means closed.
@@ -701,6 +707,13 @@ struct QueuedImage {
     descriptor: ImageDescriptor,
     path: std::path::PathBuf,
     encoded: String,
+}
+
+#[derive(Debug, Clone)]
+struct PendingCapabilitySwitch {
+    prompt: String,
+    suggestion: vesper_domain::CapabilitySuggestion,
+    selected: usize,
 }
 
 struct VoiceRecording {
@@ -1235,6 +1248,66 @@ async fn drive_loop(
         };
 
         let ctrl = modifiers.contains(KeyModifiers::CONTROL);
+        if session.pending_capability_switch.is_some() {
+            match code {
+                KeyCode::Up => {
+                    if let Some(pending) = session.pending_capability_switch.as_mut() {
+                        pending.selected = pending.selected.saturating_sub(1);
+                        if let Some(candidate) = pending.suggestion.candidates.get(pending.selected)
+                        {
+                            session.state.status = Some(format!(
+                                "Switch to `{}`? Enter confirms; Esc cancels.",
+                                candidate.model.model_id.as_str()
+                            ));
+                        }
+                    }
+                }
+                KeyCode::Down => {
+                    if let Some(pending) = session.pending_capability_switch.as_mut() {
+                        let last = pending.suggestion.candidates.len().saturating_sub(1);
+                        pending.selected = pending.selected.saturating_add(1).min(last);
+                        if let Some(candidate) = pending.suggestion.candidates.get(pending.selected)
+                        {
+                            session.state.status = Some(format!(
+                                "Switch to `{}`? Enter confirms; Esc cancels.",
+                                candidate.model.model_id.as_str()
+                            ));
+                        }
+                    }
+                }
+                KeyCode::Esc => {
+                    session.pending_capability_switch = None;
+                    session.state.status = Some(
+                        "Model switch cancelled; the prompt and image remain in the composer."
+                            .into(),
+                    );
+                }
+                KeyCode::Enter => {
+                    let Some(pending) = session.pending_capability_switch.take() else {
+                        continue;
+                    };
+                    let Some(candidate) = pending.suggestion.candidates.get(pending.selected)
+                    else {
+                        session.pending_capability_switch = Some(pending);
+                        session.state.status = Some(
+                            "No catalog-verified capable model is available on this provider and plan."
+                                .into(),
+                        );
+                        continue;
+                    };
+                    session.input = format!("/model {}", candidate.model.model_id.as_str());
+                    session.state.preferences.composer_cursor = session.input.len();
+                    session.queued_prompt = Some(pending.prompt);
+                    session.confirmed_capability_switch = true;
+                    // Fall through to the ordinary Enter path. It owns the
+                    // existing validated UpdateProviderConfiguration flow.
+                }
+                _ => {}
+            }
+            if !matches!(code, KeyCode::Enter) {
+                continue;
+            }
+        }
         // Tool-permission modal interceptor: when a one-time approval is
         // pending, the modal overlays the conversation and consumes the
         // keyboard. Only Tab/Left/Right (toggle focus), Enter (submit), and
@@ -1501,6 +1574,41 @@ async fn drive_loop(
                         }
                     }
                 }
+                if session.confirmed_capability_switch {
+                    session.confirmed_capability_switch = false;
+                    match turn_configuration(agent, &session.state, surface) {
+                        Ok(config) => {
+                            let payload = HarnessCommandPayload::UpdateProviderConfiguration {
+                                session_id: Some(runtime_session_id.clone()),
+                                configuration: config.provider_configuration.values.clone(),
+                                model: Some(config.model.clone()),
+                            };
+                            if let Err(error) = supervisor
+                                .execute(runtime_command(reasoning_seq(), payload))
+                                .await
+                            {
+                                if let Some(prompt) = session.queued_prompt.take() {
+                                    session.input = prompt;
+                                    session.state.preferences.composer_cursor = session.input.len();
+                                }
+                                session.state.status = Some(format!(
+                                    "model switch validation failed: {error:?}; prompt preserved"
+                                ));
+                                continue;
+                            }
+                        }
+                        Err(error) => {
+                            if let Some(prompt) = session.queued_prompt.take() {
+                                session.input = prompt;
+                                session.state.preferences.composer_cursor = session.input.len();
+                            }
+                            session.state.status = Some(format!(
+                                "model switch validation failed: {error}; prompt preserved"
+                            ));
+                            continue;
+                        }
+                    }
+                }
                 // Provider-routed `/auth`: re-open the authentication screen
                 // using the active provider's advertised descriptor. The
                 // terminal is the same one the main loop owns.
@@ -1724,7 +1832,11 @@ async fn drive_loop(
                 // Drain it the same way: it takes precedence over a free-text
                 // prompt (only one prompt fires per Enter).
                 let workflow_prompt = session.state.pending_prompt.take();
-                let prompt_to_spawn = workflow_prompt.or(prompt_text);
+                let prompt_to_spawn = workflow_prompt.or(prompt_text).or_else(|| {
+                    (!session.agent_running)
+                        .then(|| session.queued_prompt.take())
+                        .flatten()
+                });
                 // Mid-turn submit (Claude Code parity): while a turn is
                 // running, a free-text prompt or workflow is QUEUED and
                 // fires the moment the turn completes — the running work is
@@ -4362,6 +4474,19 @@ fn capability_index_for(
     }
 }
 
+fn capability_advisor_for(
+    provider_id: &ProviderId,
+    index: &agent_vesper_tui::ModelCapabilityIndex,
+) -> Arc<dyn vesper_provider::CapabilityAdvisor> {
+    if provider_id.as_str() == "zai" {
+        Arc::new(vesper_provider_glm::GlmCapabilityAdvisor)
+    } else {
+        Arc::new(vesper_provider::CatalogCapabilityAdvisor::new(
+            index.clone(),
+        ))
+    }
+}
+
 fn default_endpoint_for_provider(provider_id: &ProviderId) -> Result<EndpointId, String> {
     let endpoint = match provider_id.as_str() {
         "zai" => "zai-coding",
@@ -4442,6 +4567,13 @@ fn spawn_agent_turn(
         .as_ref()
         .clone()
         .with_turn_configuration(config)
+        .with_capability_advisor(
+            capability_advisor_for(surface.provider_id(), &session.capabilities),
+            vesper_provider::CapabilityContext {
+                active_plan: BoundedString::new(&session.state.controls.endpoint_plan)
+                    .map_err(|_| "active plan exceeds capability bound".to_owned())?,
+            },
+        )
         .with_progress_port(progress);
     let operating_mode = session.state.controls.operating_mode;
     let permission_mode = session.state.controls.permission_mode;
@@ -4572,13 +4704,70 @@ fn spawn_submitted_prompt(
     let root = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     match vesper_agent::expand_references(&root, &text) {
         Ok(expanded) => {
+            if let Ok(config) = turn_configuration(agent, &session.state, surface) {
+                let mut outgoing = session.conversation.clone();
+                outgoing.push(build_user_message_with_images(
+                    &expanded,
+                    session
+                        .pending_images
+                        .iter()
+                        .map(|image| image.descriptor.clone())
+                        .collect(),
+                ));
+                let advisor = capability_advisor_for(surface.provider_id(), &session.capabilities);
+                if let Err(suggestion) = vesper_provider::gate_messages(
+                    &outgoing,
+                    &config.model,
+                    advisor.as_ref(),
+                    &vesper_provider::CapabilityContext {
+                        active_plan: BoundedString::new(&session.state.controls.endpoint_plan)
+                            .unwrap_or_else(|_| BoundedString::new("").expect("bounded")),
+                    },
+                ) {
+                    let choices = suggestion
+                        .candidates
+                        .iter()
+                        .map(|candidate| candidate.model.model_id.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    session.state.status = Some(if choices.is_empty() {
+                        format!(
+                            "{}; no catalog-verified capable model is available on this plan.",
+                            suggestion.reason.as_str()
+                        )
+                    } else {
+                        format!(
+                            "{} Switch model? Choose with ↑/↓, Enter confirms, Esc cancels: {choices}",
+                            suggestion.reason.as_str()
+                        )
+                    });
+                    session.pending_capability_switch = Some(PendingCapabilitySwitch {
+                        prompt: expanded,
+                        suggestion,
+                        selected: 0,
+                    });
+                    return;
+                }
+            }
             // Rebuild the hosted-tool projection for this turn
             // so `request_human_input` advertises the live
             // `/interview-limit` policy. The service Arc is the
             // same executor used by direct and ReAct paths.
-            let turn_agent = Arc::new(agent.as_ref().clone().with_tool_registry(
-                ToolRegistry::parity_default().with_service(Arc::clone(agent_tools)),
-            ));
+            let turn_agent = Arc::new(
+                agent
+                    .as_ref()
+                    .clone()
+                    .with_tool_registry(
+                        ToolRegistry::parity_default().with_service(Arc::clone(agent_tools)),
+                    )
+                    .with_capability_advisor(
+                        capability_advisor_for(surface.provider_id(), &session.capabilities),
+                        vesper_provider::CapabilityContext {
+                            active_plan: BoundedString::new(&session.state.controls.endpoint_plan)
+                                .unwrap_or_else(|_| BoundedString::new("").expect("bounded")),
+                        },
+                    ),
+            );
             // VRO-8 (PRD §8.1): compute the diagnostic
             // projection before the turn spawns so the
             // Reasoning Panel shows the chosen strategy /
@@ -4616,7 +4805,8 @@ fn spawn_submitted_prompt(
             // baseline. The decision is factored into
             // `react_dispatch_for` for unit-testability.
             let effective_mode = session.state.effective_reasoning_mode();
-            let should_vro = vro.enabled()
+            let should_vro = session.pending_images.is_empty()
+                && vro.enabled()
                 && vro.route(&expanded, effective_mode)
                     == vesper_agent::VroRoutingDecision::Orchestrate;
             if should_vro {
@@ -13583,6 +13773,8 @@ mod tests {
             turn_tokens: None,
             last_report: Vec::new(),
             pending_images: Vec::new(),
+            pending_capability_switch: None,
+            confirmed_capability_switch: false,
             last_image: None,
             working_tree_view: None,
             working_tree_lines: Vec::new(),
@@ -13641,6 +13833,8 @@ mod tests {
             turn_tokens: None,
             last_report: Vec::new(),
             pending_images: Vec::new(),
+            pending_capability_switch: None,
+            confirmed_capability_switch: false,
             last_image: None,
             working_tree_view: None,
             working_tree_lines: Vec::new(),
@@ -13697,6 +13891,8 @@ mod tests {
             turn_tokens: None,
             last_report: Vec::new(),
             pending_images: Vec::new(),
+            pending_capability_switch: None,
+            confirmed_capability_switch: false,
             last_image: None,
             working_tree_view: None,
             working_tree_lines: Vec::new(),
@@ -14891,6 +15087,8 @@ mod tests {
             turn_tokens: None,
             last_report: Vec::new(),
             pending_images: Vec::new(),
+            pending_capability_switch: None,
+            confirmed_capability_switch: false,
             last_image: None,
             working_tree_view: None,
             working_tree_lines: Vec::new(),

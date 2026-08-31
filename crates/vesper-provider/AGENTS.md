@@ -19,6 +19,11 @@ continuation, fallback, and error contracts.
 - Provider cancellation views are owned and remain usable for the lifetime of a
   returned stream.
 - Explicit unsupported controls fail during request validation before dispatch.
+- Capability requirements and same-provider candidates are bounded,
+  provider-neutral ports. Payload scans fail closed on unknown capability and
+  never infer support from model identifiers.
+- Adapter-classified unsupported content may attach a typed requirement;
+  consumers offer recovery only before visible output.
 - The [`ProviderSuperpowers`] trait and [`SuperpowerDescriptor`] advertise
   provider-native controls (effort dial, interleaved-thinking flag, model
   selector) so the composition boundary can render them without taking a

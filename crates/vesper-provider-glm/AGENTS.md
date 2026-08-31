@@ -66,6 +66,10 @@ quota normalization, and legacy GLM compatibility translation.
   tool-capable candidates to non-vision plan-available advisers, and
   `validate` rejects ineligible auxiliary selections. GLM predicates never
   leak into the TUI.
+- `policy.rs` `GlmCapabilityAdvisor` resolves capability alternatives only
+  from `GlmCatalog` and the active endpoint plan. Bounded provider error
+  prefixes may classify unsupported image/content responses into the shared
+  typed requirement before visible output.
 
 ## Verification
 

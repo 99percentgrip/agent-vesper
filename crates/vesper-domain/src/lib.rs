@@ -23,7 +23,10 @@ pub mod version;
 pub mod vro;
 
 pub use bounded::{BoundedString, BoundedStringError, ContentText, SafeMessage};
-pub use capability::{CapabilityFallback, CapabilityId, CapabilityRequest, FeatureRequirement};
+pub use capability::{
+    CapabilityFallback, CapabilityId, CapabilityRequest, CapabilitySuggestion, FeatureRequirement,
+    MAX_MODEL_CANDIDATES, ModelCandidate, ModelRequirement,
+};
 pub use command::{
     CommandInitiator, HarnessCommand, HarnessCommandPayload, PromptSubmission,
     RuntimeAuthenticationMethod, RuntimeCapability, RuntimeInitialization, SessionListFilter,

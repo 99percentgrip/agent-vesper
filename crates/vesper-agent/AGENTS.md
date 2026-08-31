@@ -46,6 +46,11 @@ the multi-turn, tool-executing layer above it.
   turn: when an executor returns `ToolResult.injected_tools`, the loop
   merges them (deduplicated by `ToolId` or `harness_name`) into the
   advertised pool so the next iteration advertises them to the model.
+  Before every provider request it scans the bounded complete outgoing
+  payload through an injected capability advisor. User/history images and
+  image parts returned by tools produce one typed `CapabilityRequired`
+  outcome without stripping content. Adapter-classified unsupported content
+  maps to the same outcome only before visible output.
   Provider terminal outcomes other than a normal `Stop` are classified as
   `AgentLoopError::Incomplete` and must never be reported by a host as a
   completed implementation. The exception is a typed visible

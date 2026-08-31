@@ -31,10 +31,10 @@ with each release.
   and exact user PATH entry owned by `install.ps1`.
 - `publish_to_acp_registry.sh` — VRO-11.2 publishing helper for the public
   ACP Registry (`agentclientprotocol/registry`). Clones the registry to a
-  temporary directory, writes `registry/agent.json` from this repo into a
-  fresh `agent-vesper/` directory, commits on a new branch, and opens a
-  Pull Request titled *"Add agent-vesper: Native Rust Reasoning
-  Orchestrator"*. CONTINUOUS-UPDATE CONTRACT (maintainer-mandated 2026-08-18):
+  temporary directory, writes `registry/agent.json` from this repo into the
+  `agent-vesper/` directory, reuses the branch tracked by the open PR, and
+  updates that Pull Request in place. CONTINUOUS-UPDATE CONTRACT
+  (maintainer-mandated 2026-08-18):
   there is exactly ONE long-lived open `agent-vesper` PR. Never close it to
   open a new one; never comment that it is superseded. For every version
   bump: PUT the updated `agent.json` to the SAME branch the open PR tracks

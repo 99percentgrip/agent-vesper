@@ -25,7 +25,8 @@ use vesper_domain::{
     ToolDefinition, ToolResultId, WorkspaceRoot,
 };
 use vesper_provider::{
-    CancellationSignal, ProviderError, ProviderRequest, ProviderStreamEvent, StructuredOutputIntent,
+    CancellationSignal, CapabilityAdvisor, CapabilityContext, ProviderError, ProviderRequest,
+    ProviderStreamEvent, StructuredOutputIntent, gate_messages,
 };
 use vesper_runtime::{ProviderRegistry, RuntimeCancellation, RuntimeError};
 
@@ -265,6 +266,9 @@ pub enum AgentLoopError {
     /// The model persisted in a deterministic repeated/no-progress tool loop.
     #[error("tool loop stopped: {0}")]
     LoopDetected(String),
+    /// Outgoing content requires a capability the active model lacks.
+    #[error("active model cannot satisfy session content: {0:?}")]
+    CapabilityRequired(vesper_domain::CapabilitySuggestion),
 }
 
 /// The Tier C multi-turn agent loop.
@@ -275,6 +279,8 @@ pub struct AgentLoop {
     config: AgentLoopConfig,
     permission_port: Arc<dyn PermissionPort>,
     progress_port: Arc<dyn AgentProgressPort>,
+    capability_advisor: Option<Arc<dyn CapabilityAdvisor>>,
+    capability_context: CapabilityContext,
 }
 
 impl AgentLoop {
@@ -291,6 +297,8 @@ impl AgentLoop {
             config,
             permission_port: Arc::new(DenyPermissionPort),
             progress_port: Arc::new(NoopProgressPort),
+            capability_advisor: None,
+            capability_context: CapabilityContext::default(),
         }
     }
 
@@ -320,6 +328,18 @@ impl AgentLoop {
     #[must_use]
     pub fn with_turn_configuration(mut self, config: AgentLoopConfig) -> Self {
         self.config = config;
+        self
+    }
+
+    /// Installs the active provider's catalog-backed capability advisor.
+    #[must_use]
+    pub fn with_capability_advisor(
+        mut self,
+        advisor: Arc<dyn CapabilityAdvisor>,
+        context: CapabilityContext,
+    ) -> Self {
+        self.capability_advisor = Some(advisor);
+        self.capability_context = context;
         self
     }
 
@@ -424,11 +444,35 @@ impl AgentLoop {
             self.progress_port
                 .emit(AgentProgressEvent::ProviderTurnStarted { iteration });
             let request_messages = compact_history(&messages);
+            if let Some(advisor) = &self.capability_advisor {
+                gate_messages(
+                    &request_messages,
+                    &self.config.model,
+                    advisor.as_ref(),
+                    &self.capability_context,
+                )
+                .map_err(AgentLoopError::CapabilityRequired)?;
+            }
             let request = self.build_request(&ids, &request_messages, &advertised_tools, iteration);
-            let mut stream = session
-                .start(request, Arc::clone(&cancellation))
-                .await
-                .map_err(AgentLoopError::ProviderTurn)?;
+            let mut stream = match session.start(request, Arc::clone(&cancellation)).await {
+                Ok(stream) => stream,
+                Err(error) => {
+                    if !error.info.visible_output_emitted
+                        && let (Some(advisor), Some(requirement)) =
+                            (&self.capability_advisor, error.unsupported_requirement())
+                    {
+                        return Err(AgentLoopError::CapabilityRequired(
+                            vesper_provider::suggestion_for_requirement(
+                                requirement,
+                                &self.config.model,
+                                advisor.as_ref(),
+                                &self.capability_context,
+                            ),
+                        ));
+                    }
+                    return Err(AgentLoopError::ProviderTurn(error));
+                }
+            };
 
             let (assistant_parts, tool_calls, finish) =
                 consume_stream(&mut stream, self.progress_port.as_ref()).await?;
@@ -501,6 +545,7 @@ impl AgentLoop {
                     .await;
                 let mut output = outcome.text;
                 let injected = outcome.injected;
+                let media = outcome.media;
                 let execution_succeeded = !output.starts_with("tool error:")
                     && !output.starts_with("permission denied:")
                     && !output.starts_with("unknown tool:");
@@ -550,6 +595,7 @@ impl AgentLoop {
                 tool_results.push(ToolResult {
                     text: bounded.clone(),
                     injected_tools: injected.clone(),
+                    media: media.clone(),
                 });
                 // Phase 2 deferred loading: if the executor returned injected
                 // schemas, splice them into the advertised pool so the next
@@ -557,10 +603,12 @@ impl AgentLoop {
                 if !injected.is_empty() {
                     merge_injected_tools(&mut advertised_tools, injected);
                 }
+                let mut content = vec![ContentPart::Text(bounded)];
+                content.extend(media);
                 messages.push(ConversationMessage {
                     id: ids.message(),
                     role: MessageRole::Tool,
-                    content: vec![ContentPart::Text(bounded)],
+                    content,
                     extensions: tool_result_extensions(&call),
                 });
             }
@@ -653,6 +701,7 @@ impl AgentLoop {
                 Ok(result) => GateOutcome {
                     text: result.text.as_str().to_string(),
                     injected: result.injected_tools,
+                    media: result.media,
                 },
                 Err(error) => GateOutcome::text(format!("tool error: {error}")),
             },
@@ -666,6 +715,7 @@ impl AgentLoop {
                         Ok(result) => GateOutcome {
                             text: result.text.as_str().to_string(),
                             injected: result.injected_tools,
+                            media: result.media,
                         },
                         Err(error) => GateOutcome::text(format!("tool error: {error}")),
                     },
@@ -729,6 +779,8 @@ struct GateOutcome {
     text: String,
     /// Tool schemas to inject into the advertised pool on the next iteration.
     injected: Vec<ToolDefinition>,
+    /// Provider-visible image parts returned by the tool.
+    media: Vec<ContentPart>,
 }
 
 impl GateOutcome {
@@ -737,6 +789,7 @@ impl GateOutcome {
         Self {
             text,
             injected: Vec::new(),
+            media: Vec::new(),
         }
     }
 }

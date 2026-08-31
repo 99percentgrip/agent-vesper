@@ -1,7 +1,11 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use vesper_domain::{ErrorInfo, ExtensionMap, ProviderId, Retryability, SafeProviderCode};
+use vesper_domain::{
+    ErrorInfo, ExtensionMap, ModelRequirement, ProviderId, Retryability, SafeProviderCode,
+};
+
+const UNSUPPORTED_REQUIREMENT_KEY: &str = "vesper:unsupported-requirement";
 
 /// Provider-classified error with only safe diagnostics.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Error)]
@@ -34,6 +38,23 @@ pub enum RetryDecision {
 }
 
 impl ProviderError {
+    /// Attaches the provider-classified content requirement that was rejected.
+    #[must_use]
+    pub fn with_unsupported_requirement(mut self, requirement: &ModelRequirement) -> Self {
+        if let Ok(value) = serde_json::to_value(requirement) {
+            let _ = self.metadata.insert(UNSUPPORTED_REQUIREMENT_KEY, value);
+        }
+        self
+    }
+
+    /// Returns an adapter-classified unsupported-content requirement, if any.
+    #[must_use]
+    pub fn unsupported_requirement(&self) -> Option<ModelRequirement> {
+        self.metadata
+            .get(UNSUPPORTED_REQUIREMENT_KEY)
+            .and_then(|value| serde_json::from_value(value.clone()).ok())
+    }
+
     /// Applies the partial-output no-replay invariant.
     #[must_use]
     pub const fn retry_decision(&self) -> RetryDecision {
@@ -104,5 +125,16 @@ mod tests {
             error(true, Retryability::WithDeduplicatingCursor).retry_decision(),
             RetryDecision::ResumeWithCursor
         );
+    }
+
+    #[test]
+    fn unsupported_requirement_round_trips_as_typed_safe_metadata() {
+        let requirement = ModelRequirement::VisionImage {
+            media_type: vesper_domain::BoundedString::new("image/png").unwrap(),
+        };
+        let original = error(false, Retryability::Never).with_unsupported_requirement(&requirement);
+        let encoded = serde_json::to_string(&original).unwrap();
+        let decoded: ProviderError = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(decoded.unsupported_requirement(), Some(requirement));
     }
 }

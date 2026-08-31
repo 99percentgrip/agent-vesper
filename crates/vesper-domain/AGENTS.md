@@ -20,6 +20,9 @@ Orchestrator (VRO) Phase VRO-1 domain contracts.
   cause plus the tool-call ambiguity bit; transports must not collapse
   deadline, inactivity, remote EOF, and transport failures into one label.
 - Hidden internal chain-of-thought is not a domain content requirement.
+- `ModelRequirement`, `ModelCandidate`, and `CapabilitySuggestion` are the
+  bounded provider-neutral capability-recovery DTOs. Candidate construction
+  caps at three and rejects cross-provider alternatives.
 - `src/slash_commands.rs` owns the frozen-oracle ACP slash-command catalog:
   28 commands with byte-stable names and descriptions (verbatim from the
   pinned oracle's `_send_available_commands`, verified against

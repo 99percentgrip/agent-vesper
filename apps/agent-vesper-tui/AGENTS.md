@@ -623,6 +623,11 @@ business logic.
   prohibited: pasted AVIF files are normalized locally with ImageMagick or
   ffmpeg, while copied bitmap pixels need no external converter. Normal text,
   multiline text, and real slash commands remain composer input.
+- If preserved composer/history content exceeds the active model's catalog
+  capability, the TUI offers at most three same-provider, active-plan models
+  with Up/Down/Enter/Esc consent. Confirming uses the existing validated
+  session model-update path, then dispatches the untouched text and images;
+  cancellation never silently switches or drops the composition.
 - Footer and palette rows are mouse-operable while TUI mouse capture is active.
   F4 cycles bounded real Changes/Git/Diff/Files/GitHub views. F5 uses the same
   optional `arecord`/`afrecord` plus local `faster-whisper` contract as the

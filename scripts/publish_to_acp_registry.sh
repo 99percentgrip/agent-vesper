@@ -9,9 +9,9 @@
 #      (shallow, latest main).
 #   2. Creates / refreshes agent-vesper/agent.json from this repo's
 #      registry/agent.json (the canonical source).
-#   3. Commits on a fresh branch `agent-vesper/v<VERSION>` and pushes to
-#      the caller's fork (defaults to the `gh` authenticated user).
-#   4. Opens or updates a PR titled
+#   3. Reuses the branch tracked by the one open Agent Vesper PR and pushes
+#      the refreshed manifest to the caller's fork.
+#   4. Updates that PR in place (or opens it only when none exists) titled
 #      "Add agent-vesper: Native Rust Reasoning Orchestrator".
 #
 # What it does NOT do:
@@ -70,7 +70,12 @@ fi
 
 REGISTRY_UPSTREAM="agentclientprotocol/registry"
 REGISTRY_FORK="${FORK_OWNER}/registry"
-BRANCH="agent-vesper/v${VERSION}"
+OPEN_PR_NUMBER="${AGENT_VESPER_REGISTRY_PR:-539}"
+BRANCH=$(gh api "repos/${REGISTRY_UPSTREAM}/pulls/${OPEN_PR_NUMBER}" \
+    --jq '.head.ref' 2>/dev/null || true)
+if [ -z "${BRANCH}" ]; then
+    BRANCH="agent-vesper/v${VERSION}"
+fi
 PR_TITLE="Add agent-vesper: Native Rust Reasoning Orchestrator"
 AGENT_ID=$(jq -r '.id' "${MANIFEST}")  # typically "agent-vesper"
 
@@ -143,8 +148,8 @@ else
 fi
 
 # ----------------------------------------------------------------------------
-# Push to the fork. --force is safe here because the branch is owned by us
-# and named after the version (not main).
+# Push to the fork. --force is safe here because this is the dedicated branch
+# tracked by the long-lived Agent Vesper registry PR (never fork main).
 # ----------------------------------------------------------------------------
 echo "=== pushing ${BRANCH} to fork ==="
 git push fork "${BRANCH}" --force

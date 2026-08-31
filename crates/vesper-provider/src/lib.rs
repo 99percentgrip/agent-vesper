@@ -3,6 +3,7 @@
 
 mod capability;
 mod error;
+mod model_capability;
 mod ports;
 mod request;
 mod stream;
@@ -16,6 +17,10 @@ pub use capability::{
     resolve_support,
 };
 pub use error::{ProviderError, RetryDecision};
+pub use model_capability::{
+    CapabilityAdvisor, CapabilityContext, CapabilityDenial, CatalogCapabilityAdvisor,
+    ModelCapabilityIndex, gate_messages, requirement_for_messages, suggestion_for_requirement,
+};
 pub use ports::{
     AuthenticationMethodDescriptor, AuxiliaryRequestPort, CancellationSignal, CredentialError,
     EndpointConfiguration, ModelCatalog, ModelCatalogProvenance, ModelCatalogSnapshot,

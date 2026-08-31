@@ -131,6 +131,11 @@ transport, stderr-only tracing, and orderly shutdown.
   `AGENT_VESPER_FULL_HARNESS=0` only for protocol-conformance fixtures that
   must exercise the provider-neutral single-turn runtime path; production
   defaults to the full engine.
+- Mixed and image-only prompt blocks remain intact through harness
+  composition. Capability failures name the active model and up to three
+  catalog-verified alternatives; switching stays an explicit user action via
+  the existing model selector. Multimodal turns use `AgentLoop` because the
+  VRO candidate interface is text-only.
 
 ## TUI↔ACP Parity Contract
 

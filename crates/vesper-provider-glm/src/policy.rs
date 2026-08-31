@@ -14,7 +14,9 @@
 //!   (`disabled`/`enabled`/`high`/`max`).
 
 use vesper_domain::BoundedString;
+use vesper_domain::{ModelCandidate, ModelRequirement, QualifiedModelId, SafeMessage};
 use vesper_provider::{
+    CapabilityAdvisor, CapabilityContext, CapabilityDenial, ModelCapabilityIndex,
     PlanChangeReaction, SuperpowerPolicy, SuperpowerSideEffect, SuperpowerValue,
 };
 
@@ -23,6 +25,53 @@ use crate::{GlmCatalog, GlmPlan, catalog::supports_deep_reasoning};
 /// The GLM provider's superpower policy. Stateless; safe to share.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct GlmSuperpowerPolicy;
+
+/// Catalog- and plan-backed capability suggestion resolver.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct GlmCapabilityAdvisor;
+
+impl CapabilityAdvisor for GlmCapabilityAdvisor {
+    fn check(
+        &self,
+        model: &QualifiedModelId,
+        requirement: &ModelRequirement,
+    ) -> Result<(), CapabilityDenial> {
+        let index = ModelCapabilityIndex::from_descriptors(GlmCatalog::snapshot().models);
+        match requirement {
+            ModelRequirement::VisionImage { media_type } => {
+                index.accepts_image(model.model_id.as_str(), media_type.as_str())
+            }
+        }
+    }
+
+    fn alternatives_for(
+        &self,
+        requirement: &ModelRequirement,
+        current_model: &QualifiedModelId,
+        context: &CapabilityContext,
+    ) -> Vec<ModelCandidate> {
+        let plan = GlmSuperpowerPolicy::plan(context.active_plan.as_str());
+        GlmCatalog::snapshot()
+            .models
+            .into_iter()
+            .filter(|entry| entry.model != *current_model)
+            .filter(|entry| GlmCatalog::supports_plan(entry.model.model_id.as_str(), plan))
+            .filter(|entry| self.check(&entry.model, requirement).is_ok())
+            .take(vesper_domain::MAX_MODEL_CANDIDATES)
+            .filter_map(|entry| {
+                Some(ModelCandidate {
+                    model: entry.model,
+                    display_name: entry.display_name,
+                    required_plan_change: None,
+                    why_it_qualifies: SafeMessage::new(
+                        "catalog reports image support on the active API plan",
+                    )
+                    .ok()?,
+                })
+            })
+            .collect()
+    }
+}
 
 /// The current GLM flagship model — the fallback when the active model is
 /// unavailable on a new plan. Extended reasoning follows the catalog's
@@ -470,5 +519,54 @@ mod tests {
             policy.valid_choices("generation", &styles.clone(), "", ""),
             styles
         );
+    }
+
+    #[test]
+    fn capability_advisor_discovers_vision_candidates_from_catalog() {
+        let advisor = GlmCapabilityAdvisor;
+        let current = QualifiedModelId {
+            provider_id: crate::provider_id(),
+            model_id: vesper_domain::ModelId::new("glm-5.3").unwrap(),
+        };
+        let requirement = ModelRequirement::VisionImage {
+            media_type: BoundedString::new("image/png").unwrap(),
+        };
+        assert!(advisor.check(&current, &requirement).is_err());
+        let candidates = advisor.alternatives_for(
+            &requirement,
+            &current,
+            &CapabilityContext {
+                active_plan: BoundedString::new("coding").unwrap(),
+            },
+        );
+        assert!(!candidates.is_empty());
+        assert!(
+            candidates.iter().all(|candidate| {
+                GlmCatalog::is_vision_model(candidate.model.model_id.as_str())
+            })
+        );
+    }
+
+    #[test]
+    fn capability_advisor_excludes_candidates_unavailable_on_active_plan() {
+        let advisor = GlmCapabilityAdvisor;
+        let current = QualifiedModelId {
+            provider_id: crate::provider_id(),
+            model_id: vesper_domain::ModelId::new("glm-5.3").unwrap(),
+        };
+        let requirement = ModelRequirement::VisionImage {
+            media_type: BoundedString::new("image/png").unwrap(),
+        };
+        let candidates = advisor.alternatives_for(
+            &requirement,
+            &current,
+            &CapabilityContext {
+                active_plan: BoundedString::new("bigmodel").unwrap(),
+            },
+        );
+        assert!(candidates.iter().all(|candidate| GlmCatalog::supports_plan(
+            candidate.model.model_id.as_str(),
+            GlmPlan::BigModel
+        )));
     }
 }

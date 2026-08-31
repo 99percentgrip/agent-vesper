@@ -513,6 +513,10 @@ impl AcpHarnessEngine {
     }
 
     async fn run_inner(&self, request: AcpPromptRequest) -> Result<AcpPromptResult, String> {
+        let has_non_text_content = request
+            .content
+            .iter()
+            .any(|part| !matches!(part, ContentPart::Text(_)));
         let text = request
             .content
             .iter()
@@ -522,7 +526,7 @@ impl AcpHarnessEngine {
             })
             .collect::<Vec<_>>()
             .join("\n");
-        if text.is_empty() {
+        if text.is_empty() && !has_non_text_content {
             return Ok(AcpPromptResult {
                 text,
                 cancelled: false,
@@ -533,19 +537,30 @@ impl AcpHarnessEngine {
         // persisted) or — for `/diff` and `/release` — replace the prompt
         // with a workflow that drives a real agent turn.
         let mut text = text;
-        match self.try_slash_command(&request, &text).await {
-            SlashFlow::Respond(result) => return Ok(result),
-            SlashFlow::Workflow(prompt) => text = prompt,
-            SlashFlow::Ordinary => {}
+        let mut workflow_replaced = false;
+        if !has_non_text_content {
+            match self.try_slash_command(&request, &text).await {
+                SlashFlow::Respond(result) => return Ok(result),
+                SlashFlow::Workflow(prompt) => {
+                    text = prompt;
+                    workflow_replaced = true;
+                }
+                SlashFlow::Ordinary => {}
+            }
         }
+        let content = if workflow_replaced {
+            vec![ContentPart::Text(
+                vesper_domain::ContentText::new(text.clone())
+                    .map_err(|_| "prompt too large".to_owned())?,
+            )]
+        } else {
+            request.content.clone()
+        };
         let message = ConversationMessage {
             id: MessageId::new(format!("acp-harness-{}", next_engine_id()))
                 .map_err(|_| "message id bound exceeded".to_owned())?,
             role: MessageRole::User,
-            content: vec![ContentPart::Text(
-                vesper_domain::ContentText::new(text.clone())
-                    .map_err(|_| "prompt too large".to_owned())?,
-            )],
+            content,
             extensions: ExtensionMap::default(),
         };
         // Pre-dispatch cognitive context injection (ADR 0015, TUI parity):
@@ -665,11 +680,13 @@ impl AcpHarnessEngine {
         // loop already executes (no browser React interview surface here).
         let effective_mode = self.effective_reasoning_mode(&request.session_id).await;
         let profile = self.vro.profile(&text);
-        if should_orchestrate(
-            vro_enabled_from_env(),
-            effective_mode,
-            profile.recommended_strategy,
-        ) {
+        if !has_non_text_content
+            && should_orchestrate(
+                vro_enabled_from_env(),
+                effective_mode,
+                profile.recommended_strategy,
+            )
+        {
             let sink = self.cognition.engine.clone();
             return self
                 .run_vro_turn(&request, config, &text, effective_mode, sink)
@@ -686,12 +703,34 @@ impl AcpHarnessEngine {
                 }) as Arc<dyn vesper_agent::PermissionPort>
             })
             .unwrap_or_else(|| Arc::new(vesper_agent::DenyPermissionPort));
+        let capability_context = vesper_provider::CapabilityContext {
+            active_plan: vesper_domain::BoundedString::new(
+                config
+                    .provider_configuration
+                    .values
+                    .values
+                    .get("zai:endpoint-plan")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default()
+                    .to_owned(),
+            )
+            .unwrap_or_else(|_| vesper_domain::BoundedString::new("").expect("bounded")),
+        };
+        let capability_advisor: Arc<dyn vesper_provider::CapabilityAdvisor> =
+            if config.provider_id.as_str() == "zai" {
+                Arc::new(vesper_provider_glm::GlmCapabilityAdvisor)
+            } else {
+                Arc::new(vesper_provider::CatalogCapabilityAdvisor::new(
+                    vesper_provider::ModelCapabilityIndex::empty(),
+                ))
+            };
         let loop_engine = vesper_agent::AgentLoop::new(
             Arc::clone(&self.registry),
             hosted.build_default_registry(),
             config,
         )
         .with_permission_port(permission_port)
+        .with_capability_advisor(capability_advisor, capability_context)
         .with_progress_port(Arc::new(AcpEngineProgressPort {
             sink: request.event_sink.clone(),
             tool_seq: std::sync::atomic::AtomicU64::new(0),
@@ -1116,6 +1155,30 @@ fn safe_agent_loop_error(error: &vesper_agent::AgentLoopError) -> String {
         },
         AgentLoopError::LoopDetected(_) => {
             "repeated tool loop detected; the turn was stopped safely".to_owned()
+        }
+        AgentLoopError::CapabilityRequired(suggestion) => {
+            let mut message = format!(
+                "model `{}` cannot accept the preserved content: {}.",
+                suggestion.current_model.model_id.as_str(),
+                suggestion.reason.as_str()
+            );
+            if suggestion.candidates.is_empty() {
+                message.push_str(
+                    " No catalog-verified capable model is available on this provider and plan.",
+                );
+            } else {
+                message.push_str(" Select a capable model using the existing model selector: ");
+                message.push_str(
+                    &suggestion
+                        .candidates
+                        .iter()
+                        .map(|candidate| candidate.model.model_id.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                );
+                message.push('.');
+            }
+            message
         }
     }
 }

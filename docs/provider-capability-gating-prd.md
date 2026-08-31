@@ -386,3 +386,31 @@ add regression tests so earlier guarantees cannot silently regress.
   covers the window) and wire-level model selection for the LM Studio
   adapter (engine acting model updates; the request still carries the
   pinned id) — both documented in P9.
+
+## 11. Capability-aware switch suggestions (vision-first extension)
+
+- `ModelRequirement`, `ModelCandidate`, and `CapabilitySuggestion` are bounded,
+  provider-neutral DTOs. Candidate lists cap at three and cannot cross the
+  active provider identity.
+- `vesper-provider` owns the catalog-backed capability index/advisor port and
+  bounded full-payload scan. Unknown capability fails closed without a
+  fabricated candidate.
+- GLM resolution lives in `GlmCapabilityAdvisor`, reads `GlmCatalog`, and
+  filters by the active endpoint plan. Generic hosts never name or infer a
+  specific GLM alternative.
+- The TUI checks the preserved composer payload and history, presents an
+  Up/Down/Enter/Esc consent picker, applies the choice through the existing
+  session configuration path, then sends the preserved text and images.
+- `AgentLoop` scans complete compacted outbound history before every request.
+  Tool-returned images use the same content channel, and manual downgrade
+  never strips older images.
+- Adapter-classified unsupported-content errors carry the same typed
+  requirement and map to the same outcome only before visible output.
+- ACP preserves mixed and image-only protocol content and reports the active
+  model plus catalog candidates; switching remains the user's action through
+  the existing selector. Multimodal turns in both hosts use direct AgentLoop
+  because the current VRO candidate interface is text-only.
+
+Evidence is synthetic/loopback only: provider fail-closed/candidate-bound
+tests, GLM catalog/plan tests, image-history refusal, and tool-image refusal
+before the next provider dispatch.
