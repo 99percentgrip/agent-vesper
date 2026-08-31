@@ -62,6 +62,9 @@ with each release.
 - Uninstallers never remove provider credentials. OS-keyring entries and the
   private-vault fallback are outside the installer-owned artifact set.
 - The installers call both binaries with `--version` to confirm success.
+- POSIX upgrades remove legacy launcher symlinks before writing replacement
+  launchers; launcher creation must never follow a symlink into the freshly
+  installed bundle and overwrite its binaries.
 - The installers seed the curated skill library (from the bundled
   `skills/` archive directory) into `~/.agent-vesper/memory/`
   non-destructively: existing files win, slugs listed in

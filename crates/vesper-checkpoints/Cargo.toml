@@ -13,8 +13,8 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
-vesper-domain = { path = "../vesper-domain", version = "=0.20.77" }
-vesper-security = { path = "../vesper-security", version = "=0.20.77" }
+vesper-domain = { path = "../vesper-domain", version = "=0.20.78" }
+vesper-security = { path = "../vesper-security", version = "=0.20.78" }
 
 [dev-dependencies]
 tempfile = { workspace = true }

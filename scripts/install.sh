@@ -69,6 +69,10 @@ mkdir -p "$install_dir"
 mkdir -p "$(dirname "$bundle_dir")"
 rm -rf "$bundle_dir"
 mv "$temporary/agent-vesper-acp" "$bundle_dir"
+# Older installers created these entrypoints as symlinks into the bundle.
+# Remove every existing entrypoint first so redirection cannot follow a legacy
+# symlink and overwrite a freshly installed binary with its own launcher.
+rm -f "$install_dir/agent-vesper-acp" "$install_dir/agent-vesper-tui"
 printf '#!/bin/sh\nexec "%s/agent-vesper-acp" "$@"\n' "$bundle_dir" > "$install_dir/agent-vesper-acp"
 printf '#!/bin/sh\nexec "%s/agent-vesper-tui" "$@"\n' "$bundle_dir" > "$install_dir/agent-vesper-tui"
 chmod 0755 "$install_dir/agent-vesper-acp"
