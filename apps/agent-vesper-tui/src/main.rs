@@ -26,6 +26,7 @@
 
 mod mobile;
 
+use std::collections::VecDeque;
 use std::io::{self, stdout};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
@@ -318,7 +319,7 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
         trajectory_rx: None,
         agent_task: None,
         agent_running: false,
-        queued_prompt: None,
+        queued_prompts: VecDeque::new(),
         pending_text_pastes: Vec::new(),
         usage_rx: None,
         approval_rx,
@@ -621,10 +622,9 @@ struct TuiSession {
     /// `true` while an agent turn is in flight — drives the "WORKING..."
     /// status banner. Cleared as soon as the receiver yields (or aborts).
     agent_running: bool,
-    /// Mid-turn queued prompt (Claude Code parity): a free-text prompt or
-    /// workflow submitted while a turn is running is QUEUED here and fires
-    /// as soon as the turn completes — never silently dropped.
-    queued_prompt: Option<String>,
+    /// Mid-turn FIFO: every submitted follow-up is retained and runs in
+    /// order after the active turn unless the user explicitly sends now.
+    queued_prompts: VecDeque<String>,
     /// Large or multiline bracketed-paste payloads retained verbatim while
     /// the composer renders compact attachment-style labels.
     pending_text_pastes: Vec<String>,
@@ -1083,9 +1083,9 @@ async fn drive_loop(
         // Mid-turn queued prompt (Claude Code parity): a prompt submitted
         // while a turn was running fires the moment that turn completes.
         if !session.agent_running
-            && session.queued_prompt.is_some()
+            && !session.queued_prompts.is_empty()
             && session.state.phase() == PlanPhase::Normal
-            && let Some(text) = session.queued_prompt.take()
+            && let Some(text) = session.queued_prompts.pop_front()
         {
             spawn_submitted_prompt(
                 agent,
@@ -1129,6 +1129,7 @@ async fn drive_loop(
             command_menu: session.command_matches.clone(),
             command_menu_selected: session.command_selected,
             agent_running: session.agent_running,
+            queued_prompt_count: session.queued_prompts.len(),
             controls: session.state.controls.clone(),
             panels: session.state.panels,
             task_plan: session.state.task_plan.clone(),
@@ -1314,7 +1315,7 @@ async fn drive_loop(
                     };
                     session.input = format!("/model {}", candidate.model.model_id.as_str());
                     session.state.preferences.composer_cursor = session.input.len();
-                    session.queued_prompt = Some(pending.prompt);
+                    session.queued_prompts.push_front(pending.prompt);
                     session.confirmed_capability_switch = true;
                     // Fall through to the ordinary Enter path. It owns the
                     // existing validated UpdateProviderConfiguration flow.
@@ -1498,11 +1499,13 @@ async fn drive_loop(
                 // only fires when no modal is up.
                 if let Some(selected) = selected_command_completion(session) {
                     let typed = session.input.trim_end();
-                    if typed != selected || command_expands_to_argument(&selected, surface) {
+                    let selected_from_palette = typed != selected;
+                    if selected_from_palette {
                         session.input = selected;
                         session.state.preferences.composer_cursor = session.input.len();
                     }
-                    if command_expands_to_argument(&session.input, surface) {
+                    if selected_from_palette && command_expands_to_argument(&session.input, surface)
+                    {
                         session.input.push(' ');
                         session.command_selected = 0;
                         refresh_command_menu(session, registry_commands, surface);
@@ -1516,6 +1519,8 @@ async fn drive_loop(
                 }
                 let submitted_input = take_composer_text(session);
                 let intent = CommandIntent::parse(&submitted_input);
+                let command_submission = matches!(&intent, CommandIntent::Slash { .. });
+                let transcript_before_command = session.state.transcript.len();
                 // Capture whether this was a free-text prompt BEFORE dispatch
                 // clears the input buffer; Phase 6 needs the text to drive
                 // the agent loop after the pure dispatch state mutates.
@@ -1534,6 +1539,13 @@ async fn drive_loop(
                     provider_id,
                     &mut session.state,
                 );
+                if session.agent_running && command_submission {
+                    session.live_trajectory.extend(
+                        session.state.transcript[transcript_before_command..]
+                            .iter()
+                            .map(|line| format!("⎿ command: {line}")),
+                    );
+                }
                 interview_question_policy.set(session.state.controls.interview_question_limit);
                 if outcome == DispatchOutcome::Quit {
                     session.state.transcript.push("bye.".into());
@@ -1605,7 +1617,7 @@ async fn drive_loop(
                                 .execute(runtime_command(reasoning_seq(), payload))
                                 .await
                             {
-                                if let Some(prompt) = session.queued_prompt.take() {
+                                if let Some(prompt) = session.queued_prompts.pop_front() {
                                     session.input = prompt;
                                     session.state.preferences.composer_cursor = session.input.len();
                                 }
@@ -1616,7 +1628,7 @@ async fn drive_loop(
                             }
                         }
                         Err(error) => {
-                            if let Some(prompt) = session.queued_prompt.take() {
+                            if let Some(prompt) = session.queued_prompts.pop_front() {
                                 session.input = prompt;
                                 session.state.preferences.composer_cursor = session.input.len();
                             }
@@ -1852,7 +1864,7 @@ async fn drive_loop(
                 let workflow_prompt = session.state.pending_prompt.take();
                 let prompt_to_spawn = workflow_prompt.or(prompt_text).or_else(|| {
                     (!session.agent_running)
-                        .then(|| session.queued_prompt.take())
+                        .then(|| session.queued_prompts.pop_front())
                         .flatten()
                 });
                 // Mid-turn submit (Claude Code parity): while a turn is
@@ -1863,9 +1875,26 @@ async fn drive_loop(
                 if session.agent_running
                     && let Some(text) = prompt_to_spawn.as_ref()
                 {
-                    session.queued_prompt = Some(text.clone());
-                    session.state.status =
-                        Some("Queued — runs when the current turn finishes.".into());
+                    if modifiers.contains(KeyModifiers::ALT) {
+                        cancel_active_turn_preserving_partial(session, "replaced by Send Now");
+                        spawn_submitted_prompt(
+                            agent,
+                            agent_tools,
+                            &approval_port_for_react,
+                            vro,
+                            surface,
+                            cognition_bundle,
+                            text.clone(),
+                            session,
+                        );
+                        session.state.status = Some("Sent now — previous turn interrupted.".into());
+                    } else {
+                        session.queued_prompts.push_back(text.clone());
+                        session.state.status = Some(format!(
+                            "Queued #{} — Enter queues; Alt+Enter sends now.",
+                            session.queued_prompts.len()
+                        ));
+                    }
                 } else if let Some(text) = prompt_to_spawn
                     && session.state.phase() == PlanPhase::Normal
                 {
@@ -3778,10 +3807,8 @@ fn apply_keybinding_action(
     match action {
         "quit_agent" => return true,
         "cancel_turn" => {
-            if let Some(task) = session.agent_task.take() {
-                task.abort();
-                session.agent_rx = None;
-                session.agent_running = false;
+            if session.agent_running {
+                cancel_active_turn_preserving_partial(session, "cancelled by user");
                 session.state.status = Some("Active turn cancelled.".into());
             } else {
                 session.state.status = Some("No active turn to cancel.".into());
@@ -3882,6 +3909,40 @@ fn apply_keybinding_action(
         _ => session.state.status = Some(format!("Unsupported keybinding action `{action}`.")),
     }
     false
+}
+
+fn cancel_active_turn_preserving_partial(session: &mut TuiSession, cause: &str) {
+    if let Some(task) = session.agent_task.take() {
+        task.abort();
+    }
+    session.agent_rx = None;
+    session.trajectory_rx = None;
+    session.agent_running = false;
+    let partial = std::mem::take(&mut session.live_response);
+    if !partial.trim().is_empty() {
+        session
+            .state
+            .transcript
+            .push(format!("assistant (interrupted — {cause}): {partial}"));
+        if let Ok(text) = ContentText::new(partial)
+            && let Ok(id) = MessageId::new(format!("tui-interrupted-{}", reasoning_seq()))
+        {
+            session.conversation.push(ConversationMessage {
+                id,
+                role: MessageRole::Assistant,
+                content: vec![ContentPart::Text(text)],
+                extensions: ExtensionMap::default(),
+            });
+        }
+    }
+    if !session.live_trajectory.is_empty() {
+        session.state.transcript.extend(
+            session
+                .live_trajectory
+                .drain(..)
+                .map(|line| format!("interrupted: {line}")),
+        );
+    }
 }
 
 fn edit_prompt_in_external_editor(
@@ -5970,7 +6031,12 @@ fn drain_usage_event(session: &mut TuiSession) {
     match rx.try_recv() {
         Ok(AgentEvent::Usage { summary }) => {
             session.usage_rx = None;
-            session.state.transcript.push(summary);
+            session.state.transcript.push(summary.clone());
+            if session.agent_running {
+                session
+                    .live_trajectory
+                    .push(format!("⎿ command: {summary}"));
+            }
             session.state.status = None;
         }
         Ok(_) => {}
@@ -13845,7 +13911,7 @@ mod tests {
             agent_rx: None,
             trajectory_rx: None,
             agent_task: None,
-            queued_prompt: None,
+            queued_prompts: VecDeque::new(),
             pending_text_pastes: Vec::new(),
             usage_rx: None,
             agent_running: true,
@@ -13906,7 +13972,7 @@ mod tests {
             agent_rx: None,
             trajectory_rx: None,
             agent_task: None,
-            queued_prompt: None,
+            queued_prompts: VecDeque::new(),
             pending_text_pastes: Vec::new(),
             usage_rx: None,
             agent_running: true,
@@ -13965,7 +14031,7 @@ mod tests {
             agent_rx: None,
             trajectory_rx: None,
             agent_task: None,
-            queued_prompt: None,
+            queued_prompts: VecDeque::new(),
             pending_text_pastes: Vec::new(),
             usage_rx: None,
             agent_running: true,
@@ -15162,7 +15228,7 @@ mod tests {
             agent_rx: None,
             trajectory_rx: None,
             agent_task: None,
-            queued_prompt: None,
+            queued_prompts: VecDeque::new(),
             pending_text_pastes: Vec::new(),
             usage_rx: None,
             agent_running: false,
@@ -16198,11 +16264,48 @@ mod tests {
     }
 
     #[test]
-    fn queued_prompt_slot_holds_the_mid_turn_submit() {
+    fn queued_prompt_fifo_preserves_every_mid_turn_submit() {
         let mut session = fresh_tui_session_for_trajectory_tests();
-        assert!(session.queued_prompt.is_none());
-        session.queued_prompt = Some("follow-up question".into());
-        assert_eq!(session.queued_prompt.as_deref(), Some("follow-up question"));
+        session.queued_prompts.push_back("first follow-up".into());
+        session.queued_prompts.push_back("second follow-up".into());
+        assert_eq!(
+            session.queued_prompts.pop_front().as_deref(),
+            Some("first follow-up")
+        );
+        assert_eq!(
+            session.queued_prompts.pop_front().as_deref(),
+            Some("second follow-up")
+        );
+    }
+
+    #[test]
+    fn send_now_interruption_preserves_visible_partial_output() {
+        let mut session = fresh_tui_session_for_trajectory_tests();
+        session.agent_running = true;
+        session.live_response = "partial answer".into();
+        session.live_trajectory.push("⏺ read_file".into());
+
+        cancel_active_turn_preserving_partial(&mut session, "replaced by Send Now");
+
+        assert!(!session.agent_running);
+        assert!(session.live_response.is_empty());
+        assert!(session.live_trajectory.is_empty());
+        assert!(
+            session
+                .state
+                .transcript
+                .iter()
+                .any(|line| line.contains("partial answer"))
+        );
+        assert!(
+            session
+                .state
+                .transcript
+                .iter()
+                .any(|line| line.contains("read_file"))
+        );
+        assert_eq!(session.conversation.len(), 1);
+        assert_eq!(session.conversation[0].role, MessageRole::Assistant);
     }
 
     #[test]

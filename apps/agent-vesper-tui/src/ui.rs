@@ -200,6 +200,8 @@ pub struct ViewModel {
     pub command_menu_selected: usize,
     /// Whether an agent turn is currently running.
     pub agent_running: bool,
+    /// Number of follow-up prompts retained in the native FIFO.
+    pub queued_prompt_count: usize,
     /// Typed live controls governing real agent turns.
     pub controls: SessionControls,
     /// Native dashboard panel visibility.
@@ -530,9 +532,17 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
     );
 
     let activity = if model.agent_running {
-        "● Working — waiting for the provider/agent loop"
+        let notice = model.status.as_deref().unwrap_or("Working");
+        if model.queued_prompt_count > 0 {
+            format!(
+                "● {notice} · {} queued · Enter queues · Alt+Enter sends now",
+                model.queued_prompt_count
+            )
+        } else {
+            format!("● {notice} · Enter queues · Alt+Enter sends now")
+        }
     } else {
-        model.status.as_deref().unwrap_or("○ Ready")
+        model.status.clone().unwrap_or_else(|| "○ Ready".into())
     };
     frame.render_widget(
         Paragraph::new(activity).style(Style::default().fg(if model.agent_running {

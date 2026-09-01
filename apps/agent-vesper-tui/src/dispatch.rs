@@ -1072,8 +1072,15 @@ fn render_context_view(
                 None => "sandbox=off (no scope demand; /sandbox for detail)".to_string(),
             };
             format!(
-                "status: Phase={p}, transcript={line_count} lines, overrides={override_count}, {firewall_line}, {sandbox_line}.",
-                p = phase_label(phase)
+                "status: phase={p}, mode={mode:?}, permission={permission:?}, max-iterations={cap}, transcript={line_count} lines, overrides={override_count}, {firewall_line}, {sandbox_line}.",
+                p = phase_label(phase),
+                mode = controls.operating_mode,
+                permission = controls.permission_mode,
+                cap = if controls.max_tool_iterations == 0 {
+                    "disabled".into()
+                } else {
+                    controls.max_tool_iterations.to_string()
+                }
             )
         }
         ViewKind::Tasks => format!(
@@ -1093,6 +1100,10 @@ fn render_context_view(
             }
         }
         ViewKind::Usage => "usage: query routed to the active provider quota integration.".into(),
+        ViewKind::Permission => format!(
+            "permission: {:?} (set with `/permission ask|read|bypass`).",
+            controls.permission_mode
+        ),
         // VRO-13 PR-2: view-only firewall panel. The honesty sentence is a
         // verbatim directive from the PRD — the firewall catches accidents
         // and the obvious, and must never be advertised as containment.

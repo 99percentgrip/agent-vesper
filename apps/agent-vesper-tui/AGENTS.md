@@ -135,6 +135,15 @@ business logic.
   `[Pasted Content N chars]`, expand it only when Enter submits the prompt,
   and let Backspace at the editable-text origin remove the newest paste chip.
   Short single-line pastes remain directly editable.
+  While an agent turn runs, slash-command results remain foreground-visible
+  after the live region and asynchronous `/usage` uses its independent
+  channel. Bare `/permission` reports the active mode; explicit
+  `ask|read|bypass` values mutate it. Free-text Enter submissions join a
+  visible FIFO without overwriting earlier follow-ups. `Alt+Enter` is the
+  explicit Send Now gesture: interrupt the current turn, preserve already
+  visible assistant/tool output in the transcript and conversation history,
+  then start the new prompt immediately. The activity strip always reports
+  the queue count and both gestures while work is active.
   `render_permission_modal` overlays a centered `Clear` + bordered dialog
   (`PermissionModal`/`PermissionChoice` exported from `lib.rs`) whenever
   `ViewModel::pending_permission` is set; the binary's event loop intercepts

@@ -220,6 +220,8 @@ pub enum ViewKind {
     MaxIterations,
     /// `/usage` — live quota / API-plan usage.
     Usage,
+    /// `/permission` — current session permission mode.
+    Permission,
     /// `/firewall` — command firewall panel (view + disable-with-restart).
     Firewall,
     /// `/sandbox` — scope-demanded sandbox panel (view + backend choice,
@@ -951,6 +953,9 @@ impl CommandRegistry {
             }
 
             // === Live session settings / native UI ===
+            "permission" if argument.trim().is_empty() => {
+                CommandOutcome::ContextView(ViewKind::Permission)
+            }
             "permission" => resolve_session_choice(
                 name,
                 argument,
@@ -2079,6 +2084,29 @@ mod tests {
                 argument: "MAX".into()
             }
         );
+    }
+
+    #[test]
+    fn bare_permission_reports_status_while_values_still_mutate() {
+        let registry = CommandRegistry::stage_11b();
+        let plan = PlanState::default();
+        let provider = provider();
+        assert_eq!(
+            registry.resolve(&CommandIntent::parse("/permission"), &plan, &provider, &[]),
+            CommandOutcome::ContextView(ViewKind::Permission)
+        );
+        assert!(matches!(
+            registry.resolve(
+                &CommandIntent::parse("/permission bypass"),
+                &plan,
+                &provider,
+                &[]
+            ),
+            CommandOutcome::SessionConfig {
+                key: SessionConfigKey::Permission,
+                ..
+            }
+        ));
     }
 
     #[test]
