@@ -819,6 +819,7 @@ const CHROME_BORDER: Color = Color::Rgb(60, 70, 85);
 /// without chat bubbles or full-width role banners.
 fn render_transcript_lines(transcript_lines: &[String], _inner_width: usize) -> Vec<Line<'static>> {
     let mut rendered: Vec<Line<'static>> = Vec::new();
+    let mut previous_was_secondary = false;
     for (idx, raw) in transcript_lines.iter().enumerate() {
         let is_user_turn = raw.starts_with("user:");
         let is_assistant_turn = raw.starts_with("assistant");
@@ -833,8 +834,12 @@ fn render_transcript_lines(transcript_lines: &[String], _inner_width: usize) -> 
         let is_url_line =
             (raw.starts_with("http://") || raw.starts_with("https://")) && !raw.contains(' ');
 
-        // One blank line between turns for vertical pacing.
-        if idx > 0 {
+        // Keep human turns comfortably separated, but render consecutive
+        // thinking/tool events as one compact activity group. Treating every
+        // action/result as a chat turn doubled the feed height and buried the
+        // actual answer beneath empty rows.
+        let is_secondary = is_thinking || is_telemetry || is_url_line;
+        if idx > 0 && !(is_secondary && previous_was_secondary) {
             rendered.push(Line::raw(""));
         }
 
@@ -910,6 +915,7 @@ fn render_transcript_lines(transcript_lines: &[String], _inner_width: usize) -> 
             // System / plan context / errors: default styling.
             rendered.extend(lines);
         }
+        previous_was_secondary = is_secondary;
     }
     rendered
 }
@@ -1458,6 +1464,10 @@ mod tests {
                 },
             ],
             agent_running: true,
+            panels: PanelVisibility {
+                chat_only: false,
+                ..PanelVisibility::default()
+            },
             ..ViewModel::default()
         };
         let backend = TestBackend::new(140, 35);
@@ -1500,6 +1510,10 @@ mod tests {
                 priority: "1".into(),
             }],
             agent_running: true,
+            panels: PanelVisibility {
+                chat_only: false,
+                ..PanelVisibility::default()
+            },
             ..ViewModel::default()
         };
 
@@ -1687,6 +1701,20 @@ mod tests {
         terminal
             .draw(|f| render_to_frame(f, &model))
             .expect("degenerate resize must not panic");
+    }
+
+    #[test]
+    fn consecutive_tool_events_render_as_one_compact_group() {
+        let rendered = render_transcript_lines(
+            &[
+                "⏺ read_file · src/main.rs".into(),
+                "  ⎿ 120 lines".into(),
+                "⏺ run_command · cargo test".into(),
+                "  ⎿ 3 lines".into(),
+            ],
+            80,
+        );
+        assert_eq!(rendered.len(), 4, "tool groups must not gain blank rows");
     }
 
     #[test]

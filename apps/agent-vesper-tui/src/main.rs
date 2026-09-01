@@ -1033,10 +1033,30 @@ fn handle_mouse_click(
     MouseClickOutcome::Submit
 }
 
-fn finish_mouse_selection(row: u16, height: u16, session: &mut TuiSession) {
+fn conversation_selection_hit(column: u16, row: u16, width: u16, height: u16) -> bool {
+    let conversation_width = if width >= 110 {
+        width.saturating_sub(40)
+    } else {
+        width
+    };
+    column < conversation_width && row > 0 && row < height.saturating_sub(6)
+}
+
+fn finish_mouse_selection(
+    column: u16,
+    row: u16,
+    width: u16,
+    height: u16,
+    session: &mut TuiSession,
+) {
     let Some(anchor) = session.selection_anchor.take() else {
         return;
     };
+    if !conversation_selection_hit(column, row, width, height) {
+        session.selected_text.clear();
+        session.state.status = Some("Selection cancelled outside Conversation.".into());
+        return;
+    }
     let menu_height = command_menu_height(height, session.command_matches.len());
     let visible_rows = usize::from(height.saturating_sub(menu_height).saturating_sub(8).max(1));
     let first_visible = session.state.transcript.len().saturating_sub(visible_rows);
@@ -1212,16 +1232,20 @@ async fn drive_loop(
                     }
                     MouseClickOutcome::Handled => continue,
                     MouseClickOutcome::Ignored => {
-                        session.selection_anchor = Some(mouse.row);
+                        if conversation_selection_hit(
+                            mouse.column,
+                            mouse.row,
+                            area.width,
+                            area.height,
+                        ) {
+                            session.selection_anchor = Some(mouse.row);
+                        }
                         continue;
                     }
                 }
             } else if mouse.kind == MouseEventKind::Up(MouseButton::Left) {
-                finish_mouse_selection(
-                    mouse.row,
-                    terminal.size().map_err(|e| e.to_string())?.height,
-                    session,
-                );
+                let area = terminal.size().map_err(|e| e.to_string())?;
+                finish_mouse_selection(mouse.column, mouse.row, area.width, area.height, session);
                 continue;
             } else if matches!(
                 mouse.kind,
@@ -1538,6 +1562,19 @@ async fn drive_loop(
                         continue;
                     }
                 }
+                let compact_paste_display = (!session.pending_text_pastes.is_empty()).then(|| {
+                    let pasted_chars = session
+                        .pending_text_pastes
+                        .iter()
+                        .map(|paste| paste.chars().count())
+                        .sum::<usize>();
+                    let typed = session.input.trim();
+                    if typed.is_empty() {
+                        format!("user: [Pasted Content {pasted_chars} chars]")
+                    } else {
+                        format!("user: {typed} [Pasted Content {pasted_chars} chars]")
+                    }
+                });
                 let submitted_input = take_composer_text(session);
                 let intent = CommandIntent::parse(&submitted_input);
                 let command_submission = matches!(&intent, CommandIntent::Slash { .. });
@@ -1560,6 +1597,17 @@ async fn drive_loop(
                     provider_id,
                     &mut session.state,
                 );
+                if matches!(intent, CommandIntent::Prompt(_))
+                    && let Some(compact) = compact_paste_display
+                    && let Some(last_user) = session
+                        .state
+                        .transcript
+                        .iter_mut()
+                        .rev()
+                        .find(|line| line.starts_with("user:"))
+                {
+                    *last_user = compact;
+                }
                 if session.agent_running && command_submission {
                     session.live_trajectory.extend(
                         session.state.transcript[transcript_before_command..]
@@ -12842,6 +12890,14 @@ mod tests {
         assert_eq!(manual, None);
     }
 
+    #[test]
+    fn selection_hitbox_excludes_sidebar_and_lower_chrome() {
+        assert!(conversation_selection_hit(20, 10, 140, 40));
+        assert!(!conversation_selection_hit(110, 10, 140, 40));
+        assert!(!conversation_selection_hit(20, 38, 140, 40));
+        assert!(conversation_selection_hit(70, 10, 80, 40));
+    }
+
     /// GLM-catalog-backed capability index for palette/gating tests (PRD
     /// provider-capability-gating P3): the same fail-closed index the
     /// binary builds for the `zai` provider.
@@ -13333,13 +13389,13 @@ mod tests {
         // F11 must be a render-time override: every underlying panel flag is
         // preserved so the second F11 restores exactly what was visible.
         let mut panels = agent_vesper_tui::dispatch::PanelVisibility::default();
-        assert!(panels.sidebar_visible(), "rail renders by default");
-        assert!(panels.toggle_chat_only(), "first F11 collapses the rail");
-        assert!(!panels.sidebar_visible(), "chat-only hides the rail");
+        assert!(!panels.sidebar_visible(), "new sessions lead with chat");
+        assert!(!panels.toggle_chat_only(), "first F11 reveals the rail");
+        assert!(panels.sidebar_visible(), "dashboard is available on demand");
         assert!(panels.tasks, "individual panel flags stay intact");
         assert!(panels.sidebar, "the sidebar switch stays intact");
-        assert!(!panels.toggle_chat_only(), "second F11 restores the rail");
-        assert!(panels.sidebar_visible());
+        assert!(panels.toggle_chat_only(), "second F11 restores chat-only");
+        assert!(!panels.sidebar_visible());
         assert!(panels.tasks, "TODO flag survived the full cycle");
     }
 

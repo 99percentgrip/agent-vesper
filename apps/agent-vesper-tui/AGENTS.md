@@ -98,7 +98,8 @@ business logic.
   tests, and the production `render_to_frame` ratatui/crossterm backend.
   **Current layout:** the bottom Reasoning panel and Activity strip stay
   removed; the Conversation column owns chat, inline thinking, and tool
-  telemetry. Wide terminals show a compact right rail with Session, a
+  telemetry. New sessions default to chat-only full width. F11 reveals a
+  compact right rail on wide terminals with Session, a
   dedicated live TODO panel, and a bounded Last run summary. `/tasks`
   toggles the TODO region and reveals the sidebar when enabling it. F11
   (`toggle_chat_only`) collapses the entire right rail — Session + TODO +
@@ -123,7 +124,13 @@ business logic.
   `main.rs::apply_agent_progress`).
   User turns (`user:` prefix) render as plain markdown with a compact cyan
   `›` prompt marker; assistant turns remain unboxed. Legacy full-width and
-  asymmetric chat-bubble backgrounds are prohibited. The interactive
+  asymmetric chat-bubble backgrounds are prohibited. Consecutive thinking
+  and tool action/result entries form one compact activity group without
+  blank rows between every event; human turns retain breathing room. Submitted
+  bracketed pastes remain compact `[Pasted Content N chars]` chips in the
+  visible transcript while their complete text still reaches provider history.
+  Mouse selection starts and ends only inside the Conversation column; sidebar
+  and lower-chrome hits never become transcript selections. The interactive
   Pending vision images render as numbered `[Image #N]` attachment chips at
   the start of the Composer, matching Codex/Claude attachment UX; queuing an
   image must not add a synthetic line to conversation history. Backspace at

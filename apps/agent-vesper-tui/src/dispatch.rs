@@ -238,7 +238,11 @@ impl Default for PanelVisibility {
             reasoning: true,
             sidebar: true,
             tasks: true,
-            chat_only: false,
+            // Modern agent CLIs lead with the conversation. The dashboard is
+            // still one F11 (or /statusline, /tasks) away, but it no longer
+            // permanently narrows chat or contaminates native terminal text
+            // selection on first launch.
+            chat_only: true,
         }
     }
 }
@@ -1758,6 +1762,7 @@ mod integration_tests {
     #[test]
     fn chat_only_hides_the_sidebar_and_leaves_panel_flags_untouched() {
         let mut state = SessionState::new();
+        state.panels.chat_only = false;
         assert!(state.panels.sidebar);
         assert!(state.panels.tasks);
 
@@ -1783,6 +1788,7 @@ mod integration_tests {
         // one fate: both route through `PanelVisibility::toggle_chat_only`,
         // so the palette and the footer describe the same toggle.
         let mut via_command = SessionState::new();
+        via_command.panels.chat_only = false;
         step(&mut via_command, &registry, &surface, "/chat-only");
         assert!(via_command.panels.chat_only);
         assert!(via_command.panels.sidebar, "flags survive the overlay");
