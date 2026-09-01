@@ -27,7 +27,7 @@ use agent_client_protocol::{
 };
 use serde_json::{Value, json};
 use tokio::{
-    sync::{Mutex, Notify, Semaphore, mpsc, oneshot},
+    sync::{Mutex, Semaphore, mpsc, oneshot},
     task::JoinSet,
 };
 use vesper_domain::{
@@ -423,7 +423,6 @@ async fn dispatch_requests(
 ) -> Result<(), agent_client_protocol::Error> {
     let active = Arc::new(Mutex::new(BTreeMap::<SessionId, TurnId>::new()));
     let engine_active = Arc::new(Mutex::new(BTreeMap::<SessionId, usize>::new()));
-    let engine_activity_changed = Arc::new(Notify::new());
     let pending_cancels = Arc::new(Mutex::new(BTreeMap::<SessionId, Instant>::new()));
     let permission_requester = Arc::new(AcpClientPermissionRequester::new(connection.clone()));
     let context = RequestContext {
@@ -431,7 +430,6 @@ async fn dispatch_requests(
         barriers,
         active: Arc::clone(&active),
         engine_active: Arc::clone(&engine_active),
-        engine_activity_changed: Arc::clone(&engine_activity_changed),
         pending_cancels: Arc::clone(&pending_cancels),
         ids,
         output_flow,
@@ -613,9 +611,6 @@ struct RequestContext {
     /// concurrently with the implementation turn, so boolean/set tracking
     /// would let the first completed slash erase the still-running turn.
     engine_active: Arc<Mutex<BTreeMap<SessionId, usize>>>,
-    /// Wakes slash-response tasks that keep the ACP session's update channel
-    /// open until a pre-existing implementation turn has finished.
-    engine_activity_changed: Arc<Notify>,
     /// Engine-turn cancels held inside the [`CANCEL_GRACE`] window, keyed by
     /// session (deadline as value). A safe slash prompt for the session
     /// removes the entry (turn survives); anything else executes it.
@@ -633,32 +628,13 @@ struct RequestContext {
     additional_commands: Vec<vesper_domain::SlashCommandDescriptor>,
 }
 
-async fn decrement_engine_active(
-    active: &Mutex<BTreeMap<SessionId, usize>>,
-    changed: &Notify,
-    session: &SessionId,
-) {
+async fn decrement_engine_active(active: &Mutex<BTreeMap<SessionId, usize>>, session: &SessionId) {
     let mut active = active.lock().await;
     if let Some(count) = active.get_mut(session) {
         *count = count.saturating_sub(1);
         if *count == 0 {
             active.remove(session);
         }
-    }
-    changed.notify_waiters();
-}
-
-async fn wait_for_engine_idle(
-    active: &Mutex<BTreeMap<SessionId, usize>>,
-    changed: &Notify,
-    session: &SessionId,
-) {
-    loop {
-        let notified = changed.notified();
-        if !active.lock().await.contains_key(session) {
-            return;
-        }
-        notified.await;
     }
 }
 
@@ -727,7 +703,6 @@ async fn handle_request(
         barriers,
         active,
         engine_active,
-        engine_activity_changed,
         pending_cancels: _,
         ids,
         output_flow,
@@ -955,8 +930,6 @@ async fn handle_request(
                 ));
             }
             if let Some(engine) = prompt_engine {
-                let joins_active_turn = matches!(content.as_slice(), [ContentPart::Text(text)] if is_concurrent_safe_slash(text.as_str()))
-                    && engine_active.lock().await.contains_key(&session);
                 let snapshot = execute!(runtime.snapshot(&session));
                 let workspace_roots = snapshot.workspace_roots.clone();
                 let operating_mode = snapshot.operating_mode;
@@ -975,7 +948,6 @@ async fn handle_request(
                     .entry(session.clone())
                     .or_insert(0) += 1;
                 let engine_active_task = Arc::clone(&engine_active);
-                let engine_activity_changed_task = Arc::clone(&engine_activity_changed);
                 let connection = connection.clone();
                 let output_flow = output_flow.clone();
                 let request_session = request.session_id.clone();
@@ -1004,12 +976,7 @@ async fn handle_request(
                     match result {
                         Ok(result) => {
                             event_sink.drain().await?;
-                            decrement_engine_active(
-                                &engine_active_task,
-                                &engine_activity_changed_task,
-                                &engine_session,
-                            )
-                            .await;
+                            decrement_engine_active(&engine_active_task, &engine_session).await;
                             if result.cancelled {
                                 return responder.respond(prompt_response_value(
                                     agent_client_protocol::schema::v1::StopReason::Cancelled,
@@ -1066,42 +1033,13 @@ async fn handle_request(
                                     .map_err(agent_client_protocol::util::internal_error)?;
                                 output_flow.wait_until_writer_accepts().await?;
                             }
-                            // ACP session updates are not request-scoped. Zed
-                            // attaches them to its currently open prompt and
-                            // stops rendering updates when that prompt ends.
-                            // A safe slash entered during active work therefore
-                            // streams its answer immediately but holds its
-                            // terminal response until the older engine turn is
-                            // done, preserving a live channel for subsequent
-                            // tool/progress updates.
-                            if joins_active_turn {
-                                wait_for_engine_idle(
-                                    &engine_active_task,
-                                    &engine_activity_changed_task,
-                                    &engine_session,
-                                )
-                                .await;
-                            }
                             responder.respond(prompt_response_value(
                                 agent_client_protocol::schema::v1::StopReason::EndTurn,
                                 &response_message_id,
                             ))
                         }
                         Err(error) => {
-                            decrement_engine_active(
-                                &engine_active_task,
-                                &engine_activity_changed_task,
-                                &engine_session,
-                            )
-                            .await;
-                            if joins_active_turn {
-                                wait_for_engine_idle(
-                                    &engine_active_task,
-                                    &engine_activity_changed_task,
-                                    &engine_session,
-                                )
-                                .await;
-                            }
+                            decrement_engine_active(&engine_active_task, &engine_session).await;
                             tracing::warn!(error = %error, "harness engine failed");
                             responder.respond_with_error(
                                 agent_client_protocol::util::internal_error(error),
