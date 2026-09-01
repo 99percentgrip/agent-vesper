@@ -90,7 +90,11 @@ update mapping, and bounded asynchronous dispatch into `vesper-runtime`.
   to the injected engine as well. Editors may precede a concurrent-safe slash
   prompt with `session/cancel`; the bounded grace path suppresses that cancel,
   and per-session in-flight counts ensure completion of the slash response
-  cannot erase the still-running implementation turn. Every advertised command
+  cannot erase the still-running implementation turn. Because ACP updates are
+  session-scoped, a concurrent-safe slash streams its result immediately but
+  keeps its prompt response open until the pre-existing engine turn finishes;
+  this preserves Zed's active update channel for later tool/progress events.
+  Every advertised command
   is exhaustively classified as always concurrent, argument-dependent, or
   interrupting, so read-only subcommands remain usable during live work while
   state-colliding forms interrupt. The adapter supplies a bounded

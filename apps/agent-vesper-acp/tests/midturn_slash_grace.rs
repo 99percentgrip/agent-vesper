@@ -99,8 +99,16 @@ fn safe_slash_during_editor_interrupt_keeps_the_turn_running() {
     cancel(&mut process, &session);
     process.prompt(11, &session, "/status", "status-message");
 
-    // The slash answers quickly, without waiting for the turn.
+    // Its content streams immediately, but the terminal response remains
+    // open until the implementation turn finishes. ACP session updates are
+    // not request-scoped; ending this prompt early makes Zed discard the
+    // surviving turn's later tool/progress updates.
+    let status_wait_started = std::time::Instant::now();
     let status = process.response(11);
+    assert!(
+        status_wait_started.elapsed() >= Duration::from_millis(700),
+        "safe slash response ended before the active update channel was done"
+    );
     assert_eq!(
         status["result"]["stopReason"], "end_turn",
         "the mid-turn slash must answer as its own turn: {status}"

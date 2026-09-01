@@ -209,7 +209,11 @@ slash command. The adapter holds engine-session cancels for 400ms
 reports and next-turn overrides whose stores are independent of the live
 turn) arrives inside the window and ABORTS the cancel, so the turn keeps
 working while the slash answers concurrently and its text lands in the
-session context. Commands that collide with live conversation, plan,
+session context. ACP updates are session-scoped rather than request-scoped,
+so the slash streams that text immediately but keeps its prompt response open
+until the pre-existing engine turn finishes; otherwise Zed closes the active
+update channel and strands later tool/progress rendering. Commands that collide
+with live conversation, plan,
 workspace, or registry state (`/compact`, `/clear-history`, `/clear-plan`,
 `/undo`, `/rollback`, `/diff`, `/release`, and mutating `/checkpoint`,
 `/plugins`, or `/mcp` forms), any non-slash prompt, and grace expiry still
