@@ -1,6 +1,6 @@
-//! Extraction-response parsing. Mirrors mem0's defensive chain:
+//! Extraction-response parsing. Mirrors the oracle's defensive chain:
 //! `remove_code_blocks` -> `json.loads` -> `extract_json` regex fallback
-//! (`mem0/memory/utils.py:115, 131`).
+//! (`oracle/memory/utils.py:115, 131`).
 //!
 //! The LLM is asked to emit JSON with `response_format=json_object`, but
 //! not every provider honors it, so we strip code-block fences and fall
@@ -22,7 +22,7 @@ pub struct ExtractedMemory {
     #[serde(default)]
     pub attributed_to: Option<String>,
     /// Optional references to Existing Memory UUIDs for entity linking.
-    /// Per ADR 0015 these are NOT persisted in OSS V3 (matches mem0).
+    /// Per ADR 0015 these are NOT persisted in OSS V3 (matches the oracle).
     #[serde(default)]
     pub linked_memory_ids: Vec<String>,
     /// Memory classification: "persona" | "episodic" | "instruction" | "procedural".

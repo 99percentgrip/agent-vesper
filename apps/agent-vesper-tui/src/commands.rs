@@ -220,6 +220,11 @@ pub enum ViewKind {
     MaxIterations,
     /// `/usage` — live quota / API-plan usage.
     Usage,
+    /// `/firewall` — command firewall panel (view + disable-with-restart).
+    Firewall,
+    /// `/sandbox` — scope-demanded sandbox panel (view + backend choice,
+    /// resolved once at boot from `[sandbox]` + `AGENT_VESPER_SANDBOX`).
+    Sandbox,
 }
 
 /// Live session settings implemented by the native Rust harness.
@@ -886,18 +891,38 @@ impl CommandRegistry {
             "recap" => CommandOutcome::ContextView(ViewKind::Recap),
             "context" => CommandOutcome::ContextView(ViewKind::Context),
             "status" => CommandOutcome::ContextView(ViewKind::Status),
+            // VRO-13 PR-2: view-only firewall panel. Disabling requires an
+            // env restart (AGENT_VESPER_FIREWALL=off); there is no runtime
+            // toggle by design.
+            "firewall" => CommandOutcome::ContextView(ViewKind::Firewall),
+            // VRO-13 PR-4: view-only sandbox panel, mirroring the firewall
+            // panel's honesty contract (backend choice is boot-resolved).
+            "sandbox" => CommandOutcome::ContextView(ViewKind::Sandbox),
+
             "tasks" => CommandOutcome::Ui(UiAction::ToggleTasks),
             "max-iterations" => {
-                let value = argument.trim();
+                let value = argument.trim().to_ascii_lowercase();
                 if value.is_empty() {
                     CommandOutcome::ContextView(ViewKind::MaxIterations)
+                } else if matches!(value.as_str(), "disable" | "disabled" | "off") {
+                    CommandOutcome::SessionConfig {
+                        key: SessionConfigKey::MaxIterations,
+                        value: "0".into(),
+                    }
+                } else if matches!(value.as_str(), "enable" | "enabled" | "on") {
+                    CommandOutcome::SessionConfig {
+                        key: SessionConfigKey::MaxIterations,
+                        value: vesper_agent::ENABLED_DEFAULT_MAX_TOOL_ITERATIONS.to_string(),
+                    }
                 } else {
                     match value.parse::<u32>() {
-                        Ok(value @ 1..=200) => CommandOutcome::SessionConfig {
+                        Ok(value @ 1..=1000) => CommandOutcome::SessionConfig {
                             key: SessionConfigKey::MaxIterations,
                             value: value.to_string(),
                         },
-                        _ => CommandOutcome::Error("Usage: /max-iterations [1-200]".into()),
+                        _ => CommandOutcome::Error(
+                            "Usage: /max-iterations [enable|disable|1-1000]".into(),
+                        ),
                     }
                 }
             }
@@ -1926,6 +1951,14 @@ const ORACLE_COMMAND_SURFACE: &[OracleCommandEntry] = &[
     OracleCommandEntry { name: "provider",          description: "Switch the active provider (Vesper-native, arrow-key picker)" },
     OracleCommandEntry { name: "embedding",         description: "View or set the cognitive-memory embedding source (ADR 0016, Vesper-native)" },
     OracleCommandEntry { name: "chat-only",         description: "Toggle the F11 chat-only layout collapse (Vesper-native)" },
+    OracleCommandEntry {
+        name: "firewall",
+        description: "Show the VRO-13 command firewall status (view/disable-with-restart only)",
+    },
+    OracleCommandEntry {
+        name: "sandbox",
+        description: "Show the VRO-13 scope-demand sandbox status (view-only; boot-resolved)",
+    },
     OracleCommandEntry { name: "quit",              description: "Exit the TUI (Vesper-native; oracle uses Ctrl+X)" },
 ];
 
@@ -2430,11 +2463,11 @@ mod tests {
         );
         assert_eq!(
             registry.names().len(),
-            95,
-            "Phase 7 parity: 80 oracle commands + 15 Vesper-native = 95 total \
+            97,
+            "Phase 7 parity: 80 oracle commands + 17 Vesper-native = 97 total \
              (Vesper-native: approve, cancel, auth, lmstudio, provider, embedding, \
              chat-only, quit, remember, recall, forget, memories, promote, demote, \
-             interview-limit)"
+             interview-limit, sandbox)"
         );
     }
 

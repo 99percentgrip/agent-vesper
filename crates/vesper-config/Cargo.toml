@@ -15,5 +15,8 @@ thiserror.workspace = true
 vesper-domain = { path = "../vesper-domain", version = "=0.20.78" }
 vesper-security = { path = "../vesper-security", version = "=0.20.78" }
 
+[dev-dependencies]
+tempfile.workspace = true
+
 [lints]
 workspace = true

@@ -30,10 +30,10 @@ business logic.
 - `src/commands.rs` — slash-command parsing, registry, and resolution
   against the active provider's superpowers. Tier C Phase 7 (ADR 0010): the
   registry now covers the **entire** Python oracle `LOCAL_COMMANDS` surface
-  (80 distinct oracle command names, including `/export last`, + 15
-  Vesper-native = 95 commands; Vesper-native = approve, cancel, auth,
+  (80 distinct oracle command names, including `/export last`, + 16
+  Vesper-native = 96 commands; Vesper-native = approve, cancel, auth,
   lmstudio, provider, embedding, chat-only, quit, remember, recall, forget,
-  memories, promote, demote, interview-limit). The
+  memories, promote, demote, interview-limit, firewall). The
   `ORACLE_COMMAND_SURFACE` const table is the single source of truth for the
   migration matrix. `chat-only` (the `/chat-only` palette twin of the F11
   keybinding) resolves to `UiAction::ToggleChatOnly`; like every registry
@@ -453,9 +453,14 @@ business logic.
 ## Local Contracts
 
 - Native plans share the agent loop's four-segment bounded autonomous
-  continuation with ACP. If the ultimate cap is reached, status, transcript,
-  telemetry, and worker rendering must identify the stop rather than imply
-  completion.
+  continuation with ACP. Each submitted turn seeds the loop from the retained
+  task panel, so a resume turn cannot accept acknowledgement text as completion
+  while older plan items remain open. If the ultimate cap is reached, status,
+  transcript, telemetry, and worker rendering must identify the stop rather
+  than imply completion.
+- The optional per-turn iteration cap defaults to disabled. `/max-iterations
+  enable` restores 50, `/max-iterations disable` removes the user cap, and an
+  explicit `1-1000` sets it; none of these removes the ultimate safety ceiling.
 
 - Stdout carries only terminal escapes via crossterm; no ACP/JSON-RPC may
   appear there. Tracing goes to stderr only.

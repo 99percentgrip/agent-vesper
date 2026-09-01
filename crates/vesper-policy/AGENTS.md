@@ -20,4 +20,4 @@ Own the pure policy/permission algebra and nested-workflow closure.
 
 ## Child DOX Index
 
-No children.
+- `firewall/` — VRO-13 PR-1 hard-denial firewall: shell normalization, compiled rules, scan verdicts (pure, inert until PR-2 wiring).

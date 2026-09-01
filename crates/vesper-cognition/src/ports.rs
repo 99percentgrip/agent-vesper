@@ -7,7 +7,7 @@ use std::sync::Arc;
 use crate::error::Result;
 use crate::nlp::EntityCandidate;
 
-/// Action context for embedding calls. Mirrors mem0's `memory_action`.
+/// Action context for embedding calls. Mirrors the oracle's `memory_action`.
 /// Most providers do not differentiate; the port exists for forward
 /// compatibility with providers that use distinct add/search encoders.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]

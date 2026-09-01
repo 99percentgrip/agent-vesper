@@ -178,8 +178,13 @@ impl AgentProgressPort for NoopProgressPort {
     fn emit(&self, _event: AgentProgressEvent) {}
 }
 
-/// Hard upper bound on tool iterations when the caller omits one.
-pub const DEFAULT_MAX_TOOL_ITERATIONS: u32 = 50;
+/// Disabled user-configurable per-turn cap. The loop still retains
+/// [`ABSOLUTE_MAX_TOOL_ITERATIONS`] as a non-configurable safety ceiling.
+pub const DEFAULT_MAX_TOOL_ITERATIONS: u32 = 0;
+/// Cap restored by `/max-iterations enable`.
+pub const ENABLED_DEFAULT_MAX_TOOL_ITERATIONS: u32 = 50;
+/// Ultimate non-configurable safety ceiling, including plan continuation.
+pub const ABSOLUTE_MAX_TOOL_ITERATIONS: u32 = 4_000;
 /// Maximum number of ordinary iteration-cap segments an unfinished native
 /// plan may consume autonomously before the ultimate safety stop.
 pub const MAX_PLAN_CONTINUATION_SEGMENTS: u32 = 4;
@@ -203,6 +208,43 @@ pub struct AgentLoopConfig {
     pub workspace_roots: Vec<WorkspaceRoot>,
     /// Hard safety cap on tool iterations (prevents infinite loops).
     pub max_tool_iterations: u32,
+    /// VRO-13 PR-2: shared hard-denial firewall. `None` (the default via
+    /// [`AgentLoopConfig::with_firewall`]) is the structurally identical
+    /// pre-VRO-13 path: no scan ever runs. Hosts compile one instance at
+    /// boot (`AGENT_VESPER_FIREWALL=off` leaves it `None`) and both hosts
+    /// must inject the SAME shared Arc so enforcement is host-neutral.
+    pub firewall: Option<std::sync::Arc<vesper_policy::firewall::CommandFirewall>>,
+    /// VRO-13 PR-4: scope-demanded sandbox route for shell-class tools.
+    /// `None` (the default) is the structural off-path: `RunCommand` runs
+    /// `run_bounded` exactly as before, byte-identical to PR-3 behavior.
+    /// `Some` carries the isolation demand (resolved from
+    /// `.agent-vesper/config.toml` `[sandbox]` or a tool-level demand)
+    /// plus the host-built backend port; the executor consults the
+    /// fail-closed `satisfies` gate before provisioning anything.
+    pub sandbox: Option<std::sync::Arc<crate::sandbox_route::SandboxRoute>>,
+}
+
+impl AgentLoopConfig {
+    /// Builder: attaches the shared VRO-13 firewall instance.
+    #[must_use]
+    pub fn with_firewall(
+        mut self,
+        firewall: std::sync::Arc<vesper_policy::firewall::CommandFirewall>,
+    ) -> Self {
+        self.firewall = Some(firewall);
+        self
+    }
+
+    /// Builder: attaches the shared sandbox route (VRO-13 PR-4). `None`
+    /// (the default) keeps the executor path byte-identical to PR-3.
+    #[must_use]
+    pub fn with_sandbox(
+        mut self,
+        route: std::sync::Arc<crate::sandbox_route::SandboxRoute>,
+    ) -> Self {
+        self.sandbox = Some(route);
+        self
+    }
 }
 
 /// Terminal outcome of one `run_prompt` invocation.
@@ -281,6 +323,7 @@ pub struct AgentLoop {
     progress_port: Arc<dyn AgentProgressPort>,
     capability_advisor: Option<Arc<dyn CapabilityAdvisor>>,
     capability_context: CapabilityContext,
+    active_plan: Option<String>,
 }
 
 impl AgentLoop {
@@ -299,6 +342,7 @@ impl AgentLoop {
             progress_port: Arc::new(NoopProgressPort),
             capability_advisor: None,
             capability_context: CapabilityContext::default(),
+            active_plan: None,
         }
     }
 
@@ -313,6 +357,17 @@ impl AgentLoop {
     #[must_use]
     pub fn with_progress_port(mut self, progress_port: Arc<dyn AgentProgressPort>) -> Self {
         self.progress_port = progress_port;
+        self
+    }
+
+    /// Seeds the latest host-retained native plan for this turn.
+    ///
+    /// Plans outlive individual provider turns in interactive hosts. Seeding
+    /// the retained markdown prevents a later resume turn from accepting a
+    /// normal provider stop while earlier plan items are still open.
+    #[must_use]
+    pub fn with_active_plan(mut self, plan: Option<String>) -> Self {
+        self.active_plan = plan;
         self
     }
 
@@ -414,20 +469,28 @@ impl AgentLoop {
 
         let ids = IdGenerator::default();
         let mut tool_results: Vec<ToolResult> = Vec::new();
-        let mut plan: Option<String> = None;
+        let mut plan = self.active_plan.clone();
         let mut iteration: u32 = 0;
-        let mut iteration_limit = self.config.max_tool_iterations;
-        let ultimate_plan_limit = self
-            .config
-            .max_tool_iterations
-            .saturating_mul(MAX_PLAN_CONTINUATION_SEGMENTS);
+        let configured_limit = self.config.max_tool_iterations;
+        let mut iteration_limit = if configured_limit == 0 {
+            ABSOLUTE_MAX_TOOL_ITERATIONS
+        } else {
+            configured_limit.min(ABSOLUTE_MAX_TOOL_ITERATIONS)
+        };
+        let ultimate_plan_limit = if configured_limit == 0 {
+            ABSOLUTE_MAX_TOOL_ITERATIONS
+        } else {
+            configured_limit
+                .saturating_mul(MAX_PLAN_CONTINUATION_SEGMENTS)
+                .min(ABSOLUTE_MAX_TOOL_ITERATIONS)
+        };
         let mut loop_detector = LoopDetector::new();
 
         loop {
             if iteration >= iteration_limit {
                 if plan_has_open_items(plan.as_deref()) && iteration_limit < ultimate_plan_limit {
                     iteration_limit = iteration_limit
-                        .saturating_add(self.config.max_tool_iterations)
+                        .saturating_add(configured_limit)
                         .min(ultimate_plan_limit);
                     messages.retain(|message| !is_plan_continuation_message(message));
                     messages.push(plan_continuation_message(&ids));
@@ -533,6 +596,8 @@ impl AgentLoop {
                 permission_mode: permission,
                 conversation: request_messages,
                 cancellation: Arc::clone(&cancellation),
+                firewall: self.config.firewall.clone(),
+                sandbox: self.config.sandbox.clone(),
             };
             for call in tool_calls {
                 let tool_name = call.tool_id.as_str().to_string();
@@ -820,7 +885,15 @@ fn compact_history(messages: &[ConversationMessage]) -> Vec<ConversationMessage>
     }
     let keep_tail = MAX_CONTEXT_MESSAGES.saturating_sub(1);
     let first = messages.first().cloned();
-    let tail_start = messages.len().saturating_sub(keep_tail);
+    let mut tail_start = messages.len().saturating_sub(keep_tail);
+    // A tool result is valid only alongside the assistant tool call that
+    // precedes its result batch. Cutting the fixed-size window in the middle
+    // of that batch produces an orphan `role: tool` message, which strict
+    // provider APIs reject as an invalid request. Advance to the next complete
+    // conversation turn instead of emitting a structurally invalid suffix.
+    while tail_start < messages.len() && messages[tail_start].role == MessageRole::Tool {
+        tail_start += 1;
+    }
     let mut compacted = Vec::with_capacity(MAX_CONTEXT_MESSAGES);
     if let Some(first) = first {
         compacted.push(first);
@@ -979,6 +1052,40 @@ mod tests {
             ContentPart::Text(ContentText::new((MAX_CONTEXT_MESSAGES + 19).to_string()).unwrap())
         );
         assert_eq!(messages.len(), MAX_CONTEXT_MESSAGES + 20);
+    }
+
+    #[test]
+    fn context_compaction_never_starts_the_tail_with_an_orphan_tool_result() {
+        let mut messages = Vec::new();
+        for index in 0..MAX_CONTEXT_MESSAGES {
+            messages.push(ConversationMessage {
+                id: MessageId::new(format!("message-{index}")).unwrap(),
+                role: MessageRole::User,
+                content: vec![ContentPart::Text(
+                    ContentText::new(index.to_string()).unwrap(),
+                )],
+                extensions: ExtensionMap::default(),
+            });
+        }
+        messages[2].role = MessageRole::Tool;
+        messages.push(ConversationMessage {
+            id: MessageId::new("new-user-turn").unwrap(),
+            role: MessageRole::User,
+            content: vec![ContentPart::Text(ContentText::new("continue").unwrap())],
+            extensions: ExtensionMap::default(),
+        });
+
+        let window = compact_history(&messages);
+
+        assert_eq!(window.first(), messages.first());
+        assert_eq!(window[1].role, MessageRole::User);
+        assert_eq!(window[1].id.as_str(), "message-3");
+        assert!(
+            window
+                .iter()
+                .skip(1)
+                .all(|message| message.id.as_str() != "message-2")
+        );
     }
     // ------------------------------------------------------------------
     // VRO-11.8 — telemetry hint/note derivation

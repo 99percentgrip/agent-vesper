@@ -1,4 +1,4 @@
-//! BM25 normalization. Verbatim port of `mem0/utils/scoring.py`.
+//! BM25 normalization. Verbatim port of `oracle/utils/scoring.py`.
 //!
 //! Sigmoid normalization of raw BM25 scores to `[0, 1]`, with query-length-
 //! adaptive midpoint/steepness parameters. The raw score comes from SQLite
@@ -12,7 +12,7 @@ pub const ENTITY_BOOST_WEIGHT: f32 = 0.5;
 
 /// Returns `(midpoint, steepness)` for sigmoid normalization based on the
 /// number of lemmatized query terms. Verbatim from
-/// `mem0/utils/scoring.py:get_bm25_params`.
+/// `oracle/utils/scoring.py:get_bm25_params`.
 #[must_use]
 pub fn get_bm25_params(num_terms: usize) -> (f32, f32) {
     if num_terms <= 3 {
@@ -29,7 +29,7 @@ pub fn get_bm25_params(num_terms: usize) -> (f32, f32) {
 }
 
 /// Logistic-sigmoid normalization. Verbatim from
-/// `mem0/utils/scoring.py:normalize_bm25`.
+/// `oracle/utils/scoring.py:normalize_bm25`.
 #[must_use]
 pub fn normalize_bm25(raw_score: f32, midpoint: f32, steepness: f32) -> f32 {
     1.0 / (1.0 + (-steepness * (raw_score - midpoint)).exp())

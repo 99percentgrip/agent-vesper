@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     path::PathBuf,
     sync::{
         Arc, Mutex as StdMutex,
@@ -345,6 +345,25 @@ const CONCURRENT_SAFE_SLASH_COMMANDS: &[&str] = &[
     "meta-learning",
     "observability",
     "journey",
+    "firewall",
+    "sandbox",
+    // Explicit export writes a report from a transcript snapshot but does
+    // not mutate the live model history, plan, workspace, or tool registry.
+    "export",
+];
+
+/// Commands whose concurrency safety depends on the requested subcommand.
+const CONDITIONAL_CONCURRENT_SLASH_COMMANDS: &[&str] = &["checkpoint", "plugins", "mcp"];
+
+/// Advertised commands that must interrupt a live implementation turn.
+const INTERRUPTING_SLASH_COMMANDS: &[&str] = &[
+    "compact",
+    "clear-plan",
+    "clear-history",
+    "diff",
+    "undo",
+    "rollback",
+    "release",
 ];
 
 /// True when `text` is a single slash command that can be answered
@@ -355,14 +374,37 @@ fn is_concurrent_safe_slash(text: &str) -> bool {
     let Some(rest) = trimmed.strip_prefix('/') else {
         return false;
     };
-    let first = rest.split_whitespace().next().unwrap_or("");
+    let mut parts = rest.split_whitespace();
+    let first = parts.next().unwrap_or("");
     if first.is_empty() {
         return false;
     }
     let lowered = first.to_ascii_lowercase();
-    CONCURRENT_SAFE_SLASH_COMMANDS
+    if CONCURRENT_SAFE_SLASH_COMMANDS
         .iter()
         .any(|command| *command == lowered)
+    {
+        return true;
+    }
+    if INTERRUPTING_SLASH_COMMANDS
+        .iter()
+        .any(|command| *command == lowered)
+    {
+        return false;
+    }
+    if !CONDITIONAL_CONCURRENT_SLASH_COMMANDS
+        .iter()
+        .any(|command| *command == lowered)
+    {
+        return false;
+    }
+    let subcommand = parts.next().unwrap_or("").to_ascii_lowercase();
+    match lowered.as_str() {
+        "checkpoint" => subcommand == "list",
+        "plugins" => matches!(subcommand.as_str(), "" | "list" | "publishers" | "verify"),
+        "mcp" => matches!(subcommand.as_str(), "" | "list" | "tools"),
+        _ => false,
+    }
 }
 
 #[allow(clippy::too_many_arguments)] // bounded protocol-dispatch composition boundary
@@ -380,7 +422,7 @@ async fn dispatch_requests(
     additional_commands: Vec<vesper_domain::SlashCommandDescriptor>,
 ) -> Result<(), agent_client_protocol::Error> {
     let active = Arc::new(Mutex::new(BTreeMap::<SessionId, TurnId>::new()));
-    let engine_active = Arc::new(Mutex::new(BTreeSet::<SessionId>::new()));
+    let engine_active = Arc::new(Mutex::new(BTreeMap::<SessionId, usize>::new()));
     let pending_cancels = Arc::new(Mutex::new(BTreeMap::<SessionId, Instant>::new()));
     let permission_requester = Arc::new(AcpClientPermissionRequester::new(connection.clone()));
     let context = RequestContext {
@@ -426,7 +468,7 @@ async fn dispatch_requests(
                 let Some(notification) = notification else { break };
                 if let ClientNotification::CancelNotification(cancel) = notification {
                     let session = session_id(&cancel.session_id);
-                    if engine_active.lock().await.contains(&session) {
+                    if engine_active.lock().await.contains_key(&session) {
                         // Mid-turn slash grace (see CANCEL_GRACE): editors
                         // interrupt-then-prompt. Hold the cancel briefly;
                         // a safe slash prompt for this session will drop it
@@ -565,7 +607,10 @@ struct RequestContext {
     connection: ConnectionTo<Client>,
     barriers: Arc<TerminalBarriers>,
     active: Arc<Mutex<BTreeMap<SessionId, TurnId>>>,
-    engine_active: Arc<Mutex<BTreeSet<SessionId>>>,
+    /// In-flight engine prompt count per session. Safe slash commands run
+    /// concurrently with the implementation turn, so boolean/set tracking
+    /// would let the first completed slash erase the still-running turn.
+    engine_active: Arc<Mutex<BTreeMap<SessionId, usize>>>,
     /// Engine-turn cancels held inside the [`CANCEL_GRACE`] window, keyed by
     /// session (deadline as value). A safe slash prompt for the session
     /// removes the entry (turn survives); anything else executes it.
@@ -583,6 +628,16 @@ struct RequestContext {
     additional_commands: Vec<vesper_domain::SlashCommandDescriptor>,
 }
 
+async fn decrement_engine_active(active: &Mutex<BTreeMap<SessionId, usize>>, session: &SessionId) {
+    let mut active = active.lock().await;
+    if let Some(count) = active.get_mut(session) {
+        *count = count.saturating_sub(1);
+        if *count == 0 {
+            active.remove(session);
+        }
+    }
+}
+
 /// Executes one session cancel end to end: permission-request cancellation,
 /// engine-turn cancellation, and the runtime `CancelTurn` command for the
 /// tracked runtime turn. Shared by the immediate path, the grace-expiry
@@ -594,7 +649,7 @@ async fn perform_session_cancel(
 ) {
     context.permission_requester.cancel(&session);
     if let Some(engine) = context.prompt_engine.as_ref()
-        && context.engine_active.lock().await.contains(&session)
+        && context.engine_active.lock().await.contains_key(&session)
     {
         let _ = engine.cancel(&session).await;
     }
@@ -887,7 +942,11 @@ async fn handle_request(
                 let engine_message_id = message_id.clone();
                 let response_message_id = message_id.clone();
                 let save_runtime = Arc::clone(&runtime);
-                engine_active.lock().await.insert(session.clone());
+                *engine_active
+                    .lock()
+                    .await
+                    .entry(session.clone())
+                    .or_insert(0) += 1;
                 let engine_active_task = Arc::clone(&engine_active);
                 let connection = connection.clone();
                 let output_flow = output_flow.clone();
@@ -917,7 +976,7 @@ async fn handle_request(
                     match result {
                         Ok(result) => {
                             event_sink.drain().await?;
-                            engine_active_task.lock().await.remove(&engine_session);
+                            decrement_engine_active(&engine_active_task, &engine_session).await;
                             if result.cancelled {
                                 return responder.respond(prompt_response_value(
                                     agent_client_protocol::schema::v1::StopReason::Cancelled,
@@ -980,7 +1039,7 @@ async fn handle_request(
                             ))
                         }
                         Err(error) => {
-                            engine_active_task.lock().await.remove(&engine_session);
+                            decrement_engine_active(&engine_active_task, &engine_session).await;
                             tracing::warn!(error = %error, "harness engine failed");
                             responder.respond_with_error(
                                 agent_client_protocol::util::internal_error(error),
@@ -1288,7 +1347,7 @@ mod command_catalog_tests {
     fn frozen_catalog_stays_exact_and_extensions_append() {
         assert_eq!(catalog_commands(&[]).len(), 28);
         let commands = catalog_commands(&vesper_domain::HOST_PARITY_SLASH_COMMANDS);
-        assert_eq!(commands.len(), 40);
+        assert_eq!(commands.len(), 42);
         let json = serde_json::to_value(commands).unwrap();
         let names: Vec<_> = json
             .as_array()
@@ -1937,7 +1996,12 @@ mod replay_tests {
 
 #[cfg(test)]
 mod slash_grace_tests {
-    use super::is_concurrent_safe_slash;
+    use std::collections::BTreeSet;
+
+    use super::{
+        CONCURRENT_SAFE_SLASH_COMMANDS, CONDITIONAL_CONCURRENT_SLASH_COMMANDS,
+        INTERRUPTING_SLASH_COMMANDS, is_concurrent_safe_slash,
+    };
 
     #[test]
     fn informational_commands_are_safe_mid_turn() {
@@ -1957,6 +2021,12 @@ mod slash_grace_tests {
             "/recall project layout",
             "/reasoning set mode=deep",
             "/memories",
+            "/firewall",
+            "/sandbox",
+            "/export session.md",
+            "/checkpoint list",
+            "/plugins verify manifest.json",
+            "/mcp tools local",
         ] {
             assert!(
                 is_concurrent_safe_slash(command),
@@ -1974,7 +2044,6 @@ mod slash_grace_tests {
             "/undo",
             "/checkpoint ship",
             "/rollback 3",
-            "/export /tmp/out.md",
             "/diff",
             "/release minor",
             "/plugins load x",
@@ -1997,5 +2066,46 @@ mod slash_grace_tests {
         assert!(is_concurrent_safe_slash("  /status  extra"));
         // Unknown command names are not in the safe set.
         assert!(!is_concurrent_safe_slash("/totally-unknown"));
+    }
+
+    #[test]
+    fn every_advertised_command_has_exactly_one_concurrency_classification() {
+        let advertised = vesper_domain::ORACLE_SLASH_COMMANDS
+            .iter()
+            .chain(vesper_domain::HOST_PARITY_SLASH_COMMANDS.iter())
+            .map(|command| command.name)
+            .collect::<BTreeSet<_>>();
+        let always = CONCURRENT_SAFE_SLASH_COMMANDS
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>();
+        let conditional = CONDITIONAL_CONCURRENT_SLASH_COMMANDS
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>();
+        let interrupting = INTERRUPTING_SLASH_COMMANDS
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>();
+
+        for name in &advertised {
+            let classifications = usize::from(always.contains(name))
+                + usize::from(conditional.contains(name))
+                + usize::from(interrupting.contains(name));
+            assert_eq!(
+                classifications, 1,
+                "advertised command `/{name}` must have exactly one concurrency classification"
+            );
+        }
+        for classified in always
+            .iter()
+            .chain(conditional.iter())
+            .chain(interrupting.iter())
+        {
+            assert!(
+                advertised.contains(classified),
+                "classified command `/{classified}` is not advertised"
+            );
+        }
     }
 }

@@ -1,5 +1,5 @@
 //! V3 prompt ports. The system prompt is a verbatim port of
-//! `mem0/configs/prompts.py:ADDITIVE_EXTRACTION_PROMPT` (lines 468-945);
+//! `oracle/configs/prompts.py:ADDITIVE_EXTRACTION_PROMPT` (lines 468-945);
 //! `AGENT_CONTEXT_SUFFIX` of `prompts.py:947`; the user-side prompt builder
 //! is a port of `prompts.py:1016 generate_additive_extraction_prompt`.
 //!
@@ -8,7 +8,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Maximum characters of any past message included in the user prompt
-/// (mem0: `PAST_MESSAGE_TRUNCATION_LIMIT = 300`).
+/// (oracle: `PAST_MESSAGE_TRUNCATION_LIMIT = 300`).
 pub const PAST_MESSAGE_TRUNCATION_LIMIT: usize = 300;
 
 /// Rolling-window size passed to `get_last_messages`.
@@ -18,16 +18,16 @@ pub const LAST_K_MESSAGES: usize = 10;
 pub const EXISTING_MEMORY_TOP_K: usize = 10;
 
 /// V3 additive extraction system prompt. Ported verbatim from
-/// `mem0/configs/prompts.py:468 ADDITIVE_EXTRACTION_PROMPT`.
+/// `oracle/configs/prompts.py:468 ADDITIVE_EXTRACTION_PROMPT`.
 pub const ADDITIVE_EXTRACTION_PROMPT: &str =
     include_str!("../assets/additive_extraction_prompt.txt");
 
 /// Agent-scoped suffix appended to the system prompt when the scope contains
-/// an agent_id and no user_id. Ported verbatim from `mem0/configs/prompts.py:947`.
+/// an agent_id and no user_id. Ported verbatim from `oracle/configs/prompts.py:947`.
 pub const AGENT_CONTEXT_SUFFIX: &str = include_str!("../assets/agent_context_suffix.txt");
 
 /// Procedural-memory system prompt. Ported verbatim from
-/// `mem0/configs/prompts.py:326 PROCEDURAL_MEMORY_SYSTEM_PROMPT`.
+/// `oracle/configs/prompts.py:326 PROCEDURAL_MEMORY_SYSTEM_PROMPT`.
 pub const PROCEDURAL_MEMORY_SYSTEM_PROMPT: &str =
     include_str!("../assets/procedural_memory_system_prompt.txt");
 
@@ -80,7 +80,7 @@ fn format_new_messages(messages: &[crate::types::Message]) -> String {
 }
 
 /// Build the user-side extraction prompt. Verbatim port of
-/// `mem0/configs/prompts.py:1016 generate_additive_extraction_prompt`.
+/// `oracle/configs/prompts.py:1016 generate_additive_extraction_prompt`.
 #[must_use]
 #[allow(clippy::too_many_arguments)]
 pub fn generate_additive_extraction_prompt(

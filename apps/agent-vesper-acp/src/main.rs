@@ -17,6 +17,17 @@ async fn main() -> ExitCode {
         return code;
     }
     configure_stderr_tracing();
+    // VRO-13 PR-2: resolve the process-global firewall exactly once, before
+    // any session or engine can observe it. Both hosts must call this at
+    // boot; the first resolution wins and is immutable for the process.
+    let _ = vesper_policy::firewall::holder::install_from_env();
+    // VRO-13 PR-4: resolve the process-global sandbox route once, before
+    // any session or engine can observe it. Same first-resolution-wins
+    // contract as the firewall: `AGENT_VESPER_SANDBOX=docker|namespaces|off`
+    // plus the project scope's `[sandbox]` demand from
+    // `.agent-vesper/config.toml`. No demand → holder stays `None` and the
+    // executor keeps the byte-identical legacy path.
+    let _ = vesper_harness::sandbox_backend::holder::install_from_env();
     let outcome = match provider_from_argv() {
         Some(provider) => agent_vesper_acp::boot(&provider).await,
         None => agent_vesper_acp::run().await,

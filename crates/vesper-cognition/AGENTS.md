@@ -1,10 +1,10 @@
-# vesper-cognition — mem0-equivalent cognitive memory engine
+# vesper-cognition — memory-oracle-equivalent cognitive memory engine
 
 ## Purpose
 
 Own the provider-neutral **cognitive memory engine** (ADR 0015 — Stage 16): a
-native Rust emulation of the mem0 V3 ("April 2026 new algorithm") oracle at
-`/home/alex/Projects/mem0` (pin `29fa4155`). Single-pass ADD-only extraction,
+native Rust emulation of the memory oracle V3 ("April 2026 new algorithm") at
+`/home/Alex/Projects/memory-oracle` (pin `29fa4155`). Single-pass ADD-only extraction,
 hybrid semantic + FTS5 BM25 + entity-boost retrieval, and an embedded SQLite
 backing. This is the subsystem that backs the TUI's cognitive-memory surface
 (`/remember`, `/recall`, `/forget`, `/memories`, `/promote`, and `/demote`).
@@ -36,7 +36,7 @@ or types.
 - `src/nlp.rs` — Snowball (`rust-stemmers`) lemmatization fallback and the
   regex entity extractor (PROPER / QUOTED / TOPIC / IDENTIFIER).
 - `src/bm25.rs` — BM25 sigmoid normalization and query-length-adaptive
-  parameters (verbatim port of `mem0/utils/scoring.py`).
+  parameters (verbatim port of the oracle `utils/scoring.py`).
 - `src/score.rs` — hybrid scoring: `score_and_rank`, cosine similarity, and
   the entity-boost formula.
 - `src/filters.rs` — metadata filter DSL (eq/ne/in/nin/gt/gte/lt/lte/contains/
@@ -73,7 +73,7 @@ or types.
 
 ## Work Guidance
 
-- When porting a new mem0 behavior, cite the oracle `file:line` in the doc
+- When porting a new memory-oracle behavior, cite the oracle `file:line` in the doc
   comment and update the foundation blueprint if the parity surface changes.
 - The trait ports are deliberately narrow. Do not add provider-specific
   arguments; route provider concerns through the composition boundary.

@@ -19,6 +19,8 @@ use vesper_domain::{
 pub const MAX_TOOL_MEDIA_PARTS: usize = 8;
 use vesper_provider::CancellationSignal;
 
+use crate::sandbox_route::SandboxRoute;
+
 /// Boxed executor future (runtime-agnostic, like the provider ports).
 pub type ToolFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
@@ -30,6 +32,20 @@ pub type ToolFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 pub struct ToolContext {
     /// Confined workspace roots; path-bearing tools must not escape these.
     pub workspace_roots: Vec<WorkspaceRoot>,
+    /// VRO-13 hard-denial firewall for shell-class tools (PR-1 core,
+    /// PR-2 wiring). `None` is the structural off-path: `AGENT_VESPER_FIREWALL=off`
+    /// leaves this empty and `RunCommand` never invokes a scan — the
+    /// executor path is byte-identical to the pre-VRO-13 path. `Some` means
+    /// every shell command is normalized and matched before `run_bounded`.
+    pub firewall: Option<Arc<vesper_policy::firewall::CommandFirewall>>,
+    /// VRO-13 PR-4: scope-demanded sandbox route for shell-class tools.
+    /// `None` (the default) is the structural off-path: `RunCommand` runs
+    /// `run_bounded` exactly as before, byte-identical to PR-3 behavior.
+    /// `Some` carries the isolation demand (resolved from
+    /// `.agent-vesper/config.toml` `[sandbox]` or a tool-level demand) plus
+    /// the backend factory; the executor consults `vesper-security`'s
+    /// fail-closed capability check before provisioning.
+    pub sandbox: Option<Arc<SandboxRoute>>,
     /// Active session operating mode (gates tool eligibility upstream).
     pub operating_mode: SessionOperatingMode,
     /// Active permission mode (gates destructive tools upstream).
@@ -132,6 +148,14 @@ pub enum ToolError {
     /// A provider-agnostic executor failure (e.g. path escape in Phase 4).
     #[error("tool execution failed: {0}")]
     Failed(String),
+    /// VRO-13 hard denial: the command firewall rejected the command before
+    /// the shell was consulted. This is NOT a permission decision — it
+    /// outranks every permission mode, including bypass. The Display text is
+    /// a stable contract: the agent loop maps it to the model-visible
+    /// observation `tool error: [VRO-13 Firewall] denied: ...`, which the
+    /// VRO-12 loop detector classifies as failure, never success.
+    #[error("[VRO-13 Firewall] denied: {0}")]
+    FirewallDenial(String),
 }
 
 impl ToolError {
@@ -232,6 +256,8 @@ pub fn uncancellable_context(
         permission_mode,
         conversation: Vec::new(),
         cancellation: Arc::new(NeverCancelled),
+        firewall: None,
+        sandbox: None,
     }
 }
 

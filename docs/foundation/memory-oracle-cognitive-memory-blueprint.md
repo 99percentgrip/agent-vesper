@@ -1,8 +1,8 @@
-# mem0 Cognitive Memory — Local Reconnaissance & Rust Blueprint
+# Memory Oracle Cognitive Memory — Local Reconnaissance & Rust Blueprint
 
 Status: COMPLETE.
 
-Source oracle inspected: `/home/alex/Projects/mem0/` — git pin
+Memory oracle inspected: `/home/Alex/Projects/memory-oracle/` — git pin
 `29fa41558cf33263ec961dd9c6ff4245182466ef` ("April 2026 new algorithm" release).
 Target host crate: new sibling `crates/vesper-cognition` (see ADR 0015).
 Companion evidence: [`sqlite-fts5-spike.md`](sqlite-fts5-spike.md) (rusqlite
@@ -36,7 +36,7 @@ of this file records only what ADR 0015 needs to cite as evidence.
 
 ## 1. V3 algorithm — confirmed facts
 
-- **Categories** (`mem0/configs/enums.py:3`): `SEMANTIC`, `EPISODIC`,
+- **Categories** (`configs/enums.py:3`): `SEMANTIC`, `EPISODIC`,
   `PROCEDURAL`. Only `PROCEDURAL` is special-cased in code
   (`_create_procedural_memory`, `memory/main.py:1949`). The other two are enum
   values with no code path in V3 OSS — there is no `category` column on a
@@ -110,14 +110,14 @@ vector-store payload. SQLite stores only the audit log + rolling context.
 | Memory→memory `linked_memory_ids` | Emitted by LLM, not persisted | Skip persistence | Full (matches OSS). |
 | 25 vector-store backends | Qdrant/Chroma/PGVector/… | SQLite-only | Intentional scope reduction (Vesper: no external services in foundation). |
 
-## 5. Default configuration (`mem0/configs/base.py:29`)
+## 5. Default configuration (`configs/base.py:29`)
 
 | Knob | Default |
 |---|---|
 | `vector_store.provider` | `qdrant` (Vesper: SQLite) |
 | `embedder.provider` / model / dims | `openai` / `text-embedding-3-small` / 1536 (Vesper: configurable; Zai default 1024) |
 | `llm.provider` | `openai` (Vesper: provider-routed trait) |
-| `history_db_path` | `$HOME/.mem0/history.db` |
+| `history_db_path` | `$HOME/.memory-oracle/history.db` |
 | Rolling message window | 10 per session_scope |
 | Existing-memory top-k for extraction | 10 |
 | BM25 internal_limit | `max(top_k*4, 60)` |
@@ -131,24 +131,24 @@ vector-store payload. SQLite stores only the audit log + rolling context.
 | Topic | Source |
 |---|---|
 | V3 algorithm overview | `README.md` "New Memory Algorithm (April 2026)" |
-| MemoryType enum | `mem0/configs/enums.py:3` |
-| ADDITIVE_EXTRACTION_PROMPT | `mem0/configs/prompts.py:468-945` |
-| AGENT_CONTEXT_SUFFIX | `mem0/configs/prompts.py:947` |
-| `generate_additive_extraction_prompt` | `mem0/configs/prompts.py:1016` |
-| DEFAULT_UPDATE_MEMORY_PROMPT (V2, dead) | `mem0/configs/prompts.py:176` |
-| PROCEDURAL_MEMORY_SYSTEM_PROMPT | `mem0/configs/prompts.py:326` |
-| V3 8-phase add pipeline | `mem0/memory/main.py:849-1178` |
-| UUID→integer anti-hallucination | `mem0/memory/main.py:917-921` |
-| MD5 hash dedup | `mem0/memory/main.py:1041-1059` |
-| Batch entity linking | `mem0/memory/main.py:1083-1170` |
-| `search()` public API | `mem0/memory/main.py:1349-1494` |
-| `_search_vector_store` hybrid pipeline | `mem0/memory/main.py:1598-1703` |
-| `_compute_entity_boosts` | `mem0/memory/main.py:1703-1784` |
-| `score_and_rank` / `normalize_bm25` / `get_bm25_params` | `mem0/utils/scoring.py` |
-| `lemmatize_for_bm25` (spaCy) | `mem0/utils/lemmatization.py` |
-| `extract_entities` / `extract_entities_batch` | `mem0/utils/entity_extraction.py:751, 761` |
-| ENTITY_BOOST_WEIGHT = 0.5 | `mem0/utils/scoring.py:60` |
-| SQLiteManager schema | `mem0/memory/storage.py` |
-| VectorStoreBase / EmbeddingBase interfaces | `mem0/vector_stores/base.py`, `mem0/embeddings/base.py` |
-| `_build_filters_and_metadata` / `_build_session_scope` | `mem0/memory/main.py:301, 387` |
-| Default Qdrant BM25 sparse-vector impl | `mem0/vector_stores/qdrant.py:86-121` |
+| MemoryType enum | `configs/enums.py:3` |
+| ADDITIVE_EXTRACTION_PROMPT | `configs/prompts.py:468-945` |
+| AGENT_CONTEXT_SUFFIX | `configs/prompts.py:947` |
+| `generate_additive_extraction_prompt` | `configs/prompts.py:1016` |
+| DEFAULT_UPDATE_MEMORY_PROMPT (V2, dead) | `configs/prompts.py:176` |
+| PROCEDURAL_MEMORY_SYSTEM_PROMPT | `configs/prompts.py:326` |
+| V3 8-phase add pipeline | `memory/main.py:849-1178` |
+| UUID→integer anti-hallucination | `memory/main.py:917-921` |
+| MD5 hash dedup | `memory/main.py:1041-1059` |
+| Batch entity linking | `memory/main.py:1083-1170` |
+| `search()` public API | `memory/main.py:1349-1494` |
+| `_search_vector_store` hybrid pipeline | `memory/main.py:1598-1703` |
+| `_compute_entity_boosts` | `memory/main.py:1703-1784` |
+| `score_and_rank` / `normalize_bm25` / `get_bm25_params` | `utils/scoring.py` |
+| `lemmatize_for_bm25` (spaCy) | `utils/lemmatization.py` |
+| `extract_entities` / `extract_entities_batch` | `utils/entity_extraction.py:751, 761` |
+| ENTITY_BOOST_WEIGHT = 0.5 | `utils/scoring.py:60` |
+| SQLiteManager schema | `memory/storage.py` |
+| VectorStoreBase / EmbeddingBase interfaces | `vector_stores/base.py`, `embeddings/base.py` |
+| `_build_filters_and_metadata` / `_build_session_scope` | `memory/main.py:301, 387` |
+| Default Qdrant BM25 sparse-vector impl | `vector_stores/qdrant.py:86-121` |

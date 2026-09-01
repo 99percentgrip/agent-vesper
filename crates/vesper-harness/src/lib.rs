@@ -1,6 +1,8 @@
 #![forbid(unsafe_code)]
 //! Shared hosted tool services for the production ACP and TUI compositions.
 
+pub mod sandbox_backend;
+
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};

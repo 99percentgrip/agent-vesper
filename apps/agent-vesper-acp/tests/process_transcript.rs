@@ -146,8 +146,9 @@ fn stdio_transcript_reaches_real_glm_adapter_with_protocol_pure_stdout() {
         advertisement["params"]["update"]["availableCommands"]
             .as_array()
             .map(|commands| commands.len()),
-        Some(40),
-        "the post-response advertisement carries frozen plus host-parity commands"
+        Some(42),
+        "the post-response advertisement carries frozen plus host-parity commands \
+         (28 frozen + 14 host-parity, including /sandbox)"
     );
 
     send(
@@ -377,7 +378,7 @@ fn empty_prompt_and_slash_commands_never_dispatch_provider() {
             break;
         }
     }
-    // The production composition appends 12 implemented host-parity commands
+    // The production composition appends 13 implemented host-parity commands
     // after the 28 frozen entries and advertises the combined catalog once.
     assert_eq!(
         advertisements.len(),
@@ -390,8 +391,11 @@ fn empty_prompt_and_slash_commands_never_dispatch_provider() {
         .iter()
         .map(|command| command["name"].as_str().unwrap())
         .collect();
-    assert_eq!(advertised.len(), 40);
-    assert_eq!(advertised_first_and_last(&advertised), ("help", "journey"));
+    // 28 frozen oracle entries + 14 host-parity extensions (VRO-13 PR-4:
+    // /sandbox). The catalog is advertised once, in order, first help →
+    // last sandbox.
+    assert_eq!(advertised.len(), 42);
+    assert_eq!(advertised_first_and_last(&advertised), ("help", "sandbox"));
     send(
         &mut stdin,
         json!({"jsonrpc":"2.0","id":3,"method":"session/prompt","params":{"sessionId":session,"prompt":[],"_meta":{"userMessageId":"empty-message"}}}),

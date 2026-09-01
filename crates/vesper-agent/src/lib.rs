@@ -29,12 +29,14 @@ pub mod project_context;
 pub mod providers;
 pub mod references;
 pub mod registry;
+pub mod sandbox_route;
 pub mod tools;
 pub mod vro;
 
 pub use agent_loop::{
-    AgentLoop, AgentLoopConfig, AgentLoopError, AgentProgressEvent, AgentProgressPort,
-    AgentTurnOutcome, DEFAULT_MAX_TOOL_ITERATIONS, MAX_CONTEXT_MESSAGES,
+    ABSOLUTE_MAX_TOOL_ITERATIONS, AgentLoop, AgentLoopConfig, AgentLoopError, AgentProgressEvent,
+    AgentProgressPort, AgentTurnOutcome, DEFAULT_MAX_TOOL_ITERATIONS,
+    ENABLED_DEFAULT_MAX_TOOL_ITERATIONS, MAX_CONTEXT_MESSAGES,
 };
 pub use executor::{
     HostedTool, ToolContext, ToolError, ToolExecutor, ToolFuture, ToolResult, ToolService,
@@ -50,4 +52,7 @@ pub use references::{
     ReferenceError, expand_references,
 };
 pub use registry::ToolRegistry;
+// VRO-13 PR-4: the sandbox port names this type; harness adapters use the
+// re-export instead of a direct vesper-provider dependency.
+pub use vesper_provider::CancellationSignal;
 pub use vro::{TaskProfiler, VroOrchestrator, VroRoutingDecision};

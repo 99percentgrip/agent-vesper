@@ -1,6 +1,9 @@
 #![forbid(unsafe_code)]
 //! Pure policy and permission decisions. Transport/UI approval lives elsewhere.
 
+/// VRO-13 PR-1 — hard-denial firewall over shell command text.
+pub mod firewall;
+
 use serde::{Deserialize, Serialize};
 use vesper_domain::{SessionOperatingMode, SessionPermissionMode};
 use vesper_security::{IsolationRequirement, SandboxCapabilities};

@@ -1,0 +1,28 @@
+[package]
+name = "vesper-sandbox"
+description = "Opt-in OS sandbox backends with honest capability reporting for Agent Vesper"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+vesper-security = { path = "../vesper-security", version = "=0.20.78" }
+
+[dev-dependencies]
+tokio.workspace = true
+
+[features]
+# VRO-13 PR-4: Docker backend. Opt-in only; zero new mandatory dependencies
+# for default builds (the docker CLI is orchestrated through std::process).
+docker = []
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# Raw-syscall surface for the sandbox_init supervisor binary only (ADR 0022).
+# The library itself stays 100% safe code.
+libc = { version = "0.2", default-features = false }
+
+[lints]
+workspace = true

@@ -89,6 +89,7 @@ dependencies = [
  "vesper-config",
  "vesper-domain",
  "vesper-harness",
+ "vesper-policy",
  "vesper-provider",
  "vesper-provider-glm",
  "vesper-provider-synthetic",
@@ -128,6 +129,7 @@ dependencies = [
  "vesper-mcp",
  "vesper-memory",
  "vesper-observability",
+ "vesper-policy",
  "vesper-provider",
  "vesper-provider-glm",
  "vesper-provider-synthetic",
@@ -3942,8 +3944,10 @@ dependencies = [
  "tracing",
  "uuid",
  "vesper-domain",
+ "vesper-policy",
  "vesper-provider",
  "vesper-runtime",
+ "vesper-security",
  "vesper-testkit",
 ]
 
@@ -3997,6 +4001,7 @@ version = "0.20.78"
 dependencies = [
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror",
  "vesper-domain",
  "vesper-security",
@@ -4015,6 +4020,7 @@ dependencies = [
 name = "vesper-harness"
 version = "0.20.78"
 dependencies = [
+ "futures-util",
  "regex",
  "serde_json",
  "sha2 0.11.0",
@@ -4022,10 +4028,12 @@ dependencies = [
  "tokio",
  "vesper-agent",
  "vesper-checkpoints",
+ "vesper-config",
  "vesper-domain",
  "vesper-mcp",
  "vesper-memory",
  "vesper-runtime",
+ "vesper-sandbox",
  "vesper-sessions",
 ]
 
@@ -4071,6 +4079,7 @@ dependencies = [
 name = "vesper-policy"
 version = "0.20.78"
 dependencies = [
+ "regex",
  "serde",
  "vesper-domain",
  "vesper-security",
@@ -4135,6 +4144,15 @@ dependencies = [
  "vesper-provider",
  "vesper-sessions",
  "vesper-testkit",
+]
+
+[[package]]
+name = "vesper-sandbox"
+version = "0.20.78"
+dependencies = [
+ "libc",
+ "tokio",
+ "vesper-security",
 ]
 
 [[package]]

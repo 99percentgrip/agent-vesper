@@ -1181,6 +1181,16 @@ fn allowed_dependencies() -> BTreeMap<&'static str, BTreeSet<&'static str>> {
             BTreeSet::from(["vesper-domain", "vesper-security"]),
         ),
         (
+            // ADR 0022 (VRO-13 PR-3): Linux namespaces sandbox backend. The
+            // library is entirely safe code (traits, specs, probing, process
+            // orchestration via std::process); the only unsafe in the crate
+            // lives in the `sandbox_init` supervisor binary, which performs
+            // raw namespace/mount syscalls before exec. Per-crate exception
+            // enforced by scan_production_sources' sandbox-safety gate.
+            "vesper-sandbox",
+            BTreeSet::from(["vesper-security"]),
+        ),
+        (
             "vesper-testkit",
             BTreeSet::from([
                 "vesper-domain",
@@ -1226,27 +1236,36 @@ fn allowed_dependencies() -> BTreeMap<&'static str, BTreeSet<&'static str>> {
             // ADR 0010 (Tier C): the agent loop composes the runtime's
             // single-turn provider dispatch. Phase 1/2 stubs need domain +
             // provider types and the runtime registry; Phase 4 adds policy +
-            // security when real executors arrive.
+            // security when real executors arrive. PR-2/PR-3: the executor
+            // consults the firewall (vesper-policy) and the sandbox caps
+            // (vesper-security) before spawning.
             "vesper-agent",
             BTreeSet::from([
                 "vesper-domain",
                 "vesper-provider",
                 "vesper-runtime",
                 "vesper-testkit",
+                "vesper-policy",
+                "vesper-security",
             ]),
         ),
         (
             // Shared hosted services keep ACP and TUI on one Python-oracle
             // tool implementation while leaving protocol/provider concerns
-            // at their composition boundaries.
+            // at their composition boundaries. PR-4 adds the sandbox port
+            // adapter: harness owns the concrete backend (vesper-sandbox)
+            // and the config reader (vesper-config) behind the agent's
+            // SandboxBackendPort, so neither host touches the backend type.
             "vesper-harness",
             BTreeSet::from([
                 "vesper-agent",
                 "vesper-checkpoints",
+                "vesper-config",
                 "vesper-domain",
                 "vesper-mcp",
                 "vesper-memory",
                 "vesper-runtime",
+                "vesper-sandbox",
                 "vesper-sessions",
             ]),
         ),
@@ -1259,6 +1278,7 @@ fn allowed_dependencies() -> BTreeMap<&'static str, BTreeSet<&'static str>> {
                 "vesper-config",
                 "vesper-domain",
                 "vesper-harness",
+                "vesper-policy",
                 "vesper-provider",
                 "vesper-provider-glm",
                 "vesper-provider-synthetic",
@@ -1283,6 +1303,7 @@ fn allowed_dependencies() -> BTreeMap<&'static str, BTreeSet<&'static str>> {
                 "vesper-mcp",
                 "vesper-memory",
                 "vesper-observability",
+                "vesper-policy",
                 "vesper-provider",
                 "vesper-provider-glm",
                 "vesper-provider-synthetic",
@@ -1327,6 +1348,32 @@ fn scan_production_sources(root: &Path) -> Result<(), String> {
                     "foundational Rust source tree {} does not inherit a crate-level unsafe ban",
                     file.display()
                 ));
+            }
+            // ADR 0022 (VRO-13 PR-3): the sandbox supervisor binary is the
+            // one production unit that must perform raw syscalls (unshare,
+            // setgroups/setuid/setgid map writes, mount, pivot_root, execvp)
+            // before any libc runtime state exists. Enforce its safety
+            // discipline instead of the blanket lib-level ban: every unsafe
+            // op must sit in an explicit unsafe block, and the file must
+            // carry the ADR 0022 safety contract marker.
+            if crate_path.file_name().and_then(|name| name.to_str()) == Some("vesper-sandbox")
+                && matches!(
+                    file.file_name().and_then(|value| value.to_str()),
+                    Some("sandbox_init.rs")
+                )
+            {
+                if !source.contains("#![deny(unsafe_op_in_unsafe_fn)]") {
+                    return Err(format!(
+                        "sandbox supervisor {} must deny unsafe_op_in_unsafe_fn (ADR 0022)",
+                        file.display()
+                    ));
+                }
+                if !source.contains("ADR-0022") {
+                    return Err(format!(
+                        "sandbox supervisor {} must cite ADR-0022 safety contract",
+                        file.display()
+                    ));
+                }
             }
             let crate_name = crate_path.file_name().and_then(|name| name.to_str());
             let forbidden: &[&str] = if crate_name == Some("vesper-provider-glm") {

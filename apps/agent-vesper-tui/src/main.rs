@@ -100,6 +100,16 @@ type Backend = CrosstermBackend<io::Stdout>;
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
+    // VRO-13 PR-2: resolve AGENT_VESPER_FIREWALL once at boot. First
+    // resolution wins; the resulting Arc is shared by the TUI session and
+    // (via the same process global) any nested loop it spawns. `off`
+    // leaves `shared()` as None → executors never scan (legacy path).
+    let _firewall_state = vesper_policy::firewall::holder::install_from_env();
+    // VRO-13 PR-4: resolve the process-global sandbox route once at boot,
+    // mirroring the firewall holder. `AGENT_VESPER_SANDBOX=docker|off` plus
+    // the scope `[sandbox]` demand from `.agent-vesper/config.toml`; with no
+    // demand the holder stays `None` → the executor keeps the legacy path.
+    let _sandbox_route = vesper_harness::sandbox_backend::holder::install_from_env();
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args
         .iter()
@@ -2726,11 +2736,16 @@ fn session_setting_candidates(
             ("code".to_string(), "Code / act — full tool surface".into()),
         ],
         "/max-iterations" => vec![
+            (
+                "disable".to_string(),
+                "Disable the user-configurable cap (default)".into(),
+            ),
+            ("enable".to_string(), "Enable the cap at 50".into()),
             ("10".to_string(), "Short bounded run".into()),
             ("25".to_string(), "Medium bounded run".into()),
-            ("50".to_string(), "Oracle default".into()),
+            ("50".to_string(), "Default enabled cap".into()),
             ("100".to_string(), "Long bounded run".into()),
-            ("200".to_string(), "Maximum accepted cap".into()),
+            ("1000".to_string(), "Maximum configurable cap".into()),
         ],
         "/generation" => {
             let labels = advertised_policy_labels(
@@ -4413,6 +4428,13 @@ fn build_agent_config(provider_id: &ProviderId) -> Result<AgentLoopConfig, Strin
         // The executors confine every read/write/run under it.
         workspace_roots: vec![primary_workspace_root()],
         max_tool_iterations: DEFAULT_MAX_TOOL_ITERATIONS,
+        // VRO-13 PR-2: process-global firewall resolved once at boot.
+        // VRO-13 PR-2: shared process-global firewall (same holder the ACP
+        // host resolves; `off` keeps this `None` → legacy hot path).
+        firewall: vesper_policy::firewall::holder::shared(),
+        // VRO-13 PR-4: process-global sandbox route, same holder contract
+        // as the firewall. `None` = no scope demand → legacy path.
+        sandbox: vesper_harness::sandbox_backend::holder::shared(),
     })
 }
 
@@ -4567,6 +4589,7 @@ fn spawn_agent_turn(
         .as_ref()
         .clone()
         .with_turn_configuration(config)
+        .with_active_plan(retained_task_plan_markdown(&session.state.task_plan))
         .with_capability_advisor(
             capability_advisor_for(surface.provider_id(), &session.capabilities),
             vesper_provider::CapabilityContext {
@@ -4685,6 +4708,28 @@ fn spawn_agent_turn(
     session.pending_images.clear();
     session.state.status = Some("WORKING... (agent loop running)".into());
     Ok(())
+}
+
+fn retained_task_plan_markdown(tasks: &[agent_vesper_tui::dispatch::TaskItem]) -> Option<String> {
+    if tasks.is_empty() {
+        return None;
+    }
+    let mut markdown = String::from("# Plan\n\n");
+    for (index, task) in tasks.iter().enumerate() {
+        let marker = match task.status.as_str() {
+            "completed" => "[x]",
+            "in_progress" => "[~]",
+            _ => "[ ]",
+        };
+        markdown.push_str(&format!(
+            "{marker} #{} ({}/{}) {}\n",
+            index + 1,
+            task.status,
+            task.priority,
+            task.content
+        ));
+    }
+    Some(markdown)
 }
 
 /// Spawns one submitted prompt/workflow turn (direct loop, VRO orchestrate,

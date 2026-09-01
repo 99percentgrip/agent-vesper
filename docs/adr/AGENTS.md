@@ -40,6 +40,10 @@ Own accepted, durable architecture and compatibility decisions for Agent Vesper.
 - ADR 0021 composes independent project and global cognitive-memory stores in
   the TUI, with conservative smart routing, explicit overrides, visible scope
   confirmation, lifecycle moves, and a two-scope audit surface.
+- ADR 0022 (VRO-13 PR-3) introduces `vesper-sandbox`: the library is 100% safe
+  code; all namespace/mount/fork/`execve` raw syscalls live only in the
+  `sandbox_init` supervisor binary, and every capability is probed and
+  reported honestly, never assumed.
 
 ## Verification
 

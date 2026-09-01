@@ -798,7 +798,7 @@ impl CognitiveStore {
             )
             .optional()?;
 
-        // Phase 2: semantic dedup (cosine >= 0.95). Mirrors mem0's
+        // Phase 2: semantic dedup (cosine >= 0.95). Mirrors the oracle's
         // `_upsert_entity` semantic_match check. Scans in-scope entities
         // and finds the closest by cosine similarity.
         let semantic_id: Option<String> = if exact_id.is_none() {

@@ -93,6 +93,13 @@ where
             system_instructions: Vec::new(),
             workspace_roots: Vec::new(),
             max_tool_iterations: vesper_agent::DEFAULT_MAX_TOOL_ITERATIONS,
+            // VRO-13 PR-2: the process-global firewall, resolved once at
+            // host boot. `None` = structurally identical legacy path.
+            firewall: vesper_policy::firewall::holder::shared(),
+            // VRO-13 PR-4: the process-global sandbox route, resolved once
+            // at host boot from AGENT_VESPER_SANDBOX + [sandbox] scope
+            // demand. `None` = no scope demand, byte-identical legacy path.
+            sandbox: vesper_harness::sandbox_backend::holder::shared(),
         };
         let worker_factory = Arc::new(WorkerFactory::new(
             Arc::clone(&providers),
@@ -402,6 +409,7 @@ impl AcpHarnessEngine {
             hosted.build_default_registry(),
             config,
         )
+        .with_active_plan(self.active_plan(&request.session_id))
         .with_permission_port(permission_port)
         .with_progress_port(Arc::new(AcpEngineProgressPort {
             sink: request.event_sink.clone(),
@@ -729,6 +737,7 @@ impl AcpHarnessEngine {
             hosted.build_default_registry(),
             config,
         )
+        .with_active_plan(self.active_plan(&request.session_id))
         .with_permission_port(permission_port)
         .with_capability_advisor(capability_advisor, capability_context)
         .with_progress_port(Arc::new(AcpEngineProgressPort {
@@ -850,6 +859,67 @@ impl AcpHarnessEngine {
                     .await;
                 return slash_result(body);
             }
+            // VRO-13: `/firewall` is host-parity (not in the frozen 28), so
+            // it must be answered here before the domain-catalog fallthrough.
+            // View-only: the firewall state is process-global and immutable
+            // after boot (first-resolution-wins holder); changing it requires
+            // a restart with a different `AGENT_VESPER_FIREWALL`, which this
+            // text states truthfully instead of faking a toggle.
+            if lowered == "firewall" {
+                let body = vesper_policy::firewall::holder::shared()
+                    .as_ref()
+                    .map_or_else(
+                        || {
+                            "firewall: disabled (process-global; enable with \
+                             AGENT_VESPER_FIREWALL=on and restart)"
+                                .to_owned()
+                        },
+                        |_| {
+                            "firewall: enabled — hard-denial rules active for \
+                             run_command (deny > every permission mode; \
+                             disable with AGENT_VESPER_FIREWALL=off and restart)"
+                                .to_owned()
+                        },
+                    );
+                return slash_result(body);
+            }
+            // VRO-13 PR-4: `/sandbox` mirrors the TUI's host-parity panel.
+            // View-only textually (the route is process-global and immutable
+            // after boot, exactly like the firewall), but `on`/`off` are
+            // honored in the sense the route supports: `off` requires a
+            // restart with AGENT_VESPER_SANDBOX=off, and `on` with no
+            // [sandbox] scope demand is a no-op (nothing to route).
+            if lowered == "sandbox" {
+                let route = vesper_harness::sandbox_backend::holder::shared();
+                let body = match raw_argument.trim().to_ascii_lowercase().as_str() {
+                    "on" => "sandbox: route is boot-resolved; set [sandbox] in \
+                             .agent-vesper/config.toml and restart"
+                        .to_owned(),
+                    "off" => "sandbox: off requires a restart with \
+                             AGENT_VESPER_SANDBOX=off"
+                        .to_owned(),
+                    _ => route.as_ref().map_or_else(
+                        || {
+                            "sandbox: no active route (no [sandbox] scope \
+                             demand; run_command runs unsandboxed; add \
+                             [sandbox] to .agent-vesper/config.toml and \
+                             restart to demand isolation)"
+                                .to_owned()
+                        },
+                        |route| {
+                            let caps = route.capabilities();
+                            format!(
+                                "sandbox: active (backend {:?}, demand {:?}; \
+                                 route instance {:#x})",
+                                caps.backend,
+                                route.demand().requirement,
+                                vesper_harness::sandbox_backend::holder::route_id()
+                            )
+                        },
+                    ),
+                };
+                return slash_result(body);
+            }
             if let Some(body) = self.hosted.stores().parity_report(lowered.as_str()) {
                 return slash_result(body);
             }
@@ -874,6 +944,13 @@ impl AcpHarnessEngine {
                 .unwrap_or("default")
                 .to_owned()
         };
+        let max_tool_iterations = self
+            .overrides
+            .lock()
+            .await
+            .get(&request.session_id)
+            .and_then(|overrides| overrides.max_tool_iterations)
+            .unwrap_or(self.config.max_tool_iterations);
         let context = SlashCommandContext {
             stores: Some(&stores),
             model: request
@@ -893,6 +970,7 @@ impl AcpHarnessEngine {
             visible_messages,
             context_window: 0,
             tokens_used: 0,
+            max_tool_iterations,
         };
         match execute_slash_command(name, argument, &context) {
             SlashCommandOutcome::Text(body) => slash_result(body),
@@ -1111,6 +1189,13 @@ impl AcpHarnessEngine {
 
     fn plans_shared(&self) -> Arc<std::sync::Mutex<BTreeMap<vesper_domain::SessionId, String>>> {
         Arc::clone(&self.plans)
+    }
+
+    fn active_plan(&self, session_id: &vesper_domain::SessionId) -> Option<String> {
+        self.plans
+            .lock()
+            .ok()
+            .and_then(|plans| plans.get(session_id).cloned())
     }
 }
 
@@ -2067,6 +2152,13 @@ pub async fn run_multi_provider(initial: &str) -> Result<(), ()> {
             system_instructions: Vec::new(),
             workspace_roots: Vec::new(),
             max_tool_iterations: vesper_agent::DEFAULT_MAX_TOOL_ITERATIONS,
+            // VRO-13 PR-2: the process-global firewall, resolved once at
+            // host boot. `None` = structurally identical legacy path.
+            firewall: vesper_policy::firewall::holder::shared(),
+            // VRO-13 PR-4: the process-global sandbox route, resolved once
+            // at host boot from AGENT_VESPER_SANDBOX + [sandbox] scope
+            // demand. `None` = no scope demand, byte-identical legacy path.
+            sandbox: vesper_harness::sandbox_backend::holder::shared(),
         };
         let worker_factory = Arc::new(WorkerFactory::new(
             Arc::clone(&providers),
@@ -2487,6 +2579,10 @@ mod tests {
             permission_mode: vesper_domain::SessionPermissionMode::Ask,
             conversation: Vec::new(),
             cancellation: Arc::new(RuntimeCancellation::new()),
+            // VRO-13: the permission gate is firewall/sandbox-independent;
+            // `None` matches the pre-VRO-13 behavior this test pins.
+            firewall: None,
+            sandbox: None,
         };
         assert_eq!(
             vesper_agent::PermissionPort::authorize(&port, &call, &definition, &context).await,

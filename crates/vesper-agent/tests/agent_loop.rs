@@ -146,6 +146,10 @@ fn config(provider_id: &ProviderId, max_iterations: u32) -> AgentLoopConfig {
         system_instructions: Vec::new(),
         workspace_roots: Vec::new(),
         max_tool_iterations: max_iterations,
+        // VRO-13: tests exercise the legacy off-path (no process-global
+        // firewall or sandbox route installed in the test binary).
+        firewall: None,
+        sandbox: None,
     }
 }
 
@@ -376,6 +380,71 @@ async fn normal_stop_with_open_plan_continues_until_plan_is_completed() {
             )
         })
     }));
+}
+
+#[tokio::test]
+async fn normal_stop_with_host_retained_open_plan_continues_before_any_plan_tool_call() {
+    let provider_id = provider();
+    let fake = FakeProviderSession::with_scripts([
+        Ok(vec![
+            Ok(content_delta("Acknowledged, resuming now.")),
+            Ok(completed(FinishOutcome::Stop)),
+        ]),
+        Ok(vec![
+            Ok(ProviderStreamEvent::ToolCallCompleted(update_plan_call(
+                "plan-done",
+                "completed",
+            ))),
+            Ok(completed(FinishOutcome::ToolCalls)),
+        ]),
+        Ok(vec![
+            Ok(content_delta("Implementation and verification complete.")),
+            Ok(completed(FinishOutcome::Stop)),
+        ]),
+    ]);
+    let requests = fake.clone();
+    let registry = Arc::new(ProviderRegistry::new());
+    registry
+        .register(FakeFactory {
+            id: provider_id.clone(),
+            session: fake,
+        })
+        .await
+        .unwrap();
+
+    let root = tempfile::tempdir().unwrap();
+    let mut agent_config = config(&provider_id, 4);
+    agent_config.workspace_roots = vec![vesper_domain::WorkspaceRoot {
+        name: BoundedString::new("workspace").unwrap(),
+        path: BoundedString::new(root.path().to_string_lossy().to_string()).unwrap(),
+        primary: true,
+    }];
+    let outcome = AgentLoop::new(registry, ToolRegistry::parity_default(), agent_config)
+        .with_active_plan(Some(
+            "# Plan\n\n[~] #1 (in_progress/high) Finish the implementation\n".into(),
+        ))
+        .run_prompt(
+            user_message("continue"),
+            SessionOperatingMode::Code,
+            SessionPermissionMode::Bypass,
+        )
+        .await
+        .expect("a retained open plan must survive the turn boundary");
+
+    assert!(matches!(
+        outcome,
+        AgentTurnOutcome::Completed { assistant_content, .. }
+            if assistant_content.iter().any(|part| matches!(
+                part,
+                ContentPart::Text(text)
+                    if text.as_str() == "Implementation and verification complete."
+            ))
+    ));
+    let captured = requests.requests();
+    assert_eq!(captured.len(), 3);
+    assert!(captured[1].messages.iter().any(|message| message.content.iter().any(
+        |part| matches!(part, ContentPart::Text(text) if text.as_str().contains("active plan still has"))
+    )));
 }
 
 #[tokio::test]
@@ -749,7 +818,8 @@ async fn loop_executes_a_tool_call_then_completes_on_the_next_turn() {
 
 #[tokio::test]
 async fn loop_terminates_when_the_model_calls_no_tools() {
-    // A single turn with no tool calls must complete in one iteration.
+    // A disabled user cap (`0`, the production default) must still execute;
+    // it is not an immediate zero-iteration stop.
     let turn_done: ScriptedProviderResponse = Ok(vec![
         Ok(content_delta("Nothing to do.")),
         Ok(completed(FinishOutcome::Stop)),
@@ -768,7 +838,7 @@ async fn loop_terminates_when_the_model_calls_no_tools() {
     let agent = AgentLoop::new(
         registry,
         ToolRegistry::parity_default(),
-        config(&provider_id, 10),
+        config(&provider_id, 0),
     );
     let outcome = agent
         .run_prompt(
@@ -899,8 +969,9 @@ async fn permission_gate_denies_mutating_tools_in_plan_mode() {
         }
         other => panic!("expected Completed, got {other:?}"),
     }
-    // Sanity: the default cap is 50, matching the oracle's default.
-    assert_eq!(DEFAULT_MAX_TOOL_ITERATIONS, 50);
+    // The optional user cap defaults off; explicit enable restores 50.
+    assert_eq!(DEFAULT_MAX_TOOL_ITERATIONS, 0);
+    assert_eq!(vesper_agent::ENABLED_DEFAULT_MAX_TOOL_ITERATIONS, 50);
     // Silence unused-import warning for MessageRole re-export alias.
     let _ = MessageRole::Assistant;
 }

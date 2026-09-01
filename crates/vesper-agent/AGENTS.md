@@ -60,10 +60,15 @@ the multi-turn, tool-executing layer above it.
   message so hosts cannot display output the engine subsequently forgets. A
   normal `Stop` while the latest native plan
   still contains pending or in-progress tasks triggers a bounded internal
-  continuation turn; the synthetic continuation is removed from returned
-  host history. Reaching an ordinary iteration segment with open items extends
+  continuation turn. Interactive hosts seed their retained active plan into
+  each new loop invocation, so a resume turn cannot lose continuation merely
+  because it stops before calling `update_plan` again; the synthetic
+  continuation is removed from returned host history. Reaching an ordinary iteration segment with open items extends
   autonomously for at most four total segments; the ultimate cap returns the
   unfinished plan explicitly. Unplanned loops retain the single-segment cap. The
+  bounded request-history window must begin on a complete conversation turn;
+  compaction skips leading orphan tool-result messages so strict providers do
+  not reject long tool-heavy sessions as structurally invalid requests. The
   same bounded VRO-12 result-aware loop guard
   used by ReAct also protects this direct path: warnings are fed back through
   tool results, persistent repeats are blocked, and a saturated exact-repeat
@@ -535,8 +540,11 @@ the multi-turn, tool-executing layer above it.
 
 ## Work Guidance
 
-- The loop is bounded by `max_tool_iterations`; an active unfinished native
-  plan may consume at most four such segments without user intervention.
+- The user-configurable `max_tool_iterations` cap is disabled by default
+  (`0`); explicit values bound ordinary turns, while every turn retains the
+  non-configurable 4,000-iteration ultimate safety ceiling. An active
+  unfinished native plan may consume at most four configured segments without
+  user intervention, bounded by that ultimate ceiling.
   Every iteration is exactly one `ProviderSession::start`. Multi-turn conversation state is supplied and
   returned by the host through `run_prompt_with_history`; it never lives in
   provider session state.

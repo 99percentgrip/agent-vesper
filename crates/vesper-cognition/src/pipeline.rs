@@ -1,4 +1,4 @@
-//! V3 pipeline orchestration. Mirrors `mem0/memory/main.py:_add_to_vector_store`
+//! V3 pipeline orchestration. Mirrors `oracle/memory/main.py:_add_to_vector_store`
 //! (8-phase ADD flow), `_search_vector_store` (hybrid retrieval), and the
 //! admin `update`/`delete` paths.
 //!
@@ -36,7 +36,7 @@ pub struct AddRequest<'a> {
     pub extras: Option<&'a BTreeMap<String, Value>>,
     /// Optional `YYYY-MM-DD` expiration; expired rows are hidden from search.
     pub expiration_date: Option<&'a str>,
-    /// `false` → store each message verbatim (mirrors mem0's `infer=False`).
+    /// `false` → store each message verbatim (mirrors the oracle's `infer=False`).
     pub infer: bool,
     /// Optional override for `custom_instructions`.
     pub custom_instructions: Option<&'a str>,
@@ -363,7 +363,7 @@ impl CognitiveMemory {
         }
 
         // === Phase 7: entity linking (per memory) ===
-        // Best-effort; failures are non-fatal (mirrors mem0's swallow-at-warning).
+        // Best-effort; failures are non-fatal (mirrors the oracle's swallow-at-warning).
         for (id, mem, _embedding, _extras) in &records {
             if let Err(err) = self.link_entities_for_memory(id, &mem.text, req.scope) {
                 tracing_warn_entity_link(&err);

@@ -22,7 +22,8 @@ Own durable project documentation and evidence-backed engineering records.
   security, contribution, migration status, and full-harness parity evidence.
 - Root PRD files (`*-prd.md`) own accepted phased requirement documents
   (e.g. `agent-vesper-reasoning-orchestrator-prd.md`,
-  `provider-capability-gating-prd.md`); implementation evidence for their
+  `provider-capability-gating-prd.md`,
+  `qm-extraction-prd.md`); implementation evidence for their
   phases lands in the owning stage/foundation/adapter directories.
 
 ## Local Contracts

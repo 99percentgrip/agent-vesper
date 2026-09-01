@@ -30,7 +30,11 @@ update mapping, and bounded asynchronous dispatch into `vesper-runtime`.
   so rejecting them made the agent unloadable with `-32602`. The harness MCP
   registry remains the sole MCP source; no client server is launched.
 - Slash-command parity (ADR 0010 Tier C): `available_commands_update`
-  advertises the 28-command `vesper-domain` catalog exactly once for
+  advertises the frozen 28-command `vesper-domain` catalog **plus the shared
+  host-neutral extension catalog** (`HOST_PARITY_SLASH_COMMANDS`, currently
+  13 commands — 41 total; the count is asserted in
+  `adapter::command_catalog_tests::frozen_catalog_stays_exact_and_extensions_append`)
+  exactly once for
   `session/new`, `session/load`, and `session/resume`; `fork` advertises
   nothing (fixtures/acp/fork-session parity). On `session/new` the
   notification is sent only AFTER the response — clients such as Zed
@@ -83,7 +87,13 @@ update mapping, and bounded asynchronous dispatch into `vesper-runtime`.
 - `AcpPromptEngine` is an optional composition port. When injected, prompt
   requests route through a host's bounded multi-turn `vesper-agent` loop and
   are published with ACP backpressure. Cancellation notifications are routed
-  to the injected engine as well. The adapter supplies a bounded
+  to the injected engine as well. Editors may precede a concurrent-safe slash
+  prompt with `session/cancel`; the bounded grace path suppresses that cancel,
+  and per-session in-flight counts ensure completion of the slash response
+  cannot erase the still-running implementation turn. Every advertised command
+  is exhaustively classified as always concurrent, argument-dependent, or
+  interrupting, so read-only subcommands remain usable during live work while
+  state-colliding forms interrupt. The adapter supplies a bounded
   `session/request_permission` bridge to injected engines; cancellation
   resolves any pending approval and the engine must fail closed on rejection
   or a missing bridge. Without an injected engine, the runtime single-turn

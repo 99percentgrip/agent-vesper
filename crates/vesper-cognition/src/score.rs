@@ -1,6 +1,6 @@
-//! Hybrid scoring. Verbatim port of `mem0/utils/scoring.py:score_and_rank`
+//! Hybrid scoring. Verbatim port of `oracle/utils/scoring.py:score_and_rank`
 //! plus the cosine-similarity and entity-boost math from
-//! `mem0/memory/main.py:_compute_entity_boosts`.
+//! `oracle/memory/main.py:_compute_entity_boosts`.
 //!
 //! Final formula (oracle V3):
 //! ```text
@@ -60,7 +60,7 @@ pub(crate) struct ScoredCandidate {
 }
 
 /// Score and rank candidates additively, returning top-k `MemoryHit`s.
-/// Mirrors `mem0/utils/scoring.py:score_and_rank`.
+/// Mirrors `oracle/utils/scoring.py:score_and_rank`.
 ///
 /// Threshold gates `semantic_score` BEFORE combining: a candidate below
 /// threshold is excluded even if BM25/entity would boost it.
@@ -166,7 +166,7 @@ pub(crate) fn score_and_rank(
         .collect()
 }
 
-/// Entity-boost math from `mem0/memory/main.py:_compute_entity_boosts`.
+/// Entity-boost math from `oracle/memory/main.py:_compute_entity_boosts`.
 ///
 /// `boost = similarity * ENTITY_BOOST_WEIGHT * memory_count_weight` where
 /// `memory_count_weight = 1/(1+0.001*(num_linked-1)^2)`. Bounded to

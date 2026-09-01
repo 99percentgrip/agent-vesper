@@ -1,7 +1,7 @@
 //! NLP fallback layer.
 //!
-//! Substitutes for mem0's spaCy (`mem0/utils/lemmatization.py`,
-//! `mem0/utils/entity_extraction.py`). Faithful V3 quality requires spaCy;
+//! Substitutes for the oracle's spaCy (`oracle/utils/lemmatization.py`,
+//! `oracle/utils/entity_extraction.py`). Faithful V3 quality requires spaCy;
 //! this module provides the Snowball + regex fallback ratified by ADR 0015.
 //!
 //! Two public capabilities:
@@ -42,7 +42,7 @@ const STOPWORDS: &[&str] = &[
 
 /// Snowball-stem token list for FTS5 BM25 indexing and querying.
 ///
-/// Mirrors `mem0/utils/lemmatization.py:lemmatize_for_bm25` shape: lowercases,
+/// Mirrors `oracle/utils/lemmatization.py:lemmatize_for_bm25` shape: lowercases,
 /// drops stopwords and punctuation, and appends the original `-ing` form
 /// alongside the lemma when they differ (handles noun/verb ambiguity such
 /// as `meeting`/`meet`).
@@ -69,7 +69,7 @@ pub fn lemmatize_for_bm25(text: &str) -> String {
     tokens.join(" ")
 }
 
-/// Four entity classes mirroring mem0's `entity_extraction.py`.
+/// Four entity classes mirroring the oracle's `entity_extraction.py`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EntityType {
     /// Capitalized multi-word sequences (person, place, brand, title).
@@ -90,7 +90,7 @@ pub struct EntityCandidate {
 }
 
 impl EntityCandidate {
-    /// Normalize for exact-dedup matching — mirrors mem0's
+    /// Normalize for exact-dedup matching — mirrors the oracle's
     /// `_normalize_entity_text`: lowercase, single-spaced, trimmed.
     #[must_use]
     pub fn normalized(&self) -> String {

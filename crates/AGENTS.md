@@ -19,7 +19,7 @@ test-only conformance support.
   awareness ledger (ADR 0011 — Stage 12).
 - `vesper-cognition` depends only on `vesper-domain` and `vesper-security`
   (plus `rusqlite` (bundled), `rust-stemmers`, and standard utility crates);
-  it owns the mem0-equivalent V3 cognitive memory engine — single-pass
+  it owns the memory-oracle-equivalent V3 cognitive memory engine — single-pass
   ADD-only extraction, hybrid semantic + FTS5 BM25 + entity-boost retrieval,
   and the embedded SQLite backing (ADR 0015 — Stage 16). It is the **only**
   production crate permitted to declare `rusqlite`; provider embeddings +
@@ -37,6 +37,10 @@ test-only conformance support.
   `#[cfg(debug_assertions)]`.
 - `vesper-config` depends only on `vesper-domain` and `vesper-security`.
 - `vesper-policy` depends only on `vesper-domain` and `vesper-security`.
+- `vesper-sandbox` depends only on `vesper-security` plus platform `libc`
+  confined to the Linux-only `sandbox_init` supervisor binary target; it owns
+  the opt-in namespaces backend with probed, honest capabilities (ADR 0022 —
+  Sandbox Supervisor as the Sole Raw-Syscall Boundary).
 - `vesper-testkit` may depend on all foundational crates and owns synthetic
   read-store/no-write helpers; no production crate may depend on it.
 - `vesper-provider-glm` may depend on auth/domain/provider/config/security and
@@ -57,7 +61,12 @@ test-only conformance support.
 - HTTP and concrete GLM behavior are confined to `vesper-provider-glm`; no crate
   may depend on ACP, SQLite, TUI, MCP, or a disposable spike.
 - Unsafe code is denied by the current crates. Future platform exceptions
-  require a dedicated module, safety comments, review, and ADR update.
+  require a dedicated module, safety comments, review, and ADR update. ADR 0022
+  grants exactly one standing exception: `vesper-sandbox`'s `sandbox_init`
+  supervisor binary (raw syscalls for namespaces/mounts/`fork`/`execve`,
+  `#![deny(unsafe_op_in_unsafe_fn)]` + documented-block discipline, enforced by
+  `cargo xtask architecture`); the `vesper-sandbox` library itself stays
+  100% safe code.
 
 ## Verification
 
@@ -87,9 +96,7 @@ test-only conformance support.
   Stage 6 transactional writer.
 - `vesper-memory/AGENTS.md` — ADR 0011 (Stage 12) persistent memory graph,
   learned skills, user profile, and bounded epistemic ledger.
-- `vesper-cognition/AGENTS.md` — ADR 0015 (Stage 16) mem0-equivalent V3
-  cognitive memory engine: ADD-only extraction, hybrid semantic + FTS5 BM25 +
-  entity retrieval, embedded SQLite backing, and provider-routed trait ports.
+- `vesper-cognition/AGENTS.md` — ADR 0015 (Stage 16) memory-oracle-equivalent V3
 - `vesper-checkpoints/AGENTS.md` — ADR 0012 (Stage 14) workspace snapshots,
   rollback, session lineage, and bounded cron/export/clipboard/CI surface.
 - `vesper-mcp/AGENTS.md` — ADR 0013 (Stage 15) MCP stdio client and

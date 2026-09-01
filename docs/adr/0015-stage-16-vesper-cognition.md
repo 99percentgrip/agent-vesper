@@ -1,4 +1,4 @@
-# ADR 0015: Stage 16 — vesper-cognition (Local mem0 Cognitive Memory)
+# ADR 0015: Stage 16 — vesper-cognition (Local Memory-Oracle Cognitive Memory)
 
 Status: ACCEPTED
 
@@ -6,22 +6,22 @@ Builds on: [ADR 0014](0014-agent-vesper-authentication.md),
 [ADR 0011](0011-stage-12-persistent-memory-and-awareness.md),
 [ADR 0013](0013-stage-15-mcp-client-and-plugin-loader.md).
 
-Evidence: [mem0-cognitive-memory-blueprint.md](../foundation/mem0-cognitive-memory-blueprint.md),
+Evidence: [memory-oracle-cognitive-memory-blueprint.md](../foundation/memory-oracle-cognitive-memory-blueprint.md),
 [sqlite-fts5-spike.md](../foundation/sqlite-fts5-spike.md).
 
 ## Context
 
 The lead architect authorized Stage 16: a native Rust cognitive memory engine
-emulating the local mem0 V3 oracle at `/home/alex/Projects/mem0/` (git pin
+emulating the local memory-oracle V3 at `/home/Alex/Projects/memory-oracle/` (git pin
 `29fa41558cf33263ec961dd9c6ff4245182466ef`, the "April 2026 new algorithm"
 release). The reconnaissance blueprint documents the V3 architecture in full.
 
-### Why mem0 must not live in `vesper-memory`
+### Why the memory oracle must not live in `vesper-memory`
 
 `vesper-memory` (ADR 0011 — Stage 12) owns the durable memory graph, learned
 skills, user profile, and bounded awareness ledger. Its crate contract is
 explicit: it **depends only on `vesper-domain` and `vesper-security`**, with
-**no SQLite, HTTP, or TUI dependency**. mem0's V3 algorithm needs all three:
+**no SQLite, HTTP, or TUI dependency**. the memory oracle's V3 algorithm needs all three:
 
 - **SQLite** for the relational audit log + FTS5 BM25 index + entity graph.
 - **HTTP** for the embedding + extraction-LLM provider calls.
@@ -38,7 +38,7 @@ dedicated sibling crate), mirroring the established pattern of `vesper-sessions`
 
 The V3 oracle is fundamentally different from V2:
 
-- **Single-pass ADD-only extraction.** One LLM call per `add()` (`mem0/memory/main.py:849-1178`).
+- **Single-pass ADD-only extraction.** One LLM call per `add()` (`the memory oracle/memory/main.py:849-1178`).
   The LLM emits only `ADD`; the V2 `DEFAULT_UPDATE_MEMORY_PROMPT`
   ADD/UPDATE/DELETE/NONE decision LLM is dead code in V3.
 - **Post-hoc MD5 deduplication.** `mem_hash = md5(text)`; skip if hash
@@ -47,7 +47,7 @@ The V3 oracle is fundamentally different from V2:
   stored as competing memories and resolved at retrieval time.
 - **Hybrid retrieval.** `score = (semantic + bm25_normalized + entity_boost) /
   max_possible` where `max_possible ∈ {1.0, 1.5, 2.0, 2.5}` adapts to which
-  signals are active (`mem0/utils/scoring.py`).
+  signals are active (`the memory oracle/utils/scoring.py`).
 - **Entity linking.** Per-memory entity extraction + a sibling entity-store
   collection with `linked_memory_ids[]`; entity-boost formula bounded to
   `[0, 0.5]` per memory with a `1/(1+0.001*(n-1)^2)` hyper-connection penalty
@@ -55,7 +55,7 @@ The V3 oracle is fundamentally different from V2:
 
 ### Why SQLite is the right Vesper backing
 
-The reconnaissance confirmed that **mem0's memory content lives in the vector
+The reconnaissance confirmed that **the memory oracle's memory content lives in the vector
 store payload, not in SQLite**. SQLite stores only the audit log + a 10-message
 rolling context window. For a Vesper port that owns no external vector-index
 service (Vesper's foundation never depends on external services), SQLite is the

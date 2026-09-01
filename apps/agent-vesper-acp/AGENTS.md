@@ -60,8 +60,10 @@ transport, stderr-only tracing, and orderly shutdown.
   states the cause and whether recovery was withheld because a tool call had
   started.
   Native plans continue across up to four ordinary iteration segments without
-  a user-authored rescue prompt; an ultimate-cap outcome must state that work
-  remains and retain the latest plan.
+  a user-authored rescue prompt. The per-session plan map seeds every later
+  loop invocation, including user-authored resume turns, so acknowledgement
+  text cannot terminate a still-open plan before another `update_plan` call;
+  an ultimate-cap outcome must state that work remains and retain the latest plan.
   The engine also owns the TUI-parity feature surface (see the parity
   contract below): the cognitive-memory bundle, VRO orchestration, the
   tool-enforcement and cognitive-capability system instructions, and the
@@ -103,8 +105,16 @@ transport, stderr-only tracing, and orderly shutdown.
   (ADR 0010 Tier C) with full TUI harness parity: catalog commands answer
   from the harness executor with no provider dispatch, `/max-iterations` and
   model/plan switches persist as per-session engine overrides, unknown `/`
-  text answers with the oracle's bounded unknown-command fallback, and every
-  host-owned command is really wired — `/checkpoint`, `/rollback`, `/undo`,
+  text answers with the oracle's bounded unknown-command fallback, and the
+  shared host-neutral extensions (`/remember`…`/journey` plus VRO-13
+  `/firewall`, which reports the process-global firewall state from
+  `vesper-policy::firewall::holder` and never mutates it at runtime) are
+  answered host-side in `try_slash_command` before the engine parser runs.
+  `/firewall` is a host-parity command, not one of the frozen 28, so the
+  `try_slash_command` arm intercepts and answers it explicitly — it never
+  falls through to the domain parser (which would answer with the
+  unknown-command fallback) even though ACP advertises it.
+  Every host-owned command is really wired — `/checkpoint`, `/rollback`, `/undo`,
   `/export`, `/sessions`, `/lineage`, `/ci`, `/plugins`, and `/mcp` run on
   the shared `vesper-harness` host-command executor; the checkpoint-family
   commands are opt-in per the gating contract above (when enabled, they run
@@ -199,16 +209,26 @@ slash command. The adapter holds engine-session cancels for 400ms
 reports and next-turn overrides whose stores are independent of the live
 turn) arrives inside the window and ABORTS the cancel, so the turn keeps
 working while the slash answers concurrently and its text lands in the
-session context. Mutating/turn-driving commands (`/compact`,
-`/clear-history`, `/checkpoint`, `/diff`, `/release`, `/plugins`, `/mcp`,
-…), any non-slash prompt, and grace expiry still perform the cancel.
+session context. Commands that collide with live conversation, plan,
+workspace, or registry state (`/compact`, `/clear-history`, `/clear-plan`,
+`/undo`, `/rollback`, `/diff`, `/release`, and mutating `/checkpoint`,
+`/plugins`, or `/mcp` forms), any non-slash prompt, and grace expiry still
+perform the cancel. Independent operations remain concurrent, including
+`/export`, `/checkpoint list`, read-only `/plugins` and `/mcp` forms,
+`/firewall`, and `/sandbox`.
 `tokio::select!` is `biased` with notifications polled first so the
 cancel+prompt pair is always evaluated together. The engine tracks
 in-flight cancellations as a per-session SET (`Arc::ptr_eq` removal,
 cancel-all on `session/cancel`) — concurrent turns on one session must
-never overwrite each other's cancellation entry. Regression suite:
+never overwrite each other's cancellation entry. The ACP adapter separately
+tracks an in-flight COUNT per session, so completion of a concurrent safe
+slash response cannot erase the still-running implementation turn.
+`/max-iterations enable|disable|1-1000` is concurrent-safe, applies only to
+later turns, and defaults to disabled while the hard safety ceiling remains.
+Regression suite:
 `apps/agent-vesper-acp/tests/midturn_slash_grace.rs` (real binary, slow
-loopback provider).
+loopback provider). Adapter unit tests partition all 42 advertised commands
+into exactly one always-safe, argument-dependent, or interrupting class.
 
 ## Verification
 

@@ -31,6 +31,9 @@ Z.ai and Playwright MCP server descriptors.
   frontend can serve (conversation state, workflow turns, live provider
   quota) return `SlashCommandOutcome::Host` passthrough. The catalog and
   parser delegate to `vesper-domain::slash_commands`.
+  `/max-iterations` accepts `enable`, `disable`, or `1-1000`; the optional
+  user cap is disabled by default and never removes the agent loop's ultimate
+  safety ceiling.
 - `MemoryStores::parity_report` owns the shared read-only repository,
   meta-learning, observability, and journey renderings used by ACP and
   available to the TUI composition.

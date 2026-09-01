@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 //! Provider-neutral cognitive memory engine. Native Rust emulation of the
-//! mem0 V3 ("April 2026 new algorithm") oracle at `/home/alex/Projects/mem0`
+//! oracle V3 ("April 2026 new algorithm") oracle at `/home/Alex/Projects/memory-oracle`
 //! (pin `29fa4155`), per ADR 0015 (Stage 16).
 //!
 //! ## What this crate owns
@@ -99,7 +99,7 @@ confirms the selected scope.";
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(clippy::upper_case_acronyms)]
 pub enum FusionStrategy {
-    /// Additive: `(semantic + bm25 + entity_boost) / max_possible` (mem0 V3 default).
+    /// Additive: `(semantic + bm25 + entity_boost) / max_possible` (oracle V3 default).
     Additive,
     /// Reciprocal Rank Fusion: `sum(1/(60 + rank + 1))` across ranked lists.
     RRF,

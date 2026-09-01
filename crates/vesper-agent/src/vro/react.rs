@@ -348,6 +348,11 @@ impl ToolInvoker for RegistryToolInvoker {
                         ToolInvocationError::ExecutionFailed(error.to_string())
                     }
                     ToolError::Failed(reason) => ToolInvocationError::ExecutionFailed(reason),
+                    // The firewall denial is an execution observation, not a
+                    // permission ask: the loop must see a hard failure with the
+                    // exact `[VRO-13 Firewall] denied:` prefix so VRO-12-style
+                    // recovery (choose a safer command) stays possible.
+                    ToolError::FirewallDenial(text) => ToolInvocationError::ExecutionFailed(text),
                 }),
             }
         })

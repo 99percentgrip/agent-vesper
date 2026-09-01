@@ -8,10 +8,10 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 - `evidence-index.md` is the durable execution ledger and command record.
 - ADRs under `adr/` record Stage 0 compatibility and product choices.
-- `mem0-cognitive-memory-blueprint.md` is the reconnaissance record for the
-  external mem0 (`29fa4155`) oracle and the evidence base for ADR 0015
-  (Stage 16 — `vesper-cognition`). The mem0 oracle is independent of the
-  frozen Python harness; this is the only place where mem0 is cited.
+- `memory-oracle-cognitive-memory-blueprint.md` is the reconnaissance record for the
+  external the memory oracle (`29fa4155`) oracle and the evidence base for ADR 0015
+  (Stage 16 — `vesper-cognition`). The the memory oracle oracle is independent of the
+  frozen Python harness; this is the only place where the memory oracle is cited.
 - `vesperlens-end-to-end-acceptance-postmortem.md` is the owner-directed
   VesperLens audit (v0.20.29 → v0.20.44): the binding end-to-end completion
   standard, the ten audited gaps, honest-scope list, and the open task of

@@ -21,6 +21,8 @@
 //! can refine the plan inline.
 
 use vesper_domain::{BoundedString, ProviderId, SessionOperatingMode, SessionPermissionMode};
+use vesper_policy::firewall::holder;
+use vesper_policy::firewall::holder::FirewallState;
 use vesper_provider::SuperpowerValue;
 
 use crate::commands::{
@@ -1054,22 +1056,91 @@ fn render_context_view(
             )
         }
         ViewKind::Context => unreachable!("the binary owns live context accounting"),
-        ViewKind::Status => format!(
-            "status: Phase={phase_label}, transcript={line_count} lines, overrides={override_count}.",
-            phase_label = phase_label(phase)
-        ),
+        ViewKind::Status => {
+            let firewall_line = match holder::is_enabled() {
+                true => "firewall=on (hard deny; /firewall for detail)".to_string(),
+                false => "firewall=off (AGENT_VESPER_FIREWALL=off at boot)".to_string(),
+            };
+            let sandbox_line = match vesper_harness::sandbox_backend::holder::shared() {
+                Some(route) => format!(
+                    "sandbox=on ({}; /sandbox for detail)",
+                    match route.choice() {
+                        vesper_agent::sandbox_route::SandboxBackendChoice::Docker => "docker",
+                        vesper_agent::sandbox_route::SandboxBackendChoice::Default => "namespaces",
+                    }
+                ),
+                None => "sandbox=off (no scope demand; /sandbox for detail)".to_string(),
+            };
+            format!(
+                "status: Phase={p}, transcript={line_count} lines, overrides={override_count}, {firewall_line}, {sandbox_line}.",
+                p = phase_label(phase)
+            )
+        }
         ViewKind::Tasks => format!(
             "tasks: dashboard — Phase={phase_label}, {line_count} transcript line(s). \
              (Queue / token / model views need runtime integration.)",
             phase_label = phase_label(phase)
         ),
         ViewKind::MaxIterations => {
-            format!(
-                "max-iterations: live per-turn tool-call cap is {} (set with `/max-iterations 1-200`).",
-                controls.max_tool_iterations
-            )
+            if controls.max_tool_iterations == 0 {
+                "max-iterations: user cap is disabled (default); the ultimate safety ceiling remains active. Enable with `/max-iterations enable` or set 1-1000."
+                    .into()
+            } else {
+                format!(
+                    "max-iterations: live per-turn tool-call cap is {} (disable with `/max-iterations disable`).",
+                    controls.max_tool_iterations
+                )
+            }
         }
         ViewKind::Usage => "usage: query routed to the active provider quota integration.".into(),
+        // VRO-13 PR-2: view-only firewall panel. The honesty sentence is a
+        // verbatim directive from the PRD — the firewall catches accidents
+        // and the obvious, and must never be advertised as containment.
+        ViewKind::Firewall => {
+            let state = vesper_policy::firewall::holder::install_from_env();
+            let body = match &state {
+                FirewallState::Enabled { .. } => "on",
+                FirewallState::Disabled { .. } => "off",
+            };
+            let id = vesper_policy::firewall::holder::instance_id()
+                .map_or_else(|| "n/a".to_string(), |id| format!("{id:#x}"));
+            format!(
+                "firewall: {body} (ruleset instance {id})\n\
+                 catches accidents and the obvious; never advertised as containment.\n\
+                 toggle: set AGENT_VESPER_FIREWALL=off and restart (no runtime switch)"
+            )
+        }
+        // VRO-13 PR-4: view-only sandbox panel. `on|off` at runtime would
+        // contradict the route holder's once-only resolution; the demand
+        // lives in `.agent-vesper/config.toml` `[sandbox]`, so the honest
+        // control surface is "edit config + restart", identical to the
+        // ACP host's status surface.
+        ViewKind::Sandbox => {
+            let holder = vesper_harness::sandbox_backend::holder::shared();
+            let body = match &holder {
+                Some(route) => {
+                    let caps = route.capabilities();
+                    let satisfies = if route.satisfies_demand() {
+                        "satisfied"
+                    } else {
+                        "UNSATISFIED"
+                    };
+                    format!(
+                        "on (backend {}, demand {:?}, {})",
+                        caps.backend,
+                        route.demand().requirement,
+                        satisfies
+                    )
+                }
+                None => "off (no [sandbox] demand in .agent-vesper/config.toml)".to_string(),
+            };
+            let id = vesper_harness::sandbox_backend::holder::route_id();
+            format!(
+                "sandbox: {body} (route instance {id:#x})\n\
+                 feature: docker backend requires a build with --features docker\n\
+                 toggle: set AGENT_VESPER_SANDBOX=off or edit [sandbox] and restart (no runtime switch)"
+            )
+        }
     }
 }
 

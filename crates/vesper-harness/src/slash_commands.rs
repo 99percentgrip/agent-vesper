@@ -55,7 +55,8 @@ pub struct SessionOverrides {
     pub auxiliary_model: Option<String>,
     /// Requested mixture mode (`zai:mixture-mode`): off/enabled.
     pub mixture_mode: Option<String>,
-    /// Requested per-turn tool-call cap.
+    /// Requested per-turn tool-call cap (`0` disables the user cap while the
+    /// agent loop retains its non-configurable ultimate safety ceiling).
     pub max_tool_iterations: Option<u32>,
 }
 
@@ -96,6 +97,8 @@ pub struct SlashCommandContext<'a> {
     pub context_window: u64,
     /// Cumulative tokens used in this session for /status.
     pub tokens_used: u64,
+    /// Current optional per-turn cap (`0` means disabled).
+    pub max_tool_iterations: u32,
 }
 
 impl Default for SlashCommandContext<'_> {
@@ -111,6 +114,7 @@ impl Default for SlashCommandContext<'_> {
             visible_messages: 0,
             context_window: 0,
             tokens_used: 0,
+            max_tool_iterations: vesper_agent::DEFAULT_MAX_TOOL_ITERATIONS,
         }
     }
 }
@@ -131,15 +135,47 @@ pub fn execute_slash_command(
     match name {
         "help" => SlashCommandOutcome::Text(help_text()),
         "status" => SlashCommandOutcome::Text(status_text(context)),
-        "max-iterations" => match argument.trim().parse::<u32>() {
-            Ok(number @ 1..=1000) => SlashCommandOutcome::Override {
+        "max-iterations" => match argument.trim().to_ascii_lowercase().as_str() {
+            "" => SlashCommandOutcome::Text(if context.max_tool_iterations == 0 {
+                "Per-turn tool-call cap is disabled (default); the ultimate safety ceiling remains active."
+                    .to_owned()
+            } else {
+                format!(
+                    "Per-turn tool-call cap is enabled at {}.",
+                    context.max_tool_iterations
+                )
+            }),
+            "disable" | "disabled" | "off" => SlashCommandOutcome::Override {
                 overrides: SessionOverrides {
-                    max_tool_iterations: Some(number),
+                    max_tool_iterations: Some(0),
                     ..SessionOverrides::new()
                 },
-                text: format!("Per-turn tool-call cap set to {number}."),
+                text:
+                    "Per-turn tool-call cap disabled; the ultimate safety ceiling remains active."
+                        .to_owned(),
             },
-            _ => SlashCommandOutcome::Text("Usage: /max-iterations [1-1000]".to_owned()),
+            "enable" | "enabled" | "on" => SlashCommandOutcome::Override {
+                overrides: SessionOverrides {
+                    max_tool_iterations: Some(vesper_agent::ENABLED_DEFAULT_MAX_TOOL_ITERATIONS),
+                    ..SessionOverrides::new()
+                },
+                text: format!(
+                    "Per-turn tool-call cap enabled at {}.",
+                    vesper_agent::ENABLED_DEFAULT_MAX_TOOL_ITERATIONS
+                ),
+            },
+            value => match value.parse::<u32>() {
+                Ok(number @ 1..=1000) => SlashCommandOutcome::Override {
+                    overrides: SessionOverrides {
+                        max_tool_iterations: Some(number),
+                        ..SessionOverrides::new()
+                    },
+                    text: format!("Per-turn tool-call cap enabled at {number}."),
+                },
+                _ => SlashCommandOutcome::Text(
+                    "Usage: /max-iterations [enable|disable|1-1000]".to_owned(),
+                ),
+            },
         },
         "memory" => SlashCommandOutcome::Text(memory_text(context)),
         "skills" => SlashCommandOutcome::Text(skills_text(context)),
@@ -396,6 +432,13 @@ mod tests {
             execute_slash_command("max-iterations", "0", &context()),
             SlashCommandOutcome::Text(_)
         ));
+        match execute_slash_command("max-iterations", "disable", &context()) {
+            SlashCommandOutcome::Override { overrides, text } => {
+                assert_eq!(overrides.max_tool_iterations, Some(0));
+                assert!(text.contains("disabled"));
+            }
+            other => panic!("expected disable override, got {other:?}"),
+        }
     }
 
     #[test]

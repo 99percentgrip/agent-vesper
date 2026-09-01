@@ -18,6 +18,7 @@ members = [
     "crates/vesper-provider-glm",
     "crates/vesper-provider-synthetic",
     "crates/vesper-runtime",
+    "crates/vesper-sandbox",
     "crates/vesper-sessions",
     "crates/vesper-security",
     "crates/vesper-testkit",

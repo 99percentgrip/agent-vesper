@@ -1,5 +1,5 @@
-//! Filter DSL. Mirrors the operator surface mem0 documents on `search()`
-//! (`mem0/memory/main.py:_process_metadata_filters`). v1 supports exact
+//! Filter DSL. Mirrors the operator surface the memory oracle documents on `search()`
+//! (`oracle/memory/main.py:_process_metadata_filters`). v1 supports exact
 //! match plus a structured subset of the operators; AND/OR/NOT composition
 //! applies to `extras` (the JSON metadata bag).
 

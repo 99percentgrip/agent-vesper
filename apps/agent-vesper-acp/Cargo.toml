@@ -24,6 +24,7 @@ vesper-acp = { path = "../../crates/vesper-acp", version = "=0.20.78" }
 vesper-agent = { path = "../../crates/vesper-agent", version = "=0.20.78" }
 vesper-cognition = { path = "../../crates/vesper-cognition", version = "=0.20.78" }
 vesper-config = { path = "../../crates/vesper-config", version = "=0.20.78" }
+vesper-policy = { path = "../../crates/vesper-policy", version = "=0.20.78" }
 vesper-domain = { path = "../../crates/vesper-domain", version = "=0.20.78" }
 vesper-harness = { path = "../../crates/vesper-harness", version = "=0.20.78" }
 vesper-provider = { path = "../../crates/vesper-provider", version = "=0.20.78" }

@@ -1,4 +1,4 @@
-//! Public value types for the cognitive-memory engine. Mirrors the mem0 V3
+//! Public value types for the cognitive-memory engine. Mirrors the oracle V3
 //! data model where applicable; documented inline.
 
 use std::collections::BTreeMap;
@@ -35,7 +35,7 @@ impl Attribution {
 }
 
 /// Session scope: at least one of these identifiers is required for every
-/// operation (mirrors mem0's hard requirement).
+/// operation (mirrors the oracle's hard requirement).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Scope {
     pub user_id: Option<String>,
@@ -50,7 +50,7 @@ impl Scope {
         self.user_id.is_some() || self.agent_id.is_some() || self.run_id.is_some()
     }
 
-    /// Deterministic session-scope key matching mem0's `_build_session_scope`
+    /// Deterministic session-scope key matching the oracle's `_build_session_scope`
     /// (sorted `key=value` joined with `&`). Used as the SQLite messages-table
     /// partition key.
     #[must_use]
@@ -74,7 +74,7 @@ impl Scope {
 pub struct Message {
     pub role: String,
     pub content: String,
-    /// Optional named speaker (mem0 multi-speaker chats).
+    /// Optional named speaker (oracle multi-speaker chats).
     pub name: Option<String>,
 }
 
@@ -100,7 +100,7 @@ impl Message {
     }
 }
 
-/// Stored memory record (mirrors mem0's vector-store payload).
+/// Stored memory record (mirrors the oracle's vector-store payload).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(dead_code)]
 pub struct MemoryRecord {
@@ -141,7 +141,7 @@ pub struct MemoryHit {
     pub score_details: Option<ScoreBreakdown>,
 }
 
-/// Score decomposition for `explain=true` queries. Mirrors mem0's
+/// Score decomposition for `explain=true` queries. Mirrors the oracle's
 /// `score_details` shape.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScoreBreakdown {

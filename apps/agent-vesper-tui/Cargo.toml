@@ -26,6 +26,7 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 uuid.workspace = true
 vesper-agent = { path = "../../crates/vesper-agent", version = "=0.20.78" }
+vesper-policy = { path = "../../crates/vesper-policy", version = "=0.20.78" }
 vesper-auth = { path = "../../crates/vesper-auth", version = "=0.20.78" }
 vesper-checkpoints = { path = "../../crates/vesper-checkpoints", version = "=0.20.78" }
 vesper-cognition = { path = "../../crates/vesper-cognition", version = "=0.20.78" }

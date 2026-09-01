@@ -168,6 +168,49 @@ fn usage_during_editor_interrupt_keeps_the_turn_running() {
     );
 }
 
+/// Next-turn iteration controls are concurrent-safe too. Disabling the user
+/// cap must answer immediately without cancelling the already-running turn.
+#[test]
+fn max_iterations_disable_during_work_keeps_the_turn_running() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let _server = serve_one_slow_completion(
+        listener,
+        Duration::from_millis(1500),
+        "iteration-control-survivor",
+    );
+    let mut process = ProcessHarness::spawn_with_environment(
+        address,
+        [("AGENT_VESPER_FULL_HARNESS", "1".to_owned())],
+    );
+    let session = process.initialize_and_new_session();
+    process.prompt(50, &session, "slow implementation", "slow-control-message");
+    thread::sleep(Duration::from_millis(400));
+    cancel(&mut process, &session);
+    process.prompt(
+        51,
+        &session,
+        "/max-iterations disable",
+        "max-iterations-message",
+    );
+
+    let control = process.response(51);
+    assert_eq!(control["result"]["stopReason"], "end_turn", "{control}");
+    let turn = process.response(50);
+    assert_eq!(turn["result"]["stopReason"], "end_turn", "{turn}");
+    let texts = support::update_texts(process.transcript(), "agent_message_chunk");
+    assert!(
+        texts.iter().any(|text| text.contains("cap disabled")),
+        "{texts:?}"
+    );
+    assert!(
+        texts
+            .iter()
+            .any(|text| text.contains("iteration-control-survivor")),
+        "{texts:?}"
+    );
+}
+
 /// A genuine stop (cancel with NO follow-up prompt) must still cancel once
 /// the grace window expires — the grace only exists for the slash case.
 #[test]

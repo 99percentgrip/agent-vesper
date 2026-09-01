@@ -20,6 +20,7 @@ use crate::confinement::{
 use crate::executor::{
     ToolContext, ToolError, ToolExecutor, ToolFuture, ToolResult, schema_definition,
 };
+use vesper_policy::firewall::RuleDecision;
 
 /// Maximum bytes of tool output retained (prevents unbounded model context).
 const MAX_OUTPUT_BYTES: usize = 65_536;
@@ -294,10 +295,45 @@ impl ToolExecutor for RunCommand {
         let args = call.arguments.clone();
         let cwd = primary_root(ctx).map(|p| p.to_path_buf());
         let cancelled = ctx.cancellation.clone();
+        let firewall = ctx.firewall.clone();
+        let sandbox_route = ctx.sandbox.clone();
         Box::pin(async move {
             let cwd = cwd?;
             let command = string_arg(&args, "command")?;
+            // VRO-13 PR-2: hard-denial firewall scan runs BEFORE the command
+            // is cloned into `spawn_blocking`, so the legacy off-path keeps
+            // its exact hot-path budget. `ctx.firewall` is `None` whenever
+            // the firewall is off (env `AGENT_VESPER_FIREWALL=off` or a
+            // non-interactive host that never set one), which makes the off
+            // path structurally identical to the pre-VRO-13 executor: no
+            // scan, no allocation, no branch beyond this `Option` check.
+            if let Some(firewall) = firewall.as_deref() {
+                let verdict = firewall.scan(&command);
+                if let RuleDecision::Deny = verdict.decision {
+                    let index = verdict
+                        .matched_rule
+                        .map_or_else(|| "0".to_string(), |index| index.to_string());
+                    return Err(ToolError::FirewallDenial(format!(
+                        "{}; matched: {}",
+                        verdict.matched_reason.unwrap_or("firewall deny"),
+                        index
+                    )));
+                }
+            }
             let timeout = optional_u64_arg(&args, "timeout").unwrap_or(120);
+            // VRO-13 PR-4: scope-demanded sandbox routing. `ctx.sandbox` is
+            // `None` unless a scope/tool demand resolved one at host boot,
+            // so the no-demand path is byte-identical to PR-3 (one `Option`
+            // check, no allocation). When a demand IS active the executor
+            // consults the fail-closed capability gate BEFORE provisioning:
+            // an unreachable backend yields the model-facing refusal, never
+            // a silent unsandboxed run.
+            if let Some(route) = sandbox_route.as_deref() {
+                if !route.satisfies_demand() {
+                    return Err(ToolError::Failed(route.refusal_text()));
+                }
+                return run_sandboxed(route.port(), &command, &cwd, timeout, &cancelled).await;
+            }
             let command_for_task = command.clone();
             let cwd_for_task = cwd.clone();
             let cancelled_for_task = cancelled.clone();
@@ -398,6 +434,8 @@ pub fn stub_context(
         permission_mode,
         conversation: Vec::new(),
         cancellation: std::sync::Arc::new(NeverCancelled),
+        firewall: None,
+        sandbox: None,
     }
 }
 
@@ -689,4 +727,49 @@ fn run_bounded(
         combined.push_str(&String::from_utf8_lossy(&output.stderr));
     }
     Ok(bounded(&combined))
+}
+
+/// VRO-13 PR-4: executes one shell command through the sandboxed path.
+///
+/// The demand was already validated by [`SandboxRoute::satisfies_demand`]
+/// before this is called (an unsatisfied demand yields the model-facing
+/// refusal instead). This wrapper shells the command through the host's
+/// resolved backend via the route's port: it builds the bounded `Argv`,
+/// provisions, runs, tears down, and folds the bounded output into the same
+/// `ToolResult` shape as `run_bounded` so the model sees one surface.
+///
+/// Like `run_bounded`, the actual process orchestration is blocking work
+/// (waitpid, pipe reads, mount teardown) and runs on the blocking pool.
+async fn run_sandboxed(
+    port: std::sync::Arc<dyn crate::sandbox_route::SandboxBackendPort>,
+    command: &str,
+    cwd: &std::path::Path,
+    timeout: u64,
+    cancelled: &std::sync::Arc<dyn vesper_provider::CancellationSignal>,
+) -> Result<ToolResult, ToolError> {
+    // The blocking pool owns the real backend work (spawning supervisors or
+    // `docker run/exec`, waitpid, pipe reads); the async wrapper only folds
+    // the bounded outcome into the same ToolResult shape as `run_bounded`.
+    // The port Arc is cloned so the closure owns everything it touches —
+    // the executor signature stays reference-based for the caller.
+    let command = command.to_owned();
+    let cwd = cwd.to_path_buf();
+    let cancelled = cancelled.clone();
+    let outcome =
+        tokio::task::spawn_blocking(move || port.run_command(&command, &cwd, timeout, &cancelled))
+            .await
+            .map_err(|error| ToolError::Failed(format!("sandboxed task join failed: {error}")))?
+            .map_err(|error| match error {
+                crate::sandbox_route::SandboxRunError::Backend(message) => {
+                    ToolError::Failed(format!("sandbox backend error: {message}"))
+                }
+                crate::sandbox_route::SandboxRunError::Cancelled => {
+                    ToolError::Failed("command cancelled".into())
+                }
+            })?;
+    let mut combined = outcome.output;
+    if outcome.timed_out {
+        combined.push_str("\n[command timed out and was killed]");
+    }
+    ToolResult::new(bounded(&combined))
 }

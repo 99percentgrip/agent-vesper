@@ -9,6 +9,11 @@ license.workspace = true
 publish = false
 
 [dependencies]
+# Override the workspace `regex` pin (default-features = false, features =
+# ["std"]) to add `unicode-perl`: firewall rules use \w/\s/\b classes and the
+# std-only build rejects them. Mirrors the local override in vesper-agent
+# and vesper-cognition; does not leak to other crates.
+regex = { version = "1", default-features = false, features = ["std", "unicode-perl"] }
 serde.workspace = true
 vesper-domain = { path = "../vesper-domain", version = "=0.20.78" }
 vesper-security = { path = "../vesper-security", version = "=0.20.78" }
