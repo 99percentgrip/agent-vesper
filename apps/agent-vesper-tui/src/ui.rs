@@ -535,11 +535,11 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
         let notice = model.status.as_deref().unwrap_or("Working");
         if model.queued_prompt_count > 0 {
             format!(
-                "● {notice} · {} queued · Enter queues · Alt+Enter sends now",
+                "● {notice} · {} queued · Enter steers · Tab queues",
                 model.queued_prompt_count
             )
         } else {
-            format!("● {notice} · Enter queues · Alt+Enter sends now")
+            format!("● {notice} · Enter steers · Tab queues")
         }
     } else {
         model.status.clone().unwrap_or_else(|| "○ Ready".into())

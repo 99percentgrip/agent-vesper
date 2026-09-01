@@ -35,7 +35,7 @@ pub mod vro;
 
 pub use agent_loop::{
     ABSOLUTE_MAX_TOOL_ITERATIONS, AgentLoop, AgentLoopConfig, AgentLoopError, AgentProgressEvent,
-    AgentProgressPort, AgentTurnOutcome, DEFAULT_MAX_TOOL_ITERATIONS,
+    AgentProgressPort, AgentSteeringPort, AgentTurnOutcome, DEFAULT_MAX_TOOL_ITERATIONS,
     ENABLED_DEFAULT_MAX_TOOL_ITERATIONS, MAX_CONTEXT_MESSAGES,
 };
 pub use executor::{

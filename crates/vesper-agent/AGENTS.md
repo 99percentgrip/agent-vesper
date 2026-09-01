@@ -40,8 +40,11 @@ the multi-turn, tool-executing layer above it.
   `max_tool_iterations`. Captures `update_plan` output into
   `AgentTurnOutcome::plan` so callers drive the Phase 5 PLANNING → REVIEW
   transition. `AgentProgressPort` emits bounded in-memory provider/tool/plan
-  activity without tool arguments, outputs, paths, or secrets; hosts may also
-  clone a loop with per-turn provider/model configuration. As of
+  activity without tool arguments, outputs, paths, or secrets.
+  `AgentSteeringPort` is a non-blocking host inbox drained only between
+  complete provider/tool operations; injected user guidance joins the current
+  history in submission order and cannot cancel an in-flight operation. Hosts
+  may also clone a loop with per-turn provider/model configuration. As of
   deferred-loading Phase 2, the `advertised_tools` binding is mutable per
   turn: when an executor returns `ToolResult.injected_tools`, the loop
   merges them (deduplicated by `ToolId` or `harness_name`) into the

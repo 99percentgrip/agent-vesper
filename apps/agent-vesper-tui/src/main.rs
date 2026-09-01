@@ -28,8 +28,8 @@ mod mobile;
 
 use std::collections::VecDeque;
 use std::io::{self, stdout};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 use agent_vesper_tui::{
     AuthHubAction, AuthHubState, AuthProvider, CommandIntent, CommandRegistry,
@@ -53,7 +53,7 @@ use tokio::sync::mpsc;
 use tracing::{error, warn};
 use vesper_agent::{
     AgentLoop, AgentLoopConfig, AgentLoopError, AgentProgressEvent, AgentProgressPort,
-    AgentTurnOutcome, DEFAULT_MAX_TOOL_ITERATIONS, ToolRegistry,
+    AgentSteeringPort, AgentTurnOutcome, DEFAULT_MAX_TOOL_ITERATIONS, ToolRegistry,
 };
 use vesper_domain::{
     BoundedString, CommandId, CommandInitiator, CommandSchemaVersion, ContentPart, ContentText,
@@ -316,6 +316,7 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
         input: String::new(),
         conversation: Vec::new(),
         agent_rx: None,
+        steering_tx: None,
         trajectory_rx: None,
         agent_task: None,
         agent_running: false,
@@ -609,6 +610,9 @@ struct TuiSession {
     /// `try_recv` each iteration so the UI stays responsive while the model
     /// thinks and tools execute.
     agent_rx: Option<mpsc::UnboundedReceiver<AgentEvent>>,
+    /// Sender into the active direct loop. Enter steers through this channel
+    /// at the next safe provider boundary without aborting current work.
+    steering_tx: Option<mpsc::UnboundedSender<String>>,
     /// VRO-5.3 (PRD §11.6): receiver for live ReAct trajectory entries
     /// streamed by [`TrajectoryCapturingReactAgent`] and
     /// [`TrajectoryCapturingInvoker`]. `Some` while a `tokio::spawn`-ed
@@ -623,7 +627,7 @@ struct TuiSession {
     /// status banner. Cleared as soon as the receiver yields (or aborts).
     agent_running: bool,
     /// Mid-turn FIFO: every submitted follow-up is retained and runs in
-    /// order after the active turn unless the user explicitly sends now.
+    /// order after the active turn. Tab submits to this FIFO while work runs.
     queued_prompts: VecDeque<String>,
     /// Large or multiline bracketed-paste payloads retained verbatim while
     /// the composer renders compact attachment-style labels.
@@ -899,6 +903,23 @@ enum AgentEvent {
 #[derive(Clone)]
 struct ChannelProgressPort {
     tx: mpsc::UnboundedSender<AgentEvent>,
+}
+
+struct ChannelSteeringPort {
+    rx: Mutex<mpsc::UnboundedReceiver<String>>,
+}
+
+impl AgentSteeringPort for ChannelSteeringPort {
+    fn drain(&self) -> Vec<String> {
+        let Ok(mut rx) = self.rx.lock() else {
+            return Vec::new();
+        };
+        let mut pending = Vec::new();
+        while let Ok(message) = rx.try_recv() {
+            pending.push(message);
+        }
+        pending
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1867,31 +1888,32 @@ async fn drive_loop(
                         .then(|| session.queued_prompts.pop_front())
                         .flatten()
                 });
-                // Mid-turn submit (Claude Code parity): while a turn is
-                // running, a free-text prompt or workflow is QUEUED and
-                // fires the moment the turn completes — the running work is
-                // never interrupted for it and the message is never
-                // silently dropped.
+                // Mid-turn Enter steers the live direct loop at its next safe
+                // provider boundary. It does not abort the provider stream or
+                // tool currently in flight. Tab owns the separate FIFO path.
                 if session.agent_running
                     && let Some(text) = prompt_to_spawn.as_ref()
                 {
-                    if modifiers.contains(KeyModifiers::ALT) {
-                        cancel_active_turn_preserving_partial(session, "replaced by Send Now");
-                        spawn_submitted_prompt(
-                            agent,
-                            agent_tools,
-                            &approval_port_for_react,
-                            vro,
-                            surface,
-                            cognition_bundle,
-                            text.clone(),
-                            session,
-                        );
-                        session.state.status = Some("Sent now — previous turn interrupted.".into());
+                    if let Some(tx) = session.steering_tx.as_ref() {
+                        match tx.send(text.clone()) {
+                            Ok(()) => {
+                                session.state.status = Some(
+                                    "Steering sent — current operation continues; guidance applies at the next safe boundary."
+                                        .into(),
+                                );
+                            }
+                            Err(_) => {
+                                session.queued_prompts.push_back(text.clone());
+                                session.state.status = Some(format!(
+                                    "Live turn is finalizing; queued follow-up #{}.",
+                                    session.queued_prompts.len()
+                                ));
+                            }
+                        }
                     } else {
                         session.queued_prompts.push_back(text.clone());
                         session.state.status = Some(format!(
-                            "Queued #{} — Enter queues; Alt+Enter sends now.",
+                            "This execution path cannot accept live steering; queued follow-up #{}.",
                             session.queued_prompts.len()
                         ));
                     }
@@ -1963,6 +1985,19 @@ async fn drive_loop(
             KeyCode::Right => {
                 session.state.preferences.composer_cursor =
                     next_boundary(&session.input, session.state.preferences.composer_cursor);
+            }
+            KeyCode::Tab
+                if session.agent_running
+                    && session.command_matches.is_empty()
+                    && (!session.input.trim().is_empty()
+                        || !session.pending_text_pastes.is_empty()) =>
+            {
+                let text = take_composer_text(session);
+                session.queued_prompts.push_back(text);
+                session.state.status = Some(format!(
+                    "Queued follow-up #{} — the active turn continues unchanged.",
+                    session.queued_prompts.len()
+                ));
             }
             KeyCode::Tab if !session.command_matches.is_empty() => {
                 if let Some(command) = selected_command_completion(session) {
@@ -3916,6 +3951,7 @@ fn cancel_active_turn_preserving_partial(session: &mut TuiSession, cause: &str) 
         task.abort();
     }
     session.agent_rx = None;
+    session.steering_tx = None;
     session.trajectory_rx = None;
     session.agent_running = false;
     let partial = std::mem::take(&mut session.live_response);
@@ -4695,7 +4731,11 @@ fn spawn_agent_turn(
     let adviser_config = config.clone();
     let original_user = user.clone();
     let (tx, rx) = mpsc::unbounded_channel::<AgentEvent>();
+    let (steering_tx, steering_rx) = mpsc::unbounded_channel::<String>();
     let progress = Arc::new(ChannelProgressPort { tx: tx.clone() });
+    let steering = Arc::new(ChannelSteeringPort {
+        rx: Mutex::new(steering_rx),
+    });
     let agent = agent
         .as_ref()
         .clone()
@@ -4708,7 +4748,8 @@ fn spawn_agent_turn(
                     .map_err(|_| "active plan exceeds capability bound".to_owned())?,
             },
         )
-        .with_progress_port(progress);
+        .with_progress_port(progress)
+        .with_steering_port(steering);
     let operating_mode = session.state.controls.operating_mode;
     let permission_mode = session.state.controls.permission_mode;
     let task = tokio::spawn(async move {
@@ -4809,6 +4850,7 @@ fn spawn_agent_turn(
     });
     session.agent_task = Some(task);
     session.agent_rx = Some(rx);
+    session.steering_tx = Some(steering_tx);
     session.agent_running = true;
     session.activity.clear();
     session.live_trajectory.clear();
@@ -5128,6 +5170,10 @@ fn spawn_vro_turn(
     session: &mut TuiSession,
 ) -> Result<(), String> {
     let (tx, rx) = mpsc::unbounded_channel::<AgentEvent>();
+    let (steering_tx, steering_rx) = mpsc::unbounded_channel::<String>();
+    let steering = Arc::new(ChannelSteeringPort {
+        rx: Mutex::new(steering_rx),
+    });
     // VRO-7 (directive 3, audit fix): give the non-ReAct VRO path a
     // trajectory channel too, so the **✓ LEARNED** notice can flow into
     // the Reasoning Panel after a successful GVR / parallel-candidates /
@@ -5136,7 +5182,7 @@ fn spawn_vro_turn(
     // VRO-8 final audit caught. The channel is otherwise unused (no live
     // Action/Observation streaming), so it is purely a notice channel.
     let (traj_tx, traj_rx) = mpsc::unbounded_channel::<String>();
-    let agent = Arc::clone(agent);
+    let agent = Arc::new(agent.as_ref().clone().with_steering_port(steering));
     let vro = vro.clone();
     let root = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     // VRO-8: honor a manual `/reasoning set mode=<X>` override so the
@@ -5200,6 +5246,7 @@ fn spawn_vro_turn(
     });
 
     session.agent_rx = Some(rx);
+    session.steering_tx = Some(steering_tx);
     session.trajectory_rx = Some(traj_rx);
     session.agent_running = true;
     session.state.status = Some("WORKING... (VRO orchestrating)".into());
@@ -5529,13 +5576,24 @@ pub(crate) fn format_react_finish_entry(output: &serde_json::Value) -> String {
 pub(crate) struct TrajectoryCapturingReactAgent<A> {
     inner: A,
     tx: mpsc::UnboundedSender<String>,
+    steering: Option<Mutex<mpsc::UnboundedReceiver<String>>>,
 }
 
 impl<A> TrajectoryCapturingReactAgent<A> {
     /// Wraps `inner` so every `next_action` decision is also sent to `tx`.
     #[must_use]
     pub(crate) fn new(inner: A, tx: mpsc::UnboundedSender<String>) -> Self {
-        Self { inner, tx }
+        Self {
+            inner,
+            tx,
+            steering: None,
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn with_steering(mut self, steering: mpsc::UnboundedReceiver<String>) -> Self {
+        self.steering = Some(Mutex::new(steering));
+        self
     }
 }
 
@@ -5552,8 +5610,28 @@ where
     > {
         let tx = &self.tx;
         let inner = &self.inner;
+        let steering = &self.steering;
         Box::pin(async move {
-            let decision = inner.next_action(prompt, trajectory).await;
+            let pending = steering
+                .as_ref()
+                .and_then(|rx| rx.lock().ok())
+                .map(|mut rx| {
+                    let mut messages = Vec::new();
+                    while let Ok(message) = rx.try_recv() {
+                        messages.push(message);
+                    }
+                    messages
+                })
+                .unwrap_or_default();
+            let steered_prompt = if pending.is_empty() {
+                prompt.to_owned()
+            } else {
+                format!(
+                    "{prompt}\n\nLive user guidance (apply without restarting completed work):\n{}",
+                    pending.join("\n")
+                )
+            };
+            let decision = inner.next_action(&steered_prompt, trajectory).await;
             // Stream the decision (Action or Finish) to the panel.
             let entry = match &decision {
                 vesper_agent::vro::react::ReactDecision::CallTool { name, arguments } => {
@@ -5737,12 +5815,14 @@ fn spawn_vro_react_turn(
             .to_owned()
     })?;
     let (tx, rx) = mpsc::unbounded_channel::<AgentEvent>();
+    let (steering_tx, steering_rx) = mpsc::unbounded_channel::<String>();
     // VRO-5.3 directive 3: live trajectory channel. Both wrappers below
     // share this sender; the event loop drains the receiver into
     // `session.reasoning` so the Reasoning panel renders the
     // Action/Observation cycle live as the loop runs.
     let (traj_tx, traj_rx) = mpsc::unbounded_channel::<String>();
-    let capturing_agent = TrajectoryCapturingReactAgent::new(bundle.agent, traj_tx.clone());
+    let capturing_agent = TrajectoryCapturingReactAgent::new(bundle.agent, traj_tx.clone())
+        .with_steering(steering_rx);
     // Keep one sender for the VRO-7 learning-extraction notice so the
     // Reasoning Panel renders it below the Action/Observation cycle when a
     // ReAct turn succeeds (directive 3).
@@ -5836,6 +5916,7 @@ fn spawn_vro_react_turn(
     });
 
     session.agent_rx = Some(rx);
+    session.steering_tx = Some(steering_tx);
     session.trajectory_rx = Some(traj_rx);
     session.agent_running = true;
     // Clear the trajectory buffer at turn start so the live trajectory starts
@@ -6345,6 +6426,7 @@ fn drain_agent_event(session: &mut TuiSession) {
             Ok(event) => {
                 session.agent_running = false;
                 session.agent_rx = None;
+                session.steering_tx = None;
                 session.agent_task = None;
                 if let AgentEvent::Completed { history, .. } = &event {
                     session.conversation = history.clone();
@@ -6366,6 +6448,7 @@ fn drain_agent_event(session: &mut TuiSession) {
             Err(mpsc::error::TryRecvError::Disconnected) => {
                 session.agent_running = false;
                 session.agent_rx = None;
+                session.steering_tx = None;
                 session.agent_task = None;
                 session
                     .state
@@ -13909,6 +13992,7 @@ mod tests {
             input: String::new(),
             conversation: Vec::new(),
             agent_rx: None,
+            steering_tx: None,
             trajectory_rx: None,
             agent_task: None,
             queued_prompts: VecDeque::new(),
@@ -13970,6 +14054,7 @@ mod tests {
             input: String::new(),
             conversation: Vec::new(),
             agent_rx: None,
+            steering_tx: None,
             trajectory_rx: None,
             agent_task: None,
             queued_prompts: VecDeque::new(),
@@ -14029,6 +14114,7 @@ mod tests {
             input: String::new(),
             conversation: Vec::new(),
             agent_rx: None,
+            steering_tx: None,
             trajectory_rx: None,
             agent_task: None,
             queued_prompts: VecDeque::new(),
@@ -15226,6 +15312,7 @@ mod tests {
             input: String::new(),
             conversation: Vec::new(),
             agent_rx: None,
+            steering_tx: None,
             trajectory_rx: None,
             agent_task: None,
             queued_prompts: VecDeque::new(),
@@ -16279,13 +16366,30 @@ mod tests {
     }
 
     #[test]
-    fn send_now_interruption_preserves_visible_partial_output() {
+    fn live_steering_port_drains_in_submission_order_without_cancelling() {
+        let (tx, rx) = mpsc::unbounded_channel();
+        let port = ChannelSteeringPort { rx: Mutex::new(rx) };
+        tx.send("first correction".into()).unwrap();
+        tx.send("second correction".into()).unwrap();
+
+        assert_eq!(
+            port.drain(),
+            vec![
+                "first correction".to_owned(),
+                "second correction".to_owned()
+            ]
+        );
+        assert!(port.drain().is_empty());
+    }
+
+    #[test]
+    fn explicit_cancellation_preserves_visible_partial_output() {
         let mut session = fresh_tui_session_for_trajectory_tests();
         session.agent_running = true;
         session.live_response = "partial answer".into();
         session.live_trajectory.push("⏺ read_file".into());
 
-        cancel_active_turn_preserving_partial(&mut session, "replaced by Send Now");
+        cancel_active_turn_preserving_partial(&mut session, "cancelled by user");
 
         assert!(!session.agent_running);
         assert!(session.live_response.is_empty());

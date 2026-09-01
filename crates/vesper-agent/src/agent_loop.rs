@@ -171,11 +171,27 @@ pub trait AgentProgressPort: Send + Sync {
     fn emit(&self, event: AgentProgressEvent);
 }
 
+/// Host-owned, non-blocking inbox for guidance submitted during a live turn.
+/// The loop drains it only between complete provider/tool operations.
+pub trait AgentSteeringPort: Send + Sync {
+    /// Returns all pending user messages in submission order.
+    fn drain(&self) -> Vec<String>;
+}
+
 #[derive(Debug)]
 struct NoopProgressPort;
 
 impl AgentProgressPort for NoopProgressPort {
     fn emit(&self, _event: AgentProgressEvent) {}
+}
+
+#[derive(Debug)]
+struct NoopSteeringPort;
+
+impl AgentSteeringPort for NoopSteeringPort {
+    fn drain(&self) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 /// Disabled user-configurable per-turn cap. The loop still retains
@@ -321,6 +337,7 @@ pub struct AgentLoop {
     config: AgentLoopConfig,
     permission_port: Arc<dyn PermissionPort>,
     progress_port: Arc<dyn AgentProgressPort>,
+    steering_port: Arc<dyn AgentSteeringPort>,
     capability_advisor: Option<Arc<dyn CapabilityAdvisor>>,
     capability_context: CapabilityContext,
     active_plan: Option<String>,
@@ -340,6 +357,7 @@ impl AgentLoop {
             config,
             permission_port: Arc::new(DenyPermissionPort),
             progress_port: Arc::new(NoopProgressPort),
+            steering_port: Arc::new(NoopSteeringPort),
             capability_advisor: None,
             capability_context: CapabilityContext::default(),
             active_plan: None,
@@ -357,6 +375,13 @@ impl AgentLoop {
     #[must_use]
     pub fn with_progress_port(mut self, progress_port: Arc<dyn AgentProgressPort>) -> Self {
         self.progress_port = progress_port;
+        self
+    }
+
+    /// Installs the live-guidance inbox used at safe provider boundaries.
+    #[must_use]
+    pub fn with_steering_port(mut self, steering_port: Arc<dyn AgentSteeringPort>) -> Self {
+        self.steering_port = steering_port;
         self
     }
 
@@ -487,6 +512,7 @@ impl AgentLoop {
         let mut loop_detector = LoopDetector::new();
 
         loop {
+            append_steering_messages(&mut messages, &ids, self.steering_port.as_ref());
             if iteration >= iteration_limit {
                 if plan_has_open_items(plan.as_deref()) && iteration_limit < ultimate_plan_limit {
                     iteration_limit = iteration_limit
@@ -568,6 +594,10 @@ impl AgentLoop {
                 }
                 if !matches!(finish, FinishOutcome::Stop) {
                     return Err(AgentLoopError::Incomplete(finish));
+                }
+                if append_steering_messages(&mut messages, &ids, self.steering_port.as_ref()) > 0 {
+                    iteration += 1;
+                    continue;
                 }
                 if plan_has_open_items(plan.as_deref()) {
                     messages.retain(|message| !is_plan_continuation_message(message));
@@ -795,6 +825,26 @@ impl AgentLoop {
             }
         }
     }
+}
+
+fn append_steering_messages(
+    messages: &mut Vec<ConversationMessage>,
+    ids: &IdGenerator,
+    steering: &dyn AgentSteeringPort,
+) -> usize {
+    let pending = steering.drain();
+    let count = pending.len();
+    for text in pending {
+        if let Ok(text) = ContentText::new(text) {
+            messages.push(ConversationMessage {
+                id: ids.message(),
+                role: MessageRole::User,
+                content: vec![ContentPart::Text(text)],
+                extensions: ExtensionMap::default(),
+            });
+        }
+    }
+    count
 }
 
 const PLAN_CONTINUATION_EXTENSION: &str = "vesper:internal-plan-continuation";
