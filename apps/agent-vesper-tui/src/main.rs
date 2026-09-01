@@ -319,6 +319,7 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
         agent_task: None,
         agent_running: false,
         queued_prompt: None,
+        pending_text_pastes: Vec::new(),
         usage_rx: None,
         approval_rx,
         pending_approval: None,
@@ -624,6 +625,9 @@ struct TuiSession {
     /// workflow submitted while a turn is running is QUEUED here and fires
     /// as soon as the turn completes — never silently dropped.
     queued_prompt: Option<String>,
+    /// Large or multiline bracketed-paste payloads retained verbatim while
+    /// the composer renders compact attachment-style labels.
+    pending_text_pastes: Vec<String>,
     /// Receiver for an in-flight `/usage` quota query. Deliberately
     /// SEPARATE from `agent_rx` so the query can answer while an agent
     /// turn keeps streaming (it previously deferred until the turn ended
@@ -1117,7 +1121,10 @@ async fn drive_loop(
             overrides: session.state.overrides.clone(),
             transcript: session.state.transcript.clone(),
             input: session.input.clone(),
-            composer_attachments: composer_attachment_labels(&session.pending_images),
+            composer_attachments: composer_attachment_labels(
+                &session.pending_images,
+                &session.pending_text_pastes,
+            ),
             status: session.state.status.clone(),
             command_menu: session.command_matches.clone(),
             command_menu_selected: session.command_selected,
@@ -1507,7 +1514,8 @@ async fn drive_loop(
                         continue;
                     }
                 }
-                let intent = CommandIntent::parse(&session.input);
+                let submitted_input = take_composer_text(session);
+                let intent = CommandIntent::parse(&submitted_input);
                 // Capture whether this was a free-text prompt BEFORE dispatch
                 // clears the input buffer; Phase 6 needs the text to drive
                 // the agent loop after the pure dispatch state mutates.
@@ -1907,9 +1915,10 @@ async fn drive_loop(
             }
             KeyCode::Backspace => {
                 if session.state.preferences.composer_cursor == 0
-                    && !session.pending_images.is_empty()
+                    && (!session.pending_images.is_empty()
+                        || !session.pending_text_pastes.is_empty())
                 {
-                    remove_last_pending_image(session);
+                    remove_last_composer_attachment(session);
                 } else {
                     composer_backspace(
                         &mut session.input,
@@ -4041,9 +4050,41 @@ fn ingest_pasted_text(text: &str, session: &mut TuiSession) {
         if let Err(error) = queue_image(&path, session) {
             session.state.status = Some(format!("Image paste failed: {error}"));
         }
+    } else if text.contains(['\n', '\r']) || text.chars().count() >= 256 {
+        session.pending_text_pastes.push(text.to_owned());
+        session.state.status = Some(format!(
+            "Attached [Pasted Content {} chars] for the next prompt.",
+            format_character_count(text.chars().count())
+        ));
     } else {
         insert_composer_text(text, session);
     }
+}
+
+fn format_character_count(count: usize) -> String {
+    let digits = count.to_string();
+    let mut formatted = String::with_capacity(digits.len() + digits.len() / 3);
+    for (index, ch) in digits.chars().enumerate() {
+        if index > 0 && (digits.len() - index).is_multiple_of(3) {
+            formatted.push(',');
+        }
+        formatted.push(ch);
+    }
+    formatted
+}
+
+fn take_composer_text(session: &mut TuiSession) -> String {
+    if session.pending_text_pastes.is_empty() {
+        return session.input.clone();
+    }
+    let mut submitted = session.input.clone();
+    for paste in session.pending_text_pastes.drain(..) {
+        if !submitted.is_empty() {
+            submitted.push_str("\n\n");
+        }
+        submitted.push_str(&paste);
+    }
+    submitted
 }
 
 fn paste_native_clipboard(session: &mut TuiSession) {
@@ -4193,14 +4234,23 @@ fn queue_image_bytes(
     Ok(())
 }
 
-fn composer_attachment_labels(images: &[QueuedImage]) -> Vec<String> {
-    (1..=images.len())
+fn composer_attachment_labels(images: &[QueuedImage], text_pastes: &[String]) -> Vec<String> {
+    let mut labels: Vec<String> = (1..=images.len())
         .map(|index| format!("[Image #{index}]"))
-        .collect()
+        .collect();
+    labels.extend(text_pastes.iter().map(|paste| {
+        format!(
+            "[Pasted Content {} chars]",
+            format_character_count(paste.chars().count())
+        )
+    }));
+    labels
 }
 
-fn remove_last_pending_image(session: &mut TuiSession) {
-    if session.pending_images.pop().is_some() {
+fn remove_last_composer_attachment(session: &mut TuiSession) {
+    if session.pending_text_pastes.pop().is_some() {
+        session.state.status = Some("Removed pasted-content attachment.".into());
+    } else if session.pending_images.pop().is_some() {
         session.state.status = Some(if session.pending_images.is_empty() {
             "Removed image attachment.".into()
         } else {
@@ -13796,6 +13846,7 @@ mod tests {
             trajectory_rx: None,
             agent_task: None,
             queued_prompt: None,
+            pending_text_pastes: Vec::new(),
             usage_rx: None,
             agent_running: true,
             approval_rx: mpsc::unbounded_channel().1,
@@ -13856,6 +13907,7 @@ mod tests {
             trajectory_rx: None,
             agent_task: None,
             queued_prompt: None,
+            pending_text_pastes: Vec::new(),
             usage_rx: None,
             agent_running: true,
             approval_rx: mpsc::unbounded_channel().1,
@@ -13914,6 +13966,7 @@ mod tests {
             trajectory_rx: None,
             agent_task: None,
             queued_prompt: None,
+            pending_text_pastes: Vec::new(),
             usage_rx: None,
             agent_running: true,
             approval_rx: mpsc::unbounded_channel().1,
@@ -15110,6 +15163,7 @@ mod tests {
             trajectory_rx: None,
             agent_task: None,
             queued_prompt: None,
+            pending_text_pastes: Vec::new(),
             usage_rx: None,
             agent_running: false,
             approval_rx,
@@ -16175,7 +16229,7 @@ mod tests {
         assert!(session.pending_images[0].encoded.starts_with("iVBOR"));
         assert!(session.input.is_empty());
         assert_eq!(
-            composer_attachment_labels(&session.pending_images),
+            composer_attachment_labels(&session.pending_images, &session.pending_text_pastes),
             ["[Image #1]"]
         );
         assert!(session.state.transcript.is_empty());
@@ -16187,17 +16241,63 @@ mod tests {
         queue_clipboard_image(1, 1, &[0x11, 0x22, 0x33, 0xff], &mut session).unwrap();
         queue_clipboard_image(1, 1, &[0x44, 0x55, 0x66, 0xff], &mut session).unwrap();
         assert_eq!(
-            composer_attachment_labels(&session.pending_images),
+            composer_attachment_labels(&session.pending_images, &session.pending_text_pastes),
             ["[Image #1]", "[Image #2]"]
         );
 
-        remove_last_pending_image(&mut session);
+        remove_last_composer_attachment(&mut session);
         assert_eq!(
-            composer_attachment_labels(&session.pending_images),
+            composer_attachment_labels(&session.pending_images, &session.pending_text_pastes),
             ["[Image #1]"]
         );
-        remove_last_pending_image(&mut session);
+        remove_last_composer_attachment(&mut session);
         assert!(session.pending_images.is_empty());
+    }
+
+    #[test]
+    fn large_multiline_paste_renders_as_chip_and_submits_verbatim() {
+        let mut session = fresh_tui_session_for_trajectory_tests();
+        let pasted = "first directive\n".to_owned() + &"implementation detail ".repeat(100);
+
+        ingest_pasted_text(&pasted, &mut session);
+
+        assert!(
+            session.input.is_empty(),
+            "payload must not flood the composer"
+        );
+        assert_eq!(
+            session.pending_text_pastes.as_slice(),
+            std::slice::from_ref(&pasted)
+        );
+        assert_eq!(
+            composer_attachment_labels(&session.pending_images, &session.pending_text_pastes),
+            [format!(
+                "[Pasted Content {} chars]",
+                format_character_count(pasted.chars().count())
+            )]
+        );
+        assert_eq!(take_composer_text(&mut session), pasted);
+        assert!(session.pending_text_pastes.is_empty());
+    }
+
+    #[test]
+    fn short_single_line_paste_remains_directly_editable() {
+        let mut session = fresh_tui_session_for_trajectory_tests();
+        ingest_pasted_text("small paste", &mut session);
+        assert_eq!(session.input, "small paste");
+        assert!(session.pending_text_pastes.is_empty());
+    }
+
+    #[test]
+    fn backspace_at_composer_start_removes_pasted_content_before_images() {
+        let mut session = fresh_tui_session_for_trajectory_tests();
+        session.pending_text_pastes.push("large payload".into());
+        remove_last_composer_attachment(&mut session);
+        assert!(session.pending_text_pastes.is_empty());
+        assert_eq!(
+            session.state.status.as_deref(),
+            Some("Removed pasted-content attachment.")
+        );
     }
 
     #[test]

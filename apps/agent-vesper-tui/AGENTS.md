@@ -130,6 +130,11 @@ business logic.
   the start of the editable text removes the last pending image. The chips
   are a render-only projection of the existing `pending_images` payload and
   disappear when that payload is consumed by submission.
+  Multiline or 256+-character text pastes follow the same compact UX: retain
+  the exact payload outside the editable line, render
+  `[Pasted Content N chars]`, expand it only when Enter submits the prompt,
+  and let Backspace at the editable-text origin remove the newest paste chip.
+  Short single-line pastes remain directly editable.
   `render_permission_modal` overlays a centered `Clear` + bordered dialog
   (`PermissionModal`/`PermissionChoice` exported from `lib.rs`) whenever
   `ViewModel::pending_permission` is set; the binary's event loop intercepts
