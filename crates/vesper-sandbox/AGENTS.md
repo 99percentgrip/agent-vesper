@@ -44,6 +44,15 @@ through safe `std::process`.
 - Linux-only: `libc` is a dependency only under
   `[target.'cfg(target_os = "linux")']`. Off Linux the honest stub
   (`UnavailableBackend`) reports everything unavailable and fails closed.
+- Docker backend (VRO-13 PR-4) is **feature-gated** behind
+  `--features docker`; default builds gain zero new dependencies. It wraps
+  `docker run --rm -d` with `--cpus`/`--memory`/`--pids-limit` limits, a
+  bind-mount of the canonicalized primary root at `/workspace`, and
+  `--network none` unless the scope demand explicitly grants network.
+  The cold-start guard probes `docker version` first: an unreachable
+  daemon yields the model-facing "sandbox unavailable … the operation
+  needs isolation" refusal before any `docker run` is attempted, and
+  `capabilities()` reports everything `Unavailable` — never assumed.
 
 ## Work Guidance
 

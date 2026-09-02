@@ -334,6 +334,7 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
         telemetry: Arc::new(trajectory_recorder()),
         activity: Vec::new(),
         live_trajectory: Vec::new(),
+        show_tool_details: false,
         lens_url_rx: Some(lens_url_rx),
         last_lens_url: None,
         last_model: None,
@@ -663,6 +664,8 @@ struct TuiSession {
     /// trajectory stream. Reads top-to-bottom naturally with the assistant's
     /// text. Cleared at turn start alongside `reasoning`.
     live_trajectory: Vec<String>,
+    /// Ctrl+T projection switch: compact chat by default, full tool log on demand.
+    show_tool_details: bool,
     /// VRO-11.4 — receiver for VesperLens review-URL announcements. The
     /// `request_human_review` tool sends the `[VesperLens] Artifact ready
     /// for review.` message and the bare URL line through this channel; the
@@ -1176,6 +1179,7 @@ async fn drive_loop(
             task_plan: session.state.task_plan.clone(),
             activity: session.activity.clone(),
             live_trajectory: session.live_trajectory.clone(),
+            show_tool_details: session.show_tool_details,
             reasoning: session.reasoning.clone(),
             reasoning_diagnostics: session.reasoning_diagnostics.clone(),
             live_response: session.live_response.clone(),
@@ -1448,6 +1452,16 @@ async fn drive_loop(
         if matches!(code, KeyCode::Char('v')) && ctrl {
             paste_native_clipboard(session);
             refresh_command_menu(session, registry_commands, surface);
+            continue;
+        }
+        if matches!(code, KeyCode::Char('t')) && ctrl {
+            session.show_tool_details = !session.show_tool_details;
+            session.state.conversation_manual_scroll = None;
+            session.state.status = Some(if session.show_tool_details {
+                "Full tool activity shown; Ctrl+T returns to compact chat.".into()
+            } else {
+                "Tool activity collapsed; Ctrl+T shows the full run transcript.".into()
+            });
             continue;
         }
         if let Some(action) = bound_action(&session.keybindings, code, modifiers) {
@@ -3946,6 +3960,15 @@ fn apply_keybinding_action(
                 "Chat-only view. F11 restores the sidebar panels.".into()
             } else {
                 "Sidebar panels restored.".into()
+            });
+        }
+        "toggle_tool_details" => {
+            session.show_tool_details = !session.show_tool_details;
+            session.state.conversation_manual_scroll = None;
+            session.state.status = Some(if session.show_tool_details {
+                "Full tool activity shown; Ctrl+T returns to compact chat.".into()
+            } else {
+                "Tool activity collapsed; Ctrl+T shows the full run transcript.".into()
             });
         }
         "settings" | "open_history" | "open_search" => {
@@ -14066,6 +14089,7 @@ mod tests {
             telemetry: Arc::new(vesper_observability::TrajectoryRecorder::disabled()),
             activity: Vec::new(),
             live_trajectory: Vec::new(),
+            show_tool_details: false,
             lens_url_rx: None,
             last_lens_url: None,
             last_model: None,
@@ -14128,6 +14152,7 @@ mod tests {
             telemetry: Arc::new(vesper_observability::TrajectoryRecorder::disabled()),
             activity: Vec::new(),
             live_trajectory: Vec::new(),
+            show_tool_details: false,
             lens_url_rx: None,
             last_lens_url: None,
             last_model: None,
@@ -14188,6 +14213,7 @@ mod tests {
             telemetry: Arc::new(vesper_observability::TrajectoryRecorder::disabled()),
             activity: Vec::new(),
             live_trajectory: Vec::new(),
+            show_tool_details: false,
             lens_url_rx: None,
             last_lens_url: None,
             last_model: None,
@@ -15386,6 +15412,7 @@ mod tests {
             telemetry: Arc::new(trajectory_recorder()),
             activity: Vec::new(),
             live_trajectory: Vec::new(),
+            show_tool_details: false,
             lens_url_rx: None,
             last_lens_url: None,
             last_model: None,
@@ -16155,46 +16182,53 @@ mod tests {
     }
 
     #[test]
-    fn vro114_transcript_lines_include_live_trajectory_when_agent_running() {
-        // VRO-11.4 Phase 2A / VRO-11.5: tool telemetry renders INLINE in the
-        // Conversation panel with the Claude Code ⏺ action glyph. Verify the
-        // ViewModel's transcript includes live_trajectory entries when
-        // agent_running is true.
+    fn vro114_transcript_lines_collapse_live_trajectory_when_agent_running() {
+        // Raw tool telemetry stays available but normal chat receives one
+        // compact activity summary instead of hundreds of event rows.
         use agent_vesper_tui::ui::transcript_lines_for;
         let model = ViewModel {
             transcript: vec!["user: build a dashboard".into()],
-            live_trajectory: vec!["> ⏺ write_file".into()],
+            live_trajectory: vec!["⏺ write_file".into(), "  ⎿ ✓ write_file".into()],
             agent_running: true,
             live_response: String::new(),
             ..ViewModel::default()
         };
         let lines = transcript_lines_for(&model);
-        // The live_trajectory entry must appear after the transcript.
         assert!(
-            lines
-                .iter()
-                .any(|l| l.contains("⏺") && l.contains("write_file")),
-            "live_trajectory must be inline: {lines:?}"
+            lines.iter().any(|line| line.contains("Ran 1 tools")),
+            "compact activity summary must be inline: {lines:?}"
         );
+        assert!(!lines.iter().any(|line| line.contains("write_file")));
     }
 
     #[test]
-    fn vro114_transcript_lines_exclude_live_trajectory_when_agent_idle() {
-        // When the agent is NOT running, stale trajectory entries must NOT
-        // pollute the conversation — they're transient, per-turn only.
+    fn vro114_transcript_lines_keep_completed_activity_collapsed_when_idle() {
+        // Completed activity remains discoverable after finalization while
+        // its raw rows stay out of the conversational reading path.
         use agent_vesper_tui::ui::transcript_lines_for;
         let model = ViewModel {
             transcript: vec!["user: done".into()],
-            live_trajectory: vec!["> ⏺ write_file".into()],
+            live_trajectory: vec!["⏺ write_file".into()],
             agent_running: false,
             live_response: String::new(),
             ..ViewModel::default()
         };
         let lines = transcript_lines_for(&model);
-        assert!(
-            !lines.iter().any(|l| l.contains("write_file")),
-            "live_trajectory must be hidden when idle: {lines:?}"
-        );
+        assert!(lines.iter().any(|line| line.contains("Ran 1 tools")));
+        assert!(!lines.iter().any(|line| line.contains("write_file")));
+    }
+
+    #[test]
+    fn vro114_detail_projection_keeps_completed_raw_activity_available() {
+        use agent_vesper_tui::ui::transcript_lines_for;
+        let model = ViewModel {
+            live_trajectory: vec!["⏺ run_command · cargo test".into()],
+            show_tool_details: true,
+            ..ViewModel::default()
+        };
+        let lines = transcript_lines_for(&model);
+        assert!(lines.iter().any(|line| line.contains("cargo test")));
+        assert!(lines.iter().any(|line| line.contains("returns to chat")));
     }
 
     #[test]

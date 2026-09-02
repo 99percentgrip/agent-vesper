@@ -186,6 +186,25 @@ Every host-agnostic capability shipped in the TUI MUST also be wired here
   catalog commands. ACP advertises the frozen 28-command compatibility
   catalog plus the shared implemented host-neutral extension catalog.
 
+## Sandbox `/sandbox on|off|status` (VRO-13 PR-4)
+
+`/sandbox` answers the boot-resolved scope-demand route (process-global,
+once-only holder, exactly like `/firewall`), with argument handling
+byte-identical to the TUI's (host-parity contract):
+
+- bare or `status` — the live route body (active backend + demand + route
+  instance, or the truthful no-route notice pointing at
+  `.agent-vesper/config.toml` `[sandbox]`).
+- `on` / `enable` — the honest restart instruction: the demand lives in
+  `[sandbox]`; edit it and restart. Never a fake runtime toggle.
+- `off` / `disable` — restart with `AGENT_VESPER_SANDBOX=off`.
+- anything else — the shared usage error listing `on|off|status`.
+
+The route itself is resolved at host boot (`AGENT_VESPER_SANDBOX=docker|off`
+plus the `[sandbox]` scope demand); the Docker backend requires a
+`--features docker` build of this composition, and a build without it
+refuses a docker demand honestly instead of falling back.
+
 ## Checkpoints and Lineage Are Opt-In
 
 `/checkpoint`, `/rollback`, `/undo`, `/sessions`, and `/lineage` are

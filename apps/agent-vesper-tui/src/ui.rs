@@ -214,6 +214,9 @@ pub struct ViewModel {
     /// Conversation panel. Populated from the direct path's
     /// ToolStarted/ToolFinished events and the ReAct trajectory stream.
     pub live_trajectory: Vec<String>,
+    /// Whether the conversation canvas is showing the full tool transcript.
+    /// The default chat view keeps this telemetry collapsed into one summary.
+    pub show_tool_details: bool,
     /// Provider-visible reasoning streamed during the current turn.
     pub reasoning: String,
     /// VRO-8 (PRD §8.1) — diagnostic projection rendered as a header at the
@@ -273,7 +276,8 @@ pub const FOOTER_ACTIONS: &[(&str, &str)] = &[
     ("F3 Settings", "settings"),
     ("F4 Working tree", "toggle_working_tree"),
     ("F5 Push to talk", "toggle_voice"),
-    ("F6 History", "open_history"),
+    ("Ctrl+T Activity", "toggle_tool_details"),
+    ("F6 Sessions", "open_history"),
     ("^y Copy response", "copy_last_response"),
     ("F11 Chat only", "toggle_chat_only"),
     ("^p Palette", "open_palette"),
@@ -829,6 +833,7 @@ fn render_transcript_lines(transcript_lines: &[String], _inner_width: usize) -> 
         // visual hierarchy Claude Code and Codex use in their single
         // conversation feed.
         let is_thinking = raw.starts_with("thinking:");
+        let is_activity = raw.starts_with("activity:");
         let is_telemetry = raw.starts_with("⏺") || raw.trim_start_matches(' ').starts_with("⎿");
         let is_url_line =
             (raw.starts_with("http://") || raw.starts_with("https://")) && !raw.contains(' ');
@@ -837,7 +842,7 @@ fn render_transcript_lines(transcript_lines: &[String], _inner_width: usize) -> 
         // thinking/tool events as one compact activity group. Treating every
         // action/result as a chat turn doubled the feed height and buried the
         // actual answer beneath empty rows.
-        let is_secondary = is_thinking || is_telemetry || is_url_line;
+        let is_secondary = is_thinking || is_activity || is_telemetry || is_url_line;
         if idx > 0 && !(is_secondary && previous_was_secondary) {
             rendered.push(Line::raw(""));
         }
@@ -855,6 +860,8 @@ fn render_transcript_lines(transcript_lines: &[String], _inner_width: usize) -> 
             raw.strip_prefix("thinking: ")
                 .or_else(|| raw.strip_prefix("thinking:"))
                 .unwrap_or(raw)
+        } else if is_activity {
+            raw.strip_prefix("activity: ").unwrap_or(raw)
         } else if is_telemetry {
             // Keep the ⏺ / indented ⎿ glyphs verbatim — they read as
             // Claude Code's quiet action/result markers.
@@ -888,6 +895,13 @@ fn render_transcript_lines(transcript_lines: &[String], _inner_width: usize) -> 
             let style = Style::default()
                 .fg(Color::Rgb(148, 148, 170))
                 .add_modifier(Modifier::ITALIC);
+            for line in lines {
+                rendered.push(restyle_line(line, style));
+            }
+        } else if is_activity {
+            let style = Style::default()
+                .fg(Color::Rgb(91, 155, 213))
+                .add_modifier(Modifier::BOLD);
             for line in lines {
                 rendered.push(restyle_line(line, style));
             }
@@ -1272,13 +1286,66 @@ pub fn transcript_lines_for(model: &ViewModel) -> Vec<String> {
     // naturally with the assistant's text (matches Codex / Claude Code /
     // the host-agent rendering). Each line is already prefixed
     // with `> ` for visual distinction from user/assistant turns.
-    if model.agent_running {
-        lines.extend(model.live_trajectory.iter().cloned());
+    if model.show_tool_details {
+        if !model.live_trajectory.is_empty() {
+            lines.push("activity: Full tool activity · Ctrl+T returns to chat".into());
+            lines.extend(model.live_trajectory.iter().cloned());
+        }
+    } else if !model.live_trajectory.is_empty() {
+        lines.push(tool_activity_summary(&model.live_trajectory));
+        lines.extend(
+            model
+                .live_trajectory
+                .iter()
+                .filter(|line| line.contains("VesperLens") || line.starts_with("http"))
+                .cloned(),
+        );
     }
     if model.agent_running && !model.live_response.is_empty() {
         lines.push(format!("assistant (streaming): {}", model.live_response));
     }
     lines
+}
+
+/// Compact projection of a verbose provider/tool event stream.
+#[must_use]
+pub fn tool_activity_summary(entries: &[String]) -> String {
+    let mut commands = 0_usize;
+    let mut reads = 0_usize;
+    let mut edits = 0_usize;
+    let mut other = 0_usize;
+    for entry in entries {
+        let Some(action) = entry.trim().strip_prefix('⏺') else {
+            continue;
+        };
+        let name = action.trim().split([' ', '·']).next().unwrap_or_default();
+        if name.contains("command") || name.contains("shell") {
+            commands += 1;
+        } else if name.contains("read")
+            || name.contains("list")
+            || name.contains("grep")
+            || name.contains("search")
+        {
+            reads += 1;
+        } else if name.contains("write") || name.contains("edit") || name.contains("patch") {
+            edits += 1;
+        } else {
+            other += 1;
+        }
+    }
+    let total = commands + reads + edits + other;
+    let mut parts = vec![format!("Ran {total} tools")];
+    for (count, label) in [
+        (commands, "commands"),
+        (reads, "reads"),
+        (edits, "edits"),
+        (other, "other"),
+    ] {
+        if count > 0 {
+            parts.push(format!("{count} {label}"));
+        }
+    }
+    format!("activity: ● {} · Ctrl+T details", parts.join(" · "))
 }
 
 fn banner_style_for_phase(phase: PlanPhase) -> Style {
@@ -1581,6 +1648,7 @@ mod tests {
         // underlined at normal brightness — so terminals auto-linkify it.
         let model = ViewModel {
             agent_running: true,
+            show_tool_details: true,
             live_trajectory: vec![
                 "⏺ write_file".to_string(),
                 "  ⎿ ✓ write_file".to_string(),

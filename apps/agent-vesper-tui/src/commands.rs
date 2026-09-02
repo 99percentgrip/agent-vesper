@@ -127,6 +127,13 @@ pub enum CommandOutcome {
     /// [`crate::dispatch::SessionState`] to produce the view text.
     ContextView(ViewKind),
 
+    // === VRO-13 PR-4 — sandbox host parity ===
+    /// `/sandbox on|off` — restart-instruction arms of the sandbox panel.
+    /// The route is boot-resolved (once-only holder), so `on`/`off` answer
+    /// with the honest edit-config-and-restart step rather than a runtime
+    /// toggle, mirroring the ACP host byte-for-byte.
+    SandboxControl(SandboxControl),
+
     // === Tier C Phase 7 (ADR 0010) — workflow prompts ===
     /// A workflow command built a prompt that should drive a background
     /// `AgentLoop` turn. `display` is shown in the transcript; `prompt` is
@@ -227,6 +234,19 @@ pub enum ViewKind {
     /// `/sandbox` — scope-demanded sandbox panel (view + backend choice,
     /// resolved once at boot from `[sandbox]` + `AGENT_VESPER_SANDBOX`).
     Sandbox,
+}
+
+/// VRO-13 PR-4: `/sandbox on|off` control arms. The sandbox route is
+/// process-global and boot-resolved (once-only holder), so neither arm can
+/// be a live runtime toggle — both answer with the honest restart
+/// instruction, byte-identical in the TUI and ACP hosts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SandboxControl {
+    /// `/sandbox on` — the demand lives in `[sandbox]`; explains the
+    /// edit-config-and-restart step.
+    On,
+    /// `/sandbox off` — explains the `AGENT_VESPER_SANDBOX=off` restart.
+    Off,
 }
 
 /// Live session settings implemented by the native Rust harness.
@@ -897,9 +917,28 @@ impl CommandRegistry {
             // env restart (AGENT_VESPER_FIREWALL=off); there is no runtime
             // toggle by design.
             "firewall" => CommandOutcome::ContextView(ViewKind::Firewall),
-            // VRO-13 PR-4: view-only sandbox panel, mirroring the firewall
-            // panel's honesty contract (backend choice is boot-resolved).
-            "sandbox" => CommandOutcome::ContextView(ViewKind::Sandbox),
+            // VRO-13 PR-4: sandbox panel with `on|off|status` argument
+            // parity. The route is boot-resolved (once-only holder), so
+            // `on`/`off` are honest restart instructions, not runtime
+            // toggles — byte-identical semantics to the ACP host's
+            // `/sandbox on|off|status` surface.
+            "sandbox" => {
+                let value = argument.trim().to_ascii_lowercase();
+                match value.as_str() {
+                    "" | "status" => CommandOutcome::ContextView(ViewKind::Sandbox),
+                    "on" | "enable" | "enabled" => {
+                        CommandOutcome::SandboxControl(SandboxControl::On)
+                    }
+                    "off" | "disable" | "disabled" => {
+                        CommandOutcome::SandboxControl(SandboxControl::Off)
+                    }
+                    _ => CommandOutcome::Error(
+                        "Usage: /sandbox [on|off|status] (route is boot-resolved; \
+                         on/off explain the restart step)"
+                            .into(),
+                    ),
+                }
+            }
 
             "tasks" => CommandOutcome::Ui(UiAction::ToggleTasks),
             "max-iterations" => {
@@ -1962,7 +2001,7 @@ const ORACLE_COMMAND_SURFACE: &[OracleCommandEntry] = &[
     },
     OracleCommandEntry {
         name: "sandbox",
-        description: "Show the VRO-13 scope-demand sandbox status (view-only; boot-resolved)",
+        description: "Show or steer the VRO-13 sandbox (on|off|status; route is boot-resolved)",
     },
     OracleCommandEntry { name: "quit",              description: "Exit the TUI (Vesper-native; oracle uses Ctrl+X)" },
 ];
@@ -2780,6 +2819,43 @@ mod tests {
             CommandOutcome::ContextView(ViewKind::MaxIterations)
         );
         assert_eq!(resolve_bare("usage"), CommandOutcome::ProviderUsage);
+    }
+
+    #[test]
+    fn sandbox_command_parses_on_off_and_status_parity_arguments() {
+        // VRO-13 PR-4 host parity: bare and `status` show the panel; `on`
+        // and `off` are honest restart instructions (the route holder is
+        // first-resolution-wins at boot, identical to the ACP host).
+        assert_eq!(
+            resolve_bare("sandbox"),
+            CommandOutcome::ContextView(ViewKind::Sandbox)
+        );
+        assert_eq!(
+            resolve_bare_intent(&CommandIntent::parse("/sandbox status")),
+            CommandOutcome::ContextView(ViewKind::Sandbox)
+        );
+        assert_eq!(
+            resolve_bare_intent(&CommandIntent::parse("/sandbox on")),
+            CommandOutcome::SandboxControl(SandboxControl::On)
+        );
+        assert_eq!(
+            resolve_bare_intent(&CommandIntent::parse("/sandbox enable")),
+            CommandOutcome::SandboxControl(SandboxControl::On)
+        );
+        assert_eq!(
+            resolve_bare_intent(&CommandIntent::parse("/sandbox off")),
+            CommandOutcome::SandboxControl(SandboxControl::Off)
+        );
+        assert_eq!(
+            resolve_bare_intent(&CommandIntent::parse("/sandbox disable")),
+            CommandOutcome::SandboxControl(SandboxControl::Off)
+        );
+        // Unknown arguments are a bounded usage error, never a silent
+        // fallthrough to the status panel.
+        assert!(matches!(
+            resolve_bare_intent(&CommandIntent::parse("/sandbox maybe")),
+            CommandOutcome::Error(_)
+        ));
     }
 
     #[test]

@@ -9,6 +9,9 @@ publish = false
 
 [features]
 integration-test-harness = ["dep:vesper-provider-synthetic"]
+# VRO-13 PR-4: forwards to the harness/sandbox docker backend so release
+# builds can enable it; zero new mandatory dependencies for default builds.
+docker = ["vesper-harness/docker"]
 
 [dependencies]
 base64.workspace = true

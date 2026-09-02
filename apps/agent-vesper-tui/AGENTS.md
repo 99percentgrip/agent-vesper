@@ -33,7 +33,7 @@ business logic.
   (80 distinct oracle command names, including `/export last`, + 16
   Vesper-native = 96 commands; Vesper-native = approve, cancel, auth,
   lmstudio, provider, embedding, chat-only, quit, remember, recall, forget,
-  memories, promote, demote, interview-limit, firewall). The
+  memories, promote, demote, interview-limit, firewall, sandbox). The
   `ORACLE_COMMAND_SURFACE` const table is the single source of truth for the
   migration matrix. `chat-only` (the `/chat-only` palette twin of the F11
   keybinding) resolves to `UiAction::ToggleChatOnly`; like every registry
@@ -59,6 +59,14 @@ business logic.
   remains 4. The command, palette, tool schema, and executor share one typed
   policy, and the schema is rebuilt for every turn so the model sees the
   active value.
+  VRO-13 PR-4: `/sandbox [on|off|status]` resolves to
+  `CommandOutcome::ContextView(ViewKind::Sandbox)` (bare or `status`) or
+  `CommandOutcome::SandboxControl(SandboxControl::On|Off)`. The route is
+  boot-resolved (once-only holder), so `on`/`off` answer with the honest
+  edit-config-and-restart instruction — byte-identical text to the ACP
+  host's `/sandbox` surface (host-parity contract); unknown arguments get
+  the shared usage error. `/status` surfaces `sandbox=on|off` alongside the
+  firewall line.
   ADR 0021: cognitive memory is composed as two independent engines. The
   existing project store remains at `AGENT_VESPER_COGNITION_ROOT` or
   `.agent-vesper/cognition/`; the global store uses
@@ -116,9 +124,11 @@ business logic.
   `transcript_lines_for` emits a `thinking:`-prefixed block (compact
   `ReasoningDiagnostics::render_inline_header()` label + the newest
   `INLINE_THINKING_TAIL_LINES` reasoning lines) while a turn runs;
-  `render_transcript_lines` renders `thinking:` entries dim + italic and
-  `⏺`/`⎿` telemetry entries dim via `restyle_line`,
-  mirroring Claude Code / Codex live-tool hierarchy. `PanelVisibility`
+  `render_transcript_lines` renders `thinking:` entries dim + italic. Raw
+  `⏺`/`⎿` telemetry is collapsed by default into one categorized run summary;
+  Ctrl+T toggles the complete activity transcript during or after the turn
+  without replacing the final answer. Review URLs remain visible in compact
+  chat. `PanelVisibility`
   now means: `reasoning` = inline-thinking visibility (F2), `sidebar` =
   right-rail visibility, and `tasks` = dedicated TODO visibility. `ViewModel` no longer carries
   `reasoning_manual_scroll` / `reasoning_panel_focused` — every scroll
@@ -128,8 +138,8 @@ business logic.
   User turns (`user:` prefix) render as plain markdown with a compact cyan
   `›` prompt marker; assistant turns remain unboxed. Legacy full-width and
   asymmetric chat-bubble backgrounds are prohibited. Consecutive thinking
-  and tool action/result entries form one compact activity group without
-  blank rows between every event; human turns retain breathing room. Submitted
+  and expanded tool action/result entries form one compact activity group
+  without blank rows between every event; human turns retain breathing room. Submitted
   bracketed pastes remain compact `[Pasted Content N chars]` chips in the
   visible transcript while their complete text still reaches provider history.
   Mouse selection starts and ends only inside the Conversation column; sidebar
@@ -331,16 +341,18 @@ business logic.
   is configured (zero-cost when not).
   **VRO-11.4 (Local Recon & UX Overhaul)**: four architectural course-
   corrections driven by architectural analysis.
-  **(1) Inline Telemetry** — tool execution logs are ripped out of the
-  Reasoning sidebar and rendered DIRECTLY in the main Conversation panel.
+  **(1) Collapsible Inline Telemetry** — tool execution logs are owned by the
+  main Conversation canvas rather than the Reasoning sidebar, but normal chat
+  projects them as a single `Ran N tools` summary. Ctrl+T exposes the raw log
+  and works after completion, preventing either telemetry floods or lost run
+  history.
   A new `TuiSession.live_trajectory: Vec<String>` field collects per-turn
   tool telemetry from both the direct path (`AgentProgressEvent::ToolStarted`
   / `ToolFinished` → `> 🛠️ Executing: <name>...` / `> ✓ <name>`) and the
   ReAct trajectory stream (`drain_trajectory` → `> ⏳ *Executing* ...`).
-  The ViewModel's `transcript_lines_for` appends `live_trajectory` after
-  the transcript so the trajectory reads top-to-bottom naturally with the
-  assistant's text (matching Codex / Claude Code host-agent
-  rendering). The field is cleared at turn start alongside `reasoning`.
+  The ViewModel's `transcript_lines_for` owns both compact and expanded
+  projections. The field is cleared only when a new turn starts alongside
+  `reasoning`, so the completed run remains inspectable.
   **(2) Explicit `request_human_review` tool** — the implicit
   `LensObservingInvoker` (VRO-11.3 directive 4) is DELETED. VesperLens
   review is now triggered by an EXPLICIT tool the model calls when it wants

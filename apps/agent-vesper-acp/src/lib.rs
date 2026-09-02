@@ -883,40 +883,47 @@ impl AcpHarnessEngine {
                     );
                 return slash_result(body);
             }
-            // VRO-13 PR-4: `/sandbox` mirrors the TUI's host-parity panel.
-            // View-only textually (the route is process-global and immutable
-            // after boot, exactly like the firewall), but `on`/`off` are
-            // honored in the sense the route supports: `off` requires a
-            // restart with AGENT_VESPER_SANDBOX=off, and `on` with no
-            // [sandbox] scope demand is a no-op (nothing to route).
+            // VRO-13 PR-4: `/sandbox on|off|status` mirrors the TUI's
+            // host-parity panel byte-for-byte (root bidirectional-parity
+            // contract). The route is process-global and immutable after
+            // boot (once-only holder), so `on`/`off` are honored as the
+            // honest restart instructions they are — never a fake runtime
+            // toggle — and unknown arguments get the same usage error the
+            // TUI emits.
             if lowered == "sandbox" {
-                let route = vesper_harness::sandbox_backend::holder::shared();
-                let body = match raw_argument.trim().to_ascii_lowercase().as_str() {
-                    "on" => "sandbox: route is boot-resolved; set [sandbox] in \
-                             .agent-vesper/config.toml and restart"
+                let argument = raw_argument.trim().to_ascii_lowercase();
+                let body = match argument.as_str() {
+                    "" | "status" => vesper_harness::sandbox_backend::holder::shared()
+                        .as_ref()
+                        .map_or_else(
+                            || {
+                                "sandbox: no active route (no [sandbox] scope \
+                                 demand; run_command runs unsandboxed; add \
+                                 [sandbox] to .agent-vesper/config.toml and \
+                                 restart to demand isolation)"
+                                    .to_owned()
+                            },
+                            |route| {
+                                let caps = route.capabilities();
+                                format!(
+                                    "sandbox: active (backend {:?}, demand {:?}; \
+                                     route instance {:#x})",
+                                    caps.backend,
+                                    route.demand().requirement,
+                                    vesper_harness::sandbox_backend::holder::route_id()
+                                )
+                            },
+                        ),
+                    "on" | "enable" | "enabled" => "sandbox: route is boot-resolved; set \
+                                                  [sandbox] in .agent-vesper/config.toml \
+                                                  and restart"
                         .to_owned(),
-                    "off" => "sandbox: off requires a restart with \
-                             AGENT_VESPER_SANDBOX=off"
+                    "off" | "disable" | "disabled" => {
+                        "sandbox: off requires a restart with AGENT_VESPER_SANDBOX=off".to_owned()
+                    }
+                    _ => "Usage: /sandbox [on|off|status] (route is boot-resolved; \
+                         on/off explain the restart step)"
                         .to_owned(),
-                    _ => route.as_ref().map_or_else(
-                        || {
-                            "sandbox: no active route (no [sandbox] scope \
-                             demand; run_command runs unsandboxed; add \
-                             [sandbox] to .agent-vesper/config.toml and \
-                             restart to demand isolation)"
-                                .to_owned()
-                        },
-                        |route| {
-                            let caps = route.capabilities();
-                            format!(
-                                "sandbox: active (backend {:?}, demand {:?}; \
-                                 route instance {:#x})",
-                                caps.backend,
-                                route.demand().requirement,
-                                vesper_harness::sandbox_backend::holder::route_id()
-                            )
-                        },
-                    ),
                 };
                 return slash_result(body);
             }

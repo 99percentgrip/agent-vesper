@@ -861,6 +861,24 @@ fn apply_outcome(
             }
         }
 
+        // VRO-13 PR-4: `/sandbox on|off` — honest restart instructions.
+        // The route holder is first-resolution-wins at host boot, so a
+        // runtime toggle would lie about process-global state. Mirrors the
+        // ACP host's byte-identical responses (host-parity contract).
+        CommandOutcome::SandboxControl(control) => {
+            use crate::commands::SandboxControl;
+            let line = match control {
+                SandboxControl::On => "sandbox: route is boot-resolved; set [sandbox] in \
+                     .agent-vesper/config.toml and restart"
+                    .to_string(),
+                SandboxControl::Off => {
+                    "sandbox: off requires a restart with AGENT_VESPER_SANDBOX=off".to_string()
+                }
+            };
+            transcript.push(line);
+            *status = None;
+        }
+
         // === Phase 7 (ADR 0010) — workflow prompts ===
         // Stash the constructed prompt on the session; the binary drains it
         // after dispatch and spawns the AgentLoop. The display text lands in
@@ -1158,7 +1176,6 @@ fn render_context_view(
         }
     }
 }
-
 /// Lower-cased phase label for view rendering.
 fn phase_label(phase: PlanPhase) -> &'static str {
     match phase {
