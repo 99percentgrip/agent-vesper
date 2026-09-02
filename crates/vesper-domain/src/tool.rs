@@ -220,6 +220,61 @@ pub struct DiffSummary {
     pub deletions: u64,
 }
 
+/// Operation represented by one successful workspace-file change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum FileChangeOperation {
+    /// A new text file was created.
+    Create,
+    /// An existing text file was modified or replaced.
+    Modify,
+}
+
+/// Classification of one line in a bounded, renderable file-change preview.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DiffLineKind {
+    /// Unchanged context surrounding the edit.
+    Context,
+    /// A line added by the tool.
+    Addition,
+    /// A line removed by the tool.
+    Deletion,
+}
+
+/// One line of a bounded file-change preview.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DiffLine {
+    /// Whether this line is context, an addition, or a deletion.
+    pub kind: DiffLineKind,
+    /// Text without a diff marker or trailing newline.
+    pub text: String,
+}
+
+/// Bounded, provider-neutral presentation data for one successful text edit.
+///
+/// Executors compute this from their real before/after content. Frontends may
+/// render the line preview locally; protocol adapters may publish only the
+/// structured path/operation metadata when their wire contract owns diff
+/// presentation. `lines` is deliberately bounded by the producing executor.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileChangePreview {
+    /// Workspace-facing path supplied to the tool (normally relative).
+    pub path: String,
+    /// Confined absolute path, suitable for protocols requiring one.
+    pub absolute_path: String,
+    /// Whether the successful call created or modified the file.
+    pub operation: FileChangeOperation,
+    /// Total added lines in the complete change, not merely the preview.
+    pub additions: u64,
+    /// Total removed lines in the complete change, not merely the preview.
+    pub deletions: u64,
+    /// Bounded context/change lines for terminal presentation.
+    pub lines: Vec<DiffLine>,
+    /// Whether one or more complete change lines were omitted from `lines`.
+    pub truncated: bool,
+}
+
 /// Tool output paired to exactly one call.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ToolResult {

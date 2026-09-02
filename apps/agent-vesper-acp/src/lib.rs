@@ -1338,6 +1338,7 @@ impl vesper_agent::AgentProgressPort for AcpEngineProgressPort {
                 name,
                 success,
                 note,
+                change,
             } => {
                 let paired = self
                     .outstanding
@@ -1350,6 +1351,7 @@ impl vesper_agent::AgentProgressPort for AcpEngineProgressPort {
                     name,
                     success,
                     note,
+                    change,
                 });
             }
             vesper_agent::AgentProgressEvent::PlanUpdated { markdown } => {
@@ -2434,6 +2436,7 @@ mod tests {
                 name: "read_file".to_owned(),
                 success: true,
                 note: "43 lines".to_owned(),
+                change: None,
             },
         );
         let events = recording.0.lock().unwrap().clone();

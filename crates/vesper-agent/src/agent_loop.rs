@@ -67,6 +67,8 @@ pub enum AgentProgressEvent {
         name: String,
         success: bool,
         note: String,
+        /// Bounded before/after projection for a successful text-file edit.
+        change: Option<vesper_domain::FileChangePreview>,
     },
     /// The model replaced the current task plan.
     PlanUpdated { markdown: String },
@@ -641,6 +643,7 @@ impl AgentLoop {
                 let mut output = outcome.text;
                 let injected = outcome.injected;
                 let media = outcome.media;
+                let change = outcome.change;
                 let execution_succeeded = !output.starts_with("tool error:")
                     && !output.starts_with("permission denied:")
                     && !output.starts_with("unknown tool:");
@@ -683,6 +686,7 @@ impl AgentLoop {
                     name: tool_name,
                     success,
                     note,
+                    change: change.clone().filter(|_| success),
                 });
                 let bounded = ContentText::new(output).unwrap_or_else(|_| {
                     ContentText::new("[tool output too large]").expect("bounded")
@@ -691,6 +695,7 @@ impl AgentLoop {
                     text: bounded.clone(),
                     injected_tools: injected.clone(),
                     media: media.clone(),
+                    change,
                 });
                 // Phase 2 deferred loading: if the executor returned injected
                 // schemas, splice them into the advertised pool so the next
@@ -797,6 +802,7 @@ impl AgentLoop {
                     text: result.text.as_str().to_string(),
                     injected: result.injected_tools,
                     media: result.media,
+                    change: result.change,
                 },
                 Err(error) => GateOutcome::text(format!("tool error: {error}")),
             },
@@ -811,6 +817,7 @@ impl AgentLoop {
                             text: result.text.as_str().to_string(),
                             injected: result.injected_tools,
                             media: result.media,
+                            change: result.change,
                         },
                         Err(error) => GateOutcome::text(format!("tool error: {error}")),
                     },
@@ -896,6 +903,8 @@ struct GateOutcome {
     injected: Vec<ToolDefinition>,
     /// Provider-visible image parts returned by the tool.
     media: Vec<ContentPart>,
+    /// Bounded file-change preview produced by the successful executor.
+    change: Option<vesper_domain::FileChangePreview>,
 }
 
 impl GateOutcome {
@@ -905,6 +914,7 @@ impl GateOutcome {
             text,
             injected: Vec::new(),
             media: Vec::new(),
+            change: None,
         }
     }
 }

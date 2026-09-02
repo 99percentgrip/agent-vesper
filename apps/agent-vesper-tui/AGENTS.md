@@ -134,7 +134,11 @@ business logic.
   `render_transcript_lines` renders `thinking:` entries dim + italic. Raw
   `⏺`/`⎿` telemetry is collapsed by default into one categorized run summary;
   Ctrl+T toggles the complete activity transcript during or after the turn
-  without replacing the final answer. Iterative provider commentary is also
+  without replacing the final answer. Successful write/edit/apply operations
+  add an inline `Edited N files (+A -D)` summary; Ctrl+T expands bounded
+  per-file context with full-row green additions and red deletions. Both the
+  direct loop and VRO ReAct path feed the same typed change projection.
+  Iterative provider commentary is also
   activity, not primary chat: on completion, all assistant text parts except
   the final part become bounded commentary telemetry whose count remains in
   the compact activity summary; raw iterative narration stays hidden even in
@@ -158,10 +162,12 @@ business logic.
   use one quiet accent bullet on their first rendered line so role boundaries
   remain visible without chat bubbles. Wide terminals devote otherwise-empty
   right-side space to the Session/TODO/Last-run rail rather than imposing an
-  artificial prose cutoff. The full clickable action footer, command hint,
-  live activity/status line, and composer remain visible; footer controls wrap
-  onto additional rows on narrower terminals and every rendered row shares
-  the same mouse-hit projection. When the rail cannot fit, the activity line
+  artificial prose cutoff. The composer, one measured animated run-status
+  line, and a single-row state-aware footer remain visible. The footer shows
+  only controls valid for the current idle/running/menu/permission state,
+  renders keys as raised keycaps, reserves Help (and Restore in focus mode),
+  drops lower-priority chips rather than wrapping, and shares its exact
+  projection with mouse hit-testing. When the rail cannot fit, the activity line
   retains a compact `TODO completed/total` summary. The conversation
   scrollbar renders only when wrapped content exceeds the viewport. Markdown
   bold inherits the active theme's body color instead of painting whole

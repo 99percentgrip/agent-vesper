@@ -96,6 +96,8 @@ pub enum AcpEngineEvent {
         success: bool,
         /// Bounded result note (size digest or first error line).
         note: String,
+        /// Structured successful workspace edit, when the tool produced one.
+        change: Option<vesper_domain::FileChangePreview>,
     },
     /// Cumulative token usage for the whole turn.
     Usage {

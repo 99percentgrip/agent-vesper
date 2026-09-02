@@ -334,6 +334,7 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
         telemetry: Arc::new(trajectory_recorder()),
         activity: Vec::new(),
         live_trajectory: Vec::new(),
+        file_changes: Vec::new(),
         show_tool_details: false,
         lens_url_rx: Some(lens_url_rx),
         last_lens_url: None,
@@ -342,6 +343,8 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
         live_response: String::new(),
         turn_started: None,
         turn_tokens: None,
+        thinking_started: None,
+        thinking_last_delta: None,
         last_report: Vec::new(),
         pending_images: Vec::new(),
         pending_capability_switch: None,
@@ -664,6 +667,8 @@ struct TuiSession {
     /// trajectory stream. Reads top-to-bottom naturally with the assistant's
     /// text. Cleared at turn start alongside `reasoning`.
     live_trajectory: Vec<String>,
+    /// Bounded successful text edits shown as inline colored diffs.
+    file_changes: Vec<vesper_domain::FileChangePreview>,
     /// Ctrl+T projection switch: compact chat by default, full tool log on demand.
     show_tool_details: bool,
     /// VRO-11.4 — receiver for VesperLens review-URL announcements. The
@@ -690,6 +695,9 @@ struct TuiSession {
     /// Latest cumulative provider token usage for the running turn:
     /// `(total, input, output)`. Reset to `None` between turns.
     turn_tokens: Option<(u64, u64, u64)>,
+    /// First and most recent reasoning-delta timestamps for truthful timing.
+    thinking_started: Option<std::time::Instant>,
+    thinking_last_delta: Option<std::time::Instant>,
     /// Last structured completion report rendered in the sidebar.
     last_report: Vec<String>,
     /// Images encoded and queued for the next direct-vision provider turn.
@@ -930,6 +938,8 @@ enum MouseClickOutcome {
     Ignored,
     Handled,
     Submit,
+    Tab,
+    Escape,
     Quit,
 }
 
@@ -945,7 +955,20 @@ fn handle_mouse_click(
     provider_id: &ProviderId,
     checkpoints: &CheckpointStores,
 ) -> MouseClickOutcome {
-    if let Some(action) = footer_action_at(width, height, column, row) {
+    if let Some(action) = session
+        .last_model
+        .as_ref()
+        .and_then(|model| footer_action_at(model, width, height, column, row))
+    {
+        match action {
+            "submit" | "permission_confirm" => return MouseClickOutcome::Submit,
+            "queue" | "menu_complete" | "permission_choose" => {
+                return MouseClickOutcome::Tab;
+            }
+            "close_menu" | "permission_deny" => return MouseClickOutcome::Escape,
+            "menu_select" => return MouseClickOutcome::Handled,
+            _ => {}
+        }
         if action == "open_palette" {
             session.input = "/".into();
             session.state.preferences.composer_cursor = 1;
@@ -1180,10 +1203,28 @@ async fn drive_loop(
             task_plan: session.state.task_plan.clone(),
             activity: session.activity.clone(),
             live_trajectory: session.live_trajectory.clone(),
+            file_changes: session.file_changes.clone(),
             show_tool_details: session.show_tool_details,
             reasoning: session.reasoning.clone(),
             reasoning_diagnostics: session.reasoning_diagnostics.clone(),
             live_response: session.live_response.clone(),
+            turn_elapsed_ms: session
+                .turn_started
+                .map(|started| started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64)
+                .unwrap_or(0),
+            turn_tokens: session.turn_tokens,
+            thinking_elapsed_ms: session
+                .thinking_started
+                .zip(session.thinking_last_delta)
+                .map(|(start, end)| {
+                    end.duration_since(start)
+                        .as_millis()
+                        .min(u128::from(u64::MAX)) as u64
+                }),
+            animation_frame: session
+                .turn_started
+                .map(|started| (started.elapsed().as_millis() / 250) as u64)
+                .unwrap_or(0),
             last_report: session.last_report.clone(),
             working_tree_title: session
                 .working_tree_view
@@ -1234,6 +1275,12 @@ async fn drive_loop(
                     MouseClickOutcome::Quit => break,
                     MouseClickOutcome::Submit => {
                         event = Event::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+                    }
+                    MouseClickOutcome::Tab => {
+                        event = Event::Key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+                    }
+                    MouseClickOutcome::Escape => {
+                        event = Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
                     }
                     MouseClickOutcome::Handled => continue,
                     MouseClickOutcome::Ignored => {
@@ -4927,9 +4974,13 @@ fn spawn_agent_turn(
     session.agent_running = true;
     session.activity.clear();
     session.live_trajectory.clear();
+    session.file_changes.clear();
     session.reasoning.clear();
     session.live_response.clear();
     session.turn_started = Some(std::time::Instant::now());
+    session.turn_tokens = None;
+    session.thinking_started = None;
+    session.thinking_last_delta = None;
     session.last_report.clear();
     session.pending_images.clear();
     session.state.status = Some("WORKING... (agent loop running)".into());
@@ -5322,6 +5373,16 @@ fn spawn_vro_turn(
     session.steering_tx = Some(steering_tx);
     session.trajectory_rx = Some(traj_rx);
     session.agent_running = true;
+    session.activity.clear();
+    session.live_trajectory.clear();
+    session.file_changes.clear();
+    session.reasoning.clear();
+    session.live_response.clear();
+    session.turn_started = Some(std::time::Instant::now());
+    session.turn_tokens = None;
+    session.thinking_started = None;
+    session.thinking_last_delta = None;
+    session.last_report.clear();
     session.state.status = Some("WORKING... (VRO orchestrating)".into());
     Ok(())
 }
@@ -5731,13 +5792,25 @@ where
 pub(crate) struct TrajectoryCapturingInvoker<I> {
     inner: I,
     tx: mpsc::UnboundedSender<String>,
+    workspace_root: Option<std::path::PathBuf>,
 }
 
 impl<I> TrajectoryCapturingInvoker<I> {
     /// Wraps `inner` so every `invoke` result is also sent to `tx`.
     #[must_use]
     pub(crate) fn new(inner: I, tx: mpsc::UnboundedSender<String>) -> Self {
-        Self { inner, tx }
+        Self {
+            inner,
+            tx,
+            workspace_root: None,
+        }
+    }
+
+    /// Enables exact before/after edit previews for the VRO ReAct path.
+    #[must_use]
+    pub(crate) fn with_workspace_root(mut self, root: std::path::PathBuf) -> Self {
+        self.workspace_root = Some(root);
+        self
     }
 }
 
@@ -5762,6 +5835,7 @@ where
     > {
         let tx = &self.tx;
         let inner = &self.inner;
+        let workspace_root = self.workspace_root.as_deref();
         Box::pin(async move {
             // VRO-11.3 directive 2 — Live Tool Telemetry: broadcast the
             // executing line BEFORE awaiting the inner invoker so the user
@@ -5769,6 +5843,7 @@ where
             // Code). The matching Observation / Error line streams below
             // once the tool returns.
             let _ = tx.send(format_react_executing_entry(name));
+            let edit_snapshot = edit_snapshot(workspace_root, name, arguments);
             let result = inner.invoke(name, arguments).await;
             // Stream the observation (success or failure) to the panel.
             let entry = match &result {
@@ -5776,9 +5851,48 @@ where
                 Err(err) => format_react_observation_entry(&err.to_string(), false),
             };
             let _ = tx.send(entry);
+            if result.is_ok()
+                && let Some((display_path, absolute_path, existed, before)) = edit_snapshot
+                && let Ok(after) = std::fs::read_to_string(&absolute_path)
+            {
+                let change = vesper_agent::tools::file_change_preview(
+                    display_path,
+                    &absolute_path,
+                    existed,
+                    &before,
+                    &after,
+                );
+                if let Ok(encoded) = serde_json::to_string(&change) {
+                    let _ = tx.send(format!("change-preview:{encoded}"));
+                }
+            }
             result
         })
     }
+}
+
+fn edit_snapshot(
+    workspace_root: Option<&std::path::Path>,
+    name: &str,
+    arguments: &serde_json::Value,
+) -> Option<(String, std::path::PathBuf, bool, String)> {
+    if !matches!(name, "write_file" | "edit_file" | "apply_patch") {
+        return None;
+    }
+    let display_path = arguments.get("path")?.as_str()?.to_owned();
+    let path = std::path::Path::new(&display_path);
+    let absolute_path = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        workspace_root?.join(path)
+    };
+    let existed = absolute_path.exists();
+    let before = if existed {
+        std::fs::read_to_string(&absolute_path).ok()?
+    } else {
+        String::new()
+    };
+    Some((display_path, absolute_path, existed, before))
 }
 
 /// A constructed pair of (LmStudioReactAgent, RegistryToolInvoker) ready to
@@ -5900,9 +6014,10 @@ fn spawn_vro_react_turn(
     // Reasoning Panel renders it below the Action/Observation cycle when a
     // ReAct turn succeeds (directive 3).
     let traj_tx_for_notice = traj_tx.clone();
-    let capturing_invoker = TrajectoryCapturingInvoker::new(bundle.invoker, traj_tx);
     let vro = vro.clone();
     let root = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let capturing_invoker =
+        TrajectoryCapturingInvoker::new(bundle.invoker, traj_tx).with_workspace_root(root.clone());
     // VRO-8: honor a manual `/reasoning set mode=<X>` override so the
     // orchestrator's ReAct budget preset matches the user's choice.
     let effective_mode = session.state.effective_reasoning_mode();
@@ -5995,7 +6110,14 @@ fn spawn_vro_react_turn(
     // Clear the trajectory buffer at turn start so the live trajectory starts
     // fresh — the existing direct/GVR paths also clear this on turn start.
     session.live_trajectory.clear();
+    session.file_changes.clear();
     session.reasoning.clear();
+    session.live_response.clear();
+    session.turn_started = Some(std::time::Instant::now());
+    session.turn_tokens = None;
+    session.thinking_started = None;
+    session.thinking_last_delta = None;
+    session.last_report.clear();
     session.state.status = Some("WORKING... (VRO ReAct grounding)".into());
     Ok(())
 }
@@ -6132,7 +6254,14 @@ fn spawn_auxiliary_question(
     session.agent_task = Some(task);
     session.agent_rx = Some(rx);
     session.agent_running = true;
+    session.live_response.clear();
+    session.reasoning.clear();
+    session.live_trajectory.clear();
+    session.file_changes.clear();
     session.turn_started = Some(std::time::Instant::now());
+    session.turn_tokens = None;
+    session.thinking_started = None;
+    session.thinking_last_delta = None;
     session.state.status = Some(format!("Asking {auxiliary}…"));
     Ok(())
 }
@@ -6602,6 +6731,15 @@ fn drain_trajectory(session: &mut TuiSession) {
     for _ in 0..256 {
         match rx.try_recv() {
             Ok(entry) => {
+                if let Some(encoded) = entry.strip_prefix("change-preview:")
+                    && let Ok(change) = serde_json::from_str(encoded)
+                {
+                    session.file_changes.push(change);
+                    if session.file_changes.len() > 32 {
+                        session.file_changes.remove(0);
+                    }
+                    continue;
+                }
                 session.live_trajectory.push(entry);
                 // Bound the buffer so a runaway loop cannot exhaust memory.
                 if session.live_trajectory.len() > 200 {
@@ -6826,6 +6964,9 @@ fn apply_agent_progress(progress: AgentProgressEvent, session: &mut TuiSession) 
             push_activity(session, format!("◌ Provider iteration {}", iteration + 1));
         }
         AgentProgressEvent::ReasoningDelta { text } => {
+            let now = std::time::Instant::now();
+            session.thinking_started.get_or_insert(now);
+            session.thinking_last_delta = Some(now);
             append_bounded(&mut session.reasoning, text.as_str(), 32 * 1024);
         }
         AgentProgressEvent::ContentDelta { text } => {
@@ -6846,6 +6987,7 @@ fn apply_agent_progress(progress: AgentProgressEvent, session: &mut TuiSession) 
             name,
             success,
             note,
+            change,
         } => {
             // VRO-11.6/11.8: completion mirrors Claude Code's indented `⎿`
             // result glyph — ✓ for success, ✗ for failure — nested under
@@ -6857,6 +6999,12 @@ fn apply_agent_progress(progress: AgentProgressEvent, session: &mut TuiSession) 
                 session
                     .live_trajectory
                     .push(format!("  ⎿ {mark} {name} · {note}"));
+            }
+            if let Some(change) = change.filter(|_| success) {
+                session.file_changes.push(change);
+                if session.file_changes.len() > 32 {
+                    session.file_changes.remove(0);
+                }
             }
         }
         AgentProgressEvent::PlanUpdated { markdown } => {
@@ -6870,14 +7018,21 @@ fn apply_agent_progress(progress: AgentProgressEvent, session: &mut TuiSession) 
             // Live token counter: cumulative provider usage for the running
             // turn, mirrored into the activity strip (the run summary
             // repeats the totals on completion).
-            let total = usage.total.value.unwrap_or(0);
             let input = usage.input.value.unwrap_or(0);
             let output = usage.output.value.unwrap_or(0);
-            session.turn_tokens = Some((total, input, output));
-            push_activity(
-                session,
-                format!("Σ tokens {total} · in {input} · out {output}"),
-            );
+            if let Some(total) = usage.total.value.or_else(|| {
+                usage
+                    .input
+                    .value
+                    .zip(usage.output.value)
+                    .and_then(|(a, b)| a.checked_add(b))
+            }) {
+                session.turn_tokens = Some((total, input, output));
+                push_activity(
+                    session,
+                    format!("Σ tokens {total} · in {input} · out {output}"),
+                );
+            }
         }
     }
 }
@@ -14130,6 +14285,7 @@ mod tests {
             telemetry: Arc::new(vesper_observability::TrajectoryRecorder::disabled()),
             activity: Vec::new(),
             live_trajectory: Vec::new(),
+            file_changes: Vec::new(),
             show_tool_details: false,
             lens_url_rx: None,
             last_lens_url: None,
@@ -14138,6 +14294,8 @@ mod tests {
             live_response: String::new(),
             turn_started: None,
             turn_tokens: None,
+            thinking_started: None,
+            thinking_last_delta: None,
             last_report: Vec::new(),
             pending_images: Vec::new(),
             pending_capability_switch: None,
@@ -14193,6 +14351,7 @@ mod tests {
             telemetry: Arc::new(vesper_observability::TrajectoryRecorder::disabled()),
             activity: Vec::new(),
             live_trajectory: Vec::new(),
+            file_changes: Vec::new(),
             show_tool_details: false,
             lens_url_rx: None,
             last_lens_url: None,
@@ -14201,6 +14360,8 @@ mod tests {
             live_response: String::new(),
             turn_started: None,
             turn_tokens: None,
+            thinking_started: None,
+            thinking_last_delta: None,
             last_report: Vec::new(),
             pending_images: Vec::new(),
             pending_capability_switch: None,
@@ -14254,6 +14415,7 @@ mod tests {
             telemetry: Arc::new(vesper_observability::TrajectoryRecorder::disabled()),
             activity: Vec::new(),
             live_trajectory: Vec::new(),
+            file_changes: Vec::new(),
             show_tool_details: false,
             lens_url_rx: None,
             last_lens_url: None,
@@ -14262,6 +14424,8 @@ mod tests {
             live_response: String::new(),
             turn_started: None,
             turn_tokens: None,
+            thinking_started: None,
+            thinking_last_delta: None,
             last_report: Vec::new(),
             pending_images: Vec::new(),
             pending_capability_switch: None,
@@ -15361,6 +15525,68 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn trajectory_capturing_invoker_routes_successful_edits_to_diff_state() {
+        use vesper_agent::vro::react::ToolInvoker;
+
+        struct WritingInvoker {
+            path: std::path::PathBuf,
+        }
+        impl vesper_agent::vro::react::ToolInvoker for WritingInvoker {
+            fn class_of(&self, _name: &str) -> Option<vesper_domain::ToolExecutionClass> {
+                Some(vesper_domain::ToolExecutionClass::Mutating)
+            }
+
+            fn invoke<'a>(
+                &'a self,
+                _name: &'a str,
+                _arguments: &'a serde_json::Value,
+            ) -> std::pin::Pin<
+                Box<
+                    dyn std::future::Future<
+                            Output = Result<String, vesper_agent::vro::react::ToolInvocationError>,
+                        > + Send
+                        + 'a,
+                >,
+            > {
+                Box::pin(async move {
+                    std::fs::write(&self.path, "before\nafter\n").map_err(|error| {
+                        vesper_agent::vro::react::ToolInvocationError::ExecutionFailed(
+                            error.to_string(),
+                        )
+                    })?;
+                    Ok("edited file".into())
+                })
+            }
+        }
+
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("src/main.rs");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, "before\nold\n").unwrap();
+        let (tx, rx) = mpsc::unbounded_channel::<String>();
+        let wrapper = TrajectoryCapturingInvoker::new(WritingInvoker { path: path.clone() }, tx)
+            .with_workspace_root(root.path().to_path_buf());
+        wrapper
+            .invoke("edit_file", &serde_json::json!({"path": "src/main.rs"}))
+            .await
+            .unwrap();
+
+        let mut session = fresh_tui_session_for_trajectory_tests();
+        session.trajectory_rx = Some(rx);
+        drain_trajectory(&mut session);
+        assert_eq!(session.file_changes.len(), 1);
+        assert_eq!(session.file_changes[0].path, "src/main.rs");
+        assert_eq!(session.file_changes[0].additions, 1);
+        assert_eq!(session.file_changes[0].deletions, 1);
+        assert!(
+            session
+                .live_trajectory
+                .iter()
+                .all(|line| !line.starts_with("change-preview:"))
+        );
+    }
+
+    #[tokio::test]
     async fn drain_trajectory_appends_streamed_entries_into_live_trajectory() {
         // VRO-11.4/11.6: the event loop's `drain_trajectory` must consume
         // whatever the capturing wrappers sent and append it AS-IS to
@@ -15453,6 +15679,7 @@ mod tests {
             telemetry: Arc::new(trajectory_recorder()),
             activity: Vec::new(),
             live_trajectory: Vec::new(),
+            file_changes: Vec::new(),
             show_tool_details: false,
             lens_url_rx: None,
             last_lens_url: None,
@@ -15461,6 +15688,8 @@ mod tests {
             live_response: String::new(),
             turn_started: None,
             turn_tokens: None,
+            thinking_started: None,
+            thinking_last_delta: None,
             last_report: Vec::new(),
             pending_images: Vec::new(),
             pending_capability_switch: None,
@@ -16376,9 +16605,18 @@ mod tests {
         let mut session = fresh_tui_session_for_trajectory_tests();
         apply_agent_progress(
             vesper_agent::AgentProgressEvent::ToolFinished {
-                name: "read_file".into(),
+                name: "edit_file".into(),
                 success: true,
                 note: "43 lines".into(),
+                change: Some(vesper_domain::FileChangePreview {
+                    path: "src/main.rs".into(),
+                    absolute_path: "/workspace/src/main.rs".into(),
+                    operation: vesper_domain::FileChangeOperation::Modify,
+                    additions: 1,
+                    deletions: 1,
+                    lines: Vec::new(),
+                    truncated: false,
+                }),
             },
             &mut session,
         );
@@ -16386,10 +16624,12 @@ mod tests {
             session
                 .live_trajectory
                 .iter()
-                .any(|l| l.contains("✓") && l.contains("read_file")),
+                .any(|l| l.contains("✓") && l.contains("edit_file")),
             "ToolFinished success must route to live_trajectory: {:?}",
             session.live_trajectory
         );
+        assert_eq!(session.file_changes.len(), 1);
+        assert_eq!(session.file_changes[0].path, "src/main.rs");
     }
 
     #[test]
@@ -16400,6 +16640,7 @@ mod tests {
                 name: "bash".into(),
                 success: false,
                 note: "tool error: command exited 1".into(),
+                change: None,
             },
             &mut session,
         );

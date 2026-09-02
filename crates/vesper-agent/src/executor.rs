@@ -11,8 +11,8 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use vesper_domain::{
-    ContentPart, ContentText, ConversationMessage, SessionOperatingMode, SessionPermissionMode,
-    ToolCall, ToolDefinition, WorkspaceRoot,
+    ContentPart, ContentText, ConversationMessage, FileChangePreview, SessionOperatingMode,
+    SessionPermissionMode, ToolCall, ToolDefinition, WorkspaceRoot,
 };
 
 /// Maximum media parts one tool result may contribute to provider history.
@@ -91,6 +91,9 @@ pub struct ToolResult {
     /// are currently accepted; the authoritative agent gate evaluates them
     /// before the next provider request.
     pub media: Vec<ContentPart>,
+    /// Bounded, truthful workspace change produced by a successful text-file
+    /// executor. Non-editing tools leave this empty.
+    pub change: Option<FileChangePreview>,
 }
 
 impl ToolResult {
@@ -101,6 +104,7 @@ impl ToolResult {
             text: ContentText::new(text).map_err(ToolError::output_boundary)?,
             injected_tools: Vec::new(),
             media: Vec::new(),
+            change: None,
         })
     }
 
@@ -125,6 +129,14 @@ impl ToolResult {
         }
         self.media = media;
         Ok(self)
+    }
+
+    /// Attaches the bounded before/after projection produced by an editing
+    /// executor after its filesystem mutation succeeds.
+    #[must_use]
+    pub fn with_change(mut self, change: FileChangePreview) -> Self {
+        self.change = Some(change);
+        self
     }
 }
 

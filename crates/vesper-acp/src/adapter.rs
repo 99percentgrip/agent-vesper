@@ -1501,18 +1501,31 @@ impl crate::engine::AcpEventSink for AcpEngineEventSink {
                 name,
                 success,
                 note,
+                change,
             } => {
                 let status = if success {
                     ToolCallStatus::Completed
                 } else {
                     ToolCallStatus::Failed
                 };
+                let change_metadata = change.as_ref().map(|change| {
+                    serde_json::json!({
+                        "path": change.absolute_path,
+                        "operation": change.operation,
+                        "additions": change.additions,
+                        "deletions": change.deletions,
+                    })
+                });
+                let fields = ToolCallUpdateFields::new()
+                    .title(name)
+                    .status(status)
+                    .raw_output(serde_json::json!({
+                        "note": note,
+                        "change": change_metadata,
+                    }));
                 self.publish(SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
                     tool_call_id,
-                    ToolCallUpdateFields::new()
-                        .title(name)
-                        .status(status)
-                        .raw_output(serde_json::json!({ "note": note })),
+                    fields,
                 )));
             }
             crate::engine::AcpEngineEvent::Usage { usage } => {

@@ -63,9 +63,10 @@ pub use slash_commands::{
     HOST_PARITY_SLASH_COMMANDS, ORACLE_SLASH_COMMANDS, SlashCommandDescriptor, parse_slash_command,
 };
 pub use tool::{
-    CompletedToolArguments, DiffSummary, FragmentedToolCallIdentity, HarnessToolName,
-    ProviderToolName, StructuredLocation, ToolCall, ToolChoiceIntent, ToolDefinition,
-    ToolExecutionClass, ToolNameError, ToolResult, ToolResultStatus,
+    CompletedToolArguments, DiffLine, DiffLineKind, DiffSummary, FileChangeOperation,
+    FileChangePreview, FragmentedToolCallIdentity, HarnessToolName, ProviderToolName,
+    StructuredLocation, ToolCall, ToolChoiceIntent, ToolDefinition, ToolExecutionClass,
+    ToolNameError, ToolResult, ToolResultStatus,
 };
 pub use usage::{
     EstimatedCost, NormalizedUsage, UsageArithmeticError, UsageMeasurement, UsageMode,

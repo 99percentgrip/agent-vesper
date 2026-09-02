@@ -38,6 +38,11 @@ Orchestrator (VRO) Phase VRO-1 domain contracts.
   advertisement. The field carries `#[serde(default)]` so existing serialized
   definitions deserialize unchanged; only an explicit caller opts a tool into
   deferred loading.
+- `FileChangePreview` and its operation/line-kind DTOs are bounded,
+  provider-neutral descriptions of a successful filesystem mutation. They
+  carry display/absolute paths, complete addition/deletion totals, a bounded
+  line preview, and an explicit truncation bit; they never perform I/O or
+  imply that a transport rendered a native diff.
 - `src/vro.rs` owns the VRO domain contracts per
   `docs/agent-vesper-reasoning-orchestrator-prd.md`: `ReasoningMode` (§8.1),
   `ReasoningStrategy` (§10.3 — the authoritative 10-variant enum),

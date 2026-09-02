@@ -12,7 +12,8 @@ the multi-turn, tool-executing layer above it.
 
 - `src/executor.rs` — `ToolExecutor`/`ToolService` traits, hosted subsystem
   adapters, `ToolContext`, `ToolResult`, `ToolError`, and the schema-definition
-  helper. `ToolResult` carries a `text` field plus an `injected_tools` channel
+  helper. `ToolResult` carries a `text` field, an optional bounded
+  `FileChangePreview`, plus an `injected_tools` channel
   (deferred-loading Phase 2): a tool may return additional `ToolDefinition`s
   that the agent loop splices into its advertised pool for the next
   iteration. `ToolResult` derives only `PartialEq` (not `Eq`) because
@@ -23,6 +24,8 @@ the multi-turn, tool-executing layer above it.
 - `src/tools.rs` — the nine core parity-critical **real** executors (`read_file`,
   `write_file`, `edit_file`, `apply_patch`, `list_directory`, `search_files`,
   `grep`, `run_command`, `update_plan`) with confined filesystem/shell I/O.
+  Successful write/edit/patch calls compute exact before/after line totals
+  and a bounded preview only after the mutation succeeds.
 - `src/registry.rs` — `ToolRegistry`: name → executor routing + mode-filtered
   `definitions_for`. As of the deferred-loading Phase 1, `definitions_for`
   also excludes any `ToolDefinition` whose `defer_loading` is `true` — those
@@ -40,7 +43,9 @@ the multi-turn, tool-executing layer above it.
   `max_tool_iterations`. Captures `update_plan` output into
   `AgentTurnOutcome::plan` so callers drive the Phase 5 PLANNING → REVIEW
   transition. `AgentProgressPort` emits bounded in-memory provider/tool/plan
-  activity without tool arguments, outputs, paths, or secrets.
+  activity without raw tool arguments, outputs, or secrets. Successful
+  filesystem mutations may attach the executor-produced bounded
+  `FileChangePreview`; hosts must not infer diffs from prose.
   `AgentSteeringPort` is a non-blocking host inbox drained only between
   complete provider/tool operations; injected user guidance joins the current
   history in submission order and cannot cancel an in-flight operation. Hosts

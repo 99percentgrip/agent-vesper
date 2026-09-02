@@ -11,7 +11,10 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use vesper_domain::{SessionOperatingMode, SessionPermissionMode, ToolCall, ToolExecutionClass};
+use vesper_domain::{
+    DiffLine, DiffLineKind, FileChangeOperation, FileChangePreview, SessionOperatingMode,
+    SessionPermissionMode, ToolCall, ToolExecutionClass,
+};
 use vesper_provider::CancellationSignal;
 
 use crate::confinement::{
@@ -24,6 +27,10 @@ use vesper_policy::firewall::RuleDecision;
 
 /// Maximum bytes of tool output retained (prevents unbounded model context).
 const MAX_OUTPUT_BYTES: usize = 65_536;
+/// Maximum changed/context lines carried to interactive hosts for one edit.
+const MAX_CHANGE_PREVIEW_LINES: usize = 64;
+/// Maximum display width of a single preview line before an ellipsis.
+const MAX_CHANGE_PREVIEW_LINE_CHARS: usize = 240;
 
 // ----------------------------- read-only -----------------------------
 
@@ -181,17 +188,34 @@ impl ToolExecutor for WriteFile {
         let args = call.arguments.clone();
         Box::pin(async move {
             let root = primary_root(ctx)?;
-            let path = confine(root, &string_arg(&args, "path")?)?;
+            let display_path = string_arg(&args, "path")?;
+            let path = confine(root, &display_path)?;
             let content = string_arg(&args, "content")?;
+            let existed = path.exists();
+            let original = if existed {
+                fs::read_to_string(&path).ok()
+            } else {
+                Some(String::new())
+            };
             if let Some(parent) = path.parent() {
                 fs::create_dir_all(parent).map_err(|e| io_failure("write_file", e))?;
             }
             fs::write(&path, content.as_bytes()).map_err(|e| io_failure("write_file", e))?;
-            ToolResult::new(format!(
+            let result = ToolResult::new(format!(
                 "wrote {} bytes to {}",
                 content.len(),
                 path.display()
-            ))
+            ))?;
+            Ok(match original {
+                Some(original) => result.with_change(file_change_preview(
+                    display_path,
+                    &path,
+                    existed,
+                    &original,
+                    &content,
+                )),
+                None => result,
+            })
         })
     }
 }
@@ -218,7 +242,8 @@ impl ToolExecutor for EditFile {
         let args = call.arguments.clone();
         Box::pin(async move {
             let root = primary_root(ctx)?;
-            let path = confine(root, &string_arg(&args, "path")?)?;
+            let display_path = string_arg(&args, "path")?;
+            let path = confine(root, &display_path)?;
             let old_text = string_arg(&args, "old_text")?;
             let new_text = string_arg(&args, "new_text")?;
             let content = fs::read_to_string(&path).map_err(|e| io_failure("edit_file", e))?;
@@ -239,7 +264,11 @@ impl ToolExecutor for EditFile {
             }
             let updated = content.replacen(&old_text, &new_text, 1);
             fs::write(&path, updated.as_bytes()).map_err(|e| io_failure("edit_file", e))?;
-            ToolResult::new(format!("edited {}", path.display()))
+            Ok(
+                ToolResult::new(format!("edited {}", path.display()))?.with_change(
+                    file_change_preview(display_path, &path, true, &content, &updated),
+                ),
+            )
         })
     }
 }
@@ -262,7 +291,8 @@ impl ToolExecutor for ApplyPatch {
         let args = call.arguments.clone();
         Box::pin(async move {
             let root = primary_root(ctx)?;
-            let path = confine(root, &string_arg(&args, "path")?)?;
+            let display_path = string_arg(&args, "path")?;
+            let path = confine(root, &display_path)?;
             let patch = string_arg(&args, "patch")?;
             let original = fs::read_to_string(&path).map_err(|e| io_failure("apply_patch", e))?;
             let updated = apply_unified_diff(&original, &patch)?;
@@ -270,8 +300,99 @@ impl ToolExecutor for ApplyPatch {
             let staging = path.with_extension("vesper-patch-tmp");
             fs::write(&staging, updated.as_bytes()).map_err(|e| io_failure("apply_patch", e))?;
             fs::rename(&staging, &path).map_err(|e| io_failure("apply_patch", e))?;
-            ToolResult::new(format!("patched {}", path.display()))
+            Ok(
+                ToolResult::new(format!("patched {}", path.display()))?.with_change(
+                    file_change_preview(display_path, &path, true, &original, &updated),
+                ),
+            )
         })
+    }
+}
+
+/// Computes one exact line-oriented change from successful before/after
+/// content. The middle block after removing the common prefix/suffix is a
+/// valid (though intentionally simple) diff; totals describe the complete
+/// block while the carried line list remains bounded for live UIs.
+pub fn file_change_preview(
+    display_path: String,
+    absolute_path: &Path,
+    existed: bool,
+    before: &str,
+    after: &str,
+) -> FileChangePreview {
+    let before_lines = before.lines().collect::<Vec<_>>();
+    let after_lines = after.lines().collect::<Vec<_>>();
+    let mut prefix = 0_usize;
+    while prefix < before_lines.len()
+        && prefix < after_lines.len()
+        && before_lines[prefix] == after_lines[prefix]
+    {
+        prefix += 1;
+    }
+    let mut suffix = 0_usize;
+    while suffix < before_lines.len().saturating_sub(prefix)
+        && suffix < after_lines.len().saturating_sub(prefix)
+        && before_lines[before_lines.len() - 1 - suffix]
+            == after_lines[after_lines.len() - 1 - suffix]
+    {
+        suffix += 1;
+    }
+    let removed = &before_lines[prefix..before_lines.len().saturating_sub(suffix)];
+    let added = &after_lines[prefix..after_lines.len().saturating_sub(suffix)];
+    let mut candidates = Vec::new();
+    for line in &before_lines[prefix.saturating_sub(2)..prefix] {
+        candidates.push(DiffLine {
+            kind: DiffLineKind::Context,
+            text: bounded_preview_line(line),
+        });
+    }
+    for line in removed {
+        candidates.push(DiffLine {
+            kind: DiffLineKind::Deletion,
+            text: bounded_preview_line(line),
+        });
+    }
+    for line in added {
+        candidates.push(DiffLine {
+            kind: DiffLineKind::Addition,
+            text: bounded_preview_line(line),
+        });
+    }
+    let after_context_start = after_lines.len().saturating_sub(suffix);
+    let after_context_end = (after_context_start + suffix.min(2)).min(after_lines.len());
+    for line in &after_lines[after_context_start..after_context_end] {
+        candidates.push(DiffLine {
+            kind: DiffLineKind::Context,
+            text: bounded_preview_line(line),
+        });
+    }
+    let truncated = candidates.len() > MAX_CHANGE_PREVIEW_LINES;
+    candidates.truncate(MAX_CHANGE_PREVIEW_LINES);
+    FileChangePreview {
+        path: display_path,
+        absolute_path: absolute_path.display().to_string(),
+        operation: if existed {
+            FileChangeOperation::Modify
+        } else {
+            FileChangeOperation::Create
+        },
+        additions: added.len() as u64,
+        deletions: removed.len() as u64,
+        lines: candidates,
+        truncated,
+    }
+}
+
+fn bounded_preview_line(line: &str) -> String {
+    let mut chars = line.chars();
+    let bounded = chars
+        .by_ref()
+        .take(MAX_CHANGE_PREVIEW_LINE_CHARS)
+        .collect::<String>();
+    if chars.next().is_some() {
+        format!("{bounded}…")
+    } else {
+        bounded
     }
 }
 
@@ -772,4 +893,67 @@ async fn run_sandboxed(
         combined.push_str("\n[command timed out and was killed]");
     }
     ToolResult::new(bounded(&combined))
+}
+
+#[cfg(test)]
+mod change_preview_tests {
+    use super::*;
+
+    #[test]
+    fn change_preview_reports_exact_middle_edit_with_bounded_context() {
+        let preview = file_change_preview(
+            "src/main.rs".into(),
+            Path::new("/workspace/src/main.rs"),
+            true,
+            "alpha\nbeta\nold\nomega\n",
+            "alpha\nbeta\nnew one\nnew two\nomega\n",
+        );
+
+        assert_eq!(preview.operation, FileChangeOperation::Modify);
+        assert_eq!(preview.additions, 2);
+        assert_eq!(preview.deletions, 1);
+        assert_eq!(preview.path, "src/main.rs");
+        assert_eq!(preview.absolute_path, "/workspace/src/main.rs");
+        assert_eq!(
+            preview
+                .lines
+                .iter()
+                .map(|line| (line.kind, line.text.as_str()))
+                .collect::<Vec<_>>(),
+            vec![
+                (DiffLineKind::Context, "alpha"),
+                (DiffLineKind::Context, "beta"),
+                (DiffLineKind::Deletion, "old"),
+                (DiffLineKind::Addition, "new one"),
+                (DiffLineKind::Addition, "new two"),
+                (DiffLineKind::Context, "omega"),
+            ]
+        );
+        assert!(!preview.truncated);
+    }
+
+    #[test]
+    fn change_preview_bounds_large_edits_without_falsifying_totals() {
+        let before = (0..100)
+            .map(|index| format!("old-{index}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let after = (0..120)
+            .map(|index| format!("new-{index}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let preview = file_change_preview(
+            "new.rs".into(),
+            Path::new("/workspace/new.rs"),
+            true,
+            &before,
+            &after,
+        );
+
+        assert_eq!(preview.operation, FileChangeOperation::Modify);
+        assert_eq!(preview.additions, 120);
+        assert_eq!(preview.deletions, 100);
+        assert_eq!(preview.lines.len(), MAX_CHANGE_PREVIEW_LINES);
+        assert!(preview.truncated);
+    }
 }

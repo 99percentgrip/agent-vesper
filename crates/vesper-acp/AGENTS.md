@@ -61,7 +61,10 @@ update mapping, and bounded asynchronous dispatch into `vesper-runtime`.
   final text again; engines with no content deltas retain the one-chunk final
   fallback. Engines that lack tool-call ids pair
   started/finished calls by the most recently issued id per tool name (the
-  agent loop executes tools strictly sequentially).
+  agent loop executes tools strictly sequentially). Successful mutating
+  `ToolFinished` events retain bounded change metadata; the v1 adapter exposes
+  path/operation/totals in `raw_output` instead of fabricating the complete
+  old/new documents required by ACP's native `Diff` payload.
 - Session config options: `thought_level` and `permission_mode` remain
   built-in runtime-modeled options (oracle option ids; the permission
   control advertises the oracle value `read`, which the setter accepts).

@@ -214,6 +214,8 @@ pub struct ViewModel {
     /// Conversation panel. Populated from the direct path's
     /// ToolStarted/ToolFinished events and the ReAct trajectory stream.
     pub live_trajectory: Vec<String>,
+    /// Successful text-file changes captured at the executor boundary.
+    pub file_changes: Vec<vesper_domain::FileChangePreview>,
     /// Whether the conversation canvas is showing the full tool transcript.
     /// The default chat view keeps this telemetry collapsed into one summary.
     pub show_tool_details: bool,
@@ -226,6 +228,14 @@ pub struct ViewModel {
     pub reasoning_diagnostics: Option<ReasoningDiagnostics>,
     /// Assistant response accumulated during the current turn.
     pub live_response: String,
+    /// Measured wall time since the active turn started.
+    pub turn_elapsed_ms: u64,
+    /// Latest cumulative provider-reported `(total, input, output)` tokens.
+    pub turn_tokens: Option<(u64, u64, u64)>,
+    /// Measured interval from first to most recent reasoning delta.
+    pub thinking_elapsed_ms: Option<u64>,
+    /// Monotonic animation frame derived from the event-loop redraw clock.
+    pub animation_frame: u64,
     /// Last structured turn-completion report.
     pub last_report: Vec<String>,
     /// Active F4 working-tree view, when the panel is open.
@@ -259,13 +269,11 @@ pub trait TerminalRenderer {
     fn render(&mut self, model: &ViewModel);
 }
 
-/// Clickable footer segments shared by rendering and mouse hit-testing.
+/// Complete footer action inventory used by command/help tests.
 ///
-/// Rendering and `handle_mouse_click` both walk this const in order with
-/// computed x-offsets, so the two views cannot drift — but neither may
-/// filter the list independently (that WOULD desync click targets).
-/// `toggle_chat_only` (F11) stays always-visible because it is also the
-/// restore affordance from chat-only mode.
+/// The visible footer is the state-aware projection returned by
+/// [`footer_action_rows`]; rendering and mouse hit-testing both consume that
+/// same projection so hidden actions never retain stale click targets.
 pub const FOOTER_ACTIONS: &[(&str, &str)] = &[
     ("^f Search", "open_search"),
     ("^x Quit", "quit_agent"),
@@ -283,45 +291,166 @@ pub const FOOTER_ACTIONS: &[(&str, &str)] = &[
     ("^p Palette", "open_palette"),
 ];
 
-/// Wraps every footer action onto as many terminal rows as needed. Rendering
-/// and mouse hit-testing both consume this projection, so narrow windows do
-/// not silently lose the controls clipped beyond the right edge.
+/// One state-aware footer control. `key` is rendered as a raised keycap and
+/// `label` describes the action in the current state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FooterChip {
+    pub key: &'static str,
+    pub label: &'static str,
+    pub action: &'static str,
+    pub warning: bool,
+}
+
+impl FooterChip {
+    fn width(self) -> usize {
+        Line::from(format!(" {}  {} ", self.key, self.label)).width()
+    }
+}
+
+fn footer_candidates(model: &ViewModel) -> Vec<FooterChip> {
+    let chip = |key, label, action| FooterChip {
+        key,
+        label,
+        action,
+        warning: false,
+    };
+    if model.pending_permission.is_some() {
+        return vec![
+            chip("Tab", "Choose", "permission_choose"),
+            chip("Enter", "Confirm", "permission_confirm"),
+            FooterChip {
+                warning: true,
+                ..chip("Esc", "Deny", "permission_deny")
+            },
+            chip("F1", "Help", "show_help"),
+        ];
+    }
+    if !model.command_menu.is_empty() {
+        return vec![
+            chip("↑↓", "Select", "menu_select"),
+            chip("Tab", "Complete", "menu_complete"),
+            chip("Enter", "Run", "submit"),
+            chip("Esc", "Close", "close_menu"),
+            chip("F1", "Help", "show_help"),
+        ];
+    }
+    let focus = if model.panels.chat_only {
+        chip("F11", "Restore", "toggle_chat_only")
+    } else {
+        chip("F11", "Focus", "toggle_chat_only")
+    };
+    let activity = if model.show_tool_details {
+        chip("Ctrl+T", "Chat", "toggle_tool_details")
+    } else {
+        chip("Ctrl+T", "Activity", "toggle_tool_details")
+    };
+    if model.agent_running {
+        return vec![
+            chip("Enter", "Steer", "submit"),
+            chip("Tab", "Queue", "queue"),
+            FooterChip {
+                warning: true,
+                ..chip("Ctrl+C", "Stop", "cancel_turn")
+            },
+            activity,
+            chip("F2", "Thinking", "toggle_thinking"),
+            focus,
+            chip("F1", "More", "show_help"),
+        ];
+    }
+    let mut candidates = Vec::new();
+    if !model.input.trim().is_empty() || !model.composer_attachments.is_empty() {
+        candidates.push(chip("Enter", "Send", "submit"));
+    }
+    candidates.extend([
+        chip("Ctrl+P", "Commands", "open_palette"),
+        chip(
+            "F4",
+            if model.working_tree_title.is_some() {
+                "Next view"
+            } else {
+                "Changes"
+            },
+            "toggle_working_tree",
+        ),
+        chip("F6", "Sessions", "open_history"),
+        activity,
+        chip("F2", "Thinking", "toggle_thinking"),
+        chip("F3", "Settings", "settings"),
+        focus,
+        chip("F1", "More", "show_help"),
+    ]);
+    candidates
+}
+
+/// Projects current-state footer actions into exactly one terminal row.
+/// Lower-priority chips disappear when width is scarce; Help and the
+/// chat-only Restore affordance are reserved. Rendering and mouse
+/// hit-testing both consume this exact projection.
 #[must_use]
-pub fn footer_action_rows(width: u16) -> Vec<Vec<(&'static str, &'static str)>> {
+pub fn footer_action_rows(model: &ViewModel, width: u16) -> Vec<Vec<FooterChip>> {
     let width = usize::from(width.max(1));
-    let mut rows = Vec::new();
-    let mut row = Vec::new();
+    let mut candidates = footer_candidates(model);
+    let help = candidates
+        .iter()
+        .position(|chip| chip.action == "show_help")
+        .map(|index| candidates.remove(index));
+    let restore = model
+        .panels
+        .chat_only
+        .then(|| {
+            let index = candidates
+                .iter()
+                .position(|chip| chip.action == "toggle_chat_only")?;
+            Some(candidates.remove(index))
+        })
+        .flatten();
+    let reserved = restore.into_iter().chain(help).collect::<Vec<_>>();
+    let reserved_width = reserved
+        .iter()
+        .map(|chip| chip.width())
+        .sum::<usize>()
+        .saturating_add(reserved.len().saturating_sub(1));
+    let mut visible = Vec::new();
     let mut occupied = 0_usize;
-    for &(label, action) in FOOTER_ACTIONS {
-        let label_width = label.chars().count();
-        let addition = label_width + usize::from(!row.is_empty()) * 2;
-        if !row.is_empty() && occupied + addition > width {
-            rows.push(std::mem::take(&mut row));
-            occupied = 0;
+    for candidate in candidates {
+        let gap = usize::from(!visible.is_empty());
+        let bridge = usize::from(!visible.is_empty() || !reserved.is_empty());
+        if occupied + gap + candidate.width() + bridge + reserved_width <= width {
+            occupied += gap + candidate.width();
+            visible.push(candidate);
         }
-        occupied += label_width + usize::from(!row.is_empty()) * 2;
-        row.push((label, action));
     }
-    if !row.is_empty() {
-        rows.push(row);
+    for candidate in reserved {
+        let gap = usize::from(!visible.is_empty());
+        if occupied + gap + candidate.width() <= width {
+            occupied += gap + candidate.width();
+            visible.push(candidate);
+        }
     }
-    rows
+    vec![visible]
 }
 
 /// Resolves a click inside the wrapped footer to its action identifier.
 #[must_use]
-pub fn footer_action_at(width: u16, height: u16, column: u16, row: u16) -> Option<&'static str> {
-    let rows = footer_action_rows(width);
+pub fn footer_action_at(
+    model: &ViewModel,
+    width: u16,
+    height: u16,
+    column: u16,
+    row: u16,
+) -> Option<&'static str> {
+    let rows = footer_action_rows(model, width);
     let footer_top = height.saturating_sub(rows.len().min(u16::MAX as usize) as u16);
     let row_index = usize::from(row.checked_sub(footer_top)?);
     let actions = rows.get(row_index)?;
     let mut start = 0_u16;
-    for &(label, action) in actions {
-        let end = start.saturating_add(label.chars().count().min(u16::MAX as usize) as u16);
+    for chip in actions {
+        let end = start.saturating_add(chip.width().min(u16::MAX as usize) as u16);
         if (start..end).contains(&column) {
-            return Some(action);
+            return Some(chip.action);
         }
-        start = end.saturating_add(2);
+        start = end.saturating_add(1);
     }
     None
 }
@@ -333,19 +462,19 @@ pub fn footer_action_at(width: u16, height: u16, column: u16, row: u16) -> Optio
 pub struct UiLayoutMetrics {
     pub menu_height: u16,
     pub footer_height: u16,
-    /// Command menu + hint + activity + composer + wrapped footer.
+    /// Command menu + activity + composer + single-row footer.
     pub bottom_chrome_height: u16,
 }
 
 #[must_use]
 pub fn ui_layout_metrics(width: u16, height: u16, menu_items: usize) -> UiLayoutMetrics {
     let menu_height = command_menu_height(height, menu_items);
-    let footer_height = footer_action_rows(width).len().min(u16::MAX as usize) as u16;
+    let _ = width;
+    let footer_height = 1;
     UiLayoutMetrics {
         menu_height,
         footer_height,
         bottom_chrome_height: menu_height
-            .saturating_add(1) // command hint
             .saturating_add(1) // activity / status
             .saturating_add(3) // composer
             .saturating_add(footer_height),
@@ -376,7 +505,7 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
     frame.render_widget(Block::default().style(palette.base()), area);
     let metrics = ui_layout_metrics(area.width, area.height, model.command_menu.len());
     let menu_height = metrics.menu_height;
-    let footer_rows = footer_action_rows(area.width);
+    let footer_rows = footer_action_rows(model, area.width);
     let footer_height = metrics.footer_height;
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -384,10 +513,9 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
             Constraint::Length(1), // header
             Constraint::Fill(1),   // conversation + sidebar yields to essential chrome
             Constraint::Length(menu_height),
-            Constraint::Length(1),             // command hint
-            Constraint::Length(1),             // activity / status
+            Constraint::Length(1),             // animated activity / status
             Constraint::Length(3),             // composer
-            Constraint::Length(footer_height), // wrapped footer controls
+            Constraint::Length(footer_height), // contextual action rail
         ])
         .split(area);
 
@@ -605,45 +733,8 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
         );
     }
 
-    let hint = if model.command_menu.is_empty() {
-        "↑↓ history  •  Enter send  •  Ctrl-C cancel  •  Ctrl-X quit"
-    } else {
-        "↑↓ navigate  •  Tab complete  •  Enter run  •  Esc close"
-    };
-    frame.render_widget(
-        Paragraph::new(hint).style(Style::default().fg(palette.muted)),
-        chunks[3],
-    );
-
-    let mut activity = if model.agent_running {
-        let notice = model.status.as_deref().unwrap_or("Working");
-        if model.queued_prompt_count > 0 {
-            format!(
-                "● {notice} · {} queued · Enter steers · Tab queues",
-                model.queued_prompt_count
-            )
-        } else {
-            format!("● {notice} · Enter steers · Tab queues")
-        }
-    } else {
-        model.status.clone().unwrap_or_else(|| "○ Ready".into())
-    };
-    if !show_sidebar {
-        let completed = model
-            .task_plan
-            .iter()
-            .filter(|task| task.status == "completed")
-            .count();
-        activity.push_str(&format!(" · TODO {completed}/{}", model.task_plan.len()));
-    }
-    frame.render_widget(
-        Paragraph::new(activity).style(Style::default().fg(if model.agent_running {
-            palette.warning
-        } else {
-            palette.muted
-        })),
-        chunks[4],
-    );
+    let activity = run_status_line(model, show_sidebar, palette);
+    frame.render_widget(Paragraph::new(activity), chunks[3]);
 
     // Composer. Keep a visible insertion point: the old renderer hid the
     // terminal cursor, which made the input look like a static mockup.
@@ -677,7 +768,7 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
     } else {
         " Message ".into()
     };
-    let composer_area = chunks[5];
+    let composer_area = chunks[4];
     frame.render_widget(
         Paragraph::new(Line::from(composer_spans)).block(
             Block::default()
@@ -710,23 +801,130 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
             Line::from(
                 row.into_iter()
                     .enumerate()
-                    .flat_map(|(index, (label, _))| {
-                        let spacer = (index > 0).then(|| Span::raw("  "));
-                        spacer.into_iter().chain(std::iter::once(Span::styled(
-                            label,
-                            Style::default().fg(palette.accent),
-                        )))
+                    .flat_map(|(index, chip)| {
+                        let spacer = (index > 0).then(|| Span::raw(" "));
+                        let key_style = Style::default()
+                            .fg(if chip.warning {
+                                palette.warning
+                            } else {
+                                palette.accent
+                            })
+                            .bg(palette.raised)
+                            .add_modifier(Modifier::BOLD);
+                        spacer.into_iter().chain([
+                            Span::styled(format!(" {} ", chip.key), key_style),
+                            Span::styled(
+                                format!(" {} ", chip.label),
+                                Style::default().fg(palette.muted).bg(palette.surface),
+                            ),
+                        ])
                     })
                     .collect::<Vec<_>>(),
             )
         })
         .collect::<Vec<_>>();
-    frame.render_widget(Paragraph::new(footer), chunks[6]);
+    frame.render_widget(
+        Paragraph::new(footer).style(Style::default().bg(palette.surface)),
+        chunks[5],
+    );
 
     // Overlay the tool-permission modal LAST so it paints over every other
     // panel. `Clear` resets the underlying cells first so the dialog reads as
     // a true pop-up rather than a tinted in-place block.
     render_permission_modal(frame, model, palette);
+}
+
+fn run_status_line(model: &ViewModel, show_sidebar: bool, palette: ThemePalette) -> Line<'static> {
+    if !model.agent_running {
+        return Line::from(vec![
+            Span::styled("○ ", Style::default().fg(palette.muted)),
+            Span::styled(
+                model.status.clone().unwrap_or_else(|| "Ready".into()),
+                Style::default().fg(palette.muted),
+            ),
+        ]);
+    }
+    const FRAMES: [&str; 8] = ["✦", "✧", "✶", "✷", "✹", "✷", "✶", "✧"];
+    let symbol = FRAMES[(model.animation_frame as usize) % FRAMES.len()];
+    let mut detail = vec![format_duration(model.turn_elapsed_ms)];
+    if let Some((total, _, _)) = model.turn_tokens {
+        detail.push(format!("↑ {} tokens", compact_number(total)));
+    }
+    if let Some(ms) = model.thinking_elapsed_ms {
+        detail.push(format!("thought for {}", format_duration(ms)));
+    }
+    if model.queued_prompt_count > 0 {
+        detail.push(format!("{} queued", model.queued_prompt_count));
+    }
+    if !show_sidebar {
+        let completed = model
+            .task_plan
+            .iter()
+            .filter(|task| task.status == "completed")
+            .count();
+        detail.push(format!("TODO {completed}/{}", model.task_plan.len()));
+    }
+    Line::from(vec![
+        Span::styled(
+            format!("{symbol} "),
+            Style::default()
+                .fg(palette.warning)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            run_activity_label(model),
+            Style::default()
+                .fg(palette.warning)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!("  ({})", detail.join(" · ")),
+            Style::default().fg(palette.muted),
+        ),
+    ])
+}
+
+fn run_activity_label(model: &ViewModel) -> &'static str {
+    if !model.live_response.trim().is_empty() {
+        return "Responding…";
+    }
+    let latest_tool = model.live_trajectory.iter().rev().find_map(|entry| {
+        entry
+            .trim()
+            .strip_prefix('⏺')
+            .map(|value| value.trim().split([' ', '·']).next().unwrap_or_default())
+    });
+    match latest_tool {
+        Some(name) if name.contains("write") || name.contains("edit") || name.contains("patch") => {
+            "Editing…"
+        }
+        Some(name) if name.contains("read") || name.contains("list") || name.contains("grep") => {
+            "Exploring…"
+        }
+        Some(name) if name.contains("test") || name.contains("verify") => "Verifying…",
+        Some(name) if name.contains("command") || name.contains("shell") => "Running…",
+        Some(_) => "Working…",
+        None if !model.reasoning.trim().is_empty() => "Thinking…",
+        None => "Beaming…",
+    }
+}
+
+fn format_duration(milliseconds: u64) -> String {
+    if milliseconds < 1_000 {
+        format!("{:.1}s", milliseconds as f64 / 1_000.0)
+    } else {
+        format!("{}s", milliseconds / 1_000)
+    }
+}
+
+fn compact_number(value: u64) -> String {
+    if value < 1_000 {
+        value.to_string()
+    } else if value < 1_000_000 {
+        format!("{:.1}k", value as f64 / 1_000.0)
+    } else {
+        format!("{:.1}m", value as f64 / 1_000_000.0)
+    }
 }
 
 /// Renders the interactive tool-permission modal centered over the screen.
@@ -903,6 +1101,10 @@ struct ThemePalette {
     selection: Color,
     selected_text: Color,
     warning: Color,
+    added: Color,
+    added_bg: Color,
+    removed: Color,
+    removed_bg: Color,
 }
 
 impl ThemePalette {
@@ -924,6 +1126,10 @@ fn theme_palette(theme: &str) -> ThemePalette {
             selection: Color::Rgb(208, 238, 230),
             selected_text: Color::Rgb(20, 60, 50),
             warning: Color::Rgb(170, 105, 0),
+            added: Color::Rgb(20, 110, 65),
+            added_bg: Color::Rgb(224, 246, 235),
+            removed: Color::Rgb(180, 45, 55),
+            removed_bg: Color::Rgb(252, 230, 232),
         },
         "light" => ThemePalette {
             background: Color::Rgb(245, 245, 245),
@@ -936,6 +1142,10 @@ fn theme_palette(theme: &str) -> ThemePalette {
             selection: Color::Rgb(190, 220, 215),
             selected_text: Color::Black,
             warning: Color::Rgb(150, 90, 0),
+            added: Color::Rgb(0, 110, 55),
+            added_bg: Color::Rgb(215, 240, 225),
+            removed: Color::Rgb(170, 35, 45),
+            removed_bg: Color::Rgb(245, 220, 222),
         },
         "dracula" => ThemePalette {
             background: Color::Rgb(40, 42, 54),
@@ -948,6 +1158,10 @@ fn theme_palette(theme: &str) -> ThemePalette {
             selection: Color::Rgb(68, 71, 90),
             selected_text: Color::Rgb(248, 248, 242),
             warning: Color::Rgb(241, 250, 140),
+            added: Color::Rgb(80, 250, 123),
+            added_bg: Color::Rgb(35, 70, 52),
+            removed: Color::Rgb(255, 121, 198),
+            removed_bg: Color::Rgb(75, 38, 60),
         },
         "nord" => ThemePalette {
             background: Color::Rgb(46, 52, 64),
@@ -960,6 +1174,10 @@ fn theme_palette(theme: &str) -> ThemePalette {
             selection: Color::Rgb(67, 76, 94),
             selected_text: Color::Rgb(236, 239, 244),
             warning: Color::Rgb(235, 203, 139),
+            added: Color::Rgb(163, 190, 140),
+            added_bg: Color::Rgb(49, 65, 57),
+            removed: Color::Rgb(191, 97, 106),
+            removed_bg: Color::Rgb(73, 49, 55),
         },
         "ansi" => ThemePalette {
             background: Color::Black,
@@ -972,6 +1190,10 @@ fn theme_palette(theme: &str) -> ThemePalette {
             selection: Color::White,
             selected_text: Color::Black,
             warning: Color::Yellow,
+            added: Color::Green,
+            added_bg: Color::Black,
+            removed: Color::Red,
+            removed_bg: Color::Black,
         },
         // `vesper` remains a compatibility alias for saved preferences, but
         // the former blue/slate palette is intentionally retired.
@@ -986,6 +1208,10 @@ fn theme_palette(theme: &str) -> ThemePalette {
             selection: Color::Rgb(32, 73, 62),
             selected_text: Color::White,
             warning: Color::Rgb(236, 190, 80),
+            added: Color::Rgb(100, 210, 140),
+            added_bg: Color::Rgb(15, 48, 30),
+            removed: Color::Rgb(245, 105, 115),
+            removed_bg: Color::Rgb(58, 24, 28),
         },
     }
 }
@@ -1026,6 +1252,18 @@ fn render_transcript_lines_themed(
             || raw.starts_with("superpower:")
             || raw.starts_with("reasoning:");
         let is_telemetry = raw.starts_with("⏺") || raw.trim_start_matches(' ').starts_with("⎿");
+        let is_diff_summary = raw.starts_with("diff-summary:");
+        let is_diff_file = raw.starts_with("diff-file:");
+        let is_diff_add = raw.starts_with("diff-add:");
+        let is_diff_del = raw.starts_with("diff-del:");
+        let is_diff_context = raw.starts_with("diff-context:");
+        let is_diff_ellipsis = raw.starts_with("diff-ellipsis:");
+        let is_diff = is_diff_summary
+            || is_diff_file
+            || is_diff_add
+            || is_diff_del
+            || is_diff_context
+            || is_diff_ellipsis;
         let is_url_line =
             (raw.starts_with("http://") || raw.starts_with("https://")) && !raw.contains(' ');
 
@@ -1033,8 +1271,13 @@ fn render_transcript_lines_themed(
         // thinking/tool events as one compact activity group. Treating every
         // action/result as a chat turn doubled the feed height and buried the
         // actual answer beneath empty rows.
-        let is_secondary =
-            is_thinking || is_activity || is_commentary || is_notice || is_telemetry || is_url_line;
+        let is_secondary = is_thinking
+            || is_activity
+            || is_commentary
+            || is_notice
+            || is_telemetry
+            || is_url_line
+            || is_diff;
         if is_user_turn {
             rendered.push(Line::from(Span::styled(
                 "─".repeat(inner_width.max(1)),
@@ -1065,6 +1308,15 @@ fn render_transcript_lines_themed(
             // Keep the ⏺ / indented ⎿ glyphs verbatim — they read as
             // Claude Code's quiet action/result markers.
             raw.as_str()
+        } else if let Some(content) = raw
+            .strip_prefix("diff-summary:")
+            .or_else(|| raw.strip_prefix("diff-file:"))
+            .or_else(|| raw.strip_prefix("diff-add:"))
+            .or_else(|| raw.strip_prefix("diff-del:"))
+            .or_else(|| raw.strip_prefix("diff-context:"))
+            .or_else(|| raw.strip_prefix("diff-ellipsis:"))
+        {
+            content
         } else {
             raw.as_str()
         };
@@ -1142,6 +1394,53 @@ fn render_transcript_lines_themed(
             // the human-readable turns — Claude Code's exact hierarchy.
             let style = Style::default().fg(palette.muted);
             for line in lines {
+                rendered.push(restyle_line(line, style));
+            }
+        } else if is_diff_summary {
+            let style = Style::default()
+                .fg(palette.accent)
+                .add_modifier(Modifier::BOLD);
+            for mut line in lines {
+                line.spans.insert(0, Span::styled("● ", style));
+                rendered.push(restyle_line(line, style));
+            }
+        } else if is_diff_file {
+            let style = Style::default()
+                .fg(palette.text)
+                .add_modifier(Modifier::BOLD);
+            for mut line in lines {
+                line.spans.insert(0, Span::styled("  └ ", style));
+                rendered.push(restyle_line(line, style));
+            }
+        } else if is_diff_add || is_diff_del || is_diff_context || is_diff_ellipsis {
+            let (marker, style) = if is_diff_add {
+                (
+                    "+ ",
+                    Style::default().fg(palette.added).bg(palette.added_bg),
+                )
+            } else if is_diff_del {
+                (
+                    "- ",
+                    Style::default().fg(palette.removed).bg(palette.removed_bg),
+                )
+            } else if is_diff_context {
+                ("  ", Style::default().fg(palette.muted))
+            } else {
+                (
+                    "  ",
+                    Style::default()
+                        .fg(palette.muted)
+                        .add_modifier(Modifier::ITALIC),
+                )
+            };
+            for mut line in lines {
+                line.spans
+                    .insert(0, Span::styled(format!("    {marker}"), style));
+                let occupied = line.width();
+                if (is_diff_add || is_diff_del) && occupied < inner_width {
+                    line.spans
+                        .push(Span::styled(" ".repeat(inner_width - occupied), style));
+                }
                 rendered.push(restyle_line(line, style));
             }
         } else {
@@ -1517,11 +1816,15 @@ pub fn transcript_lines_for(model: &ViewModel) -> Vec<String> {
         (!model.live_trajectory.is_empty()).then(|| {
             let mut detail = vec!["activity: Activity transcript · Ctrl+T returns to chat".into()];
             detail.extend(structured_activity_lines(&model.live_trajectory));
+            detail.extend(file_change_preview_lines(&model.file_changes));
             detail
         })
     } else {
         (!model.live_trajectory.is_empty()).then(|| {
             let mut summary = vec![tool_activity_summary(&model.live_trajectory)];
+            if let Some(change_summary) = file_change_summary_line(&model.file_changes) {
+                summary.push(change_summary);
+            }
             summary.extend(
                 model
                     .live_trajectory
@@ -1581,6 +1884,47 @@ pub fn transcript_lines_for(model: &ViewModel) -> Vec<String> {
             "assistant (streaming): {}",
             newest_text_tail(&model.live_response, 640)
         ));
+    }
+    lines
+}
+
+fn file_change_summary_line(changes: &[vesper_domain::FileChangePreview]) -> Option<String> {
+    if changes.is_empty() {
+        return None;
+    }
+    let additions = changes.iter().map(|change| change.additions).sum::<u64>();
+    let deletions = changes.iter().map(|change| change.deletions).sum::<u64>();
+    Some(format!(
+        "activity: ✎ Edited {} {} (+{additions} -{deletions}) · Ctrl+T diff",
+        changes.len(),
+        if changes.len() == 1 { "file" } else { "files" }
+    ))
+}
+
+fn file_change_preview_lines(changes: &[vesper_domain::FileChangePreview]) -> Vec<String> {
+    let Some(summary) = file_change_summary_line(changes) else {
+        return Vec::new();
+    };
+    let mut lines = vec![format!(
+        "diff-summary:{}",
+        summary.trim_start_matches("activity: ")
+    )];
+    for change in changes {
+        lines.push(format!(
+            "diff-file:{} (+{} -{})",
+            change.path, change.additions, change.deletions
+        ));
+        for line in &change.lines {
+            let prefix = match line.kind {
+                vesper_domain::DiffLineKind::Context => "diff-context:",
+                vesper_domain::DiffLineKind::Addition => "diff-add:",
+                vesper_domain::DiffLineKind::Deletion => "diff-del:",
+            };
+            lines.push(format!("{prefix}{}", line.text));
+        }
+        if change.truncated {
+            lines.push("diff-ellipsis:… preview truncated; totals include all lines".into());
+        }
     }
     lines
 }
@@ -2370,24 +2714,27 @@ mod tests {
     }
 
     #[test]
-    fn wrapped_footer_keeps_every_action_visible_and_clickable() {
+    fn contextual_footer_is_one_row_and_every_visible_chip_is_clickable() {
         let width = 80;
         let height = 24;
-        let rows = footer_action_rows(width);
-        assert!(rows.len() > 1, "narrow footer should wrap");
-        assert_eq!(
-            rows.iter().map(Vec::len).sum::<usize>(),
-            FOOTER_ACTIONS.len()
-        );
+        let model = ViewModel {
+            agent_running: true,
+            ..ViewModel::default()
+        };
+        let rows = footer_action_rows(&model, width);
+        assert_eq!(rows.len(), 1, "footer must never steal extra chat rows");
+        assert!(rows[0].iter().any(|chip| chip.action == "submit"));
+        assert!(rows[0].iter().any(|chip| chip.action == "cancel_turn"));
+        assert!(rows[0].iter().any(|chip| chip.action == "show_help"));
         let top = height - rows.len() as u16;
         for (row_index, row) in rows.iter().enumerate() {
             let mut x = 0_u16;
-            for &(label, action) in row {
+            for chip in row {
                 assert_eq!(
-                    footer_action_at(width, height, x, top + row_index as u16),
-                    Some(action)
+                    footer_action_at(&model, width, height, x, top + row_index as u16),
+                    Some(chip.action)
                 );
-                x += label.chars().count() as u16 + 2;
+                x += chip.width() as u16 + 1;
             }
         }
     }
@@ -2970,6 +3317,28 @@ fn visual_reference_frame_has_agent_cli_information_hierarchy() {
             "⏺ run_command · cargo test".into(),
             "  ⎿ ✓ run_command · 199 passed".into(),
         ],
+        file_changes: vec![vesper_domain::FileChangePreview {
+            path: "src/main.rs".into(),
+            absolute_path: "/workspace/src/main.rs".into(),
+            operation: vesper_domain::FileChangeOperation::Modify,
+            additions: 1,
+            deletions: 1,
+            lines: vec![
+                vesper_domain::DiffLine {
+                    kind: vesper_domain::DiffLineKind::Context,
+                    text: " fn main() {".into(),
+                },
+                vesper_domain::DiffLine {
+                    kind: vesper_domain::DiffLineKind::Deletion,
+                    text: "    println!(\"old\");".into(),
+                },
+                vesper_domain::DiffLine {
+                    kind: vesper_domain::DiffLineKind::Addition,
+                    text: "    println!(\"new\");".into(),
+                },
+            ],
+            truncated: false,
+        }],
         panels: PanelVisibility {
             chat_only: false,
             ..PanelVisibility::default()
@@ -2994,6 +3363,7 @@ fn visual_reference_frame_has_agent_cli_information_hierarchy() {
     }
     assert!(frame_text.contains("[Pasted Content"));
     assert!(frame_text.contains("Ran 3 tools"));
+    assert!(frame_text.contains("Edited 1 file (+1 -1)"));
     assert!(frame_text.contains("Implemented"));
     assert!(!frame_text.contains("inspect the repository"));
     assert!(!frame_text.contains("first test failed"));
@@ -3031,10 +3401,68 @@ fn visual_reference_frame_has_agent_cli_information_hierarchy() {
     assert!(detail_text.contains("Explored"));
     assert!(detail_text.contains("Edited"));
     assert!(detail_text.contains("Ran commands"));
+    assert!(detail_text.contains("src/main.rs (+1 -1)"));
+    assert!(detail_text.contains("-     println!(\"old\");"));
+    assert!(detail_text.contains("+     println!(\"new\");"));
     assert!(!detail_text.contains("inspect the repository"));
+    let added_row = (0..buffer.area.height)
+        .find(|&y| {
+            (0..buffer.area.width)
+                .map(|x| buffer[(x, y)].symbol())
+                .collect::<String>()
+                .contains("println!(\"new\")")
+        })
+        .expect("inline diff addition row");
+    assert_eq!(
+        buffer[(2, added_row)].bg,
+        theme_palette("chatgpt-black").added_bg
+    );
     if std::env::var_os("VESPER_DUMP_UI").is_some() {
         eprintln!("ACTIVITY VIEW\n{detail_text}");
     }
+}
+
+#[test]
+fn animated_run_status_uses_measured_time_tokens_and_thinking_duration() {
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+
+    let render = |frame_index| {
+        let model = ViewModel {
+            agent_running: true,
+            live_trajectory: vec!["⏺ edit_file · src/main.rs".into()],
+            turn_elapsed_ms: 17_000,
+            turn_tokens: Some((1_500, 1_000, 500)),
+            thinking_elapsed_ms: Some(1_000),
+            animation_frame: frame_index,
+            ..ViewModel::default()
+        };
+        let backend = TestBackend::new(80, 1);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                frame.render_widget(
+                    Paragraph::new(run_status_line(
+                        &model,
+                        false,
+                        theme_palette("chatgpt-black"),
+                    )),
+                    frame.area(),
+                );
+            })
+            .unwrap();
+        (0..80)
+            .map(|x| terminal.backend().buffer()[(x, 0)].symbol())
+            .collect::<String>()
+    };
+
+    let first = render(0);
+    let second = render(1);
+    assert!(first.contains("Editing…"));
+    assert!(first.contains("17s"));
+    assert!(first.contains("↑ 1.5k tokens"));
+    assert!(first.contains("thought for 1s"));
+    assert_ne!(first.chars().next(), second.chars().next());
 }
 
 #[test]
@@ -3080,12 +3508,9 @@ fn responsive_reference_frames_keep_controls_and_hide_raw_reasoning() {
         );
         assert!(frame_text.contains("Implementing the verified"));
         assert!(!frame_text.contains("RAW_PRIVATE_REASONING"));
-        for &(label, _) in FOOTER_ACTIONS {
-            assert!(
-                frame_text.contains(label),
-                "footer action {label} missing at {width}x{height}"
-            );
-        }
+        assert!(frame_text.contains("Steer"));
+        assert!(frame_text.contains("Stop"));
+        assert!(frame_text.contains("More"));
         if width >= 110 {
             assert!(frame_text.contains("Session"));
             assert!(
