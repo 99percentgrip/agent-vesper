@@ -61,7 +61,8 @@ pub use plan_mode::{PendingQuestion, PlanModeError, PlanPhase, PlanState, PlanTr
 pub use superpowers::{ProviderSuperpowerSurface, SuperpowerOverrides};
 pub use ui::{
     FOOTER_ACTIONS, PermissionChoice, PermissionModal, ReasoningDiagnostics, StubRenderer,
-    TerminalRenderer, ViewModel, command_menu_height, render_to_frame,
+    TerminalRenderer, UiLayoutMetrics, ViewModel, command_menu_height, footer_action_at,
+    footer_action_rows, render_to_frame, ui_layout_metrics,
 };
 
 use vesper_domain::ProviderId;

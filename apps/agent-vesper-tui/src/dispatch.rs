@@ -235,14 +235,16 @@ impl PanelVisibility {
 impl Default for PanelVisibility {
     fn default() -> Self {
         Self {
-            reasoning: true,
+            // Raw chain-of-thought stays out of primary chat. F2 is an
+            // explicit diagnostic opt-in for the bounded reasoning tail;
+            // normal progress uses typed tools, TODOs, and status instead.
+            reasoning: false,
             sidebar: true,
             tasks: true,
-            // Modern agent CLIs lead with the conversation. The dashboard is
-            // still one F11 (or /statusline, /tasks) away, but it no longer
-            // permanently narrows chat or contaminates native terminal text
-            // selection on first launch.
-            chat_only: true,
+            // Session facts, TODO progress, and the last-run report are core
+            // agent feedback and stay visible by default. F11 remains the
+            // explicit opt-in escape hatch for a temporary chat-only canvas.
+            chat_only: false,
         }
     }
 }

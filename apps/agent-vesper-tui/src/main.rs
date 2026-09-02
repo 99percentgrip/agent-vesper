@@ -33,12 +33,12 @@ use std::sync::{Arc, Mutex};
 
 use agent_vesper_tui::{
     AuthHubAction, AuthHubState, AuthProvider, CommandIntent, CommandRegistry,
-    DEFAULT_INTERVIEW_QUESTION_LIMIT, DispatchOutcome, FOOTER_ACTIONS, InterviewQuestionLimit,
-    LmStudioHub, LmStudioSettings, LmStudioSettingsAction, MAX_INTERVIEW_QUESTIONS, MediaOp,
-    PermissionChoice, PermissionModal, PlanPhase, ProviderSuperpowerSurface, SessionState,
-    StartupRoute, TerminalAction, ViewModel, apply_model_plan, apply_task_plan,
-    command_menu_height, dispatch, load_lmstudio_settings, query_startup_view, render_auth_hub,
-    render_lmstudio_hub, render_to_frame, save_lmstudio_settings, startup_route,
+    DEFAULT_INTERVIEW_QUESTION_LIMIT, DispatchOutcome, InterviewQuestionLimit, LmStudioHub,
+    LmStudioSettings, LmStudioSettingsAction, MAX_INTERVIEW_QUESTIONS, MediaOp, PermissionChoice,
+    PermissionModal, PlanPhase, ProviderSuperpowerSurface, SessionState, StartupRoute,
+    TerminalAction, ViewModel, apply_model_plan, apply_task_plan, dispatch, footer_action_at,
+    load_lmstudio_settings, query_startup_view, render_auth_hub, render_lmstudio_hub,
+    render_to_frame, save_lmstudio_settings, startup_route, ui_layout_metrics,
 };
 use crossterm::{
     event::{
@@ -945,32 +945,25 @@ fn handle_mouse_click(
     provider_id: &ProviderId,
     checkpoints: &CheckpointStores,
 ) -> MouseClickOutcome {
-    if row == height.saturating_sub(1) {
-        let mut start = 0_u16;
-        for (label, action) in FOOTER_ACTIONS {
-            let end = start.saturating_add(label.chars().count() as u16);
-            if (start..end).contains(&column) {
-                if *action == "open_palette" {
-                    session.input = "/".into();
-                    session.state.preferences.composer_cursor = 1;
-                    refresh_command_menu(session, registry, surface);
-                    return MouseClickOutcome::Handled;
-                }
-                return if apply_keybinding_action(
-                    action,
-                    session,
-                    registry,
-                    surface,
-                    provider_id,
-                    checkpoints,
-                ) {
-                    MouseClickOutcome::Quit
-                } else {
-                    MouseClickOutcome::Handled
-                };
-            }
-            start = end.saturating_add(2);
+    if let Some(action) = footer_action_at(width, height, column, row) {
+        if action == "open_palette" {
+            session.input = "/".into();
+            session.state.preferences.composer_cursor = 1;
+            refresh_command_menu(session, registry, surface);
+            return MouseClickOutcome::Handled;
         }
+        return if apply_keybinding_action(
+            action,
+            session,
+            registry,
+            surface,
+            provider_id,
+            checkpoints,
+        ) {
+            MouseClickOutcome::Quit
+        } else {
+            MouseClickOutcome::Handled
+        };
     }
 
     // VRO-11.9 — click-to-open: with mouse capture ON (the default), the
@@ -983,15 +976,14 @@ fn handle_mouse_click(
     if session.command_matches.is_empty()
         && let Some(model) = session.last_model.clone()
     {
-        let menu_height = command_menu_height(height, session.command_matches.len());
-        let bottom_chrome = menu_height.saturating_add(6);
+        let metrics = ui_layout_metrics(width, height, session.command_matches.len());
         let working_tree_height = if session.working_tree_view.is_some() {
             10
         } else {
             0
         };
         let transcript_height = height
-            .saturating_sub(1 + bottom_chrome)
+            .saturating_sub(1 + metrics.bottom_chrome_height)
             .saturating_sub(working_tree_height);
         let show_sidebar = session.state.panels.sidebar_visible() && width >= 110;
         let body_width = if show_sidebar {
@@ -1011,11 +1003,12 @@ fn handle_mouse_click(
         }
     }
 
-    let menu_height = command_menu_height(height, session.command_matches.len());
+    let metrics = ui_layout_metrics(width, height, session.command_matches.len());
+    let menu_height = metrics.menu_height;
     if menu_height == 0 {
         return MouseClickOutcome::Ignored;
     }
-    let menu_top = height.saturating_sub(menu_height.saturating_add(6));
+    let menu_top = height.saturating_sub(metrics.bottom_chrome_height);
     let content_top = menu_top.saturating_add(1);
     let content_bottom = menu_top.saturating_add(menu_height).saturating_sub(1);
     if !(content_top..content_bottom).contains(&row) {
@@ -1042,7 +1035,10 @@ fn conversation_selection_hit(column: u16, row: u16, width: u16, height: u16) ->
     } else {
         width
     };
-    column < conversation_width && row > 0 && row < height.saturating_sub(6)
+    let metrics = ui_layout_metrics(width, height, 0);
+    column < conversation_width
+        && row > 0
+        && row < height.saturating_sub(metrics.bottom_chrome_height)
 }
 
 fn finish_mouse_selection(
@@ -1060,8 +1056,13 @@ fn finish_mouse_selection(
         session.state.status = Some("Selection cancelled outside Conversation.".into());
         return;
     }
-    let menu_height = command_menu_height(height, session.command_matches.len());
-    let visible_rows = usize::from(height.saturating_sub(menu_height).saturating_sub(8).max(1));
+    let metrics = ui_layout_metrics(width, height, session.command_matches.len());
+    let visible_rows = usize::from(
+        height
+            .saturating_sub(1 + metrics.bottom_chrome_height)
+            .saturating_sub(2)
+            .max(1),
+    );
     let first_visible = session.state.transcript.len().saturating_sub(visible_rows);
     let first_row = 2_u16;
     let start = usize::from(anchor.min(row).saturating_sub(first_row));
@@ -6539,8 +6540,9 @@ fn drain_agent_event(session: &mut TuiSession) {
 
 /// Keeps iterative assistant narration out of the primary conversation.
 /// AgentLoop returns one text part for each provider iteration; only the last
-/// part is the user-facing answer. Earlier parts remain available in the
-/// Ctrl+T activity transcript instead of becoming an undifferentiated wall.
+/// part is the user-facing answer. Earlier parts remain as bounded commentary
+/// telemetry so the compact activity summary can count them, while their raw
+/// prose stays hidden from both chat and the Ctrl+T tool transcript.
 fn collapse_completed_commentary(event: &mut AgentEvent, session: &mut TuiSession) {
     let AgentEvent::Completed {
         outcome: AgentTurnOutcome::Completed {
@@ -13448,13 +13450,16 @@ mod tests {
         // F11 must be a render-time override: every underlying panel flag is
         // preserved so the second F11 restores exactly what was visible.
         let mut panels = agent_vesper_tui::dispatch::PanelVisibility::default();
-        assert!(!panels.sidebar_visible(), "new sessions lead with chat");
-        assert!(!panels.toggle_chat_only(), "first F11 reveals the rail");
-        assert!(panels.sidebar_visible(), "dashboard is available on demand");
+        assert!(panels.sidebar_visible(), "new sessions show the dashboard");
+        assert!(panels.toggle_chat_only(), "first F11 hides the rail");
+        assert!(
+            !panels.sidebar_visible(),
+            "chat-only is available on demand"
+        );
         assert!(panels.tasks, "individual panel flags stay intact");
         assert!(panels.sidebar, "the sidebar switch stays intact");
-        assert!(panels.toggle_chat_only(), "second F11 restores chat-only");
-        assert!(!panels.sidebar_visible());
+        assert!(!panels.toggle_chat_only(), "second F11 restores the rail");
+        assert!(panels.sidebar_visible());
         assert!(panels.tasks, "TODO flag survived the full cycle");
     }
 
@@ -16231,7 +16236,7 @@ mod tests {
         };
         let lines = transcript_lines_for(&model);
         assert!(
-            lines.iter().any(|line| line.contains("Ran 1 tools")),
+            lines.iter().any(|line| line.contains("Ran 1 tool")),
             "compact activity summary must be inline: {lines:?}"
         );
         assert!(!lines.iter().any(|line| line.contains("write_file")));
@@ -16250,7 +16255,7 @@ mod tests {
             ..ViewModel::default()
         };
         let lines = transcript_lines_for(&model);
-        assert!(lines.iter().any(|line| line.contains("Ran 1 tools")));
+        assert!(lines.iter().any(|line| line.contains("Ran 1 tool")));
         assert!(!lines.iter().any(|line| line.contains("write_file")));
     }
 

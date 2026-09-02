@@ -283,6 +283,75 @@ pub const FOOTER_ACTIONS: &[(&str, &str)] = &[
     ("^p Palette", "open_palette"),
 ];
 
+/// Wraps every footer action onto as many terminal rows as needed. Rendering
+/// and mouse hit-testing both consume this projection, so narrow windows do
+/// not silently lose the controls clipped beyond the right edge.
+#[must_use]
+pub fn footer_action_rows(width: u16) -> Vec<Vec<(&'static str, &'static str)>> {
+    let width = usize::from(width.max(1));
+    let mut rows = Vec::new();
+    let mut row = Vec::new();
+    let mut occupied = 0_usize;
+    for &(label, action) in FOOTER_ACTIONS {
+        let label_width = label.chars().count();
+        let addition = label_width + usize::from(!row.is_empty()) * 2;
+        if !row.is_empty() && occupied + addition > width {
+            rows.push(std::mem::take(&mut row));
+            occupied = 0;
+        }
+        occupied += label_width + usize::from(!row.is_empty()) * 2;
+        row.push((label, action));
+    }
+    if !row.is_empty() {
+        rows.push(row);
+    }
+    rows
+}
+
+/// Resolves a click inside the wrapped footer to its action identifier.
+#[must_use]
+pub fn footer_action_at(width: u16, height: u16, column: u16, row: u16) -> Option<&'static str> {
+    let rows = footer_action_rows(width);
+    let footer_top = height.saturating_sub(rows.len().min(u16::MAX as usize) as u16);
+    let row_index = usize::from(row.checked_sub(footer_top)?);
+    let actions = rows.get(row_index)?;
+    let mut start = 0_u16;
+    for &(label, action) in actions {
+        let end = start.saturating_add(label.chars().count().min(u16::MAX as usize) as u16);
+        if (start..end).contains(&column) {
+            return Some(action);
+        }
+        start = end.saturating_add(2);
+    }
+    None
+}
+
+/// Shared top-level geometry used by rendering and terminal hit-testing.
+/// Essential chrome has fixed height; the conversation receives the
+/// remaining `Fill` space.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UiLayoutMetrics {
+    pub menu_height: u16,
+    pub footer_height: u16,
+    /// Command menu + hint + activity + composer + wrapped footer.
+    pub bottom_chrome_height: u16,
+}
+
+#[must_use]
+pub fn ui_layout_metrics(width: u16, height: u16, menu_items: usize) -> UiLayoutMetrics {
+    let menu_height = command_menu_height(height, menu_items);
+    let footer_height = footer_action_rows(width).len().min(u16::MAX as usize) as u16;
+    UiLayoutMetrics {
+        menu_height,
+        footer_height,
+        bottom_chrome_height: menu_height
+            .saturating_add(1) // command hint
+            .saturating_add(1) // activity / status
+            .saturating_add(3) // composer
+            .saturating_add(footer_height),
+    }
+}
+
 #[must_use]
 pub fn command_menu_height(area_height: u16, item_count: usize) -> u16 {
     if item_count == 0 {
@@ -305,16 +374,20 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
     let area = frame.area();
     let palette = theme_palette(&model.preferences.theme);
     frame.render_widget(Block::default().style(palette.base()), area);
-    let menu_height = command_menu_height(area.height, model.command_menu.len());
+    let metrics = ui_layout_metrics(area.width, area.height, model.command_menu.len());
+    let menu_height = metrics.menu_height;
+    let footer_rows = footer_action_rows(area.width);
+    let footer_height = metrics.footer_height;
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(1), // header
-            Constraint::Min(8),    // conversation + sidebar
+            Constraint::Fill(1),   // conversation + sidebar yields to essential chrome
             Constraint::Length(menu_height),
-            Constraint::Length(1), // status / interaction hint
-            Constraint::Length(3), // composer
-            Constraint::Length(1), // footer
+            Constraint::Length(1),             // command hint
+            Constraint::Length(1),             // activity / status
+            Constraint::Length(3),             // composer
+            Constraint::Length(footer_height), // wrapped footer controls
         ])
         .split(area);
 
@@ -375,11 +448,10 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
     // while PLANNING, the plan body while REVIEW), then the live transcript.
     let transcript_lines = transcript_lines_for(model);
     let transcript_area = conversation_chunks[0];
-    let transcript_viewport = transcript_area.inner(Margin {
+    let transcript_content = transcript_area.inner(Margin {
         horizontal: 2,
         vertical: 1,
     });
-    let transcript_content = readable_column(transcript_viewport, 112);
     let inner_width = usize::from(transcript_content.width);
     // Render the transcript to markdown Lines once, then estimate the
     // wrapped-line count from the *rendered* output. Estimating from the raw
@@ -435,16 +507,18 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
     // scroll mode (PageUp/Home). We render against the *inner* area (inside
     // the borders) so the scrollbar sits next to the text rather than over
     // the right border.
-    let mut scrollbar_state = ScrollbarState::new(wrapped_lines.min(u16::MAX as usize))
-        .position(usize::from(effective_scroll))
-        .viewport_content_length(visible_lines);
-    frame.render_stateful_widget(
-        Scrollbar::new(ScrollbarOrientation::VerticalRight)
-            .thumb_style(Style::default().fg(palette.muted))
-            .track_style(Style::default().fg(palette.border)),
-        transcript_viewport,
-        &mut scrollbar_state,
-    );
+    if wrapped_lines > visible_lines {
+        let mut scrollbar_state = ScrollbarState::new(wrapped_lines)
+            .position(usize::from(effective_scroll))
+            .viewport_content_length(visible_lines);
+        frame.render_stateful_widget(
+            Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .thumb_style(Style::default().fg(palette.muted))
+                .track_style(Style::default().fg(palette.border)),
+            transcript_content,
+            &mut scrollbar_state,
+        );
+    }
 
     if working_tree_height > 0 {
         frame.render_widget(
@@ -531,7 +605,17 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
         );
     }
 
-    let hint = if model.agent_running {
+    let hint = if model.command_menu.is_empty() {
+        "↑↓ history  •  Enter send  •  Ctrl-C cancel  •  Ctrl-X quit"
+    } else {
+        "↑↓ navigate  •  Tab complete  •  Enter run  •  Esc close"
+    };
+    frame.render_widget(
+        Paragraph::new(hint).style(Style::default().fg(palette.muted)),
+        chunks[3],
+    );
+
+    let mut activity = if model.agent_running {
         let notice = model.status.as_deref().unwrap_or("Working");
         if model.queued_prompt_count > 0 {
             format!(
@@ -541,22 +625,24 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
         } else {
             format!("● {notice} · Enter steers · Tab queues")
         }
-    } else if model.command_menu.is_empty() {
-        model
-            .status
-            .clone()
-            .unwrap_or_else(|| "Enter sends · / commands · ↑↓ history".into())
     } else {
-        "↑↓ navigate · Tab completes · Enter runs · Esc closes".into()
+        model.status.clone().unwrap_or_else(|| "○ Ready".into())
     };
-    let chrome_content = readable_column(chunks[3], 112);
+    if !show_sidebar {
+        let completed = model
+            .task_plan
+            .iter()
+            .filter(|task| task.status == "completed")
+            .count();
+        activity.push_str(&format!(" · TODO {completed}/{}", model.task_plan.len()));
+    }
     frame.render_widget(
-        Paragraph::new(hint).style(Style::default().fg(if model.agent_running {
+        Paragraph::new(activity).style(Style::default().fg(if model.agent_running {
             palette.warning
         } else {
             palette.muted
         })),
-        chrome_content,
+        chunks[4],
     );
 
     // Composer. Keep a visible insertion point: the old renderer hid the
@@ -591,7 +677,7 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
     } else {
         " Message ".into()
     };
-    let composer_area = readable_column(chunks[4], 112);
+    let composer_area = chunks[5];
     frame.render_widget(
         Paragraph::new(Line::from(composer_spans)).block(
             Block::default()
@@ -618,11 +704,24 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
         x: cursor_x,
         y: composer_area.y.saturating_add(1),
     });
-    let footer = "Ctrl+C cancel · Ctrl+T activity · F11 chat only · Ctrl+X quit";
-    frame.render_widget(
-        Paragraph::new(footer).style(Style::default().fg(palette.muted)),
-        readable_column(chunks[5], 112),
-    );
+    let footer = footer_rows
+        .into_iter()
+        .map(|row| {
+            Line::from(
+                row.into_iter()
+                    .enumerate()
+                    .flat_map(|(index, (label, _))| {
+                        let spacer = (index > 0).then(|| Span::raw("  "));
+                        spacer.into_iter().chain(std::iter::once(Span::styled(
+                            label,
+                            Style::default().fg(palette.accent),
+                        )))
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect::<Vec<_>>();
+    frame.render_widget(Paragraph::new(footer), chunks[6]);
 
     // Overlay the tool-permission modal LAST so it paints over every other
     // panel. `Clear` resets the underlying cells first so the dialog reads as
@@ -891,16 +990,6 @@ fn theme_palette(theme: &str) -> ThemePalette {
     }
 }
 
-/// Keeps prose at an agent-CLI reading measure instead of stretching a single
-/// paragraph across an ultrawide terminal. Compact terminals still use every
-/// available column; wide terminals retain a quiet right gutter.
-fn readable_column(area: Rect, max_width: u16) -> Rect {
-    Rect {
-        width: area.width.min(max_width),
-        ..area
-    }
-}
-
 /// Renders the transcript as a quiet terminal-native feed: user prompts carry
 /// a cyan `›` marker, assistant markdown is unboxed, and thinking/tool output
 /// stays visually secondary. This follows Codex/Claude terminal hierarchy
@@ -932,6 +1021,10 @@ fn render_transcript_lines_themed(
         let is_thinking = raw.starts_with("thinking:");
         let is_activity = raw.starts_with("activity:");
         let is_commentary = raw.starts_with("commentary:");
+        let is_notice = raw.starts_with("session setting:")
+            || raw.starts_with("runtime:")
+            || raw.starts_with("superpower:")
+            || raw.starts_with("reasoning:");
         let is_telemetry = raw.starts_with("⏺") || raw.trim_start_matches(' ').starts_with("⎿");
         let is_url_line =
             (raw.starts_with("http://") || raw.starts_with("https://")) && !raw.contains(' ');
@@ -941,7 +1034,7 @@ fn render_transcript_lines_themed(
         // action/result as a chat turn doubled the feed height and buried the
         // actual answer beneath empty rows.
         let is_secondary =
-            is_thinking || is_activity || is_commentary || is_telemetry || is_url_line;
+            is_thinking || is_activity || is_commentary || is_notice || is_telemetry || is_url_line;
         if is_user_turn {
             rendered.push(Line::from(Span::styled(
                 "─".repeat(inner_width.max(1)),
@@ -990,11 +1083,7 @@ fn render_transcript_lines_themed(
                             .add_modifier(Modifier::BOLD),
                     ),
                 );
-                let occupied = line
-                    .spans
-                    .iter()
-                    .map(|span| span.content.chars().count())
-                    .sum::<usize>();
+                let occupied = line.width();
                 if occupied < inner_width {
                     line.spans
                         .push(Span::raw(" ".repeat(inner_width - occupied)));
@@ -1021,6 +1110,12 @@ fn render_transcript_lines_themed(
                 .fg(palette.muted)
                 .add_modifier(Modifier::ITALIC);
             for line in lines {
+                rendered.push(restyle_line(line, style));
+            }
+        } else if is_notice {
+            let style = Style::default().fg(palette.muted);
+            for mut line in lines {
+                line.spans.insert(0, Span::styled("· ", style));
                 rendered.push(restyle_line(line, style));
             }
         } else if is_activity {
@@ -1140,14 +1235,7 @@ fn estimated_wrapped_lines(lines: &[Line<'_>], width: usize) -> usize {
     let width = width.max(1);
     lines
         .iter()
-        .map(|line| {
-            let chars: usize = line
-                .spans
-                .iter()
-                .map(|span| span.content.chars().count())
-                .sum();
-            chars.max(1).div_ceil(width)
-        })
+        .map(|line| line.width().max(1).div_ceil(width))
         .sum::<usize>()
         .max(1)
 }
@@ -1213,12 +1301,6 @@ fn render_sidebar(
     // live TODO surface, and a bounded run summary. Tool telemetry remains
     // inline with the conversation, but plan state does not belong in chat
     // history because repeated updates bury the actual dialogue.
-    let report_height = if model.last_report.is_empty() { 3 } else { 8 };
-    let todo_constraint = if model.panels.tasks {
-        Constraint::Min(7)
-    } else {
-        Constraint::Length(0)
-    };
     frame.render_widget(
         Block::default()
             .borders(Borders::LEFT)
@@ -1230,10 +1312,26 @@ fn render_sidebar(
         horizontal: 2,
         vertical: 1,
     });
+    // Session facts and Run state are essential feedback. Give them fixed
+    // rows and let TODO consume the flexible middle so the 110×24 breakpoint
+    // cannot starve Run out of the viewport.
+    let session_height = 7;
+    let todo_minimum = u16::from(model.panels.tasks) * 2;
+    let desired_report_height = if model.last_report.is_empty() { 2 } else { 8 };
+    let report_height = desired_report_height.min(
+        rail.height
+            .saturating_sub(session_height + todo_minimum)
+            .max(1),
+    );
+    let todo_constraint = if model.panels.tasks {
+        Constraint::Fill(1)
+    } else {
+        Constraint::Length(0)
+    };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(9),
+            Constraint::Length(session_height),
             todo_constraint,
             Constraint::Length(report_height),
         ])
@@ -1257,7 +1355,18 @@ fn render_sidebar(
     ];
     frame.render_widget(Paragraph::new(session), chunks[0]);
 
-    let todo_lines = if model.task_plan.is_empty() {
+    let completed = model
+        .task_plan
+        .iter()
+        .filter(|task| task.status == "completed")
+        .count();
+    let task_capacity = usize::from(chunks[1].height.saturating_sub(1));
+    let shown_tasks = if model.task_plan.len() > task_capacity {
+        task_capacity.saturating_sub(1)
+    } else {
+        task_capacity
+    };
+    let mut todo_lines = if model.task_plan.is_empty() {
         vec![Line::from(Span::styled(
             "No active tasks",
             Style::default().fg(palette.muted),
@@ -1266,6 +1375,7 @@ fn render_sidebar(
         model
             .task_plan
             .iter()
+            .take(shown_tasks)
             .map(|task| {
                 let (marker, color) = match task.status.as_str() {
                     "completed" => ("✓", Color::Green),
@@ -1274,16 +1384,20 @@ fn render_sidebar(
                 };
                 Line::from(vec![
                     Span::styled(format!("{marker} "), Style::default().fg(color)),
-                    Span::raw(task.content.clone()),
+                    Span::raw(truncate_with_ellipsis(
+                        &task.content,
+                        usize::from(chunks[1].width.saturating_sub(2)),
+                    )),
                 ])
             })
             .collect()
     };
-    let completed = model
-        .task_plan
-        .iter()
-        .filter(|task| task.status == "completed")
-        .count();
+    if shown_tasks < model.task_plan.len() {
+        todo_lines.push(Line::from(Span::styled(
+            format!("… {} more", model.task_plan.len() - shown_tasks),
+            Style::default().fg(palette.muted),
+        )));
+    }
     if model.panels.tasks {
         frame.render_widget(
             Paragraph::new(
@@ -1340,6 +1454,17 @@ fn render_sidebar(
     );
 }
 
+fn truncate_with_ellipsis(text: &str, max_chars: usize) -> String {
+    let max_chars = max_chars.max(1);
+    if text.chars().count() <= max_chars {
+        return text.to_owned();
+    }
+    if max_chars == 1 {
+        return "…".into();
+    }
+    format!("{}…", text.chars().take(max_chars - 1).collect::<String>())
+}
+
 fn superpower_value_for(model: &ViewModel, alias: &str) -> Option<String> {
     let descriptor = model
         .superpowers
@@ -1364,7 +1489,8 @@ fn superpower_value_for(model: &ViewModel, alias: &str) -> Option<String> {
 /// window keeps the live feed readable (Claude Code collapses thinking the
 /// same way once the turn completes; while running, the newest reasoning is
 /// what matters).
-pub const INLINE_THINKING_TAIL_LINES: usize = 14;
+pub const INLINE_THINKING_TAIL_LINES: usize = 6;
+pub const INLINE_THINKING_MAX_CHARS: usize = 480;
 
 /// Builds the transcript lines for the main panel: Plan Mode context first
 /// (pending questions during PLANNING, the plan body during REVIEW), then the
@@ -1407,11 +1533,18 @@ pub fn transcript_lines_for(model: &ViewModel) -> Vec<String> {
         })
     };
     if let Some(activity) = activity.take() {
-        let before_final = transcript
-            .iter()
-            .rposition(|line| line.starts_with("assistant"))
-            .unwrap_or(transcript.len());
-        transcript.splice(before_final..before_final, activity);
+        let insertion = if model.agent_running {
+            transcript
+                .iter()
+                .rposition(|line| line.starts_with("user:"))
+                .map_or(transcript.len(), |index| index + 1)
+        } else {
+            transcript
+                .iter()
+                .rposition(|line| line.starts_with("assistant"))
+                .unwrap_or(transcript.len())
+        };
+        transcript.splice(insertion..insertion, activity);
     }
     lines.extend(transcript);
     // VRO-11.5: the provider-visible chain of thought streams INLINE in the
@@ -1425,8 +1558,8 @@ pub fn transcript_lines_for(model: &ViewModel) -> Vec<String> {
             None => "🧠 Thinking…".to_string(),
         };
         lines.push(format!("thinking: {header}"));
-        let tail: Vec<&str> = model
-            .reasoning
+        let bounded_reasoning = newest_text_tail(&model.reasoning, INLINE_THINKING_MAX_CHARS);
+        let tail: Vec<&str> = bounded_reasoning
             .lines()
             .filter(|line| !line.trim().is_empty())
             .rev()
@@ -1439,7 +1572,34 @@ pub fn transcript_lines_for(model: &ViewModel) -> Vec<String> {
             lines.push(format!("thinking: {line}"));
         }
     }
+    // Provider content is useful while it streams, but it must never become
+    // another unbounded wall. Keep only a small newest tail in primary chat;
+    // terminal completion atomically replaces it with the complete final
+    // assistant entry already stored in the transcript.
+    if model.agent_running && !model.live_response.trim().is_empty() {
+        lines.push(format!(
+            "assistant (streaming): {}",
+            newest_text_tail(&model.live_response, 640)
+        ));
+    }
     lines
+}
+
+fn newest_text_tail(text: &str, max_chars: usize) -> String {
+    let text = text.trim();
+    let count = text.chars().count();
+    if count <= max_chars {
+        return text.to_owned();
+    }
+    let tail = text
+        .chars()
+        .skip(count.saturating_sub(max_chars))
+        .collect::<String>();
+    let tail = tail
+        .find(char::is_whitespace)
+        .map(|index| tail[index..].trim_start())
+        .unwrap_or(tail.as_str());
+    format!("…{tail}")
 }
 
 /// Retroactively compacts transcripts created by older binaries. Within each
@@ -1569,19 +1729,28 @@ pub fn tool_activity_summary(entries: &[String]) -> String {
         }
     }
     let total = commands + reads + edits + other;
-    let mut parts = vec![format!("Ran {total} tools")];
-    for (count, label) in [
-        (commands, "commands"),
-        (reads, "reads"),
-        (edits, "edits"),
-        (other, "other"),
+    let mut parts = vec![format!(
+        "Ran {total} {}",
+        if total == 1 { "tool" } else { "tools" }
+    )];
+    for (count, singular, plural) in [
+        (commands, "command", "commands"),
+        (reads, "read", "reads"),
+        (edits, "edit", "edits"),
+        (other, "other", "other"),
     ] {
         if count > 0 {
-            parts.push(format!("{count} {label}"));
+            parts.push(format!(
+                "{count} {}",
+                if count == 1 { singular } else { plural }
+            ));
         }
     }
     if commentary > 0 {
-        parts.push(format!("{commentary} progress updates"));
+        parts.push(format!(
+            "{commentary} progress {}",
+            if commentary == 1 { "update" } else { "updates" }
+        ));
     }
     format!("activity: ● {} · Ctrl+T details", parts.join(" · "))
 }
@@ -1859,13 +2028,10 @@ mod tests {
             .iter()
             .map(|cell| cell.symbol())
             .collect();
+        assert!(after.contains("TODO 0/1"), "compact TODO survives: {after}");
         assert!(
-            !after.contains("TODO 1/1"),
-            "chat-only collapse must hide the rail: {after}"
-        );
-        assert!(
-            !after.contains("Session"),
-            "chat-only collapse must hide the session panel: {after}"
+            !after.contains("Permission  Ask") && !after.contains("Context     1 entries"),
+            "chat-only collapse must hide session facts: {after}"
         );
         assert!(
             after.contains("Actual conversation"),
@@ -2135,6 +2301,98 @@ mod tests {
     }
 
     #[test]
+    fn running_content_is_visible_but_bounded_and_default_reasoning_is_hidden() {
+        let model = ViewModel {
+            agent_running: true,
+            reasoning: "private raw reasoning that must stay hidden".repeat(100),
+            live_response: "progress word ".repeat(200),
+            ..ViewModel::default()
+        };
+        let lines = transcript_lines_for(&model);
+        assert!(!lines.iter().any(|line| line.starts_with("thinking:")));
+        let streaming = lines
+            .iter()
+            .find(|line| line.starts_with("assistant (streaming):"))
+            .expect("bounded live assistant tail");
+        assert!(streaming.chars().count() < 700);
+        assert!(streaming.contains('…'));
+    }
+
+    #[test]
+    fn running_activity_stays_with_the_current_turn() {
+        let model = ViewModel {
+            agent_running: true,
+            transcript: vec![
+                "user: first request".into(),
+                "assistant: first answer".into(),
+                "user: second request".into(),
+            ],
+            live_trajectory: vec!["⏺ run_command · cargo test".into()],
+            live_response: "second answer streaming".into(),
+            ..ViewModel::default()
+        };
+        let lines = transcript_lines_for(&model);
+        let first_answer = lines
+            .iter()
+            .position(|line| line == "assistant: first answer")
+            .unwrap();
+        let second_request = lines
+            .iter()
+            .position(|line| line == "user: second request")
+            .unwrap();
+        let activity = lines
+            .iter()
+            .position(|line| line.starts_with("activity:"))
+            .unwrap();
+        let streaming = lines
+            .iter()
+            .position(|line| line.starts_with("assistant (streaming):"))
+            .unwrap();
+        assert!(first_answer < second_request);
+        assert!(second_request < activity);
+        assert!(activity < streaming);
+    }
+
+    #[test]
+    fn tool_activity_summary_uses_polished_count_grammar() {
+        assert_eq!(
+            tool_activity_summary(&["⏺ run_command · cargo test".into()]),
+            "activity: ● Ran 1 tool · 1 command · Ctrl+T details"
+        );
+        assert_eq!(
+            tool_activity_summary(&[
+                "⏺ read_file · src/lib.rs".into(),
+                "⏺ read_file · src/main.rs".into(),
+                "commentary: checking both files".into(),
+            ]),
+            "activity: ● Ran 2 tools · 2 reads · 1 progress update · Ctrl+T details"
+        );
+    }
+
+    #[test]
+    fn wrapped_footer_keeps_every_action_visible_and_clickable() {
+        let width = 80;
+        let height = 24;
+        let rows = footer_action_rows(width);
+        assert!(rows.len() > 1, "narrow footer should wrap");
+        assert_eq!(
+            rows.iter().map(Vec::len).sum::<usize>(),
+            FOOTER_ACTIONS.len()
+        );
+        let top = height - rows.len() as u16;
+        for (row_index, row) in rows.iter().enumerate() {
+            let mut x = 0_u16;
+            for &(label, action) in row {
+                assert_eq!(
+                    footer_action_at(width, height, x, top + row_index as u16),
+                    Some(action)
+                );
+                x += label.chars().count() as u16 + 2;
+            }
+        }
+    }
+
+    #[test]
     fn transcript_lines_bound_the_inline_thinking_tail() {
         // A long chain of thought must not flood the conversation: only
         // INLINE_THINKING_TAIL_LINES most recent reasoning lines render.
@@ -2159,6 +2417,14 @@ mod tests {
             thinking.len(),
             INLINE_THINKING_TAIL_LINES + 1,
             "one header line + exactly the bounded tail"
+        );
+        assert!(
+            thinking
+                .iter()
+                .map(|line| line.chars().count())
+                .sum::<usize>()
+                < INLINE_THINKING_MAX_CHARS + 100,
+            "F2 diagnostics must also have a character budget"
         );
         assert!(
             lines
@@ -2226,6 +2492,38 @@ mod tests {
         assert!(
             any_visible,
             "manual scroll 50-from-bottom should keep some mid-to-late lines visible (checked 165-185)"
+        );
+    }
+
+    #[test]
+    fn render_to_frame_hides_scrollbar_when_transcript_fits() {
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
+        let model = ViewModel {
+            transcript: vec![
+                "user: Build it".into(),
+                "assistant: Implemented and verified.".into(),
+            ],
+            ..ViewModel::default()
+        };
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).expect("test backend");
+        terminal
+            .draw(|frame| render_to_frame(frame, &model))
+            .expect("short transcript render");
+        let content = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(
+            !content
+                .chars()
+                .any(|symbol| matches!(symbol, '▲' | '▼' | '║' | '█')),
+            "a transcript that fits must not paint an inactive scrollbar: {content}"
         );
     }
 
@@ -2673,14 +2971,13 @@ fn visual_reference_frame_has_agent_cli_information_hierarchy() {
             "  ⎿ ✓ run_command · 199 passed".into(),
         ],
         panels: PanelVisibility {
-            chat_only: true,
+            chat_only: false,
             ..PanelVisibility::default()
         },
         ..ViewModel::default()
     };
-    // Use an ultrawide frame like the user's failing screenshot. The chat
-    // column must retain a readable measure instead of expanding prose to the
-    // terminal edge.
+    // Use an ultrawide frame like the user's failing screenshot. Wide space
+    // must contain the session/TODO rail rather than becoming a dead gutter.
     let backend = TestBackend::new(150, 32);
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
@@ -2712,12 +3009,8 @@ fn visual_reference_frame_has_agent_cli_information_hierarchy() {
         buffer[(3, prompt_row)].bg,
         theme_palette("chatgpt-black").raised
     );
-    for y in 2..24 {
-        assert!(
-            (116..146).all(|x| buffer[(x, y)].symbol().trim().is_empty()),
-            "conversation prose escaped its readable column on row {y}"
-        );
-    }
+    assert!(frame_text.contains("Session"));
+    assert!(frame_text.contains("TODO"));
     if std::env::var_os("VESPER_DUMP_UI").is_some() {
         eprintln!("COMPACT CHAT\n{frame_text}");
     }
@@ -2741,5 +3034,67 @@ fn visual_reference_frame_has_agent_cli_information_hierarchy() {
     assert!(!detail_text.contains("inspect the repository"));
     if std::env::var_os("VESPER_DUMP_UI").is_some() {
         eprintln!("ACTIVITY VIEW\n{detail_text}");
+    }
+}
+
+#[test]
+fn responsive_reference_frames_keep_controls_and_hide_raw_reasoning() {
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+
+    for (width, height) in [(80, 24), (109, 24), (110, 24), (150, 32)] {
+        let model = ViewModel {
+            transcript: vec!["user: Build it".into()],
+            live_trajectory: vec!["⏺ run_command · cargo test".into()],
+            live_response: "Implementing the verified change now.".into(),
+            reasoning: "RAW_PRIVATE_REASONING ".repeat(500),
+            agent_running: true,
+            task_plan: vec![TaskItem {
+                content: "Implement and verify responsive conversation layout".into(),
+                status: "in_progress".into(),
+                priority: "high".into(),
+            }],
+            ..ViewModel::default()
+        };
+        let backend = TestBackend::new(width, height);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| render_to_frame(frame, &model))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let frame_text = (0..buffer.area.height)
+            .map(|y| {
+                (0..buffer.area.width)
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            frame_text.contains("Message"),
+            "composer missing at {width}x{height}"
+        );
+        assert!(
+            frame_text.contains("TODO"),
+            "TODO feedback missing at {width}x{height}"
+        );
+        assert!(frame_text.contains("Implementing the verified"));
+        assert!(!frame_text.contains("RAW_PRIVATE_REASONING"));
+        for &(label, _) in FOOTER_ACTIONS {
+            assert!(
+                frame_text.contains(label),
+                "footer action {label} missing at {width}x{height}"
+            );
+        }
+        if width >= 110 {
+            assert!(frame_text.contains("Session"));
+            assert!(
+                frame_text.contains("RUN"),
+                "Run state missing at {width}x{height}"
+            );
+        }
+        if std::env::var_os("VESPER_DUMP_UI").is_some() {
+            eprintln!("RESPONSIVE {width}x{height}\n{frame_text}");
+        }
     }
 }

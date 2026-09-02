@@ -106,9 +106,10 @@ business logic.
   tests, and the production `render_to_frame` ratatui/crossterm backend.
   **Current layout:** the bottom Reasoning panel and Activity strip stay
   removed; the Conversation column owns chat, inline thinking, and tool
-  telemetry. New sessions default to chat-only full width. F11 reveals a
-  compact right rail on wide terminals with Session, a
-  dedicated live TODO panel, and a bounded Last run summary. `/tasks`
+  telemetry. New sessions show a compact right rail on wide terminals with
+  Session, a dedicated live TODO panel, and a bounded Last run summary.
+  Session and Run keep fixed rows while TODO flexes at compact heights, so
+  every rail surface remains visible at the 110×24 breakpoint. `/tasks`
   toggles the TODO region and reveals the sidebar when enabling it. F11
   (`toggle_chat_only`) collapses the entire right rail — Session + TODO +
   Last run — into a chat-only full-width view; the collapse is a pure
@@ -125,8 +126,9 @@ business logic.
   as a compatibility alias for ChatGPT Black. `/tasks` and `/statusline` clear the overlay when
   they explicitly reveal the rail. The footer advertises the F11 action
   beside the other mouse-operable footer segments. The provider
-  chain of thought streams INLINE in the Conversation feed:
-  `transcript_lines_for` emits a `thinking:`-prefixed block (compact
+  chain of thought stays out of primary chat by default and becomes a bounded
+  diagnostic tail only after explicit F2 opt-in. `transcript_lines_for` then
+  emits a `thinking:`-prefixed block (compact
   `ReasoningDiagnostics::render_inline_header()` label + the newest
   `INLINE_THINKING_TAIL_LINES` reasoning lines) while a turn runs;
   `render_transcript_lines` renders `thinking:` entries dim + italic. Raw
@@ -134,9 +136,11 @@ business logic.
   Ctrl+T toggles the complete activity transcript during or after the turn
   without replacing the final answer. Iterative provider commentary is also
   activity, not primary chat: on completion, all assistant text parts except
-  the final part move into the Ctrl+T transcript as dim commentary and the
-  final part remains the sole user-facing answer. The same compaction is a
-  render-time projection for resumed transcripts created by older binaries:
+  the final part become bounded commentary telemetry whose count remains in
+  the compact activity summary; raw iterative narration stays hidden even in
+  Ctrl+T, and the final part remains the sole user-facing answer. The same
+  compaction is a render-time projection for resumed transcripts created by
+  older binaries:
   within each user turn, preceding assistant entries remain hidden in both
   views; Ctrl+T shows structured typed tool activity grouped as Explored,
   Edited, Ran commands, and Other activity, never raw provider narration.
@@ -149,17 +153,20 @@ business logic.
   input targets the conversation. Tool telemetry uses the `⏺` action /
   `⎿` result glyphs (Claude Code parity; the strings are formatted in
   `main.rs::apply_agent_progress`).
-  Conversation prose has a maximum 112-column reading measure on wide
-  terminals while the scrollbar remains at the viewport edge. User turns
-  (`user:` prefix) render as a distinct raised prompt row with a compact
-  `›` marker and turn separator. Assistant turns remain unboxed and use one
-  quiet accent bullet on their first rendered line so role boundaries remain
-  visible without chat bubbles. The composer
-  aligns to the same reading measure, and idle interaction help occupies one
-  restrained status row rather than stacked hint/activity rows. Markdown bold
-  inherits the active theme's body color instead of painting whole reports
-  yellow; headings and inline code retain semantic accents. Legacy full-width
-  and asymmetric chat-bubble backgrounds are prohibited. Consecutive thinking
+  User turns (`user:` prefix) render as a distinct raised prompt row with a
+  compact `›` marker and turn separator. Assistant turns remain unboxed and
+  use one quiet accent bullet on their first rendered line so role boundaries
+  remain visible without chat bubbles. Wide terminals devote otherwise-empty
+  right-side space to the Session/TODO/Last-run rail rather than imposing an
+  artificial prose cutoff. The full clickable action footer, command hint,
+  live activity/status line, and composer remain visible; footer controls wrap
+  onto additional rows on narrower terminals and every rendered row shares
+  the same mouse-hit projection. When the rail cannot fit, the activity line
+  retains a compact `TODO completed/total` summary. The conversation
+  scrollbar renders only when wrapped content exceeds the viewport. Markdown
+  bold inherits the active theme's body color instead of painting whole
+  reports yellow; headings and inline code retain semantic accents. Legacy
+  full-width and asymmetric chat-bubble backgrounds are prohibited. Consecutive thinking
   and expanded tool action/result entries form one compact activity group
   without blank rows between every event; human turns retain breathing room. Submitted
   bracketed pastes remain compact `[Pasted Content N chars]` chips in the
@@ -203,10 +210,11 @@ business logic.
   `ViewModel.reasoning_diagnostics` before each VRO turn; `None` (the
   default) renders a plain `🧠 Thinking…` header.
 - Live agent progress and terminal completion share one FIFO per-turn mpsc
-  channel. Reasoning/content deltas must remain ordered, and terminal
-  finalization must replace the visible streaming region with exactly one
-  transcript copy of the assistant answer; never spawn independent
-  per-delta delivery tasks.
+  channel. Reasoning/content deltas must remain ordered, and partial content
+  is projected through a bounded newest tail while running so it cannot flood
+  primary chat. Terminal finalization must replace that streaming region with
+  exactly one transcript copy of the assistant answer; never spawn
+  independent per-delta delivery tasks.
 - Shared `AgentTurnOutcome::Interrupted` is rendered and recorded as an
   explicit interrupted terminal while preserving partial assistant content,
   current plan, and conversation history; it must not become a generic failure
