@@ -132,8 +132,11 @@ business logic.
   `render_transcript_lines` renders `thinking:` entries dim + italic. Raw
   `⏺`/`⎿` telemetry is collapsed by default into one categorized run summary;
   Ctrl+T toggles the complete activity transcript during or after the turn
-  without replacing the final answer. Review URLs remain visible in compact
-  chat. `PanelVisibility`
+  without replacing the final answer. Iterative provider commentary is also
+  activity, not primary chat: on completion, all assistant text parts except
+  the final part move into the Ctrl+T transcript as dim commentary and the
+  final part remains the sole user-facing answer. Review URLs remain visible
+  in compact chat. `PanelVisibility`
   now means: `reasoning` = inline-thinking visibility (F2), `sidebar` =
   right-rail visibility, and `tasks` = dedicated TODO visibility. `ViewModel` no longer carries
   `reasoning_manual_scroll` / `reasoning_panel_focused` — every scroll

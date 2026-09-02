@@ -6495,7 +6495,7 @@ fn drain_agent_event(session: &mut TuiSession) {
         };
         match received {
             Ok(AgentEvent::Progress(progress)) => apply_agent_progress(progress, session),
-            Ok(event) => {
+            Ok(mut event) => {
                 session.agent_running = false;
                 session.agent_rx = None;
                 session.steering_tx = None;
@@ -6506,6 +6506,7 @@ fn drain_agent_event(session: &mut TuiSession) {
                         session.state.status = Some(format!("session persistence failed: {error}"));
                     }
                 }
+                collapse_completed_commentary(&mut event, session);
                 build_completion_report(session, &event);
                 if session.state.preferences.sound {
                     use std::io::Write;
@@ -6534,6 +6535,40 @@ fn drain_agent_event(session: &mut TuiSession) {
             }
         }
     }
+}
+
+/// Keeps iterative assistant narration out of the primary conversation.
+/// AgentLoop returns one text part for each provider iteration; only the last
+/// part is the user-facing answer. Earlier parts remain available in the
+/// Ctrl+T activity transcript instead of becoming an undifferentiated wall.
+fn collapse_completed_commentary(event: &mut AgentEvent, session: &mut TuiSession) {
+    let AgentEvent::Completed {
+        outcome: AgentTurnOutcome::Completed {
+            assistant_content, ..
+        },
+        ..
+    } = event
+    else {
+        return;
+    };
+    let text_positions = assistant_content
+        .iter()
+        .enumerate()
+        .filter_map(|(index, part)| matches!(part, ContentPart::Text(_)).then_some(index))
+        .collect::<Vec<_>>();
+    let Some(&final_text) = text_positions.last() else {
+        return;
+    };
+    let mut commentary = Vec::new();
+    for index in text_positions.into_iter().rev() {
+        if index != final_text
+            && let ContentPart::Text(text) = assistant_content.remove(index)
+        {
+            commentary.push(format!("commentary: {}", text.as_str()));
+        }
+    }
+    commentary.reverse();
+    session.live_trajectory.extend(commentary);
 }
 
 /// Drains pending VRO ReAct trajectory entries non-blockingly (VRO-5.3,
@@ -16230,6 +16265,42 @@ mod tests {
         let lines = transcript_lines_for(&model);
         assert!(lines.iter().any(|line| line.contains("cargo test")));
         assert!(lines.iter().any(|line| line.contains("returns to chat")));
+    }
+
+    #[test]
+    fn completed_iteration_commentary_collapses_but_final_answer_remains_primary() {
+        let mut session = fresh_tui_session_for_trajectory_tests();
+        let mut event = AgentEvent::Completed {
+            outcome: AgentTurnOutcome::Completed {
+                assistant_content: vec![
+                    ContentPart::Text(ContentText::new("Let me inspect the files.").unwrap()),
+                    ContentPart::Text(ContentText::new("Tests are running now.").unwrap()),
+                    ContentPart::Text(ContentText::new("Implemented and verified.").unwrap()),
+                ],
+                iterations: 3,
+                tool_results: Vec::new(),
+                plan: None,
+            },
+            history: Vec::new(),
+        };
+        collapse_completed_commentary(&mut event, &mut session);
+        let AgentEvent::Completed {
+            outcome:
+                AgentTurnOutcome::Completed {
+                    assistant_content, ..
+                },
+            ..
+        } = event
+        else {
+            panic!("completed outcome expected");
+        };
+        assert_eq!(assistant_content.len(), 1);
+        assert!(matches!(
+            &assistant_content[0],
+            ContentPart::Text(text) if text.as_str() == "Implemented and verified."
+        ));
+        assert_eq!(session.live_trajectory.len(), 2);
+        assert!(session.live_trajectory[0].starts_with("commentary:"));
     }
 
     #[test]

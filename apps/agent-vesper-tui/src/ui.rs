@@ -928,6 +928,7 @@ fn render_transcript_lines_themed(
         // conversation feed.
         let is_thinking = raw.starts_with("thinking:");
         let is_activity = raw.starts_with("activity:");
+        let is_commentary = raw.starts_with("commentary:");
         let is_telemetry = raw.starts_with("⏺") || raw.trim_start_matches(' ').starts_with("⎿");
         let is_url_line =
             (raw.starts_with("http://") || raw.starts_with("https://")) && !raw.contains(' ');
@@ -936,7 +937,8 @@ fn render_transcript_lines_themed(
         // thinking/tool events as one compact activity group. Treating every
         // action/result as a chat turn doubled the feed height and buried the
         // actual answer beneath empty rows.
-        let is_secondary = is_thinking || is_activity || is_telemetry || is_url_line;
+        let is_secondary =
+            is_thinking || is_activity || is_commentary || is_telemetry || is_url_line;
         if idx > 0 && !(is_secondary && previous_was_secondary) {
             rendered.push(Line::raw(""));
         }
@@ -956,6 +958,8 @@ fn render_transcript_lines_themed(
                 .unwrap_or(raw)
         } else if is_activity {
             raw.strip_prefix("activity: ").unwrap_or(raw)
+        } else if is_commentary {
+            raw.strip_prefix("commentary: ").unwrap_or(raw)
         } else if is_telemetry {
             // Keep the ⏺ / indented ⎿ glyphs verbatim — they read as
             // Claude Code's quiet action/result markers.
@@ -982,7 +986,7 @@ fn render_transcript_lines_themed(
             }
         } else if is_assistant_turn {
             rendered.extend(lines);
-        } else if is_thinking {
+        } else if is_thinking || is_commentary {
             // VRO-11.5: live thinking streams as dim italic secondary text —
             // visually distinct from the final conversational answer without
             // stealing attention from it (the `🧠` header line included).
@@ -1413,7 +1417,12 @@ pub fn tool_activity_summary(entries: &[String]) -> String {
     let mut reads = 0_usize;
     let mut edits = 0_usize;
     let mut other = 0_usize;
+    let mut commentary = 0_usize;
     for entry in entries {
+        if entry.starts_with("commentary:") {
+            commentary += 1;
+            continue;
+        }
         let Some(action) = entry.trim().strip_prefix('⏺') else {
             continue;
         };
@@ -1443,6 +1452,9 @@ pub fn tool_activity_summary(entries: &[String]) -> String {
         if count > 0 {
             parts.push(format!("{count} {label}"));
         }
+    }
+    if commentary > 0 {
+        parts.push(format!("{commentary} progress updates"));
     }
     format!("activity: ● {} · Ctrl+T details", parts.join(" · "))
 }
