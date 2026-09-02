@@ -1358,7 +1358,11 @@ pub fn transcript_lines_for(model: &ViewModel) -> Vec<String> {
         }
         PlanPhase::Normal | PlanPhase::Executing => {}
     }
-    lines.extend(model.transcript.iter().cloned());
+    if model.show_tool_details {
+        lines.extend(model.transcript.iter().cloned());
+    } else {
+        lines.extend(compact_persisted_transcript(&model.transcript));
+    }
     // VRO-11.5: the provider-visible chain of thought streams INLINE in the
     // Conversation panel as a dimmed `🧠 Thinking` block (the bottom
     // Reasoning panel is gone). Only a bounded tail of the newest reasoning
@@ -1408,6 +1412,42 @@ pub fn transcript_lines_for(model: &ViewModel) -> Vec<String> {
         lines.push(format!("assistant (streaming): {}", model.live_response));
     }
     lines
+}
+
+/// Retroactively compacts transcripts created by older binaries. Within each
+/// user turn, only the last assistant entry is primary; preceding assistant
+/// entries are iterative progress and become one activity row. Ctrl+T bypasses
+/// this projection and renders the original persisted entries verbatim.
+fn compact_persisted_transcript(transcript: &[String]) -> Vec<String> {
+    let mut output = Vec::with_capacity(transcript.len());
+    let mut segment = Vec::new();
+    let flush = |segment: &mut Vec<String>, output: &mut Vec<String>| {
+        let assistant_positions = segment
+            .iter()
+            .enumerate()
+            .filter_map(|(index, line)| line.starts_with("assistant").then_some(index))
+            .collect::<Vec<_>>();
+        let final_assistant = assistant_positions.last().copied();
+        let progress_count = assistant_positions.len().saturating_sub(1);
+        if progress_count > 0 {
+            output.push(format!(
+                "activity: ● {progress_count} progress updates · Ctrl+T details"
+            ));
+        }
+        for (index, line) in segment.drain(..).enumerate() {
+            if !line.starts_with("assistant") || Some(index) == final_assistant {
+                output.push(line);
+            }
+        }
+    };
+    for line in transcript {
+        if line.starts_with("user:") && !segment.is_empty() {
+            flush(&mut segment, &mut output);
+        }
+        segment.push(line.clone());
+    }
+    flush(&mut segment, &mut output);
+    output
 }
 
 /// Compact projection of a verbose provider/tool event stream.
@@ -2059,6 +2099,7 @@ mod tests {
             .collect();
         let model = ViewModel {
             transcript: long_lines,
+            show_tool_details: true,
             // 50 lines up from the bottom: the bottom-most line must NOT be
             // visible (we scrolled past it), but a line near the bottom of
             // the visible window should be present.
@@ -2149,6 +2190,7 @@ mod tests {
         let long_lines: Vec<String> = (0..200).map(|i| format!("assistant: line {i}")).collect();
         let model = ViewModel {
             transcript: long_lines,
+            show_tool_details: true,
             conversation_manual_scroll: Some(u16::MAX),
             ..ViewModel::default()
         };
@@ -2453,4 +2495,52 @@ fn themes_own_complete_palettes_and_retire_the_blue_default() {
         theme_palette("chatgpt-black").background,
         "saved legacy preference must migrate to black rather than resurrect blue"
     );
+}
+
+#[test]
+fn persisted_iteration_narration_is_compacted_without_losing_final_answer() {
+    let transcript = vec![
+        "user: fix it".into(),
+        "assistant: Let me inspect the repository.".into(),
+        "assistant: Now I will run the tests.".into(),
+        "assistant: Fixed and verified.".into(),
+        "agent: 3 turn(s), 2 tool result(s)".into(),
+    ];
+    let compact = compact_persisted_transcript(&transcript);
+    assert!(
+        compact
+            .iter()
+            .any(|line| line.contains("2 progress updates"))
+    );
+    assert!(
+        compact
+            .iter()
+            .any(|line| line.contains("Fixed and verified"))
+    );
+    assert!(
+        !compact
+            .iter()
+            .any(|line| line.contains("inspect the repository"))
+    );
+    assert!(!compact.iter().any(|line| line.contains("run the tests")));
+}
+
+#[test]
+fn ctrl_t_bypasses_persisted_history_compaction() {
+    let model = ViewModel {
+        transcript: vec![
+            "user: fix it".into(),
+            "assistant: First progress update".into(),
+            "assistant: Final answer".into(),
+        ],
+        show_tool_details: true,
+        ..ViewModel::default()
+    };
+    let lines = transcript_lines_for(&model);
+    assert!(
+        lines
+            .iter()
+            .any(|line| line.contains("First progress update"))
+    );
+    assert!(lines.iter().any(|line| line.contains("Final answer")));
 }

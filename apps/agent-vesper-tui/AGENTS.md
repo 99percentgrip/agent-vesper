@@ -135,8 +135,11 @@ business logic.
   without replacing the final answer. Iterative provider commentary is also
   activity, not primary chat: on completion, all assistant text parts except
   the final part move into the Ctrl+T transcript as dim commentary and the
-  final part remains the sole user-facing answer. Review URLs remain visible
-  in compact chat. `PanelVisibility`
+  final part remains the sole user-facing answer. The same compaction is a
+  render-time projection for resumed transcripts created by older binaries:
+  within each user turn, preceding assistant entries collapse into one
+  progress row while Ctrl+T shows the persisted history verbatim. Review URLs
+  remain visible in compact chat. `PanelVisibility`
   now means: `reasoning` = inline-thinking visibility (F2), `sidebar` =
   right-rail visibility, and `tasks` = dedicated TODO visibility. `ViewModel` no longer carries
   `reasoning_manual_scroll` / `reasoning_panel_focused` — every scroll
