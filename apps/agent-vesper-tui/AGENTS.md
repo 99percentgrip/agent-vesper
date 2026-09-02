@@ -137,9 +137,12 @@ business logic.
   the final part move into the Ctrl+T transcript as dim commentary and the
   final part remains the sole user-facing answer. The same compaction is a
   render-time projection for resumed transcripts created by older binaries:
-  within each user turn, preceding assistant entries collapse into one
-  progress row while Ctrl+T shows the persisted history verbatim. Review URLs
-  remain visible in compact chat. `PanelVisibility`
+  within each user turn, preceding assistant entries remain hidden in both
+  views; Ctrl+T shows structured typed tool activity grouped as Explored,
+  Edited, Ran commands, and Other activity, never raw provider narration.
+  Resumed multiline/256+-character user prompts receive the same compact
+  `[Pasted Content N chars]` presentation as newly submitted prompts. Review
+  URLs remain visible in compact chat. `PanelVisibility`
   now means: `reasoning` = inline-thinking visibility (F2), `sidebar` =
   right-rail visibility, and `tasks` = dedicated TODO visibility. `ViewModel` no longer carries
   `reasoning_manual_scroll` / `reasoning_panel_focused` — every scroll

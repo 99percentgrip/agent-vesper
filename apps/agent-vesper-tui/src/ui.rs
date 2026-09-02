@@ -1341,8 +1341,9 @@ pub const INLINE_THINKING_TAIL_LINES: usize = 14;
 
 /// Builds the transcript lines for the main panel: Plan Mode context first
 /// (pending questions during PLANNING, the plan body during REVIEW), then the
-/// accumulated transcript, then the live region (inline thinking → tool
-/// telemetry → streaming response) while a turn runs.
+/// accumulated transcript, then the live region (inline thinking and compact
+/// or structured tool activity) while a turn runs. Provider progress prose is
+/// intentionally not projected into primary chat.
 pub fn transcript_lines_for(model: &ViewModel) -> Vec<String> {
     let mut lines = Vec::new();
     match model.plan.phase() {
@@ -1358,11 +1359,34 @@ pub fn transcript_lines_for(model: &ViewModel) -> Vec<String> {
         }
         PlanPhase::Normal | PlanPhase::Executing => {}
     }
-    if model.show_tool_details {
-        lines.extend(model.transcript.iter().cloned());
+    let mut transcript = compact_persisted_transcript(&model.transcript);
+    let mut activity = if model.show_tool_details {
+        (!model.live_trajectory.is_empty()).then(|| {
+            let mut detail = vec!["activity: Activity transcript · Ctrl+T returns to chat".into()];
+            detail.extend(structured_activity_lines(&model.live_trajectory));
+            detail
+        })
     } else {
-        lines.extend(compact_persisted_transcript(&model.transcript));
+        (!model.live_trajectory.is_empty()).then(|| {
+            let mut summary = vec![tool_activity_summary(&model.live_trajectory)];
+            summary.extend(
+                model
+                    .live_trajectory
+                    .iter()
+                    .filter(|line| line.contains("VesperLens") || line.starts_with("http"))
+                    .cloned(),
+            );
+            summary
+        })
+    };
+    if let Some(activity) = activity.take() {
+        let before_final = transcript
+            .iter()
+            .rposition(|line| line.starts_with("assistant"))
+            .unwrap_or(transcript.len());
+        transcript.splice(before_final..before_final, activity);
     }
+    lines.extend(transcript);
     // VRO-11.5: the provider-visible chain of thought streams INLINE in the
     // Conversation panel as a dimmed `🧠 Thinking` block (the bottom
     // Reasoning panel is gone). Only a bounded tail of the newest reasoning
@@ -1388,36 +1412,13 @@ pub fn transcript_lines_for(model: &ViewModel) -> Vec<String> {
             lines.push(format!("thinking: {line}"));
         }
     }
-    // VRO-11.4: inline tool telemetry renders DIRECTLY in the Conversation
-    // panel after the transcript, so the trajectory reads top-to-bottom
-    // naturally with the assistant's text (matches Codex / Claude Code /
-    // the host-agent rendering). Each line is already prefixed
-    // with `> ` for visual distinction from user/assistant turns.
-    if model.show_tool_details {
-        if !model.live_trajectory.is_empty() {
-            lines.push("activity: Full tool activity · Ctrl+T returns to chat".into());
-            lines.extend(model.live_trajectory.iter().cloned());
-        }
-    } else if !model.live_trajectory.is_empty() {
-        lines.push(tool_activity_summary(&model.live_trajectory));
-        lines.extend(
-            model
-                .live_trajectory
-                .iter()
-                .filter(|line| line.contains("VesperLens") || line.starts_with("http"))
-                .cloned(),
-        );
-    }
-    if model.agent_running && !model.live_response.is_empty() {
-        lines.push(format!("assistant (streaming): {}", model.live_response));
-    }
     lines
 }
 
 /// Retroactively compacts transcripts created by older binaries. Within each
 /// user turn, only the last assistant entry is primary; preceding assistant
-/// entries are iterative progress and become one activity row. Ctrl+T bypasses
-/// this projection and renders the original persisted entries verbatim.
+/// entries are iterative progress and remain hidden in both presentation
+/// modes. Structured activity comes from typed tool events, never prose.
 fn compact_persisted_transcript(transcript: &[String]) -> Vec<String> {
     let mut output = Vec::with_capacity(transcript.len());
     let mut segment = Vec::new();
@@ -1428,15 +1429,12 @@ fn compact_persisted_transcript(transcript: &[String]) -> Vec<String> {
             .filter_map(|(index, line)| line.starts_with("assistant").then_some(index))
             .collect::<Vec<_>>();
         let final_assistant = assistant_positions.last().copied();
-        let progress_count = assistant_positions.len().saturating_sub(1);
-        if progress_count > 0 {
-            output.push(format!(
-                "activity: ● {progress_count} progress updates · Ctrl+T details"
-            ));
-        }
         for (index, line) in segment.drain(..).enumerate() {
+            if line.starts_with("agent:") {
+                continue;
+            }
             if !line.starts_with("assistant") || Some(index) == final_assistant {
-                output.push(line);
+                output.push(compact_visible_prompt(line));
             }
         }
     };
@@ -1448,6 +1446,68 @@ fn compact_persisted_transcript(transcript: &[String]) -> Vec<String> {
     }
     flush(&mut segment, &mut output);
     output
+}
+
+fn compact_visible_prompt(line: String) -> String {
+    let Some(body) = line.strip_prefix("user:") else {
+        return line;
+    };
+    let body = body.trim();
+    let count = body.chars().count();
+    if count < 256 && !body.contains('\n') {
+        return line;
+    }
+    let lead = body
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .chars()
+        .take(120)
+        .collect::<String>();
+    format!("user: {lead} [Pasted Content {count} chars]")
+}
+
+fn structured_activity_lines(entries: &[String]) -> Vec<String> {
+    let mut groups: [Vec<String>; 4] = std::array::from_fn(|_| Vec::new());
+    let mut current_group = 3_usize;
+    for entry in entries {
+        let trimmed = entry.trim();
+        if trimmed.starts_with("commentary:") {
+            continue;
+        }
+        if let Some(action) = trimmed.strip_prefix('⏺') {
+            let name = action.trim().split([' ', '·']).next().unwrap_or_default();
+            current_group = if name.contains("read")
+                || name.contains("list")
+                || name.contains("grep")
+                || name.contains("search")
+            {
+                0
+            } else if name.contains("write") || name.contains("edit") || name.contains("patch") {
+                1
+            } else if name.contains("command") || name.contains("shell") {
+                2
+            } else {
+                3
+            };
+            groups[current_group].push(entry.clone());
+        } else if trimmed.starts_with('⎿') {
+            groups[current_group].push(entry.clone());
+        } else if entry.contains("VesperLens") || entry.starts_with("http") {
+            groups[3].push(entry.clone());
+        }
+    }
+    let mut lines = Vec::new();
+    for (label, group) in ["Explored", "Edited", "Ran commands", "Other activity"]
+        .into_iter()
+        .zip(groups)
+    {
+        if !group.is_empty() {
+            lines.push(format!("activity: {label}"));
+            lines.extend(group);
+        }
+    }
+    lines
 }
 
 /// Compact projection of a verbose provider/tool event stream.
@@ -2095,7 +2155,7 @@ mod tests {
         // `conversation_manual_scroll` (PageUp/Home) without going past the
         // valid range.
         let long_lines: Vec<String> = (0..200)
-            .map(|i| format!("assistant: line number {i} of a long transcript"))
+            .map(|i| format!("user: line number {i} of a long transcript"))
             .collect();
         let model = ViewModel {
             transcript: long_lines,
@@ -2187,7 +2247,7 @@ mod tests {
         // visible, line 199 NOT visible). This guards against the original
         // bug where the input handler subtracted from u16::MAX and produced
         // a value that overflowed back to the bottom.
-        let long_lines: Vec<String> = (0..200).map(|i| format!("assistant: line {i}")).collect();
+        let long_lines: Vec<String> = (0..200).map(|i| format!("user: line {i}")).collect();
         let model = ViewModel {
             transcript: long_lines,
             show_tool_details: true,
@@ -2510,11 +2570,6 @@ fn persisted_iteration_narration_is_compacted_without_losing_final_answer() {
     assert!(
         compact
             .iter()
-            .any(|line| line.contains("2 progress updates"))
-    );
-    assert!(
-        compact
-            .iter()
             .any(|line| line.contains("Fixed and verified"))
     );
     assert!(
@@ -2526,21 +2581,117 @@ fn persisted_iteration_narration_is_compacted_without_losing_final_answer() {
 }
 
 #[test]
-fn ctrl_t_bypasses_persisted_history_compaction() {
+fn resumed_large_prompt_renders_as_a_compact_attachment_chip() {
+    let body = format!(
+        "Please implement this request\n{}",
+        "detailed context ".repeat(40)
+    );
+    let count = body.trim().chars().count();
+    let compact = compact_persisted_transcript(&[format!("user: {body}")]);
+    assert_eq!(compact.len(), 1);
+    assert!(compact[0].contains("Please implement this request"));
+    assert!(compact[0].contains(&format!("[Pasted Content {count} chars]")));
+    assert!(!compact[0].contains("detailed context detailed context"));
+}
+
+#[test]
+fn ctrl_t_keeps_persisted_progress_compact_and_shows_structured_tools() {
     let model = ViewModel {
         transcript: vec![
             "user: fix it".into(),
             "assistant: First progress update".into(),
             "assistant: Final answer".into(),
         ],
+        live_trajectory: vec![
+            "⏺ read_file · src/main.rs".into(),
+            "  ⎿ ✓ read_file · 120 lines".into(),
+            "⏺ run_command · cargo test".into(),
+        ],
         show_tool_details: true,
         ..ViewModel::default()
     };
     let lines = transcript_lines_for(&model);
     assert!(
-        lines
+        !lines
             .iter()
             .any(|line| line.contains("First progress update"))
     );
     assert!(lines.iter().any(|line| line.contains("Final answer")));
+    assert!(lines.iter().any(|line| line.contains("Explored")));
+    assert!(lines.iter().any(|line| line.contains("Ran commands")));
+}
+
+#[test]
+fn visual_reference_frame_has_agent_cli_information_hierarchy() {
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+
+    let mut model = ViewModel {
+        transcript: vec![
+            format!(
+                "user: Build the feature\n{}",
+                "long specification ".repeat(30)
+            ),
+            "assistant: I will inspect the repository now.".into(),
+            "assistant: The first test failed, so I will adjust it.".into(),
+            "assistant: ## Implemented\n\n- Added the requested behavior\n- Verification passed"
+                .into(),
+        ],
+        live_trajectory: vec![
+            "⏺ read_file · src/main.rs".into(),
+            "  ⎿ ✓ read_file · 120 lines".into(),
+            "⏺ apply_patch · src/main.rs".into(),
+            "  ⎿ ✓ apply_patch".into(),
+            "⏺ run_command · cargo test".into(),
+            "  ⎿ ✓ run_command · 199 passed".into(),
+        ],
+        panels: PanelVisibility {
+            chat_only: true,
+            ..PanelVisibility::default()
+        },
+        ..ViewModel::default()
+    };
+    let backend = TestBackend::new(110, 32);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| render_to_frame(frame, &model))
+        .unwrap();
+    let buffer = terminal.backend().buffer();
+    let mut frame_text = String::new();
+    for y in 0..buffer.area.height {
+        let row = (0..buffer.area.width)
+            .map(|x| buffer[(x, y)].symbol())
+            .collect::<String>();
+        frame_text.push_str(row.trim_end());
+        frame_text.push('\n');
+    }
+    assert!(frame_text.contains("[Pasted Content"));
+    assert!(frame_text.contains("Ran 3 tools"));
+    assert!(frame_text.contains("Implemented"));
+    assert!(!frame_text.contains("inspect the repository"));
+    assert!(!frame_text.contains("first test failed"));
+    if std::env::var_os("VESPER_DUMP_UI").is_some() {
+        eprintln!("COMPACT CHAT\n{frame_text}");
+    }
+
+    model.show_tool_details = true;
+    terminal
+        .draw(|frame| render_to_frame(frame, &model))
+        .unwrap();
+    let buffer = terminal.backend().buffer();
+    let mut detail_text = String::new();
+    for y in 0..buffer.area.height {
+        let row = (0..buffer.area.width)
+            .map(|x| buffer[(x, y)].symbol())
+            .collect::<String>();
+        detail_text.push_str(row.trim_end());
+        detail_text.push('\n');
+    }
+    assert!(detail_text.contains("Explored"));
+    assert!(detail_text.contains("Edited"));
+    assert!(detail_text.contains("Ran commands"));
+    assert!(!detail_text.contains("inspect the repository"));
+    if std::env::var_os("VESPER_DUMP_UI").is_some() {
+        eprintln!("ACTIVITY VIEW\n{detail_text}");
+    }
 }
