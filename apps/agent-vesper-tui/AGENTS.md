@@ -106,7 +106,10 @@ business logic.
   Last run — into a chat-only full-width view; the collapse is a pure
   render-time overlay (`PanelVisibility::chat_only`), so the per-panel
   `sidebar` / `tasks` flags keep their values and a second F11 restores the
-  exact previous layout. `/tasks` and `/statusline` clear the overlay when
+  exact previous layout. The conversation is a borderless padded canvas, the
+  composer uses one quiet top divider, and the optional utility rail uses one
+  vertical divider with flat section headings rather than stacked rounded
+  boxes. `/tasks` and `/statusline` clear the overlay when
   they explicitly reveal the rail. The footer advertises the F11 action
   beside the other mouse-operable footer segments. The provider
   chain of thought streams INLINE in the Conversation feed:

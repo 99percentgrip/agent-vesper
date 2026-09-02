@@ -9,7 +9,7 @@
 
 use ratatui::{
     Frame,
-    layout::{Alignment, Constraint, Direction, Layout, Position, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Margin, Position, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{
@@ -335,7 +335,10 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
         Span::styled(format!("• {} ", phase.label()), phase_style),
         Span::styled(format!("• {state}"), Style::default().fg(Color::DarkGray)),
     ]);
-    frame.render_widget(Paragraph::new(header), chunks[0]);
+    frame.render_widget(
+        Paragraph::new(header).style(Style::default().bg(Color::Rgb(12, 20, 31))),
+        chunks[0],
+    );
 
     let show_sidebar = model.panels.sidebar_visible() && chunks[1].width >= 110;
     let body = Layout::default()
@@ -366,7 +369,11 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
     // while PLANNING, the plan body while REVIEW), then the live transcript.
     let transcript_lines = transcript_lines_for(model);
     let transcript_area = conversation_chunks[0];
-    let inner_width = usize::from(transcript_area.width.saturating_sub(2));
+    let transcript_content = transcript_area.inner(Margin {
+        horizontal: 2,
+        vertical: 1,
+    });
+    let inner_width = usize::from(transcript_content.width);
     // Render the transcript to markdown Lines once, then estimate the
     // wrapped-line count from the *rendered* output. Estimating from the raw
     // strings would over-count (markdown collapses fenced code markers) and
@@ -397,14 +404,8 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
         let estimate = estimated_wrapped_lines(&rendered, inner_width);
         (ratatui::text::Text::from(rendered), estimate)
     };
-    let paragraph = Paragraph::new(transcript).wrap(Wrap { trim: false }).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(CHROME_BORDER))
-            .title(" Conversation "),
-    );
-    let visible_lines = usize::from(transcript_area.height.saturating_sub(2));
+    let paragraph = Paragraph::new(transcript).wrap(Wrap { trim: false });
+    let visible_lines = usize::from(transcript_content.height);
     let max_scroll = wrapped_lines
         .saturating_sub(visible_lines)
         .min(u16::MAX as usize) as u16;
@@ -419,7 +420,7 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
         .unwrap_or(0)
         .min(max_scroll);
     let effective_scroll = max_scroll.saturating_sub(manual);
-    frame.render_widget(paragraph.scroll((effective_scroll, 0)), transcript_area);
+    frame.render_widget(paragraph.scroll((effective_scroll, 0)), transcript_content);
 
     // Vertical scrollbar on the right edge of the Conversation block. The
     // state mirrors the same `effective_scroll` used by the paragraph so the
@@ -434,7 +435,7 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
         Scrollbar::new(ScrollbarOrientation::VerticalRight)
             .thumb_style(Style::default().fg(Color::Rgb(120, 140, 160)))
             .track_style(Style::default().fg(Color::Rgb(60, 70, 85))),
-        transcript_area,
+        transcript_content,
         &mut scrollbar_state,
     );
 
@@ -583,13 +584,12 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
             model.preferences.vim_mode.to_uppercase()
         )
     } else {
-        " Composer ".into()
+        " Message ".into()
     };
     frame.render_widget(
         Paragraph::new(Line::from(composer_spans)).block(
             Block::default()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
+                .borders(Borders::TOP)
                 .border_style(Style::default().fg(CHROME_BORDER))
                 .title(composer_title),
         ),
@@ -598,12 +598,11 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
     let cursor_x = chunks[5]
         .x
         .saturating_add(
-            1 + 2
-                + model
-                    .composer_attachments
-                    .iter()
-                    .map(|label| label.chars().count() as u16 + 1)
-                    .sum::<u16>()
+            2 + model
+                .composer_attachments
+                .iter()
+                .map(|label| label.chars().count() as u16 + 1)
+                .sum::<u16>()
                 + model.input[..model.preferences.composer_cursor.min(model.input.len())]
                     .chars()
                     .count() as u16,
@@ -936,7 +935,7 @@ pub fn bare_url_entry_at_row(model: &ViewModel, area: Rect, row: u16) -> Option<
     if area.height < 3 || area.width < 3 {
         return None;
     }
-    let inner_width = usize::from(area.width.saturating_sub(2));
+    let inner_width = usize::from(area.width.saturating_sub(4));
     let visible = usize::from(area.height.saturating_sub(2));
     let top = area.y.saturating_add(1);
     if !(top..top.saturating_add(visible as u16)).contains(&row) {
@@ -1076,6 +1075,17 @@ fn render_sidebar(frame: &mut Frame<'_>, area: ratatui::layout::Rect, model: &Vi
     } else {
         Constraint::Length(0)
     };
+    frame.render_widget(
+        Block::default()
+            .borders(Borders::LEFT)
+            .border_style(Style::default().fg(CHROME_BORDER))
+            .style(Style::default().bg(Color::Rgb(9, 15, 24))),
+        area,
+    );
+    let rail = area.inner(Margin {
+        horizontal: 2,
+        vertical: 1,
+    });
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -1083,7 +1093,7 @@ fn render_sidebar(frame: &mut Frame<'_>, area: ratatui::layout::Rect, model: &Vi
             todo_constraint,
             Constraint::Length(report_height),
         ])
-        .split(area);
+        .split(rail);
 
     let model_name = superpower_value_for(model, "model").unwrap_or_else(|| "provider".into());
     let thinking = superpower_value_for(model, "thinking").unwrap_or_else(|| "enabled".into());
@@ -1101,16 +1111,7 @@ fn render_sidebar(frame: &mut Frame<'_>, area: ratatui::layout::Rect, model: &Vi
         Line::from(format!("Phase       {}", model.plan.phase().label())),
         Line::from(format!("Context     {} entries", model.transcript.len())),
     ];
-    frame.render_widget(
-        Paragraph::new(session).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(CHROME_BORDER))
-                .title(" Session "),
-        ),
-        chunks[0],
-    );
+    frame.render_widget(Paragraph::new(session), chunks[0]);
 
     let todo_lines = if model.task_plan.is_empty() {
         vec![Line::from(Span::styled(
@@ -1141,13 +1142,17 @@ fn render_sidebar(frame: &mut Frame<'_>, area: ratatui::layout::Rect, model: &Vi
         .count();
     if model.panels.tasks {
         frame.render_widget(
-            Paragraph::new(todo_lines).wrap(Wrap { trim: false }).block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded)
-                    .border_style(Style::default().fg(CHROME_BORDER))
-                    .title(format!(" TODO {completed}/{} ", model.task_plan.len())),
-            ),
+            Paragraph::new(
+                std::iter::once(Line::from(Span::styled(
+                    format!("TODO {completed}/{}", model.task_plan.len()),
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                )))
+                .chain(todo_lines)
+                .collect::<Vec<_>>(),
+            )
+            .wrap(Wrap { trim: false }),
             chunks[1],
         );
     }
@@ -1172,17 +1177,21 @@ fn render_sidebar(frame: &mut Frame<'_>, area: ratatui::layout::Rect, model: &Vi
         model.last_report.iter().cloned().map(Line::from).collect()
     };
     frame.render_widget(
-        Paragraph::new(run_lines).wrap(Wrap { trim: false }).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(CHROME_BORDER))
-                .title(if model.last_report.is_empty() {
-                    " Run "
+        Paragraph::new(
+            std::iter::once(Line::from(Span::styled(
+                if model.last_report.is_empty() {
+                    "RUN"
                 } else {
-                    " Last run "
-                }),
-        ),
+                    "LAST RUN"
+                },
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )))
+            .chain(run_lines)
+            .collect::<Vec<_>>(),
+        )
+        .wrap(Wrap { trim: false }),
         chunks[2],
     );
 }
@@ -1489,7 +1498,7 @@ mod tests {
         );
         assert!(content.contains("Inspect implementation"));
         assert!(content.contains("Open interactive review"));
-        assert!(content.contains("Run"));
+        assert!(content.contains("RUN"));
         assert!(content.contains("Working"));
         assert!(content.contains("Actual conversation"));
     }
