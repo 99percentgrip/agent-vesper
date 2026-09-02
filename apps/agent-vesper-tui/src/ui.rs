@@ -312,8 +312,7 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
             Constraint::Length(1), // header
             Constraint::Min(8),    // conversation + sidebar
             Constraint::Length(menu_height),
-            Constraint::Length(1), // command hint
-            Constraint::Length(1), // activity
+            Constraint::Length(1), // status / interaction hint
             Constraint::Length(3), // composer
             Constraint::Length(1), // footer
         ])
@@ -376,10 +375,11 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
     // while PLANNING, the plan body while REVIEW), then the live transcript.
     let transcript_lines = transcript_lines_for(model);
     let transcript_area = conversation_chunks[0];
-    let transcript_content = transcript_area.inner(Margin {
+    let transcript_viewport = transcript_area.inner(Margin {
         horizontal: 2,
         vertical: 1,
     });
+    let transcript_content = readable_column(transcript_viewport, 112);
     let inner_width = usize::from(transcript_content.width);
     // Render the transcript to markdown Lines once, then estimate the
     // wrapped-line count from the *rendered* output. Estimating from the raw
@@ -442,7 +442,7 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
         Scrollbar::new(ScrollbarOrientation::VerticalRight)
             .thumb_style(Style::default().fg(palette.muted))
             .track_style(Style::default().fg(palette.border)),
-        transcript_content,
+        transcript_viewport,
         &mut scrollbar_state,
     );
 
@@ -531,17 +531,7 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
         );
     }
 
-    let hint = if model.command_menu.is_empty() {
-        "↑↓ history  •  Enter send  •  Ctrl-C cancel  •  Ctrl-X quit"
-    } else {
-        "↑↓ navigate  •  Tab complete  •  Enter run  •  Esc close"
-    };
-    frame.render_widget(
-        Paragraph::new(hint).style(Style::default().fg(palette.muted)),
-        chunks[3],
-    );
-
-    let activity = if model.agent_running {
+    let hint = if model.agent_running {
         let notice = model.status.as_deref().unwrap_or("Working");
         if model.queued_prompt_count > 0 {
             format!(
@@ -551,16 +541,22 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
         } else {
             format!("● {notice} · Enter steers · Tab queues")
         }
+    } else if model.command_menu.is_empty() {
+        model
+            .status
+            .clone()
+            .unwrap_or_else(|| "Enter sends · / commands · ↑↓ history".into())
     } else {
-        model.status.clone().unwrap_or_else(|| "○ Ready".into())
+        "↑↓ navigate · Tab completes · Enter runs · Esc closes".into()
     };
+    let chrome_content = readable_column(chunks[3], 112);
     frame.render_widget(
-        Paragraph::new(activity).style(Style::default().fg(if model.agent_running {
+        Paragraph::new(hint).style(Style::default().fg(if model.agent_running {
             palette.warning
         } else {
             palette.muted
         })),
-        chunks[4],
+        chrome_content,
     );
 
     // Composer. Keep a visible insertion point: the old renderer hid the
@@ -595,6 +591,7 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
     } else {
         " Message ".into()
     };
+    let composer_area = readable_column(chunks[4], 112);
     frame.render_widget(
         Paragraph::new(Line::from(composer_spans)).block(
             Block::default()
@@ -602,9 +599,9 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
                 .border_style(Style::default().fg(palette.border))
                 .title(composer_title),
         ),
-        chunks[5],
+        composer_area,
     );
-    let cursor_x = chunks[5]
+    let cursor_x = composer_area
         .x
         .saturating_add(
             2 + model
@@ -616,19 +613,15 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
                     .chars()
                     .count() as u16,
         )
-        .min(chunks[5].right().saturating_sub(1));
+        .min(composer_area.right().saturating_sub(1));
     frame.set_cursor_position(Position {
         x: cursor_x,
-        y: chunks[5].y.saturating_add(1),
+        y: composer_area.y.saturating_add(1),
     });
-    let footer = FOOTER_ACTIONS
-        .iter()
-        .map(|(label, _)| *label)
-        .collect::<Vec<_>>()
-        .join("  ");
+    let footer = "Ctrl+C cancel · Ctrl+T activity · F11 chat only · Ctrl+X quit";
     frame.render_widget(
-        Paragraph::new(footer).style(Style::default().fg(palette.accent)),
-        chunks[6],
+        Paragraph::new(footer).style(Style::default().fg(palette.muted)),
+        readable_column(chunks[5], 112),
     );
 
     // Overlay the tool-permission modal LAST so it paints over every other
@@ -898,6 +891,16 @@ fn theme_palette(theme: &str) -> ThemePalette {
     }
 }
 
+/// Keeps prose at an agent-CLI reading measure instead of stretching a single
+/// paragraph across an ultrawide terminal. Compact terminals still use every
+/// available column; wide terminals retain a quiet right gutter.
+fn readable_column(area: Rect, max_width: u16) -> Rect {
+    Rect {
+        width: area.width.min(max_width),
+        ..area
+    }
+}
+
 /// Renders the transcript as a quiet terminal-native feed: user prompts carry
 /// a cyan `›` marker, assistant markdown is unboxed, and thinking/tool output
 /// stays visually secondary. This follows Codex/Claude terminal hierarchy
@@ -912,7 +915,7 @@ fn render_transcript_lines(transcript_lines: &[String], _inner_width: usize) -> 
 
 fn render_transcript_lines_themed(
     transcript_lines: &[String],
-    _inner_width: usize,
+    inner_width: usize,
     palette: ThemePalette,
 ) -> Vec<Line<'static>> {
     let mut rendered: Vec<Line<'static>> = Vec::new();
@@ -939,7 +942,12 @@ fn render_transcript_lines_themed(
         // actual answer beneath empty rows.
         let is_secondary =
             is_thinking || is_activity || is_commentary || is_telemetry || is_url_line;
-        if idx > 0 && !(is_secondary && previous_was_secondary) {
+        if is_user_turn {
+            rendered.push(Line::from(Span::styled(
+                "─".repeat(inner_width.max(1)),
+                Style::default().fg(palette.border),
+            )));
+        } else if idx > 0 && !(is_secondary && previous_was_secondary) {
             rendered.push(Line::raw(""));
         }
 
@@ -982,10 +990,29 @@ fn render_transcript_lines_themed(
                             .add_modifier(Modifier::BOLD),
                     ),
                 );
+                let occupied = line
+                    .spans
+                    .iter()
+                    .map(|span| span.content.chars().count())
+                    .sum::<usize>();
+                if occupied < inner_width {
+                    line.spans
+                        .push(Span::raw(" ".repeat(inner_width - occupied)));
+                }
+                line.style = Style::default().bg(palette.raised);
                 rendered.push(line);
             }
         } else if is_assistant_turn {
-            rendered.extend(lines);
+            for (line_index, mut line) in lines.into_iter().enumerate() {
+                line.spans.insert(
+                    0,
+                    Span::styled(
+                        if line_index == 0 { "• " } else { "  " },
+                        Style::default().fg(palette.accent),
+                    ),
+                );
+                rendered.push(line);
+            }
         } else if is_thinking || is_commentary {
             // VRO-11.5: live thinking streams as dim italic secondary text —
             // visually distinct from the final conversational answer without
@@ -2651,7 +2678,10 @@ fn visual_reference_frame_has_agent_cli_information_hierarchy() {
         },
         ..ViewModel::default()
     };
-    let backend = TestBackend::new(110, 32);
+    // Use an ultrawide frame like the user's failing screenshot. The chat
+    // column must retain a readable measure instead of expanding prose to the
+    // terminal edge.
+    let backend = TestBackend::new(150, 32);
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
         .draw(|frame| render_to_frame(frame, &model))
@@ -2670,6 +2700,24 @@ fn visual_reference_frame_has_agent_cli_information_hierarchy() {
     assert!(frame_text.contains("Implemented"));
     assert!(!frame_text.contains("inspect the repository"));
     assert!(!frame_text.contains("first test failed"));
+    let prompt_row = (0..buffer.area.height)
+        .find(|&y| {
+            (0..buffer.area.width)
+                .map(|x| buffer[(x, y)].symbol())
+                .collect::<String>()
+                .contains("Build the feature")
+        })
+        .expect("prompt row");
+    assert_eq!(
+        buffer[(3, prompt_row)].bg,
+        theme_palette("chatgpt-black").raised
+    );
+    for y in 2..24 {
+        assert!(
+            (116..146).all(|x| buffer[(x, y)].symbol().trim().is_empty()),
+            "conversation prose escaped its readable column on row {y}"
+        );
+    }
     if std::env::var_os("VESPER_DUMP_UI").is_some() {
         eprintln!("COMPACT CHAT\n{frame_text}");
     }

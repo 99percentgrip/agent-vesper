@@ -28,12 +28,6 @@ const CODE_BG: Color = Color::Rgb(30, 32, 40);
 const CODE_FG: Color = Color::Rgb(214, 220, 232);
 /// Foreground color for inline `code`.
 const INLINE_CODE_FG: Color = Color::Rgb(255, 176, 81);
-/// Foreground color for **bold** spans. Distinct from body text so bold
-/// reads as a typographic emphasis, not just a font-weight change (which
-/// many terminals do not render distinctly). Warm cream against the cool
-/// blue heading color creates the visual hierarchy the Native GLM
-/// reference layout shows.
-const BOLD_FG: Color = Color::Rgb(255, 222, 140);
 /// Foreground color for list bullets / numbers and structural markers.
 const MARKER_FG: Color = Color::Rgb(255, 176, 81);
 /// Foreground color for ATX headings.
@@ -240,16 +234,12 @@ fn parse_inline(text: &str) -> Vec<Span<'static>> {
 }
 
 /// Recursively parses `inner` for nested markers, then applies `modifier` to
-/// every produced span. Used for bold / italic / strikethrough. Bold spans
-/// additionally inherit [`BOLD_FG`] so they read as a distinct typographic
-/// color rather than just a font-weight change (which many terminals render
-/// identically to regular weight).
+/// every produced span. Used for bold / italic / strikethrough. Bold stays in
+/// the active theme's body color: painting every emphasized phrase yellow
+/// turns long agent reports into a noisy wall and defeats the document
+/// hierarchy supplied by headings and inline code.
 fn style_inner(spans: &mut Vec<Span<'static>>, inner: &str, modifier: Modifier) {
-    let base = if modifier.contains(Modifier::BOLD) {
-        Style::default().add_modifier(modifier).fg(BOLD_FG)
-    } else {
-        Style::default().add_modifier(modifier)
-    };
+    let base = Style::default().add_modifier(modifier);
     for mut span in parse_inline(inner) {
         span.style = base.patch(span.style);
         spans.push(span);

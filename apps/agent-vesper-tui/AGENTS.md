@@ -149,9 +149,17 @@ business logic.
   input targets the conversation. Tool telemetry uses the `⏺` action /
   `⎿` result glyphs (Claude Code parity; the strings are formatted in
   `main.rs::apply_agent_progress`).
-  User turns (`user:` prefix) render as plain markdown with a compact cyan
-  `›` prompt marker; assistant turns remain unboxed. Legacy full-width and
-  asymmetric chat-bubble backgrounds are prohibited. Consecutive thinking
+  Conversation prose has a maximum 112-column reading measure on wide
+  terminals while the scrollbar remains at the viewport edge. User turns
+  (`user:` prefix) render as a distinct raised prompt row with a compact
+  `›` marker and turn separator. Assistant turns remain unboxed and use one
+  quiet accent bullet on their first rendered line so role boundaries remain
+  visible without chat bubbles. The composer
+  aligns to the same reading measure, and idle interaction help occupies one
+  restrained status row rather than stacked hint/activity rows. Markdown bold
+  inherits the active theme's body color instead of painting whole reports
+  yellow; headings and inline code retain semantic accents. Legacy full-width
+  and asymmetric chat-bubble backgrounds are prohibited. Consecutive thinking
   and expanded tool action/result entries form one compact activity group
   without blank rows between every event; human turns retain breathing room. Submitted
   bracketed pastes remain compact `[Pasted Content N chars]` chips in the
