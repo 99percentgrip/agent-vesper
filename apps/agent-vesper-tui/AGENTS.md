@@ -117,7 +117,12 @@ business logic.
   exact previous layout. The conversation is a borderless padded canvas, the
   composer uses one quiet top divider, and the optional utility rail uses one
   vertical divider with flat section headings rather than stacked rounded
-  boxes. `/tasks` and `/statusline` clear the overlay when
+  boxes. Theme selection owns a complete palette (canvas, header/rail/menu
+  surfaces, text, muted text, accent, borders, selection, and warnings); UI
+  chrome must never fall back to a hard-coded blue/slate surface. New sessions
+  default to `chatgpt-black`; `/theme` also exposes `chatgpt-white`, ANSI,
+  Light, Dracula, and Nord. The retired `vesper` preference is accepted only
+  as a compatibility alias for ChatGPT Black. `/tasks` and `/statusline` clear the overlay when
   they explicitly reveal the rail. The footer advertises the F11 action
   beside the other mouse-operable footer segments. The provider
   chain of thought streams INLINE in the Conversation feed:

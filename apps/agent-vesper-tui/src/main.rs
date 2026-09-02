@@ -2935,7 +2935,8 @@ fn session_setting_candidates(
             values
         }
         "/theme" => vec![
-            ("vesper".to_string(), "Vesper dark".into()),
+            ("chatgpt-black".to_string(), "ChatGPT Black".into()),
+            ("chatgpt-white".to_string(), "ChatGPT White".into()),
             ("ansi".to_string(), "Terminal ANSI".into()),
             ("light".to_string(), "High-contrast light".into()),
             ("dracula".to_string(), "Dracula".into()),

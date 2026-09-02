@@ -303,8 +303,8 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
         return;
     }
     let area = frame.area();
-    let theme = theme_style(&model.preferences.theme);
-    frame.render_widget(Block::default().style(theme), area);
+    let palette = theme_palette(&model.preferences.theme);
+    frame.render_widget(Block::default().style(palette.base()), area);
     let menu_height = command_menu_height(area.height, model.command_menu.len());
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -335,12 +335,15 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
             " Agent Vesper ",
             Style::default().add_modifier(Modifier::BOLD),
         ),
-        Span::styled(format!("• {model_name} "), Style::default().fg(Color::Cyan)),
+        Span::styled(
+            format!("• {model_name} "),
+            Style::default().fg(palette.accent),
+        ),
         Span::styled(format!("• {} ", phase.label()), phase_style),
-        Span::styled(format!("• {state}"), Style::default().fg(Color::DarkGray)),
+        Span::styled(format!("• {state}"), Style::default().fg(palette.muted)),
     ]);
     frame.render_widget(
-        Paragraph::new(header).style(Style::default().bg(Color::Rgb(12, 20, 31))),
+        Paragraph::new(header).style(Style::default().fg(palette.text).bg(palette.surface)),
         chunks[0],
     );
 
@@ -387,7 +390,7 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
             Span::styled(
                 "Agent Vesper",
                 Style::default()
-                    .fg(Color::Cyan)
+                    .fg(palette.accent)
                     .add_modifier(Modifier::BOLD),
             ),
             Span::raw(" ready. Type a prompt, or type "),
@@ -404,7 +407,7 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
         // Render each top-level entry separately so markdown cannot bleed
         // across role/tool boundaries and user prompts can receive the quiet
         // terminal-native `›` marker.
-        let rendered = render_transcript_lines(&transcript_lines, inner_width);
+        let rendered = render_transcript_lines_themed(&transcript_lines, inner_width, palette);
         let estimate = estimated_wrapped_lines(&rendered, inner_width);
         (ratatui::text::Text::from(rendered), estimate)
     };
@@ -437,8 +440,8 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
         .viewport_content_length(visible_lines);
     frame.render_stateful_widget(
         Scrollbar::new(ScrollbarOrientation::VerticalRight)
-            .thumb_style(Style::default().fg(Color::Rgb(120, 140, 160)))
-            .track_style(Style::default().fg(Color::Rgb(60, 70, 85))),
+            .thumb_style(Style::default().fg(palette.muted))
+            .track_style(Style::default().fg(palette.border)),
         transcript_content,
         &mut scrollbar_state,
     );
@@ -451,7 +454,7 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
                     Block::default()
                         .borders(Borders::ALL)
                         .border_type(BorderType::Rounded)
-                        .border_style(Style::default().fg(CHROME_BORDER))
+                        .border_style(Style::default().fg(palette.border))
                         .title(format!(
                             " Working tree • {} • F4 cycles ",
                             model.working_tree_title.as_deref().unwrap_or_default()
@@ -462,7 +465,7 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
     }
 
     if show_sidebar {
-        render_sidebar(frame, body[1], model);
+        render_sidebar(frame, body[1], model, palette);
     }
 
     if !model.command_menu.is_empty() {
@@ -476,7 +479,9 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
             .map(|(index, (command, description))| {
                 let is_selected = index == selected;
                 let row_style = if is_selected {
-                    Style::default().bg(Color::Rgb(17, 49, 75))
+                    Style::default()
+                        .fg(palette.selected_text)
+                        .bg(palette.selection)
                 } else {
                     Style::default()
                 };
@@ -489,18 +494,18 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
                         },
                         row_style
                             .fg(if is_selected {
-                                Color::White
+                                palette.selected_text
                             } else {
-                                Color::Cyan
+                                palette.accent
                             })
                             .add_modifier(Modifier::BOLD),
                     )),
                     Line::from(Span::styled(
                         format!("  {description}"),
                         row_style.fg(if is_selected {
-                            Color::White
+                            palette.selected_text
                         } else {
-                            Color::Gray
+                            palette.muted
                         }),
                     )),
                 ])
@@ -513,8 +518,8 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
                 Block::default()
                     .borders(Borders::ALL)
                     .border_type(BorderType::Rounded)
-                    .border_style(Style::default().fg(CHROME_BORDER))
-                    .style(Style::default().bg(Color::Rgb(48, 59, 80)))
+                    .border_style(Style::default().fg(palette.border))
+                    .style(Style::default().fg(palette.text).bg(palette.raised))
                     .title(format!(
                         " 🔎 Commands {}/{} — click a command or type to filter ",
                         selected + 1,
@@ -532,7 +537,7 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
         "↑↓ navigate  •  Tab complete  •  Enter run  •  Esc close"
     };
     frame.render_widget(
-        Paragraph::new(hint).style(Style::default().fg(Color::DarkGray)),
+        Paragraph::new(hint).style(Style::default().fg(palette.muted)),
         chunks[3],
     );
 
@@ -551,9 +556,9 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
     };
     frame.render_widget(
         Paragraph::new(activity).style(Style::default().fg(if model.agent_running {
-            Color::Yellow
+            palette.warning
         } else {
-            Color::Gray
+            palette.muted
         })),
         chunks[4],
     );
@@ -563,21 +568,21 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
     let mut composer_spans = vec![Span::styled(
         "› ",
         Style::default()
-            .fg(Color::Cyan)
+            .fg(palette.accent)
             .add_modifier(Modifier::BOLD),
     )];
     for attachment in &model.composer_attachments {
         composer_spans.push(Span::styled(
             format!("{attachment} "),
             Style::default()
-                .fg(Color::Cyan)
+                .fg(palette.accent)
                 .add_modifier(Modifier::BOLD),
         ));
     }
     if model.input.is_empty() && model.composer_attachments.is_empty() {
         composer_spans.push(Span::styled(
             "Type a prompt or / for commands",
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(palette.muted),
         ));
     } else {
         composer_spans.push(Span::raw(model.input.clone()));
@@ -594,7 +599,7 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
         Paragraph::new(Line::from(composer_spans)).block(
             Block::default()
                 .borders(Borders::TOP)
-                .border_style(Style::default().fg(CHROME_BORDER))
+                .border_style(Style::default().fg(palette.border))
                 .title(composer_title),
         ),
         chunks[5],
@@ -622,14 +627,14 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
         .collect::<Vec<_>>()
         .join("  ");
     frame.render_widget(
-        Paragraph::new(footer).style(Style::default().fg(Color::Rgb(91, 155, 213))),
+        Paragraph::new(footer).style(Style::default().fg(palette.accent)),
         chunks[6],
     );
 
     // Overlay the tool-permission modal LAST so it paints over every other
     // panel. `Clear` resets the underlying cells first so the dialog reads as
     // a true pop-up rather than a tinted in-place block.
-    render_permission_modal(frame, model);
+    render_permission_modal(frame, model, palette);
 }
 
 /// Renders the interactive tool-permission modal centered over the screen.
@@ -645,7 +650,7 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
 /// `[40, 90]`, height is ~2/5 of the pane clamped to `[9, 22]`. A degenerate
 /// 1×1 terminal still renders without panicking because every layout
 /// constraint has a `Length` floor.
-fn render_permission_modal(frame: &mut Frame<'_>, model: &ViewModel) {
+fn render_permission_modal(frame: &mut Frame<'_>, model: &ViewModel, palette: ThemePalette) {
     let Some(modal) = model.pending_permission.as_ref() else {
         return;
     };
@@ -684,7 +689,7 @@ fn render_permission_modal(frame: &mut Frame<'_>, model: &ViewModel) {
     if !modal.reason.is_empty() {
         body_lines.push(Line::from(Span::styled(
             modal.reason.clone(),
-            Style::default().fg(Color::Yellow),
+            Style::default().fg(palette.warning),
         )));
     }
     body_lines.push(Line::raw(""));
@@ -703,7 +708,7 @@ fn render_permission_modal(frame: &mut Frame<'_>, model: &ViewModel) {
     for wrapped in wrap_text_simple(&modal.arguments, inner_width) {
         body_lines.push(Line::from(Span::styled(
             wrapped,
-            Style::default().fg(Color::Rgb(159, 214, 255)),
+            Style::default().fg(palette.accent),
         )));
     }
 
@@ -713,6 +718,7 @@ fn render_permission_modal(frame: &mut Frame<'_>, model: &ViewModel) {
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
                 .border_style(Style::default().fg(Color::Rgb(220, 80, 80)))
+                .style(Style::default().fg(palette.text).bg(palette.raised))
                 .title(Line::from(vec![Span::styled(
                     " Tool permission required ",
                     Style::default()
@@ -793,34 +799,122 @@ fn wrap_text_simple(text: &str, width: usize) -> Vec<String> {
     out
 }
 
-fn theme_style(theme: &str) -> Style {
-    match theme {
-        "light" => Style::default()
-            .fg(Color::Black)
-            .bg(Color::Rgb(245, 245, 245)),
-        "dracula" => Style::default()
-            .fg(Color::Rgb(248, 248, 242))
-            .bg(Color::Rgb(40, 42, 54)),
-        "nord" => Style::default()
-            .fg(Color::Rgb(216, 222, 233))
-            .bg(Color::Rgb(46, 52, 64)),
-        "ansi" => Style::default().fg(Color::White).bg(Color::Black),
-        _ => Style::default()
-            .fg(Color::Rgb(226, 232, 240))
-            .bg(Color::Rgb(7, 11, 18)),
+#[derive(Clone, Copy)]
+struct ThemePalette {
+    background: Color,
+    surface: Color,
+    raised: Color,
+    text: Color,
+    muted: Color,
+    accent: Color,
+    border: Color,
+    selection: Color,
+    selected_text: Color,
+    warning: Color,
+}
+
+impl ThemePalette {
+    fn base(self) -> Style {
+        Style::default().fg(self.text).bg(self.background)
     }
 }
 
-/// Subtle slate color used for the rounded application chrome (composer,
-/// conversation, sidebar panels). Tying the whole UI to one border color
-/// gives the polished, cohesive look the Native GLM reference layout shows.
-const CHROME_BORDER: Color = Color::Rgb(60, 70, 85);
+fn theme_palette(theme: &str) -> ThemePalette {
+    match theme {
+        "chatgpt-white" => ThemePalette {
+            background: Color::Rgb(255, 255, 255),
+            surface: Color::Rgb(247, 247, 248),
+            raised: Color::Rgb(238, 238, 240),
+            text: Color::Rgb(32, 33, 35),
+            muted: Color::Rgb(102, 102, 110),
+            accent: Color::Rgb(16, 163, 127),
+            border: Color::Rgb(210, 210, 215),
+            selection: Color::Rgb(208, 238, 230),
+            selected_text: Color::Rgb(20, 60, 50),
+            warning: Color::Rgb(170, 105, 0),
+        },
+        "light" => ThemePalette {
+            background: Color::Rgb(245, 245, 245),
+            surface: Color::Rgb(232, 232, 232),
+            raised: Color::Rgb(220, 220, 220),
+            text: Color::Black,
+            muted: Color::DarkGray,
+            accent: Color::Rgb(0, 105, 85),
+            border: Color::Rgb(170, 170, 170),
+            selection: Color::Rgb(190, 220, 215),
+            selected_text: Color::Black,
+            warning: Color::Rgb(150, 90, 0),
+        },
+        "dracula" => ThemePalette {
+            background: Color::Rgb(40, 42, 54),
+            surface: Color::Rgb(33, 34, 44),
+            raised: Color::Rgb(68, 71, 90),
+            text: Color::Rgb(248, 248, 242),
+            muted: Color::Rgb(98, 114, 164),
+            accent: Color::Rgb(80, 250, 123),
+            border: Color::Rgb(98, 114, 164),
+            selection: Color::Rgb(68, 71, 90),
+            selected_text: Color::Rgb(248, 248, 242),
+            warning: Color::Rgb(241, 250, 140),
+        },
+        "nord" => ThemePalette {
+            background: Color::Rgb(46, 52, 64),
+            surface: Color::Rgb(59, 66, 82),
+            raised: Color::Rgb(67, 76, 94),
+            text: Color::Rgb(216, 222, 233),
+            muted: Color::Rgb(129, 161, 193),
+            accent: Color::Rgb(136, 192, 208),
+            border: Color::Rgb(76, 86, 106),
+            selection: Color::Rgb(67, 76, 94),
+            selected_text: Color::Rgb(236, 239, 244),
+            warning: Color::Rgb(235, 203, 139),
+        },
+        "ansi" => ThemePalette {
+            background: Color::Black,
+            surface: Color::Black,
+            raised: Color::Black,
+            text: Color::White,
+            muted: Color::DarkGray,
+            accent: Color::Green,
+            border: Color::DarkGray,
+            selection: Color::White,
+            selected_text: Color::Black,
+            warning: Color::Yellow,
+        },
+        // `vesper` remains a compatibility alias for saved preferences, but
+        // the former blue/slate palette is intentionally retired.
+        _ => ThemePalette {
+            background: Color::Rgb(0, 0, 0),
+            surface: Color::Rgb(10, 10, 10),
+            raised: Color::Rgb(24, 24, 24),
+            text: Color::Rgb(236, 236, 236),
+            muted: Color::Rgb(142, 142, 142),
+            accent: Color::Rgb(16, 163, 127),
+            border: Color::Rgb(58, 58, 58),
+            selection: Color::Rgb(32, 73, 62),
+            selected_text: Color::White,
+            warning: Color::Rgb(236, 190, 80),
+        },
+    }
+}
 
 /// Renders the transcript as a quiet terminal-native feed: user prompts carry
 /// a cyan `›` marker, assistant markdown is unboxed, and thinking/tool output
 /// stays visually secondary. This follows Codex/Claude terminal hierarchy
 /// without chat bubbles or full-width role banners.
 fn render_transcript_lines(transcript_lines: &[String], _inner_width: usize) -> Vec<Line<'static>> {
+    render_transcript_lines_themed(
+        transcript_lines,
+        _inner_width,
+        theme_palette("chatgpt-black"),
+    )
+}
+
+fn render_transcript_lines_themed(
+    transcript_lines: &[String],
+    _inner_width: usize,
+    palette: ThemePalette,
+) -> Vec<Line<'static>> {
     let mut rendered: Vec<Line<'static>> = Vec::new();
     let mut previous_was_secondary = false;
     for (idx, raw) in transcript_lines.iter().enumerate() {
@@ -880,7 +974,7 @@ fn render_transcript_lines(transcript_lines: &[String], _inner_width: usize) -> 
                     Span::styled(
                         marker,
                         Style::default()
-                            .fg(Color::Cyan)
+                            .fg(palette.accent)
                             .add_modifier(Modifier::BOLD),
                     ),
                 );
@@ -893,14 +987,14 @@ fn render_transcript_lines(transcript_lines: &[String], _inner_width: usize) -> 
             // visually distinct from the final conversational answer without
             // stealing attention from it (the `🧠` header line included).
             let style = Style::default()
-                .fg(Color::Rgb(148, 148, 170))
+                .fg(palette.muted)
                 .add_modifier(Modifier::ITALIC);
             for line in lines {
                 rendered.push(restyle_line(line, style));
             }
         } else if is_activity {
             let style = Style::default()
-                .fg(Color::Rgb(91, 155, 213))
+                .fg(palette.accent)
                 .add_modifier(Modifier::BOLD);
             for line in lines {
                 rendered.push(restyle_line(line, style));
@@ -911,7 +1005,7 @@ fn render_transcript_lines(transcript_lines: &[String], _inner_width: usize) -> 
             // unwrapped line so terminal auto-linkification works. Ctrl+O is
             // the guaranteed opener when the terminal refuses.
             let style = Style::default()
-                .fg(Color::Cyan)
+                .fg(palette.accent)
                 .add_modifier(Modifier::UNDERLINED);
             for line in lines {
                 rendered.push(restyle_line(line, style));
@@ -920,7 +1014,7 @@ fn render_transcript_lines(transcript_lines: &[String], _inner_width: usize) -> 
             // VRO-11.6: tool telemetry (⏺ action / ⎿ result) renders dim
             // (no italics) so the lines read as quiet machine output between
             // the human-readable turns — Claude Code's exact hierarchy.
-            let style = Style::default().fg(Color::Rgb(148, 148, 170));
+            let style = Style::default().fg(palette.muted);
             for line in lines {
                 rendered.push(restyle_line(line, style));
             }
@@ -1078,7 +1172,12 @@ fn render_screen_reader(frame: &mut Frame<'_>, model: &ViewModel) {
     });
 }
 
-fn render_sidebar(frame: &mut Frame<'_>, area: ratatui::layout::Rect, model: &ViewModel) {
+fn render_sidebar(
+    frame: &mut Frame<'_>,
+    area: ratatui::layout::Rect,
+    model: &ViewModel,
+    palette: ThemePalette,
+) {
     // Keep the rail useful and quiet: compact session facts, a dedicated
     // live TODO surface, and a bounded run summary. Tool telemetry remains
     // inline with the conversation, but plan state does not belong in chat
@@ -1092,8 +1191,8 @@ fn render_sidebar(frame: &mut Frame<'_>, area: ratatui::layout::Rect, model: &Vi
     frame.render_widget(
         Block::default()
             .borders(Borders::LEFT)
-            .border_style(Style::default().fg(CHROME_BORDER))
-            .style(Style::default().bg(Color::Rgb(9, 15, 24))),
+            .border_style(Style::default().fg(palette.border))
+            .style(Style::default().fg(palette.text).bg(palette.surface)),
         area,
     );
     let rail = area.inner(Margin {
@@ -1115,7 +1214,7 @@ fn render_sidebar(frame: &mut Frame<'_>, area: ratatui::layout::Rect, model: &Vi
         Line::from(Span::styled(
             "Session",
             Style::default()
-                .fg(Color::Cyan)
+                .fg(palette.accent)
                 .add_modifier(Modifier::BOLD),
         )),
         Line::from(format!("Model       {model_name}")),
@@ -1130,7 +1229,7 @@ fn render_sidebar(frame: &mut Frame<'_>, area: ratatui::layout::Rect, model: &Vi
     let todo_lines = if model.task_plan.is_empty() {
         vec![Line::from(Span::styled(
             "No active tasks",
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(palette.muted),
         ))]
     } else {
         model
@@ -1140,7 +1239,7 @@ fn render_sidebar(frame: &mut Frame<'_>, area: ratatui::layout::Rect, model: &Vi
                 let (marker, color) = match task.status.as_str() {
                     "completed" => ("✓", Color::Green),
                     "in_progress" => ("●", Color::Yellow),
-                    _ => ("○", Color::DarkGray),
+                    _ => ("○", palette.muted),
                 };
                 Line::from(vec![
                     Span::styled(format!("{marker} "), Style::default().fg(color)),
@@ -1160,7 +1259,7 @@ fn render_sidebar(frame: &mut Frame<'_>, area: ratatui::layout::Rect, model: &Vi
                 std::iter::once(Line::from(Span::styled(
                     format!("TODO {completed}/{}", model.task_plan.len()),
                     Style::default()
-                        .fg(Color::Cyan)
+                        .fg(palette.accent)
                         .add_modifier(Modifier::BOLD),
                 )))
                 .chain(todo_lines)
@@ -1176,9 +1275,9 @@ fn render_sidebar(frame: &mut Frame<'_>, area: ratatui::layout::Rect, model: &Vi
             Span::styled(
                 if model.agent_running { "● " } else { "○ " },
                 Style::default().fg(if model.agent_running {
-                    Color::Yellow
+                    palette.warning
                 } else {
-                    Color::DarkGray
+                    palette.muted
                 }),
             ),
             Span::raw(if model.agent_running {
@@ -1199,7 +1298,7 @@ fn render_sidebar(frame: &mut Frame<'_>, area: ratatui::layout::Rect, model: &Vi
                     "LAST RUN"
                 },
                 Style::default()
-                    .fg(Color::Cyan)
+                    .fg(palette.accent)
                     .add_modifier(Modifier::BOLD),
             )))
             .chain(run_lines)
@@ -1675,20 +1774,22 @@ mod tests {
             "the review URL must be visible inline: {content}"
         );
 
-        let has_cyan_link = terminal.backend().buffer().content.iter().any(|cell| {
-            cell.style().fg == Some(ratatui::style::Color::Cyan)
+        let accent = theme_palette(&model.preferences.theme).accent;
+        let muted = theme_palette(&model.preferences.theme).muted;
+        let has_accent_link = terminal.backend().buffer().content.iter().any(|cell| {
+            cell.style().fg == Some(accent)
                 && cell
                     .style()
                     .add_modifier
                     .contains(ratatui::style::Modifier::UNDERLINED)
         });
         assert!(
-            has_cyan_link,
-            "the URL line must render cyan + underlined (link affordance)"
+            has_accent_link,
+            "the URL line must render in the theme accent + underlined"
         );
 
         let has_dim_telemetry = terminal.backend().buffer().content.iter().any(|cell| {
-            cell.style().fg == Some(ratatui::style::Color::Rgb(148, 148, 170))
+            cell.style().fg == Some(muted)
                 && !cell
                     .style()
                     .add_modifier
@@ -1835,11 +1936,12 @@ mod tests {
             "thinking text should be visible inline"
         );
         // The thinking cells carry the dim italic live-region style.
+        let muted = theme_palette(&model.preferences.theme).muted;
         let has_dim_italic = terminal.backend().buffer().content.iter().any(|cell| {
             cell.style()
                 .add_modifier
                 .contains(ratatui::style::Modifier::ITALIC)
-                && cell.style().fg == Some(ratatui::style::Color::Rgb(148, 148, 170))
+                && cell.style().fg == Some(muted)
         });
         assert!(
             has_dim_italic,
@@ -2095,10 +2197,10 @@ mod tests {
         assert!(
             buffer.content.iter().any(|cell| {
                 cell.symbol() == "›"
-                    && cell.style().fg == Some(Color::Cyan)
+                    && cell.style().fg == Some(theme_palette(&model.preferences.theme).accent)
                     && cell.style().add_modifier.contains(Modifier::BOLD)
             }),
-            "user turns need the compact cyan › marker"
+            "user turns need the compact theme-accent › marker"
         );
         assert!(
             buffer.content.iter().all(|cell| {
@@ -2309,4 +2411,34 @@ mod tests {
             "default must not falsely claim escalation"
         );
     }
+}
+#[test]
+fn themes_own_complete_palettes_and_retire_the_blue_default() {
+    let retired_blue = Color::Rgb(7, 11, 18);
+    for name in [
+        "chatgpt-black",
+        "chatgpt-white",
+        "ansi",
+        "light",
+        "dracula",
+        "nord",
+    ] {
+        let palette = theme_palette(name);
+        assert_ne!(palette.background, retired_blue, "{name}");
+        assert_ne!(palette.text, palette.background, "{name} text contrast");
+        assert_ne!(palette.accent, palette.background, "{name} accent contrast");
+    }
+    assert_eq!(
+        theme_palette("chatgpt-black").background,
+        Color::Rgb(0, 0, 0)
+    );
+    assert_eq!(
+        theme_palette("chatgpt-white").background,
+        Color::Rgb(255, 255, 255)
+    );
+    assert_eq!(
+        theme_palette("vesper").background,
+        theme_palette("chatgpt-black").background,
+        "saved legacy preference must migrate to black rather than resurrect blue"
+    );
 }

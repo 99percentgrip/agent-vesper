@@ -267,7 +267,7 @@ pub struct TerminalPreferences {
 impl Default for TerminalPreferences {
     fn default() -> Self {
         Self {
-            theme: "vesper".into(),
+            theme: "chatgpt-black".into(),
             screen_reader: false,
             native_mouse: true,
             sound: false,
