@@ -24,6 +24,16 @@
 //! be cleared, and the parity tests in `tests/scope_parity.rs` must reset
 //! the process-global state between cases. Production callers only ever
 //! install once at boot, so the mutex is uncontended in practice.
+//!
+//! # Test serialization
+//!
+//! `SCOPE_HOLDER` is a process global and the in-crate tests reset it, so
+//! every test that touches the holder must hold [`TEST_MUTEX`] for its
+//! whole body. Parallel threads otherwise interleave reset/install pairs
+//! across tests and produce spurious "two ids for one directory" failures
+//! (`holder_starts_empty_and_resolves_once` was exactly this flake). The
+//! integration tests in `tests/scope_parity.rs` already follow this
+//! discipline and pin `--test-threads=1` from outside.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -189,8 +199,20 @@ pub mod holder {
 mod tests {
     use super::*;
 
+    /// Serializes every holder test for its whole body: the holder is
+    /// process-global and tests reset it, so parallel execution interleaves
+    /// reset/install pairs and fails spuriously.
+    static TEST_MUTEX: Mutex<()> = Mutex::new(());
+
+    fn serialized() -> std::sync::MutexGuard<'static, ()> {
+        TEST_MUTEX
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     #[test]
     fn holder_starts_empty_and_resolves_once() {
+        let _lock = serialized();
         holder::reset_for_tests();
         let root = tempfile::tempdir().expect("project root");
         let first = holder::install_for_root(root.path()).expect("first resolution installs");
@@ -212,6 +234,7 @@ mod tests {
 
     #[test]
     fn holder_is_first_resolution_wins() {
+        let _lock = serialized();
         holder::reset_for_tests();
         let first_root = tempfile::tempdir().expect("first");
         let second_root = tempfile::tempdir().expect("second");
@@ -231,6 +254,7 @@ mod tests {
 
     #[test]
     fn read_only_stamp_policy_never_creates_project_state() {
+        let _lock = serialized();
         holder::reset_for_tests();
         let root = tempfile::tempdir().expect("project root");
         let resolved =
@@ -247,6 +271,7 @@ mod tests {
 
     #[test]
     fn failed_first_resolution_does_not_install() {
+        let _lock = serialized();
         holder::reset_for_tests();
         let error = holder::install_for_root(Path::new("/nonexistent/project/root"))
             .expect_err("inaccessible root must fail honestly");
