@@ -1400,18 +1400,12 @@ fn render_transcript_lines_themed(
             let style = Style::default()
                 .fg(palette.accent)
                 .add_modifier(Modifier::BOLD);
-            for mut line in lines {
-                line.spans.insert(0, Span::styled("● ", style));
-                rendered.push(restyle_line(line, style));
-            }
+            rendered.push(diff_header_line(content, "● ", style, palette));
         } else if is_diff_file {
             let style = Style::default()
                 .fg(palette.text)
                 .add_modifier(Modifier::BOLD);
-            for mut line in lines {
-                line.spans.insert(0, Span::styled("  └ ", style));
-                rendered.push(restyle_line(line, style));
-            }
+            rendered.push(diff_header_line(content, "  └ ", style, palette));
         } else if is_diff_add || is_diff_del || is_diff_context || is_diff_ellipsis {
             let (marker, style) = if is_diff_add {
                 (
@@ -1524,6 +1518,52 @@ fn restyle_line(line: Line<'static>, style: Style) -> Line<'static> {
             })
             .collect::<Vec<_>>(),
     )
+}
+
+/// Renders a compact diff header while preserving the semantic colors of its
+/// signed line counts. Both the collapsed edit summary and expanded per-file
+/// headers use this projection, so `+N` is always green and `-N` red.
+fn diff_header_line(
+    content: &str,
+    prefix: &'static str,
+    base_style: Style,
+    palette: ThemePalette,
+) -> Line<'static> {
+    let mut spans = vec![Span::styled(prefix, base_style)];
+    let bytes = content.as_bytes();
+    let mut plain_start = 0;
+    let mut index = 0;
+
+    while index < bytes.len() {
+        let sign = bytes[index];
+        if (sign == b'+' || sign == b'-') && bytes.get(index + 1).is_some_and(u8::is_ascii_digit) {
+            if plain_start < index {
+                spans.push(Span::styled(
+                    content[plain_start..index].to_owned(),
+                    base_style,
+                ));
+            }
+            let end = bytes[index + 1..]
+                .iter()
+                .position(|byte| !byte.is_ascii_digit())
+                .map_or(bytes.len(), |offset| index + 1 + offset);
+            let count_style = base_style.fg(if sign == b'+' {
+                palette.added
+            } else {
+                palette.removed
+            });
+            spans.push(Span::styled(content[index..end].to_owned(), count_style));
+            plain_start = end;
+            index = end;
+        } else {
+            index += 1;
+        }
+    }
+
+    if plain_start < content.len() {
+        spans.push(Span::styled(content[plain_start..].to_owned(), base_style));
+    }
+    Line::from(spans)
 }
 
 /// Estimates how many display rows `lines` will occupy after ratatui wraps
@@ -3291,6 +3331,34 @@ fn ctrl_t_keeps_persisted_progress_compact_and_shows_structured_tools() {
     assert!(lines.iter().any(|line| line.contains("Final answer")));
     assert!(lines.iter().any(|line| line.contains("Explored")));
     assert!(lines.iter().any(|line| line.contains("Ran commands")));
+}
+
+#[test]
+fn diff_header_counts_keep_additions_green_and_removals_red() {
+    let palette = theme_palette("chatgpt-black");
+    let rendered = render_transcript_lines_themed(
+        &[
+            "diff-summary:✎ Edited 5 files (+280 -1) · Ctrl+T diff".into(),
+            "diff-file:src/error.rs (+8 -0)".into(),
+        ],
+        100,
+        palette,
+    );
+
+    for (count, color) in [
+        ("+280", palette.added),
+        ("-1", palette.removed),
+        ("+8", palette.added),
+        ("-0", palette.removed),
+    ] {
+        assert!(
+            rendered
+                .iter()
+                .flat_map(|line| line.spans.iter())
+                .any(|span| { span.content == count && span.style.fg == Some(color) }),
+            "{count} should retain its semantic diff color"
+        );
+    }
 }
 
 #[test]

@@ -136,8 +136,10 @@ business logic.
   Ctrl+T toggles the complete activity transcript during or after the turn
   without replacing the final answer. Successful write/edit/apply operations
   add an inline `Edited N files (+A -D)` summary; Ctrl+T expands bounded
-  per-file context with full-row green additions and red deletions. Both the
-  direct loop and VRO ReAct path feed the same typed change projection.
+  per-file context with full-row green additions and red deletions. Signed
+  `+A` / `-D` counts in compact and expanded diff headers stay green / red.
+  Both the direct loop and VRO ReAct path feed the same typed change
+  projection.
   Iterative provider commentary is also
   activity, not primary chat: on completion, all assistant text parts except
   the final part become bounded commentary telemetry whose count remains in
