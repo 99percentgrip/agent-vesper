@@ -2348,8 +2348,18 @@ impl WorkerFactory {
     }
 }
 
+pub mod daemon_lock;
 mod host_commands;
 pub mod slash_commands;
+pub mod watcher_sweep;
+
+pub use daemon_lock::{
+    DaemonLockError, DaemonLockGuard, DaemonLockStatus, daemon_lock_path, read_daemon_lock_status,
+};
+pub use watcher_sweep::{
+    SweepAction, SweepEventRow, SweepOutcome, WATCHER_EVENTS_LOG_NAME, WATCHER_MAX_RETRIES,
+    WATCHER_SWEEP_INTERVAL, WATCHER_SWEEP_MAX_FIRES, list_sweep_events, run_sweep_once,
+};
 
 pub struct HarnessToolService {
     stores: Arc<MemoryStores>,
@@ -2479,11 +2489,46 @@ impl HarnessToolService {
 }
 
 async fn run_cron_scheduler(root: PathBuf, factory: WorkerFactory) {
+    // VRO-13 PR-6: the scheduler now claims each (job, slot) exactly once
+    // across every coexisting process (foreground TUI + background daemon),
+    // via the kernel-arbitrated `O_CREAT|O_EXCL` marker under `slots/`.
+    // The lease discipline (`claim_due`) still drives due-detection; the
+    // slot marker is the exactly-once arbiter. When no daemon exists this
+    // changes nothing user-visible: every slot still fires exactly once.
     loop {
         if let Ok(registry) = vesper_checkpoints::CronRegistry::open(&root)
             && let Ok(runs) = registry.claim_due(std::time::SystemTime::now(), false)
         {
             for run in runs {
+                // Slot ordinal = the unix seconds of the fire time, aligned
+                // to the job's schedule granularity. Jobs firing at the same
+                // wall-clock second across processes share one ordinal, so
+                // exactly one process wins the marker.
+                let slot = run
+                    .entry
+                    .next_run_at
+                    .and_then(|when| when.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|elapsed| elapsed.as_secs())
+                    .unwrap_or_else(|| {
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|elapsed| elapsed.as_secs())
+                            .unwrap_or(0)
+                    });
+                if !registry
+                    .claim_slot(&run.entry.id, slot, std::time::SystemTime::now())
+                    .unwrap_or(false)
+                {
+                    // Another live scheduler (TUI or daemon) owns this slot.
+                    // Release the lease so it does not block the next tick.
+                    let _ = registry.finish_claim(
+                        &run.entry.id,
+                        &run.token,
+                        "silent",
+                        "slot owned by a coexisting scheduler",
+                    );
+                    continue;
+                }
                 let result = run_provider_worker(
                     &factory,
                     None,
@@ -2497,7 +2542,13 @@ async fn run_cron_scheduler(root: PathBuf, factory: WorkerFactory) {
                     Ok(output) => ("ok", output),
                     Err(error) => ("error", error.to_string()),
                 };
-                let _ = registry.finish_claim(&run.entry.id, &run.token, status, &output);
+                let _ = registry.mark_fired(
+                    &run.entry.id,
+                    slot,
+                    status,
+                    &output,
+                    std::time::SystemTime::now(),
+                );
             }
         }
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;

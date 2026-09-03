@@ -9,6 +9,7 @@ license.workspace = true
 [dependencies]
 regex.workspace = true
 sha2.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 futures-util.workspace = true
@@ -23,6 +24,8 @@ vesper-sandbox = { path = "../vesper-sandbox", version = "=0.20.78" }
 vesper-sessions = { path = "../vesper-sessions", version = "=0.20.78" }
 
 [features]
+# VRO-13 PR-6: the daemon's single-writer flock discipline. Unix-only
+
 # Forwards to vesper-sandbox's docker backend so hosts can enable it
 docker = ["vesper-sandbox/docker"]
 

@@ -4022,6 +4022,7 @@ version = "0.20.78"
 dependencies = [
  "futures-util",
  "regex",
+ "serde",
  "serde_json",
  "sha2 0.11.0",
  "tempfile",

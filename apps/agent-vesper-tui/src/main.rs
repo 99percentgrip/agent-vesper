@@ -147,6 +147,17 @@ async fn main() -> io::Result<()> {
             args.iter()
                 .find_map(|arg| arg.strip_prefix("--resume=").map(str::to_string))
         });
+    // VRO-13 PR-6: `--headless daemon` runs the detached scheduler
+    // composition. It is a separate process concern from the interactive
+    // TUI: no terminal, no event loop, no user input. It takes the
+    // single-writer daemon lock over the shared state root, refuses
+    // politely when a live daemon already holds it (exit 0, never a
+    // fight), and otherwise runs the cron scheduler until SIGINT/SIGTERM.
+    // Dual-fire is prevented by the (job, slot) exactly-once claims in
+    // `vesper-checkpoints`, not by this lock.
+    if args.iter().any(|arg| arg == "--headless") && args.iter().any(|arg| arg == "daemon") {
+        return run_headless_daemon().await;
+    }
     // Tracing goes to stderr only; stdout is reserved for terminal escapes.
     let _ = tracing_subscriber::fmt()
         .with_writer(io::stderr)
@@ -157,6 +168,115 @@ async fn main() -> io::Result<()> {
         error!("agent-vesper-tui exited with error: {message}");
         return Err(io::Error::other(message));
     }
+    Ok(())
+}
+
+/// VRO-13 PR-6 — the headless daemon composition (PRD §2.6).
+///
+/// Owns: the exclusive `daemon.lock`, the slot-claiming cron scheduler,
+/// and nothing else (no TUI, no ACP, no watcher sweep until PR-7). Fires
+/// run with the interactive floor: `Ask` permission, and in a headless
+/// context with no approval channel that fails closed (read-mostly), so
+/// unattended work gets no free authority the interactive session has
+/// not granted.
+async fn run_headless_daemon() -> io::Result<()> {
+    let _ = tracing_subscriber::fmt()
+        .with_writer(io::stderr)
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .try_init();
+    // Same durable roots the interactive TUI derives (env override first).
+    let state_root = std::env::var("AGENT_VESPER_CHECKPOINT_ROOT")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| {
+            std::env::current_dir()
+                .unwrap_or_else(|_| std::path::PathBuf::from("."))
+                .join(".agent-vesper")
+                .join("checkpoints")
+        });
+    // The daemon lock lives beside the cron store it serializes.
+    let lock_root = state_root.clone();
+    match vesper_harness::daemon_lock::acquire_daemon_lock(&lock_root) {
+        Ok(_guard) => {
+            eprintln!(
+                "agent-vesper-daemon: started (pid {}, state {})",
+                std::process::id(),
+                lock_root.display()
+            );
+        }
+        Err(vesper_harness::daemon_lock::DaemonLockError::HeldBy(pid)) => {
+            eprintln!("daemon already running (pid {pid})");
+            return Ok(());
+        }
+        Err(vesper_harness::daemon_lock::DaemonLockError::Io) => {
+            eprintln!(
+                "agent-vesper-daemon: cannot create the daemon lock under {}",
+                lock_root.display()
+            );
+            return Err(io::Error::other("daemon lock unavailable"));
+        }
+    }
+    // VRO-13 PR-7: resolve the workspace scope ONCE at host boot (never
+    // mid-loop) and bind the watcher sweep to it. The sweep then shares
+    // the exact ScopeId the TUI/ACP resolve for the same directory, so
+    // `/watch` registrations are honored by whichever host is running.
+    let scope_id = vesper_harness::scope_holder::holder::install_for_root(
+        &std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+    )
+    .ok()
+    .flatten()
+    .map(|scope| scope.id().to_string())
+    .unwrap_or_else(|| "scope-unresolved".to_string());
+    vesper_harness::watcher_sweep::spawn_watcher_sweep(
+        state_root.clone(),
+        scope_id,
+        std::sync::Arc::new(|_entry: &vesper_checkpoints::WatcherEntry| {
+            // Unattended fires get the interactive floor: Ask permission.
+            // With no approval channel in a headless daemon, that fails
+            // closed (read-mostly). Watchers never run side effects they
+            // were not explicitly granted (PRD §2.6).
+            Err("watcher fire requires an approval channel; denied (headless ask-floor)".into())
+        }),
+    );
+    // Fire scheduled work until the process is stopped. The scheduler is
+    // the harness's own: identical store paths, identical claim discipline,
+    // so TUI and daemon coexist without double-firing (PRD §4.4.2).
+    let registry = Arc::new(vesper_runtime::ProviderRegistry::new());
+    let _ = register_default_providers(&registry).await;
+    let factory = vesper_harness::WorkerFactory::new(
+        Arc::clone(&registry),
+        build_agent_config(
+            &ProviderId::new(provider_name_from_env().as_str())
+                .map_err(|error| io::Error::other(format!("invalid provider id: {error}")))?,
+        )
+        .map_err(io::Error::other)?,
+    );
+    let scheduler = vesper_harness::HarnessToolService::new(
+        Arc::new(vesper_harness::MemoryStores::open_default()),
+        state_root,
+        std::env::var("AGENT_VESPER_MCP_ROOT")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| {
+                std::env::current_dir()
+                    .unwrap_or_else(|_| std::path::PathBuf::from("."))
+                    .join(".agent-vesper")
+                    .join("mcp")
+            }),
+        Some(Arc::new(factory)),
+    );
+    // The service's own constructor spawned the scheduler on this runtime.
+    // Hold the service alive for the process lifetime; the loop below only
+    // paces the process (and honors SIGTERM/SIGINT by returning).
+    let _service = Arc::new(scheduler);
+    // VRO-13 PR-7: the watcher sweep runs on the runtime this process
+    // already owns, NEVER on a render task (there is none here — the
+    // daemon owns no terminal). Each fire is a bounded turn under `Ask`
+    // permission; with no approval channel in headless context that fails
+    // closed, so an unattended watcher can never gain authority an
+    // interactive session has not granted.
+    tokio::signal::ctrl_c()
+        .await
+        .map_err(|error| io::Error::other(error.to_string()))?;
+    eprintln!("agent-vesper-daemon: shutting down");
     Ok(())
 }
 
@@ -11509,6 +11629,48 @@ impl CheckpointStores {
     }
 }
 
+/// Resolves the daemon's state root exactly as `--headless daemon` does:
+/// `AGENT_VESPER_CHECKPOINT_ROOT`'s parent (default `.agent-vesper/`).
+fn state_root_path() -> std::path::PathBuf {
+    let checkpoint_root = match std::env::var("AGENT_VESPER_CHECKPOINT_ROOT") {
+        Ok(value) => std::path::PathBuf::from(value),
+        Err(_) => std::env::current_dir()
+            .unwrap_or_else(|_| std::path::PathBuf::from("."))
+            .join(".agent-vesper")
+            .join("checkpoints"),
+    };
+    checkpoint_root
+        .parent()
+        .map(std::path::Path::to_path_buf)
+        .unwrap_or_else(|| checkpoint_root)
+}
+
+/// The ScopeId string for watcher registration/listing: the installed
+/// scope holder's id when the host booted with one (the normal path),
+/// else the `.vesper-scope-id` stamp beside the state root, else a
+/// stable fallback derived from the canonical CWD so registrations never
+/// silently land in a foreign scope. Read-only: this never creates the
+/// stamp (creation is a boot-time act of `install_for_root`).
+fn scope_id_string() -> String {
+    if let Some(id) = vesper_harness::scope_holder::holder::scope_id() {
+        return id.to_string();
+    }
+    // Boot normally installs the scope before any session runs; this
+    // fallback covers direct store access before that (tests, early
+    // commands). Reading the stamp directly mirrors `ensure_scope_id`'s
+    // read path without ever writing it.
+    let stamp = std::env::current_dir()
+        .ok()
+        .map(|root| root.join(vesper_agent::vro::scope::STAMP_FILE_NAME));
+    if let Some(stamp) = stamp
+        && let Ok(text) = std::fs::read_to_string(&stamp)
+        && !text.trim().is_empty()
+    {
+        return text.trim().to_string();
+    }
+    "scope-unresolved".to_string()
+}
+
 /// Drains one [`CheckpointOp`] against the durable stores, pushing the
 /// result into the transcript. Pure-with-side-effects: no async, no
 /// terminal I/O, only local filesystem reads/writes via
@@ -11879,6 +12041,192 @@ fn drain_checkpoint_op(
             } else {
                 Some("CI status unavailable.".into())
             };
+        }
+        // VRO-13 PR-6: surface the background daemon's single-writer lock
+        // state. Pure read: one bounded file check, never a wait.
+        // PR-7 appends the watcher layer: registration counts and the
+        // recent sweep events the daemon recorded (fired / queued /
+        // paused / denied), so `/daemon status` is the one-stop health
+        // surface for unattended work.
+        CheckpointOp::DaemonStatus => {
+            let state_root = state_root_path();
+            let report = match vesper_harness::daemon_lock::read_daemon_lock_status(&state_root) {
+                vesper_harness::daemon_lock::DaemonLockStatus::NotHeld => {
+                    format!(
+                        "daemon: not running (no lock under {})",
+                        state_root.display()
+                    )
+                }
+                vesper_harness::daemon_lock::DaemonLockStatus::Held { pid, started_at } => {
+                    let uptime = started_at
+                        .elapsed()
+                        .ok()
+                        .and_then(|duration| duration.as_secs().checked_sub(0))
+                        .map(|secs| format!(" (up {secs}s)"))
+                        .unwrap_or_default();
+                    format!("daemon: running (pid {pid}){uptime}")
+                }
+                vesper_harness::daemon_lock::DaemonLockStatus::Stale { pid, .. } => {
+                    format!("daemon: stale lock from dead pid {pid} (next boot reclaims it)")
+                }
+                vesper_harness::daemon_lock::DaemonLockStatus::Corrupt => {
+                    "daemon: lock unreadable (next boot reclaims it)".to_string()
+                }
+            };
+            state.transcript.push(report.clone());
+            state.status = Some(format!("{report} — `/daemon` (read-only status)"));
+        }
+        // VRO-13 PR-7: the watcher surface. All three are bounded,
+        // synchronous store operations on the shared watchers.jsonl the
+        // daemon's sweep reads. The TUI registers; the daemon fires.
+        CheckpointOp::WatcherRegister {
+            path,
+            pattern,
+            heartbeat,
+        } => {
+            let root = state_root_path();
+            match vesper_checkpoints::WatcherStore::open(&root) {
+                Ok(store) => {
+                    let canonical = std::path::Path::new(&path)
+                        .canonicalize()
+                        .map(|p| p.display().to_string())
+                        .unwrap_or_else(|_| path.clone());
+                    match store.register(
+                        &scope_id_string(),
+                        &canonical,
+                        vesper_checkpoints::WatcherTargetKind::Path,
+                        &pattern,
+                        heartbeat,
+                    ) {
+                        Ok(entry) => {
+                            let note = format!(
+                                "watch: {} -> {} ({}; heartbeat {}s)",
+                                entry.id,
+                                entry.target,
+                                entry.pattern,
+                                heartbeat.unwrap_or(
+                                    vesper_checkpoints::watchers::WATCHER_DEFAULT_HEARTBEAT_SECONDS
+                                )
+                            );
+                            state.transcript.push(note.clone());
+                            state.status = Some(format!("{note} — `/watch list`"));
+                        }
+                        Err(error) => {
+                            state.transcript.push(format!("watch: {error}"));
+                            state.status = Some(format!("watch failed: {error}"));
+                        }
+                    }
+                }
+                Err(error) => {
+                    state
+                        .transcript
+                        .push(format!("watch: store unavailable — {error}"));
+                    state.status = Some("watch: store unavailable".into());
+                }
+            }
+        }
+        CheckpointOp::WatcherList => {
+            let root = state_root_path();
+            match vesper_checkpoints::WatcherStore::open(&root) {
+                Ok(store) => {
+                    let scope = scope_id_string();
+                    let entries = store.list_for_scope(&scope);
+                    if entries.is_empty() {
+                        state.transcript.push(format!(
+                            "watch: none registered for scope {scope} (see /watch <path> <pattern>)"
+                        ));
+                        state.status = Some("no watchers".into());
+                    } else {
+                        let total = entries.len();
+                        let mut report = String::new();
+                        for entry in &entries {
+                            let state_label = if entry.enabled { "active" } else { "paused" };
+                            let hb = entry.heartbeat_seconds.unwrap_or(
+                                vesper_checkpoints::watchers::WATCHER_DEFAULT_HEARTBEAT_SECONDS,
+                            );
+                            let fails = entry.consecutive_failures;
+                            report.push_str(&format!(
+                                "  {}  [{}] {} (pattern {}; heartbeat {}s; fails {})\n",
+                                entry.id, state_label, entry.target, entry.pattern, hb, fails
+                            ));
+                        }
+                        state.transcript.push(format!(
+                            "watch: {} watcher(s) in scope {scope}:\n{report}",
+                            total
+                        ));
+                        state.status = Some(format!("{} watcher(s)", total));
+                    }
+                }
+                Err(error) => {
+                    state
+                        .transcript
+                        .push(format!("watch: store unavailable — {error}"));
+                    state.status = Some("watch: store unavailable".into());
+                }
+            }
+        }
+        CheckpointOp::WatcherProbe { id } => {
+            let root = state_root_path();
+            match vesper_checkpoints::WatcherStore::open(&root) {
+                Ok(store) => match store.get(&id) {
+                    Some(entry) => {
+                        // Evaluate the watcher NOW in this process: no
+                        // provider turn, no fire — a pure match check so a
+                        // registration can be validated without a daemon.
+                        let matched = vesper_harness::watcher_sweep::probe_watcher(&entry);
+                        state.transcript.push(format!(
+                            "watch: {id} currently {} (target {}, pattern {})",
+                            if matched { "MATCHES" } else { "does not match" },
+                            entry.target,
+                            entry.pattern
+                        ));
+                        state.status = Some(if matched {
+                            format!("{id} matches now")
+                        } else {
+                            format!("{id} does not match")
+                        });
+                    }
+                    None => {
+                        state
+                            .transcript
+                            .push(format!("watch: unknown watcher {id}"));
+                        state.status = Some(format!("unknown watcher {id}"));
+                    }
+                },
+                Err(error) => {
+                    state
+                        .transcript
+                        .push(format!("watch: store unavailable — {error}"));
+                    state.status = Some("watch: store unavailable".into());
+                }
+            }
+        }
+        CheckpointOp::WatcherRemove { id } => {
+            let root = state_root_path();
+            match vesper_checkpoints::WatcherStore::open(&root) {
+                Ok(store) => match store.forget(&id) {
+                    Ok(true) => {
+                        state.transcript.push(format!("watch: removed {id}"));
+                        state.status = Some(format!("removed {id}"));
+                    }
+                    Ok(false) => {
+                        state
+                            .transcript
+                            .push(format!("watch: no watcher named {id} (see /watch list)"));
+                        state.status = Some(format!("no watcher {id}"));
+                    }
+                    Err(error) => {
+                        state.transcript.push(format!("watch: {error}"));
+                        state.status = Some(format!("watch failed: {error}"));
+                    }
+                },
+                Err(error) => {
+                    state
+                        .transcript
+                        .push(format!("watch: store unavailable — {error}"));
+                    state.status = Some("watch: store unavailable".into());
+                }
+            }
         }
     }
 }

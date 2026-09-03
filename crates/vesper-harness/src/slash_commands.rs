@@ -196,6 +196,13 @@ pub fn execute_slash_command(
             SlashCommandOutcome::Host(argument.to_owned())
         }
         "sessions" | "lineage" => SlashCommandOutcome::Host(argument.to_owned()),
+        // VRO-13 PR-7: the watcher surface is host-owned in the ACP too.
+        // The ACP host opens the same WatcherStore under the same
+        // scope-keyed state root the daemon reads, so a `/watch` issued
+        // from the editor registers with the identical ScopeId the daemon
+        // later sweeps — cross-host parity by construction (one store, one
+        // scope id, one sweep loop).
+        "watch" => SlashCommandOutcome::Host(argument.to_owned()),
         _ => SlashCommandOutcome::Unknown(format!("/{name}")),
     }
 }

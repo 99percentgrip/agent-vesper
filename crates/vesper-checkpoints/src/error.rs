@@ -34,6 +34,10 @@ pub enum CheckpointError {
     /// A scheduler claim token no longer belongs to the caller.
     #[error("cron claim is no longer valid")]
     CronClaimLost,
+    /// The requested slot was already claimed by another runner
+    /// (exactly-once discipline; the loser must not fire).
+    #[error("cron slot already claimed")]
+    CronSlotTaken,
     /// A workspace path escaped the configured workspace root.
     #[error("workspace path escapes the root")]
     PathEscape,
@@ -67,6 +71,27 @@ pub enum CheckpointError {
     /// by the clipboard port when no clipboard is reachable).
     #[error("capability not available: {0}")]
     Unavailable(&'static str),
+    /// VRO-13 PR-6: a claimed cron slot is already owned by another
+    /// scheduler process (exactly-once fire discipline).
+    #[error("cron slot is already claimed")]
+    CronSlotClaimed,
+    /// VRO-13 PR-6: a slot-claim marker component (job id) was malformed.
+    #[error("invalid slot-claim job id")]
+    InvalidSlotClaim,
+    /// VRO-13 PR-6: the single-writer daemon lock is held by another live
+    /// daemon process.
+    #[error("daemon lock is held by pid {0}")]
+    DaemonLockHeld(u32),
+    /// VRO-13 PR-7: a watcher pattern contained a forbidden regex
+    /// metacharacter (only the `^`/`$` anchors are permitted).
+    #[error("watcher pattern contains a forbidden regex metacharacter")]
+    InvalidWatcherPattern,
+    /// VRO-13 PR-7: a watcher target was malformed for its kind.
+    #[error("watcher target is invalid for its kind")]
+    InvalidWatcherTarget,
+    /// VRO-13 PR-7: a watcher id was not found in the store.
+    #[error("watcher not found: {0}")]
+    WatcherNotFound(String),
 }
 
 impl From<std::io::Error> for CheckpointError {

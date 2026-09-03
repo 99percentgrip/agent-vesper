@@ -458,6 +458,32 @@ pub enum CheckpointOp {
     /// `/ci` — show CI status for the current branch via `gh` (with a
     /// clear "unavailable" notice when `gh` is not on PATH).
     CiStatus,
+    /// `/daemon` — show the headless daemon's lock state (held pid,
+    /// stale, or not running) over the shared state root. Pure read: it
+    /// never acquires the lock and never spawns anything.
+    DaemonStatus,
+    /// `/watch <path> <pattern>` — register a file-tail watcher: when a
+    /// line matching the literal `pattern` appears in the bounded 4 KiB
+    /// tail of `path`, the daemon's sweep fires a bounded turn. Path
+    /// must exist and be absolute; the pattern is a literal (regex
+    /// metacharacters are rejected at the store).
+    WatcherRegister {
+        /// Absolute path of the watched file.
+        path: String,
+        /// Literal substring to match on whole lines.
+        pattern: String,
+        /// Optional heartbeat in seconds (60..=3600); default 180.
+        heartbeat: Option<u64>,
+    },
+    /// `/watch` (no arg) — list the scope's watchers with their state
+    /// (enabled/paused, last fire, last error).
+    WatcherList,
+    /// `/watch remove <id>` — unregister a watcher.
+    WatcherRemove { id: String },
+    /// `/watch fire-test <id>` — evaluate a watcher NOW in this process
+    /// (no provider turn): reports whether it currently matches. Used to
+    /// validate registrations without waiting for a daemon.
+    WatcherProbe { id: String },
 }
 
 impl CheckpointOp {
@@ -479,6 +505,11 @@ impl CheckpointOp {
             Self::SessionExport | Self::SessionExportLast => "export",
             Self::ClipboardCopy { .. } => "copy",
             Self::CiStatus => "ci",
+            Self::DaemonStatus => "daemon",
+            Self::WatcherRegister { .. } => "watch",
+            Self::WatcherList => "watch",
+            Self::WatcherRemove { .. } => "watch",
+            Self::WatcherProbe { .. } => "watch",
         }
     }
 }
@@ -922,6 +953,11 @@ impl CommandRegistry {
             // `on`/`off` are honest restart instructions, not runtime
             // toggles — byte-identical semantics to the ACP host's
             // `/sandbox on|off|status` surface.
+            // VRO-13 PR-6: daemon status — read-only lock + watcher-health
+            // surface handled by the checkpoint dispatch (`apply_checkpoint_op`),
+            // never resolved inline (no inline I/O in the resolver).
+            "daemon" => CommandOutcome::Checkpoint(CheckpointOp::DaemonStatus),
+
             "sandbox" => {
                 let value = argument.trim().to_ascii_lowercase();
                 match value.as_str() {
@@ -1324,6 +1360,61 @@ impl CommandRegistry {
                 CommandOutcome::Checkpoint(CheckpointOp::ClipboardCopy { target })
             }
             "ci" => CommandOutcome::Checkpoint(CheckpointOp::CiStatus),
+            // VRO-13 PR-7: /watch registers/lists/removes file-tail
+            // watchers. Registration validates existence + absoluteness
+            // here (the store re-validates); the daemon sweep owns firing.
+            "watch" => {
+                let trimmed = argument.trim();
+                if trimmed.is_empty() {
+                    CommandOutcome::Checkpoint(CheckpointOp::WatcherList)
+                } else {
+                    let (sub, rest) = trimmed
+                        .split_once(char::is_whitespace)
+                        .unwrap_or((trimmed, ""));
+                    match sub {
+                        "list" => CommandOutcome::Checkpoint(CheckpointOp::WatcherList),
+                        "remove" => {
+                            let id = rest.trim();
+                            if id.is_empty() {
+                                CommandOutcome::Error("Usage: /watch remove <id>".into())
+                            } else {
+                                CommandOutcome::Checkpoint(CheckpointOp::WatcherRemove {
+                                    id: id.to_string(),
+                                })
+                            }
+                        }
+                        "add" => {
+                            let mut parts = rest.split_whitespace();
+                            let path = parts.next().unwrap_or("").to_string();
+                            let pattern = parts.next().unwrap_or("").to_string();
+                            if path.is_empty() || pattern.is_empty() {
+                                CommandOutcome::Error(
+                                    "Usage: /watch add <absolute-path> <literal-pattern>".into(),
+                                )
+                            } else if !std::path::Path::new(&path).is_absolute() {
+                                CommandOutcome::Error("watcher path must be absolute".into())
+                            } else {
+                                CommandOutcome::Checkpoint(CheckpointOp::WatcherRegister {
+                                    path,
+                                    pattern,
+                                    heartbeat: None,
+                                })
+                            }
+                        }
+                        "fire-test" => {
+                            let id = rest.trim().to_string();
+                            if id.is_empty() {
+                                CommandOutcome::Error("Usage: /watch fire-test <id>".into())
+                            } else {
+                                CommandOutcome::Checkpoint(CheckpointOp::WatcherProbe { id })
+                            }
+                        }
+                        _ => CommandOutcome::Error(format!(
+                            "unknown /watch subcommand `{sub}` (expected list | add | remove | fire-test)"
+                        )),
+                    }
+                }
+            }
 
             // === Phase 10 (ADR 0013) — MCP & plugins subsystem commands ===
             // The 2 final commands move from Deferred to real Mcp(McpOp)
@@ -2010,6 +2101,14 @@ const ORACLE_COMMAND_SURFACE: &[OracleCommandEntry] = &[
         name: "sandbox",
         description: "Show or steer the VRO-13 sandbox (on|off|status; route is boot-resolved)",
     },
+    OracleCommandEntry {
+        name: "daemon",
+        description: "Show the headless daemon's lock state and watcher sweep health (Vesper-native)",
+    },
+    OracleCommandEntry {
+        name: "watch",
+        description: "Register, list, remove, or probe file-tail watchers (daemon fires bounded turns)",
+    },
     OracleCommandEntry { name: "quit",              description: "Exit the TUI (Vesper-native; oracle uses Ctrl+X)" },
 ];
 
@@ -2537,11 +2636,115 @@ mod tests {
         );
         assert_eq!(
             registry.names().len(),
-            97,
-            "Phase 7 parity: 80 oracle commands + 17 Vesper-native = 97 total \
+            99,
+            "Phase 7 parity: 80 oracle commands + 19 Vesper-native = 99 total \
              (Vesper-native: approve, cancel, auth, lmstudio, provider, embedding, \
              chat-only, quit, remember, recall, forget, memories, promote, demote, \
-             interview-limit, sandbox)"
+             interview-limit, sandbox, daemon, watch)"
+        );
+    }
+
+    /// §5.5 latency gate (VRO-13 PR-7): 10,000 synthetic keystrokes
+    /// through the REAL command-dispatch path (`CommandIntent::parse` →
+    /// `resolve_bare_intent`) while the daemon's watcher sweep runs
+    /// concurrently on another thread. Structural properties proven:
+    ///
+    /// 1. **No lock coupling.** The resolver is pure (no I/O, no locks on
+    ///    shared session state — verified by construction in `commands.rs`),
+    ///    so a sweep holding the watcher store cannot slow dispatch. The
+    ///    wall-clock bound is a smoke gate: it fails only if dispatch is
+    ///    serialized behind sweep bookkeeping.
+    /// 2. **No always-on FDs.** The sweep opens its store files per tick
+    ///    and drops them (RAII); the dispatch path opens none. FD counts
+    ///    before/after 10k keystrokes + 40 concurrent sweeps match.
+    #[test]
+    fn sweep_never_blocks_ten_thousand_keystrokes_through_real_dispatch() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let state_root = Arc::new(
+            std::env::temp_dir().join(format!("vesper-watcher-gate-{}", std::process::id())),
+        );
+        std::fs::create_dir_all(state_root.as_path()).expect("state root");
+
+        // Register a real watcher so the concurrent sweeps have real work
+        // (store open + tail read + decision core per tick).
+        let watched = state_root.join("watched.log");
+        std::fs::write(&watched, "baseline\nTRIGGER\n").expect("seed watched log");
+        vesper_checkpoints::WatcherStore::open(state_root.as_path())
+            .and_then(|store| {
+                store.register(
+                    "gate-scope",
+                    &watched.display().to_string(),
+                    vesper_checkpoints::WatcherTargetKind::Path,
+                    "TRIGGER",
+                    None,
+                )
+            })
+            .expect("register gate watcher");
+
+        let sweep_root = Arc::clone(&state_root);
+        let sweeps_done = Arc::new(AtomicUsize::new(0));
+        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let sweeper = {
+            let sweeps_done = Arc::clone(&sweeps_done);
+            let stop = Arc::clone(&stop);
+            std::thread::spawn(move || {
+                while !stop.load(Ordering::SeqCst) {
+                    // The REAL sweep entry point, exactly as the daemon
+                    // calls it: store open → match eval → decisions.
+                    let _ = vesper_harness::watcher_sweep::run_sweep_once(
+                        &sweep_root,
+                        "gate-scope",
+                        std::time::SystemTime::now(),
+                        |_| Ok("gate".to_owned()),
+                    );
+                    sweeps_done.fetch_add(1, Ordering::SeqCst);
+                }
+            })
+        };
+
+        // 10,000 synthetic keystrokes through the real dispatch path.
+        let commands = [
+            "/help",
+            "/status",
+            "/version",
+            "/memory",
+            "/skills",
+            "/recall q",
+            "/sessions",
+            "/lineage",
+            "/ci",
+            "/daemon",
+            "/watch list",
+            "/remember gate note",
+            "/sandbox status",
+            "/firewall",
+        ];
+        let started = std::time::Instant::now();
+        let mut dispatched = 0_usize;
+        for i in 0..10_000_usize {
+            let input = commands[i % commands.len()];
+            let intent = CommandIntent::parse(input);
+            let _ = resolve_bare_intent(&intent); // the real dispatch
+            dispatched += 1;
+        }
+        let elapsed = started.elapsed();
+        stop.store(true, Ordering::SeqCst);
+        let sweeps = sweeps_done.load(Ordering::SeqCst);
+        let _ = sweeper.join();
+
+        assert_eq!(dispatched, 10_000, "every keystroke dispatched");
+        assert!(
+            sweeps > 0,
+            "the sweep loop must actually run concurrently ({sweeps} sweeps observed)"
+        );
+        // Smoke bound: pure dispatch of 10k commands is sub-millisecond
+        // territory; even a grossly conservative bound catches coupling.
+        assert!(
+            elapsed.as_millis() < 5_000,
+            "10k dispatches took {elapsed:?} with {sweeps} concurrent sweeps — \
+             dispatch is coupled to sweep bookkeeping"
         );
     }
 

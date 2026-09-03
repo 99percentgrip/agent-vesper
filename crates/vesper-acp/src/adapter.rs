@@ -299,8 +299,7 @@ impl TerminalBarriers {
 /// informational slash command like `/status` or `/usage` that can be
 /// answered without touching the turn. Executing such a cancel would stop
 /// the user's work for no benefit. Within this grace window a prompt whose
-/// sole text part is a [`CONCURRENT_SAFE_SLASH_COMMANDS`] command aborts
-/// the pending cancel (the turn keeps running and the slash answers
+/// sole text part is a [`CONCURRENT_SAFE_SLASH_COMMANDS`] command aborts/// the pending cancel (the turn keeps running and the slash answers
 /// concurrently); any other prompt, or grace expiry, executes the cancel.
 const CANCEL_GRACE: std::time::Duration = std::time::Duration::from_millis(400);
 
@@ -347,6 +346,9 @@ const CONCURRENT_SAFE_SLASH_COMMANDS: &[&str] = &[
     "journey",
     "firewall",
     "sandbox",
+    // Headless daemon health is a read-only report; answering it can never
+    // disturb a running turn (VRO-13 PR-7).
+    "daemon",
     // Explicit export writes a report from a transcript snapshot but does
     // not mutate the live model history, plan, workspace, or tool registry.
     "export",
@@ -364,6 +366,9 @@ const INTERRUPTING_SLASH_COMMANDS: &[&str] = &[
     "undo",
     "rollback",
     "release",
+    // Watcher registration mutates the durable watcher store the daemon
+    // sweeps; it must stop the world to register coherently (VRO-13 PR-7).
+    "watch",
 ];
 
 /// True when `text` is a single slash command that can be answered
@@ -1347,7 +1352,7 @@ mod command_catalog_tests {
     fn frozen_catalog_stays_exact_and_extensions_append() {
         assert_eq!(catalog_commands(&[]).len(), 28);
         let commands = catalog_commands(&vesper_domain::HOST_PARITY_SLASH_COMMANDS);
-        assert_eq!(commands.len(), 42);
+        assert_eq!(commands.len(), 44);
         let json = serde_json::to_value(commands).unwrap();
         let names: Vec<_> = json
             .as_array()

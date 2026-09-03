@@ -11,7 +11,8 @@ use std::time::{Duration, SystemTime};
 use crate::error::CheckpointError;
 use crate::io::{append_line, read_all_jsonl, write_atomic};
 use crate::types::{
-    CRON_CLAIM_TTL_SECONDS, CronClaim, CronEntry, MAX_CRON_JOBS, MAX_CRON_OUTPUT_CHARS,
+    CRON_CLAIM_TTL_SECONDS, CRON_SLOTS_LOG_NAME, CronClaim, CronEntry, CronFiredSlot,
+    MAX_CRON_JOBS, MAX_CRON_OUTPUT_CHARS, MAX_FIRED_SLOT_FILES, SLOTS_DIR_NAME,
 };
 
 /// One scheduler-owned execution lease returned by [`CronRegistry::claim_due`].
@@ -323,6 +324,242 @@ impl CronRegistry {
         rewrite(&self.root, &state.entries)?;
         Ok(updated)
     }
+
+    // === VRO-13 PR-6 — exactly-once slot claims =========================
+
+    /// Path of the slot-claim marker directory shared by every coexisting
+    /// scheduler (TUI foreground, background daemon, `cron run` force).
+    fn slots_dir(root: &Path) -> PathBuf {
+        root.join(SLOTS_DIR_NAME)
+    }
+
+    /// One slot marker's path. The file NAME is `<job>-<slot>` with any
+    /// path/separator characters in the job id neutralised, so a hostile
+    /// job id can never escape the markers directory.
+    fn slot_marker_path(root: &Path, job_id: &str, slot: u64) -> Result<PathBuf, CheckpointError> {
+        let sanitized = sanitize_marker_component(job_id)?;
+        Ok(Self::slots_dir(root).join(format!("{sanitized}.{slot}")))
+    }
+
+    /// The slot ledger's JSONL path (audit trail of claims and outcomes).
+    fn slots_log_path(root: &Path) -> PathBuf {
+        root.join(CRON_SLOTS_LOG_NAME)
+    }
+
+    /// Claims one (job, slot) exactly once across every coexisting process.
+    ///
+    /// The arbiter is an `O_CREAT | O_EXCL` kernel-mediated creation of a
+    /// per-slot marker file under `<root>/slots/` — the same primitive qm's
+    /// `claimSlot` used SQLite transactions for, delivered JSONL-plus-fs
+    /// atomic here (ADR 0012 forbids SQLite in this crate). The claim is
+    /// atomic across processes by construction: exactly one `create_new`
+    /// succeeds, every other contender observes the existing inode.
+    /// Pruning keeps the marker set bounded.
+    ///
+    /// On success the claim is also appended to `cron-slots.jsonl` (audit
+    /// ledger) and the job's `run_count` bookkeeping is refreshed, so
+    /// `/daemon status` and `/loop` listings stay truthful.
+    pub fn claim_slot(
+        &self,
+        job_id: &str,
+        slot: u64,
+        now: SystemTime,
+    ) -> Result<bool, CheckpointError> {
+        let mut state = self.state.lock().expect("cron mutex poisoned");
+        if !state.entries.iter().any(|entry| entry.id == job_id) {
+            return Err(CheckpointError::CronJobNotFound(job_id.to_owned()));
+        }
+        let slots_dir = Self::slots_dir(&self.root);
+        std::fs::create_dir_all(&slots_dir).map_err(|_| CheckpointError::io("create"))?;
+        prune_slot_markers(&slots_dir, slot);
+        let marker = Self::slot_marker_path(&self.root, job_id, slot)?;
+        let claimed = std::fs::File::create_new(&marker);
+        match claimed {
+            Ok(file) => {
+                let _ = file.sync_all();
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                return Ok(false);
+            }
+            Err(_) => return Err(CheckpointError::io("create")),
+        }
+        let record = CronFiredSlot {
+            job: job_id.to_owned(),
+            slot,
+            pid: std::process::id(),
+            fired_at: now,
+            status: None,
+        };
+        let serialized = serde_json::to_string(&record)?;
+        append_line(&Self::slots_log_path(&self.root), &serialized)?;
+        if let Some(entry) = state.entries.iter_mut().find(|entry| entry.id == job_id) {
+            entry.last_status = Some("claimed".to_owned());
+        }
+        Ok(true)
+    }
+
+    /// Records the outcome of a fired slot. The exactly-once arbiter is the
+    /// marker file; this ledger row is the durable audit trail surfaced by
+    /// `/daemon status` and the fire's transcript entry.
+    pub fn mark_fired(
+        &self,
+        job_id: &str,
+        slot: u64,
+        status: &str,
+        output: &str,
+        now: SystemTime,
+    ) -> Result<(), CheckpointError> {
+        if !matches!(status, "ok" | "error" | "cancelled" | "silent") {
+            return Err(CheckpointError::BoundsViolated("cron status"));
+        }
+        let mut state = self.state.lock().expect("cron mutex poisoned");
+        if !state.entries.iter().any(|entry| entry.id == job_id) {
+            return Err(CheckpointError::CronJobNotFound(job_id.to_owned()));
+        }
+        let record = CronFiredSlot {
+            job: job_id.to_owned(),
+            slot,
+            pid: std::process::id(),
+            fired_at: now,
+            status: Some(status.to_owned()),
+        };
+        let serialized = serde_json::to_string(&record)?;
+        append_line(&Self::slots_log_path(&self.root), &serialized)?;
+        if let Some(entry) = state.entries.iter_mut().find(|entry| entry.id == job_id) {
+            entry.run_count = entry.run_count.saturating_add(1);
+            let bounded_output = output
+                .chars()
+                .take(MAX_CRON_OUTPUT_CHARS)
+                .collect::<String>();
+            entry.last_status = Some(status.to_owned());
+            entry.last_output = (!bounded_output.is_empty()).then_some(bounded_output);
+        }
+        rewrite(&self.root, &state.entries)?;
+        Ok(())
+    }
+
+    /// Lists slot-ledger rows (claims + outcomes), for `/daemon status`
+    /// and diagnostics.
+    pub fn list_slot_records(&self) -> Vec<CronFiredSlot> {
+        read_all_jsonl::<CronFiredSlot>(&Self::slots_log_path(&self.root)).unwrap_or_default()
+    }
+
+    /// The next scheduled fire time across enabled jobs, for `/daemon status`.
+    #[must_use]
+    pub fn next_scheduled_fire(&self) -> Option<SystemTime> {
+        self.state
+            .lock()
+            .expect("cron mutex poisoned")
+            .entries
+            .iter()
+            .filter(|entry| entry.enabled)
+            .filter_map(|entry| entry.next_run_at)
+            .min()
+    }
+}
+
+// === VRO-13 PR-6 — exactly-once slot claims (daemon coexistence) =========
+//
+// The lease discipline above serializes scheduler ticks within one process
+// and across TUI↔TUI restarts, but it cannot prevent two independent
+// processes (the foreground TUI scheduler and the background daemon) from
+// claiming the same time slot: both open their own `CronRegistry`, so
+// neither observes the other's in-memory cache until a rewrite lands, and
+// the read-check-write window is wide enough to double-fire.
+//
+// The slot discipline closes that window with a kernel-arbitrated claim:
+// each (job, slot) pair owns one marker file created with `O_CREAT|O_EXCL`
+// (`File::create_new`). Exactly one process can create it; every other
+// contender gets `AlreadyExists` and declines the slot. The marker is
+// immutable (no rewrite races), self-describing (the claim ledger records
+// the winning PID and timestamp), and confined to `<root>/slots/` so it
+// can never collide with `cron.jsonl`.
+//
+// `cron-slots.jsonl` is the audit ledger: one line per successful claim
+// and one per completed fire. It is advisory — exactly-once is enforced by
+// the marker files, so a torn ledger line (crash mid-append) can never
+// resurrect a double-fire.
+
+/// Sanitizes a job id for use inside a marker file name: rejects empty,
+/// NUL, path separators, and leading dots, so a hostile job id cannot
+/// escape `slots/`. Returns the `cron-` prefix stripped.
+fn sanitize_marker_component(job_id: &str) -> Result<String, CheckpointError> {
+    let trimmed = job_id.trim();
+    if trimmed.is_empty()
+        || trimmed.contains('/')
+        || trimmed.contains('\\')
+        || trimmed.contains('\0')
+        || trimmed.starts_with('.')
+    {
+        return Err(CheckpointError::InvalidSlotClaim);
+    }
+    Ok(trimmed.trim_start_matches("cron-").to_string())
+}
+
+/// Keeps the marker set bounded: drops the oldest per-job markers beyond
+/// [`MAX_FIRED_SLOT_FILES`]. Never removes a marker for a slot at or after
+/// `from_slot` (the just-claimed one) — pruning only reclaims history the
+/// schedule has already left behind. Missing directory or unreadable
+/// entries are ignored (pruning is best-effort bookkeeping, never a
+/// correctness mechanism).
+fn prune_slot_markers(slots_dir: &Path, from_slot: u64) {
+    let Ok(read_dir) = std::fs::read_dir(slots_dir) else {
+        return;
+    };
+    // (job suffix, slot) pairs parsed from marker names, newest-last.
+    let mut markers: Vec<(String, u64)> = Vec::new();
+    for entry in read_dir.flatten() {
+        let Ok(name) = entry.file_name().into_string() else {
+            continue;
+        };
+        let Some((job, slot)) = parse_slot_file_name(&name) else {
+            continue;
+        };
+        markers.push((job, slot));
+    }
+    if markers.is_empty() {
+        return;
+    }
+    markers.sort_unstable();
+    // Count per job suffix; collect the ones beyond the per-job bound.
+    let mut excess: Vec<(String, u64)> = Vec::new();
+    let mut last: Option<(String, usize)> = None;
+    for (job, slot) in markers {
+        if slot >= from_slot {
+            continue; // never prune the live claim or anything after it
+        }
+        let (current_job, count) = match last {
+            Some((prior_job, count)) if prior_job == job.clone() => (job.clone(), count + 1),
+            _ => (job.clone(), 1),
+        };
+        last = Some((current_job.clone(), count));
+        // The `count`-th oldest marker for this job: prune when the job
+        // holds more than the bound and this is one of the overflow ones.
+        // `markers` is sorted ascending, so the first entries per job are
+        // the oldest — overflow is everything past the newest
+        // MAX_FIRED_SLOT_FILES - 1 per job. Simplest correct form: prune
+        // when the running per-job count exceeds the bound.
+        if count > MAX_FIRED_SLOT_FILES {
+            excess.push((job, slot));
+        }
+    }
+    for (job, slot) in excess {
+        let _ = std::fs::remove_file(slots_dir.join(format!("{job}.{slot}")));
+    }
+}
+
+/// Parses a marker file name back into `(job suffix, slot)`. Returns `None`
+/// for anything that does not match the `<job>.<slot>` shape with an
+/// all-digit slot.
+fn parse_slot_file_name(name: &str) -> Option<(String, u64)> {
+    let (job, slot) = name.rsplit_once('.')?;
+    if job.is_empty() || slot.is_empty() {
+        return None;
+    }
+    if !slot.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    Some((job.to_string(), slot.parse().ok()?))
 }
 
 fn is_recurring(schedule: &str) -> bool {

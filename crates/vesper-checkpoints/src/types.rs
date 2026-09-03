@@ -11,6 +11,36 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::CheckpointError;
 
+// === VRO-13 PR-6 — exactly-once slot claims (daemon coexistence) ===
+
+/// Directory under the cron root holding per-(job, slot) claim markers.
+pub const SLOTS_DIR_NAME: &str = "slots";
+/// JSONL audit ledger of slot claims and fire outcomes (PR-6).
+pub const CRON_SLOTS_LOG_NAME: &str = "cron-slots.jsonl";
+/// Marker files kept per job before the oldest are pruned (PR-6). The
+/// arbiter of exactly-once is the marker file itself; pruning only reclaims
+/// history the schedule has already left behind.
+pub const MAX_FIRED_SLOT_FILES: usize = 1_000;
+/// One durable audit row for the PR-6 slot ledger (`cron-slots.jsonl`).
+/// Exactly-once is enforced by the marker files; this row is the human /
+/// diagnostic trail surfaced by `/daemon status`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CronFiredSlot {
+    /// Owning job id (`cron-N`).
+    pub job: String,
+    /// Slot ordinal claimed (schedule-aligned monotonic index, unix
+    /// seconds of the slot start).
+    pub slot: u64,
+    /// PID of the claiming process (TUI scheduler or daemon).
+    pub pid: u32,
+    /// Claim (or outcome) timestamp.
+    pub fired_at: SystemTime,
+    /// Outcome once the fire completed: `ok` | `error` | `cancelled` |
+    /// `silent`; `None` on the claim row.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+}
+
 // === Bounds (defaults; the composition boundary may lower them) ===
 
 /// Maximum size of any single file that a snapshot will copy.

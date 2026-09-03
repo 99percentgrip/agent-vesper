@@ -146,7 +146,7 @@ fn stdio_transcript_reaches_real_glm_adapter_with_protocol_pure_stdout() {
         advertisement["params"]["update"]["availableCommands"]
             .as_array()
             .map(|commands| commands.len()),
-        Some(42),
+        Some(44),
         "the post-response advertisement carries frozen plus host-parity commands \
          (28 frozen + 14 host-parity, including /sandbox)"
     );
@@ -391,11 +391,11 @@ fn empty_prompt_and_slash_commands_never_dispatch_provider() {
         .iter()
         .map(|command| command["name"].as_str().unwrap())
         .collect();
-    // 28 frozen oracle entries + 14 host-parity extensions (VRO-13 PR-4:
-    // /sandbox). The catalog is advertised once, in order, first help →
-    // last sandbox.
-    assert_eq!(advertised.len(), 42);
-    assert_eq!(advertised_first_and_last(&advertised), ("help", "sandbox"));
+    // 28 frozen oracle entries + 16 host-parity extensions (VRO-13 PR-5:
+    // /daemon + /watch). The catalog is advertised once, in order, first
+    // help → last watch.
+    assert_eq!(advertised.len(), 44);
+    assert_eq!(advertised_first_and_last(&advertised), ("help", "watch"));
     send(
         &mut stdin,
         json!({"jsonrpc":"2.0","id":3,"method":"session/prompt","params":{"sessionId":session,"prompt":[],"_meta":{"userMessageId":"empty-message"}}}),

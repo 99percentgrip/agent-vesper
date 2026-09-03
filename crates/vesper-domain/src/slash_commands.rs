@@ -144,7 +144,7 @@ pub const ORACLE_SLASH_COMMANDS: [SlashCommandDescriptor; 28] = [
 /// Host-neutral Vesper extensions implemented by both production hosts.
 /// Kept separate from the frozen oracle catalog so compatibility fixtures
 /// remain byte-stable while ACP clients can discover the real added surface.
-pub const HOST_PARITY_SLASH_COMMANDS: [SlashCommandDescriptor; 14] = [
+pub const HOST_PARITY_SLASH_COMMANDS: [SlashCommandDescriptor; 16] = [
     SlashCommandDescriptor {
         name: "remember",
         description: "Save a fact to cognitive memory",
@@ -200,6 +200,14 @@ pub const HOST_PARITY_SLASH_COMMANDS: [SlashCommandDescriptor; 14] = [
     SlashCommandDescriptor {
         name: "sandbox",
         description: "Show the VRO-13 command sandbox status (view only; set AGENT_VESPER_SANDBOX and restart)",
+    },
+    SlashCommandDescriptor {
+        name: "daemon",
+        description: "Show the headless daemon's lock state and watcher sweep health (read-only)",
+    },
+    SlashCommandDescriptor {
+        name: "watch",
+        description: "Register, list, remove, or probe file-tail watchers (daemon fires bounded turns)",
     },
 ];
 

@@ -58,6 +58,7 @@ pub mod ledger;
 pub mod sessions;
 pub mod snapshot;
 pub mod types;
+pub mod watchers;
 
 pub use ci::{CiStatus, CiStatusReader};
 pub use clipboard::{ClipboardOutcome, ClipboardPort, MAX_CLIPBOARD_BYTES};
@@ -73,4 +74,9 @@ pub use types::{
     HARD_MAX_RETENTION_COUNT, MAX_CHECKPOINT_SIZE_BYTES, MAX_CRON_JOBS, MAX_CRON_OUTPUT_CHARS,
     MAX_CRON_PROMPT_CHARS, MAX_FILE_SIZE_BYTES, MAX_FILES_PER_CHECKPOINT, MAX_LABEL_CHARS,
     MAX_LINEAGE_DEPTH, MAX_RETENTION_COUNT, SessionRecord, SessionStatus,
+};
+pub use watchers::{
+    MAX_WATCHER_PATTERN_CHARS, MAX_WATCHER_TAIL_BYTES, MAX_WATCHERS,
+    WATCHER_DEFAULT_HEARTBEAT_SECONDS, WATCHER_MIN_FIRE_INTERVAL_SECONDS, WATCHERS_LOG_NAME,
+    WatcherEntry, WatcherStore, WatcherTargetKind, validate_watcher_pattern,
 };

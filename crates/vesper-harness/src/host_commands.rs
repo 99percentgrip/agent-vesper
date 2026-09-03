@@ -90,6 +90,7 @@ impl HarnessToolService {
             }
             "plugins" => self.plugins_command(argument),
             "mcp" => self.mcp_command(argument),
+            "watch" => self.watch_command(argument),
             _ => format!(
                 "/{name} is a host-owned command this composition does not serve \
                  through the shared executor."
@@ -468,6 +469,102 @@ impl HarnessToolService {
     }
 
     /// `/mcp [list|add <id> <command> [args...]|remove <id>|tools <id>]`.
+    /// `/watch` — the shared host executor's watcher surface (TUI and ACP
+    /// parity): register/list/remove/probe file-tail watchers bound to the
+    /// process's resolved scope. The TUI binary's richer drain (canonicalize,
+    /// transcript push, status line) composes over the same store; this
+    /// executor is the ACP's entry point.
+    fn watch_command(&self, argument: &str) -> String {
+        let argument = argument.trim();
+        let Ok(store) = vesper_checkpoints::WatcherStore::open(&self.cron_root) else {
+            return format!(
+                "watch: store unavailable (root {})",
+                self.cron_root.display()
+            );
+        };
+        // The scope id the hosts resolved at boot; identical for the TUI
+        // and ACP in the same directory (PR-5 parity property).
+        let scope_id = crate::scope_holder::holder::scope_id()
+            .map(|id| id.as_str().to_owned())
+            .unwrap_or_else(|| "scope-unresolved".to_owned());
+        if argument.is_empty() || argument == "list" {
+            let entries = store.list_for_scope(&scope_id);
+            if entries.is_empty() {
+                return format!(
+                    "watch: none registered for scope {scope_id} \
+                     (usage: /watch add <absolute-path> <literal-pattern>)"
+                );
+            }
+            let mut lines = format!("watch: {} watcher(s) in scope {scope_id}", entries.len());
+            for entry in entries.iter().take(50) {
+                let state_label = if entry.enabled { "active" } else { "paused" };
+                lines.push_str(&format!(
+                    "\n  {} [{}] {} (pattern {}; fails {})",
+                    entry.id, state_label, entry.target, entry.pattern, entry.consecutive_failures
+                ));
+            }
+            return lines;
+        }
+        let (sub, rest) = argument
+            .split_once(char::is_whitespace)
+            .unwrap_or((argument, ""));
+        match sub {
+            "add" => {
+                let mut parts = rest.split_whitespace();
+                let path = parts.next().unwrap_or_default().to_owned();
+                let pattern = parts.next().unwrap_or_default().to_owned();
+                if path.is_empty() || pattern.is_empty() {
+                    return "Usage: /watch add <absolute-path> <literal-pattern>".to_owned();
+                }
+                if !Path::new(&path).is_absolute() {
+                    return "watch: path must be absolute".to_owned();
+                }
+                match store.register(
+                    &scope_id,
+                    &path,
+                    vesper_checkpoints::WatcherTargetKind::Path,
+                    &pattern,
+                    None,
+                ) {
+                    Ok(entry) => format!(
+                        "watch: {} -> {} (pattern `{}`)",
+                        entry.id, entry.target, entry.pattern
+                    ),
+                    Err(error) => format!("watch: failed — {error}"),
+                }
+            }
+            "remove" => {
+                let id = rest.trim();
+                if id.is_empty() {
+                    return "Usage: /watch remove <id>".to_owned();
+                }
+                match store.forget(id) {
+                    Ok(true) => format!("watch: removed {id}"),
+                    Ok(false) => format!("watch: no watcher {id}"),
+                    Err(error) => format!("watch: failed — {error}"),
+                }
+            }
+            "fire-test" => {
+                let id = rest.trim();
+                if id.is_empty() {
+                    return "Usage: /watch fire-test <id>".to_owned();
+                }
+                let Some(entry) = store.get(id) else {
+                    return format!("watch: no watcher {id}");
+                };
+                let matches = crate::watcher_sweep::probe_watcher(&entry);
+                if matches {
+                    "watch: currently MATCHING".to_owned()
+                } else {
+                    "watch: not matching (tail re-read)".to_owned()
+                }
+            }
+            _ => format!(
+                "Unknown /watch subcommand: {sub}. Available: list, add, remove, fire-test."
+            ),
+        }
+    }
+
     fn mcp_command(&self, argument: &str) -> String {
         let argument = argument.trim();
         if argument.is_empty() {
