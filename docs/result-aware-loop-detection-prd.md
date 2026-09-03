@@ -29,11 +29,11 @@ numeric ceiling at full token cost.
 VRO-12 adds **result-aware loop detection**: a deterministic, allocation-
 bounded sliding window over the last **5** executed (tool, args-hash,
 result-hash) triples, evaluated after every OBSERVE step of the VRO ReAct
-loop. Three patterns are classified — **Exact Repeat**, **Ping-Pong**,
-**No-Progress** — and each escalates through a three-step ladder: *warn*
-(system nudge injected into the trajectory), *block* (result replaced, no
-budget consumed), *break* (loop halts with a `BudgetExceeded` outcome and a
-named cause).
+loop. Three patterns are classified — **Exact Repeat**, **Ping-Pong**, and
+**No-Progress**. Exact Repeat and Ping-Pong use the corrective *warn* →
+*block* → *break* ladder; No-Progress is a one-warning advisory because
+equal output from distinct repository probes is not sufficient evidence of
+an unsafe turn.
 
 Objective: **stop token-burning loops at the first classifiable evidence,
 before the numeric ceilings fire, with zero behavior change to any path that
@@ -152,8 +152,24 @@ evaluated over the 5-entry window after each successful record:
    Counted with `filter`, **not** `take_while`: an unrelated interleaved
    call must not reset the streak (the reference's 43-near-duplicate-calls
    lesson).
-   - count ≥ 4 ⇒ `Warn`; ≥ 5 with prior Warn in-window ⇒ `Block`;
-     saturation (5/5 identical results) ⇒ `Break`.
+   - **Read-only tools only** (post-incident correction, see the decision
+     log). The premise "byte-identical result ⇒ no new information" holds
+     only for read-only probes: mutating/shell acks (`edited {path}`,
+     `wrote N bytes`) are constant-form text that does not encode the state
+     change, and an empty `grep` result is legitimate for every
+     non-matching pattern. Feeding those into the key produced fatal
+     false-positive `Break`s in real coding turns (the TUI incident of
+     2026-W14: five legitimate differently-argued `edit_file` calls and
+     five empty-result `grep` probes each killed a live turn). The recorded
+     `ToolExecutionClass` gates the detector: only windows whose matching
+     records are `ReadOnly` may classify No-Progress. Exact Repeat is not
+     gated (an identical call is a loop regardless of class).
+   - Advisory only: count = 4 ⇒ one `Warn` for the evidence window;
+     further differently-argued probes preserve their real results and
+     continue. Empty output from several searches is not proof of a loop.
+     Only exact-repeat protection and the configured numeric tool budget may
+     end a turn. This incident correction prevents both hosts from reporting
+     a failed implementation during legitimate repository exploration.
 
 Escalation state is a small in-window record of the last emitted
 intervention (pattern kind + pair/.tool identity) — no cross-turn memory,
@@ -191,11 +207,13 @@ Warn text (per pattern):
   exhausted. Stop probing it; reason from the observations already
   collected, or Finish.`
 
-Block replaces the result text with
+Exact-Repeat/Ping-Pong Block replaces the result text with
 `[VRO-12 Loop Guard — BLOCKED] '{tool}' suppressed: {pattern}. {guidance}`
 and — mirroring Read-Before-Write — the blocked attempt does **not** consume
 a `max_tool_calls` unit (it never influenced the model's next decision with
-new information). Break terminates with the named risk note (§3).
+new information). No-Progress never blocks or terminates; its one warning is
+advisory. Break terminates with the named risk note (§3) only for the
+remaining terminal patterns.
 
 Rationale for the ladder: the reference's production telemetry shows the
 Warn nudge alone breaks most loops (the model gets an explicit instruction
@@ -262,10 +280,11 @@ to the labels above:
 - **Ping-Pong** — `ping_pong_warns_on_full_window_alternation` (P1);
   `ping_pong_negative_case_abbaa_is_clear` (P2);
   `ping_pong_blocks_when_pattern_persists_after_warn` (P3).
-- **No-Progress** — `react_loop_no_progress_breaks_identical_empty_results`
+- **No-Progress** — `react_loop_no_progress_warns_without_stopping_exploration`
   and `no_progress_interleaved_call_does_not_reset_the_count` (N1/N2,
   `filter` semantics); `identical_args_stay_exact_repeat_not_no_progress`
-  (N3).
+  (N3). It is advisory-only; the numeric tool budget remains its only
+  terminal ceiling.
 - **Recording rules** — `failed_invocations_are_not_recorded_by_the_loop`
   (R1); `read_before_write_rejections_are_not_recorded_and_consume_no_budget`
   (R2, asserts `tool_calls == 0` by exact cost arithmetic, not token counts).
@@ -341,11 +360,12 @@ they are out of VRO-12 scope and were left alone.
   20-entry/4-cycle thresholds are **not** portable to a directive-fixed
   5-entry window; §3's adaptation note already documents this and the
   implementation is the evidence-backed reading. No change.
-- **No-progress escalation.** §3 states Warn ≥ 4, Block ≥ 5 *with prior
-  in-window Warn*, Break at 5/5 saturation. In a 5-slot window, a 5-count
-  **is** saturation, so the Block tier is unreachable and is subsumed by
-  Break. The implementation encodes exactly this (Warn at 4, Break at 5).
-  This is recorded here as the accepted reading rather than changed.
+- **No-progress escalation.** Live TUI and ACP evidence showed that several
+  valid, differently-argued `grep` probes with equal empty output were
+  reported as failed turns. Equal output is insufficient evidence that a
+  repository survey is unsafe. No-progress therefore emits one in-window
+  warning at four matching probes and never `Block`s or `Break`s; exact
+  repeat and the numeric tool budget retain the terminal protections.
 - **Intervention text.** §4 quotes bare `[VRO-12 Loop Guard]` strings. The
   implementation prefixes Warn with `[Loop Detection Warning]` and Block
   with `[SYSTEM OVERRIDE: LOOP BLOCKED. YOU MUST CHANGE STRATEGY.]`. These

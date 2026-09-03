@@ -28,6 +28,23 @@ async fn main() -> ExitCode {
     // `.agent-vesper/config.toml`. No demand → holder stays `None` and the
     // executor keeps the byte-identical legacy path.
     let _ = vesper_harness::sandbox_backend::holder::install_from_env();
+    // VRO-13 PR-5: resolve the WorkspaceScope once at boot (identity, layers,
+    // per-scope skills, firewall composition) — identical derivation in both
+    // hosts, so the TUI and ACP resolve identical ScopeIds for one directory.
+    // Scope resolution is strictly a host-boot concern; the loop layer never
+    // sees scopes. Resolution failure degrades gracefully (un-scoped
+    // defaults), never blocking stdio protocol startup.
+    let scope_stamp_policy =
+        if std::env::var("AGENT_VESPER_ENABLE_SCOPE_STAMP").is_ok_and(|value| value == "1") {
+            vesper_agent::vro::scope::StampPolicy::Write
+        } else {
+            vesper_agent::vro::scope::StampPolicy::ReadOnly
+        };
+    if let Err(error) =
+        vesper_harness::scope_holder::holder::install_from_env_with_stamp_policy(scope_stamp_policy)
+    {
+        eprintln!("vesper: workspace scope resolution failed ({error}); using unscoped defaults");
+    }
     let outcome = match provider_from_argv() {
         Some(provider) => agent_vesper_acp::boot(&provider).await,
         None => agent_vesper_acp::run().await,

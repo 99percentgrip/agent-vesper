@@ -111,6 +111,15 @@ async fn main() -> io::Result<()> {
     // the scope `[sandbox]` demand from `.agent-vesper/config.toml`; with no
     // demand the holder stays `None` → the executor keeps the legacy path.
     let _sandbox_route = vesper_harness::sandbox_backend::holder::install_from_env();
+    // VRO-13 PR-5: resolve the WorkspaceScope once at boot (identity, layers,
+    // per-scope skills, firewall composition). Scope resolution is strictly
+    // a host-boot concern: the loop layer never sees or re-resolves scopes.
+    // Resolving before the sandbox route keeps `.agent-vesper/config.toml`
+    // single-read per boot. Resolution failure degrades gracefully (the
+    // legacy un-scoped path) — it never blocks startup.
+    if let Err(error) = vesper_harness::scope_holder::holder::install_from_env() {
+        tracing::warn!(%error, "workspace scope resolution failed; using unscoped defaults");
+    }
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args
         .iter()

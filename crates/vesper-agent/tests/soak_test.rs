@@ -518,7 +518,14 @@ async fn soak_loop_detector_200_call_mixed_workload_bounded_and_deterministic() 
         // Every recorded step must keep both windows bounded at 5.
         let actions: Vec<LoopGuardAction> = detectors
             .iter_mut()
-            .map(|d| d.record(name, &args, &result))
+            .map(|d| {
+                d.record(
+                    name,
+                    &args,
+                    &result,
+                    vesper_domain::ToolExecutionClass::ReadOnly,
+                )
+            })
             .collect();
         for detector in &detectors {
             assert!(

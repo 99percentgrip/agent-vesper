@@ -18,6 +18,10 @@ transport, stderr-only tracing, and orderly shutdown.
   atomic private-file operation to the GLM provider auth boundary.
 - Session readers are disabled unless explicitly enabled, use bounded
   filesystem stores, reject unsafe roots, and never create missing roots.
+- Workspace-scope identity resolution is read-only by default: the
+  editor-spawned ACP process must not create `.vesper-scope-id` in a project
+  unless `AGENT_VESPER_ENABLE_SCOPE_STAMP=1`. This persistence policy does
+  not change the resolved scope id, so TUI↔ACP scope identity remains equal.
 - Session writers are disabled unless explicitly enabled via
   `AGENT_VESPER_ENABLE_SESSION_WRITES`; the application constructs and injects
   `VesperSessionWriter` but delegates every mutation, atomic rename, and

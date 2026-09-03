@@ -37,6 +37,7 @@ pub mod profiler;
 pub mod rate_limit;
 pub mod react;
 pub mod repair;
+pub mod scope;
 pub mod strategies;
 pub mod verifiers;
 

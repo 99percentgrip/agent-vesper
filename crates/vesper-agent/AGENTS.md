@@ -79,8 +79,10 @@ the multi-turn, tool-executing layer above it.
   not reject long tool-heavy sessions as structurally invalid requests. The
   same bounded VRO-12 result-aware loop guard
   used by ReAct also protects this direct path: warnings are fed back through
-  tool results, persistent repeats are blocked, and a saturated exact-repeat
-  or no-progress window fails truthfully with `LoopDetected`.
+  tool results, persistent exact repeats are blocked, and only a saturated
+  exact-repeat window fails truthfully with `LoopDetected`. Differently
+  argued read-only probes with equal output are advisory-only: one warning
+  per bounded evidence window, never a host-visible failure.
 - `src/vro/mod.rs` — Vesper Reasoning Orchestrator (VRO) scaffolding.
   `VroOrchestrator` holds a `ReasoningConfig` (from `vesper-domain`), a
   `TaskProfiler`, and a shared `VerifierRegistry` (behind an `Arc` so the
@@ -176,8 +178,10 @@ the multi-turn, tool-executing layer above it.
   Retains at most five successful `(tool, args hash, result hash)` records and
   detects exact repeats, tool ping-pong, and differently-argued probes that
   return identical results. ReAct and the shared direct `AgentLoop` both use
-  its warning/block/break ladder; failed tools and policy rejections are not
-  recorded. Public surface: `LoopDetector`, `LoopGuardAction`
+  its exact-repeat/ping-pong warning/block/break protection; no-progress is
+  a one-warning advisory so legitimate exploratory searches cannot abort a
+  host turn. Failed tools and policy rejections are not recorded. Public
+  surface: `LoopDetector`, `LoopGuardAction`
   (`Clear`/`Warn`/`Block`/`Break`), `LoopBreak` (typed circuit-breaker
   payload: `pattern` + `message`), `LoopPattern`, `LoopWarning`, and the
   threshold constants. Hosts and tests classify a Break by the typed

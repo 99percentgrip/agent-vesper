@@ -22,7 +22,7 @@ use vesper_domain::{
     CapabilityId, CapabilityRequest, ContentPart, ContentText, ConversationMessage, ExtensionMap,
     FeatureRequirement, FinishOutcome, MessageId, MessageRole, ProviderId, ProviderRequestId,
     QualifiedModelId, SessionOperatingMode, SessionPermissionMode, SystemInstruction, ToolCall,
-    ToolDefinition, ToolResultId, WorkspaceRoot,
+    ToolDefinition, ToolExecutionClass, ToolResultId, WorkspaceRoot,
 };
 use vesper_provider::{
     CancellationSignal, CapabilityAdvisor, CapabilityContext, ProviderError, ProviderRequest,
@@ -656,7 +656,16 @@ impl AgentLoop {
                 // classification.
                 let mut blocked_by_loop_guard = false;
                 if execution_succeeded {
-                    match loop_detector.record(&tool_name, &call.arguments, &output) {
+                    // Result-aware VRO-12 detectors reason from "identical
+                    // result text ⇒ no new information", which holds only
+                    // for read-only tools; the recorded class gates them
+                    // (constant-form mutating acks never mean "no progress").
+                    // `gate_and_execute` resolved the definition; class is
+                    // `None` only for gate failures, which never reach here.
+                    let class = outcome
+                        .execution_class
+                        .unwrap_or(ToolExecutionClass::Mutating);
+                    match loop_detector.record(&tool_name, &call.arguments, &output, class) {
                         LoopGuardAction::Clear => {}
                         LoopGuardAction::Warn(warning) => {
                             output.push_str("\n\n");
@@ -791,10 +800,11 @@ impl AgentLoop {
         let Some(definition) = definition else {
             return GateOutcome::text(format!("unknown tool: {}", call.tool_id));
         };
+        let execution_class = definition.execution_class;
         let decision = check_tool_permission(
             context.operating_mode,
             context.permission_mode,
-            definition.execution_class,
+            execution_class,
         );
         match decision {
             PermissionDecision::Allow => match self.tools.execute(call, context).await {
@@ -803,6 +813,7 @@ impl AgentLoop {
                     injected: result.injected_tools,
                     media: result.media,
                     change: result.change,
+                    execution_class: Some(execution_class),
                 },
                 Err(error) => GateOutcome::text(format!("tool error: {error}")),
             },
@@ -818,6 +829,7 @@ impl AgentLoop {
                             injected: result.injected_tools,
                             media: result.media,
                             change: result.change,
+                            execution_class: Some(execution_class),
                         },
                         Err(error) => GateOutcome::text(format!("tool error: {error}")),
                     },
@@ -905,6 +917,10 @@ struct GateOutcome {
     media: Vec<ContentPart>,
     /// Bounded file-change preview produced by the successful executor.
     change: Option<vesper_domain::FileChangePreview>,
+    /// The executed tool's authority class. `None` for gate failures
+    /// (unknown tool, permission denial) — the loop records only successful
+    /// executions, which always carry the definition's class.
+    execution_class: Option<ToolExecutionClass>,
 }
 
 impl GateOutcome {
@@ -915,6 +931,7 @@ impl GateOutcome {
             injected: Vec::new(),
             media: Vec::new(),
             change: None,
+            execution_class: None,
         }
     }
 }

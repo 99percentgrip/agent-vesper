@@ -2,6 +2,7 @@
 //! Shared hosted tool services for the production ACP and TUI compositions.
 
 pub mod sandbox_backend;
+pub mod scope_holder;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;

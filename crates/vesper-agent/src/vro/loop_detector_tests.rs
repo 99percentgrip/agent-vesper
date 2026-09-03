@@ -54,14 +54,29 @@ fn block_text(action: &LoopGuardAction) -> &str {
 fn exact_repeat_warns_at_three_identical_calls() {
     let mut d = LoopDetector::new();
     assert_eq!(
-        d.record("grep", &json!({"q": "x"}), "r"),
+        d.record(
+            "grep",
+            &json!({"q": "x"}),
+            "r",
+            ToolExecutionClass::ReadOnly
+        ),
         LoopGuardAction::Clear
     );
     assert_eq!(
-        d.record("grep", &json!({"q": "x"}), "r"),
+        d.record(
+            "grep",
+            &json!({"q": "x"}),
+            "r",
+            ToolExecutionClass::ReadOnly
+        ),
         LoopGuardAction::Clear
     );
-    let third = d.record("grep", &json!({"q": "x"}), "r");
+    let third = d.record(
+        "grep",
+        &json!({"q": "x"}),
+        "r",
+        ToolExecutionClass::ReadOnly,
+    );
     match &third {
         LoopGuardAction::Warn(w) => {
             assert!(
@@ -81,9 +96,19 @@ fn exact_repeat_warns_at_three_identical_calls() {
 fn exact_repeat_blocks_at_four_identical_calls() {
     let mut d = LoopDetector::new();
     for _ in 0..3 {
-        let _ = d.record("grep", &json!({"q": "x"}), "r");
+        let _ = d.record(
+            "grep",
+            &json!({"q": "x"}),
+            "r",
+            ToolExecutionClass::ReadOnly,
+        );
     }
-    let fourth = d.record("grep", &json!({"q": "x"}), "r");
+    let fourth = d.record(
+        "grep",
+        &json!({"q": "x"}),
+        "r",
+        ToolExecutionClass::ReadOnly,
+    );
     assert!(
         block_text(&fourth).contains("[SYSTEM OVERRIDE: LOOP BLOCKED. YOU MUST CHANGE STRATEGY.]"),
         "Block must carry the directive override text: {fourth:?}"
@@ -95,9 +120,19 @@ fn exact_repeat_blocks_at_four_identical_calls() {
 fn exact_repeat_breaks_when_window_saturates() {
     let mut d = LoopDetector::new();
     for _ in 0..4 {
-        let _ = d.record("grep", &json!({"q": "x"}), "r");
+        let _ = d.record(
+            "grep",
+            &json!({"q": "x"}),
+            "r",
+            ToolExecutionClass::ReadOnly,
+        );
     }
-    let fifth = d.record("grep", &json!({"q": "x"}), "r");
+    let fifth = d.record(
+        "grep",
+        &json!({"q": "x"}),
+        "r",
+        ToolExecutionClass::ReadOnly,
+    );
     match &fifth {
         LoopGuardAction::Break(brk) => {
             assert!(
@@ -134,13 +169,43 @@ fn exact_repeat_breaks_when_window_saturates() {
 #[test]
 fn exact_repeat_resets_when_args_change() {
     let mut d = LoopDetector::new();
-    let _ = d.record("grep", &json!({"q": "x"}), "r1");
-    let _ = d.record("grep", &json!({"q": "x"}), "r1");
-    let _ = d.record("grep", &json!({"q": "x"}), "r1"); // Warn
-    let _ = d.record("grep", &json!({"q": "OTHER"}), "r1"); // different args -> run broken
+    let _ = d.record(
+        "grep",
+        &json!({"q": "x"}),
+        "r1",
+        ToolExecutionClass::ReadOnly,
+    );
+    let _ = d.record(
+        "grep",
+        &json!({"q": "x"}),
+        "r1",
+        ToolExecutionClass::ReadOnly,
+    );
+    let _ = d.record(
+        "grep",
+        &json!({"q": "x"}),
+        "r1",
+        ToolExecutionClass::ReadOnly,
+    ); // Warn
+    let _ = d.record(
+        "grep",
+        &json!({"q": "OTHER"}),
+        "r1",
+        ToolExecutionClass::ReadOnly,
+    ); // different args -> run broken
+    // Exact-repeat run is broken by the differing args (trailing run of
+    // `x` is 1), but this sequence also forms a no-progress pattern
+    // (4+ identical `r1` results on `grep`, ≥2 distinct args): the 4th
+    // record Warned. Further distinct empty-result searches are allowed;
+    // this is ordinary exploration, not a terminal loop.
     assert!(matches!(
-        d.record("grep", &json!({"q": "x"}), "r1"),
-        LoopGuardAction::Break(_)
+        d.record(
+            "grep",
+            &json!({"q": "x"}),
+            "r1",
+            ToolExecutionClass::ReadOnly
+        ),
+        LoopGuardAction::Clear
     ));
 }
 
@@ -149,20 +214,40 @@ fn exact_repeat_result_differences_do_not_block_the_call_key() {
     // PRD: the Exact-Repeat key is the CALL (name + args). Identical calls
     // with different results must still escalate.
     let mut d = LoopDetector::new();
-    d.record("rand", &json!({"s":1}), "r1");
-    d.record("rand", &json!({"s":1}), "r2");
-    d.record("rand", &json!({"s":1}), "r3");
-    let a4 = d.record("rand", &json!({"s":1}), "r4");
+    d.record("rand", &json!({"s":1}), "r1", ToolExecutionClass::ReadOnly);
+    d.record("rand", &json!({"s":1}), "r2", ToolExecutionClass::ReadOnly);
+    d.record("rand", &json!({"s":1}), "r3", ToolExecutionClass::ReadOnly);
+    let a4 = d.record("rand", &json!({"s":1}), "r4", ToolExecutionClass::ReadOnly);
     assert!(matches!(a4, LoopGuardAction::Block(_)));
 }
 
 #[test]
 fn ping_pong_warns_on_full_window_alternation() {
     let mut d = LoopDetector::new();
-    d.record("read_file", &json!({"p":"a"}), "ra");
-    d.record("grep", &json!({"q":"b"}), "rb");
-    d.record("read_file", &json!({"p":"a"}), "ra");
-    let a4 = d.record("grep", &json!({"q":"b"}), "rb");
+    d.record(
+        "read_file",
+        &json!({"p":"a"}),
+        "ra",
+        ToolExecutionClass::ReadOnly,
+    );
+    d.record(
+        "grep",
+        &json!({"q":"b"}),
+        "rb",
+        ToolExecutionClass::ReadOnly,
+    );
+    d.record(
+        "read_file",
+        &json!({"p":"a"}),
+        "ra",
+        ToolExecutionClass::ReadOnly,
+    );
+    let a4 = d.record(
+        "grep",
+        &json!({"q":"b"}),
+        "rb",
+        ToolExecutionClass::ReadOnly,
+    );
     assert!(
         matches!(warn_pattern(&a4), LoopPattern::PingPong { a, b } if a == "read_file" && b == "grep"),
         "4 alternating calls must Warn PingPong, got {a4:?}"
@@ -172,13 +257,43 @@ fn ping_pong_warns_on_full_window_alternation() {
 #[test]
 fn ping_pong_blocks_when_pattern_persists_after_warn() {
     let mut d = LoopDetector::new();
-    d.record("read_file", &json!({"p":"a"}), "ra");
-    d.record("grep", &json!({"q":"b"}), "rb");
-    d.record("read_file", &json!({"p":"a"}), "ra");
-    let warn = d.record("grep", &json!({"q":"b"}), "rb");
+    d.record(
+        "read_file",
+        &json!({"p":"a"}),
+        "ra",
+        ToolExecutionClass::ReadOnly,
+    );
+    d.record(
+        "grep",
+        &json!({"q":"b"}),
+        "rb",
+        ToolExecutionClass::ReadOnly,
+    );
+    d.record(
+        "read_file",
+        &json!({"p":"a"}),
+        "ra",
+        ToolExecutionClass::ReadOnly,
+    );
+    let warn = d.record(
+        "grep",
+        &json!({"q":"b"}),
+        "rb",
+        ToolExecutionClass::ReadOnly,
+    );
     assert!(matches!(warn, LoopGuardAction::Warn(_)));
-    d.record("read_file", &json!({"p":"a"}), "ra");
-    let a6 = d.record("grep", &json!({"q":"b"}), "rb");
+    d.record(
+        "read_file",
+        &json!({"p":"a"}),
+        "ra",
+        ToolExecutionClass::ReadOnly,
+    );
+    let a6 = d.record(
+        "grep",
+        &json!({"q":"b"}),
+        "rb",
+        ToolExecutionClass::ReadOnly,
+    );
     assert!(
         matches!(a6, LoopGuardAction::Block(_)),
         "persisting ping-pong must Block, got {a6:?}"
@@ -193,11 +308,36 @@ fn ping_pong_breaks_when_alternation_fills_every_slot() {
     // tools is the terminal Block for the pattern. The loop still halts
     // on the NEXT same-args repeat via detector 1.
     let mut d = LoopDetector::new();
-    d.record("read_file", &json!({"p":"a"}), "ra");
-    d.record("grep", &json!({"q":"b"}), "rb");
-    d.record("read_file", &json!({"p":"a"}), "ra");
-    d.record("grep", &json!({"q":"b"}), "rb");
-    let a5 = d.record("read_file", &json!({"p":"a"}), "ra");
+    d.record(
+        "read_file",
+        &json!({"p":"a"}),
+        "ra",
+        ToolExecutionClass::ReadOnly,
+    );
+    d.record(
+        "grep",
+        &json!({"q":"b"}),
+        "rb",
+        ToolExecutionClass::ReadOnly,
+    );
+    d.record(
+        "read_file",
+        &json!({"p":"a"}),
+        "ra",
+        ToolExecutionClass::ReadOnly,
+    );
+    d.record(
+        "grep",
+        &json!({"q":"b"}),
+        "rb",
+        ToolExecutionClass::ReadOnly,
+    );
+    let a5 = d.record(
+        "read_file",
+        &json!({"p":"a"}),
+        "ra",
+        ToolExecutionClass::ReadOnly,
+    );
     // Whole-window alternation persists past the Warn: the terminal
     // action for the pattern is Block (persisting after warning).
     assert!(
@@ -206,7 +346,12 @@ fn ping_pong_breaks_when_alternation_fills_every_slot() {
     );
     // A same-tool call breaks the alternation and starts a new consecutive
     // run; it is not yet an exact-repeat warning.
-    let a6 = d.record("read_file", &json!({"p":"a"}), "ra");
+    let a6 = d.record(
+        "read_file",
+        &json!({"p":"a"}),
+        "ra",
+        ToolExecutionClass::ReadOnly,
+    );
     assert!(
         matches!(a6, LoopGuardAction::Clear),
         "breaking alternation must reset the pattern, got {a6:?}"
@@ -218,10 +363,10 @@ fn ping_pong_ignores_same_tool_repetition() {
     // A,A,A,A is Exact-Repeat territory, not Ping-Pong.
     let mut d = LoopDetector::new();
     for _ in 0..4 {
-        d.record("grep", &json!({"q":"a"}), "r");
+        d.record("grep", &json!({"q":"a"}), "r", ToolExecutionClass::ReadOnly);
     }
     // The 3rd call already Warned (exact repeat); ensure no PingPong misfire.
-    let a = d.record("grep", &json!({"q":"a"}), "r");
+    let a = d.record("grep", &json!({"q":"a"}), "r", ToolExecutionClass::ReadOnly);
     assert!(
         !matches!(
             &a,
@@ -381,9 +526,10 @@ async fn react_loop_block_does_not_consume_tool_budget() {
 }
 
 #[tokio::test]
-async fn react_loop_no_progress_breaks_identical_empty_results() {
+async fn react_loop_no_progress_warns_without_stopping_exploration() {
     // Same tool, DIFFERENT args every time, byte-identical empty result: the
-    // classic token-burning probe. No-Progress must Break it.
+    // ordinary repository exploration. No-Progress may advise once but must
+    // never stop the turn; only the configured numeric budget may do that.
     let decisions = (0..12)
         .map(|i| ReactDecision::CallTool {
             name: "grep".to_string(),
@@ -394,12 +540,11 @@ async fn react_loop_no_progress_breaks_identical_empty_results() {
     let invoker = StaticInvoker::with_read("grep", "");
     let outcome =
         run_tool_grounded_react("hunt forever", &agent, &invoker, budget(20, 20), true).await;
-    assert_eq!(outcome.status, OutcomeStatus::BudgetExceeded);
+    assert_eq!(outcome.status, OutcomeStatus::Succeeded);
     assert!(
-        outcome
-            .unresolved_risks
-            .iter()
-            .any(|r| r.contains("VRO-12"))
+        outcome.unresolved_risks.is_empty(),
+        "no-progress must not manufacture a terminal risk: {:?}",
+        outcome.unresolved_risks
     );
 }
 
@@ -429,6 +574,11 @@ async fn react_loop_ping_pong_intervenes_before_finish() {
         .lock()
         .expect("poisoned")
         .insert("grep".to_string(), Ok("a.rs:1:x".to_string()));
+    invoker
+        .classes
+        .lock()
+        .expect("poisoned")
+        .insert("grep".to_string(), ToolExecutionClass::ReadOnly);
     let (outcome, trajectory) = run_tool_grounded_react_with_trajectory(
         "bounce forever",
         &agent,
@@ -458,7 +608,12 @@ fn window_retains_at_most_five_records_after_many_calls() {
     // retained window is the LAST five (newest) records, not the first five.
     let mut d = LoopDetector::new();
     for i in 0..8 {
-        let _ = d.record("grep", &json!({"q": i}), &format!("result-{i}"));
+        let _ = d.record(
+            "grep",
+            &json!({"q": i}),
+            &format!("result-{i}"),
+            ToolExecutionClass::ReadOnly,
+        );
         assert!(
             d.len() <= 5,
             "window must never exceed 5 entries, got {} after call {i}",
@@ -484,12 +639,27 @@ fn args_hash_is_invariant_under_object_key_reordering() {
     // record is vacuous — both return Clear either way.)
     let mut d = LoopDetector::new();
     // First insertion order.
-    let a1 = d.record("grep", &json!({"a": 1, "b": 2}), "r");
+    let a1 = d.record(
+        "grep",
+        &json!({"a": 1, "b": 2}),
+        "r",
+        ToolExecutionClass::ReadOnly,
+    );
     // Reversed insertion order, same logical object.
-    let a2 = d.record("grep", &json!({"b": 2, "a": 1}), "r");
+    let a2 = d.record(
+        "grep",
+        &json!({"b": 2, "a": 1}),
+        "r",
+        ToolExecutionClass::ReadOnly,
+    );
     // Back to the first order: the run is now 3 IF AND ONLY IF the two
     // orderings hashed identically.
-    let a3 = d.record("grep", &json!({"a": 1, "b": 2}), "r");
+    let a3 = d.record(
+        "grep",
+        &json!({"a": 1, "b": 2}),
+        "r",
+        ToolExecutionClass::ReadOnly,
+    );
     assert!(matches!(a1, LoopGuardAction::Clear));
     assert!(matches!(a2, LoopGuardAction::Clear));
     assert!(
@@ -521,9 +691,9 @@ fn hash_distinguishes_zero_float_and_string_zero() {
     ];
     for (label, first, second) in cases {
         let mut d = LoopDetector::new();
-        let a1 = d.record("probe", &first, "r");
-        let _ = d.record("probe", &second, "r");
-        let a3 = d.record("probe", &first, "r");
+        let a1 = d.record("probe", &first, "r", ToolExecutionClass::ReadOnly);
+        let _ = d.record("probe", &second, "r", ToolExecutionClass::ReadOnly);
+        let a3 = d.record("probe", &first, "r", ToolExecutionClass::ReadOnly);
         assert!(
             matches!(a1, LoopGuardAction::Clear) && matches!(a3, LoopGuardAction::Clear),
             "{label}: {first:?} and {second:?} must be distinct argument hashes, so \
@@ -533,11 +703,11 @@ fn hash_distinguishes_zero_float_and_string_zero() {
     // Positive control: the same construction WITH a genuine repeat must
     // Warn, proving the harness above can fail and is not vacuous.
     let mut d = LoopDetector::new();
-    let _ = d.record("probe", &json!(0), "r");
-    let _ = d.record("probe", &json!(0), "r");
+    let _ = d.record("probe", &json!(0), "r", ToolExecutionClass::ReadOnly);
+    let _ = d.record("probe", &json!(0), "r", ToolExecutionClass::ReadOnly);
     assert!(
         matches!(
-            d.record("probe", &json!(0), "sql"),
+            d.record("probe", &json!(0), "sql", ToolExecutionClass::ReadOnly),
             LoopGuardAction::Warn(w) if matches!(w.pattern, LoopPattern::ExactRepeat { .. })
         ),
         "control: three identical integer-zero calls must Warn"
@@ -549,9 +719,24 @@ fn hash_distinguishes_adjacent_string_concatenations() {
     // PRD §6 H3: ["ab","c"] !== ["a","bc"]. Distinct args hashes mean the
     // trailing identical-run detector cannot treat them as the same call.
     let mut d = LoopDetector::new();
-    let a1 = d.record("probe", &json!(["ab", "c"]), "r");
-    let a2 = d.record("probe", &json!(["a", "bc"]), "r");
-    let a3 = d.record("probe", &json!(["ab", "c"]), "r");
+    let a1 = d.record(
+        "probe",
+        &json!(["ab", "c"]),
+        "r",
+        ToolExecutionClass::ReadOnly,
+    );
+    let a2 = d.record(
+        "probe",
+        &json!(["a", "bc"]),
+        "r",
+        ToolExecutionClass::ReadOnly,
+    );
+    let a3 = d.record(
+        "probe",
+        &json!(["ab", "c"]),
+        "r",
+        ToolExecutionClass::ReadOnly,
+    );
     assert!(
         matches!(a1, LoopGuardAction::Clear) && matches!(a2, LoopGuardAction::Clear),
         "distinct argument arrays must not form an exact-repeat run; got {a1:?}, {a2:?}"
@@ -621,11 +806,26 @@ fn ping_pong_negative_case_abbaa_is_clear() {
     // PRD §6 P2: A,B,B,A,A is NOT alternation and must classify Clear at
     // every step. The two-in-a-row B's break the pattern.
     let mut d = LoopDetector::new();
-    let a1 = d.record("read_file", &json!({"p": 1}), "ra");
-    let a2 = d.record("grep", &json!({"q": 1}), "rb");
-    let a3 = d.record("grep", &json!({"q": 1}), "rb");
-    let a4 = d.record("read_file", &json!({"p": 1}), "ra");
-    let a5 = d.record("read_file", &json!({"p": 1}), "ra");
+    let a1 = d.record(
+        "read_file",
+        &json!({"p": 1}),
+        "ra",
+        ToolExecutionClass::ReadOnly,
+    );
+    let a2 = d.record("grep", &json!({"q": 1}), "rb", ToolExecutionClass::ReadOnly);
+    let a3 = d.record("grep", &json!({"q": 1}), "rb", ToolExecutionClass::ReadOnly);
+    let a4 = d.record(
+        "read_file",
+        &json!({"p": 1}),
+        "ra",
+        ToolExecutionClass::ReadOnly,
+    );
+    let a5 = d.record(
+        "read_file",
+        &json!({"p": 1}),
+        "ra",
+        ToolExecutionClass::ReadOnly,
+    );
     for (label, action) in [
         ("1st", a1),
         ("2nd", a2),
@@ -662,11 +862,36 @@ fn no_progress_interleaved_call_does_not_reset_the_count() {
     // (detector 2 owns that shape), so the unrelated call is placed between
     // two same-tool clusters rather than strictly alternating.
     let mut d = LoopDetector::new();
-    let _ = d.record("grep", &json!({"q": 1}), "no matches");
-    let _ = d.record("list_directory", &json!({"p": "."}), "unrelated");
-    let _ = d.record("grep", &json!({"q": 2}), "no matches");
-    let _ = d.record("grep", &json!({"q": 3}), "no matches");
-    let fourth = d.record("grep", &json!({"q": 4}), "no matches");
+    let _ = d.record(
+        "grep",
+        &json!({"q": 1}),
+        "no matches",
+        ToolExecutionClass::ReadOnly,
+    );
+    let _ = d.record(
+        "list_directory",
+        &json!({"p": "."}),
+        "unrelated",
+        ToolExecutionClass::ReadOnly,
+    );
+    let _ = d.record(
+        "grep",
+        &json!({"q": 2}),
+        "no matches",
+        ToolExecutionClass::ReadOnly,
+    );
+    let _ = d.record(
+        "grep",
+        &json!({"q": 3}),
+        "no matches",
+        ToolExecutionClass::ReadOnly,
+    );
+    let fourth = d.record(
+        "grep",
+        &json!({"q": 4}),
+        "no matches",
+        ToolExecutionClass::ReadOnly,
+    );
     let assert_no_progress = |action: &LoopGuardAction| {
         matches!(
             action,
@@ -688,9 +913,24 @@ fn identical_args_stay_exact_repeat_not_no_progress() {
     // PRD §6 N3: when every call has IDENTICAL args, detector 1 (Exact
     // Repeat) owns the case. The no-progress detector must not fire.
     let mut d = LoopDetector::new();
-    let _ = d.record("grep", &json!({"q": "same"}), "no matches");
-    let _ = d.record("grep", &json!({"q": "same"}), "no matches");
-    let third = d.record("grep", &json!({"q": "same"}), "no matches");
+    let _ = d.record(
+        "grep",
+        &json!({"q": "same"}),
+        "no matches",
+        ToolExecutionClass::ReadOnly,
+    );
+    let _ = d.record(
+        "grep",
+        &json!({"q": "same"}),
+        "no matches",
+        ToolExecutionClass::ReadOnly,
+    );
+    let third = d.record(
+        "grep",
+        &json!({"q": "same"}),
+        "no matches",
+        ToolExecutionClass::ReadOnly,
+    );
     assert!(
         matches!(
             &third,
@@ -698,7 +938,12 @@ fn identical_args_stay_exact_repeat_not_no_progress() {
         ),
         "identical args must classify as ExactRepeat, never NoProgress (N3); got {third:?}"
     );
-    let fourth = d.record("grep", &json!({"q": "same"}), "no matches");
+    let fourth = d.record(
+        "grep",
+        &json!({"q": "same"}),
+        "no matches",
+        ToolExecutionClass::ReadOnly,
+    );
     assert!(
         matches!(fourth, LoopGuardAction::Block(_)),
         "identical args escalate through the ExactRepeat ladder to Block (N3); got {fourth:?}"
@@ -957,3 +1202,682 @@ async fn non_looping_react_turn_produces_no_loop_guard_text() {
 // a pattern actually fires. That is the strongest zero-breakage guarantee
 // available without inventing a disable switch. See the audit report and the
 // PRD decision log for the full rationale.
+
+// ---------------------------------------------------------------------------
+// Post-audit regression tests — the TUI loop-detector incident
+// ---------------------------------------------------------------------------
+
+// Two fatal false positives were reported from real coding turns:
+//
+//   1. `no-progress, tool 'edit_file', 5 differently-argued calls with
+//      byte-identical results (window saturated)`
+//   2. `no-progress, tool 'grep', 5 differently-argued calls with
+//      byte-identical results (window saturated)`
+//
+// Root cause 1 (edit_file): mutating tools return constant-form
+// acknowledgments (`edited {path}`) that do not encode the state change.
+// Five legitimate, differently-argued edits to one file produce
+// byte-identical acks — real progress misread as a loop.
+// Root cause 2 (grep): the no-progress ladder broke at first saturation
+// with zero corrective opportunity (Warn@4 → Break@5, no Block tier), so
+// five legitimate empty-result greps killed the turn instantly.
+//
+// The fixes: No-Progress/Ping-Pong are class-gated (read-only tools only —
+// the "identical result ⇒ no new information" premise holds only there),
+// and the ladder is Warn@4 → Block@5 (refunded) → Break@6 (only after the
+// model ignored the Block override).
+
+#[test]
+fn mutating_tool_identical_acks_never_classify_no_progress() {
+    // THE edit_file incident: five differently-argued edits to the same
+    // file, each succeeding, each returning the constant-form ack
+    // `edited src/lib.rs`. The workspace genuinely advanced five times.
+    // The detector must stay Clear at every step.
+    let mut d = LoopDetector::new();
+    let ack = "edited src/lib.rs";
+    let actions = [
+        d.record(
+            "edit_file",
+            &json!({"path": "src/lib.rs", "old_text": "a", "new_text": "b"}),
+            ack,
+            ToolExecutionClass::Mutating,
+        ),
+        d.record(
+            "edit_file",
+            &json!({"path": "src/lib.rs", "old_text": "b", "new_text": "c"}),
+            ack,
+            ToolExecutionClass::Mutating,
+        ),
+        d.record(
+            "edit_file",
+            &json!({"path": "src/lib.rs", "old_text": "c", "new_text": "d"}),
+            ack,
+            ToolExecutionClass::Mutating,
+        ),
+        d.record(
+            "edit_file",
+            &json!({"path": "src/lib.rs", "old_text": "d", "new_text": "e"}),
+            ack,
+            ToolExecutionClass::Mutating,
+        ),
+        d.record(
+            "edit_file",
+            &json!({"path": "src/lib.rs", "old_text": "e", "new_text": "f"}),
+            ack,
+            ToolExecutionClass::Mutating,
+        ),
+    ];
+    for (i, action) in actions.iter().enumerate() {
+        assert!(
+            matches!(action, LoopGuardAction::Clear),
+            "legitimate edit_file acks must never fire the guard (call {}): {action:?}",
+            i + 1
+        );
+    }
+}
+
+#[test]
+fn mutating_tool_identical_acks_never_classify_ping_pong() {
+    // The read↔edit edit cycle: five alternating calls where every mutating
+    // step genuinely advances state. Class-gated Ping-Pong must stay Clear.
+    let mut d = LoopDetector::new();
+    let read_ack = "fn main() {}";
+    let edit_ack = "edited src/lib.rs";
+    let actions = [
+        d.record(
+            "read_file",
+            &json!({"path": "src/lib.rs"}),
+            read_ack,
+            ToolExecutionClass::ReadOnly,
+        ),
+        d.record(
+            "edit_file",
+            &json!({"path": "src/lib.rs", "old_text": "a", "new_text": "b"}),
+            edit_ack,
+            ToolExecutionClass::Mutating,
+        ),
+        d.record(
+            "read_file",
+            &json!({"path": "src/lib.rs"}),
+            read_ack,
+            ToolExecutionClass::ReadOnly,
+        ),
+        d.record(
+            "edit_file",
+            &json!({"path": "src/lib.rs", "old_text": "b", "new_text": "c"}),
+            edit_ack,
+            ToolExecutionClass::Mutating,
+        ),
+        d.record(
+            "read_file",
+            &json!({"path": "src/lib.rs"}),
+            read_ack,
+            ToolExecutionClass::ReadOnly,
+        ),
+    ];
+    for (i, action) in actions.iter().enumerate() {
+        assert!(
+            matches!(action, LoopGuardAction::Clear),
+            "the healthy read↔edit cycle must never fire the guard (call {}): {action:?}",
+            i + 1
+        );
+    }
+}
+
+#[test]
+fn no_progress_warns_once_then_allows_exploration() {
+    // Repeated, differently-argued empty searches are common while mapping
+    // an unfamiliar repository. They receive one advisory but never a
+    // heuristic Block or Break.
+    let mut d = LoopDetector::new();
+    let empty = "";
+    let a1 = d.record(
+        "grep",
+        &json!({"pattern": "needle-1"}),
+        empty,
+        ToolExecutionClass::ReadOnly,
+    );
+    let a2 = d.record(
+        "grep",
+        &json!({"pattern": "needle-2"}),
+        empty,
+        ToolExecutionClass::ReadOnly,
+    );
+    let a3 = d.record(
+        "grep",
+        &json!({"pattern": "needle-3"}),
+        empty,
+        ToolExecutionClass::ReadOnly,
+    );
+    assert!(matches!(a1, LoopGuardAction::Clear));
+    assert!(matches!(a2, LoopGuardAction::Clear));
+    assert!(matches!(a3, LoopGuardAction::Clear));
+    let a4 = d.record(
+        "grep",
+        &json!({"pattern": "needle-4"}),
+        empty,
+        ToolExecutionClass::ReadOnly,
+    );
+    assert!(
+        matches!(&a4, LoopGuardAction::Warn(w) if matches!(
+            &w.pattern,
+            LoopPattern::NoProgress { tool, count: 4, .. } if tool == "grep"
+        )),
+        "4th identical-result probe must Warn, got {a4:?}"
+    );
+    let a5 = d.record(
+        "grep",
+        &json!({"pattern": "needle-5"}),
+        empty,
+        ToolExecutionClass::ReadOnly,
+    );
+    assert!(matches!(&a5, LoopGuardAction::Clear));
+    let a6 = d.record(
+        "grep",
+        &json!({"pattern": "needle-6"}),
+        empty,
+        ToolExecutionClass::ReadOnly,
+    );
+    assert!(matches!(&a6, LoopGuardAction::Clear));
+}
+
+#[test]
+fn no_progress_reset_when_model_changes_tool_or_result() {
+    // The corrective purpose of the ladder: after a Warn, if the model
+    // changes strategy (different tool, then a genuinely different result),
+    // the escalation state must reset. A later 4-probe streak on a NEW
+    // exhausted evidence starts at Warn again, not at Block.
+    let mut d = LoopDetector::new();
+    let empty = "";
+    for i in 0..4 {
+        let action = d.record(
+            "grep",
+            &json!({"pattern": format!("stuck-{i}")}),
+            empty,
+            ToolExecutionClass::ReadOnly,
+        );
+        let _ = action;
+    }
+    // Warn fired on the 4th. Model obeys: switches tool and gets a distinct
+    // result. The escalation state survives while the old evidence remains
+    // in the window (N2 filter semantics — an interleaved unrelated call
+    // must NOT reset the streak), so the heal sequence must wash ALL five
+    // old records out before the ladder is provably reset.
+    let heal = d.record(
+        "read_file",
+        &json!({"path": "other.rs"}),
+        "fresh content",
+        ToolExecutionClass::ReadOnly,
+    );
+    assert!(matches!(heal, LoopGuardAction::Clear));
+    for i in 1..5 {
+        let heal = d.record(
+            "read_file",
+            &json!({"path": format!("other-{i}.rs")}),
+            &format!("fresh content {i}"),
+            ToolExecutionClass::ReadOnly,
+        );
+        assert!(
+            matches!(heal, LoopGuardAction::Clear),
+            "distinct results must stay Clear: {heal:?}"
+        );
+    }
+    // The entire stuck evidence has now left the 5-slot window. A new
+    // 4-probe no-progress run must start the ladder over at Warn.
+    for i in 0..3 {
+        let action = d.record(
+            "grep",
+            &json!({"pattern": format!("again-{i}")}),
+            empty,
+            ToolExecutionClass::ReadOnly,
+        );
+        assert!(
+            matches!(action, LoopGuardAction::Clear),
+            "healed run must stay Clear (probe {i}): {action:?}"
+        );
+    }
+    let re_warn = d.record(
+        "grep",
+        &json!({"pattern": "again-3"}),
+        empty,
+        ToolExecutionClass::ReadOnly,
+    );
+    assert!(
+        matches!(&re_warn, LoopGuardAction::Warn(w) if matches!(w.pattern, LoopPattern::NoProgress { .. })),
+        "a fresh exhausted evidence must re-enter the ladder at Warn, got {re_warn:?}"
+    );
+}
+
+#[tokio::test]
+async fn react_loop_survives_legitimate_edit_ack_streak() {
+    // End-to-end: the exact TUI incident shape through the real ReAct loop.
+    // A mutating invoker whose ack text is constant-form (`edited {path}`),
+    // five differently-argued successful edits — the turn must complete
+    // with zero VRO-12 intervention.
+    struct EditingInvoker;
+    impl ToolInvoker for EditingInvoker {
+        fn class_of(&self, name: &str) -> Option<ToolExecutionClass> {
+            match name {
+                "edit_file" => Some(ToolExecutionClass::Mutating),
+                _ => Some(ToolExecutionClass::ReadOnly),
+            }
+        }
+        fn invoke<'a>(
+            &'a self,
+            name: &'a str,
+            _args: &'a serde_json::Value,
+        ) -> Pin<Box<dyn Future<Output = Result<String, ToolInvocationError>> + Send + 'a>>
+        {
+            let name = name.to_string();
+            Box::pin(async move {
+                Ok(match name.as_str() {
+                    "edit_file" => "edited src/lib.rs".to_string(),
+                    other => format!("ok: {other}"),
+                })
+            })
+        }
+    }
+
+    let decisions = (0..6)
+        .map(|i| ReactDecision::CallTool {
+            name: "edit_file".to_string(),
+            arguments: json!({
+                "path": "src/lib.rs",
+                "old_text": format!("old-{i}"),
+                "new_text": format!("new-{i}"),
+            }),
+        })
+        .chain(std::iter::once(ReactDecision::Finish {
+            output: json!({"answer": "all edits applied"}),
+        }))
+        .collect::<Vec<_>>();
+    let agent = OrderedScriptedAgent::new(decisions);
+    let (outcome, trajectory) = run_tool_grounded_react_with_trajectory(
+        "apply six legitimate edits",
+        &agent,
+        &EditingInvoker,
+        budget(20, 20),
+        true,
+    )
+    .await;
+    assert_eq!(
+        outcome.status,
+        OutcomeStatus::Succeeded,
+        "six legitimate edits must complete the turn; got {:?}",
+        outcome.unresolved_risks
+    );
+    assert!(
+        trajectory
+            .iter()
+            .all(|entry| !matches!(entry, TrajectoryEntry::Observation { text, .. } if text.contains("VRO-12"))),
+        "no VRO-12 bytes may appear for legitimate edit acks; got {trajectory:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Post-audit regression tests: class-aware premises and the corrective
+// no-progress ladder. These pin the two production false positives from the
+// TUI incident ("VRO-12 loop guard: no-progress, tool 'grep'/'edit_file',
+// 5 differently-argued calls with byte-identical results").
+// ---------------------------------------------------------------------------
+
+#[test]
+fn mutating_tool_identical_acks_never_trip_no_progress() {
+    // `edit_file` returns `format!("edited {path}")` — a constant-form ack.
+    // Five legitimate, differently-argued edits to the same file produce
+    // byte-identical results while the workspace genuinely advances. The
+    // no-progress premise ("identical result = no new information") holds
+    // only for read-only probes; a mutating ack must never fire it.
+    let mut d = LoopDetector::new();
+    for i in 0..8 {
+        let action = d.record(
+            "edit_file",
+            &json!({"path": "src/lib.rs", "old_text": format!("old {i}"), "new_text": format!("new {i}")}),
+            "edited src/lib.rs",
+            ToolExecutionClass::Mutating,
+        );
+        assert!(
+            !matches!(&action, LoopGuardAction::Warn(w) if matches!(w.pattern, LoopPattern::NoProgress { .. })),
+            "legitimate differently-argued mutating edits must never warn no-progress (call {i}): {action:?}"
+        );
+        assert!(
+            !matches!(
+                &action,
+                LoopGuardAction::Block(_) | LoopGuardAction::Break(_)
+            ),
+            "legitimate differently-argued mutating edits must never be suppressed or broken (call {i}): {action:?}"
+        );
+    }
+}
+
+#[test]
+fn mutating_tool_identical_acks_never_trip_ping_pong() {
+    // The healthy edit cycle: read → edit → read → edit. Each mutating step
+    // changes workspace state even though the ack text is constant-form and
+    // the read re-observation is byte-identical. Whole-window name
+    // alternation alone must not classify ping-pong when a mutating tool
+    // participates.
+    let mut d = LoopDetector::new();
+    let read = json!({"path": "src/lib.rs"});
+    for edit in 0..3 {
+        let a = d.record(
+            "read_file",
+            &read,
+            "file body",
+            ToolExecutionClass::ReadOnly,
+        );
+        assert!(
+            !matches!(a, LoopGuardAction::Warn(ref w) if matches!(w.pattern, LoopPattern::PingPong { .. })),
+            "read→edit alternation must never warn ping-pong: {a:?}"
+        );
+        let b = d.record(
+            "edit_file",
+            &json!({"path": "src/lib.rs", "old_text": format!("o{edit}"), "new_text": format!("n{edit}")}),
+            "edited src/lib.rs",
+            ToolExecutionClass::Mutating,
+        );
+        assert!(
+            !matches!(b, LoopGuardAction::Warn(ref w) if matches!(w.pattern, LoopPattern::PingPong { .. }))
+                && !matches!(&b, LoopGuardAction::Block(t) if t.contains("ping-pong")),
+            "read→edit alternation must never escalate ping-pong: {b:?}"
+        );
+    }
+}
+
+#[test]
+fn read_only_no_progress_is_advisory_not_terminal() {
+    // Different grep patterns can all return empty during valid exploration.
+    // Warn once, then preserve the actual results and keep the turn alive.
+    let mut d = LoopDetector::new();
+    for i in 0..3 {
+        assert!(matches!(
+            d.record(
+                "grep",
+                &json!({"pattern": format!("needle{i}")}),
+                "",
+                ToolExecutionClass::ReadOnly
+            ),
+            LoopGuardAction::Clear
+        ));
+    }
+    let fourth = d.record(
+        "grep",
+        &json!({"pattern": "needle3"}),
+        "",
+        ToolExecutionClass::ReadOnly,
+    );
+    assert!(
+        matches!(&fourth, LoopGuardAction::Warn(w) if matches!(
+            &w.pattern,
+            LoopPattern::NoProgress { tool, count: 4, .. } if tool == "grep"
+        )),
+        "4th differently-argued empty grep must Warn (not Break); got {fourth:?}"
+    );
+    let fifth = d.record(
+        "grep",
+        &json!({"pattern": "needle4"}),
+        "",
+        ToolExecutionClass::ReadOnly,
+    );
+    assert!(matches!(&fifth, LoopGuardAction::Clear));
+    let sixth = d.record(
+        "grep",
+        &json!({"pattern": "needle5"}),
+        "",
+        ToolExecutionClass::ReadOnly,
+    );
+    assert!(matches!(&sixth, LoopGuardAction::Clear));
+}
+
+#[test]
+fn no_progress_advisory_resets_when_evidence_leaves_window() {
+    // The advisory state decays once its evidence leaves the bounded window.
+    let mut d = LoopDetector::new();
+    for i in 0..4 {
+        let _ = d.record(
+            "grep",
+            &json!({"pattern": format!("a{i}")}),
+            "",
+            ToolExecutionClass::ReadOnly,
+        );
+    } // -> Warn at 4
+    let fifth = d.record(
+        "grep",
+        &json!({"pattern": "b"}),
+        "",
+        ToolExecutionClass::ReadOnly,
+    );
+    assert!(matches!(fifth, LoopGuardAction::Clear));
+    // Model changes strategy: distinct results wash the evidence out.
+    for i in 0..5 {
+        let action = d.record(
+            "read_file",
+            &json!({"path": format!("p{i}")}),
+            &format!("body{i}"),
+            ToolExecutionClass::ReadOnly,
+        );
+        assert!(
+            !matches!(
+                action,
+                LoopGuardAction::Break(_) | LoopGuardAction::Block(_)
+            ),
+            "fresh distinct results must clear all escalation: {action:?}"
+        );
+    }
+    // A new identical-result run starts over at the Warn tier.
+    let run = |d: &mut LoopDetector, i: u32| {
+        d.record(
+            "grep",
+            &json!({"pattern": format!("c{i}")}),
+            "",
+            ToolExecutionClass::ReadOnly,
+        )
+    };
+    assert!(matches!(run(&mut d, 0), LoopGuardAction::Clear));
+    assert!(matches!(run(&mut d, 1), LoopGuardAction::Clear));
+    assert!(matches!(run(&mut d, 2), LoopGuardAction::Clear));
+    assert!(
+        matches!(run(&mut d, 3), LoopGuardAction::Warn(_)),
+        "a fresh no-progress run must restart at Warn after the evidence left the window"
+    );
+}
+
+#[test]
+fn shell_tool_identical_output_never_trips_result_detectors() {
+    // `run_command` acks (bounded stdout of identical commands) are
+    // Shell-class; even identical output across differently-argued calls
+    // must not fire no-progress. (Identical *calls* still hit Exact Repeat.)
+    let mut d = LoopDetector::new();
+    for i in 0..6 {
+        let action = d.record(
+            "run_command",
+            &json!({"command": format!("echo probe-{i}")}),
+            "same bounded output",
+            ToolExecutionClass::Shell,
+        );
+        assert!(
+            !matches!(&action, LoopGuardAction::Warn(w) if matches!(w.pattern, LoopPattern::NoProgress { .. })),
+            "Shell-class identical output must not fire no-progress (call {i}): {action:?}"
+        );
+    }
+}
+
+#[test]
+fn mutating_tool_exact_repeat_still_fires() {
+    // The class gate must NOT weaken Exact Repeat: a literally identical
+    // mutating call repeated is a loop regardless of class (the key is the
+    // call, not the result).
+    let mut d = LoopDetector::new();
+    let call = json!({"path": "src/lib.rs", "old_text": "a", "new_text": "b"});
+    for _ in 0..2 {
+        assert!(matches!(
+            d.record(
+                "edit_file",
+                &call,
+                "edited src/lib.rs",
+                ToolExecutionClass::Mutating
+            ),
+            LoopGuardAction::Clear
+        ));
+    }
+    assert!(
+        matches!(
+            d.record(
+                "edit_file",
+                &call,
+                "edited src/lib.rs",
+                ToolExecutionClass::Mutating
+            ),
+            LoopGuardAction::Warn(_)
+        ),
+        "identical mutating calls must still Warn exact repeat"
+    );
+    assert!(
+        matches!(
+            d.record(
+                "edit_file",
+                &call,
+                "edited src/lib.rs",
+                ToolExecutionClass::Mutating
+            ),
+            LoopGuardAction::Block(_)
+        ),
+        "identical mutating calls must still Block exact repeat"
+    );
+    assert!(
+        matches!(
+            d.record(
+                "edit_file",
+                &call,
+                "edited src/lib.rs",
+                ToolExecutionClass::Mutating
+            ),
+            LoopGuardAction::Break(_)
+        ),
+        "identical mutating calls must still Break exact repeat at saturation"
+    );
+}
+
+#[tokio::test]
+async fn react_loop_read_edit_cycle_is_not_a_loop() {
+    // End-to-end ReAct variant of the incident: the healthy
+    // read_file → edit_file → read_file → edit_file cycle with constant-form
+    // edit acks and re-reads must run to the numeric budget, never a
+    // VRO-12 break or block.
+    struct EditCycleInvoker;
+    impl ToolInvoker for EditCycleInvoker {
+        fn class_of(&self, name: &str) -> Option<ToolExecutionClass> {
+            match name {
+                "read_file" => Some(ToolExecutionClass::ReadOnly),
+                "edit_file" => Some(ToolExecutionClass::Mutating),
+                _ => None,
+            }
+        }
+        fn invoke<'a>(
+            &'a self,
+            name: &'a str,
+            _args: &'a serde_json::Value,
+        ) -> Pin<Box<dyn Future<Output = Result<String, ToolInvocationError>> + Send + 'a>>
+        {
+            let name = name.to_string();
+            Box::pin(async move { Ok(format!("{name} done")) })
+        }
+    }
+
+    let mut decisions = Vec::new();
+    for i in 0..6 {
+        decisions.push(ReactDecision::CallTool {
+            name: "read_file".to_string(),
+            arguments: json!({"path": "src/lib.rs"}),
+        });
+        decisions.push(ReactDecision::CallTool {
+            name: "edit_file".to_string(),
+            arguments: json!({
+                "path": "src/lib.rs",
+                "old_text": format!("old {i}"),
+                "new_text": format!("new {i}")
+            }),
+        });
+    }
+    decisions.push(ReactDecision::Finish {
+        output: json!({"answer": "edited the file six times"}),
+    });
+    let agent = OrderedScriptedAgent::new(decisions);
+    let (outcome, trajectory) = run_tool_grounded_react_with_trajectory(
+        "iterate on the file",
+        &agent,
+        &EditCycleInvoker,
+        budget(20, 20),
+        true,
+    )
+    .await;
+    assert_eq!(
+        outcome.status,
+        OutcomeStatus::Succeeded,
+        "the healthy read→edit cycle must complete, not break; risks: {:?}",
+        outcome.unresolved_risks
+    );
+    assert!(
+        trajectory
+            .iter()
+            .all(|entry| !matches!(entry, TrajectoryEntry::Observation { text, .. } if text.contains("[VRO-12") || text.contains("LOOP BLOCKED"))),
+        "the healthy read→edit cycle must produce no guard intervention; got {trajectory:?}"
+    );
+}
+
+#[tokio::test]
+async fn react_loop_grep_no_progress_stays_alive_after_advisory() {
+    // A sequence of distinct grep probes may be an intentional survey. The
+    // guard must warn once but must not terminate either host's turn.
+    struct EmptyGrepInvoker;
+    impl ToolInvoker for EmptyGrepInvoker {
+        fn class_of(&self, _name: &str) -> Option<ToolExecutionClass> {
+            Some(ToolExecutionClass::ReadOnly)
+        }
+        fn invoke<'a>(
+            &'a self,
+            _name: &'a str,
+            _args: &'a serde_json::Value,
+        ) -> Pin<Box<dyn Future<Output = Result<String, ToolInvocationError>> + Send + 'a>>
+        {
+            Box::pin(async { Ok(String::new()) })
+        }
+    }
+
+    let decisions = (0..12)
+        .map(|i| ReactDecision::CallTool {
+            name: "grep".to_string(),
+            arguments: json!({"pattern": format!("needle{i}")}),
+        })
+        .collect::<Vec<_>>();
+    let agent = OrderedScriptedAgent::new(decisions);
+    let (outcome, trajectory) = run_tool_grounded_react_with_trajectory(
+        "hunt forever",
+        &agent,
+        &EmptyGrepInvoker,
+        budget(20, 20),
+        true,
+    )
+    .await;
+    assert_eq!(outcome.status, OutcomeStatus::Succeeded);
+    assert!(
+        outcome.unresolved_risks.is_empty(),
+        "advisory no-progress must not create a terminal risk: {:?}",
+        outcome.unresolved_risks
+    );
+    // A single advisory is visible, with no synthetic block.
+    let observations: Vec<&TrajectoryEntry> = trajectory
+        .iter()
+        .filter(|entry| {
+            matches!(entry, TrajectoryEntry::Observation { text, .. }
+                if text.contains("[VRO-12 Loop Guard]"))
+        })
+        .collect();
+    let saw_warn = observations.iter().any(|entry| {
+        matches!(entry, TrajectoryEntry::Observation { text, .. } if text.contains("[Loop Detection Warning]"))
+    });
+    assert!(
+        saw_warn && observations.iter().all(|entry| !matches!(entry, TrajectoryEntry::Observation { text, .. } if text.contains("LOOP BLOCKED"))),
+        "no-progress must be advisory only; got {trajectory:?}"
+    );
+}

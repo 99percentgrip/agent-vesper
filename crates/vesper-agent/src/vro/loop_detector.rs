@@ -13,9 +13,9 @@
 //! - **Ping-Pong** — the entire window alternates two distinct tool names
 //!   (`A, B, A, B, A`) without new state. A name-level pattern is the
 //!   signal; args may vary.
-//! - **No-Progress** — the same tool returns byte-identical output across
-//!   ≥ 4 *differently-argued* probes. Counted with `filter`, not
-//!   `take_while`, so an unrelated interleaved call does not reset the
+//! - **No-Progress** — the same **read-only** tool returns byte-identical
+//!   output across ≥ 4 *differently-argued* probes. Counted with `filter`,
+//!   not `take_while`, so an unrelated interleaved call does not reset the
 //!   streak (the reference repo's 43-near-duplicate-calls lesson).
 //!
 //! Escalation ladder: [`LoopGuardAction::Warn`] (nudge observation appended
@@ -23,6 +23,33 @@
 //! blocked attempt does not consume a `max_tool_calls` unit, mirroring the
 //! Read-Before-Write precedent) → [`LoopGuardAction::Break`] (circuit
 //! breaker; the turn halts with `BudgetExceeded` and a named risk).
+//!
+//! ## Class-aware premises (post-audit correction)
+//!
+//! The No-Progress and Ping-Pong detectors reason from "byte-identical
+//! results ⇒ no new information reached the model". That premise holds only
+//! for **read-only** tools. Mutating and shell tools return constant-form
+//! acknowledgments by design (`edited {path}`, `wrote N bytes to {path}`):
+//! five legitimate, differently-argued edits to the same file produce
+//! byte-identical acks while the workspace state genuinely advances, and
+//! `grep` legitimately returns the empty string for every non-matching
+//! pattern. Feeding those acks into the no-progress key produced fatal
+//! false-positive `Break`s in real coding turns (the TUI loop-detector
+//! incident). Both detectors are therefore gated on the recorded execution
+//! class: only windows whose matching records are
+//! [`ToolExecutionClass::ReadOnly`] can classify No-Progress or Ping-Pong.
+//! Exact Repeat is *not* gated — an identical call repeated is a loop
+//! regardless of class, and its key does not include the result.
+//!
+//! No-Progress is deliberately advisory: it injects one Warn at 4 matching
+//! probes, then lets the turn continue. Different searches with the same
+//! empty result are ordinary repository exploration, not proof that a turn
+//! is unsafe. The hard tool budget remains the terminal safety ceiling. The
+//! execution class comes from the caller's registry (the
+//! same [`ToolExecutionClass`] the permission gate uses), so a classless
+//! caller can still construct the guard; the class-aware detectors treat
+//! an unknown class as mutating (fail-open for legitimate work, never
+//! fail-closed into a false `Break`).
 //!
 //! ## Determinism (PRD C5)
 //!
@@ -50,6 +77,7 @@ use std::collections::VecDeque;
 
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use vesper_domain::ToolExecutionClass;
 
 /// Sliding-window capacity (directive-fixed, PRD C2).
 pub const LOOP_WINDOW_SIZE: usize = 5;
@@ -167,11 +195,18 @@ struct ToolCallRecord {
     name: String,
     args_hash: u64,
     result_hash: u64,
+    /// Execution class at dispatch time. Result-aware detectors (Ping-Pong,
+    /// No-Progress) may only fire on read-only tools: mutating/shell tools
+    /// return constant-form acknowledgments whose text does not encode the
+    /// state change, so "byte-identical result" cannot mean "no progress"
+    /// for them. Exact Repeat ignores the class — an identical call is a
+    /// loop regardless.
+    class: ToolExecutionClass,
 }
 
-/// In-window memory of the last emitted Warn, so a *persisting* pattern
-/// escalates to Block on the next record. Resets when the evidence pattern
-/// leaves the window (PRD §3: no cross-turn memory, no growth).
+/// In-window memory of the last emitted advisory/intervention. Resets when
+/// the evidence pattern leaves the window (PRD §3: no cross-turn memory, no
+/// growth).
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum WarnState {
     ExactRepeat { name: String, args_hash: u64 },
@@ -283,11 +318,25 @@ impl LoopDetector {
     /// Detectors run in fixed escalation order (most severe classification
     /// first, PRD §3): Exact Repeat → Ping-Pong → No-Progress. Failed
     /// invocations and Read-Before-Write rejections must NOT be recorded.
-    pub fn record(&mut self, name: &str, args: &Value, result: &str) -> LoopGuardAction {
+    ///
+    /// `execution_class` is the recorded authority class of the executed
+    /// tool. It feeds the result-aware detectors' premise gate: Ping-Pong
+    /// and No-Progress reason from "identical results ⇒ no new information",
+    /// which holds only for read-only tools, so any window entry classified
+    /// Mutating/Shell/Process/NestedWorkflow blocks those detectors (see
+    /// the module docs).
+    pub fn record(
+        &mut self,
+        name: &str,
+        args: &Value,
+        result: &str,
+        execution_class: ToolExecutionClass,
+    ) -> LoopGuardAction {
         let record = ToolCallRecord {
             name: name.to_string(),
             args_hash: hash_args(args),
             result_hash: hash_result(result),
+            class: execution_class,
         };
 
         // Sliding window: evict the oldest once at capacity, then append.
@@ -296,19 +345,23 @@ impl LoopDetector {
         }
         self.window.push_back(record);
 
-        // Detector 1 — Exact Repeat (absolute thresholds; PRD §3).
+        // Detector 1 — Exact Repeat (absolute thresholds; PRD §3). Not
+        // class-gated: an identical call repeated is a loop regardless of
+        // the tool's authority class.
         if let Some(action) = self.detect_exact_repeat() {
             self.retain_warn_state();
             return action;
         }
         // Detector 2 — Ping-Pong (Warn, then Block on persisting pattern).
+        // Class-gated: an alternating window that contains a mutating or
+        // shell tool is making state changes, not thrashing.
         if let Some(action) = self.detect_ping_pong() {
             self.retain_warn_state();
             return action;
         }
-        // Detector 3 — No-Progress (Warn at 4; saturation at 5 is Break —
-        // the Block tier is subsumed by the Break threshold, documented in
-        // PRD §3).
+        // Detector 3 — No-Progress (read-only tools only). It is advisory:
+        // one warning per evidence window, never a Block or Break. Distinct
+        // searches can legitimately have identical empty output.
         if let Some(action) = self.detect_no_progress() {
             self.retain_warn_state();
             return action;
@@ -394,6 +447,18 @@ impl LoopDetector {
         if self.window.len() < PING_PONG_MIN_WINDOW {
             return None;
         }
+        // Class gate: the "no new state" premise holds only when every
+        // alternating tool is read-only. A read→edit→read→edit window is
+        // the healthy edit cycle, not thrashing: each mutating step
+        // advances workspace state even though its constant-form ack text
+        // is byte-identical.
+        if !self
+            .window
+            .iter()
+            .all(|r| r.class == ToolExecutionClass::ReadOnly)
+        {
+            return None;
+        }
         let names: Vec<&str> = self.window.iter().map(|r| r.name.as_str()).collect();
         let (a, b) = (names[0], names[1]);
         if a == b {
@@ -454,12 +519,24 @@ impl LoopDetector {
     /// in the window with ≥ 2 distinct argument hashes (identical args are
     /// detector 1's territory). Counted with `filter` across the whole
     /// window so interleaved unrelated calls do not reset the streak.
-    /// count == window size ⇒ Break · count ≥ 4 ⇒ Warn.
+    ///
+    /// **Read-only tools only.** Mutating/shell acks are constant-form text
+    /// that does not encode the state change, so identical acks do not mean
+    /// no progress for them.
+    ///
+    /// Advisory: count ≥ 4 ⇒ one Warn for the matching evidence window.
+    /// Subsequent distinct probes continue normally. The numeric tool budget,
+    /// not a heuristic about equal search output, is the terminal ceiling.
     fn detect_no_progress(&mut self) -> Option<LoopGuardAction> {
         if self.window.len() < NO_PROGRESS_MIN {
             return None;
         }
         let last = self.window.back()?;
+        // Class gate: only a read-only tool's result text is information
+        // the model did not already have; a mutating ack is not.
+        if last.class != ToolExecutionClass::ReadOnly {
+            return None;
+        }
         let matching: Vec<&ToolCallRecord> = self
             .window
             .iter()
@@ -486,16 +563,19 @@ impl LoopDetector {
             count,
             distinct_args,
         };
-        if count >= LOOP_WINDOW_SIZE {
-            Some(LoopGuardAction::Break(LoopBreak::new(
-                pattern,
-                format!(
-                    "no-progress, tool '{}', {count} differently-argued calls with \
-                     byte-identical results (window saturated)",
-                    last.name
-                ),
-            )))
+        let warned_same = matches!(
+            &self.warned,
+            Some(WarnState::NoProgress { name, result_hash })
+                if *name == last.name && *result_hash == last.result_hash
+        );
+        if warned_same {
+            // Repository investigation commonly tries several patterns that
+            // all yield no matches. Preserve the result and leave the turn
+            // running after its single advisory rather than manufacturing a
+            // failure from equal output.
+            None
         } else {
+            // First tier: corrective nudge appended to the real result.
             self.warned = Some(WarnState::NoProgress {
                 name: last.name.clone(),
                 result_hash: last.result_hash,
@@ -540,6 +620,9 @@ impl LoopDetector {
                 }
             }
             WarnState::NoProgress { name, result_hash } => {
+                // The advisory remains spent while its matching evidence is
+                // still in the bounded window, so one investigation cluster
+                // produces one nudge rather than flooding the transcript.
                 let count = self
                     .window
                     .iter()

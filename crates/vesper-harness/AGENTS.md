@@ -61,6 +61,11 @@ Z.ai and Playwright MCP server descriptors.
   never drift on store-open semantics again.
 - Durable roots are supplied by the composition boundary and default to the
   `.agent-vesper/` layout; no credentials are persisted by this crate.
+- `src/scope_holder.rs` resolves the shared VRO workspace scope once at host
+  boot. The TUI uses its default writing stamp policy; ACP must pass
+  `StampPolicy::ReadOnly` unless `AGENT_VESPER_ENABLE_SCOPE_STAMP=1`, so an
+  editor-spawned process never creates `.vesper-scope-id` in a project by
+  default. The policy changes persistence only, never the resolved id.
 - The service exposes the same hosted tool definitions and behavior to ACP and
   TUI, avoiding frontend-specific parity drift.
 - Provider-backed worker outcome rendering preserves partial content and the

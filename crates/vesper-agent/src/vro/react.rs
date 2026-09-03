@@ -506,7 +506,7 @@ pub async fn run_tool_grounded_react_with_trajectory(
                         if is_read_only {
                             has_read_evidence = true;
                         }
-                        match loop_detector.record(&name, &arguments, &text) {
+                        match loop_detector.record(&name, &arguments, &text, class) {
                             LoopGuardAction::Clear => {
                                 trajectory.push(TrajectoryEntry::Observation {
                                     text,
