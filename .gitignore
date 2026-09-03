@@ -19,6 +19,10 @@ Thumbs.db
 # Agent Vesper local user-state (memory, skills, checkpoints) — never committed.
 # These churn every session and are owned by the running agent, not the repo.
 .agent-vesper/
+# VRO-13 PR-5 scope-identity stamp: per-machine identity of the project
+# workspace, written by the host at boot. Not portable across checkouts
+# (derive-only hosts like the ACP never write it), so never committed.
+.vesper-scope-id
 .glm-acp/
 
 # Screenshot cache from the ACP image-share protocol
