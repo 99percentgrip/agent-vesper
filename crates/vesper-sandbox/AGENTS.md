@@ -44,6 +44,8 @@ through safe `std::process`.
 - Linux-only: `libc` is a dependency only under
   `[target.'cfg(target_os = "linux")']`. Off Linux the honest stub
   (`UnavailableBackend`) reports everything unavailable and fails closed.
+  The `sandbox_init` binary likewise compiles to an inert entry point off
+  Linux, so workspace-wide test builds never link Linux syscall symbols there.
 - Docker backend (VRO-13 PR-4) is **feature-gated** behind
   `--features docker`; default builds gain zero new dependencies. It wraps
   `docker run --rm -d` with `--cpus`/`--memory`/`--pids-limit` limits, a

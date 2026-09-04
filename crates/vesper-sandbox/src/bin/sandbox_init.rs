@@ -37,11 +37,15 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 #![deny(clippy::undocumented_unsafe_blocks)]
 
+#[cfg(target_os = "linux")]
 use std::ffi::CString;
 
 /// ASCII unit separator used by the run-line protocol.
+#[cfg(target_os = "linux")]
 const US: char = '\x1f';
 
+/// Linux namespace supervisor entry point.
+#[cfg(target_os = "linux")]
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let mode = args.first().map(String::as_str).unwrap_or_default();
@@ -61,12 +65,20 @@ fn main() {
     }
 }
 
+/// The supervisor has no implementation away from Linux. Keeping an inert
+/// executable target lets workspace-wide test builds exercise the honest
+/// library stub on those platforms without linking Linux syscalls.
+#[cfg(not(target_os = "linux"))]
+fn main() {}
+
 /// Parsed `hold` arguments.
+#[cfg(target_os = "linux")]
 struct HoldArgs {
     root: CString,
     env: Vec<(CString, CString)>,
 }
 
+#[cfg(target_os = "linux")]
 impl HoldArgs {
     fn parse(args: &[String]) -> Result<Self, String> {
         let mut root: Option<CString> = None;
@@ -107,6 +119,7 @@ impl HoldArgs {
     }
 }
 
+#[cfg(target_os = "linux")]
 mod sys {
     //! Raw syscall wrappers. Every `unsafe` block carries a `SAFETY:` comment
     //! stating the invariant that makes the FFI call sound at that point.
@@ -438,7 +451,7 @@ mod sys {
 
 /// Unit test for the run-line parser lives behind `#[cfg(test)]` so the
 /// supervisor binary carries its own protocol regression check.
-#[cfg(test)]
+#[cfg(all(test, target_os = "linux"))]
 mod tests {
     use super::US;
 
