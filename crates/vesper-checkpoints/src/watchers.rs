@@ -526,13 +526,18 @@ mod tests {
         (temp, store)
     }
 
+    fn path_target(temp: &TempDir, name: &str) -> String {
+        temp.path().join(name).to_string_lossy().into_owned()
+    }
+
     #[test]
     fn register_persists_across_reopen() {
         let (temp, store) = store();
+        let target = path_target(&temp, "watched.log");
         let entry = store
             .register(
                 "scope-ab12",
-                "/tmp/watched.log",
+                &target,
                 WatcherTargetKind::Path,
                 "ERROR",
                 None,
@@ -548,11 +553,12 @@ mod tests {
 
     #[test]
     fn regex_metacharacters_are_rejected() {
-        let (_temp, store) = store();
+        let (temp, store) = store();
+        let target = path_target(&temp, "f");
         for pattern in ["a.*b", "ERROR (code", "x[0-9]y", "a{2,3}", "p|q", "a\\w"] {
             assert!(
                 store
-                    .register("s", "/tmp/f", WatcherTargetKind::Path, pattern, None)
+                    .register("s", &target, WatcherTargetKind::Path, pattern, None)
                     .is_err(),
                 "pattern `{pattern}` must be rejected"
             );
@@ -561,10 +567,11 @@ mod tests {
 
     #[test]
     fn anchors_are_allowed_and_honored() {
-        let (_temp, store) = store();
+        let (temp, store) = store();
+        let target = path_target(&temp, "f");
         assert!(
             store
-                .register("s", "/tmp/f", WatcherTargetKind::Path, "^ERROR$", None)
+                .register("s", &target, WatcherTargetKind::Path, "^ERROR$", None)
                 .is_ok()
         );
         assert!(watcher_pattern_matches_line("^ERROR$", "ERROR"));
@@ -577,9 +584,10 @@ mod tests {
 
     #[test]
     fn rate_limit_requires_sixty_seconds_between_fires() {
-        let (_temp, store) = store();
+        let (temp, store) = store();
+        let target = path_target(&temp, "f");
         let entry = store
-            .register("s", "/tmp/f", WatcherTargetKind::Path, "ERROR", None)
+            .register("s", &target, WatcherTargetKind::Path, "ERROR", None)
             .unwrap();
         let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000);
         assert!(entry.may_fire_at(t0));
@@ -591,9 +599,10 @@ mod tests {
 
     #[test]
     fn failure_streak_pauses_the_watcher() {
-        let (_temp, store) = store();
+        let (temp, store) = store();
+        let target = path_target(&temp, "f");
         let entry = store
-            .register("s", "/tmp/f", WatcherTargetKind::Path, "ERROR", None)
+            .register("s", &target, WatcherTargetKind::Path, "ERROR", None)
             .unwrap();
         let t = SystemTime::UNIX_EPOCH;
         for attempt in 1..=MAX_WATCHER_RETRIES {
@@ -663,15 +672,33 @@ mod tests {
 
     #[test]
     fn scope_filter_lists_only_bound_watchers() {
-        let (_temp, store) = store();
+        let (temp, store) = store();
         store
-            .register("scope-a", "/tmp/a", WatcherTargetKind::Path, "ERROR", None)
+            .register(
+                "scope-a",
+                &path_target(&temp, "a"),
+                WatcherTargetKind::Path,
+                "ERROR",
+                None,
+            )
             .unwrap();
         store
-            .register("scope-b", "/tmp/b", WatcherTargetKind::Path, "ERROR", None)
+            .register(
+                "scope-b",
+                &path_target(&temp, "b"),
+                WatcherTargetKind::Path,
+                "ERROR",
+                None,
+            )
             .unwrap();
         store
-            .register("scope-a", "/tmp/c", WatcherTargetKind::Path, "ERROR", None)
+            .register(
+                "scope-a",
+                &path_target(&temp, "c"),
+                WatcherTargetKind::Path,
+                "ERROR",
+                None,
+            )
             .unwrap();
         assert_eq!(store.list_for_scope("scope-a").len(), 2);
         assert_eq!(store.list_for_scope("scope-b").len(), 1);
@@ -680,12 +707,12 @@ mod tests {
 
     #[test]
     fn watcher_capacity_is_bounded() {
-        let (_temp, store) = store();
+        let (temp, store) = store();
         for index in 0..MAX_WATCHERS {
             store
                 .register(
                     "s",
-                    &format!("/tmp/f{index}"),
+                    &path_target(&temp, &format!("f{index}")),
                     WatcherTargetKind::Path,
                     "ERROR",
                     None,
@@ -694,16 +721,23 @@ mod tests {
         }
         assert!(
             store
-                .register("s", "/tmp/overflow", WatcherTargetKind::Path, "ERROR", None)
+                .register(
+                    "s",
+                    &path_target(&temp, "overflow"),
+                    WatcherTargetKind::Path,
+                    "ERROR",
+                    None,
+                )
                 .is_err()
         );
     }
 
     #[test]
     fn forget_is_idempotent() {
-        let (_temp, store) = store();
+        let (temp, store) = store();
+        let target = path_target(&temp, "f");
         let entry = store
-            .register("s", "/tmp/f", WatcherTargetKind::Path, "ERROR", None)
+            .register("s", &target, WatcherTargetKind::Path, "ERROR", None)
             .unwrap();
         assert!(store.forget(&entry.id).unwrap());
         assert!(!store.forget(&entry.id).unwrap());
