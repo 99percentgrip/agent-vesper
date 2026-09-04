@@ -28,7 +28,7 @@ exclude = ["spikes/*"]
 resolver = "3"
 
 [workspace.package]
-version = "0.20.81"
+version = "0.20.82"
 authors = ["Aleksejs Kozlitins"]
 edition = "2024"
 rust-version = "1.88"
