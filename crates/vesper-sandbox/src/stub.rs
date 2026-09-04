@@ -18,7 +18,8 @@ use crate::{
 #[derive(Debug, Default)]
 pub struct UnavailableBackend;
 
-fn caps() -> SandboxCapabilities {
+/// Returns the platform's honest all-unavailable capability report.
+pub(crate) fn unavailable_caps() -> SandboxCapabilities {
     SandboxCapabilities {
         backend: "unavailable-stub".to_owned(),
         process_tree: CapabilityStatus::Unavailable,
@@ -32,14 +33,14 @@ impl UnavailableBackend {
     fn denial(requirement: IsolationRequirement) -> SandboxError {
         SandboxError::CapabilityUnavailable {
             requirement,
-            capabilities: caps(),
+            capabilities: unavailable_caps(),
         }
     }
 }
 
 impl SandboxBackend for UnavailableBackend {
     fn capabilities(&self) -> SandboxCapabilities {
-        caps()
+        unavailable_caps()
     }
 
     fn provision<'a>(
