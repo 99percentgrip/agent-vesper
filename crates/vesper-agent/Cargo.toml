@@ -26,17 +26,17 @@ thiserror.workspace = true
 tokio = { workspace = true, features = ["net", "io-util"] }
 tracing.workspace = true
 uuid.workspace = true
-vesper-domain = { path = "../vesper-domain", version = "=0.20.79" }
+vesper-domain = { path = "../vesper-domain", version = "=0.20.80" }
 # VRO-13 PR-2: the shell executor consults the pure firewall (policy crate
 # owns the scan; the executor only maps Deny to a ToolError). Dependency
 # direction is agent → policy, both below the composition boundary.
 # PR-4: the same executor consults vesper-security's fail-closed capability
 # gate before provisioning a scope-demanded sandbox (capability *types*
 # only; the backend itself stays at the composition boundary).
-vesper-policy = { path = "../vesper-policy", version = "=0.20.79" }
-vesper-security = { path = "../vesper-security", version = "=0.20.79" }
-vesper-provider = { path = "../vesper-provider", version = "=0.20.79" }
-vesper-runtime = { path = "../vesper-runtime", version = "=0.20.79" }
+vesper-policy = { path = "../vesper-policy", version = "=0.20.80" }
+vesper-security = { path = "../vesper-security", version = "=0.20.80" }
+vesper-provider = { path = "../vesper-provider", version = "=0.20.80" }
+vesper-runtime = { path = "../vesper-runtime", version = "=0.20.80" }
 
 [dev-dependencies]
 # VRO-9 (Directive 3): live HTTP integration tests for the ReAct loop drive
@@ -46,7 +46,7 @@ vesper-runtime = { path = "../vesper-runtime", version = "=0.20.79" }
 reqwest.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
-vesper-testkit = { path = "../vesper-testkit", version = "=0.20.79" }
+vesper-testkit = { path = "../vesper-testkit", version = "=0.20.80" }
 
 [lints]
 workspace = true
