@@ -1148,9 +1148,11 @@ fn embed_to_blob(embedding: &[f32]) -> Vec<u8> {
 }
 
 fn blob_to_embed(blob: &[u8]) -> Vec<f32> {
-    blob.chunks_exact(4)
+    blob.as_chunks::<4>()
+        .0
+        .iter()
         .map(|chunk| {
-            let arr: [u8; 4] = chunk.try_into().unwrap_or([0; 4]);
+            let arr: [u8; 4] = *chunk;
             f32::from_le_bytes(arr)
         })
         .collect()
