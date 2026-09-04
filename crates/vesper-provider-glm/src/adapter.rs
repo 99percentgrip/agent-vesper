@@ -88,6 +88,10 @@ impl GlmSession {
 }
 
 impl ProviderSession for GlmSession {
+    fn auxiliary(&self) -> Option<&dyn vesper_provider::AuxiliaryRequestPort> {
+        Some(self)
+    }
+
     fn start<'a>(
         &'a self,
         request: ProviderRequest,

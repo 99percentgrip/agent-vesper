@@ -44,6 +44,10 @@ Own accepted, durable architecture and compatibility decisions for Agent Vesper.
   code; all namespace/mount/fork/`execve` raw syscalls live only in the
   `sandbox_init` supervisor binary, and every capability is probed and
   reported honestly, never assumed.
+- ADR 0023 defines provider-neutral semantic context compaction shared by both
+  hosts and all direct/VRO execution paths, including transactional history
+  replacement, token pressure, auxiliary fallback, security, persistence,
+  and quality lineage.
 
 ## Verification
 

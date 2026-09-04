@@ -571,6 +571,9 @@ pub fn serialize_auxiliary_request(
     body.remove("tool_stream");
     body.remove("tool_choice");
     body.insert("thinking".into(), json!({"type": "disabled"}));
+    if let Some(auxiliary_model) = &config.auxiliary_model {
+        body.insert("model".into(), json!(auxiliary_model.as_str()));
+    }
     let maximum = body
         .get("max_tokens")
         .and_then(Value::as_u64)
@@ -727,10 +730,15 @@ mod tests {
 
     #[test]
     fn auxiliary_is_bounded_and_disables_thinking_and_streaming() {
-        let body = serialize_auxiliary_request(&base_request(), &GlmConfig::default()).unwrap();
+        let config = GlmConfig {
+            auxiliary_model: Some(vesper_domain::ModelId::new("glm-5.2").unwrap()),
+            ..GlmConfig::default()
+        };
+        let body = serialize_auxiliary_request(&base_request(), &config).unwrap();
         assert_eq!(body["stream"], false);
         assert_eq!(body["thinking"], json!({"type": "disabled"}));
         assert_eq!(body["max_tokens"], 1_024);
+        assert_eq!(body["model"], "glm-5.2");
         assert!(body.get("stream_options").is_none());
     }
 

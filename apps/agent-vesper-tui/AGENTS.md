@@ -533,6 +533,11 @@ business logic.
   while older plan items remain open. If the ultimate cap is reached, status,
   transcript, telemetry, and worker rendering must identify the stop rather
   than imply completion.
+- The LM Studio-backed Tool-Grounded ReAct adviser may receive bounded prior
+  conversation context only when LM Studio is also the acting provider. For a
+  different acting provider it receives the current request only; compaction
+  must never widen that established disclosure into cross-provider transcript
+  disclosure.
 - The optional per-turn iteration cap defaults to disabled. `/max-iterations
   enable` restores 50, `/max-iterations disable` removes the user cap, and an
   explicit `1-1000` sets it; none of these removes the ultimate safety ceiling.
@@ -590,6 +595,12 @@ business logic.
 - Persisted TUI search uses the bounded `vesper-sessions` linear search port;
   its projection contains only user/assistant text and is atomically
   replaced. SQLite/FTS indexes are intentionally absent.
+- `/compact [focus]` invokes the shared semantic compactor asynchronously;
+  it never hides or deletes the human-visible transcript. Direct and VRO
+  turns auto-compact at the shared token-pressure threshold using the selected
+  model's catalog window. Persisted state separates display transcript from
+  provider-working history and retains pressure, latest report, and bounded
+  quality lineage; a 15-point coverage regression is surfaced visibly.
 - `AGENT_VESPER_TELEMETRY` opt-in enables the secret-safe trajectory recorder;
   prompts, tool payloads, reasoning, paths, commands, and credentials are
   excluded from JSONL events.

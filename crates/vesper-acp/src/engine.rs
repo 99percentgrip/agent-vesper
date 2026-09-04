@@ -171,7 +171,7 @@ impl std::fmt::Debug for AcpPromptRequest {
 
 /// Normalized final result. Streaming engines may emit their own updates in
 /// a future extension; the initial boundary remains bounded and deterministic.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct AcpPromptResult {
     /// Final assistant text to publish as one ACP message chunk.
     pub text: String,
@@ -179,10 +179,14 @@ pub struct AcpPromptResult {
     pub cancelled: bool,
     /// Whether the adapter should persist this turn into the session record.
     /// Slash-command turns set `false`: the frozen oracle echoes them to the
-    /// UI but never adds them to model-visible history or the persisted
-    /// session (fixtures/acp/slash-command expects unchanged file hashes
-    /// across a slash turn).
+    /// UI but does not append their text to model-visible history. A stateful
+    /// command may instead provide `history_replacement`, which is committed
+    /// without persisting the slash prompt/response pair.
     pub persist_turn: bool,
+    /// Validated provider-working history replacement (normally produced by
+    /// automatic or manual compaction). When present, the adapter commits it
+    /// atomically instead of reconstructing the turn from display text.
+    pub history_replacement: Option<Vec<ConversationMessage>>,
 }
 
 /// Optional full-harness prompt engine.

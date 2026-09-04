@@ -119,8 +119,8 @@ pub enum CommandOutcome {
     // === Tier C Phase 7 (ADR 0010) — context mutations ===
     /// `/clear-plan`, `/clear-history` — clear Plan Mode back to NORMAL.
     ClearPlan,
-    /// `/compact [N]` — drop all but the last `keep` transcript lines.
-    Compact { keep: usize },
+    /// `/compact [focus]` — transactionally summarize older provider context.
+    Compact { focus: Option<String> },
 
     // === Tier C Phase 7 (ADR 0010) — context views ===
     /// Read-only view of session state. The dispatch surface inspects
@@ -935,10 +935,9 @@ impl CommandRegistry {
 
             // === Phase 7 — context mutations ===
             "clear-plan" | "clear-history" => CommandOutcome::ClearPlan,
-            "compact" => {
-                let keep = parse_compact_keep(argument);
-                CommandOutcome::Compact { keep }
-            }
+            "compact" => CommandOutcome::Compact {
+                focus: (!argument.trim().is_empty()).then(|| argument.trim().to_owned()),
+            },
 
             // === Phase 7 — context views ===
             "recap" => CommandOutcome::ContextView(ViewKind::Recap),
@@ -1708,7 +1707,7 @@ impl CommandRegistry {
         buffer.push_str("  /clear-view        clear the visible transcript\n");
         buffer.push_str("  /clear-history     alias for /clear-plan\n");
         buffer.push_str(
-            "  /compact [N]       drop all but the last N transcript lines (default 20)\n",
+            "  /compact [focus]   summarize older provider context; optionally state what to preserve\n",
         );
         buffer.push_str("  /recap             one-line session summary\n");
         buffer.push_str("  /context           context-window usage by segment\n");
@@ -1834,19 +1833,6 @@ pub(crate) fn parse_reasoning_mode(value: &str) -> Option<vesper_domain::Reasoni
         "maximum" | "max" => Some(ReasoningMode::Maximum),
         "off" => Some(ReasoningMode::Off),
         _ => None,
-    }
-}
-
-/// Parses the optional keep-count for `/compact [N]`. Defaults to 20 (the
-/// oracle's compact default keeps a reasonable recent window). Bounded to
-/// `[0, 1000]` so a typo can't drain the whole transcript silently.
-fn parse_compact_keep(argument: &str) -> usize {
-    if argument.trim().is_empty() {
-        return 20;
-    }
-    match argument.trim().parse::<usize>() {
-        Ok(n) => n.min(1000),
-        Err(_) => 20,
     }
 }
 
@@ -2965,11 +2951,11 @@ mod tests {
     }
 
     #[test]
-    fn phase7_compact_defaults_to_20_and_parses_argument() {
+    fn phase7_compact_accepts_optional_semantic_focus() {
         let registry = CommandRegistry::stage_11b();
         let plan_state = PlanState::default();
         let provider = provider();
-        // Bare /compact → keep 20.
+        // Bare /compact → balanced summary.
         let outcome = registry.resolve(
             &CommandIntent::Slash {
                 name: "compact".into(),
@@ -2979,31 +2965,24 @@ mod tests {
             &provider,
             &[],
         );
-        assert_eq!(outcome, CommandOutcome::Compact { keep: 20 });
+        assert_eq!(outcome, CommandOutcome::Compact { focus: None });
 
-        // /compact 5 → keep 5.
+        // Arguments are focus text, never destructive retention counts.
         let outcome = registry.resolve(
             &CommandIntent::Slash {
                 name: "compact".into(),
-                argument: "5".into(),
+                argument: "focus on tests and remaining TODOs".into(),
             },
             &plan_state,
             &provider,
             &[],
         );
-        assert_eq!(outcome, CommandOutcome::Compact { keep: 5 });
-
-        // /compact bogus → falls back to 20.
-        let outcome = registry.resolve(
-            &CommandIntent::Slash {
-                name: "compact".into(),
-                argument: "bogus".into(),
-            },
-            &plan_state,
-            &provider,
-            &[],
+        assert_eq!(
+            outcome,
+            CommandOutcome::Compact {
+                focus: Some("focus on tests and remaining TODOs".into())
+            }
         );
-        assert_eq!(outcome, CommandOutcome::Compact { keep: 20 });
     }
 
     #[test]

@@ -26,6 +26,10 @@ provider turns, and acceptance of pure converted session state.
 - A composed external multi-turn engine may commit a completed visible turn
   through `accept_external_turn`; the actor remains the sole owner of history
   and the existing injected writer remains the only persistence path.
+- A composed engine may atomically install a validated compacted working
+  history through `replace_history` only while no turn is active. The actor
+  increments revision and the existing injected writer remains the sole
+  persistence path; the runtime never interprets compaction metadata.
 - Freshly created sessions carry a default endpoint identity supplied by the
   composition boundary through `RuntimeDefaults.endpoint`, so the converted
   record is always persistable; the runtime is provider-neutral and never

@@ -46,9 +46,11 @@ update mapping, and bounded asynchronous dispatch into `vesper-runtime`.
   ordering). With an injected prompt engine, `/`-prefixed prompts route to
   the engine, which owns catalog execution; without an engine they fail
   closed with `-32601` instead of dispatching the provider. Slash turns
-  report `AcpPromptResult.persist_turn == false` and are never appended to
-  persisted sessions (the `acp.slash-command` fixture expects unchanged
-  file hashes).
+  report `AcpPromptResult.persist_turn == false` and are not appended as
+  user/assistant turns (the `acp.slash-command` fixture expects unchanged
+  file hashes). A validated `/compact` result is the narrow exception:
+  `history_replacement` atomically replaces provider-working history and is
+  saved without persisting the slash text itself.
 - `AcpEngineEvent`/`AcpEventSink` are the streaming-engine vocabulary
   (`ReasoningDelta`, `ContentDelta`, `ToolStarted`, `ToolFinished`, `Usage`,
   `PlanUpdated`); the adapter sink maps each to the same wire shape the
@@ -104,6 +106,10 @@ update mapping, and bounded asynchronous dispatch into `vesper-runtime`.
   pre-sanitized, bounded, actionable classifications; the adapter preserves
   that safe reason in ACP error data instead of flattening every failure to a
   generic `harness engine failed` message.
+- `AcpPromptResult.history_replacement` carries a validated full working-set
+  replacement from semantic compaction. The adapter commits it through the
+  runtime actor before saving/responding; absent replacement retains ordinary
+  `persist_turn` behavior.
 - `vro_events.rs` (VRO-10, PRD §16) owns the VRO status-event vocabulary
   surfacing orchestrator phase transitions to upstream ACP clients. The
   `VroEvent` enum mirrors the 13 PRD §16 event names (`reasoning.profiled`,

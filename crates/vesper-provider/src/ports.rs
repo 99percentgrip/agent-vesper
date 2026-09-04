@@ -198,6 +198,15 @@ pub trait ProviderCredentialPort: Send + Sync {
 
 /// Scoped provider transport/session port.
 pub trait ProviderSession: Send + Sync {
+    /// Optional bounded auxiliary-request surface implemented by this same
+    /// scoped session.  Keeping this opt-in lets the provider-neutral agent
+    /// use a provider's purpose-built compaction path without requiring every
+    /// adapter to implement auxiliary inference; callers may fall back to an
+    /// ordinary tool-disabled turn when it is absent.
+    fn auxiliary(&self) -> Option<&dyn AuxiliaryRequestPort> {
+        None
+    }
+
     /// Starts one ordered response stream.
     fn start<'a>(
         &'a self,

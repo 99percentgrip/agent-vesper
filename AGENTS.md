@@ -130,6 +130,13 @@ When the user requests a durable behavior change, record it here or in the relev
   output and session history. Automatic recovery is bounded and permitted
   only when no ambiguous tool-call fragment exists; neither host may replay a
   possibly side-effecting tool call.
+- Context compaction is token-pressure driven against the active provider
+  model's advertised window, transactional, and shared by direct, VRO, TUI,
+  and ACP paths. It preserves system instructions and complete recent tool
+  transactions, persists summary lineage/quality metadata, keeps the TUI's
+  human-visible transcript intact, and fails closed before dispatch when the
+  minimum safe suffix cannot fit. Manual `/compact [focus]` is semantic, not
+  a message-count truncation control.
 - Users must not have to babysit an active native plan with repeated
   "continue" prompts. A normal provider stop or an ordinary iteration-segment
   boundary while plan items remain open triggers bounded autonomous

@@ -143,6 +143,7 @@ fn config(provider_id: &ProviderId, max_iterations: u32) -> AgentLoopConfig {
             provider_id: provider_id.clone(),
             model_id: vesper_domain::ModelId::new("fixture-model").unwrap(),
         },
+        context_window_tokens: 131_072,
         system_instructions: Vec::new(),
         workspace_roots: Vec::new(),
         max_tool_iterations: max_iterations,
@@ -151,6 +152,124 @@ fn config(provider_id: &ProviderId, max_iterations: u32) -> AgentLoopConfig {
         firewall: None,
         sandbox: None,
     }
+}
+
+fn indexed_message(index: usize, role: MessageRole, text: &str) -> ConversationMessage {
+    ConversationMessage {
+        id: MessageId::new(format!("history-{index}")).unwrap(),
+        role,
+        content: vec![ContentPart::Text(ContentText::new(text).unwrap())],
+        extensions: ExtensionMap::default(),
+    }
+}
+
+#[tokio::test]
+async fn pressure_compacts_before_dispatch_and_emits_a_report() {
+    let provider_id = provider();
+    let fake = FakeProviderSession::with_scripts([
+        Ok(vec![
+            Ok(content_delta(
+                "## Goal\ncontinue implementation\n## Verification\ntests pending",
+            )),
+            Ok(completed(FinishOutcome::Stop)),
+        ]),
+        Ok(vec![
+            Ok(content_delta("completed after compaction")),
+            Ok(completed(FinishOutcome::Stop)),
+        ]),
+    ]);
+    let recorded = fake.clone();
+    let registry = Arc::new(ProviderRegistry::new());
+    registry
+        .register(FakeFactory {
+            id: provider_id.clone(),
+            session: fake,
+        })
+        .await
+        .unwrap();
+    let progress = Arc::new(RecordingProgressPort::default());
+    let mut loop_config = config(&provider_id, 10);
+    loop_config.context_window_tokens = 5_000;
+    let agent = AgentLoop::new(registry, ToolRegistry::parity_default(), loop_config)
+        .with_progress_port(progress.clone());
+    let history = (0..8)
+        .map(|index| {
+            indexed_message(
+                index,
+                if index % 2 == 0 {
+                    MessageRole::User
+                } else {
+                    MessageRole::Assistant
+                },
+                &format!("goal implementation {}", "x".repeat(2_000)),
+            )
+        })
+        .collect();
+
+    let (outcome, compacted) = agent
+        .run_prompt_with_history(
+            history,
+            SessionOperatingMode::Code,
+            SessionPermissionMode::Ask,
+        )
+        .await
+        .expect("automatic compaction should create enough headroom");
+
+    assert!(matches!(outcome, AgentTurnOutcome::Completed { .. }));
+    assert!(compacted[0].id.as_str().starts_with("compaction-"));
+    let requests = recorded.requests();
+    assert_eq!(requests.len(), 2);
+    assert!(requests[0].tools.is_empty());
+    assert!(matches!(
+        requests[0].tool_choice,
+        vesper_provider::ToolChoice::None
+    ));
+    assert!(
+        progress
+            .events
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|event| matches!(event, AgentProgressEvent::CompactionCompleted { .. }))
+    );
+}
+
+#[tokio::test]
+async fn compaction_refuses_to_dispatch_when_complete_recent_suffix_cannot_fit() {
+    let provider_id = provider();
+    let fake = FakeProviderSession::with_scripts([Ok(vec![
+        Ok(content_delta("## Goal\ncontinue")),
+        Ok(completed(FinishOutcome::Stop)),
+    ])]);
+    let recorded = fake.clone();
+    let registry = Arc::new(ProviderRegistry::new());
+    registry
+        .register(FakeFactory {
+            id: provider_id.clone(),
+            session: fake,
+        })
+        .await
+        .unwrap();
+    let mut loop_config = config(&provider_id, 10);
+    loop_config.context_window_tokens = 5_000;
+    let history = (0..8)
+        .map(|index| indexed_message(index, MessageRole::User, &"x".repeat(5_000)))
+        .collect();
+
+    let error = AgentLoop::new(registry, ToolRegistry::parity_default(), loop_config)
+        .run_prompt_with_history(
+            history,
+            SessionOperatingMode::Code,
+            SessionPermissionMode::Ask,
+        )
+        .await
+        .expect_err("an oversized complete suffix must fail before the main turn");
+
+    assert!(matches!(
+        error,
+        AgentLoopError::ContextWindowExhausted { .. }
+    ));
+    assert_eq!(recorded.requests().len(), 1, "only the summary request ran");
 }
 
 #[tokio::test]

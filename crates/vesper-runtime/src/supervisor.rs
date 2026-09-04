@@ -572,6 +572,27 @@ impl RuntimeSupervisor {
         receiver.await.map_err(|_| RuntimeError::ChannelClosed)?
     }
 
+    /// Atomically replaces the provider-visible working history after a
+    /// validated semantic compaction. Full human-facing transcripts remain a
+    /// host concern; this method changes only the runtime context sent on the
+    /// next turn.
+    pub async fn replace_history(
+        &self,
+        id: &SessionId,
+        history: Vec<ConversationMessage>,
+    ) -> Result<(), RuntimeError> {
+        let handle = self.handle(id).await?;
+        let (sender, receiver) = oneshot::channel();
+        handle
+            .request(SessionCommand::ReplaceHistory {
+                history,
+                response: sender,
+            })
+            .await
+            .map_err(|_| RuntimeError::SessionNotFound(id.clone()))?;
+        receiver.await.map_err(|_| RuntimeError::ChannelClosed)?
+    }
+
     /// Transactionally persists a live session snapshot when a write path has
     /// been injected. Returns `Ok(None)` when persistence is not configured so
     /// callers can treat saving as optional without branching on injection.
@@ -991,6 +1012,10 @@ enum SessionCommand {
         assistant_content: Vec<ContentPart>,
         response: oneshot::Sender<Result<(), RuntimeError>>,
     },
+    ReplaceHistory {
+        history: Vec<ConversationMessage>,
+        response: oneshot::Sender<Result<(), RuntimeError>>,
+    },
     Cancel {
         turn_id: TurnId,
         response: oneshot::Sender<Result<(), RuntimeError>>,
@@ -1111,6 +1136,16 @@ impl SessionActor {
                             extensions: ExtensionMap::default(),
                         });
                     }
+                    self.increment_revision();
+                    Ok(())
+                };
+                let _ = response.send(result);
+            }
+            SessionCommand::ReplaceHistory { history, response } => {
+                let result = if self.state.active_turn.is_some() {
+                    Err(RuntimeError::TurnAlreadyActive)
+                } else {
+                    self.state.history = history;
                     self.increment_revision();
                     Ok(())
                 };

@@ -21,6 +21,7 @@
 //! verification.
 
 pub mod agent_loop;
+pub mod compaction;
 pub mod confinement;
 pub mod executor;
 pub mod permission;
@@ -36,7 +37,12 @@ pub mod vro;
 pub use agent_loop::{
     ABSOLUTE_MAX_TOOL_ITERATIONS, AgentLoop, AgentLoopConfig, AgentLoopError, AgentProgressEvent,
     AgentProgressPort, AgentSteeringPort, AgentTurnOutcome, DEFAULT_MAX_TOOL_ITERATIONS,
-    ENABLED_DEFAULT_MAX_TOOL_ITERATIONS, MAX_CONTEXT_MESSAGES,
+    ENABLED_DEFAULT_MAX_TOOL_ITERATIONS,
+};
+pub use compaction::{
+    AUTO_COMPACT_PERCENT, CONTEXT_PRESSURE_THRESHOLDS, CompactionCommit, CompactionError,
+    CompactionReason, CompactionReport, ContextPressure, RESPONSE_RESERVE_TOKENS,
+    estimate_context_tokens,
 };
 pub use executor::{
     HostedTool, ToolContext, ToolError, ToolExecutor, ToolFuture, ToolResult, ToolService,

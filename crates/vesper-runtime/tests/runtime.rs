@@ -2,9 +2,10 @@ use std::{fs, sync::Arc};
 
 use vesper_domain::{
     BoundedString, CommandId, CommandInitiator, CommandSchemaVersion, ContentPart, ContentText,
-    CorrelationId, EndpointId, EventSequence, ExtensionMap, FinishOutcome, HarnessCommand,
-    HarnessCommandPayload, MessageId, ModelId, PromptSubmission, ProviderId, QualifiedModelId,
-    SchemaVersion, SessionId, SessionListFilter, VersionedExtensionEnvelope, WorkspaceRoot,
+    ConversationMessage, CorrelationId, EndpointId, EventSequence, ExtensionMap, FinishOutcome,
+    HarnessCommand, HarnessCommandPayload, MessageId, MessageRole, ModelId, PromptSubmission,
+    ProviderId, QualifiedModelId, SchemaVersion, SessionId, SessionListFilter,
+    VersionedExtensionEnvelope, WorkspaceRoot,
 };
 use vesper_provider::{
     CancellationSignal, ProviderConfiguration, ProviderFactory, ProviderFuture, ProviderStreamEvent,
@@ -201,6 +202,33 @@ fn create(number: u64) -> HarnessCommand {
         },
         number,
     )
+}
+
+#[tokio::test]
+async fn validated_compaction_history_replaces_runtime_history_atomically() {
+    let runtime = runtime([]).await;
+    let RuntimeResponse::Session(created) = runtime.execute(create(1)).await.unwrap() else {
+        panic!("expected created session");
+    };
+    let before = runtime.snapshot(&created.session_id).await.unwrap();
+    let replacement = vec![ConversationMessage {
+        id: MessageId::new("compaction-covered-4").unwrap(),
+        role: MessageRole::User,
+        content: vec![ContentPart::Text(
+            ContentText::new("<agent-vesper-context-summary>state</agent-vesper-context-summary>")
+                .unwrap(),
+        )],
+        extensions: ExtensionMap::default(),
+    }];
+
+    runtime
+        .replace_history(&created.session_id, replacement.clone())
+        .await
+        .unwrap();
+
+    let after = runtime.snapshot(&created.session_id).await.unwrap();
+    assert_eq!(after.history, replacement);
+    assert!(after.revision.get() > before.revision.get());
 }
 
 #[tokio::test]

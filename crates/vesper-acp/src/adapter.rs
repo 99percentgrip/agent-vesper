@@ -1014,7 +1014,17 @@ async fn handle_request(
                             // (oracle parity: echoed to the UI, never appended
                             // to model-visible history or the persisted
                             // record). Model turns persist the full exchange.
-                            if result.persist_turn {
+                            if let Some(history) = result.history_replacement {
+                                if let Err(error) =
+                                    save_runtime.replace_history(&engine_session, history).await
+                                {
+                                    return responder.respond_with_error(sdk_runtime_error(error));
+                                }
+                                if let Err(error) = save_runtime.save_session(&engine_session).await
+                                {
+                                    return responder.respond_with_error(sdk_runtime_error(error));
+                                }
+                            } else if result.persist_turn {
                                 if let Err(error) = save_runtime
                                     .accept_external_turn(&engine_session, user, assistant_content)
                                     .await

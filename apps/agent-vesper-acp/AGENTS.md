@@ -103,6 +103,10 @@ transport, stderr-only tracing, and orderly shutdown.
   `max_context_length` for `lmstudio` (conservative 8K floor when
   unadvertised; never GLM's 1M for a local model) — so the Zed token
   counter (`usage_update`) sizes against the selected model.
+  The engine uses that same per-provider/model map for manual and automatic
+  compaction after live footer switches, shares pressure-tier notification
+  state across successive requests, and streams compaction and quality
+  warnings through ordinary ACP updates.
   `tests/provider_selection.rs` is `integration-test-harness`-gated: the
   synthetic boot token it uses exists only under that feature.
   The engine executes the 28-command oracle slash catalog in-process
@@ -131,8 +135,10 @@ transport, stderr-only tracing, and orderly shutdown.
   no-integration error for providers without one); `/diff` and `/release`
   replace the prompt with the TUI's workflow text and drive one real agent
   turn. Slash turns report `persist_turn == false` and never enter
-  conversation history or persisted records — except the `/diff` and
-  `/release` workflow turns, which persist like ordinary prompts. The
+  conversation history as slash text. `/compact [focus]` is the additional
+  stateful exception: it installs and persists the validated semantic history
+  replacement; `/diff` and `/release` workflow turns persist like ordinary
+  prompts. The
   engine's progress port pairs tool started/finished events by the most
   recently issued id per tool name, forwards bounded filesystem-change
   metadata to the ACP adapter, and records the latest per-session plan

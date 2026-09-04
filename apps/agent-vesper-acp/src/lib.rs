@@ -52,6 +52,12 @@ where
 
     let profile = ProviderProfile::for_identity(&provider)?;
     let qualified_model = runtime_model(&profile.model, &provider);
+    let context_windows = context_window_catalog(
+        &provider,
+        &profile.model,
+        controls::glm_context_window(&profile.provider_configuration),
+        &[],
+    );
     let session_reads = session_reads_from_environment(&qualified_model).map_err(|_| ())?;
     let session_writes = session_writes_from_environment().map_err(|_| ())?;
     let runtime = RuntimeSupervisor::new(
@@ -90,6 +96,7 @@ where
             provider_id: provider.clone(),
             provider_configuration: profile.provider_configuration.clone(),
             model: qualified_model,
+            context_window_tokens: controls::glm_context_window(&profile.provider_configuration),
             system_instructions: Vec::new(),
             workspace_roots: Vec::new(),
             max_tool_iterations: vesper_agent::DEFAULT_MAX_TOOL_ITERATIONS,
@@ -118,6 +125,7 @@ where
             hosted,
             open_cognition_bundle(provider.as_str()).await,
             vro_orchestrator(),
+            context_windows,
         ));
         adapter.with_prompt_engine(engine)
     } else {
@@ -267,6 +275,13 @@ struct AcpHarnessEngine {
     /// Latest agent plan markdown per session (`/clear-plan` resets it and
     /// republishes an empty plan so ACP clients clear their plan panel).
     plans: Arc<std::sync::Mutex<BTreeMap<vesper_domain::SessionId, String>>>,
+    /// Exact provider-catalog context limits keyed by acting provider/model.
+    /// Missing native metadata deliberately falls back to a conservative
+    /// floor instead of borrowing another provider's larger window.
+    context_windows: BTreeMap<(String, String), u64>,
+    /// Per-session pressure tier notification state shared across prompt-loop
+    /// instances (the ACP engine constructs a fresh loop for each request).
+    pressure_levels: Mutex<BTreeMap<vesper_domain::SessionId, Arc<std::sync::atomic::AtomicU8>>>,
 }
 
 #[derive(Debug)]
@@ -311,6 +326,7 @@ impl AcpHarnessEngine {
         hosted: Arc<HarnessToolService>,
         cognition: cognition::CognitionBundle,
         vro: vesper_agent::VroOrchestrator,
+        context_windows: BTreeMap<(String, String), u64>,
     ) -> Self {
         Self {
             registry,
@@ -323,7 +339,29 @@ impl AcpHarnessEngine {
             cancellations: Mutex::new(BTreeMap::new()),
             overrides: Mutex::new(BTreeMap::new()),
             plans: Arc::new(std::sync::Mutex::new(BTreeMap::new())),
+            context_windows,
+            pressure_levels: Mutex::new(BTreeMap::new()),
         }
+    }
+
+    fn context_window_for(&self, provider: &ProviderId, model: &ModelId) -> u64 {
+        self.context_windows
+            .get(&(provider.as_str().to_owned(), model.as_str().to_owned()))
+            .copied()
+            .unwrap_or(8_192)
+    }
+
+    async fn pressure_state(
+        &self,
+        session_id: &vesper_domain::SessionId,
+    ) -> Arc<std::sync::atomic::AtomicU8> {
+        Arc::clone(
+            self.pressure_levels
+                .lock()
+                .await
+                .entry(session_id.clone())
+                .or_insert_with(|| Arc::new(std::sync::atomic::AtomicU8::new(0))),
+        )
     }
 
     /// Effective VRO mode for a session: a `/reasoning set mode=` override
@@ -404,22 +442,60 @@ impl AcpHarnessEngine {
                 }) as Arc<dyn vesper_agent::PermissionPort>
             })
             .unwrap_or_else(|| Arc::new(vesper_agent::DenyPermissionPort));
+        let progress: Arc<dyn vesper_agent::AgentProgressPort> = Arc::new(AcpEngineProgressPort {
+            sink: request.event_sink.clone(),
+            tool_seq: std::sync::atomic::AtomicU64::new(0),
+            outstanding: std::sync::Mutex::new(BTreeMap::new()),
+            session_id: request.session_id.clone(),
+            plans: self.plans_shared(),
+        });
+        let pressure_state = self.pressure_state(&request.session_id).await;
         let loop_engine = vesper_agent::AgentLoop::new(
             Arc::clone(&self.registry),
             hosted.build_default_registry(),
             config,
         )
         .with_active_plan(self.active_plan(&request.session_id))
+        .with_context_pressure_state(pressure_state)
         .with_permission_port(permission_port)
-        .with_progress_port(Arc::new(AcpEngineProgressPort {
-            sink: request.event_sink.clone(),
-            tool_seq: std::sync::atomic::AtomicU64::new(0),
-            outstanding: std::sync::Mutex::new(BTreeMap::new()),
-            session_id: request.session_id.clone(),
-            plans: self.plans_shared(),
-        }));
+        .with_progress_port(Arc::clone(&progress));
+        let history = self
+            .histories
+            .lock()
+            .await
+            .get(&request.session_id)
+            .cloned()
+            .unwrap_or_default();
+        let capacity = loop_engine.configuration().context_window_tokens;
+        let reserve =
+            vesper_agent::RESPONSE_RESERVE_TOKENS.min(capacity.saturating_div(10).max(256));
+        let used = vesper_agent::estimate_context_tokens(
+            &loop_engine.configuration().system_instructions,
+            &history,
+        )
+        .saturating_add(reserve);
+        if capacity > 0 && used.saturating_mul(100) >= capacity.saturating_mul(85) {
+            let commit = loop_engine
+                .compact_history(history, None)
+                .await
+                .map_err(|error| format!("VRO context compaction failed safely: {error}"))?;
+            progress.emit(vesper_agent::AgentProgressEvent::CompactionCompleted {
+                report: Box::new(commit.report.clone()),
+            });
+            self.histories
+                .lock()
+                .await
+                .insert(request.session_id.clone(), commit.history);
+        }
         let generator = AcpCandidateGenerator {
             agent: loop_engine.clone(),
+            history: self
+                .histories
+                .lock()
+                .await
+                .get(&request.session_id)
+                .cloned()
+                .unwrap_or_default(),
         };
         let reasoning_request = ReasoningRequest {
             request_id: RequestId::new(format!("acp-vro-{}", next_engine_id()))
@@ -509,14 +585,14 @@ impl AcpHarnessEngine {
             extensions: ExtensionMap::default(),
         };
         let mut histories = self.histories.lock().await;
-        histories
-            .entry(request.session_id.clone())
-            .or_default()
-            .push(assistant);
+        let history = histories.entry(request.session_id.clone()).or_default();
+        history.push(assistant);
+        let history_replacement = Some(history.clone());
         Ok(AcpPromptResult {
             text: content,
             cancelled: false,
             persist_turn: true,
+            history_replacement,
         })
     }
 
@@ -539,6 +615,7 @@ impl AcpHarnessEngine {
                 text,
                 cancelled: false,
                 persist_turn: true,
+                history_replacement: None,
             });
         }
         // Slash commands either answer in-process (never dispatched, never
@@ -667,6 +744,8 @@ impl AcpHarnessEngine {
                 }
             }
         }
+        config.context_window_tokens =
+            self.context_window_for(&config.provider_id, &config.model.model_id);
         if !request.workspace_roots.is_empty() {
             config.workspace_roots = request.workspace_roots.clone();
         }
@@ -732,12 +811,14 @@ impl AcpHarnessEngine {
                     vesper_provider::ModelCapabilityIndex::empty(),
                 ))
             };
+        let pressure_state = self.pressure_state(&request.session_id).await;
         let loop_engine = vesper_agent::AgentLoop::new(
             Arc::clone(&self.registry),
             hosted.build_default_registry(),
             config,
         )
         .with_active_plan(self.active_plan(&request.session_id))
+        .with_context_pressure_state(pressure_state)
         .with_permission_port(permission_port)
         .with_capability_advisor(capability_advisor, capability_context)
         .with_progress_port(Arc::new(AcpEngineProgressPort {
@@ -773,6 +854,7 @@ impl AcpHarnessEngine {
                 text: String::new(),
                 cancelled: true,
                 persist_turn: true,
+                history_replacement: None,
             });
         }
         let (outcome, history) = run_result.map_err(|error| {
@@ -793,11 +875,12 @@ impl AcpHarnessEngine {
         self.histories
             .lock()
             .await
-            .insert(request.session_id, history);
+            .insert(request.session_id, history.clone());
         Ok(AcpPromptResult {
             text: outcome_text(&outcome),
             cancelled: false,
             persist_turn: true,
+            history_replacement: Some(history),
         })
     }
 
@@ -821,6 +904,7 @@ impl AcpHarnessEngine {
                 text: body,
                 cancelled: false,
                 persist_turn: false,
+                history_replacement: None,
             })
         };
         // Vesper-native surface FIRST: the domain parser below only
@@ -1041,27 +1125,67 @@ impl AcpHarnessEngine {
                 text: body,
                 cancelled: false,
                 persist_turn: false,
+                history_replacement: None,
             })
         };
         match name {
             "compact" => {
-                let keep = parse_compact_keep(argument);
-                let mut histories = self.histories.lock().await;
-                match histories.get_mut(&request.session_id) {
-                    Some(history) => {
-                        let dropped = history.len().saturating_sub(keep);
-                        if keep == 0 {
-                            history.clear();
-                        } else if history.len() > keep {
-                            let drain_from = history.len() - keep;
-                            history.drain(0..drain_from);
-                        }
-                        respond(format!(
-                            "compact: dropped {dropped} older message(s); kept {} recent.",
-                            history.len()
-                        ))
+                let history = self
+                    .histories
+                    .lock()
+                    .await
+                    .get(&request.session_id)
+                    .cloned()
+                    .unwrap_or_else(|| request.history.clone());
+                let mut config = self.config.clone();
+                if let Some(provider_configuration) = &request.provider_configuration {
+                    config.provider_configuration = provider_configuration.clone();
+                }
+                if let Some(model) = &request.model {
+                    config.provider_id = model.provider_id.clone();
+                    config.model = model.clone();
+                }
+                config.context_window_tokens =
+                    self.context_window_for(&config.provider_id, &config.model.model_id);
+                config.workspace_roots = request.workspace_roots.clone();
+                config.system_instructions =
+                    vesper_agent::project_instructions(&config.workspace_roots);
+                let loop_engine = vesper_agent::AgentLoop::new(
+                    Arc::clone(&self.registry),
+                    Arc::clone(&self.hosted).build_default_registry(),
+                    config,
+                );
+                match loop_engine
+                    .compact_history(history, (!argument.trim().is_empty()).then_some(argument))
+                    .await
+                {
+                    Ok(commit) => {
+                        let report = commit.report;
+                        let history = commit.history;
+                        self.histories
+                            .lock()
+                            .await
+                            .insert(request.session_id.clone(), history.clone());
+                        SlashFlow::Respond(AcpPromptResult {
+                            text: format!(
+                                "compact: summarized {} older message(s); estimated tokens {} -> {}; quality {}.{:02}%.",
+                                report.dropped_messages,
+                                report.before_tokens,
+                                report.after_tokens,
+                                report.quality_basis_points / 100,
+                                report.quality_basis_points % 100,
+                            ),
+                            cancelled: false,
+                            persist_turn: false,
+                            history_replacement: Some(history),
+                        })
                     }
-                    None => respond("compact: no conversation history yet.".to_owned()),
+                    Err(vesper_agent::AgentLoopError::Compaction(
+                        vesper_agent::CompactionError::NotEnoughHistory,
+                    )) => respond("compact: not enough complete history to compact.".to_owned()),
+                    Err(error) => respond(format!(
+                        "compact: failed safely; original history retained: {error}"
+                    )),
                 }
             }
             "clear-history" => {
@@ -1272,6 +1396,12 @@ fn safe_agent_loop_error(error: &vesper_agent::AgentLoopError) -> String {
             }
             message
         }
+        AgentLoopError::ContextWindowExhausted { used, capacity } => format!(
+            "context window exhausted ({used}/{capacity} estimated tokens); shorten the current request or select a model with a larger advertised window"
+        ),
+        AgentLoopError::Compaction(error) => {
+            format!("context compaction failed safely; original history was retained: {error}")
+        }
     }
 }
 
@@ -1360,6 +1490,33 @@ impl vesper_agent::AgentProgressPort for AcpEngineProgressPort {
             vesper_agent::AgentProgressEvent::UsageUpdated { usage } => {
                 sink.event(AcpEngineEvent::Usage { usage: *usage });
             }
+            vesper_agent::AgentProgressEvent::ContextPressureUpdated {
+                used,
+                capacity,
+                level,
+            } => sink.event(AcpEngineEvent::ReasoningDelta {
+                text: format!("Context pressure {level}% · {used}/{capacity} estimated tokens"),
+            }),
+            vesper_agent::AgentProgressEvent::CompactionCompleted { report } => {
+                sink.event(AcpEngineEvent::ReasoningDelta {
+                    text: format!(
+                        "Context compacted · {}→{} estimated tokens · {} older messages summarized{}",
+                        report.before_tokens,
+                        report.after_tokens,
+                        report.dropped_messages,
+                        if report.quality_declined {
+                            " · warning: evidence coverage declined by at least 15%"
+                        } else {
+                            ""
+                        }
+                    ),
+                });
+            }
+            vesper_agent::AgentProgressEvent::CompactionFailed { reason } => {
+                sink.event(AcpEngineEvent::ReasoningDelta {
+                    text: format!("Context compaction failed safely: {reason}"),
+                });
+            }
             vesper_agent::AgentProgressEvent::TurnStarted
             | vesper_agent::AgentProgressEvent::ProviderTurnStarted { .. } => {}
         }
@@ -1409,23 +1566,12 @@ fn unknown_command_text(command: &str) -> String {
 enum SlashFlow {
     /// Not a slash command — run the ordinary multi-turn loop.
     Ordinary,
-    /// Answer now with this result (never dispatched, never persisted).
+    /// Answer now without provider dispatch. Stateful commands may carry a
+    /// validated working-history replacement for runtime persistence.
     Respond(AcpPromptResult),
     /// Replace the prompt with this workflow text and run one real agent
     /// turn (TUI `/diff` and `/release` parity).
     Workflow(String),
-}
-
-/// Parses the optional keep-count for `/compact [N]` (TUI parity). Defaults
-/// to 20; bounded to `[0, 1000]`.
-fn parse_compact_keep(argument: &str) -> usize {
-    if argument.trim().is_empty() {
-        return 20;
-    }
-    match argument.trim().parse::<usize>() {
-        Ok(n) => n.min(1000),
-        Err(_) => 20,
-    }
 }
 
 /// Resolves the bump level for `/release [patch|minor|major]` (TUI parity).
@@ -1561,6 +1707,7 @@ fn rfc3339_now() -> String {
 /// feedback, the outcome text becomes the candidate payload).
 struct AcpCandidateGenerator {
     agent: vesper_agent::AgentLoop,
+    history: Vec<ConversationMessage>,
 }
 
 impl vesper_agent::vro::CandidateGenerator for AcpCandidateGenerator {
@@ -1598,7 +1745,7 @@ impl vesper_agent::vro::CandidateGenerator for AcpCandidateGenerator {
                     ));
                 }
             }
-            let message = ConversationMessage {
+            let mut message = ConversationMessage {
                 id: MessageId::new("vro-generate").expect("valid"),
                 role: MessageRole::User,
                 content: vec![ContentPart::Text(
@@ -1607,18 +1754,30 @@ impl vesper_agent::vro::CandidateGenerator for AcpCandidateGenerator {
                 )],
                 extensions: ExtensionMap::default(),
             };
+            let mut history = self.history.clone();
+            if history
+                .last()
+                .is_some_and(|last| last.role == MessageRole::User)
+            {
+                let current = history.pop().expect("last user was checked");
+                message.content.extend(current.content.into_iter().skip(1));
+            }
+            history.push(message);
             let outcome = self
                 .agent
-                .run_prompt(
-                    message,
+                .run_prompt_with_history(
+                    history,
                     SessionOperatingMode::Code,
                     SessionPermissionMode::Ask,
                 )
                 .await;
             match outcome {
-                Ok(vesper_agent::AgentTurnOutcome::Completed {
-                    assistant_content, ..
-                }) => {
+                Ok((
+                    vesper_agent::AgentTurnOutcome::Completed {
+                        assistant_content, ..
+                    },
+                    _,
+                )) => {
                     let text: String = assistant_content
                         .iter()
                         .filter_map(|part| match part {
@@ -1643,6 +1802,7 @@ impl vesper_agent::vro::CandidateGenerator for AcpCandidateGenerator {
     fn boxed_clone(&self) -> Box<dyn vesper_agent::vro::CandidateGenerator> {
         Box::new(AcpCandidateGenerator {
             agent: self.agent.clone(),
+            history: self.history.clone(),
         })
     }
 }
@@ -2094,6 +2254,12 @@ pub async fn run_multi_provider(initial: &str) -> Result<(), ()> {
     // Truthful footer model entries: live catalog models (advertised context
     // included), with the pinned model guaranteed present.
     let lm_controls = lm_control_models(&lm_factory);
+    let context_windows = context_window_catalog(
+        &initial_id,
+        &profile.model,
+        controls::multi_provider_context_window(&profile.provider_configuration, &lm_controls),
+        &lm_controls,
+    );
 
     let session_reads = session_reads_from_environment(&qualified_model).map_err(|_| ())?;
     let session_writes = session_writes_from_environment().map_err(|_| ())?;
@@ -2158,6 +2324,10 @@ pub async fn run_multi_provider(initial: &str) -> Result<(), ()> {
             provider_id: initial_id.clone(),
             provider_configuration: profile.provider_configuration.clone(),
             model: qualified_model,
+            context_window_tokens: controls::multi_provider_context_window(
+                &profile.provider_configuration,
+                &lm_controls,
+            ),
             system_instructions: Vec::new(),
             workspace_roots: Vec::new(),
             max_tool_iterations: vesper_agent::DEFAULT_MAX_TOOL_ITERATIONS,
@@ -2186,6 +2356,7 @@ pub async fn run_multi_provider(initial: &str) -> Result<(), ()> {
             hosted,
             open_cognition_bundle(initial_id.as_str()).await,
             vro_orchestrator(),
+            context_windows,
         ));
         adapter.with_prompt_engine(engine)
     } else {
@@ -2236,6 +2407,35 @@ fn lm_control_models(
         );
     }
     out
+}
+
+fn context_window_catalog(
+    initial_provider: &ProviderId,
+    initial_model: &ModelId,
+    initial_context: u64,
+    lm_models: &[controls::LmStudioControlModel],
+) -> BTreeMap<(String, String), u64> {
+    let mut windows = BTreeMap::new();
+    for entry in vesper_provider_glm::GlmCatalog::entries() {
+        windows.insert(
+            ("zai".to_owned(), entry.id().to_owned()),
+            entry.context_tokens(),
+        );
+    }
+    for entry in lm_models {
+        windows.insert(
+            ("lmstudio".to_owned(), entry.id.clone()),
+            entry.context_window.unwrap_or(8_192),
+        );
+    }
+    windows.insert(
+        (
+            initial_provider.as_str().to_owned(),
+            initial_model.as_str().to_owned(),
+        ),
+        initial_context.max(1),
+    );
+    windows
 }
 
 /// Boots the composition with an explicitly resolved provider token.
@@ -2485,11 +2685,7 @@ mod tests {
     }
 
     #[test]
-    fn compact_and_release_helpers_match_tui_semantics() {
-        assert_eq!(parse_compact_keep(""), 20);
-        assert_eq!(parse_compact_keep("5"), 5);
-        assert_eq!(parse_compact_keep("9999"), 1000);
-        assert_eq!(parse_compact_keep("not-a-number"), 20);
+    fn release_helper_matches_tui_semantics() {
         assert_eq!(release_bump(""), "patch");
         assert_eq!(release_bump("MINOR"), "minor");
         assert_eq!(release_bump("major"), "major");

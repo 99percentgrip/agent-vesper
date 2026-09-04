@@ -37,6 +37,14 @@ the multi-turn, tool-executing layer above it.
   by itself and the default port fails closed.
 - `src/project_context.rs` — bounded, symlink-safe progressive discovery of
   project instruction files with secret-assignment redaction.
+- `src/compaction.rs` — provider-neutral token estimation, 60/75/85 pressure
+  tiers, semantic evidence extraction, secret scrubbing, complete recent tool
+  transaction partitioning, bounded summary/source envelopes, transactional
+  commit validation, and persisted coverage-quality lineage. System
+  instructions stay outside replaceable history. `AgentLoop` automatically
+  compacts at 85% including a response reserve and routes summarization through
+  auxiliary → main → deterministic evidence fallback; an irreducible suffix
+  fails before ordinary provider dispatch.
 - `src/vro/scope.rs` — scoped workspace identity, layers, skills, firewall,
   and sandbox-demand resolution. Skill-relative paths reject Unix-rooted,
   Windows-rooted/drive-prefixed, parent-traversal, NUL, and empty forms on
@@ -476,8 +484,9 @@ the multi-turn, tool-executing layer above it.
   composition boundary with `project_instructions`; the helper is bounded and
   does not persist or mutate project files.
 - `ToolContext` carries the current visible conversation for context-aware
-  hosted tools. Provider requests use a deterministic bounded window of at
-  most `MAX_CONTEXT_MESSAGES` messages while the host retains the returned
+  hosted tools. Provider requests use the validated semantic working history;
+  token pressure, not message count, triggers compaction. Hosts retain the
+  returned provider history and may separately preserve a complete display
   transcript.
 - Depends on `vesper-domain`, `vesper-provider`, `vesper-runtime` (+ `glob`,
   `regex` for search; `sha2` for VRO-7 deterministic procedure IDs; workspace

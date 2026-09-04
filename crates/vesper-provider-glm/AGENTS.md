@@ -66,6 +66,11 @@ quota normalization, and legacy GLM compatibility translation.
   tool-capable candidates to non-vision plan-available advisers, and
   `validate` rejects ineligible auxiliary selections. GLM predicates never
   leak into the TUI.
+- `GlmSession` exposes its bounded non-streaming `AuxiliaryRequestPort` through
+  `ProviderSession::auxiliary`. `zai:auxiliary-model` is decoded into
+  `GlmConfig`, validated against the active endpoint plan, and replaces the
+  wire `model` only for tool-free auxiliary requests; `main` retains the
+  acting model.
 - `policy.rs` `GlmCapabilityAdvisor` resolves capability alternatives only
   from `GlmCatalog` and the active endpoint plan. Bounded provider error
   prefixes may classify unsupported image/content responses into the shared

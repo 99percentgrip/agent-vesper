@@ -294,6 +294,10 @@ impl GlmGenerationProfile {
 pub struct GlmConfig {
     /// Selected model.
     pub model: ModelId,
+    /// Optional purpose-built auxiliary model used for compaction and other
+    /// tool-free background inference. `None` routes those requests to the
+    /// acting model.
+    pub auxiliary_model: Option<ModelId>,
     /// Selected endpoint.
     pub endpoint: GlmEndpoint,
     /// Reasoning mode.
@@ -317,6 +321,7 @@ impl Default for GlmConfig {
     fn default() -> Self {
         Self {
             model: ModelId::new("glm-5.3").expect("static model ID"),
+            auxiliary_model: None,
             endpoint: GlmEndpoint::official(GlmPlan::Coding).expect("static endpoint"),
             reasoning: GlmReasoningMode::Enabled,
             generation_profile: GlmGenerationProfile::Balanced,
@@ -345,6 +350,15 @@ impl GlmConfig {
         }
         if !model_supports_plan(self.model.as_str(), self.endpoint.plan()) {
             return if crate::catalog::is_known_model(self.model.as_str()) {
+                Err(GlmAdapterError::ModelPlanMismatch)
+            } else {
+                Err(GlmAdapterError::UnknownModel)
+            };
+        }
+        if let Some(auxiliary) = &self.auxiliary_model
+            && !model_supports_plan(auxiliary.as_str(), self.endpoint.plan())
+        {
+            return if crate::catalog::is_known_model(auxiliary.as_str()) {
                 Err(GlmAdapterError::ModelPlanMismatch)
             } else {
                 Err(GlmAdapterError::UnknownModel)
@@ -414,6 +428,16 @@ impl GlmConfig {
             .and_then(serde_json::Value::as_str)
         {
             config.generation_profile = parse_generation_profile(profile)?;
+        }
+        if let Some(model) = fields
+            .get("zai:auxiliary-model")
+            .and_then(serde_json::Value::as_str)
+            .filter(|model| *model != "main")
+        {
+            config.auxiliary_model =
+                Some(ModelId::new(model).map_err(|_| {
+                    GlmAdapterError::Configuration("auxiliary model ID is invalid")
+                })?);
         }
         if let Some(limit) = fields
             .get("zai:continuation-limit")
@@ -527,5 +551,37 @@ mod tests {
     #[test]
     fn default_model_is_the_current_flagship() {
         assert_eq!(GlmConfig::default().model.as_str(), "glm-5.3");
+    }
+
+    #[test]
+    fn provider_configuration_selects_a_validated_auxiliary_model() {
+        let mut configuration = ProviderConfiguration {
+            provider_id: crate::provider_id(),
+            values: vesper_domain::VersionedExtensionEnvelope {
+                namespace: vesper_domain::ExtensionNamespace::new("provider.zai").unwrap(),
+                version: vesper_domain::SchemaVersion::new(1).unwrap(),
+                values: vesper_domain::ExtensionMap::default(),
+            },
+        };
+        configuration
+            .values
+            .values
+            .insert("zai:auxiliary-model", serde_json::json!("glm-5.2"))
+            .unwrap();
+        let decoded = GlmConfig::from_provider_configuration(&configuration).unwrap();
+        assert_eq!(
+            decoded.auxiliary_model.as_ref().map(ModelId::as_str),
+            Some("glm-5.2")
+        );
+
+        configuration
+            .values
+            .values
+            .insert("zai:auxiliary-model", serde_json::json!("invented"))
+            .unwrap();
+        assert_eq!(
+            GlmConfig::from_provider_configuration(&configuration).unwrap_err(),
+            GlmAdapterError::UnknownModel
+        );
     }
 }

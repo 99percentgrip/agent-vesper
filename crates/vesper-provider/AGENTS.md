@@ -24,6 +24,10 @@ continuation, fallback, and error contracts.
   never infer support from model identifiers.
 - Adapter-classified unsupported content may attach a typed requirement;
   consumers offer recovery only before visible output.
+- `ProviderSession::auxiliary` optionally exposes the provider-neutral
+  `AuxiliaryRequestPort` for bounded tool-free inference such as compaction.
+  Sessions without one return `None`; callers retain a main-model or
+  deterministic fallback and never assume auxiliary support.
 - The [`ProviderSuperpowers`] trait and [`SuperpowerDescriptor`] advertise
   provider-native controls (effort dial, interleaved-thinking flag, model
   selector) so the composition boundary can render them without taking a

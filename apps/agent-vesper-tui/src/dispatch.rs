@@ -132,6 +132,14 @@ pub struct SessionState {
     pub pending_context_report: bool,
     /// Selected fenced-code block action, executed by the binary.
     pub pending_code_block: Option<(usize, bool)>,
+    /// Manual semantic compaction requested by `/compact [focus]`.
+    pub pending_compaction_focus: Option<Option<String>>,
+    /// Latest token-aware context-pressure sample `(used, capacity, tier)`.
+    pub context_pressure: Option<(u64, u64, u8)>,
+    /// Successful compaction-quality samples, in basis points.
+    pub compaction_quality_history: Vec<u16>,
+    /// Latest committed compaction audit report.
+    pub last_compaction: Option<vesper_agent::CompactionReport>,
     /// Whether the binary should re-open the provider-routed authentication
     /// screen (`/auth`) using the active provider's advertised descriptor.
     pub pending_reauth: bool,
@@ -445,6 +453,10 @@ fn apply_outcome(
         pending_provider_usage,
         pending_context_report,
         pending_code_block,
+        pending_compaction_focus,
+        context_pressure: _,
+        compaction_quality_history: _,
+        last_compaction: _,
         pending_reauth,
         pending_lmstudio_settings,
         pending_provider_switch,
@@ -834,16 +846,9 @@ fn apply_outcome(
             transcript.push("plan: cleared (back to NORMAL).".into());
             *status = Some("Plan cleared.".into());
         }
-        CommandOutcome::Compact { keep } => {
-            let dropped = transcript.len().saturating_sub(keep);
-            if keep == 0 {
-                transcript.clear();
-            } else if transcript.len() > keep {
-                let drain_from = transcript.len() - keep;
-                transcript.drain(0..drain_from);
-            }
-            transcript.push(format!("compact: dropped {dropped} older line(s)."));
-            *status = Some(format!("Compacted — {keep} recent line(s) kept."));
+        CommandOutcome::Compact { focus } => {
+            *pending_compaction_focus = Some(focus);
+            *status = Some("Preparing transactional context compaction…".into());
         }
 
         // === Phase 7 (ADR 0010) — context views ===
@@ -1849,7 +1854,7 @@ mod integration_tests {
     }
 
     #[test]
-    fn phase7_compact_keeps_only_the_last_n_lines() {
+    fn phase7_compact_queues_provider_history_without_hiding_transcript() {
         let registry = registry();
         let surface = surface();
         let mut state = SessionState::new();
@@ -1859,21 +1864,15 @@ mod integration_tests {
             step(&mut state, &registry, &surface, &format!("line {n}"));
         }
         assert_eq!(state.transcript.len(), 5);
-        // /compact 2 keeps the last 2 user lines.
-        step(&mut state, &registry, &surface, "/compact 2");
-        // The compact itself pushes a "dropped N lines" notice, so the final
-        // length is 2 (kept) + 1 (notice) = 3.
-        assert!(
-            state.transcript.len() <= 3,
-            "compact must drop older lines; got {}",
-            state.transcript.len()
+        step(&mut state, &registry, &surface, "/compact focus on tests");
+        assert_eq!(
+            state.transcript.len(),
+            5,
+            "audit transcript must remain visible"
         );
-        assert!(
-            state
-                .transcript
-                .iter()
-                .any(|line| line.contains("compact") && line.contains("dropped")),
-            "compact must push a dropped-lines notice"
+        assert_eq!(
+            state.pending_compaction_focus,
+            Some(Some("focus on tests".into()))
         );
     }
 
