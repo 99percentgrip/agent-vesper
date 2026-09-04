@@ -12,6 +12,11 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
   external the memory oracle (`29fa4155`) oracle and the evidence base for ADR 0015
   (Stage 16 — `vesper-cognition`). The the memory oracle oracle is independent of the
   frozen Python harness; this is the only place where the memory oracle is cited.
+- `vro13-pr8-closeout-evidence.md` is the VRO-13 cross-feature closeout record:
+  the end-to-end fixture (`crates/vesper-harness/tests/vro13_e2e.rs`), the
+  pipeline coverage (watcher/cron fire → composed firewall → sandbox route →
+  scope-keyed transcript), and the PR-1..PR-8 verification trail per
+  `docs/qm-extraction-prd.md`.
 - `vesperlens-end-to-end-acceptance-postmortem.md` is the owner-directed
   VesperLens audit (v0.20.29 → v0.20.44): the binding end-to-end completion
   standard, the ten audited gaps, honest-scope list, and the open task of

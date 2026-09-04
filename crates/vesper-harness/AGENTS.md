@@ -103,6 +103,10 @@ Z.ai and Playwright MCP server descriptors.
 ## Verification
 
 - Run `cargo test -p vesper-harness`.
+- Run `cargo test -p vesper-harness --test vro13_e2e` (VRO-13 PR-8
+  cross-feature fixture: watcher fire → bounded turn → composed
+  firewall → opt-in sandbox route → scope-keyed slot ledger; run with
+  `--features docker` to include the feature-gated cold-start arm).
 - Run `cargo xtask architecture` and `cargo xtask verify`.
 
 ## Child DOX Index

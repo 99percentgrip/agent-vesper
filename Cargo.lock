@@ -4033,9 +4033,12 @@ dependencies = [
  "vesper-domain",
  "vesper-mcp",
  "vesper-memory",
+ "vesper-policy",
+ "vesper-provider",
  "vesper-runtime",
  "vesper-sandbox",
  "vesper-sessions",
+ "vesper-testkit",
 ]
 
 [[package]]

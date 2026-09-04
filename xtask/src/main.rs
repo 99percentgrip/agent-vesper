@@ -927,7 +927,20 @@ fn architecture() -> Result<(), String> {
                 .path
                 .as_ref()
                 .and_then(|_| names.values().find(|name| *name == &dependency.name));
+            // VRO-13 PR-8: `vesper-harness` integration tests compose the
+            // real foundational seams (firewall, provider factory, testkit
+            // fakes) that production `src/` must NOT link. Dev-kind deps
+            // never enter the production build, so they are allowed for
+            // the harness's cross-feature fixtures while the allowlist
+            // above keeps binding for every normal dependency everywhere.
+            let harness_dev = package.name == "vesper-harness"
+                && dependency.kind.as_deref() == Some("dev")
+                && matches!(
+                    dependency.name.as_str(),
+                    "vesper-policy" | "vesper-provider" | "vesper-testkit"
+                );
             if let Some(target) = workspace_target
+                && !harness_dev
                 && !allowed
                     .get(package.name.as_str())
                     .is_some_and(|targets| targets.contains(target.as_str()))

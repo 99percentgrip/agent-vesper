@@ -31,6 +31,12 @@ docker = ["vesper-sandbox/docker"]
 
 [dev-dependencies]
 tempfile.workspace = true
+# VRO-13 PR-8: the cross-feature e2e fixture composes the firewall holder
+# (vesper-policy), the provider seam (vesper-provider), and the deterministic
+# fake provider (vesper-testkit) — test-only, mirroring vesper-agent/tests.
+vesper-policy = { path = "../vesper-policy", version = "=0.20.78" }
+vesper-provider = { path = "../vesper-provider", version = "=0.20.78" }
+vesper-testkit = { path = "../vesper-testkit", version = "=0.20.78" }
 
 [lints]
 workspace = true

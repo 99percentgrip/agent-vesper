@@ -1,6 +1,6 @@
 # Migration Status
 
-Last updated: 2026-08-31
+Last updated: 2026-09-04
 
 | Area | Status | Current evidence |
 | --- | --- | --- |
@@ -13,6 +13,7 @@ Last updated: 2026-08-31
 | Native TUI interaction surface | IMPLEMENTED AND LOCALLY VERIFIED | Full palette/value pickers, mouse-operable footer/rows, reasoning/activity/TODO/report panels, working-tree views, Vim, keybinds, clipboard images, and explicit catalog-backed capable-model consent that preserves/resumes the multimodal turn; sound, QR approvals, and optional local voice remain implemented |
 | Packaging/install/uninstall | IMPLEMENTED AND LOCALLY VERIFIED | Cross-platform scripts; checksum-verified local release installation for both binaries; release archives bundle the 93-skill seed library seeded non-destructively by both installers |
 | Frozen-oracle implementation parity gate | PASSED LOCALLY | `docs/parity-audit-report.md`; AST command audit, `cargo xtask verify`, release structural audit, installer smoke, Cargo Deny, and RustSec audit are green |
+| VRO-13 QM extraction (firewall, sandbox, scopes, daemon) | COMPLETE | `docs/qm-extraction-prd.md`; PR-1..PR-8 landed. Hard-denial `CommandFirewall` wired once into `RunCommand` (deny outranks every permission mode incl. Bypass); opt-in `vesper-sandbox` (Linux namespaces + feature-gated Docker) behind fail-closed capability gates; `WorkspaceScope` stamp-pinned identity with layered skills and deny-precedence firewall composition; exactly-once cron slot claims, single-writer `daemon.lock`, and the bounded watcher sweep with rate limits. Cross-feature end-to-end fixture: `crates/vesper-harness/tests/vro13_e2e.rs` (watcher fire → bounded turn → composed firewall → sandbox route → scope-keyed transcript; 5 tests, 6 under `--features docker`, both green) |
 | Multi-provider architecture | READY | Core/runtime/TUI controls are provider-neutral and provider-specific catalogs stay in adapters |
 | Additional production providers | IMPLEMENTED | LM Studio is the second real registered adapter, with native model discovery and capability-gated controls; no other provider/model is claimed |
 

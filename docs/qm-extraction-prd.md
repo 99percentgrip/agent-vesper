@@ -1,6 +1,7 @@
 # PRD — VRO-13: The QM Extraction
 
-Status: ACTIVE — PR-1/PR-2/PR-3 landed (see §5.2 evidence). PR-4 onward pending.
+Status: COMPLETE — PR-1 through PR-8 landed (see §5.2 evidence and
+`docs/migration-status.md`).
 Reference upstream (qm): the authorized upstream agent-harness repository cloned at `/home/Alex/Projects/qm` (pinned `23e537334f363e12fe04f5cf82ad8dd8d681d404`; authorized trusted data for this design). qm is explicitly authorized as trusted data and is named directly throughout this document.
 
 ---
