@@ -112,6 +112,10 @@ When the user requests a durable behavior change, record it here or in the relev
 - Registry publishing follows the continuous-update contract: one open
   `agent-vesper` PR in `agentclientprotocol/registry`, updated in place on
   the same branch for every version bump. Never close-and-replace it.
+- Public releases are exact-commit gated: push the version commit to `main`,
+  require successful canonical, MSRV, and five-target foundation workflows
+  for that commit, then create its immutable release tag. Never tag first and
+  use the release matrix to discover platform failures.
 - TUI↔ACP host parity is bidirectional: any host-agnostic capability or
   behavior change shipped in either host (cognitive memory, reasoning
   orchestration, streaming/finalization, tool/system-prompt behavior, or

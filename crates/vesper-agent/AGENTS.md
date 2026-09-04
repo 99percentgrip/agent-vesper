@@ -37,6 +37,10 @@ the multi-turn, tool-executing layer above it.
   by itself and the default port fails closed.
 - `src/project_context.rs` — bounded, symlink-safe progressive discovery of
   project instruction files with secret-assignment redaction.
+- `src/vro/scope.rs` — scoped workspace identity, layers, skills, firewall,
+  and sandbox-demand resolution. Skill-relative paths reject Unix-rooted,
+  Windows-rooted/drive-prefixed, parent-traversal, NUL, and empty forms on
+  every host rather than relying on platform-specific `Path` semantics.
 - `src/agent_loop.rs` — `AgentLoop::run_prompt` and
   `AgentLoop::run_prompt_with_history`: dispatch turn → collect tool calls →
   gate → execute → append `role: Tool` results → repeat, bounded by

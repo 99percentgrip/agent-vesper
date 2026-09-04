@@ -13,6 +13,10 @@ platform assumptions on hosts unavailable locally.
   The tag-triggered `release.yml` workflow is the sole publishing workflow and
   may publish only compiled, checksummed release archives; it must not make
   provider calls.
+- Release builds are fail-closed behind exact-commit CI: the tagged commit must
+  already have successful `push` runs for `ci.yml`, `msrv.yml`, and
+  `platform-foundation.yml`. Push the version commit to `main`, wait for all
+  three workflows to pass, and only then create/push its release tag.
 - The default toolchain is pinned to Rust 1.95.0 via `rust-toolchain.toml`
   (with `clippy` and `rustfmt` components); MSRV 1.88.0 is enforced
   independently in `msrv.yml` and the spike workflows.
@@ -42,7 +46,10 @@ platform assumptions on hosts unavailable locally.
   they are never silently skipped.
 - CI validates Stage 5 coverage, read-only session/testkit conformance, and
   writer/SQLite architecture gates on all five target families.
-- `release.yml` declares a single concurrency group `release-pipeline` with
+- `release.yml` checks exact-commit CI through the Actions API using only the
+  repository `GITHUB_TOKEN` with `actions: read`; no build or publication job
+  starts when any required push workflow lacks a successful run. It also
+  declares a single concurrency group `release-pipeline` with
   `cancel-in-progress: true` so a new tag-push (or `workflow_dispatch` with
   a `tag` input) cancels any stuck prior run (e.g. a phantom-queued run
   left behind by a runner-image `Service Unavailable` failure). Without

@@ -12,6 +12,7 @@ on:
         type: string
 
 permissions:
+  actions: read
   contents: write
 
 # Cancel any stuck prior release run (e.g. a runner-image Service Unavailable
@@ -23,8 +24,48 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  release-gate:
+    name: Verify exact-commit CI
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Require successful main validation for release commit
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          release_commit="$(git rev-parse "${RELEASE_TAG}^{commit}")"
+          echo "Release commit: ${release_commit}"
+
+          require_success() {
+            workflow="$1"
+            successful_runs="$(
+              gh api --method GET \
+                -H "Accept: application/vnd.github+json" \
+                -H "X-GitHub-Api-Version: 2022-11-28" \
+                "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/runs" \
+                -f head_sha="${release_commit}" \
+                -f event=push \
+                -f per_page=100 \
+                --jq '[.workflow_runs[] | select(.conclusion == "success")] | length'
+            )"
+            if [ "${successful_runs}" -lt 1 ]; then
+              echo "::error::${workflow} has no successful push run for ${release_commit}"
+              exit 1
+            fi
+            echo "${workflow}: successful for ${release_commit}"
+          }
+
+          require_success ci.yml
+          require_success msrv.yml
+          require_success platform-foundation.yml
+
   build:
     name: Build ${{ matrix.label }}
+    needs: release-gate
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     strategy:

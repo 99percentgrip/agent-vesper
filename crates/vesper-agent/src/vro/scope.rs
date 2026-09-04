@@ -593,14 +593,17 @@ pub fn validate_skill_relative_path(relative: &str) -> Result<PathBuf, ScopeErro
         ));
     }
     let path = PathBuf::from(trimmed);
-    if path.is_absolute() {
+    // `Path::is_absolute` follows the host platform, but skill slugs can be
+    // supplied on any host. Reject both Unix-rooted and Windows-rooted forms
+    // everywhere so a path cannot become absolute after crossing platforms.
+    if path.is_absolute() || trimmed.starts_with(['/', '\\']) {
         return Err(ScopeError::InvalidSkillPath(format!(
             "absolute paths are rejected: {trimmed}"
         )));
     }
-    // Windows-style drive-absolute forms (`C:/`, `C:\`) pass `is_absolute()`
-    // on non-Windows hosts; reject them everywhere so a slug authored on one
-    // platform cannot smuggle an absolute path on another.
+    // Windows drive forms pass `is_absolute()` on non-Windows hosts; reject
+    // them everywhere so a slug authored on one platform cannot smuggle an
+    // absolute path on another.
     if trimmed.len() >= 2 {
         let bytes = trimmed.as_bytes();
         let first = bytes[0];
@@ -1377,7 +1380,12 @@ mod tests {
         // `C:/skills/x.md` is not `is_absolute()` on Unix, but a Windows
         // drive prefix is an absolute path for safety purposes: reject by
         // component shape too, so every host rejects it identically.
-        for absolute in ["/etc/passwd", "/skills/x.md", "C:/skills/x.md"] {
+        for absolute in [
+            "/etc/passwd",
+            "/skills/x.md",
+            "\\skills\\x.md",
+            "C:/skills/x.md",
+        ] {
             let error =
                 validate_skill_relative_path(absolute).expect_err("absolute must be rejected");
             assert!(
