@@ -19,8 +19,8 @@
 //!
 //! - The lock file carries the holder's PID and start time.
 //! - A second daemon sees the existing file, reads the holder PID, and
-//!   checks liveness (`/proc/<pid>` presence on Unix, always-live on
-//!   platforms without a procfs).
+//!   checks liveness with a bounded native process probe (`/proc/<pid>` on
+//!   Linux, `kill -0` on other Unix platforms, and `tasklist` on Windows).
 //! - A **dead** holder means the lock is stale: it is removed and the
 //!   takeover succeeds (graceful reclaim).
 //! - A **live** holder means the second daemon exits `0` cleanly with
@@ -178,21 +178,46 @@ fn unix_seconds_to_system_time(seconds: u64) -> SystemTime {
     std::time::UNIX_EPOCH + std::time::Duration::from_secs(seconds)
 }
 
-/// Whether a PID names a live process. On Unix, `/proc/<pid>` presence;
-/// on platforms without a procfs this conservatively reports `true` so a
-/// missing procfs degrades to "never steal a lock" rather than "steal
-/// every lock".
-fn pid_alive(pid: u32) -> bool {
+/// Whether a PID names a live local process, using a bounded platform-native
+/// probe. If the probe itself cannot run, report the PID as live so a daemon
+/// never steals a lock merely because its liveness check was unavailable.
+pub(crate) fn pid_alive(pid: u32) -> bool {
     if pid == 0 {
         return false; // init-swap guard: PID 0 never names a process
     }
+
+    #[cfg(target_os = "linux")]
+    {
+        let proc_entry = Path::new("/proc").join(pid.to_string());
+        if Path::new("/proc").is_dir() {
+            return proc_entry.exists();
+        }
+    }
+
     #[cfg(unix)]
     {
-        Path::new("/proc").join(pid.to_string()).exists()
+        std::process::Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(true)
     }
-    #[cfg(not(unix))]
+
+    #[cfg(windows)]
     {
-        let _ = pid;
+        std::process::Command::new("tasklist")
+            .args(["/FI", &format!("PID eq {pid}"), "/NH"])
+            .output()
+            .map(|output| {
+                String::from_utf8_lossy(&output.stdout)
+                    .lines()
+                    .any(|line| line.split_whitespace().nth(1) == Some(pid.to_string().as_str()))
+            })
+            .unwrap_or(true)
+    }
+
+    #[cfg(not(any(unix, windows)))]
+    {
         true
     }
 }

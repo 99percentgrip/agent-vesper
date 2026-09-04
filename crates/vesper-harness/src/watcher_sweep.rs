@@ -91,19 +91,6 @@ pub enum SweepAction {
     Skip,
 }
 
-/// Reads whether a PID is alive via `/proc/<pid>` (bounded single stat,
-/// never a procfs walk). Non-`/proc` platforms report alive (conservative:
-/// a PID watcher simply never fires).
-fn is_pid_alive(pid: u32) -> bool {
-    if !cfg!(target_os = "linux") {
-        return true;
-    }
-    Path::new("/proc")
-        .join(pid.to_string())
-        .try_exists()
-        .unwrap_or(false)
-}
-
 /// Whether a watcher's target currently satisfies its match predicate:
 /// a path target must contain a line matching the literal pattern in the
 /// bounded 4 KiB tail; a PID target fires when the process is gone; a
@@ -111,7 +98,7 @@ fn is_pid_alive(pid: u32) -> bool {
 /// (glob expansion itself stays bounded by the store's `MAX_WATCHERS`).
 fn watcher_matches(entry: &WatcherEntry) -> bool {
     match entry.target_kind {
-        WatcherTargetKind::Pid => !is_pid_alive(pid_from_target(&entry.target)),
+        WatcherTargetKind::Pid => !crate::daemon_lock::pid_alive(pid_from_target(&entry.target)),
         WatcherTargetKind::Path | WatcherTargetKind::Glob => {
             let Ok(tail) = read_watcher_tail(Path::new(&entry.target)) else {
                 return false;
@@ -588,7 +575,7 @@ mod tests {
     fn pid_watchers_fire_on_death() {
         let temp = TempDir::new().unwrap();
         let root = scope_root(&temp);
-        // A PID that cannot exist on Linux: nothing at /proc/4294967295.
+        // A PID beyond normal OS allocation ranges cannot exist.
         let dead = u32::MAX;
         let store = WatcherStore::open(&root).unwrap();
         store
@@ -606,16 +593,7 @@ mod tests {
             SystemTime::now(),
             |_| Ok(String::new()),
         );
-        if cfg!(target_os = "linux") {
-            assert_eq!(outcome.fired.len(), 1, "dead PID fires");
-        } else {
-            // Conservative-alive semantics: non-Linux reports the PID
-            // alive, so the watcher never fires there.
-            assert!(
-                outcome.fired.is_empty(),
-                "non-Linux: PID liveness is conservative-alive"
-            );
-        }
+        assert_eq!(outcome.fired.len(), 1, "dead PID fires");
     }
 
     #[test]

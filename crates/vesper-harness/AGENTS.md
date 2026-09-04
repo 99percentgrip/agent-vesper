@@ -81,6 +81,10 @@ Z.ai and Playwright MCP server descriptors.
   bounded. When a provider-backed worker is supplied, the host starts a
   one-second polling scheduler that claims due cron jobs, executes them, and
   persists bounded status/output; dropping the service aborts that scheduler.
+- Daemon locks and PID watchers share one bounded native liveness probe:
+  `/proc/<pid>` on Linux, `kill -0` on other Unix hosts, and `tasklist` on
+  Windows. If the probe cannot run it conservatively treats the PID as live,
+  preventing accidental lock takeover or false watcher fires.
 - No protocol, provider-wire, UI, SQLite, or live-provider dependency is
   allowed here.
 - **Phase 3 deferred loading + MCP gateway.** `mcp_list_tools` now translates
