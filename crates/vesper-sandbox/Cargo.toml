@@ -9,7 +9,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
-vesper-security = { path = "../vesper-security", version = "=0.20.85" }
+vesper-security = { path = "../vesper-security", version = "=0.20.86" }
 
 [dev-dependencies]
 tokio.workspace = true

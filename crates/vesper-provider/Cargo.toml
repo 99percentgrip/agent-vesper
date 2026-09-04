@@ -13,7 +13,7 @@ futures-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-vesper-domain = { path = "../vesper-domain", version = "=0.20.85" }
+vesper-domain = { path = "../vesper-domain", version = "=0.20.86" }
 
 [lints]
 workspace = true
