@@ -402,12 +402,11 @@ the multi-turn, tool-executing layer above it.
     runs LAST so the deterministic placeholders (which contain only `[`, `]`,
     `:`, letters, underscore) cannot themselves trip the entropy threshold.
     `scrub_json` recursively redacts string values in `serde_json::Value`
-    trees. **Pitfall** (VRO-7): the workspace `regex` dep is
-    `default-features = false` (no `unicode-perl`), so `\b`/`\s`/`\w`
-    REJECT with NFA-build errors. This crate declares a per-crate override
-    `regex = { version = "1", default-features = false, features = ["std",
-    "unicode-perl"] }` so the scrubber patterns compile; the rest of the
-    workspace stays ASCII-only via `regex.workspace = true`.
+    trees. **Regex feature contract:** the workspace `regex` dependency uses
+    `default-features = false`; this crate therefore declares `unicode-perl`
+    for `\b`/`\s`/`\w` and `unicode-case` for its `(?i)` credential-keyword
+    patterns explicitly. Both must remain enabled in the production manifest;
+    test-only transitive feature unification is not release evidence.
   - `ProceduralMemory` + `ProceduralStep` — the persisted artifact. Each
     step is a *generalized* observation (`Invoke tool \`read_file\` with
     sanitized arguments.`, plus a sanitized JSON argument excerpt and a
@@ -495,9 +494,10 @@ the multi-turn, tool-executing layer above it.
   frontends, or any disposable spike. **VRO-7 per-crate `regex` override:**
   `crates/vesper-agent/Cargo.toml` declares
   `regex = { version = "1", default-features = false, features = ["std",
-  "unicode-perl"] }` (NOT `regex.workspace = true`) so the `SecretScrubber`'s
-  `\b`/`\s`/`\w` patterns compile; this does NOT leak to other crates, which
-  keep using the workspace's ASCII-only regex.
+  "unicode-perl", "unicode-case"] }` (NOT `regex.workspace = true`) so the
+  `SecretScrubber`'s character classes and case-insensitive patterns compile
+  in release binaries; this does NOT leak to other crates, which keep using
+  the workspace's minimal regex feature set.
 - Every path-bearing tool routes its argument through `confinement::confine`
   against the session's primary workspace root before any I/O. `run_command`
   runs in the workspace root via the platform shell (`sh -c` / `cmd /C`) with a

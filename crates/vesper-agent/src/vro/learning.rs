@@ -865,15 +865,28 @@ mod tests {
     #[test]
     fn scrubber_redacts_bearer_token() {
         let s = SecretScrubber::new();
-        let input = "Authorization: Bearer ya29.A0ARrda6-YVM46JQ-32CharOrMoreTokenGoesHereEtc";
-        let out = s.scrub(input);
+        for prefix in ["Bearer", "bearer", "bEaReR"] {
+            let input = format!(
+                "Authorization: {prefix} ya29.A0ARrda6-YVM46JQ-32CharOrMoreTokenGoesHereEtc"
+            );
+            let out = s.scrub(&input);
+            assert!(
+                !out.contains("ya29."),
+                "bearer token must be redacted, got: {out}"
+            );
+            assert!(
+                out.contains("[REDACTED:"),
+                "expected a placeholder, got: {out}"
+            );
+        }
+    }
+
+    #[test]
+    fn production_manifest_enables_every_scrubber_regex_feature() {
+        let manifest = include_str!("../../Cargo.toml");
         assert!(
-            !out.contains("ya29."),
-            "bearer token must be redacted, got: {out}"
-        );
-        assert!(
-            out.contains("[REDACTED:"),
-            "expected a placeholder, got: {out}"
+            manifest.contains(r#"features = ["std", "unicode-perl", "unicode-case"]"#),
+            "the release graph must compile case-insensitive scrubber patterns"
         );
     }
 

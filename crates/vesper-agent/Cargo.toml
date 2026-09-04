@@ -13,9 +13,11 @@ glob.workspace = true
 # VRO-7 (Verified Workflow Learning) — SecretScrubber uses \b/\s/\w word
 # boundaries for secret-shape detection. The workspace pins regex with
 # default-features=false (ASCII-only) to keep foundational crates lean; we
-# override per-crate to enable unicode-perl so the scrubber patterns compile.
+# override per-crate to enable unicode-perl for the character classes and
+# unicode-case for the case-insensitive credential keywords. Both are required
+# in the production binary graph; test-only feature unification is insufficient.
 # This does NOT leak to other crates — they keep using `regex.workspace`.
-regex = { version = "1", default-features = false, features = ["std", "unicode-perl"] }
+regex = { version = "1", default-features = false, features = ["std", "unicode-perl", "unicode-case"] }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
