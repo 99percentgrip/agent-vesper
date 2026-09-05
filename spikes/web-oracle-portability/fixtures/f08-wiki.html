@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Pipe (Unix) - Encyclopedia</title>
+  <link rel="stylesheet" href="/w/load.php">
+</head>
+<body class="skin-vector">
+  <div id="content">
+    <h1 id="firstHeading">Pipe (Unix)</h1>
+    <div id="mw-content-text">
+      <p>In Unix and Unix-like systems, a <b>pipe</b> is a unidirectional
+      data channel between processes. Pipes were among the original
+      features of Unix and remain a core composition primitive.</p>
+      <div class="toc" role="navigation">
+        <h2>Contents</h2>
+        <ul>
+          <li>1 Creation</li>
+  <li>2 Anonymous pipes</li>
+          <li>3 Named pipes</li>
+        </ul>
+      </div>
+      <h2><span class="mw-headline" id="Creation">Creation</span></h2>
+      <p>Pipes are created with the <code>pipe</code> system call, which
+      returns a pair of file descriptors. One end is for reading, the
+      other for writing.</p>
+      <h2><span class="mw-headline" id="Anonymous_pipes">Anonymous pipes</span></h2>
+      <p>Anonymous pipes exist only as file descriptors and cannot be
+      addressed by name. They form the basis of pipelines where the
+      output of one command feeds the input of the next.</p>
+      <table class="wikitable">
+        <caption>System calls</caption>
+        <tr><th>Call</th><th>Purpose</th></tr>
+        <tr><td><code>pipe</code></td><td>create a descriptor pair</td></tr>
+        <tr><td><code>dup2</code></td><td>duplicate onto a standard descriptor</td></tr>
+      </table>
+      <div class="mw-editsection">
+        <span class="mw-editsection-bracket">[</span><a href="/w/index.php?title=Pipe&amp;action=edit">edit</a><span class="mw-editsection-bracket">]</span>
+      </div>
+      <div class="navbox" style="display:none">Hidden navigation box</div>
+      <style>/* inline style block */</style>
+    </div>
+  </div>
+</body>
+</html>

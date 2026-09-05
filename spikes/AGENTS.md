@@ -36,3 +36,4 @@ starting production Agent Vesper implementation.
 - `rust-sse-transport/AGENTS.md` — bounded HTTP/SSE/cancellation semantics.
 - `sqlite-fts5/AGENTS.md` — bundled/system SQLite FTS5 packaging and rebuild behavior.
 - `process-sandbox/AGENTS.md` — process-tree cleanup and platform sandbox conformance.
+- `web-oracle-portability/AGENTS.md` — VRO-14 PR-0 DOM-to-Markdown density pipeline and headless CDP pipe-channel feasibility.

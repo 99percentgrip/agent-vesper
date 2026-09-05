@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <template>
+    <div class="cart-template"></div>
+  </template>
+</head>
+<body>
+  <noscript><p>Enable JavaScript for the full experience.</p></noscript>
+  <div id="app" data-page="product">
+    <nav class="header-nav">
+      <ul>
+        <li><a href="/">Home</a></li>
+        <li><a href="/c/widgets">Widgets</a></li>
+        <li><a href="/cart" class="cart-link">Cart (<span data-cart-count>0</span>)</a></li>
+      </ul>
+    </nav>
+    <main>
+      <h1 data-product-name>Stainless Widget</h1>
+      <p class="price" data-price="4900">$49.00</p>
+      <p class="availability">In stock, ships in 2 days</p>
+      <div class="gallery">
+        <img src="/img/widget-1.webp" alt="Widget front view">
+        <img src="/img/widget-2.webp" alt="Widget side view">
+      </div>
+      <form action="/cart/add" method="post" class="add-to-cart">
+        <label for="qty">Quantity</label>
+        <input id="qty" type="number" min="1" max="9" value="1">
+        <select name="finish" aria-label="Finish">
+          <option value="matte">Matte</option>
+          <option value="gloss">Gloss</2></option>
+        </select>
+        <button type="submit" class="btn btn-primary">Add to cart</button>
+      </form>
+      <section class="description">
+        <h2>Description</h2>
+        <p>Machined from a single billet. Anodized finish available in
+        matte or gloss. Fits all standard widget mounts.</p>
+        <ul>
+          <li>Material: 6061 aluminum</li>
+          <li>Weight: 84 g</li>
+          <li>Finish: anodized</li>
+        </ul>
+      </section>
+      <section class="specs">
+        <h2>Specifications</h2>
+        <table>
+          <thead><tr><th>Property</th><th>Value</th></tr></thead>
+          <tbody>
+            <tr><td>Material</td><td>6061 aluminum</td></tr>
+ <tr><td>Finish</td><td>Anodized</td></tr>
+            <tr><td>Weight</td><td>84 g</td></tr>
+          </tbody>
+        </table>
+      </section>
+      <section class="reviews">
+        <h2>Reviews</h2>
+        <article class="review">
+          <p class="review-meta">5 stars &middot; verified purchase</p>
+          <p>Exactly as described. The matte finish looks great.</p>
+        </article>
+        <article class="review">
+          <p class="review-meta">4 stars &midd decoding="async"</p>
+          <p>Good widget, slightly heavier than expected.</p>
+        </article>
+      </malformed-section>
+    </main>
+  </div>
+  <footer>
+    <p>&copy; 2026 Store. <a href="/returns">Returns</a> &middot; <a href="/privacy">Privacy</a>.</p>
+  </footer>
+</body>
+</html>

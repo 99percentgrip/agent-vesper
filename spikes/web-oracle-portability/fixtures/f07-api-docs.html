@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>SDK methods - Client library</title>
+</head>
+<body>
+  <div class="layout">
+    <aside class="toc">
+      <h2>Contents</h2>
+      <ul>
+        <li><a href="#open">open</a></li>
+        <li><a href="#navigate">navigate</a></li>
+        <li><a href="#click">click</a></li>
+      </ul>
+    </aside>
+    <main>
+      <h1>SDK methods</h1>
+      <section id="open">
+        <h2><code>open()</code></h2>
+        <p>Opens a session. Returns a handle bound to the supplied
+        transport. Errors if the transport probe fails.</p>
+        <pre><code class="language-rust">let session = client.open(transport).await?;</code></pre>
+      </section>
+      <section id="navigate">
+        <h2><code>navigate(url)</code></h2>
+        <p>Navigates to a URL. Resolves after the document is ready and
+        the event channel reports the load event.</p>
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Required</th></tr></thead>
+          <tbody>
+            <tr><td><code>url</code></td><td>string</td><td>yes</td></tr>
+          </tbody>
+        </table>
+      </section>
+      <section id="click">
+        <h2><code>click(target)</code></h2>
+        <p>Clicks an indexed element. The index comes from the serialized
+        interactable map. Errors if the index is no longer valid.</p>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

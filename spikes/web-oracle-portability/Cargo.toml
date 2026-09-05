@@ -1,0 +1,17 @@
+[package]
+name = "web-oracle-portability"
+version = "0.1.0"
+edition = "2021"
+description = "VRO-14 PR-0 disposable spike: converter/density portability + headless CDP pipe driver."
+publish = false
+
+[workspace]
+
+[dependencies]
+anyhow = "1.0.104"
+os_pipe = "1.2.3"
+quick-xml = "0.41.0"
+serde_json = "1.0.151"
+
+[profile.release]
+debug = false

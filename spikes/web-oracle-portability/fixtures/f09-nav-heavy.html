@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Control Panel — Settings Overview</title>
+  <style>.nav{float:left} .grid{display:grid}</style>
+  <script>var cfg = {items: 4, theme: "dark"};</script>
+</head>
+<body>
+  <header class="site-header nav-bar">
+    <nav class="nav primary-nav" aria-label="primary">
+      <ul>
+        <li><a href="/dashboard">Dashboard</a></li>
+        <li><a href="/settings" aria-current="page">Settings</a></li>
+        <li><a href="/alerts">Alerts</a></li>
+        <li><a href="/help">Help</a></li>
+      </ul>
+    </nav>
+    <div class="promo-banner">Switch to Pro — 50% off</div>
+  </header>
+  <main class="settings-main">
+    <h1>Settings Overview</h1>
+    <p>Preferences are grouped into profiles. Each profile controls defaults for sessions, appearance, and notifications.</p>
+    <h2>Session defaults</h2>
+    <p>Sessions expire after 30 days of inactivity unless renewed. Renewal resets the window without changing tokens.</p>
+    <ul>
+      <li><strong>Timeout:</strong> 30 days</li>
+      <li><strong>Renewal:</strong> automatic on activity</li>
+      <li><strong>Revocation:</strong> immediate on password change</li>
+    </ul>
+    <h2>Appearance</h2>
+    <p>Themes are stored per profile. Dark mode follows the system setting by default.</p>
+    <form class="settings-form" action="/settings" method="post">
+      <label for="theme">Theme</label>
+      <select id="theme" name="theme"><option>system</option><option>dark</option><option>light</option></select>
+      <label for="density">Density</label>
+      <input id="density" name="density" type="range" min="1" max="5" value="3">
+      <button type="submit">Save</button>
+    </form>
+    <h2>Notifications</h2>
+    <p>Email digests are sent weekly. Critical alerts bypass the digest and send immediately.</p>
+    <table class="prefs-table">
+      <caption>Notification channels</caption>
+      <thead><tr><th scope="col">Event</th><th scope="col">Email</th><th scope="col">Push</th></tr></thead>
+      <tbody>
+        <tr><td>Digest</td><td>yes</td><td>no</td></tr>
+        <tr><td>Critical alert</td><td>yes</td><td>yes</td></tr>
+      </tbody>
+    </table>
+  </main>
+  <aside class="sidebar toc" role="complementary">
+    <h3>On this page</h3>
+    <ul><li><a href="#sessions">Session defaults</a></li><li><a-only href="#x">x</a-only></li></ul>
+  </aside>
+  <footer class="site-footer copyright">
+    <p>© 2026 Example Corp. All rights reserved.</p>
+    <p class="social share-links">Follow: <a href="/x">X</a> · <a href="/b">B</a></p>
+  </footer>
+</body>
+</html>
