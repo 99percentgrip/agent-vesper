@@ -15,8 +15,8 @@ publish = false
 # and vesper-cognition; does not leak to other crates.
 regex = { version = "1", default-features = false, features = ["std", "unicode-perl"] }
 serde.workspace = true
-vesper-domain = { path = "../vesper-domain", version = "=0.20.86" }
-vesper-security = { path = "../vesper-security", version = "=0.20.86" }
+vesper-domain = { path = "../vesper-domain", version = "=0.20.87" }
+vesper-security = { path = "../vesper-security", version = "=0.20.87" }
 
 [lints]
 workspace = true
