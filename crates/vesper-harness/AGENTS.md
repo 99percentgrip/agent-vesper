@@ -68,6 +68,10 @@ Z.ai and Playwright MCP server descriptors.
   default. The policy changes persistence only, never the resolved id.
 - The service exposes the same hosted tool definitions and behavior to ACP and
   TUI, avoiding frontend-specific parity drift.
+- `HarnessToolService::orchestrate_skills` is the shared ADR 0024 host bridge.
+  It supplies current tool capabilities and platform to `vesper-memory`, owns
+  bounded outcome feedback, and shares that tracker with read-only workers.
+  It never turns selection into permission.
 - Provider-backed worker outcome rendering preserves partial content and the
   typed interruption diagnostic from the shared agent loop; workers never
   silently report an interrupted generation as complete.

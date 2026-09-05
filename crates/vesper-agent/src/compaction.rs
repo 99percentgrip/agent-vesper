@@ -32,6 +32,7 @@ pub const MAX_COMPACTION_SOURCE_CHARS: usize = 96_000;
 pub const RESPONSE_RESERVE_TOKENS: u64 = 8_192;
 
 const COMPACTION_EXTENSION: &str = "vesper:compaction";
+const SKILL_SELECTION_EXTENSION: &str = "vesper:skills";
 
 /// Why compaction was requested.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -87,6 +88,7 @@ pub struct CompactionDraft {
     before_tokens: u64,
     capacity_tokens: u64,
     quality_history: Vec<u16>,
+    routed_skills: Vec<String>,
     summary_char_limit: usize,
 }
 
@@ -185,6 +187,7 @@ pub fn prepare_compaction(
                 .collect::<String>()
         });
     let quality_history = prior_quality_history(messages);
+    let routed_skills = prior_routed_skills(older);
     Ok(CompactionDraft {
         original: messages.to_vec(),
         recent,
@@ -200,6 +203,7 @@ pub fn prepare_compaction(
         before_tokens: estimate_context_tokens(system_instructions, messages),
         capacity_tokens,
         quality_history,
+        routed_skills,
         summary_char_limit,
     })
 }
@@ -309,6 +313,19 @@ impl CompactionDraft {
                 }),
             )
             .map_err(|_| CompactionError::InvalidSummary)?;
+        if !self.routed_skills.is_empty() {
+            summary_message
+                .extensions
+                .insert(
+                    SKILL_SELECTION_EXTENSION,
+                    serde_json::json!({
+                        "selected": self.routed_skills,
+                        "scope": "compacted-audit",
+                        "reactivate": false,
+                    }),
+                )
+                .map_err(|_| CompactionError::InvalidSummary)?;
+        }
         history[0] = summary_message;
         Ok(CompactionCommit { history, report })
     }
@@ -342,6 +359,30 @@ fn prior_quality_history(messages: &[ConversationMessage]) -> Vec<u16> {
         history.drain(..history.len() - 49);
     }
     history
+}
+
+fn prior_routed_skills(messages: &[ConversationMessage]) -> Vec<String> {
+    let mut skills = std::collections::BTreeSet::new();
+    for message in messages {
+        let Some(selected) = message
+            .extensions
+            .get(SKILL_SELECTION_EXTENSION)
+            .and_then(|value| value.get("selected"))
+            .and_then(serde_json::Value::as_array)
+        else {
+            continue;
+        };
+        for slug in selected
+            .iter()
+            .filter_map(serde_json::Value::as_str)
+            .take(3)
+        {
+            if slug.len() <= 96 && skills.len() < 64 {
+                skills.insert(slug.to_owned());
+            }
+        }
+    }
+    skills.into_iter().collect()
 }
 
 fn estimate_parts(parts: &[ContentPart]) -> u64 {
@@ -416,7 +457,7 @@ fn extract_evidence(
     messages: &[ConversationMessage],
     scrubber: &SecretScrubber,
 ) -> BTreeMap<&'static str, Vec<String>> {
-    const CATEGORIES: [(&str, &[&str]); 9] = [
+    const CATEGORIES: [(&str, &[&str]); 10] = [
         (
             "Goal",
             &["goal", "objective", "request", "need", "implement"],
@@ -454,6 +495,7 @@ fn extract_evidence(
             "Lineage",
             &["commit", "branch", "session", "checkpoint", "version"],
         ),
+        ("Skill routing", &[]),
     ];
     let mut result = BTreeMap::new();
     for (name, _) in CATEGORIES {
@@ -466,6 +508,29 @@ fn extract_evidence(
             MessageRole::Tool => "tool",
             MessageRole::ProviderOpaque(_) => "provider",
         };
+        if let Some(selected) = message
+            .extensions
+            .get(SKILL_SELECTION_EXTENSION)
+            .and_then(|value| value.get("selected"))
+            .and_then(serde_json::Value::as_array)
+        {
+            let skills = selected
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .take(3)
+                .collect::<Vec<_>>();
+            if !skills.is_empty() {
+                let entry = result
+                    .get_mut("Skill routing")
+                    .expect("category initialized");
+                if entry.len() < 12 {
+                    entry.push(format!(
+                        "{role}: previously selected {} (identity audit only; re-evaluate before reuse)",
+                        skills.join(", ")
+                    ));
+                }
+            }
+        }
         for part in &message.content {
             let text: Option<Cow<'_, str>> = match part {
                 ContentPart::Text(text) => Some(Cow::Borrowed(text.as_str())),
@@ -744,6 +809,39 @@ mod tests {
             .get(COMPACTION_EXTENSION)
             .unwrap();
         assert_eq!(metadata["quality_history"].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn compaction_preserves_skill_identity_for_audit_without_reactivation() {
+        let mut messages = (0..8)
+            .map(|index| message(index, MessageRole::User, "continue the implementation"))
+            .collect::<Vec<_>>();
+        messages[0]
+            .extensions
+            .insert(
+                SKILL_SELECTION_EXTENSION,
+                serde_json::json!({"selected": ["xlsx", "github-review"]}),
+            )
+            .unwrap();
+        let draft =
+            prepare_compaction(&[], &messages, 100_000, CompactionReason::Manual, None).unwrap();
+        assert!(
+            draft
+                .prompt()
+                .contains("previously selected xlsx, github-review")
+        );
+        let summary = draft.deterministic_summary().to_owned();
+        let commit = draft.commit(&summary, &[]).unwrap();
+        let audit = commit.history[0]
+            .extensions
+            .get(SKILL_SELECTION_EXTENSION)
+            .unwrap();
+        assert_eq!(
+            audit["selected"],
+            serde_json::json!(["github-review", "xlsx"])
+        );
+        assert_eq!(audit["reactivate"], false);
+        assert_eq!(audit["scope"], "compacted-audit");
     }
 
     #[test]

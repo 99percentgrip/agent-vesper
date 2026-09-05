@@ -44,7 +44,9 @@ the multi-turn, tool-executing layer above it.
   instructions stay outside replaceable history. `AgentLoop` automatically
   compacts at 85% including a response reserve and routes summarization through
   auxiliary → main → deterministic evidence fallback; an irreducible suffix
-  fails before ordinary provider dispatch.
+  fails before ordinary provider dispatch. Compaction retains bounded prior
+  `vesper:skills` identities as audit metadata marked `reactivate: false`;
+  skill bodies never enter summaries and later turns rerun ADR 0024 routing.
 - `src/vro/scope.rs` — scoped workspace identity, layers, skills, firewall,
   and sandbox-demand resolution. Skill-relative paths reject Unix-rooted,
   Windows-rooted/drive-prefixed, parent-traversal, NUL, and empty forms on

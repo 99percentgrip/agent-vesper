@@ -2007,6 +2007,38 @@ mod tests {
     }
 
     #[test]
+    fn shared_service_routes_skills_with_live_host_capabilities() {
+        let local = tempfile::tempdir().unwrap();
+        let global = tempfile::tempdir().unwrap();
+        let stores = Arc::new(MemoryStores::open_at(local.path(), global.path()));
+        stores
+            .skills()
+            .unwrap()
+            .write(
+                &vesper_memory::SkillSlug::new("isolated-review").unwrap(),
+                "---\nname: isolated-review\ndescription: Review a pull request in isolation\ncontext: fork\nrequires-tools: [read_skill]\n---\nprivate body",
+            )
+            .unwrap();
+        let service = HarnessToolService::new_with_checkpoint_gate(
+            stores,
+            local.path().join("cron"),
+            local.path().join("plugins"),
+            None,
+            false,
+        );
+        let tools =
+            std::collections::BTreeSet::from(["read_skill".to_owned(), "delegate_task".to_owned()]);
+        let report = service.orchestrate_skills(
+            "Use skill isolated-review to inspect this pull request",
+            None,
+            &tools,
+        );
+        assert_eq!(report.selected_names(), vec!["isolated-review"]);
+        assert!(report.selected[0].body.is_empty());
+        assert!(report.context().unwrap().contains("delegate this skill"));
+    }
+
+    #[test]
     fn shared_service_advertises_all_hosted_python_tools() {
         let service = HarnessToolService {
             stores: Arc::new(MemoryStores {
@@ -2023,6 +2055,7 @@ mod tests {
             session_root: PathBuf::new(),
             checkpoints_enabled: true,
             worker_factory: None,
+            skill_outcomes: Arc::new(vesper_memory::SkillOutcomeTracker::default()),
             cron_abort: None,
         };
         let names = service
@@ -2374,6 +2407,7 @@ pub struct HarnessToolService {
     /// See [`HarnessToolService::new_with_checkpoint_gate`].
     checkpoints_enabled: bool,
     worker_factory: Option<Arc<WorkerFactory>>,
+    skill_outcomes: Arc<vesper_memory::SkillOutcomeTracker>,
     cron_abort: Option<tokio::task::AbortHandle>,
 }
 
@@ -2445,6 +2479,7 @@ impl HarnessToolService {
             session_root,
             checkpoints_enabled,
             worker_factory,
+            skill_outcomes: Arc::new(vesper_memory::SkillOutcomeTracker::default()),
             cron_abort,
         }
     }
@@ -2472,6 +2507,35 @@ impl HarnessToolService {
         &self.stores
     }
 
+    /// Selects a bounded, policy-eligible skill set for one user prompt.
+    /// Hosts append the returned context transiently and restore the original
+    /// user message before persistence, exactly like cognitive auto-recall.
+    #[must_use]
+    pub fn orchestrate_skills(
+        &self,
+        prompt: &str,
+        explicit_skill: Option<&str>,
+        available_tools: &std::collections::BTreeSet<String>,
+    ) -> vesper_memory::SkillRoutingReport {
+        let Some(store) = self.stores.skills() else {
+            return vesper_memory::SkillRoutingReport::default();
+        };
+        let outcomes = self.skill_outcomes.adjustments();
+        store.orchestrate(&vesper_memory::SkillRoutingQuery {
+            prompt,
+            explicit_skill,
+            available_tools,
+            platform: std::env::consts::OS,
+            outcome_adjustments: &outcomes,
+        })
+    }
+
+    /// Feeds a verified terminal result back into the bounded in-process
+    /// ranking history. No prompt or skill content is retained.
+    pub fn record_skill_outcome(&self, skills: &[String], succeeded: bool) {
+        self.skill_outcomes.record(skills, succeeded);
+    }
+
     fn read_only_worker_service(&self) -> Arc<Self> {
         Arc::new(Self {
             stores: Arc::clone(&self.stores),
@@ -2483,6 +2547,7 @@ impl HarnessToolService {
             session_root: self.session_root.clone(),
             checkpoints_enabled: self.checkpoints_enabled,
             worker_factory: None,
+            skill_outcomes: Arc::clone(&self.skill_outcomes),
             cron_abort: None,
         })
     }

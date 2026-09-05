@@ -48,6 +48,10 @@ Own accepted, durable architecture and compatibility decisions for Agent Vesper.
   hosts and all direct/VRO execution paths, including transactional history
   replacement, token pressure, auxiliary fallback, security, persistence,
   and quality lineage.
+- ADR 0024 defines provider-neutral automatic and explicit skill routing:
+  deterministic metadata ranking, fail-closed eligibility, bounded
+  composition, transient inline loading, isolated-worker loading, cross-host
+  parity, compaction-safe identity audit, and bounded outcome feedback.
 
 ## Verification
 

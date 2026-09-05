@@ -1,6 +1,6 @@
 # Migration Status
 
-Last updated: 2026-09-04
+Last updated: 2026-09-05
 
 | Area | Status | Current evidence |
 | --- | --- | --- |
@@ -17,6 +17,7 @@ Last updated: 2026-09-04
 | Multi-provider architecture | READY | Core/runtime/TUI controls are provider-neutral and provider-specific catalogs stay in adapters |
 | Additional production providers | IMPLEMENTED | LM Studio is the second real registered adapter, with native model discovery and capability-gated controls; no other provider/model is claimed |
 | Context compaction parity | IMPLEMENTED AND LOCALLY VERIFIED | ADR 0023: active-model token pressure at 60/75/85%, automatic compaction at 85% with response reserve, semantic `/compact [focus]`, immutable system prompts, complete recent tool transactions, secret-scrubbed untrusted summary input, auxiliary→main→deterministic fallback, transactional rollback/fail-closed overflow, ACP/TUI persistence, VRO/direct parity, full TUI display transcript retention, and persisted quality-regression telemetry |
+| Skill orchestration parity | IMPLEMENTED AND LOCALLY VERIFIED | ADR 0024: provider-neutral metadata discovery/ranking, policy/tool/platform/risk eligibility, automatic top-three composition, explicit `/skill` and bundles, transient bounded bodies, isolated-worker contexts, direct/VRO/ReAct and ACP/TUI parity, outcome feedback, and compaction-safe audit identity |
 
 The prior Stage 4/5-only text in this file was obsolete: the workspace now
 contains the complete agent loop, hosted tools, persistence writers, memory,

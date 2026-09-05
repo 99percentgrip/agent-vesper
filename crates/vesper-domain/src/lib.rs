@@ -61,6 +61,7 @@ pub use plan::{Plan, PlanStatus, PlanStep};
 pub use session::{ReasoningRetentionMode, SessionLineage, SessionSnapshotHeader};
 pub use slash_commands::{
     HOST_PARITY_SLASH_COMMANDS, ORACLE_SLASH_COMMANDS, SlashCommandDescriptor, parse_slash_command,
+    skill_workflow_prompt,
 };
 pub use tool::{
     CompletedToolArguments, DiffLine, DiffLineKind, DiffSummary, FileChangeOperation,

@@ -29,11 +29,8 @@ business logic.
   the security follow-up.
 - `src/commands.rs` — slash-command parsing, registry, and resolution
   against the active provider's superpowers. Tier C Phase 7 (ADR 0010): the
-  registry now covers the **entire** Python oracle `LOCAL_COMMANDS` surface
-  (80 distinct oracle command names, including `/export last`, + 16
-  Vesper-native = 96 commands; Vesper-native = approve, cancel, auth,
-  lmstudio, provider, embedding, chat-only, quit, remember, recall, forget,
-  memories, promote, demote, interview-limit, firewall, sandbox). The
+  registry now covers the complete Python oracle surface plus Vesper-native
+  commands (100 entries including the distinct `/export last` route). The
   `ORACLE_COMMAND_SURFACE` const table is the single source of truth for the
   migration matrix. `chat-only` (the `/chat-only` palette twin of the F11
   keybinding) resolves to `UiAction::ToggleChatOnly`; like every registry
@@ -78,6 +75,13 @@ business logic.
   (`--local`) overrides, and always echoes the chosen scope and reason.
   `/recall` and automatic recall search both stores, `/memories` audits them,
   and `/promote` / `/demote` move a short- or full-ID memory between them.
+  ADR 0024 adds `/skill <name|bundle:name> [task]`: it builds a normal agent
+  workflow prompt, then the shared provider-neutral router selects before
+  direct, VRO, or ReAct dispatch. Automatic selections use the same route.
+  Inline bodies are provider-request-only and restored from session history;
+  isolated bodies stay in the bounded worker. Missing/ineligible explicit
+  selections stop before provider dispatch, and terminal outcomes feed only
+  bounded secret-free ranking feedback.
 - `src/dispatch.rs` — pure, terminal-free event-loop dispatch: the bridge
   between the command registry, the Plan Mode state machine, and the
   `SuperpowerOverrides` store. Owns `SessionState`, `DispatchOutcome`, and

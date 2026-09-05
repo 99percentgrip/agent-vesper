@@ -144,7 +144,7 @@ pub const ORACLE_SLASH_COMMANDS: [SlashCommandDescriptor; 28] = [
 /// Host-neutral Vesper extensions implemented by both production hosts.
 /// Kept separate from the frozen oracle catalog so compatibility fixtures
 /// remain byte-stable while ACP clients can discover the real added surface.
-pub const HOST_PARITY_SLASH_COMMANDS: [SlashCommandDescriptor; 16] = [
+pub const HOST_PARITY_SLASH_COMMANDS: [SlashCommandDescriptor; 17] = [
     SlashCommandDescriptor {
         name: "remember",
         description: "Save a fact to cognitive memory",
@@ -194,6 +194,10 @@ pub const HOST_PARITY_SLASH_COMMANDS: [SlashCommandDescriptor; 16] = [
         description: "Show the durable memory and skill timeline",
     },
     SlashCommandDescriptor {
+        name: "skill",
+        description: "Explicitly run one skill or bundle: /skill <name|bundle:name> [task]",
+    },
+    SlashCommandDescriptor {
         name: "firewall",
         description: "Show the VRO-13 command firewall status (view/disable-with-restart only)",
     },
@@ -227,6 +231,28 @@ pub fn parse_slash_command(text: &str) -> Option<(&'static str, &str)> {
         .iter()
         .find(|command| command.name == lowered)
         .map(|command| (command.name, argument))
+}
+
+/// Converts `/skill` arguments into the ordinary prompt consumed by the
+/// shared skill router. Both production hosts call this function so explicit
+/// skill and bundle syntax cannot drift.
+pub fn skill_workflow_prompt(argument: &str) -> Result<String, &'static str> {
+    let argument = argument.trim();
+    if argument.is_empty() {
+        return Err("Usage: /skill <name|bundle:name> [task description]");
+    }
+    let (selection, task) = argument
+        .split_once(char::is_whitespace)
+        .map_or((argument, ""), |(selection, task)| (selection, task.trim()));
+    let prompt = if let Some(bundle) = selection.strip_prefix("bundle:") {
+        if bundle.is_empty() {
+            return Err("Usage: /skill bundle:<name> [task description]");
+        }
+        format!("Use bundle {bundle}. {task}")
+    } else {
+        format!("Use skill {selection}. {task}")
+    };
+    Ok(prompt.trim().to_owned())
 }
 
 #[cfg(test)]
@@ -270,5 +296,19 @@ mod tests {
         assert!(parse_slash_command("/future-command").is_none());
         assert!(parse_slash_command("plain prompt").is_none());
         assert!(parse_slash_command("").is_none());
+    }
+
+    #[test]
+    fn skill_workflow_parser_handles_single_skills_and_bundles() {
+        assert_eq!(
+            skill_workflow_prompt("xlsx build a forecast").unwrap(),
+            "Use skill xlsx. build a forecast"
+        );
+        assert_eq!(
+            skill_workflow_prompt("bundle:evidence investigate").unwrap(),
+            "Use bundle evidence. investigate"
+        );
+        assert!(skill_workflow_prompt("").is_err());
+        assert!(skill_workflow_prompt("bundle:").is_err());
     }
 }

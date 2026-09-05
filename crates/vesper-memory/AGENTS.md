@@ -18,6 +18,9 @@ subsystem that backs the Tier C Phase 8 un-stubbed commands
 - `src/skills.rs` — `SkillStore` (markdown skill files under
   `<root>/skills/<slug>.md`), `SkillSummary`, and bounded JSON skill bundles
   under `<root>/bundles/<slug>.json`.
+- `src/skill_orchestrator.rs` — ADR 0024 deterministic skill metadata parser,
+  eligibility gate, semantic/file/trigger ranker, bounded composer, transient
+  loader, and secret-free in-process outcome tracker.
 - `src/profile.rs` — `UserProfile` (single markdown file with bounded
   size, append/forget with category sections).
 - `src/awareness.rs` — `AwarenessLedger` and the `EpistemicRecord` /
@@ -57,6 +60,15 @@ subsystem that backs the Tier C Phase 8 un-stubbed commands
 - `read_section` extracts one heading's section; the headline shown by
   `list_skills` prefers the frontmatter `description` (oracle context
   parity: `- {name}: {description}`).
+- Skill orchestration considers metadata only, selects at most three skills,
+  and fails closed on invocation policy, archive/platform/tool/exclusion/
+  conflict constraints. Inline bodies are bounded to 24,000 characters each
+  and 60,000 total; isolated bodies are never returned to the main context.
+  Selection and bundle activation never grant tool or external-side-effect
+  permission.
+- Catalog discovery reads at most 32,000 bytes from each skill file. Full
+  bodies are read only for selected inline skills; the main process never
+  reads a selected isolated skill's full body.
 
 ## Work Guidance
 
@@ -71,14 +83,16 @@ subsystem that backs the Tier C Phase 8 un-stubbed commands
   is opt-in via `save()`/`load()` to a single JSON file. The harness
   (not this crate) is responsible for keeping the live state coherent
   with provider evidence.
-- Bundle files are durable grouping metadata only; loading a bundle never
-  implicitly executes or mutates a skill.
+- Bundle files are durable grouping metadata only; bundles are activated
+  explicitly, fail as a unit when a requested member is missing, ineligible,
+  unreadable, or conflicting, rank members within the normal three-skill cap,
+  and never implicitly execute, mutate, or widen permission.
 
 ## Verification
 
-- `cargo test -p vesper-memory` — unit + integration tests (atomic
-  writes, bounds enforcement, confinement rejection, append/forget
-  idempotency, awareness upsert/resolve).
+- `cargo test -p vesper-memory` — unit + integration tests (stores, routing
+  against the curated catalog, eligibility, bundles, isolation, adversarial
+  body non-selection, bounds, and feedback).
 - `cargo xtask architecture` — confirms the new crate satisfies the
   production dependency allowlist and the source-tree unsafe ban.
 

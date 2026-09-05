@@ -6,6 +6,7 @@
 //! same shape: each skill is a markdown document with YAML frontmatter
 //! (or a leading `# <name>` header), and the store enumerates them.
 
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -22,6 +23,9 @@ use crate::types::SkillSlug;
 pub const MAX_SKILL_BYTES: usize = 200_000;
 /// Hard cap on the number of skill files the store will enumerate.
 pub const MAX_SKILL_FILES: usize = 500;
+/// Prefix sufficient for bounded frontmatter and catalog headlines. Full
+/// skill bodies are read only after orchestration selects them.
+pub(crate) const MAX_SKILL_CATALOG_PREFIX_BYTES: usize = 32_000;
 /// Maximum number of skills referenced by one bundle.
 pub const MAX_BUNDLE_SKILLS: usize = 32;
 /// Maximum serialized size of one bundle.
@@ -168,6 +172,20 @@ impl SkillStore {
         if let Some(body) = self
             .global_skill_path(slug)
             .and_then(|path| std::fs::read_to_string(path).ok())
+        {
+            return Ok(body);
+        }
+        Err(MemoryError::NotFound(format!("skill:{}", slug.as_str())))
+    }
+
+    /// Reads only the bounded catalog prefix used for discovery/ranking.
+    pub(crate) fn read_catalog_prefix(&self, slug: &SkillSlug) -> Result<String, MemoryError> {
+        if let Some(body) = read_prefix(&self.skill_path(slug)) {
+            return Ok(body);
+        }
+        if let Some(body) = self
+            .global_skill_path(slug)
+            .and_then(|path| read_prefix(&path))
         {
             return Ok(body);
         }
@@ -424,13 +442,22 @@ fn scan_skills_dir(dir: &Path, out: &mut Vec<SkillSummary>) {
             Ok(slug) => slug,
             Err(_) => continue,
         };
-        let body = std::fs::read_to_string(&path).unwrap_or_default();
+        let body = read_prefix(&path).unwrap_or_default();
         let headline = headline_of(&body);
         out.push(SkillSummary {
             slug: slug.as_str().to_string(),
             headline,
         });
     }
+}
+
+fn read_prefix(path: &Path) -> Option<String> {
+    let file = std::fs::File::open(path).ok()?;
+    let mut bytes = Vec::with_capacity(MAX_SKILL_CATALOG_PREFIX_BYTES);
+    file.take(MAX_SKILL_CATALOG_PREFIX_BYTES as u64)
+        .read_to_end(&mut bytes)
+        .ok()?;
+    Some(String::from_utf8_lossy(&bytes).into_owned())
 }
 
 /// Scans one `bundles/` directory into a vector of parsed bundles.

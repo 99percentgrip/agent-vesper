@@ -429,6 +429,8 @@ impl AcpHarnessEngine {
         user_text: &str,
         mode: vesper_domain::ReasoningMode,
         sink: Option<Arc<vesper_cognition::CognitiveMemory>>,
+        original_user_content: Vec<ContentPart>,
+        selected_skills: Vec<String>,
     ) -> Result<AcpPromptResult, String> {
         use vesper_domain::{OutcomeStatus, PrivacyMode, ReasoningRequest, RequestId};
         let hosted = Arc::clone(&self.hosted);
@@ -586,8 +588,17 @@ impl AcpHarnessEngine {
         };
         let mut histories = self.histories.lock().await;
         let history = histories.entry(request.session_id.clone()).or_default();
+        if let Some(latest_user) = history
+            .iter_mut()
+            .rev()
+            .find(|message| message.role == MessageRole::User)
+        {
+            latest_user.content = original_user_content;
+        }
         history.push(assistant);
         let history_replacement = Some(history.clone());
+        self.hosted
+            .record_skill_outcome(&selected_skills, outcome.status == OutcomeStatus::Succeeded);
         Ok(AcpPromptResult {
             text: content,
             cancelled: false,
@@ -665,6 +676,44 @@ impl AcpHarnessEngine {
         .ok()
         .flatten();
         if let Some(context) = recall_context
+            && let Ok(extra) = vesper_domain::ContentText::new(context)
+        {
+            message.content.push(ContentPart::Text(extra));
+        }
+        let available_tools = self
+            .hosted
+            .clone()
+            .build_default_registry()
+            .definitions_for(request.operating_mode)
+            .into_iter()
+            .map(|definition| definition.harness_name.as_str().to_owned())
+            .collect::<std::collections::BTreeSet<_>>();
+        let skill_report = self
+            .hosted
+            .orchestrate_skills(&text, None, &available_tools);
+        if let Some(error) = skill_report.explicit_error.as_ref() {
+            return Ok(AcpPromptResult {
+                text: format!("skill routing failed: {error}"),
+                cancelled: false,
+                persist_turn: false,
+                history_replacement: None,
+            });
+        }
+        let selected_skills = skill_report.selected_names();
+        if !selected_skills.is_empty() {
+            let _ = message.extensions.insert(
+                "vesper:skills",
+                serde_json::json!({"selected": selected_skills.clone()}),
+            );
+        }
+        if !selected_skills.is_empty()
+            && let Some(event_sink) = request.event_sink.as_ref()
+        {
+            event_sink.event(vesper_acp::AcpEngineEvent::ReasoningDelta {
+                text: format!("Skills selected: {}", selected_skills.join(", ")),
+            });
+        }
+        if let Some(context) = skill_report.context()
             && let Ok(extra) = vesper_domain::ContentText::new(context)
         {
             message.content.push(ContentPart::Text(extra));
@@ -775,9 +824,30 @@ impl AcpHarnessEngine {
             )
         {
             let sink = self.cognition.engine.clone();
-            return self
-                .run_vro_turn(&request, config, &text, effective_mode, sink)
+            let result = self
+                .run_vro_turn(
+                    &request,
+                    config,
+                    &text,
+                    effective_mode,
+                    sink,
+                    original_content.clone(),
+                    selected_skills.clone(),
+                )
                 .await;
+            if result.is_err() {
+                self.hosted.record_skill_outcome(&selected_skills, false);
+                let mut histories = self.histories.lock().await;
+                if let Some(history) = histories.get_mut(&request.session_id)
+                    && let Some(latest_user) = history
+                        .iter_mut()
+                        .rev()
+                        .find(|message| message.role == MessageRole::User)
+                {
+                    latest_user.content = original_content;
+                }
+            }
+            return result;
         }
         let hosted = Arc::clone(&self.hosted);
         let permission_port: Arc<dyn vesper_agent::PermissionPort> = request
@@ -850,12 +920,41 @@ impl AcpHarnessEngine {
             .or_default()
             .retain(|entry| !Arc::ptr_eq(entry, &cancellation));
         if cancellation.is_cancelled() {
+            self.hosted.record_skill_outcome(&selected_skills, false);
+            let mut histories = self.histories.lock().await;
+            if let Some(history) = histories.get_mut(&request.session_id)
+                && let Some(latest_user) = history
+                    .iter_mut()
+                    .rev()
+                    .find(|message| message.role == MessageRole::User)
+            {
+                latest_user.content = original_content;
+            }
             return Ok(AcpPromptResult {
                 text: String::new(),
                 cancelled: true,
                 persist_turn: true,
                 history_replacement: None,
             });
+        }
+        if let Ok((outcome, _)) = &run_result {
+            self.hosted.record_skill_outcome(
+                &selected_skills,
+                matches!(outcome, vesper_agent::AgentTurnOutcome::Completed { .. }),
+            );
+        } else {
+            self.hosted.record_skill_outcome(&selected_skills, false);
+        }
+        if run_result.is_err() {
+            let mut histories = self.histories.lock().await;
+            if let Some(history) = histories.get_mut(&request.session_id)
+                && let Some(latest_user) = history
+                    .iter_mut()
+                    .rev()
+                    .find(|message| message.role == MessageRole::User)
+            {
+                latest_user.content = original_content.clone();
+            }
         }
         let (outcome, history) = run_result.map_err(|error| {
             let safe_error = safe_agent_loop_error(&error);
@@ -919,6 +1018,12 @@ impl AcpHarnessEngine {
                 None => (rest, ""),
             };
             let lowered = raw_name.to_ascii_lowercase();
+            if lowered == "skill" {
+                return match vesper_domain::skill_workflow_prompt(raw_argument) {
+                    Ok(prompt) => SlashFlow::Workflow(prompt),
+                    Err(error) => slash_result(error.to_owned()),
+                };
+            }
             if cognition::is_cognition_command(lowered.as_str()) {
                 // Blocking-pool: the bundle's adapters use
                 // `reqwest::blocking` clients, which must never run (or

@@ -32,7 +32,7 @@ update mapping, and bounded asynchronous dispatch into `vesper-runtime`.
 - Slash-command parity (ADR 0010 Tier C): `available_commands_update`
   advertises the frozen 28-command `vesper-domain` catalog **plus the shared
   host-neutral extension catalog** (`HOST_PARITY_SLASH_COMMANDS`, currently
-  13 commands — 41 total; the count is asserted in
+  17 commands — 45 total; the count is asserted in
   `adapter::command_catalog_tests::frozen_catalog_stays_exact_and_extensions_append`)
   exactly once for
   `session/new`, `session/load`, and `session/resume`; `fork` advertises

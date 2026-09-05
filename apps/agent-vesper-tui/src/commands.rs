@@ -1236,6 +1236,7 @@ impl CommandRegistry {
                 }
             }
             "skills" => CommandOutcome::Memory(MemoryOp::SkillsList),
+            "skill" => resolve_skill_workflow(argument),
             "profile" => CommandOutcome::Memory(MemoryOp::ProfileShow),
             "awareness" => CommandOutcome::Memory(MemoryOp::AwarenessList { kind: None }),
             "metacognition" => CommandOutcome::Memory(MemoryOp::MetacognitionList),
@@ -1757,6 +1758,9 @@ impl CommandRegistry {
         buffer.push_str("  /goal <summary>     add a persistent goal\n");
         buffer.push_str("  /subgoal <criterion> add a goal acceptance criterion\n");
         buffer.push_str("  /skills             list learned skills\n");
+        buffer.push_str(
+            "  /skill <name|bundle:name> [task]  explicitly run a skill or bounded bundle\n",
+        );
         buffer.push_str("  /profile            show approved profile preferences\n");
         buffer.push_str("  /awareness          show epistemic state\n");
         buffer.push_str("  /metacognition      show metacognitive state\n");
@@ -1895,6 +1899,19 @@ fn resolve_smart(argument: &str) -> CommandOutcome {
     CommandOutcome::Workflow {
         display: format!("smart {name}: {label}."),
         prompt: prompt.into(),
+    }
+}
+
+fn resolve_skill_workflow(argument: &str) -> CommandOutcome {
+    match vesper_domain::skill_workflow_prompt(argument) {
+        Ok(prompt) => CommandOutcome::Workflow {
+            display: format!(
+                "skill: explicitly selected {}.",
+                argument.split_whitespace().next().unwrap_or_default()
+            ),
+            prompt,
+        },
+        Err(error) => CommandOutcome::Error(error.into()),
     }
 }
 
@@ -2043,6 +2060,7 @@ const ORACLE_COMMAND_SURFACE: &[OracleCommandEntry] = &[
     OracleCommandEntry { name: "observability",     description: "Show secret-safe local reliability metrics" },
     OracleCommandEntry { name: "memory",            description: "Show project-local memory entries" },
     OracleCommandEntry { name: "skills",            description: "List learned project skills" },
+    OracleCommandEntry { name: "skill",             description: "Run one skill or bundle explicitly (Vesper-native)" },
     OracleCommandEntry { name: "profile",           description: "Show approved cross-project user-profile preferences" },
     OracleCommandEntry { name: "curator",           description: "Run deterministic skill maintenance" },
     OracleCommandEntry { name: "sessions",          description: "Search past sessions" },
@@ -2561,6 +2579,7 @@ mod tests {
             "awareness",
             "memory",
             "skills",
+            "skill",
             "ci",
             "export",
         ] {
@@ -2622,11 +2641,8 @@ mod tests {
         );
         assert_eq!(
             registry.names().len(),
-            99,
-            "Phase 7 parity: 80 oracle commands + 19 Vesper-native = 99 total \
-             (Vesper-native: approve, cancel, auth, lmstudio, provider, embedding, \
-             chat-only, quit, remember, recall, forget, memories, promote, demote, \
-             interview-limit, sandbox, daemon, watch)"
+            100,
+            "the complete oracle-compatible and Vesper-native command surface must stay registered"
         );
     }
 
@@ -3082,6 +3098,29 @@ mod tests {
             }
             other => panic!("expected Workflow, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn explicit_skill_and_bundle_commands_build_routable_prompts() {
+        for (input, expected) in [
+            (
+                "/skill xlsx build a forecast",
+                "Use skill xlsx. build a forecast",
+            ),
+            (
+                "/skill bundle:evidence investigate this claim",
+                "Use bundle evidence. investigate this claim",
+            ),
+        ] {
+            match resolve_bare_intent(&CommandIntent::parse(input)) {
+                CommandOutcome::Workflow { prompt, .. } => assert_eq!(prompt, expected),
+                other => panic!("expected skill workflow, got {other:?}"),
+            }
+        }
+        assert!(matches!(
+            resolve_bare_intent(&CommandIntent::parse("/skill")),
+            CommandOutcome::Error(_)
+        ));
     }
 
     #[test]

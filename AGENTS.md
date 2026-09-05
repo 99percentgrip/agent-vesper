@@ -137,6 +137,13 @@ When the user requests a durable behavior change, record it here or in the relev
   human-visible transcript intact, and fails closed before dispatch when the
   minimum safe suffix cannot fit. Manual `/compact [focus]` is semantic, not
   a message-count truncation control.
+- Skill orchestration is provider-neutral and shared by TUI/ACP direct, VRO,
+  and ReAct paths. It ranks only bounded metadata, applies fail-closed policy
+  eligibility, composes at most three skills, injects inline instructions only
+  for the active provider request, and keeps `context: fork` bodies inside a
+  bounded worker. `/skill <name|bundle:name> [task]` is a cross-host explicit
+  route. Selection never grants permission or external side effects; compacted
+  identities are audit-only and must be rerouted before reuse.
 - Users must not have to babysit an active native plan with repeated
   "continue" prompts. A normal provider stop or an ordinary iteration-segment
   boundary while plan items remain open triggers bounded autonomous

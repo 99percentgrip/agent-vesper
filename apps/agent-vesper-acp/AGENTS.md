@@ -138,9 +138,14 @@ transport, stderr-only tracing, and orderly shutdown.
   conversation history as slash text. `/compact [focus]` is the additional
   stateful exception: it installs and persists the validated semantic history
   replacement; `/diff` and `/release` workflow turns persist like ordinary
-  prompts. The
-  engine's progress port pairs tool started/finished events by the most
-  recently issued id per tool name, forwards bounded filesystem-change
+  prompts. The ADR 0024 `/skill <name|bundle:name> [task]` extension replaces
+  the slash text with a real workflow prompt and uses the same `vesper-memory`
+  router as the TUI across direct and VRO paths. Automatic routing also runs
+  on every ordinary prompt. Bodies are transient, selected identities are
+  observable, missing/ineligible explicit requests fail before provider
+  dispatch, and outcome feedback is bounded and content-free. The engine's
+  progress port pairs tool started/finished events by the most recently issued
+  id per tool name, forwards bounded filesystem-change
   metadata to the ACP adapter, and records the latest per-session plan
   markdown. Rich terminal red/green diff painting is a TUI-only presentation
   detail; ACP clients receive truthful path/operation/addition/deletion

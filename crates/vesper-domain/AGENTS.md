@@ -28,7 +28,10 @@ Orchestrator (VRO) Phase VRO-1 domain contracts.
   pinned oracle's `_send_available_commands`, verified against
   `fixtures/acp/slash-command`) plus the pure case-insensitive
   `parse_slash_command` parser. It is plain data — no stores, no I/O;
-  store-backed execution lives in `vesper-harness`. The ACP catalog is a
+  store-backed execution lives in `vesper-harness`. It also owns the separate
+  shared host-parity extension descriptors, including ADR 0024 `/skill`, so
+  ACP advertisement and TUI registration are checked against one foundation
+  catalog. The ACP oracle catalog is a
   distinct oracle surface from the TUI's `LOCAL_COMMANDS` palette (79+3
   commands); the TUI keeps its own registry rather than collapsing onto this
   28-command subset.

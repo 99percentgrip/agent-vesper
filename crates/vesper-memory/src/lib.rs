@@ -37,6 +37,7 @@ pub mod awareness;
 pub mod error;
 pub mod io;
 pub mod profile;
+pub mod skill_orchestrator;
 pub mod skills;
 pub mod store;
 pub mod types;
@@ -44,6 +45,12 @@ pub mod types;
 pub use awareness::{AwarenessLedger, MAX_RECORDS as MAX_AWARENESS_RECORDS};
 pub use error::MemoryError;
 pub use profile::{MAX_PROFILE_BYTES, MAX_PROFILE_LINE_CHARS, PROFILE_FILENAME, UserProfile};
+pub use skill_orchestrator::{
+    AUTO_ACTIVATION_SCORE, LoadedSkill, MAX_SELECTED_SKILLS, MAX_SKILL_CONTEXT_CHARS,
+    MAX_TOTAL_SKILL_CONTEXT_CHARS, SkillCandidate, SkillExecutionMode, SkillInvocationPolicy,
+    SkillMetadata, SkillOutcomeTracker, SkillRisk, SkillRoutingQuery, SkillRoutingReport,
+    parse_metadata,
+};
 pub use skills::{
     MAX_BUNDLE_BYTES, MAX_BUNDLE_SKILLS, MAX_SKILL_BYTES, MAX_SKILL_FILES, SkillBundle, SkillStore,
     SkillSummary,

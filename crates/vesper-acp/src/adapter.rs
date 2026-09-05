@@ -309,7 +309,7 @@ const CANCEL_GRACE: std::time::Duration = std::time::Duration::from_millis(400);
 /// whose durable stores are independent of the live turn. Deliberately
 /// EXCLUDED: commands that mutate conversation/session state or drive a
 /// real turn (`compact`, `clear-history`, `clear-plan`, `undo`,
-/// `checkpoint`, `rollback`, `export`, `diff`, `release`) and subprocess/
+/// `checkpoint`, `rollback`, `export`, `diff`, `release`, `skill`) and subprocess/
 /// registry mutators (`plugins`, `mcp`) — those must stop the world.
 const CONCURRENT_SAFE_SLASH_COMMANDS: &[&str] = &[
     "status",
@@ -366,6 +366,9 @@ const INTERRUPTING_SLASH_COMMANDS: &[&str] = &[
     "undo",
     "rollback",
     "release",
+    // Skill activation drives a real provider turn and must observe one stable
+    // history/tool-capability snapshot.
+    "skill",
     // Watcher registration mutates the durable watcher store the daemon
     // sweeps; it must stop the world to register coherently (VRO-13 PR-7).
     "watch",
@@ -1362,7 +1365,7 @@ mod command_catalog_tests {
     fn frozen_catalog_stays_exact_and_extensions_append() {
         assert_eq!(catalog_commands(&[]).len(), 28);
         let commands = catalog_commands(&vesper_domain::HOST_PARITY_SLASH_COMMANDS);
-        assert_eq!(commands.len(), 44);
+        assert_eq!(commands.len(), 45);
         let json = serde_json::to_value(commands).unwrap();
         let names: Vec<_> = json
             .as_array()
@@ -2074,6 +2077,7 @@ mod slash_grace_tests {
             "/rollback 3",
             "/diff",
             "/release minor",
+            "/skill xlsx update the workbook",
             "/plugins load x",
             "/mcp add srv",
         ] {
