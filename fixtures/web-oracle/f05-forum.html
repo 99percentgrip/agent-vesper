@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Thread: pipe debugging channels - Forum</title>
+</head>
+<body>
+  <div id="wrap">
+    <header>
+      <a class="logo" href="/">Forum</a>
+      <nav>
+        <a href="/latest">Latest</a>
+        <a href="/categories">Categories</a>
+        <a href="/u/login">Log in</a>
+      </nav>
+    </header>
+    <main>
+      <h1>Thread: pipe debugging channels</h1>
+      <ol class="posts">
+        <li class="post" id="p1">
+          <div class="post-meta"><a href="/u/1">op_user</a> &middot; 2h</div>
+          <div class="post-body">
+            <p>Has anyone wired the debugging channel to anonymous pipes
+            instead of a TCP port? Looking for a containment win.</p>
+          </div>
+        </li>
+        <li class="post" id="p2">
+          <div class="post-meta"><a href="/u/2">reply_user</a> &middot; 1h</div>
+          <div class="post-body">
+            <p>Yes. Spawn the child with the pipe flags, keep FD 3 as the
+            command stream and FD 4 as the event stream, and close your
+            write end to shut down cleanly.</p>
+            <blockquote><p><a href="/u/1">@op_user</a> it also avoids port
+            collisions in containers.</p></blockquote>
+          </div>
+        </li>
+        <li class="post" id="p3">
+          <div class. "post-meta"><a href="/u/3">third_user</a> &middot; 55m</div>
+          <div class="post-body">
+            <p>Linking the engineering writeup from the platform team for
+            anyone landing here from search.</p>
+            <p><a href="https://notes.example.test/pipes">notes.example.test/pipes</a></p>
+          </div>
+        </li>
+      </ol>
+      <form class="reply-form" action="/reply" method="post">
+        <textarea name="body" rows="4" placeholder="Write a reply..."></textarea>
+        <button type="submit">Reply</button>
+      </form>
+    </main>
+    <aside class="sidebar sidebar-ads">
+      <div class="ad-slot advert">Advertisement</div>
+    </aside>
+    <footer>
+      <p>Powered by ForumSoft.</p>
+    </footer>
+  </div>
+</body>
+</html>

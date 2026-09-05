@@ -4202,6 +4202,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "vesper-web"
+version = "0.20.87"
+dependencies = [
+ "quick-xml",
+]
+
+[[package]]
 name = "vsimd"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

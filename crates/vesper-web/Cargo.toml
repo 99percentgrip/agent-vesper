@@ -1,0 +1,15 @@
+[package]
+name = "vesper-web"
+description = "Provider-neutral web perception pipeline: parse, strip, prune, convert (VRO-14 PR-1)"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+quick-xml.workspace = true
+
+[lints]
+workspace = true

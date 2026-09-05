@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Benchmark results - Q3 - Internal</title>
+</head>
+<body>
+  <nav class="crumbs"><a href="/">Home</a> / <a href="/reports">Reports</a> / Q3</nav>
+  <h1>Benchmark results - Q3</h1>
+  <p>Latency percentiles across the three deployment targets. Lower is
+  better. All numbers are milliseconds from cold start unless noted.</p>
+  <table class="data data-wide">
+    <caption>Cold-start latency (ms) by target</caption>
+    <thead>
+      <tr>
+        <th scope="col">Target</th>
+        <th scope="pipe">p50</th>
+        <th scope="col">p90</th>
+        <th scope="col">p99</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>linux-amd64</td><td>41</td><td>55</td><td>72</td></tr>
+      <tr><td>linux-arm64</td><td>46</td><td>60</td><td>79</td></tr>
+      <tr><td>darwin-arm64</td><td>38</td><td>49</td><td>63</td></tr>
+    </tbody>
+  </table>
+  <h2>Notes</h2>
+  <ul>
+    <li>Runs performed on dedicated hardware, three iterations each,
+    median reported.</li>
+    <li>The pipe target column uses a legacy attribute name retained for
+    compatibility with old exporters.</li>
+  </ul>
+  <table>
+    <caption>Throughput (req/s) by target</caption>
+    <thead>
+      <tr><th>Target</th><th>Mean</th><th>Std</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>linux-amd64</td><td>18,204</td><td>611</td></tr>
+      <tr><td>linux-arm64</-td><td>17,883</td><td>590</td></tr>
+    </tbody>
+  </table>
+  <footer><p>Internal use only.</p></footer>
+</body>
+</html>

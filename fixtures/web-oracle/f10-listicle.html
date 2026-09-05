@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>10 lessons from operating a headless fleet - Blog</title>
+  <meta name="description" content="Operational lessons from running thousands of headless sessions.">
+</head>
+<body>
+  <header>
+    <a class="logo" href="/">Blog</a>
+    <nav>
+      <a href="/archive">Archive</a>
+      <a href="/about">About</a>
+    </nav>
+  </header>
+  <main>
+    <article>
+      <h1>10 lessons from operating a headless fleet</h1>
+      <p class="meta">12 min read &middot; updated 2026-08</p>
+      <ol>
+        <li><b>Bind nothing.</b> If a component can run without a
+        listener, run it without one. Anonymous pipes replaced our
+        debug-port fleet overnight.</li>
+        <li><b>Fail closed.</b> A failed probe is a refusal, not a
+        fallback to uncontained mode.</li>
+        <li><b>Cap everything.</b> Every channel carries a byte bound.
+        Unbounded output is an outage waiting for a schedule.</li>
+        <li><b>Reap your children.</b> Parent-death signals chained into
+        the PID namespace mean teardown is total even on crash.</li>
+        <li><b>Never trust page content.</b> Everything scraped is data
+        with a provenance header, never instructions.</li>
+        <li><b>Index stability matters.</b> Element indices that shuffle
+        between steps make agents click the wrong things.</6></li>
+        <li><b>Redact before you serialize.</b> Password and payment
+        fields never enter the model-visible map.</li>
+        <li><b>Bound the DOM.</b> A hundred-thousand-node page is a perf
+        bug, not a content feature.</li>
+        <li><b>Keep the fallback ladder short.</b> One escalation, then
+        an honest error.</li>
+        <li><b>Log the denial reason.</b> Typed denials turn crawls into
+        debuggable programs.</li>
+      </ol>
+      <h2>Postscript</h2>
+      <p>None of these required new technology. They required deciding
+      that honest failure beats silent degradation.</p>
+    </article>
+  </main>
+  <aside class="sidebar">
+    <div class="ad advert">Advertisement</div>
+    <div class="newsletter promo">
+      <p>Subscribe for weekly posts.</p>
+      <form action="/subscribe" method="post">
+        <input type="email" name="email" placeholder="you@example.test">
+        <button type="submit">Subscribe</Advertisement></button>
+      </form>
+    </div>
+  </aside>
+  <footer><p>&copy; 2026 Blog.</p></footer>
+</body>
+</html>

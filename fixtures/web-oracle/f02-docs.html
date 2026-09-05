@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Policy Configuration Reference - Manual</title>
+  <meta name="description" content="Reference for the policy configuration file format.">
+  <link rel="canonical" href="https://manual.example.test/policy-config">
+  <style>.nav { display: none; }</style>
+</head>
+<body>
+  <nav class="site-nav">
+    <a href="/manual">Manual</a>
+    <a href="/manual/intro">Introduction</a>
+    <a href="/manual/policy">Policy</a>
+    <a href="/manual/glossary">Glossary</a>
+  </nav>
+  <main>
+    <h1>Policy Configuration Reference</h1>
+    <section id="overview">
+      <h2>Overview</h2>
+      <p>The policy file is TOML. It declares rules, a mode, and optional
+      metadata. Rules are evaluated in declaration order and the first
+      match wins.</p>
+    </section>
+    <section id="options">
+      <h2>Options</h2>
+      <dl>
+        <dt><code>mode</code></dt>
+        <dd>One of <code>allowlist</code> or <code>denylist</code>. Defaults to denylist.</dd>
+        <dt><code>rules</code></dt>
+        <dd>An array of rule tables. Each has <code>pattern</code> and <code>decision</code>.</dd>
+        <dt><code>version</code></dt>
+        <dd>Schema version integer, currently <code>1</code>.</dd>
+      </dl>
+      <pre><code>[policy]
+mode = "denylist"
+version = 1
+
+[[policy.rules]]
+pattern = "fork-bomb"
+decision = "deny"</code></pre>
+    </section>
+    <section id="precedence">
+      <h2>Precedence</h2>
+      <p>Denial outranks approval which outranks allowance. A rule that
+      denies is absolute: no later rule, mode, or operator override can
+      permit the operation.</p>
+      <blockquote>
+        <p>Denial is absolute. Everything else is a speed bump.</p>
+      </blockquote>
+    </section>
+    <aside class="promo advert" aria-hidden="true">
+      <p>Advertisement: buy more tokens today!</p>
+    </aside>
+    <section id="examples">
+      < <h2>Examples</h2>>
+      <p>Examples below show minimal complete configurations for the two
+      modes.</p>
+      <ul>
+        <li>A denylist with one rule (shown above).</li>
+        <li>An allowlist that denies everything not matched:
+          <ol>
+            <li>Set <code>mode = "allowlist"</code>.</li>
+            <li>List the allowed patterns.</li>
+          </ol>
+        </li>
+      </ul>
+    </section>
+  </main>
+  <footer>
+    <p>The Manual. Generated from source.</p>
+  </footer>
+</body>
+</html>

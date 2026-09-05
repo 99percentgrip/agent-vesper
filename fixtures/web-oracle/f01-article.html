@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sandboxing Agentic Browser Automation - Engineering Notes</title>
+  <meta name="description" content="How to run an LLM-driven browser operator inside an OS sandbox with no TCP listeners.">
+  <meta name="keywords" content="sandbox, browser, automation, namespaces">
+  <link rel="stylesheet" href="/assets/site.css">
+  <style>body { margin: 0; font-family: sans-serif; }</style>
+  <script>window.__BOOT__ = { locale: "en" };</script>
+</head>
+<body>
+  <header>
+    <nav aria-label="primary">
+      <a href="/">Home</a>
+      <a href="/articles">Articles</a>
+      <a href="/about">About</a>
+      <a href="/feed.xml">RSS</a>
+    </nav>
+    <form action="/search" method="get" role="search">
+      <input type="search" name="q" placeholder="Search articles">
+      <button type="submit">Search</button>
+    </form>
+  </header>
+  <aside class="sidebar sidebar-ads promo">
+    <div class="ad-slot advert" data-ad="leaderboard">Advertisement</div>
+    <ul class="social-share share">
+      <li><a href="https://example-share.invalid/x">Share on X</a></li>
+      <li><a href="https://example-share.invalid/y">Share on Y</a></li>
+    </ul>
+  </aside>
+  <main>
+    <article class="post">
+      <h1>Sandboxing Agentic Browser Automation</h1>
+      <p class="byline">By the Platform Team &middot; September 2026</p>
+      <p>Agentic browser automation needs a hard boundary between the
+      agent process and the host. This article walks through a design where
+      the browser is spawned with its debugging channel wired to inherited
+      anonymous pipes instead of a TCP listener, so the channel is
+      unreachable from outside the process tree.</p>
+      <h2>Why pipes beat sockets</h2>
+      <p>A TCP debug listener, even on loopback, is a socket others can
+      probe. Anonymous pipes exist only as file descriptors; there is no
+      listening socket to attack and no port to collide with. The kernel
+      enforces that only the parent and child hold descriptors to the
+      same pipe.</p>
+      <h3>FD layout</h3>
+      <p>The child reads commands on FD 3 and writes events on FD 4.
+      The parent duplicates its ends before exec so nothing else inherits
+      them. Teardown is closing the write end: the child observes EOF and
+      exits, and the supervisor reaps the process.</p>
+      <pre><code>spawn --remote-debugging-pipe --no-sandbox --disable-gpu</code></pre>
+      <h3>Fail-closed capability reporting</h3>
+      <p>Any probe that cannot complete reports the capability as
+      unavailable rather than guessing. The orchestrator then refuses the
+      isolated operation instead of silently degrading to an uncontained
+      run.</p>
+      <table>
+        <caption>Probe outcomes by host capability</caption>
+        <thead>
+          <tr><th>Host capability</th><th>Probe result</th><th>Reported</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Namespaces allowed</td><td>probe ok</td><td>Available</td></tr>
+          <tr><td>UID map write blocked</td><td>probe fail</td><td>Unavailable</td></tr>
+          <tr><td>Docker daemon up</td><td>version ok</td><ed></td></tr>
+          <tr><td>Docker daemon down</td><td>version fail</td><td>Unavailable</td></tr>
+        </tbody>
+      </table>
+      <figure>
+        <img src="/assets/diagram.svg" alt="Diagram of the pipe boundary" loading="lazy">
+        <figcaption>The debugging channel as the only boundary crossing.</figcaption>
+      </img></figure>
+      <h2>Conclusion</h2>
+      <p>Pipe-based debugging channels, paired with fail-closed capability
+      reporting, give agentic browser sessions a containment story that
+      survives missing privileges without pretending they exist.</p>
+    </article>
+  </main>
+  <footer>
+    <p>&copy; 2026 Engineering Notes. All rights reserved.</p>
+    <nav aria-label="footer">
+      <a href="/privacy">Privacy</a>
+      <a href="/terms">Terms</a>
+      <a href="/contact">Contact</a>
+      <a href="/sitemap.xml">Sitemap</a>
+    </nav>
+  </footer>
+</body>
+</html>

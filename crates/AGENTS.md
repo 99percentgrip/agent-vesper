@@ -43,6 +43,10 @@ test-only conformance support.
   Sandbox Supervisor as the Sole Raw-Syscall Boundary).
 - `vesper-testkit` may depend on all foundational crates and owns synthetic
   read-store/no-write helpers; no production crate may depend on it.
+- `vesper-web` (VRO-14 PR-1) depends only on `quick-xml`; it owns the pure
+  parse/strip/prune/convert DOM pipeline with strictly zero I/O (no network,
+  no filesystem, no clock). Transports and the headless renderer are
+  composition-boundary ports in later PRs, never here.
 - `vesper-provider-glm` may depend on auth/domain/provider/config/security and
   use `vesper-testkit` only as a dev dependency.
 - `vesper-runtime` may depend on domain/provider and the read-only repository,
@@ -109,3 +113,5 @@ test-only conformance support.
   ACP and TUI compositions.
 - `vesper-observability/AGENTS.md` — opt-in secret-safe trajectory recording
   and bounded reliability aggregation for composed hosts.
+- `vesper-web/AGENTS.md` — VRO-14 PR-1 perception engine: pure parse/strip/
+  prune/convert pipeline (zero I/O, offline golden corpus).

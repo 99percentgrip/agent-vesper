@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>App</title>
+  <meta name="description" content="">
+</head>
+<body>
+  <div id="root"></div>
+  <div id="modal-root"></div>
+  <script src="/assets/app.js" defer></script>
+  <script>
+    window.__INITIAL__ = {"user": null, "featureFlags": {"beta": true}};
+    // Hydration mounts after network settle.
+    (function () { /* no-op in fixture */ })();
+  </script>
+  <noscript>
+    <p>This application requires JavaScript.</p>
+  </noscript>
+</body>
+</html>

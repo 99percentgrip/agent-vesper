@@ -1190,6 +1190,16 @@ fn allowed_dependencies() -> BTreeMap<&'static str, BTreeSet<&'static str>> {
         ),
         ("vesper-provider", BTreeSet::from(["vesper-domain"])),
         (
+            // VRO-14 PR-1: the web oracle perception engine (pure DOM
+            // transformation pipeline). Zero I/O by construction: parsing,
+            // strip, density pruning, and markdown conversion are all pure
+            // functions over in-memory HTML strings. Network transports and
+            // the headless renderer are later PRs' ports, implemented at the
+            // composition boundary, never here.
+            "vesper-web",
+            BTreeSet::from(["vesper-domain"]),
+        ),
+        (
             "vesper-policy",
             BTreeSet::from(["vesper-domain", "vesper-security"]),
         ),

@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Edge cases</title>
+</head>
+<body>
+  <!-- top comment -->
+  <div>
+    <p>Plain div text before any structure.</p>
+    <template>
+      <p>Template content must be dropped by the strip stage.</p>
+    </template>
+    <svg width="10" height="10"><path d="M0 0"/></svg>
+    <iframe src="https://frame.example.test/embed" title="embedded"></iframe>
+    <img src="/a.png" alt="alpha">
+    <img src="/b.png">
+    <p>Entities: &amp; &lt; &gt; &quot; &#39; &nbsp; &copy; &hellip;</p>
+    <p>Unicode: héllo wörld ünïcode 日本語テキスト 🚀 emoji</p>
+    <p>Long attribute: <span data-config="very-long-attribute-value-that-should-not-bloat-output-because-it-is-decorative">span with data attribute</span></p>
+    <form>
+      <label for="q">Query</label>
+      <input id="q" type="text" value="prefilled">
+      <input id="secret" type="password" value="hunter2">
+      <input id="cc" type="text" autocomplete="cc-number" value="4111111111111111">
+      <select><option value="1">One</option><option value="2" selected>Two</option></select>
+      <textarea placeholder="notes"></textarea>
+    </form>
+    <p>Self-closing foreign elements: <br/> and <hr/> and <img src="/c.png" alt="gamma"/>.</p>
+    <script type="application/json">{"json": "in script"}</script>
+    <style>p::after { content: "style text" }</style>
+    <p aria-hidden="true">Hidden from assistive tech but visible on screen; strip stage should not drop on aria-hidden alone.</p>
+    <p style="display: none">Visually hidden paragraph must be dropped.</p>
+    <div class="nav-ad advert" id="promo-box">
+      <p>Ad box with negative class and id markers.</p>
+    </div>
+    <a href="/ok">Fine link</a> and <a>NoHref</a>
+    <div><b>Bold</b> <i>italic</i> <em>em</em> <strong>strong</strong> <code>code</code> <small>small</small></div>
+    <p>Closing with a normal paragraph.</p>
+  </div>
+</body>
+</html>
