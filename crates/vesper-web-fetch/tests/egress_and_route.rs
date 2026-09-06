@@ -8,10 +8,8 @@ use vesper_sandbox::{
     Argv, ExecOutput, SandboxBackend, SandboxError, SandboxFuture, SandboxHandle, SandboxSpec,
 };
 #[cfg(feature = "docker")]
-#[allow(unexpected_cfgs)]
 use vesper_sandbox::{DockerBackend, DockerSandboxConfig};
 #[cfg(feature = "docker")]
-#[allow(unexpected_cfgs)]
 use vesper_security::IsolationRequirement;
 use vesper_security::{CapabilityStatus, SandboxCapabilities, SecurityStrength};
 use vesper_web::transport::{FetchError, FetchRequest, FetchTransport};
@@ -215,10 +213,8 @@ async fn helper_output_parses_into_fetch_response() {
 /// feature gate matches `vesper-sandbox`'s own: default builds carry zero
 /// new dependencies.
 #[cfg(feature = "docker")]
-#[allow(unexpected_cfgs)]
 #[tokio::test]
 #[ignore = "live docker + network required"]
-#[allow(unexpected_cfgs)]
 async fn docker_backend_executes_fetch_helper() {
     let backend = DockerBackend::new(DockerSandboxConfig::default());
     backend.probe_daemon().expect("docker daemon reachable");
