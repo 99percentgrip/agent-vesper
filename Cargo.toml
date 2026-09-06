@@ -23,6 +23,7 @@ members = [
     "crates/vesper-security",
     "crates/vesper-testkit",
     "crates/vesper-web",
+    "crates/vesper-web-fetch",
     "xtask",
 ]
 exclude = ["spikes/*"]

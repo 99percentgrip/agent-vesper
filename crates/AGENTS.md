@@ -47,6 +47,16 @@ test-only conformance support.
   parse/strip/prune/convert DOM pipeline with strictly zero I/O (no network,
   no filesystem, no clock). Transports and the headless renderer are
   composition-boundary ports in later PRs, never here.
+- `vesper-web-fetch` (VRO-14 PR-3) may depend on `vesper-web`,
+  `vesper-sandbox`, and `vesper-security` (plus `reqwest`/`serde`/`url`); it
+  owns the sandbox-routed `FetchTransport` implementation and the
+  `vesper-web-fetch` helper binary — the only production unit besides the
+  supervisor that performs network I/O, and only ever **inside** a sandbox
+  provisioned with `IsolationRequirement::Network` + an explicit network
+  grant. The pure egress gate in `vesper-web::egress` must clear every
+  request before any sandbox is provisioned; the harness process never
+  fetches. The reqwest reference is architecture-scanner-exempted for this
+  crate's sources only.
 - `vesper-provider-glm` may depend on auth/domain/provider/config/security and
   use `vesper-testkit` only as a dev dependency.
 - `vesper-runtime` may depend on domain/provider and the read-only repository,
@@ -115,3 +125,5 @@ test-only conformance support.
   and bounded reliability aggregation for composed hosts.
 - `vesper-web/AGENTS.md` — VRO-14 PR-1 perception engine: pure parse/strip/
   prune/convert pipeline (zero I/O, offline golden corpus).
+- `vesper-web-fetch/AGENTS.md` — VRO-14 PR-3 sandboxed fetch route: egress
+  gate, helper binary, and `FetchTransport` over the ADR-0022 sandbox.

@@ -48,15 +48,14 @@ pub fn extract_metadata(document: &Document) -> PageMetadata {
                 }
             }
             "meta" => apply_meta(element, &mut meta),
-            "link" => {
+            "link"
                 if element
                     .attr("rel")
-                    .is_some_and(|rel| rel.eq_ignore_ascii_case("canonical"))
-                {
-                    let href = element.attr("href").unwrap_or("").trim();
-                    if !href.is_empty() && meta.canonical.is_none() {
-                        meta.canonical = Some(href.to_string());
-                    }
+                    .is_some_and(|rel| rel.eq_ignore_ascii_case("canonical")) =>
+            {
+                let href = element.attr("href").unwrap_or("").trim();
+                if !href.is_empty() && meta.canonical.is_none() {
+                    meta.canonical = Some(href.to_string());
                 }
             }
             _ => {}

@@ -1,0 +1,31 @@
+[package]
+name = "vesper-web-fetch"
+description = "Sandbox-routed web fetch helper: egress gate + FetchTransport over the ADR-0022 sandbox (VRO-14 PR-3)"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+serde.workspace = true
+reqwest.workspace = true
+serde_json.workspace = true
+url.workspace = true
+vesper-sandbox = { path = "../vesper-sandbox", version = "=0.20.87" }
+vesper-security = { path = "../vesper-security", version = "=0.20.87" }
+vesper-web = { path = "../vesper-web", version = "=0.20.87" }
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio.workspace = true
+
+[features]
+# Pass-through gate for the live-docker proof test (see
+# tests/egress_and_route.rs): default builds carry zero new dependencies,
+# exactly like vesper-sandbox's own docker feature.
+docker = ["vesper-sandbox/docker"]
+
+[lints]
+workspace = true

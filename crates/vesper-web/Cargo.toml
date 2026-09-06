@@ -11,6 +11,7 @@ publish = false
 [dependencies]
 quick-xml.workspace = true
 rust-stemmers.workspace = true
+thiserror.workspace = true
 url.workspace = true
 
 [lints]

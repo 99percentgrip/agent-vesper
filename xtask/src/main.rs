@@ -1200,6 +1200,16 @@ fn allowed_dependencies() -> BTreeMap<&'static str, BTreeSet<&'static str>> {
             BTreeSet::from(["vesper-domain"]),
         ),
         (
+            // VRO-14 PR-3: the sandboxed fetch route. This is the ONE
+            // production unit allowed to reference the sandbox backend and
+            // reqwest-scanning exception: it executes the fetch helper
+            // inside an IsolationRequirement::Network sandbox with an
+            // explicit network grant. The helper binary performs the only
+            // web egress in the workspace, always inside the sandbox.
+            "vesper-web-fetch",
+            BTreeSet::from(["vesper-sandbox", "vesper-security", "vesper-web"]),
+        ),
+        (
             "vesper-policy",
             BTreeSet::from(["vesper-domain", "vesper-security"]),
         ),
@@ -1399,7 +1409,22 @@ fn scan_production_sources(root: &Path) -> Result<(), String> {
                 }
             }
             let crate_name = crate_path.file_name().and_then(|name| name.to_str());
-            let forbidden: &[&str] = if crate_name == Some("vesper-provider-glm") {
+            // VRO-14 PR-3: the sandboxed fetch helper is the one production
+            // unit besides the supervisor allowed to name an HTTP client —
+            // it runs INSIDE the provisioned sandbox (the harness process
+            // never links it into a fetch path; vesper-web itself stays
+            // reqwest-free and pure).
+            let forbidden: &[&str] = if crate_name == Some("vesper-web-fetch") {
+                &[
+                    "agent_client_protocol",
+                    "agent-client-protocol",
+                    "ratatui",
+                    "rusqlite",
+                    "spikes/",
+                    "vesper-testkit",
+                    "vesper_provider_glm",
+                ]
+            } else if crate_name == Some("vesper-provider-glm") {
                 &[
                     "agent_client_protocol",
                     "agent-client-protocol",

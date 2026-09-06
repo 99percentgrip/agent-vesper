@@ -24,11 +24,13 @@ pub mod convert;
 pub mod crawl;
 pub mod density;
 pub mod dom;
+pub mod egress;
 pub mod links;
 pub mod meta;
 pub mod pipeline;
 pub mod rank;
 pub mod strip;
+pub mod transport;
 
 pub use arena::{ArenaNode, Dom, NodeId};
 pub use convert::{ConvertOptions, blocks_to_markdown, document_to_markdown};

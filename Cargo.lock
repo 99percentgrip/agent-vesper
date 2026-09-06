@@ -4207,7 +4207,23 @@ version = "0.20.87"
 dependencies = [
  "quick-xml",
  "rust-stemmers",
+ "thiserror",
  "url",
+]
+
+[[package]]
+name = "vesper-web-fetch"
+version = "0.20.87"
+dependencies = [
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "url",
+ "vesper-sandbox",
+ "vesper-security",
+ "vesper-web",
 ]
 
 [[package]]
