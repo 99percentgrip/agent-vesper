@@ -62,6 +62,7 @@ jobs:
           require_success ci.yml
           require_success msrv.yml
           require_success platform-foundation.yml
+          require_success web-driver.yml
 
   build:
     name: Build ${{ matrix.label }}
@@ -175,6 +176,18 @@ jobs:
           test "$RELEASE_TAG" = "v$workspace_version"
           test "$registry_version" = "$workspace_version"
           test "$(find dist -maxdepth 1 -type f -name '*.sha256' | wc -l)" -eq 5
+      - name: Download exact-commit tested browser images
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          release_commit="$(git rev-parse "${RELEASE_TAG}^{commit}")"
+          driver_run="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/web-driver.yml/runs" -f head_sha="${release_commit}" -f event=push --jq '[.workflow_runs[] | select(.conclusion == "success")][0].id')"
+          test "$driver_run" != null
+          gh run download "$driver_run" --repo "$GITHUB_REPOSITORY" --name web-driver-linux-x86_64 --dir dist
+          gh run download "$driver_run" --repo "$GITHUB_REPOSITORY" --name web-driver-linux-aarch64 --dir dist
+          cd dist
+          sha256sum --check vesper-web-driver-linux-x86_64.tar.gz.sha256 vesper-web-driver-linux-aarch64.tar.gz.sha256
       - name: Create or update GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

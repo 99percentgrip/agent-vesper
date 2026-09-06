@@ -53,4 +53,5 @@ captured results.
 
 ## Child DOX Index
 
-No children.
+- `web-oracle/AGENTS.md` — original synthetic web perception, sitemap and
+  adversarial fixtures; separate from the frozen Python result hash index.

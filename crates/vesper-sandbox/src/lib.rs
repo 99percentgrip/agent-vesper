@@ -27,7 +27,9 @@ use std::sync::{Arc, Mutex};
 use vesper_security::{CapabilityStatus, SandboxCapabilities, SecurityStrength};
 
 mod linux;
+mod pipe;
 mod stub;
+pub use pipe::SandboxPipe;
 
 #[cfg(feature = "docker")]
 pub mod docker;
@@ -296,6 +298,18 @@ pub type SandboxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 pub trait SandboxBackend: Send + Sync {
     /// Honest, probed capabilities. Never claims what it has not verified.
     fn capabilities(&self) -> SandboxCapabilities;
+
+    /// Open bounded NUL-framed duplex I/O inside an existing sandbox.
+    /// Backends without a duplex supervisor protocol must refuse.
+    fn open_pipe(
+        &self,
+        _handle: Arc<SandboxHandle>,
+        _argv: &Argv,
+    ) -> Result<SandboxPipe, SandboxError> {
+        Err(SandboxError::Run(
+            "sandbox backend does not support duplex pipes".into(),
+        ))
+    }
 
     /// Provision one ephemeral sandbox for `spec`.
     fn provision<'a>(

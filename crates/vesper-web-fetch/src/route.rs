@@ -38,6 +38,8 @@ pub struct WebSandboxRouteConfig {
     pub egress: EgressPolicy,
     /// Timeout (seconds) placed on the sandbox spec.
     pub timeout_seconds: u64,
+    /// Shared HTTP/browser identification string.
+    pub user_agent: String,
 }
 
 impl WebSandboxRouteConfig {
@@ -49,6 +51,7 @@ impl WebSandboxRouteConfig {
             writable_root,
             egress: EgressPolicy::default(),
             timeout_seconds: crate::DEFAULT_FETCH_TIMEOUT_SECONDS,
+            user_agent: "agent-vesper".into(),
         }
     }
 }
@@ -57,8 +60,8 @@ impl WebSandboxRouteConfig {
 /// is `Clone + Send + Sync` for the host.
 #[derive(Clone)]
 pub struct WebSandboxPort {
-    backend: Arc<dyn SandboxBackend>,
-    config: WebSandboxRouteConfig,
+    pub(crate) backend: Arc<dyn SandboxBackend>,
+    pub(crate) config: WebSandboxRouteConfig,
 }
 
 impl WebSandboxPort {
@@ -66,6 +69,11 @@ impl WebSandboxPort {
     #[must_use]
     pub fn new(backend: Arc<dyn SandboxBackend>, config: WebSandboxRouteConfig) -> Self {
         Self { backend, config }
+    }
+
+    /// Nonzero identity shared by fetch and browser composition paths.
+    pub fn instance_id(&self) -> usize {
+        Arc::as_ptr(&self.backend) as *const () as usize
     }
 
     /// The pre-flight gate, exposed for tests and host-side pre-checks.
@@ -102,13 +110,12 @@ impl FetchTransport for WebSandboxPort {
             .timeout_seconds
             .min(self.config.timeout_seconds)
             .clamp(1, crate::DEFAULT_FETCH_TIMEOUT_SECONDS);
-        let max_body = request
-            .max_body_bytes
-            .clamp(1, vesper_sandbox::OUTPUT_CAP_BYTES);
+        let max_body = request.max_body_bytes.clamp(1, 512 * 1024);
         let backend = Arc::clone(&self.backend);
         let helper = self.config.helper_path.clone();
         let writable_root = self.config.writable_root.clone();
         let policy = self.config.egress.clone();
+        let user_agent = self.config.user_agent.clone();
 
         Box::pin(async move {
             // 1. Pure pre-flight gate. Robots verdict `None` here: hosts
@@ -144,6 +151,51 @@ impl FetchTransport for WebSandboxPort {
             spec.memory_limit_bytes = Some(512 * 1024 * 1024);
 
             let handle = backend.provision(&spec).await.map_err(sandbox_denial)?;
+            if max_body > vesper_sandbox::OUTPUT_CAP_BYTES {
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout);
+                let pipe = backend
+                    .open_pipe(
+                        Arc::new(handle),
+                        &Argv {
+                            argv: vec![helper.to_string_lossy().into_owned(), "--pipe".into()],
+                            cwd: "/".into(),
+                        },
+                    )
+                    .map_err(sandbox_denial)?;
+                pipe.send(serde_json::to_vec(&serde_json::json!({"url":url,"cap":max_body,"policy":{
+                    "allow_plain_http":policy.allow_plain_http,"allowed_hosts":policy.allowed_hosts,"respect_robots":policy.respect_robots,"user_agent":user_agent,
+                }})).map_err(|_| FetchError::Fetch("invalid request".into()))?, deadline).map_err(sandbox_denial)?;
+                let mut body = String::new();
+                loop {
+                    let bytes = pipe.receive(deadline).map_err(sandbox_denial)?;
+                    if bytes.len() > vesper_sandbox::OUTPUT_CAP_BYTES {
+                        return Err(FetchError::TooLarge("helper chunk".into()));
+                    }
+                    let frame: serde_json::Value = serde_json::from_slice(&bytes)
+                        .map_err(|_| FetchError::Fetch("invalid helper frame".into()))?;
+                    if let Some(reason) = frame["error"].as_str() {
+                        return Err(match frame["kind"].as_str() {
+                            Some("egress") => FetchError::Egress(reason.into()),
+                            Some("budget") => FetchError::TooLarge(reason.into()),
+                            _ => FetchError::Fetch(reason.into()),
+                        });
+                    }
+                    if let Some(chunk) = frame["body"].as_str() {
+                        if body.len() + chunk.len() > max_body {
+                            return Err(FetchError::TooLarge("helper body".into()));
+                        }
+                        body.push_str(chunk);
+                    }
+                    if frame["done"] == true {
+                        let meta = frame["meta"]
+                            .as_str()
+                            .and_then(parse_helper_meta)
+                            .ok_or_else(|| FetchError::Fetch("missing helper metadata".into()))?;
+                        return response_from_parts(meta, &url, body, false)
+                            .map_err(FetchError::Fetch);
+                    }
+                }
+            }
             let argv = Argv {
                 argv: vec![
                     helper.to_string_lossy().into_owned(),
@@ -153,6 +205,7 @@ impl FetchTransport for WebSandboxPort {
                         "allow_plain_http": policy.allow_plain_http,
                         "allowed_hosts": policy.allowed_hosts,
                         "respect_robots": policy.respect_robots,
+                        "user_agent": user_agent,
                     })
                     .to_string(),
                 ],

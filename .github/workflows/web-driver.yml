@@ -1,0 +1,48 @@
+name: web-driver
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  browser:
+    name: Contained browser ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: linux-x86_64
+            runner: ubuntu-24.04
+          - arch: linux-aarch64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install pinned Rust
+        run: rustup toolchain install 1.95.0 --profile minimal
+      - name: Build immutable browser and helper image
+        run: docker build -f crates/vesper-web-fetch/Dockerfile -t vesper-web-driver:validated .
+      - name: Real pipe-browser acceptance
+        run: |
+          export VESPER_WEB_TEST_IMAGE="$(docker image inspect vesper-web-driver:validated --format '{{.Id}}')"
+          cargo test -p vesper-web-fetch --all-features real_pipe_browser -- --ignored --nocapture
+      - name: Preserve exact tested image for release
+        shell: bash
+        run: |
+          mkdir -p driver-assets
+          docker image inspect vesper-web-driver:validated --format '{{.Id}}' > driver-assets/vesper-web-driver-${{ matrix.arch }}.image-id
+          docker save vesper-web-driver:validated | gzip -1 > driver-assets/vesper-web-driver-${{ matrix.arch }}.tar.gz
+          cd driver-assets
+          sha256sum vesper-web-driver-${{ matrix.arch }}.tar.gz > vesper-web-driver-${{ matrix.arch }}.tar.gz.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-driver-${{ matrix.arch }}
+          path: driver-assets
+          compression-level: 0
+          if-no-files-found: error

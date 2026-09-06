@@ -106,6 +106,8 @@ impl SelectorMapCache {
 /// One line of the serialized map (debugging and test assertions).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MapLine {
+    /// True only on the observation that first assigns this index.
+    pub is_new: bool,
     /// Stable interactive index (`[n]` in the output).
     pub index: usize,
     /// Depth in the rendered tree.
@@ -130,8 +132,12 @@ pub fn serialize_interactable_map(
     for line in &lines {
         let indent = "  ".repeat(line.depth);
         out.push_str(&format!(
-            "{}- [{}] <{}> {}\n",
-            indent, line.index, line.tag, line.label
+            "{}- [{}] <{}> {}{}\n",
+            indent,
+            line.index,
+            line.tag,
+            line.label,
+            if line.is_new { " [new]" } else { "" }
         ));
     }
     out
@@ -148,53 +154,160 @@ pub fn interactable_lines(
 
 fn collect_lines(doc: &MaterializedDocument, cache: &mut SelectorMapCache) -> Vec<MapLine> {
     let mut out = Vec::new();
-    // The flat snapshot lists every node with a parent index; the roots
-    // (negative parents, the document shells) open the walk. Depth derives
-    // from the ancestor chain, not recursion over owned children.
+    let mut children = vec![Vec::new(); doc.nodes.len()];
+    let mut stack = Vec::new();
     for (position, node) in doc.nodes.iter().enumerate() {
-        if node.parent_index.is_none() {
-            walk(position, 0, doc, cache, &mut out);
+        if let Some(parent) = node.parent_index.filter(|parent| *parent < doc.nodes.len()) {
+            children[parent].push(position);
+        } else {
+            stack.push((position, 0usize));
+        }
+    }
+    stack.reverse();
+    let mut visited = vec![false; doc.nodes.len()];
+    let occluded = paint_occluded(doc);
+    while let Some((position, depth)) = stack.pop() {
+        if visited[position] {
+            continue;
+        }
+        visited[position] = true;
+        let node = &doc.nodes[position];
+        if !node_visible(node) || occluded[position] {
+            continue;
+        }
+        let mut wrapper = None;
+        if matches!(node.tag_name.as_str(), "span" | "label") {
+            let mut enriched = node.clone();
+            enriched.children = children[position]
+                .iter()
+                .map(|&i| {
+                    let mut child = doc.nodes[i].clone();
+                    child.children = children[i].iter().map(|&j| doc.nodes[j].clone()).collect();
+                    child
+                })
+                .collect();
+            wrapper = Some(enriched);
+        }
+        if is_interactive(wrapper.as_ref().unwrap_or(node)) {
+            if let Some(id) = node.backend_node_id {
+                out.push(MapLine {
+                    is_new: cache.peek(id).is_none(),
+                    index: cache.index_for(id),
+                    depth: depth.min(32),
+                    tag: node.tag_name.clone(),
+                    label: label_for(node),
+                });
+            }
+            // A containing interactive control replaces its inner structure.
+            // Preserve a descendant control only if it geometrically escapes.
+            for &child in children[position].iter().rev() {
+                if node
+                    .bounds
+                    .zip(doc.nodes[child].bounds)
+                    .is_some_and(|(outer, inner)| coverage(outer, inner) < 0.99)
+                {
+                    stack.push((child, depth + 1));
+                }
+            }
+        } else {
+            stack.extend(children[position].iter().rev().map(|&i| (i, depth + 1)));
         }
     }
     out
 }
 
-fn walk(
-    id: usize,
-    depth: usize,
-    doc: &MaterializedDocument,
-    cache: &mut SelectorMapCache,
-    out: &mut Vec<MapLine>,
-) {
-    let Some(node) = doc.nodes.get(id) else {
-        return;
-    };
-    if !node_visible(node) {
-        return; // hidden subtree: zero tokens
+fn coverage(outer: [f64; 4], inner: [f64; 4]) -> f64 {
+    let area = inner[2] * inner[3];
+    if area <= 0.0 {
+        return 0.0;
     }
-    if is_interactive(node) {
-        // Only nodes with a backend id can carry a stable session index.
-        if let Some(backend_id) = node.backend_node_id {
-            let index = cache.index_for(backend_id);
-            out.push(MapLine {
-                index,
-                depth,
-                tag: node.tag_name.clone(),
-                label: label_for(node),
-            });
+    let width = ((outer[0] + outer[2]).min(inner[0] + inner[2]) - outer[0].max(inner[0])).max(0.0);
+    let height = ((outer[1] + outer[3]).min(inner[1] + inner[3]) - outer[1].max(inner[1])).max(0.0);
+    width * height / area
+}
+
+fn paint_occluded(doc: &MaterializedDocument) -> Vec<bool> {
+    // Spatial buckets avoid comparing every node against every paint object.
+    let cell = |v: f64| (v / 256.0).floor() as i32;
+    let mut buckets: HashMap<(i32, i32), Vec<usize>> = HashMap::new();
+    let mut large = Vec::new();
+    for (i, node) in doc.nodes.iter().enumerate() {
+        let Some(bounds) = node
+            .bounds
+            .filter(|b| b.iter().all(|v| v.is_finite()) && b[2] > 0.0 && b[3] > 0.0)
+        else {
+            continue;
+        };
+        let background = node
+            .style("background-color")
+            .unwrap_or("")
+            .replace(' ', "");
+        if node.paint_order.is_none()
+            || !node_visible(node)
+            || background.is_empty()
+            || background == "transparent"
+            || (background.starts_with("rgba(")
+                && background
+                    .trim_end_matches(')')
+                    .rsplit(',')
+                    .next()
+                    .and_then(|alpha| alpha.parse::<f32>().ok())
+                    .is_none_or(|alpha| alpha < 1.0))
+            || node
+                .style("opacity")
+                .and_then(|v| v.parse::<f32>().ok())
+                .is_some_and(|v| v < 1.0)
+        {
+            continue;
         }
-        // Children of an interactive node rarely add value; gamma caps
-        // them too. Do not recurse.
-        return;
-    }
-    for (position, child) in doc.nodes.iter().enumerate() {
-        if child.parent_index == Some(id) {
-            walk(position, depth + 1, doc, cache, out);
+        let (x1, x2, y1, y2) = (
+            cell(bounds[0]),
+            cell(bounds[0] + bounds[2]),
+            cell(bounds[1]),
+            cell(bounds[1] + bounds[3]),
+        );
+        if (i64::from(x2) - i64::from(x1) + 1).saturating_mul(i64::from(y2) - i64::from(y1) + 1)
+            > 1024
+        {
+            large.push(i);
+            continue;
+        }
+        for x in x1..=x2 {
+            for y in y1..=y2 {
+                buckets.entry((x, y)).or_default().push(i);
+            }
         }
     }
+    doc.nodes
+        .iter()
+        .map(|node| {
+            let Some(bounds) = node.bounds else {
+                return false;
+            };
+            let key = (
+                cell(bounds[0] + bounds[2] / 2.0),
+                cell(bounds[1] + bounds[3] / 2.0),
+            );
+            buckets
+                .get(&key)
+                .into_iter()
+                .flatten()
+                .chain(large.iter())
+                .any(|&i| {
+                    let blocker = &doc.nodes[i];
+                    blocker.paint_order > node.paint_order
+                        && blocker
+                            .bounds
+                            .is_some_and(|outer| coverage(outer, bounds) >= 0.99)
+                })
+        })
+        .collect()
 }
 
 fn node_visible(node: &MaterializedNode) -> bool {
+    if node.attr("aria-hidden") == Some("true") {
+        return false;
+    }
     let display = node.style("display").unwrap_or("");
     if display.eq_ignore_ascii_case("none") {
         return false;
@@ -218,7 +331,20 @@ pub const LABEL_CAP: usize = 60;
 /// Priority mirrors gamma's hint order: visible text, aria-label,
 /// placeholder, value (redacted), title, then role/name fallbacks.
 pub fn label_for(node: &MaterializedNode) -> String {
-    let mut label = redact_sensitive(node).unwrap_or_default();
+    let mut label =
+        if crate::interactable::is_sensitive_value(node.attr("type"), node.attr("autocomplete")) {
+            redact_sensitive(node).unwrap_or_else(|| "••••".into())
+        } else {
+            node.attr("aria-label")
+                .filter(|s| !s.trim().is_empty())
+                .or_else(|| node.node_value.as_deref().filter(|s| !s.trim().is_empty()))
+                .or_else(|| node.attr("placeholder"))
+                .or_else(|| node.attr("value"))
+                .or_else(|| node.attr("title"))
+                .or_else(|| node.attr("role"))
+                .unwrap_or_default()
+                .to_owned()
+        };
     if label.len() > LABEL_CAP {
         // Cut on a char boundary.
         let mut end = LABEL_CAP;
@@ -333,6 +459,9 @@ mod tests {
         let text = serialize_interactable_map(&doc, &mut cache);
         assert!(text.contains("- [1] <button> Save"), "map: {text}");
         assert!(text.contains("- [2] <a> Next page"), "map: {text}");
+        assert!(text.contains("[new]"));
+        let next = serialize_interactable_map(&doc, &mut cache);
+        assert!(!next.contains("[new]"));
     }
 
     #[test]

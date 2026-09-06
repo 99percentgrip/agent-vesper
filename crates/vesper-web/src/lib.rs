@@ -33,6 +33,7 @@ pub mod meta;
 pub mod pipeline;
 pub mod rank;
 pub mod selector_map;
+pub mod sitemap;
 pub mod snapshot;
 pub mod strip;
 pub mod transport;

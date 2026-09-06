@@ -159,6 +159,45 @@ impl DockerBackend {
         &self.config
     }
 
+    /// Digest-pinned web images must already be installed; never implicitly
+    /// pull an image while provisioning a tool operation.
+    pub fn probe_image(&self) -> Result<(), SandboxError> {
+        let mut child = Command::new(self.docker_bin())
+            .args([
+                "image",
+                "inspect",
+                "--format",
+                "{{.Id}}",
+                &self.config.resolved_image(),
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|_| SandboxError::Provision("driver image probe failed".into()))?;
+        let started = Instant::now();
+        loop {
+            match child.try_wait() {
+                Ok(Some(status)) if status.success() => return Ok(()),
+                Ok(Some(_)) => {
+                    return Err(SandboxError::Provision(
+                        "driver image unavailable; install the configured digest first".into(),
+                    ));
+                }
+                Ok(None) if started.elapsed() < PROBE_TIMEOUT => {
+                    std::thread::sleep(Duration::from_millis(20))
+                }
+                _ => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(SandboxError::Provision(
+                        "driver image probe timed out or failed".into(),
+                    ));
+                }
+            }
+        }
+    }
+
     /// Resolved docker binary path.
     #[must_use]
     pub fn docker_bin(&self) -> PathBuf {
@@ -321,6 +360,35 @@ fn unique_slug() -> String {
 }
 
 impl SandboxBackend for DockerBackend {
+    fn open_pipe(
+        &self,
+        handle: std::sync::Arc<SandboxHandle>,
+        argv: &Argv,
+    ) -> Result<crate::SandboxPipe, SandboxError> {
+        let teardown = handle
+            .teardown_command
+            .as_ref()
+            .ok_or_else(|| SandboxError::Run("not a container handle".into()))?;
+        // Use the binary recorded at provision, not a mutable env override.
+        let binary = teardown
+            .first()
+            .ok_or_else(|| SandboxError::Run("missing container runtime".into()))?;
+        let name = teardown
+            .last()
+            .ok_or_else(|| SandboxError::Run("missing container identity".into()))?;
+        let cwd = Self::container_cwd(&handle.writable_root, &argv.cwd);
+        let mut args = self.exec_args(name, &cwd, argv);
+        args.insert(1, "-i".into());
+        let child = Command::new(binary)
+            .args(args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|_| SandboxError::Run("container pipe spawn failed".into()))?;
+        crate::SandboxPipe::new(child, handle)
+    }
+
     fn capabilities(&self) -> SandboxCapabilities {
         match self.probe_daemon() {
             Ok(version) => SandboxCapabilities {
@@ -361,6 +429,11 @@ impl SandboxBackend for DockerBackend {
             }
             let binary = self.docker_bin();
             let name = self.container_name();
+            if self.config.resolved_image().contains("@sha256:")
+                || self.config.resolved_image().starts_with("sha256:")
+            {
+                self.probe_image()?;
+            }
             let root = spec.writable_root.canonicalize().map_err(|error| {
                 SandboxError::Provision(format!(
                     "writable root {} cannot be canonicalized: {error}",
@@ -368,8 +441,16 @@ impl SandboxBackend for DockerBackend {
                 ))
             })?;
             let mut command = Command::new(&binary);
+            let mut effective = self.config.clone();
+            effective.network = effective.network && spec.allow_network;
+            if let Some(cpus) = spec.cpu_limit {
+                effective.cpus = Some(cpus.to_string());
+            }
+            if let Some(memory) = spec.memory_limit_bytes {
+                effective.memory = Some(memory.to_string());
+            }
             command
-                .args(self.run_args(&name, &root, spec.timeout_seconds))
+                .args(Self::new(effective).run_args(&name, &root, spec.timeout_seconds))
                 .stdin(Stdio::null())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped());
@@ -452,27 +533,21 @@ impl SandboxBackend for DockerBackend {
             let mut child = command
                 .spawn()
                 .map_err(|error| SandboxError::Run(format!("docker exec spawn: {error}")))?;
+            // Drain concurrently: waiting for exit before reading deadlocks
+            // as soon as a payload fills the OS pipe (often less than 64 KiB).
+            let stdout_reader = drain_pipe(child.stdout.take().expect("piped stdout"));
+            let stderr_reader = drain_pipe(child.stderr.take().expect("piped stderr"));
             let started = Instant::now();
             let deadline = Duration::from_secs(handle.timeout_seconds.max(1));
             loop {
                 match child.try_wait() {
                     Ok(Some(status)) => {
-                        let mut stdout_bytes = Vec::new();
-                        let mut stderr_bytes = Vec::new();
-                        if let Some(pipe) = child.stdout.take() {
-                            pipe.take((OUTPUT_CAP_BYTES + 1) as u64)
-                                .read_to_end(&mut stdout_bytes)
-                                .map_err(|error| {
-                                    SandboxError::Run(format!("read stdout: {error}"))
-                                })?;
-                        }
-                        if let Some(pipe) = child.stderr.take() {
-                            pipe.take((OUTPUT_CAP_BYTES + 1) as u64)
-                                .read_to_end(&mut stderr_bytes)
-                                .map_err(|error| {
-                                    SandboxError::Run(format!("read stderr: {error}"))
-                                })?;
-                        }
+                        let stdout_bytes = stdout_reader
+                            .join()
+                            .map_err(|_| SandboxError::Run("stdout worker failed".into()))??;
+                        let stderr_bytes = stderr_reader
+                            .join()
+                            .map_err(|_| SandboxError::Run("stderr worker failed".into()))??;
                         return Ok(ExecOutput {
                             exit_code: status.code(),
                             stdout: cap_output(&stdout_bytes),
@@ -483,6 +558,9 @@ impl SandboxBackend for DockerBackend {
                     Ok(None) => {
                         if started.elapsed() >= deadline {
                             let _ = child.kill();
+                            let _ = child.wait();
+                            let _ = stdout_reader.join();
+                            let _ = stderr_reader.join();
                             return Ok(ExecOutput {
                                 exit_code: None,
                                 stdout: String::new(),
@@ -496,6 +574,10 @@ impl SandboxBackend for DockerBackend {
                         std::thread::sleep(Duration::from_millis(50));
                     }
                     Err(error) => {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        let _ = stdout_reader.join();
+                        let _ = stderr_reader.join();
                         return Err(SandboxError::Run(format!("docker exec wait: {error}")));
                     }
                 }
@@ -539,6 +621,25 @@ impl SandboxBackend for DockerBackend {
             }
         })
     }
+}
+
+fn drain_pipe(
+    mut pipe: impl Read + Send + 'static,
+) -> std::thread::JoinHandle<Result<Vec<u8>, SandboxError>> {
+    std::thread::spawn(move || {
+        let mut kept = Vec::new();
+        let mut chunk = [0; 8192];
+        loop {
+            let count = pipe
+                .read(&mut chunk)
+                .map_err(|_| SandboxError::Run("output pipe failed".into()))?;
+            if count == 0 {
+                return Ok(kept);
+            }
+            let remaining = (OUTPUT_CAP_BYTES + 1).saturating_sub(kept.len());
+            kept.extend_from_slice(&chunk[..count.min(remaining)]);
+        }
+    })
 }
 
 /// Caps raw output bytes to [`OUTPUT_CAP_BYTES`] on a UTF-8 boundary and

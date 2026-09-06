@@ -11,12 +11,13 @@ platform assumptions on hosts unavailable locally.
   linux-arm64, macos-intel, macos-apple-silicon, windows-x86_64.
 - Validation workflows must not call live providers or require credentials.
   The tag-triggered `release.yml` workflow is the sole publishing workflow and
-  may publish only compiled, checksummed release archives; it must not make
+  may publish only compiled, checksummed release archives and exact-commit
+  tested browser image archives; it must not make
   provider calls.
 - Release builds are fail-closed behind exact-commit CI: the tagged commit must
   already have successful `push` runs for `ci.yml`, `msrv.yml`, and
-  `platform-foundation.yml`. Push the version commit to `main`, wait for all
-  three workflows to pass, and only then create/push its release tag.
+  `platform-foundation.yml`, and `web-driver.yml`. Push the version commit to
+  `main`, wait for all four workflows to pass, then create/push its release tag.
 - Release archives include `vesper-web-fetch` beside ACP and TUI; both hosts
   build with their existing Docker feature. Browser/image availability remains
   an explicit runtime prerequisite, not an archive capability claim.
@@ -76,6 +77,11 @@ platform assumptions on hosts unavailable locally.
   `cargo deny check`).
 - `workflows/msrv.yml` — dedicated Rust 1.88.0 foundational verification with
   per-stage fixture coverage.
+- `workflows/web-driver.yml` — native x86_64/arm64 image builds and gated
+  real pipe-browser tests; preserves the exact tested image archives and
+  immutable image IDs. Release downloads those artifacts, never rebuilds
+  untested images after tagging. Public release assets avoid requiring a
+  separate container-registry credential or visibility change.
 - `workflows/platform-foundation.yml` — five-target production-foundation and
   eligible spike matrix.
 - `workflows/foundation-spikes.yml` — five-target disposable spike test matrix.

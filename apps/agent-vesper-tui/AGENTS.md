@@ -531,6 +531,10 @@ business logic.
 
 ## Local Contracts
 
+- The opt-in web surface uses the shared harness web service and its contained
+  fetch/render/browser runtime, off the render thread. No TUI-specific driver
+  or network fallback exists; deployment is documented in `docs/web-tools.md`.
+
 - Native plans share the agent loop's four-segment bounded autonomous
   continuation with ACP. Each submitted turn seeds the loop from the retained
   task panel, so a resume turn cannot accept acknowledgement text as completion
@@ -756,9 +760,8 @@ business logic.
   strategies fail, the status line names the fix. Ctrl-Shift-C copies only
   app-managed mouse-selected transcript text.
 - Provider catalogs and provider-specific settings belong to adapters. The
-  production composition currently registers only the real Z.ai adapter;
-  provider-neutral runtime/registry boundaries must not be described as a
-  second production provider.
+  production composition registers the real Z.ai and LM Studio adapters;
+  no additional provider may be advertised without its adapter and evidence.
 - When adding a new slash command, register it in
   `CommandRegistry::stage_11b`, document its surface in
   `CommandRegistry::help_text`, and add a test that proves it resolves

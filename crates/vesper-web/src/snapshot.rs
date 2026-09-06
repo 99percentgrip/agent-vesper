@@ -18,6 +18,36 @@
 
 use serde::Deserialize;
 
+/// CDP sparse string/integer columns. The array form reads early recorded
+/// fixtures; live CDP sends parallel `index` and `value` arrays.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum SparseValues {
+    /// Live sparse column.
+    Sparse { index: Vec<usize>, value: Vec<i64> },
+    /// Legacy dense fixture column.
+    Dense(Vec<i64>),
+}
+impl SparseValues {
+    fn get(&self, row: usize) -> Option<i64> {
+        match self {
+            Self::Sparse { index, value } => index
+                .iter()
+                .position(|i| *i == row)
+                .and_then(|i| value.get(i))
+                .copied(),
+            Self::Dense(values) => values.get(row).copied(),
+        }
+    }
+}
+
+/// CDP sparse boolean column (presence means true).
+#[derive(Debug, Clone, Deserialize, PartialEq, Default)]
+pub struct SparseBoolean {
+    /// Rows whose value is true.
+    pub index: Vec<usize>,
+}
+
 /// The exact computed styles the Action Engine consumes (pinned gamma
 /// table). Order matters: `computedStyles` arrays index into this list.
 pub const REQUIRED_COMPUTED_STYLES: [&str; 10] = [
@@ -81,13 +111,22 @@ pub struct NodeTreeSnapshot {
     pub node_value: Option<Vec<i64>>,
     /// Text nodes' full text, `strings`-indexed (CDP `textValue`).
     #[serde(default, rename = "textValue")]
-    pub text_value: Option<Vec<i64>>,
+    pub text_value: Option<SparseValues>,
+    /// Live input value, string-table indexed; redacted at materialization.
+    #[serde(default, rename = "inputValue")]
+    pub input_value: Option<SparseValues>,
+    /// Listener-aware browser clickability signal.
+    #[serde(default, rename = "isClickable")]
+    pub is_clickable: Option<SparseBoolean>,
     /// Flattened attribute pairs: `[name_idx, value_idx, …]` per node.
     #[serde(default)]
     pub attributes: Option<Vec<Vec<i64>>>,
     /// Per-node shadow-root types, `strings`-indexed.
     #[serde(default, rename = "shadowRootType")]
-    pub shadow_root_type: Option<Vec<i64>>,
+    pub shadow_root_type: Option<SparseValues>,
+    /// Link from an iframe owner to its document in this capture.
+    #[serde(default, rename = "contentDocumentIndex")]
+    pub content_document_index: Option<SparseValues>,
     /// The CDP backend node id per node — the stable identity the
     /// selector-map cache keys on across snapshots.
     #[serde(default, rename = "backendNodeId")]
@@ -226,11 +265,20 @@ impl CaptureSnapshotResult {
         let layout_styles = document.layout.styles.as_ref();
         let layout_bounds = document.layout.bounds.as_ref();
         let layout_paints = document.layout.paint_orders.as_ref();
+        let layout_rows: std::collections::HashMap<_, _> = layout_nodes
+            .iter()
+            .enumerate()
+            .map(|(row, node)| (*node, row))
+            .collect();
+        let clickable: std::collections::HashSet<_> = document
+            .nodes
+            .is_clickable
+            .as_ref()
+            .map(|column| column.index.iter().copied().collect())
+            .unwrap_or_default();
 
         for j in 0..node_count {
-            let layout_row = layout_nodes
-                .iter()
-                .position(|layout_node| *layout_node == j as i64);
+            let layout_row = layout_rows.get(&(j as i64)).copied();
             let style_map = layout_row.and_then(|row| {
                 let styles = layout_styles?.get(row)?;
                 let mut map = std::collections::BTreeMap::new();
@@ -252,7 +300,7 @@ impl CaptureSnapshotResult {
             });
             let paint_order = layout_row.and_then(|row| layout_paints?.get(row).copied());
 
-            let attributes = document
+            let mut attributes = document
                 .nodes
                 .attributes
                 .as_ref()
@@ -268,23 +316,74 @@ impl CaptureSnapshotResult {
                 })
                 .unwrap_or_default();
 
+            let attr = |key: &str| {
+                attributes
+                    .iter()
+                    .find(|(name, _)| name == key)
+                    .map(|(_, value)| value.as_str())
+            };
+            let sensitive =
+                crate::interactable::is_sensitive_value(attr("type"), attr("autocomplete"));
+            let input_value = str_at(
+                document
+                    .nodes
+                    .input_value
+                    .as_ref()
+                    .and_then(|column| column.get(j)),
+            )
+            .map(|value| {
+                if sensitive {
+                    crate::interactable::redact(value.chars().count())
+                } else {
+                    value
+                }
+            });
+            if sensitive {
+                for (key, value) in &mut attributes {
+                    if key == "value" {
+                        *value = crate::interactable::redact(value.chars().count());
+                    }
+                }
+            }
+            if let Some(value) = &input_value {
+                attributes.retain(|(key, _)| key != "value");
+                attributes.push(("value".into(), value.clone()));
+            }
+            if let Some(kind) = str_at(
+                document
+                    .nodes
+                    .shadow_root_type
+                    .as_ref()
+                    .and_then(|column| column.get(j)),
+            ) {
+                attributes.push(("data-vesper-shadow-root".into(), kind));
+            }
+            if let Some(index) = document
+                .nodes
+                .content_document_index
+                .as_ref()
+                .and_then(|column| column.get(j))
+            {
+                attributes.push(("data-vesper-frame-document".into(), index.to_string()));
+            }
+
             out.nodes.push(MaterializedNode {
                 node_index: j,
                 parent_index: parents
                     .get(j)
-                    .and_then(|p| usize::try_from(*p).ok().filter(|p| *p != j)),
+                    .and_then(|p| usize::try_from(*p).ok().filter(|p| *p < j)),
                 node_type: node_types.get(j).copied().unwrap_or(0),
                 tag_name: str_at(node_names.get(j).copied())
                     .unwrap_or_default()
                     .to_ascii_lowercase(),
-                has_js_click_listener: false,
+                has_js_click_listener: clickable.contains(&j),
                 node_value: str_at(values.get(j).copied()),
                 attributes,
                 backend_node_id: backend_ids.get(j).copied(),
                 computed_styles: style_map.unwrap_or_default(),
                 paint_order,
                 bounds,
-                input_value: None,
+                input_value,
                 input_checked: None,
                 children: Vec::new(),
             });
@@ -308,20 +407,24 @@ impl CaptureSnapshotResult {
             nodes: &[MaterializedNode],
             root: usize,
             kids_of: &std::collections::HashMap<usize, Vec<usize>>,
+            depth: usize,
         ) -> MaterializedNode {
             let mut node = nodes[root].clone();
+            if depth >= 256 {
+                return node;
+            }
             let child_list = kids_of.get(&root).cloned().unwrap_or_default();
             node.children = child_list
                 .into_iter()
                 .filter(|&child_index| nodes.get(child_index).is_some())
-                .map(|child_index| clone_subtree(nodes, child_index, kids_of))
+                .map(|child_index| clone_subtree(nodes, child_index, kids_of, depth + 1))
                 .collect();
             node
         }
         let mut assembled: Vec<MaterializedNode> = Vec::new();
         for &root_index in &root_indexes {
             if out.nodes.get(root_index).is_some() {
-                assembled.push(clone_subtree(&out.nodes, root_index, &by_parent));
+                assembled.push(clone_subtree(&out.nodes, root_index, &by_parent, 0));
             }
         }
         out.roots = root_indexes;
@@ -468,6 +571,15 @@ pub mod tests_support {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn live_sparse_values_are_masked_and_click_listeners_survive() {
+        let capture: CaptureSnapshotResult = serde_json::from_value(serde_json::json!({"strings":["INPUT","type","password","secret-canary"],"documents":[{"nodes":{"nodeType":[1],"nodeName":[0],"backendNodeId":[17],"attributes":[[1,2]],"inputValue":{"index":[0],"value":[3]},"shadowRootType":{"index":[],"value":[]},"isClickable":{"index":[0]}}}]})).unwrap();
+        let doc = capture.materialize(0);
+        assert!(doc.nodes[0].has_js_click_listener);
+        assert!(!format!("{doc:?}").contains("secret-canary"));
+        assert_eq!(doc.nodes[0].input_value.as_deref(), Some("••••••••"));
+    }
 
     /// A minimal capture with the fields the heuristics use. Style rows
     /// are authored against REQUIRED_COMPUTED_STYLES slots and this exact

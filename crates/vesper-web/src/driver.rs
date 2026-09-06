@@ -34,6 +34,22 @@ pub struct CdpMessage(pub Value);
 pub trait BrowserDriverPort: Send + Sync {
     /// Execute one action against the current page.
     fn execute(&self, action: &BrowserAction) -> BoxFuture<'_, Result<ActionResult, DriverError>>;
+    /// Optional form submission extension; implementations must not silently
+    /// ignore a requested submit.
+    fn execute_with_submit(
+        &self,
+        action: &BrowserAction,
+        submit: bool,
+    ) -> BoxFuture<'_, Result<ActionResult, DriverError>> {
+        if submit {
+            return Box::pin(async {
+                Err(DriverError::Invalid(
+                    "driver does not support submit".into(),
+                ))
+            });
+        }
+        self.execute(action)
+    }
     /// Terminate the browser session (idempotent).
     fn close(&self) -> BoxFuture<'_, Result<(), DriverError>>;
 }
@@ -63,11 +79,13 @@ pub enum DriverError {
     Invalid(String),
 }
 
-/// Pure command shaping: one action -> its CDP command sequence.
+/// Diagnostic action outline, NOT an executable CDP wire sequence.
 ///
-/// Every step names the session the executor must target (flat sessions
-/// after `Target.attachToTarget`). Pure: no I/O; unit-tested against a
-/// recorded matrix.
+/// Index hints deliberately remain unresolved in this pure module. Production
+/// execution lives in `vesper-web-fetch::browser::BrowserSession`, which
+/// resolves live backend nodes and supplies complete protocol parameters.
+/// Retained for action-shape compatibility tests only; never send this output
+/// to a browser.
 pub fn plan_commands(action: &BrowserAction, session_id: &str) -> Vec<(String, Value)> {
     match action {
         BrowserAction::Navigate { url } => vec![(

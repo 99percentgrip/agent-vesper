@@ -50,6 +50,14 @@ pub const WEB_TOOL_NAMES: [&str; 5] = [
 pub struct WebScope {
     /// Browser interaction requires its own explicit opt-in.
     pub interact_enabled: bool,
+    /// Fetch/render engine gates and immutable driver deployment input.
+    pub fetch_enabled: bool,
+    /// Permit one headless escalation after a JS-signaled fetch.
+    pub render_enabled: bool,
+    /// Digest-pinned OCI driver image.
+    pub driver_image: Option<String>,
+    /// User agent shared by both engines.
+    pub user_agent: String,
     /// Whether robots.txt verdicts gate fetching (default true).
     pub respect_robots: bool,
     /// Per-tool output budget in bytes (clamped to the config ceiling).
@@ -66,6 +74,10 @@ impl WebScope {
     pub fn disabled() -> Self {
         Self {
             interact_enabled: false,
+            fetch_enabled: true,
+            render_enabled: false,
+            driver_image: None,
+            user_agent: "agent-vesper".into(),
             respect_robots: true,
             output_budget_bytes: vesper_config::DEFAULT_OUTPUT_BUDGET_BYTES,
             allowlist: Vec::new(),
@@ -78,6 +90,9 @@ impl WebScope {
 pub struct WebService {
     scope: WebScope,
     transport: Arc<dyn FetchTransport>,
+    runtime: Arc<crate::web_runtime::WebRuntime>,
+    renderer: Arc<dyn vesper_web::transport::RenderTransport>,
+    browser: Arc<dyn vesper_web::driver::BrowserDriverPort>,
 }
 
 impl WebService {
@@ -85,10 +100,17 @@ impl WebService {
     /// one constructor so the parity test's byte-equality holds.
     #[must_use]
     pub fn from_scope(scope: WebScope) -> Self {
-        let transport = Arc::new(ProductionFetch {
-            scope: scope.clone(),
-        });
-        Self { scope, transport }
+        let runtime = Arc::new(crate::web_runtime::WebRuntime::new(scope.clone()));
+        let transport = Arc::new(crate::web_runtime::RuntimeFetch(runtime.clone()));
+        let renderer = Arc::new(crate::web_runtime::RuntimeFetch(runtime.clone()));
+        let browser = Arc::new(crate::web_runtime::RuntimeBrowser(runtime.clone()));
+        Self {
+            scope,
+            transport,
+            runtime,
+            renderer,
+            browser,
+        }
     }
 
     /// Inject a sandbox transport; offline tests supply fixture responses.
@@ -96,6 +118,20 @@ impl WebService {
     pub fn with_transport(mut self, transport: Arc<dyn FetchTransport>) -> Self {
         self.transport = transport;
         self
+    }
+
+    /// Inject a contained renderer (offline fixtures in deterministic tests).
+    pub fn with_renderer(
+        mut self,
+        renderer: Arc<dyn vesper_web::transport::RenderTransport>,
+    ) -> Self {
+        self.renderer = renderer;
+        self
+    }
+
+    /// Nonzero shared runtime identity; constructing it performs no I/O.
+    pub fn runtime_identity(&self) -> usize {
+        Arc::as_ptr(&self.runtime) as usize
     }
 
     /// The parsed scope (tool execution consults this).
@@ -146,7 +182,7 @@ impl WebService {
             ),
             (
                 "web_map",
-                "Discover the links of one page and rank \
+                "Discover page and sitemap links and rank \
                  them against `search` by cosine similarity over link text and URL. \
                  Returns a capped, deduplicated URL list.",
                 &[
@@ -164,6 +200,9 @@ impl WebService {
                     ("url", "string", true),
                     ("max_urls", "integer", false),
                     ("max_depth", "integer", false),
+                    ("concurrency", "integer", false),
+                    ("wall_clock_seconds", "integer", false),
+                    ("same_origin_only", "boolean", false),
                     ("search", "string", false),
                 ],
             ),
@@ -190,6 +229,15 @@ impl WebService {
                 definition.defer_loading = true;
                 if *name == "web_scrape" {
                     definition.input_schema["properties"]["formats"]["items"] = serde_json::json!({"type": "string", "enum": ["markdown", "fit", "rawHtml", "links"]});
+                }
+                if *name == "web_interact" {
+                    let properties = &mut definition.input_schema["properties"];
+                    properties["action"]["enum"] = serde_json::json!(["navigate","click","type","scroll","select_option","back","forward","reload","screenshot","close"]);
+                    properties["submit"] = serde_json::json!({"type":"boolean"});
+                    properties["clear_first"] = serde_json::json!({"type":"boolean"});
+                    properties["value"] = serde_json::json!({"type":"string"});
+                    properties["direction"] = serde_json::json!({"type":"string","enum":["up","down"]});
+                    properties["amount_pages"] = serde_json::json!({"type":"integer","minimum":1,"maximum":10});
                 }
                 definition
             })
@@ -236,6 +284,10 @@ pub mod holder {
         }
         Ok(Some(WebScope {
             interact_enabled: scope.interact_enabled,
+            fetch_enabled: scope.fetch_enabled,
+            render_enabled: scope.render_enabled,
+            driver_image: scope.driver_image.clone(),
+            user_agent: scope.user_agent.clone(),
             respect_robots: scope.respect_robots,
             output_budget_bytes: scope.clamped_budget(),
             allowlist: scope.allowlist,
@@ -292,7 +344,25 @@ impl ToolExecutor for WebService {
                 return Err(ToolError::Failed("web operation cancelled".into()));
             }
             if name == "web_interact" {
-                return Err(ToolError::Failed("browser sandbox unavailable: no production pipe-CDP session driver is installed".into()));
+                if !self.scope.interact_enabled {
+                    return Err(ToolError::Failed("browser interaction is disabled".into()));
+                }
+                let (action, submit) = parse_browser_action(&arguments)?;
+                let result = self
+                    .browser
+                    .execute_with_submit(&action, submit)
+                    .await
+                    .map_err(|e| ToolError::Failed(e.to_string()))?;
+                return ToolResult::new(format!(
+                    "[untrusted browser content]\n{}\n{}{}",
+                    result.description,
+                    result.map.unwrap_or_default(),
+                    if result.screenshot_base64.is_empty() {
+                        String::new()
+                    } else {
+                        format!("\n[screenshot PNG base64]\n{}", result.screenshot_base64)
+                    }
+                ));
             }
             if !WEB_TOOL_NAMES.contains(&name.as_str()) {
                 return Err(ToolError::Failed("unknown web tool".into()));
@@ -307,36 +377,77 @@ impl ToolExecutor for WebService {
             }
             let budget = (self.scope.output_budget_bytes as usize)
                 .clamp(1, vesper_config::MAX_OUTPUT_BUDGET_BYTES as usize);
-            let page = self.fetch(&url).await?;
+            // Reject malformed arguments before any external side effect.
+            if name == "web_scrape" {
+                if let Some(formats) = arguments.get("formats") {
+                    let formats = formats
+                        .as_array()
+                        .ok_or_else(|| ToolError::Failed("formats must be an array".into()))?;
+                    if formats.iter().any(|v| {
+                        !matches!(v.as_str(), Some("markdown" | "fit" | "rawHtml" | "links"))
+                    }) {
+                        return Err(ToolError::Failed("unsupported scrape format".into()));
+                    }
+                }
+            } else if name == "web_map" {
+                argument_limit(&arguments, "limit", 100, 1000)?;
+            } else if name == "web_crawl" {
+                for (key, default, cap) in [
+                    ("max_urls", 20, 200),
+                    ("max_depth", 2, 10),
+                    ("concurrency", 2, 4),
+                    ("wall_clock_seconds", 120, 120),
+                ] {
+                    argument_limit(&arguments, key, default, cap)?;
+                }
+                if arguments
+                    .get("same_origin_only")
+                    .is_some_and(|v| !v.is_boolean())
+                {
+                    return Err(ToolError::Failed("same_origin_only must be boolean".into()));
+                }
+            }
+            let started = std::time::Instant::now();
+            let seconds = if name == "web_crawl" {
+                argument_limit(&arguments, "wall_clock_seconds", 120, 120)?.max(1) as u64
+            } else {
+                45
+            };
+            let page = self.fetch_bounded(&url, seconds).await?;
             let mut content = match name.as_str() {
                 "web_fetch" => page.body.clone(),
-                "web_scrape" => scrape_page(&page, &arguments)?,
+                "web_scrape" => scrape_page(&page, &arguments, budget)?,
                 "web_map" => {
                     let mut doc = vesper_web::dom::parse(&page.body);
                     vesper_web::strip::strip(&mut doc);
-                    let links = vesper_web::links::extract_links(&doc, &page.url);
+                    let mut links = vesper_web::links::extract_links(&doc, &page.url);
+                    let discovery = self.sitemap_links(&page.url, _context).await;
+                    links.extend(discovery.0);
                     let query = arguments
                         .get("search")
                         .and_then(|v| v.as_str())
                         .unwrap_or("");
                     let limit = argument_limit(&arguments, "limit", 100, 1000)?;
                     let mut seen = std::collections::BTreeSet::new();
-                    vesper_web::rank::rank_links(links, query)
+                    let ranked = vesper_web::rank::rank_links(links, query)
                         .into_iter()
                         .filter(|entry| seen.insert(entry.link.url.clone()))
                         .take(limit)
                         .map(|entry| format!("{} {}", entry.link.url, entry.link.text))
                         .collect::<Vec<_>>()
-                        .join("\n")
+                        .join("\n");
+                    format!("{ranked}\n{}", discovery.1.join("\n"))
                 }
                 "web_crawl" => {
-                    self.crawl(page.clone(), &arguments, budget, _context)
+                    self.crawl(page.clone(), &arguments, budget, _context, started)
                         .await?
                 }
                 _ => unreachable!(),
             };
             let original_bytes = content.len();
-            truncate_utf8(&mut content, budget);
+            if name != "web_scrape" {
+                truncate_utf8(&mut content, budget);
+            }
             let origin = url::Url::parse(&page.url)
                 .map(|url| url.origin().ascii_serialization())
                 .unwrap_or_else(|_| "unknown".into());
@@ -350,7 +461,13 @@ impl ToolExecutor for WebService {
 }
 
 impl WebService {
+    #[cfg(test)]
     async fn fetch(&self, url: &str) -> Result<FetchResponse, ToolError> {
+        self.fetch_bounded(url, 45).await
+    }
+
+    async fn fetch_bounded(&self, url: &str, seconds: u64) -> Result<FetchResponse, ToolError> {
+        let started = std::time::Instant::now();
         let policy = vesper_web::egress::EgressPolicy {
             allow_plain_http: true,
             allowed_hosts: self.scope.allowlist.clone(),
@@ -364,11 +481,132 @@ impl WebService {
                 denial.name()
             )));
         }
-        let request = FetchRequest::new(url);
-        self.transport
-            .fetch(&request)
-            .await
-            .map_err(|error| ToolError::Failed(error.to_string()))
+        let mut request = FetchRequest::new(url);
+        request.timeout_seconds = seconds.clamp(1, 45);
+        request.max_body_bytes = self.scope.output_budget_bytes as usize;
+        if !self.scope.fetch_enabled {
+            if self.scope.render_enabled {
+                return self
+                    .renderer
+                    .render(&request)
+                    .await
+                    .map_err(|e| ToolError::Failed(e.to_string()));
+            }
+            return Err(ToolError::Failed("web engines are disabled".into()));
+        }
+        let result = self.transport.fetch(&request).await;
+        let escalate = match &result {
+            Ok(page) => {
+                page.body.trim().is_empty()
+                    || (page.body.trim_start().starts_with('<')
+                        && !page.content_type.contains("html")
+                        && !page.content_type.contains("xml"))
+                    || {
+                        let lower = page.body.to_ascii_lowercase();
+                        (lower.contains("<noscript") || lower.contains("<script"))
+                            && vesper_web::dom::body(&vesper_web::strip::parse_and_strip(
+                                &page.body,
+                            ))
+                            .text()
+                            .trim()
+                            .is_empty()
+                    }
+            }
+            Err(vesper_web::transport::FetchError::Fetch(reason)) => {
+                reason.contains("999") || reason.contains("content_type")
+            }
+            _ => false,
+        };
+        if escalate && self.scope.render_enabled {
+            request.timeout_seconds = seconds.saturating_sub(started.elapsed().as_secs());
+            if request.timeout_seconds == 0 {
+                return Err(ToolError::Failed(
+                    "web operation budget exhausted before render".into(),
+                ));
+            }
+            return self
+                .renderer
+                .render(&request)
+                .await
+                .map_err(|e| ToolError::Failed(e.to_string()));
+        }
+        result.map_err(|error| ToolError::Failed(error.to_string()))
+    }
+
+    async fn sitemap_links(
+        &self,
+        url: &str,
+        context: &ToolContext,
+    ) -> (Vec<vesper_web::links::LinkRecord>, Vec<String>) {
+        use vesper_web::sitemap::{SITEMAP_LIMIT, URL_LIMIT};
+        let started = std::time::Instant::now();
+        let Ok(base) = url::Url::parse(url) else {
+            return (Vec::new(), vec!["[denied: invalid sitemap origin]".into()]);
+        };
+        let mut queue = std::collections::VecDeque::new();
+        let mut notes = Vec::new();
+        let mut request = FetchRequest::new(base.join("/robots.txt").expect("web URL").as_str());
+        request.max_body_bytes = self.scope.output_budget_bytes as usize;
+        request.timeout_seconds = 45;
+        if let Ok(robots) = self.transport.fetch(&request).await {
+            queue.extend(vesper_web::sitemap::robots_sitemaps(&robots.body, url));
+        }
+        queue.push_back(base.join("/sitemap.xml").expect("web URL").to_string());
+        let mut seen = std::collections::BTreeSet::new();
+        let mut urls = std::collections::BTreeSet::new();
+        let mut links = Vec::new();
+        while let Some(url) = queue.pop_front() {
+            if context.cancellation.is_cancelled() {
+                notes.push("[denied: sitemap cancelled]".into());
+                break;
+            }
+            if seen.contains(&url) {
+                continue;
+            }
+            if seen.len() >= SITEMAP_LIMIT
+                || urls.len() >= URL_LIMIT
+                || started.elapsed().as_secs() >= 120
+            {
+                notes.push("[denied: sitemap_budget_exceeded]".into());
+                break;
+            }
+            seen.insert(url.clone());
+            request.url = url.clone();
+            request.timeout_seconds = 120u64
+                .saturating_sub(started.elapsed().as_secs())
+                .clamp(1, 45);
+            let page = match self.transport.fetch(&request).await {
+                Ok(page) => page,
+                Err(error) => {
+                    notes.push(format!("[sitemap unavailable: {url} {error}]"));
+                    continue;
+                }
+            };
+            match vesper_web::sitemap::parse(&page.body, &page.url) {
+                Ok(map) if map.is_index => queue.extend(
+                    map.locations
+                        .into_iter()
+                        .take(SITEMAP_LIMIT.saturating_sub(queue.len())),
+                ),
+                Ok(map) => {
+                    for url in map.locations {
+                        if urls.len() >= URL_LIMIT {
+                            break;
+                        }
+                        if urls.insert(url.clone()) {
+                            links.push(vesper_web::links::LinkRecord {
+                                url,
+                                text: String::new(),
+                                rel: Vec::new(),
+                                nofollow: false,
+                            });
+                        }
+                    }
+                }
+                Err(error) => notes.push(format!("[sitemap unavailable: {url} {error}]")),
+            }
+        }
+        (links, notes)
     }
 
     async fn crawl(
@@ -377,80 +615,109 @@ impl WebService {
         args: &serde_json::Value,
         budget: usize,
         context: &ToolContext,
+        started: std::time::Instant,
     ) -> Result<String, ToolError> {
         let max_urls = argument_limit(args, "max_urls", 20, 200)?;
         let max_depth = argument_limit(args, "max_depth", 2, 10)?;
+        let concurrency = argument_limit(args, "concurrency", 2, 4)?.max(1);
+        let wall_seconds = argument_limit(args, "wall_clock_seconds", 120, 120)?.max(1) as u64;
+        let same_origin = match args.get("same_origin_only") {
+            None => true,
+            Some(value) => value
+                .as_bool()
+                .ok_or_else(|| ToolError::Failed("same_origin_only must be boolean".into()))?,
+        };
         let origin = url::Url::parse(&seed.url)
             .map_err(|_| ToolError::Failed("invalid seed URL".into()))?
             .origin();
         let mut queue = std::collections::VecDeque::from([(seed.url.clone(), 0usize, Some(seed))]);
         let mut seen = std::collections::BTreeSet::new();
         let mut output = String::new();
-        let started = std::time::Instant::now();
-        while let Some((url, depth, supplied)) = queue.pop_front() {
+        while !queue.is_empty() {
             if context.cancellation.is_cancelled() {
                 return Err(ToolError::Failed("web crawl cancelled".into()));
             }
             if output.len() >= budget
-                || started.elapsed().as_secs() >= 120
+                || started.elapsed().as_secs() >= wall_seconds
                 || seen.len() >= max_urls
             {
                 output.push_str("\n[denied: budget_exhausted]\n");
                 break;
             }
-            let normalized = vesper_web::links::canonicalize(&url, &url).unwrap_or(url.clone());
-            if !seen.insert(normalized) {
-                output.push_str(&format!("\n[denied: duplicate_normalized {url}]\n"));
-                continue;
+            let mut batch = Vec::new();
+            while batch.len() < concurrency && seen.len() < max_urls {
+                let Some((url, depth, supplied)) = queue.pop_front() else {
+                    break;
+                };
+                let normalized = vesper_web::links::canonicalize(&url, &url).unwrap_or(url.clone());
+                if !seen.insert(normalized) {
+                    output.push_str(&format!("\n[denied: duplicate_normalized {url}]\n"));
+                    continue;
+                }
+                batch.push((url, depth, supplied));
             }
-            let page = match supplied {
-                Some(page) => page,
-                None => match self.fetch(&url).await {
+            let remaining = wall_seconds
+                .saturating_sub(started.elapsed().as_secs())
+                .max(1);
+            let fetched = futures_util::future::join_all(batch.into_iter().map(
+                |(url, depth, supplied)| async move {
+                    let result = match supplied {
+                        Some(page) => Ok(page),
+                        None => self.fetch_bounded(&url, remaining).await,
+                    };
+                    (url, depth, result)
+                },
+            ))
+            .await;
+            for (url, depth, result) in fetched {
+                let page = match result {
                     Ok(page) => page,
                     Err(error) => {
                         output.push_str(&format!("\n[denied: {url} {error}]\n"));
                         continue;
                     }
-                },
-            };
-            if url::Url::parse(&page.url)
-                .ok()
-                .is_none_or(|url| url.origin() != origin)
-            {
-                output.push_str("\n[denied: off_origin redirect]\n");
-                continue;
-            }
-            output.push_str(&format!(
-                "\n[page {} truncated={}]\n{}",
-                page.url,
-                page.truncated,
-                vesper_web::pipeline::run_default_pipeline(&page.body).fit_markdown
-            ));
-            let mut doc = vesper_web::dom::parse(&page.body);
-            vesper_web::strip::strip(&mut doc);
-            for link in vesper_web::links::extract_links(&doc, &page.url)
-                .into_iter()
-                .take(1000)
-            {
-                let reason = if depth >= max_depth {
-                    Some("depth_limit")
-                } else if url::Url::parse(&link.url)
-                    .ok()
-                    .is_none_or(|url| url.origin() != origin)
-                {
-                    Some("off_origin")
-                } else if queue.len() >= max_urls {
-                    Some("budget_exhausted")
-                } else {
-                    None
                 };
-                if let Some(reason) = reason {
-                    output.push_str(&format!("\n[denied: {reason} {}]\n", link.url));
-                } else {
-                    queue.push_back((link.url, depth + 1, None));
+                if same_origin
+                    && url::Url::parse(&page.url)
+                        .ok()
+                        .is_none_or(|url| url.origin() != origin)
+                {
+                    output.push_str("\n[denied: off_origin redirect]\n");
+                    continue;
                 }
-                if output.len() >= budget {
-                    break;
+                output.push_str(&format!(
+                    "\n[page {} truncated={}]\n{}",
+                    page.url,
+                    page.truncated,
+                    vesper_web::pipeline::run_default_pipeline(&page.body).fit_markdown
+                ));
+                let mut doc = vesper_web::dom::parse(&page.body);
+                vesper_web::strip::strip(&mut doc);
+                for link in vesper_web::links::extract_links(&doc, &page.url)
+                    .into_iter()
+                    .take(1000)
+                {
+                    let reason = if depth >= max_depth {
+                        Some("depth_limit")
+                    } else if same_origin
+                        && url::Url::parse(&link.url)
+                            .ok()
+                            .is_none_or(|url| url.origin() != origin)
+                    {
+                        Some("off_origin")
+                    } else if queue.len() >= max_urls {
+                        Some("budget_exhausted")
+                    } else {
+                        None
+                    };
+                    if let Some(reason) = reason {
+                        output.push_str(&format!("\n[denied: {reason} {}]\n", link.url));
+                    } else {
+                        queue.push_back((link.url, depth + 1, None));
+                    }
+                    if output.len() >= budget {
+                        break;
+                    }
                 }
             }
         }
@@ -481,7 +748,11 @@ fn truncate_utf8(text: &mut String, cap: usize) {
     text.truncate(end);
 }
 
-fn scrape_page(page: &FetchResponse, args: &serde_json::Value) -> Result<String, ToolError> {
+fn scrape_page(
+    page: &FetchResponse,
+    args: &serde_json::Value,
+    budget: usize,
+) -> Result<String, ToolError> {
     let formats = match args.get("formats") {
         None => vec!["markdown", "fit"],
         Some(value) => value
@@ -495,16 +766,36 @@ fn scrape_page(page: &FetchResponse, args: &serde_json::Value) -> Result<String,
             .collect::<Result<Vec<_>, _>>()?,
     };
     let pipeline = vesper_web::pipeline::run_default_pipeline(&page.body);
-    let mut output = Vec::new();
+    // Preserve every requested format within the host's 1 MiB ContentText
+    // envelope; report the additional per-field cut instead of failing output.
+    let field_count = formats
+        .iter()
+        .copied()
+        .collect::<std::collections::BTreeSet<_>>()
+        .len()
+        + 1;
+    let budget = budget.min((1_048_576 - 8192) / field_count);
+    let doc = vesper_web::strip::parse_and_strip(&page.body);
+    let metadata = vesper_web::meta::extract_metadata(&doc);
+    let mut output = vec![format!(
+        "[page]\n{}",
+        serde_json::json!({"url":page.url,"status":page.status,"metadata":metadata})
+    )];
+    truncate_utf8(&mut output[0], budget);
+    let mut seen_formats = std::collections::BTreeSet::new();
     for format in formats {
-        let content = match format {
+        if !seen_formats.insert(format) {
+            continue;
+        }
+        let mut content = match format {
             "markdown" => pipeline.full_markdown.clone(),
             "fit" => {
-                if let Some(query) = args.get("query").and_then(|v| v.as_str()) {
-                    let doc = vesper_web::strip::parse_and_strip(&page.body);
+                let query =
+                    vesper_web::bm25::page_query(&doc, args.get("query").and_then(|v| v.as_str()));
+                if !query.is_empty() {
                     let dom = vesper_web::arena::Dom::from_document(&doc);
                     vesper_web::bm25::Bm25Filter::new()
-                        .filter(&vesper_web::bm25::extract_chunks(&dom), query)
+                        .filter(&vesper_web::bm25::extract_chunks(&dom), &query)
                         .into_iter()
                         .map(|chunk| chunk.text)
                         .collect::<Vec<_>>()
@@ -526,56 +817,272 @@ fn scrape_page(page: &FetchResponse, args: &serde_json::Value) -> Result<String,
             }
             _ => return Err(ToolError::Failed(format!("unsupported format {format}"))),
         };
-        output.push(format!("[{format}]\n{content}"));
+        let original = content.len();
+        truncate_utf8(&mut content, budget);
+        output.push(format!("[{format}]\n{content}\n[density field={format} original_bytes={original} returned_bytes={} truncated={}]", content.len(), original > content.len() || page.truncated));
     }
     Ok(output.join("\n"))
 }
 
-struct ProductionFetch {
-    scope: WebScope,
-}
-
-impl FetchTransport for ProductionFetch {
-    fn fetch(
-        &self,
-        request: &FetchRequest,
-    ) -> vesper_web::transport::BoxFuture<
-        '_,
-        Result<FetchResponse, vesper_web::transport::FetchError>,
-    > {
-        let request = request.clone();
-        let scope = self.scope.clone();
-        Box::pin(async move {
-            tokio::task::spawn_blocking(move || {
-                use vesper_web::transport::FetchError;
-                let root = tempfile::tempdir().map_err(|error| FetchError::Sandbox(error.to_string()))?;
-                let docker = std::env::var("AGENT_VESPER_SANDBOX").ok().is_some_and(|v| matches!(v.as_str(), "docker" | "container"));
-                let (backend, helper): (Arc<dyn vesper_sandbox::SandboxBackend>, std::path::PathBuf) = if docker {
-                    #[cfg(feature = "docker")]
-                    {
-                        let image = std::env::var("VESPER_DOCKER_IMAGE").map_err(|_| FetchError::Sandbox("set VESPER_DOCKER_IMAGE to an image digest containing /usr/local/bin/vesper-web-fetch".into()))?;
-                        if !image.contains("@sha256:") { return Err(FetchError::Sandbox("web image must be digest-pinned".into())); }
-                        (Arc::new(vesper_sandbox::DockerBackend::new(vesper_sandbox::DockerSandboxConfig { network: true, image: Some(image), ..Default::default() })), "/usr/local/bin/vesper-web-fetch".into())
-                    }
-                    #[cfg(not(feature = "docker"))]
-                    { return Err(FetchError::Sandbox("binary was built without the docker feature".into())); }
+fn parse_browser_action(
+    args: &serde_json::Value,
+) -> Result<(vesper_web::BrowserAction, bool), ToolError> {
+    use vesper_web::BrowserAction as A;
+    let string = |key: &str| {
+        args.get(key)
+            .and_then(|v| v.as_str())
+            .map(str::to_owned)
+            .ok_or_else(|| ToolError::Failed(format!("{key} must be a string")))
+    };
+    let index = || {
+        args.get("index")
+            .and_then(|v| v.as_u64())
+            .and_then(|v| usize::try_from(v).ok())
+            .filter(|v| *v > 0)
+            .ok_or_else(|| ToolError::Failed("index must be a positive integer".into()))
+    };
+    let boolean = |key: &str, default: bool| match args.get(key) {
+        None => Ok(default),
+        Some(value) => value
+            .as_bool()
+            .ok_or_else(|| ToolError::Failed(format!("{key} must be boolean"))),
+    };
+    let action = match string("action")?.as_str() {
+        "navigate" => A::Navigate {
+            url: string("url")?,
+        },
+        "click" => A::Click { index: index()? },
+        "type" => A::Type {
+            index: index()?,
+            text: string("text")?,
+            clear_first: boolean("clear_first", true)?,
+        },
+        "select_option" => A::SelectOption {
+            index: index()?,
+            value: string("value")?,
+        },
+        "scroll" => {
+            let direction = match args
+                .get("direction")
+                .and_then(|v| v.as_str())
+                .unwrap_or("down")
+            {
+                "down" => 1,
+                "up" => -1,
+                _ => return Err(ToolError::Failed("direction must be up or down".into())),
+            };
+            let pages = argument_limit(args, "amount_pages", 1, 10)?.max(1) as i32;
+            A::Scroll {
+                dy: direction * pages * 800,
+                index: if args.get("index").is_some() {
+                    Some(index()?)
                 } else {
-                    let helper = std::env::current_exe().map_err(|error| FetchError::Sandbox(error.to_string()))?.with_file_name(if cfg!(windows) { "vesper-web-fetch.exe" } else { "vesper-web-fetch" });
-                    if !helper.is_file() { return Err(FetchError::Sandbox("vesper-web-fetch is missing from the installed bundle".into())); }
-                    (vesper_sandbox::default_backend(), helper)
-                };
-                let mut config = vesper_web_fetch::WebSandboxRouteConfig::new(helper, root.path().to_path_buf());
-                config.egress = vesper_web::egress::EgressPolicy { allow_plain_http: true, allowed_hosts: scope.allowlist, respect_robots: scope.respect_robots };
-                let port = vesper_web_fetch::WebSandboxPort::new(backend, config);
-                tokio::runtime::Handle::current().block_on(port.fetch(&request))
-            }).await.map_err(|_| vesper_web::transport::FetchError::Sandbox("web worker failed".into()))?
-        })
-    }
+                    None
+                },
+            }
+        }
+        "back" => A::Back,
+        "forward" => A::Forward,
+        "reload" => A::Reload,
+        "screenshot" => A::Screenshot,
+        "close" => A::Close,
+        _ => return Err(ToolError::Failed("unknown browser action".into())),
+    };
+    Ok((action, boolean("submit", false)?))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct CountingRender(std::sync::atomic::AtomicUsize);
+    impl vesper_web::transport::RenderTransport for CountingRender {
+        fn render(
+            &self,
+            request: &FetchRequest,
+        ) -> vesper_web::transport::BoxFuture<
+            '_,
+            Result<FetchResponse, vesper_web::transport::FetchError>,
+        > {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let url = request.url.clone();
+            Box::pin(async move {
+                Ok(FetchResponse {
+                    status: 200,
+                    url,
+                    body: "<h1>Rendered fixture</h1>".into(),
+                    content_type: "text/html".into(),
+                    truncated: false,
+                })
+            })
+        }
+    }
+
+    struct RecordedFetch(Result<FetchResponse, vesper_web::transport::FetchError>);
+    impl FetchTransport for RecordedFetch {
+        fn fetch(
+            &self,
+            _: &FetchRequest,
+        ) -> vesper_web::transport::BoxFuture<
+            '_,
+            Result<FetchResponse, vesper_web::transport::FetchError>,
+        > {
+            let result = self.0.clone();
+            Box::pin(async move { result })
+        }
+    }
+
+    #[tokio::test]
+    async fn sitemap_discovery_merges_nested_fixture_and_stops_cycles() {
+        struct SitemapFixture(std::sync::Mutex<Vec<String>>);
+        impl FetchTransport for SitemapFixture {
+            fn fetch(
+                &self,
+                request: &FetchRequest,
+            ) -> vesper_web::transport::BoxFuture<
+                '_,
+                Result<FetchResponse, vesper_web::transport::FetchError>,
+            > {
+                self.0.lock().unwrap().push(request.url.clone());
+                let body = match request.url.as_str() {
+                    "https://example.com/robots.txt" => {
+                        include_str!("../../../fixtures/web-oracle/sitemap-robots.txt")
+                    }
+                    "https://example.com/maps/index.xml" => {
+                        include_str!("../../../fixtures/web-oracle/sitemap-index.xml")
+                    }
+                    "https://example.com/maps/pages.xml.gz" => {
+                        include_str!("../../../fixtures/web-oracle/sitemap-pages.xml")
+                    }
+                    _ => "<urlset/>",
+                };
+                let url = request.url.clone();
+                Box::pin(async move {
+                    Ok(FetchResponse {
+                        status: 200,
+                        url,
+                        body: body.into(),
+                        content_type: "application/xml".into(),
+                        truncated: false,
+                    })
+                })
+            }
+        }
+        struct NeverCancelled;
+        impl vesper_provider::CancellationSignal for NeverCancelled {
+            fn is_cancelled(&self) -> bool {
+                false
+            }
+        }
+        let context = ToolContext {
+            workspace_roots: Vec::new(),
+            operating_mode: vesper_domain::SessionOperatingMode::Code,
+            permission_mode: vesper_domain::SessionPermissionMode::Bypass,
+            conversation: Vec::new(),
+            cancellation: Arc::new(NeverCancelled),
+            firewall: None,
+            sandbox: None,
+        };
+        let fixture = Arc::new(SitemapFixture(std::sync::Mutex::new(Vec::new())));
+        let service = WebService::from_scope(WebScope::disabled()).with_transport(fixture.clone());
+        let (links, notes) = service
+            .sitemap_links("https://example.com/", &context)
+            .await;
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].url, "https://example.com/sitemap-only?a=1&b=2");
+        assert!(notes.is_empty(), "{notes:?}");
+        assert_eq!(fixture.0.lock().unwrap().len(), 4);
+    }
+
+    #[tokio::test]
+    async fn recorded_spa_with_title_escalates_once() {
+        let mut scope = WebScope::disabled();
+        scope.render_enabled = true;
+        let renderer = Arc::new(CountingRender(std::sync::atomic::AtomicUsize::new(0)));
+        let service = WebService::from_scope(scope)
+            .with_transport(Arc::new(RecordedFetch(Ok(FetchResponse {
+                status: 200,
+                url: "https://example.com".into(),
+                body: include_str!("../../../fixtures/web-oracle/f04-spa-shell.html").into(),
+                content_type: "text/html".into(),
+                truncated: false,
+            }))))
+            .with_renderer(renderer.clone());
+        assert!(
+            service
+                .fetch("https://example.com")
+                .await
+                .unwrap()
+                .body
+                .contains("Rendered fixture")
+        );
+        assert_eq!(renderer.0.load(std::sync::atomic::Ordering::Relaxed), 1);
+    }
+
+    #[tokio::test]
+    async fn render_waterfall_is_single_shot_and_never_bypasses_egress() {
+        use vesper_web::transport::FetchError;
+        for result in [
+            Ok(FetchResponse {
+                status: 200,
+                url: "https://example.com".into(),
+                body: "<noscript>Enable JS</noscript><script>bootstrap()</script>".into(),
+                content_type: "text/html".into(),
+                truncated: false,
+            }),
+            Err(FetchError::Fetch("HTTP status 999".into())),
+        ] {
+            let mut scope = WebScope::disabled();
+            scope.render_enabled = true;
+            let renderer = Arc::new(CountingRender(std::sync::atomic::AtomicUsize::new(0)));
+            let service = WebService::from_scope(scope)
+                .with_transport(Arc::new(RecordedFetch(result)))
+                .with_renderer(renderer.clone());
+            assert!(
+                service
+                    .fetch("https://example.com")
+                    .await
+                    .unwrap()
+                    .body
+                    .contains("Rendered fixture")
+            );
+            assert_eq!(renderer.0.load(std::sync::atomic::Ordering::Relaxed), 1);
+            assert!(service.fetch("https://127.0.0.1").await.is_err());
+            assert_eq!(renderer.0.load(std::sync::atomic::Ordering::Relaxed), 1);
+        }
+        let renderer = Arc::new(CountingRender(std::sync::atomic::AtomicUsize::new(0)));
+        let service = WebService::from_scope(WebScope::disabled())
+            .with_transport(Arc::new(RecordedFetch(Err(FetchError::Fetch(
+                "HTTP status 999".into(),
+            )))))
+            .with_renderer(renderer.clone());
+        assert!(service.fetch("https://example.com").await.is_err());
+        assert_eq!(renderer.0.load(std::sync::atomic::Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn browser_schema_parser_covers_submit_scroll_and_selection() {
+        let (action, submit) = parse_browser_action(
+            &serde_json::json!({"action":"type","index":1,"text":"secret","submit":true}),
+        )
+        .unwrap();
+        assert!(submit && matches!(action, vesper_web::BrowserAction::Type { index: 1, .. }));
+        assert!(matches!(
+            parse_browser_action(
+                &serde_json::json!({"action":"scroll","direction":"up","amount_pages":2})
+            )
+            .unwrap()
+            .0,
+            vesper_web::BrowserAction::Scroll { dy: -1600, .. }
+        ));
+        assert!(parse_browser_action(&serde_json::json!({"action":"click","index":0})).is_err());
+        assert!(
+            parse_browser_action(
+                &serde_json::json!({"action":"type","index":1,"text":"x","submit":"yes"})
+            )
+            .is_err()
+        );
+    }
     use crate::HarnessToolService;
     use crate::MemoryStores;
     use std::sync::Arc;
@@ -924,7 +1431,7 @@ mod tests {
             > {
                 let url = request.url.clone();
                 Box::pin(async move {
-                    Ok(FetchResponse { url, body: "<html><body><article><h1>Native web test</h1><p>Useful content survives the perception pipeline.</p><a href='/child'>child</a><a href='https://other.example/'>external</a></article></body></html>".into(), content_type: "text/html".into(), truncated: false })
+                    Ok(FetchResponse { status: 200, url, body: "<html><body><article><h1>Native web test</h1><p>Useful content survives the perception pipeline.</p><a href='/child'>child</a><a href='https://other.example/'>external</a></article></body></html>".into(), content_type: "text/html".into(), truncated: false })
                 })
             }
         }

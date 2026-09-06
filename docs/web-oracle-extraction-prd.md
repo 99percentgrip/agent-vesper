@@ -1,8 +1,9 @@
 # PRD — VRO-14: The Web Oracle Extraction
 
-Status: PARTIAL — perception modules and passive tool execution are implemented;
-production browser sessions, render escalation, and sitemap discovery remain
-open. The implementation audit is `docs/foundation/vro14-gap-audit.md`.
+Status: production gap repairs implemented; final acceptance and release gates
+are tracked in `docs/foundation/vro14-gap-audit.md`. Browser sessions, render
+escalation, sitemap discovery and the pinned driver build now have executable
+production paths. Deployment instructions are in `docs/web-tools.md`.
 Implementation evidence lands under `docs/foundation/` per `docs/AGENTS.md`.
 
 Reference upstream (the triad), explicitly authorized as trusted data and
@@ -58,7 +59,7 @@ Rust toolset for the ReAct loop:
    the heart of the Perception Engine.
 3. **Agentic interaction (gamma).** Gamma's current generation maps the
    live DOM to a compact indexed representation the model can act on: a CDP
-   `DOMSnapshot.captureSnapshot` pass (11 required computed styles),
+   `DOMSnapshot.captureSnapshot` pass (10 required computed styles),
    enrichment with the accessibility tree, bounds, visibility,
    clickability heuristics (JS click listeners, ARIA roles, form-control
    wrappers), paint-order filtering, and a serializer that assigns stable
@@ -127,7 +128,7 @@ Ignored completely, per the extraction directive and the recon:
 | Fit-markdown generation | beta `<pkg-root>/markdown_generation_strategy.py` | `fit_markdown` output path |
 | html2text conversion options | beta `<pkg-root>/html2text/config.py` | converter options struct |
 | CDP DOMSnapshot enrichment | gamma `<pkg-root>/dom/service.py`, `enhanced_snapshot.py` | `SnapshotModel` (F2) |
-| Computed-style allowlist (11 styles) | gamma `enhanced_snapshot.py` `REQUIRED_COMPUTED_STYLES` | `REQUIRED_COMPUTED_STYLES` const |
+| Computed-style allowlist (10 styles) | gamma `enhanced_snapshot.py` `REQUIRED_COMPUTED_STYLES` | `REQUIRED_COMPUTED_STYLES` const |
 | Sensitive-input redaction at extraction | gamma `enhanced_snapshot.py` `_SENSITIVE_INPUT_TYPES` | snapshot-layer redaction (§2.2) |
 | Sensitive-input filtering policy | gamma `enhanced_snapshot.py` `_is_sensitive_input` | field-layer mirroring (§2.2) |
 | Clickability heuristics | gamma `<pkg-root>/dom/serializer/clickable_elements.py` | `is_interactive` |
@@ -326,7 +327,7 @@ never leaving the page.
 `DOMSnapshot.captureSnapshot` results (documents, strings table, node and
 layout arrays) and the enrichment pass ported from gamma:
 
-- `REQUIRED_COMPUTED_STYLES`: the exact 11-style allowlist (`display`,
+- `REQUIRED_COMPUTED_STYLES`: the exact 10-style allowlist (`display`,
   `visibility`, `opacity`, `overflow`(+x/y), `cursor`, `pointer-events`,
   `position`, `background-color`) — bounded style capture, not full CSS.
 - `EnhancedNode`: node/backend ids, tag, attributes, bounds (`DOMRect`),

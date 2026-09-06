@@ -9,7 +9,7 @@
 use crate::dom::{Document, Element, Node, body, find_first};
 
 /// OpenGraph tags captured by the extractor.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
 pub struct OpenGraph {
     pub title: Option<String>,
     pub description: Option<String>,
@@ -21,7 +21,7 @@ pub struct OpenGraph {
 }
 
 /// Page-level metadata extracted from the DOM.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
 pub struct PageMetadata {
     pub title: Option<String>,
     pub description: Option<String>,

@@ -139,7 +139,7 @@ impl RobotsRules {
                 "allow" | "disallow" => {
                     saw_rule = true;
                     if !agents.is_empty() && !value.is_empty() {
-                        rules.push((value.to_string(), key == "allow"));
+                        rules.push((robots_octets(value), key == "allow"));
                     }
                 }
                 _ => {}
@@ -167,6 +167,7 @@ impl RobotsRules {
 
     /// Longest-prefix match decides; empty rules allow everything.
     pub fn is_allowed(&self, path: &str) -> bool {
+        let path = robots_octets(path);
         self.rules
             .iter()
             .filter(|(prefix, _)| robots_matches(prefix.as_bytes(), path.as_bytes()))
@@ -182,6 +183,40 @@ impl RobotsRules {
             .map(|(_, allowed)| *allowed)
             .unwrap_or(true)
     }
+}
+
+// RFC 9309 matching: decode percent-encoded unreserved octets; preserve
+// reserved escapes and encode non-ASCII UTF-8 octets before comparison.
+fn robots_octets(value: &str) -> String {
+    fn hex(byte: u8) -> Option<u8> {
+        (byte as char).to_digit(16).map(|v| v as u8)
+    }
+    let bytes = value.as_bytes();
+    let mut out = String::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        let byte = bytes[i];
+        if byte == b'%'
+            && i + 2 < bytes.len()
+            && let (Some(high), Some(low)) = (hex(bytes[i + 1]), hex(bytes[i + 2]))
+        {
+            let decoded = high * 16 + low;
+            if decoded.is_ascii_alphanumeric() || b"-._~".contains(&decoded) {
+                out.push(decoded as char);
+            } else {
+                out.push_str(&format!("%{decoded:02X}"));
+            }
+            i += 3;
+        } else {
+            if byte.is_ascii() {
+                out.push(byte as char);
+            } else {
+                out.push_str(&format!("%{byte:02X}"));
+            }
+            i += 1;
+        }
+    }
+    out
 }
 
 fn robots_matches(pattern: &[u8], path: &[u8]) -> bool {
@@ -318,6 +353,18 @@ fn default_path(url: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn robots_normalizes_octets_without_decoding_reserved_slashes() {
+        let rules = RobotsRules::parse(
+            "User-agent: *\nDisallow: /caf%C3%A9\nDisallow: /~private\nDisallow: /a%2fb",
+            "agent-vesper",
+        );
+        assert!(!rules.is_allowed("/café"));
+        assert!(!rules.is_allowed("/%7eprivate"));
+        assert!(!rules.is_allowed("/a%2Fb"));
+        assert!(rules.is_allowed("/a/b"));
+    }
 
     #[test]
     fn robots_combines_agent_groups_and_prefers_specific_rules() {

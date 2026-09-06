@@ -27,6 +27,11 @@ web oracle triad repositories). Fixture names and categories:
 - `f11-edge` — edge cases: entities, unicode, deep nesting, empty bodies,
   comments, `template` content, self-closing foreign elements.
 - `f12-e-commerce` — product page (price, spec table, reviews).
+- `sitemap-robots.txt`, `sitemap-index.xml`, `sitemap-pages.xml` — original
+  synthetic sitemap directives, recursive index cycle, gzip-target location,
+  escaped query delimiters and normalized URL duplicates. Shared-service tests
+  supply these decoded bodies through fixture transports; helper tests own
+  bounded gzip decompression.
 
 ## Local Contracts
 
@@ -34,8 +39,8 @@ web oracle triad repositories). Fixture names and categories:
   live-provider text.
 - `goldens/` holds byte-identical expected markdown per fixture, produced
   by the `vesper-web` pipeline with default options; regeneration is a
-  deliberate act (`cargo test -p vesper-web --test corpus_golden --
-  --bless`), never accidental.
+  deliberate act (`cargo run -p vesper-web --example gen-goldens --
+  <repo-root>`), never accidental.
 - The corpus is offline: no test in `vesper-web` may open a socket, file
   outside its own crate paths, or clock-dependent value.
 

@@ -3,7 +3,7 @@
     [Pricing](#pricing)
     [Testimonials](#testimonials)
     [Sign up](/signup)
-  
+
     # Ship faster with widgets
 
     Widgets for teams that want to move quickly without breaking
@@ -11,7 +11,7 @@
 
     [Start free](/signup)
     [Book a demo](/demo)
-    
+
       ### Fast
 
       Widgets are fast because they are compiled ahead of time and
@@ -43,6 +43,6 @@
       > We shipped in a weekend. The widgets just worked.
 
       — A satisfied customer
-    
+
       > Second testimonial with an intentionally malformed
 >  attribute above this element.

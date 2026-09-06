@@ -152,7 +152,7 @@ pub fn evaluate(url: &str, policy: &EgressPolicy, robots_allowed: Option<bool>) 
         && !policy
             .allowed_hosts
             .iter()
-            .any(|allowed| allowed.eq_ignore_ascii_case(&host))
+            .any(|allowed| matches_origin_pattern(allowed, &parsed))
     {
         return EgressVerdict::Deny(EgressDenial::HostNotAllowlisted);
     }
@@ -162,9 +162,71 @@ pub fn evaluate(url: &str, policy: &EgressPolicy, robots_allowed: Option<bool>) 
     EgressVerdict::Allow
 }
 
+/// Scheme/host/port patterns. Wildcard subdomains exclude suffix lookalikes.
+pub fn matches_origin_pattern(pattern: &str, target: &url::Url) -> bool {
+    let (scheme, authority) = pattern
+        .split_once("://")
+        .map_or((None, pattern), |(s, h)| (Some(s), h));
+    if scheme.is_some_and(|s| s != "*" && !s.eq_ignore_ascii_case(target.scheme())) {
+        return false;
+    }
+    let authority = authority.strip_suffix('/').unwrap_or(authority);
+    if authority.contains(['/', '@', '?', '#']) {
+        return false;
+    }
+    let (host, port) = if authority.starts_with('[') {
+        let Some(end) = authority.find(']') else {
+            return false;
+        };
+        (&authority[..=end], authority[end + 1..].strip_prefix(':'))
+    } else {
+        authority
+            .rsplit_once(':')
+            .map_or((authority, None), |(h, p)| (h, Some(p)))
+    };
+    if let Some(port) = port
+        && port != "*"
+        && port.parse::<u16>().ok() != target.port_or_known_default()
+    {
+        return false;
+    }
+    let actual = target.host_str().unwrap_or_default().to_ascii_lowercase();
+    let host = host.to_ascii_lowercase();
+    if host == "*" {
+        return true;
+    }
+    if let Some(suffix) = host.strip_prefix("*.") {
+        return actual.len() > suffix.len() + 1 && actual.ends_with(&format!(".{suffix}"));
+    }
+    actual == host
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn origin_patterns_enforce_scheme_subdomain_boundary_and_port() {
+        let target = url::Url::parse("https://docs.example.com:8443/path").unwrap();
+        assert!(matches_origin_pattern(
+            "https://*.example.com:8443",
+            &target
+        ));
+        assert!(matches_origin_pattern("docs.example.com", &target));
+        for pattern in [
+            "http://*.example.com:8443",
+            "https://*.example.com:443",
+            "https://example.com",
+            "https://*example.com",
+            "https://user@docs.example.com:8443",
+        ] {
+            assert!(!matches_origin_pattern(pattern, &target));
+        }
+        assert!(!matches_origin_pattern(
+            "*.example.com",
+            &url::Url::parse("https://badexample.com").unwrap()
+        ));
+    }
 
     #[test]
     fn ipv6_private_and_link_local_are_denied_over_https() {

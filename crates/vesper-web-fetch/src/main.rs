@@ -49,6 +49,9 @@ fn main() -> ExitCode {
         eprintln!("usage: vesper-web-fetch <url>");
         return ExitCode::from(4);
     };
+    if url == "--pipe" {
+        return pipe_fetch();
+    }
     if !url.starts_with("http://") && !url.starts_with("https://") {
         eprintln!("refused: only http/https URLs are fetchable");
         return ExitCode::from(1);
@@ -70,7 +73,21 @@ fn main() -> ExitCode {
         },
         None => HelperPolicy::default(),
     };
-    match fetch(&url, cap, &policy) {
+    let result = if args.next().as_deref() == Some("--check") {
+        check_navigation(&url, &policy).map(|()| Outcome {
+            status: 204,
+            content_type: "text/plain".into(),
+            final_url: url.clone(),
+            charset: "utf-8".into(),
+            redirects: 0,
+            bytes_read: 0,
+            body: Vec::new(),
+            truncated: false,
+        })
+    } else {
+        fetch(&url, cap, &policy)
+    };
+    match result {
         Ok(outcome) => {
             // Metadata travels on stderr as one JSON line so stdout stays
             // byte-exact body content.
@@ -105,6 +122,70 @@ struct Outcome {
     redirects: usize,
     bytes_read: u64,
     body: Vec<u8>,
+    truncated: bool,
+}
+
+fn pipe_fetch() -> ExitCode {
+    use std::io::BufRead;
+    let mut input = Vec::new();
+    if std::io::stdin()
+        .lock()
+        .take(64 * 1024 + 1)
+        .read_until(0, &mut input)
+        .is_err()
+        || input.len() > 64 * 1024
+        || input.pop() != Some(0)
+    {
+        return ExitCode::from(4);
+    }
+    #[derive(serde::Deserialize)]
+    struct Request {
+        url: String,
+        cap: u64,
+        policy: HelperPolicy,
+    }
+    let Ok(request) = serde_json::from_slice::<Request>(&input) else {
+        return ExitCode::from(4);
+    };
+    let mut output = std::io::stdout().lock();
+    let mut emit = |value: serde_json::Value| -> std::io::Result<()> {
+        serde_json::to_writer(&mut output, &value)?;
+        output.write_all(&[0])?;
+        output.flush()
+    };
+    match fetch(
+        &request.url,
+        request.cap.clamp(1, 512 * 1024),
+        &request.policy,
+    ) {
+        Ok(outcome) => {
+            let body = String::from_utf8_lossy(&outcome.body);
+            let mut start = 0;
+            while start < body.len() {
+                let mut end = (start + 8192).min(body.len());
+                while !body.is_char_boundary(end) {
+                    end -= 1;
+                }
+                if emit(serde_json::json!({"body": &body[start..end]})).is_err() {
+                    return ExitCode::from(2);
+                }
+                start = end;
+            }
+            if emit(serde_json::json!({"meta": metadata_line(&outcome), "done":true})).is_err() {
+                return ExitCode::from(2);
+            }
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            let (kind, reason) = match error {
+                FetchError::CapExceeded => ("budget", "body cap exceeded".into()),
+                FetchError::Policy(reason) => ("egress", reason),
+                FetchError::Transport(reason) => ("fetch", reason),
+            };
+            let _ = emit(serde_json::json!({"error":reason,"kind":kind,"done":true}));
+            ExitCode::from(2)
+        }
+    }
 }
 
 enum FetchError {
@@ -119,6 +200,7 @@ struct HelperPolicy {
     allow_plain_http: bool,
     allowed_hosts: Vec<String>,
     respect_robots: bool,
+    user_agent: String,
 }
 
 impl Default for HelperPolicy {
@@ -127,6 +209,7 @@ impl Default for HelperPolicy {
             allow_plain_http: false,
             allowed_hosts: Vec::new(),
             respect_robots: true,
+            user_agent: "agent-vesper".into(),
         }
     }
 }
@@ -159,7 +242,24 @@ fn checked_addresses(addresses: &[SocketAddr]) -> Result<(), FetchError> {
     Ok(())
 }
 
-fn get_one(url: &url::Url) -> Result<reqwest::blocking::Response, FetchError> {
+fn check_navigation(url: &str, policy: &HelperPolicy) -> Result<(), FetchError> {
+    let url = checked_url(url, policy)?;
+    let host = url.host_str().unwrap_or_default().trim_matches(['[', ']']);
+    let addresses: Vec<_> = (host, url.port_or_known_default().unwrap_or(443))
+        .to_socket_addrs()
+        .map_err(|_| FetchError::Transport("DNS resolution failed".into()))?
+        .collect();
+    checked_addresses(&addresses)?;
+    if policy.respect_robots {
+        robots_check(&url, policy)?;
+    }
+    Ok(())
+}
+
+fn get_one(
+    url: &url::Url,
+    policy: &HelperPolicy,
+) -> Result<reqwest::blocking::Response, FetchError> {
     // Resolve inside the helper, validate every answer, then pin those
     // addresses into the client so a second DNS lookup cannot rebind it.
     let host = url.host_str().unwrap_or_default().trim_matches(['[', ']']);
@@ -177,18 +277,38 @@ fn get_one(url: &url::Url) -> Result<reqwest::blocking::Response, FetchError> {
         .build()
         .map_err(|_| FetchError::Transport("HTTP client initialization failed".into()))?
         .get(url.clone())
-        .header("user-agent", "agent-vesper")
+        .header("user-agent", &policy.user_agent)
         .send()
         .map_err(|_| FetchError::Transport("HTTP request failed".into()))
 }
 
 fn robots_check(url: &url::Url, policy: &HelperPolicy) -> Result<(), FetchError> {
+    type Cache = std::collections::HashMap<String, vesper_web::crawl::RobotsRules>;
+    static CACHE: std::sync::OnceLock<std::sync::Mutex<Cache>> = std::sync::OnceLock::new();
+    let cache = CACHE.get_or_init(Default::default);
+    let key = format!(
+        "{} {}",
+        url.origin().ascii_serialization(),
+        policy.user_agent
+    );
+    let path = &url[url::Position::BeforePath..url::Position::AfterQuery];
+    if let Some(rules) = cache
+        .lock()
+        .map_err(|_| FetchError::Policy("robots_cache_unavailable".into()))?
+        .get(&key)
+    {
+        return if rules.is_allowed(path) {
+            Ok(())
+        } else {
+            Err(FetchError::Policy("robots_disallowed".into()))
+        };
+    }
     let mut robots = url
         .join("/robots.txt")
         .map_err(|_| FetchError::Policy("robots_url".into()))?;
     for hop in 0..=MAX_REDIRECTS {
         robots = checked_url(robots.as_str(), policy)?;
-        let response = get_one(&robots)?;
+        let response = get_one(&robots, policy)?;
         let status = response.status().as_u16();
         if response.status().is_redirection() {
             robots = redirect_target(&robots, &response, hop, policy)?;
@@ -208,10 +328,19 @@ fn robots_check(url: &url::Url, policy: &HelperPolicy) -> Result<(), FetchError>
         if body.len() as u64 > BODY_CAP_BYTES {
             return Err(FetchError::Policy("robots_budget_exceeded".into()));
         }
-        let rules =
-            vesper_web::crawl::RobotsRules::parse(&String::from_utf8_lossy(&body), "agent-vesper");
-        let path = &url[url::Position::BeforePath..url::Position::AfterQuery];
-        return if rules.is_allowed(path) {
+        let rules = vesper_web::crawl::RobotsRules::parse(
+            &String::from_utf8_lossy(&body),
+            &policy.user_agent,
+        );
+        let allowed = rules.is_allowed(path);
+        let mut cache = cache
+            .lock()
+            .map_err(|_| FetchError::Policy("robots_cache_unavailable".into()))?;
+        if cache.len() >= 128 {
+            cache.clear();
+        }
+        cache.insert(key, rules);
+        return if allowed {
             Ok(())
         } else {
             Err(FetchError::Policy("robots_disallowed".into()))
@@ -246,7 +375,7 @@ fn fetch(url: &str, cap: u64, policy: &HelperPolicy) -> Result<Outcome, FetchErr
         if policy.respect_robots {
             robots_check(&current, policy)?;
         }
-        let response = get_one(&current)?;
+        let response = get_one(&current, policy)?;
         if response.status().is_redirection() {
             current = redirect_target(&current, &response, redirects, policy)?;
             continue;
@@ -280,6 +409,7 @@ fn decode_response(
             redirects,
             bytes_read: 0,
             body: Vec::new(),
+            truncated: false,
         });
     }
 
@@ -290,16 +420,26 @@ fn decode_response(
     limited
         .read_to_end(&mut body)
         .map_err(|error| FetchError::Transport(error.to_string()))?;
-    if body.len() as u64 > cap {
-        return Err(FetchError::CapExceeded);
-    }
+    let mut truncated = body.len() as u64 > cap;
     let bytes_read = body.len() as u64;
 
-    let (sniffed_type, charset) = sniff(&content_type, &body);
-    let decoded = decode_charset(&body, &charset);
-    if decoded.len() as u64 > cap {
-        return Err(FetchError::CapExceeded);
+    if body.starts_with(&[0x1f, 0x8b]) {
+        if truncated {
+            return Err(FetchError::CapExceeded);
+        }
+        body = gunzip_bounded(&body, cap)?;
     }
+    body.truncate(cap as usize);
+
+    let (sniffed_type, charset) = sniff(&content_type, &body);
+    let bytes = decode_charset(&body, &charset);
+    let mut decoded = String::from_utf8_lossy(&bytes).into_owned();
+    let mut end = decoded.len().min(cap as usize);
+    while !decoded.is_char_boundary(end) {
+        end -= 1;
+    }
+    truncated |= end < decoded.len();
+    decoded.truncate(end);
     Ok(Outcome {
         status,
         content_type: sniffed_type,
@@ -307,8 +447,21 @@ fn decode_response(
         charset,
         redirects,
         bytes_read,
-        body: decoded,
+        body: decoded.into_bytes(),
+        truncated,
     })
+}
+
+fn gunzip_bounded(body: &[u8], cap: u64) -> Result<Vec<u8>, FetchError> {
+    let mut expanded = Vec::new();
+    flate2::read::MultiGzDecoder::new(body)
+        .take(cap + 1)
+        .read_to_end(&mut expanded)
+        .map_err(|_| FetchError::Transport("invalid gzip body".into()))?;
+    if expanded.len() as u64 > cap {
+        return Err(FetchError::CapExceeded);
+    }
+    Ok(expanded)
 }
 
 /// Content-type sniffing: when the header is missing or generic, look at
@@ -361,9 +514,29 @@ fn decode_charset(body: &[u8], charset: &str) -> Vec<u8> {
     match charset {
         "utf-8" | "us-ascii" | "" => body.to_vec(),
         "utf-16be" | "utf-16le" => utf16_to_utf8(body, charset == "utf-16be"),
-        "iso-8859-1" | "latin1" | "windows-1252" | "cp1252" => latin1_to_utf8(body),
+        "iso-8859-1" | "latin1" => latin1_to_utf8(body),
+        "windows-1252" | "cp1252" => windows1252_to_utf8(body),
         _ => body.to_vec(),
     }
+}
+
+fn windows1252_to_utf8(body: &[u8]) -> Vec<u8> {
+    const C1: [u32; 32] = [
+        0x20ac, 0x81, 0x201a, 0x192, 0x201e, 0x2026, 0x2020, 0x2021, 0x2c6, 0x2030, 0x160, 0x2039,
+        0x152, 0x8d, 0x17d, 0x8f, 0x90, 0x2018, 0x2019, 0x201c, 0x201d, 0x2022, 0x2013, 0x2014,
+        0x2dc, 0x2122, 0x161, 0x203a, 0x153, 0x9d, 0x17e, 0x178,
+    ];
+    body.iter()
+        .map(|&byte| {
+            let code = if (0x80..=0x9f).contains(&byte) {
+                C1[usize::from(byte - 0x80)]
+            } else {
+                u32::from(byte)
+            };
+            char::from_u32(code).unwrap_or(char::REPLACEMENT_CHARACTER)
+        })
+        .collect::<String>()
+        .into_bytes()
 }
 
 fn latin1_to_utf8(body: &[u8]) -> Vec<u8> {
@@ -399,7 +572,7 @@ fn metadata_line(outcome: &Outcome) -> String {
             "vwf": "1", "status": outcome.status,
             "content_type": outcome.content_type, "final_url": outcome.final_url,
             "bytes_read": outcome.bytes_read, "redirects": outcome.redirects,
-            "charset": outcome.charset, "truncated": false,
+            "charset": outcome.charset, "truncated": outcome.truncated,
         })
     )
 }
@@ -407,6 +580,31 @@ fn metadata_line(outcome: &Outcome) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gzip_sitemap_decodes_and_expansion_bombs_fail_closed() {
+        let xml = include_str!("../../../fixtures/web-oracle/sitemap-pages.xml");
+        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        encoder.write_all(xml.as_bytes()).unwrap();
+        let compressed = encoder.finish().unwrap();
+        assert_eq!(
+            gunzip_bounded(&compressed, 512 * 1024).ok().unwrap(),
+            xml.as_bytes()
+        );
+        assert!(matches!(
+            gunzip_bounded(&compressed, 32),
+            Err(FetchError::CapExceeded)
+        ));
+        assert!(gunzip_bounded(b"invalid gzip", 1000).is_err());
+    }
+
+    #[test]
+    fn windows1252_punctuation_is_not_latin1_control_text() {
+        assert_eq!(
+            windows1252_to_utf8(&[0x80, 0x93, b'a', 0x94]),
+            "€“a”".as_bytes()
+        );
+    }
 
     #[test]
     fn emitted_metadata_round_trips_through_production_parser() {
@@ -418,6 +616,7 @@ mod tests {
             redirects: 3,
             bytes_read: 4,
             body: b"body".to_vec(),
+            truncated: false,
         };
         let meta = vesper_web_fetch::parse::parse_helper_meta(&metadata_line(&outcome))
             .expect("actual helper metadata must parse");

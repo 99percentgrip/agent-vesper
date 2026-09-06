@@ -121,10 +121,19 @@ Z.ai and Playwright MCP server descriptors.
   production uses the sandbox helper on a blocking worker, tests use offline
   pages. Registry builds reuse the service Arc. `search_tools` searches eligible
   web definitions and injects their schemas for subsequent model requests.
-- `web_interact` requires its separate config opt-in and refuses while no
-  production pipe-CDP session driver exists. Map currently discovers page
-  links only. Do not advertise sitemap/render/browser completion; current
-  outstanding requirements live in `docs/foundation/vro14-gap-audit.md`.
+- `src/web_runtime.rs` lazily owns a single sandbox route used by fetch,
+  ephemeral rendering, and persistent browser interaction. Initialization
+  requires a digest-pinned driver image; no host HTTP/browser fallback exists.
+  `AGENT_VESPER_SANDBOX=off` refuses initialization, including web execution.
+  Browser interaction has a separate opt-in. A failed pipe invalidates the
+  session, and render escalation never modifies the interactive session.
+  Four shared runtime permits cap concurrent sandbox operations. Fetch and
+  render share one deadline; crawl includes seed work in its wall-clock budget.
+  Argument validation precedes external execution; closing an unopened browser
+  is an idempotent no-op without a daemon/image probe.
+- Map merges bounded sitemap/index discovery with page links. Current
+  acceptance status remains in `docs/foundation/vro14-gap-audit.md`; a passing
+  component test alone is not permission to advertise full PRD completion.
 
 ## Verification
 

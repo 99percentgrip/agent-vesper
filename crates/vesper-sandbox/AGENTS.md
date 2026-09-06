@@ -36,6 +36,11 @@ through safe `std::process`.
   cognition-root paths ever enter a sandbox.
 - Output is capped at `OUTPUT_CAP_BYTES` (64 KiB per stream). Timeouts kill
   the supervisor and report `timed_out: true` rather than hanging.
+- `src/pipe.rs` owns optional container duplex channels: NUL-framed input
+  capped at 512 KiB, output frames at 16 MiB, one queued frame, absolute
+  send/receive deadlines, no payload logging. Pipe drop kills/reaps the exec
+  client and releases its sandbox handle before joining I/O threads. Backends
+  without duplex support explicitly refuse; the namespace protocol is unchanged.
 - `sandbox_init` is the **only** production component allowed `unsafe`. It
   carries `#![allow(unsafe_code)]` + `#![deny(unsafe_op_in_unsafe_fn)]` +
   `#![deny(clippy::undocumented_unsafe_blocks)]`, and every unsafe block
@@ -55,6 +60,9 @@ through safe `std::process`.
   daemon yields the model-facing "sandbox unavailable … the operation
   needs isolation" refusal before any `docker run` is attempted, and
   `capabilities()` reports everything `Unavailable` — never assumed.
+  Pinned images are probed locally before provisioning, with no implicit pull.
+  Per-request network grants and resource overrides are honored. Concurrent
+  bounded stream draining avoids deadlocking on output larger than an OS pipe.
 
 ## Work Guidance
 

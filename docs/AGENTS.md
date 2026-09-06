@@ -20,6 +20,8 @@ Own durable project documentation and evidence-backed engineering records.
   replay evidence, disk invariance, governance, and Stage 6 readiness.
 - Root documentation files own current architecture, workspace, dependency,
   security, contribution, migration status, and full-harness parity evidence.
+- `web-tools.md` owns web-driver installation, immutable image identity,
+  opt-in configuration, operation bounds, and deployment troubleshooting.
 - Root PRD files (`*-prd.md`) own accepted phased requirement documents
   (e.g. `agent-vesper-reasoning-orchestrator-prd.md`,
   `provider-capability-gating-prd.md`, `qm-extraction-prd.md`,

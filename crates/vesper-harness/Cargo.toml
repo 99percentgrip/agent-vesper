@@ -15,20 +15,20 @@ tokio.workspace = true
 tempfile.workspace = true
 url.workspace = true
 futures-util.workspace = true
-vesper-agent = { path = "../vesper-agent", version = "=0.20.88" }
-vesper-checkpoints = { path = "../vesper-checkpoints", version = "=0.20.88" }
-vesper-config = { path = "../vesper-config", version = "=0.20.88" }
-vesper-domain = { path = "../vesper-domain", version = "=0.20.88" }
-vesper-mcp = { path = "../vesper-mcp", version = "=0.20.88" }
-vesper-memory = { path = "../vesper-memory", version = "=0.20.88" }
-vesper-runtime = { path = "../vesper-runtime", version = "=0.20.88" }
-vesper-sandbox = { path = "../vesper-sandbox", version = "=0.20.88" }
-vesper-sessions = { path = "../vesper-sessions", version = "=0.20.88" }
+vesper-agent = { path = "../vesper-agent", version = "=0.20.89" }
+vesper-checkpoints = { path = "../vesper-checkpoints", version = "=0.20.89" }
+vesper-config = { path = "../vesper-config", version = "=0.20.89" }
+vesper-domain = { path = "../vesper-domain", version = "=0.20.89" }
+vesper-mcp = { path = "../vesper-mcp", version = "=0.20.89" }
+vesper-memory = { path = "../vesper-memory", version = "=0.20.89" }
+vesper-runtime = { path = "../vesper-runtime", version = "=0.20.89" }
+vesper-sandbox = { path = "../vesper-sandbox", version = "=0.20.89" }
+vesper-sessions = { path = "../vesper-sessions", version = "=0.20.89" }
 # VRO-14 PR-5: the web tools' pure surfaces (perception pipeline, egress
 # policy, action vocabulary) live in vesper-web; the transport stays behind
 # the port trait and is supplied by the composition boundary.
-vesper-web = { path = "../vesper-web", version = "=0.20.88" }
-vesper-web-fetch = { path = "../vesper-web-fetch", version = "=0.20.88" }
+vesper-web = { path = "../vesper-web", version = "=0.20.89" }
+vesper-web-fetch = { path = "../vesper-web-fetch", version = "=0.20.89" }
 
 [features]
 # VRO-13 PR-6: the daemon's single-writer flock discipline. Unix-only
@@ -41,9 +41,9 @@ tempfile.workspace = true
 # VRO-13 PR-8: the cross-feature e2e fixture composes the firewall holder
 # (vesper-policy), the provider seam (vesper-provider), and the deterministic
 # fake provider (vesper-testkit) — test-only, mirroring vesper-agent/tests.
-vesper-policy = { path = "../vesper-policy", version = "=0.20.88" }
-vesper-provider = { path = "../vesper-provider", version = "=0.20.88" }
-vesper-testkit = { path = "../vesper-testkit", version = "=0.20.88" }
+vesper-policy = { path = "../vesper-policy", version = "=0.20.89" }
+vesper-provider = { path = "../vesper-provider", version = "=0.20.89" }
+vesper-testkit = { path = "../vesper-testkit", version = "=0.20.89" }
 
 [lints]
 workspace = true

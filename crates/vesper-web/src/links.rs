@@ -129,6 +129,14 @@ pub fn normalize_url(target: &Url) -> String {
     if normalized.query() == Some("") {
         normalized.set_query(None);
     }
+    if normalized.query().is_some() {
+        let mut pairs: Vec<_> = normalized
+            .query_pairs()
+            .map(|(k, v)| (k.into_owned(), v.into_owned()))
+            .collect();
+        pairs.sort();
+        normalized.query_pairs_mut().clear().extend_pairs(pairs);
+    }
     // Default ports are redundant.
     let default_port = matches!(
         (normalized.scheme(), normalized.port()),

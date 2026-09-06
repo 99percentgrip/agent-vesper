@@ -39,6 +39,8 @@ impl FetchRequest {
 /// A fetched page, ready for the perception pipeline.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FetchResponse {
+    /// Final HTTP status for scrape metadata and engine choice.
+    pub status: u16,
     /// Final URL after redirects.
     pub url: String,
     /// Body decoded to text (charset already applied).
@@ -75,6 +77,12 @@ pub trait FetchTransport: Send + Sync {
     /// and MUST NOT perform any network I/O outside a sandbox provisioned
     /// with a network grant for this request.
     fn fetch(&self, request: &FetchRequest) -> BoxFuture<'_, Result<FetchResponse, FetchError>>;
+}
+
+/// One headless render attempt, isolated from an interactive browser session.
+pub trait RenderTransport: Send + Sync {
+    /// Render only inside a network-granted sandbox; never retry silently.
+    fn render(&self, request: &FetchRequest) -> BoxFuture<'_, Result<FetchResponse, FetchError>>;
 }
 
 /// Alias for the boxed future shape used across the workspace (no

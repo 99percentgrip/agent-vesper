@@ -113,7 +113,8 @@ When the user requests a durable behavior change, record it here or in the relev
   `agent-vesper` PR in `agentclientprotocol/registry`, updated in place on
   the same branch for every version bump. Never close-and-replace it.
 - Public releases are exact-commit gated: push the version commit to `main`,
-  require successful canonical, MSRV, and five-target foundation workflows
+  require successful canonical, MSRV, five-target foundation, and contained
+  web-driver image acceptance workflows
   for that commit, then create its immutable release tag. Never tag first and
   use the release matrix to discover platform failures.
 - TUI↔ACP host parity is bidirectional: any host-agnostic capability or

@@ -29,4 +29,3 @@
 | dup2 | duplicate onto a standard descriptor |
 
         [[edit](/w/index.php?title=Pipe&)]
-      

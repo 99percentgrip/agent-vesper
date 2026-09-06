@@ -1,7 +1,7 @@
 //! VRO-14 PR-5: `[web]` scope configuration from `.agent-vesper/config.toml`.
 //!
 //! Same deliberately minimal, dependency-free TOML reader discipline as
-//! `sandbox_config` (one table, tolerant of unknown keys, forward
+//! `sandbox_config` (bounded tables, tolerant of unknown keys, forward
 //! compatible). The `[web]` block is the **opt-in switch** for the five
 //! web tools: when it is absent, or `enabled = false`, the harness
 //! registers nothing and the agent loop pays zero runtime cost — no tool
@@ -15,6 +15,12 @@
 //! - `allowlist` (array of strings, default empty = all hosts allowed,
 //!   subject to the egress gate's address-class denials) — host allowlist
 //!   handed to the egress policy.
+//! - `engine.fetch.enabled` (default true), `engine.render.enabled` and
+//!   `interact.enabled` (default false), `driver.image` (immutable ID/digest),
+//!   `user_agent`, and fail-closed sandbox/private-address settings.
+//!
+//! Nested `[web.engine.fetch]`, `[web.engine.render]`, `[web.interact]`,
+//! `[web.driver]`, and `[web.sandbox]` tables are equivalent to dotted keys.
 //!
 //! A second `[web]` table is an error; malformed known values are errors;
 //! everything unknown is ignored.
@@ -58,6 +64,14 @@ pub struct WebScopeConfig {
     pub enabled: bool,
     /// Separate opt-in for browser interaction; unavailable drivers refuse.
     pub interact_enabled: bool,
+    /// Plain fetch engine gate.
+    pub fetch_enabled: bool,
+    /// Single headless escalation gate.
+    pub render_enabled: bool,
+    /// Immutable OCI driver image reference; never pulled at host boot.
+    pub driver_image: Option<String>,
+    /// Credential-free HTTP identification string.
+    pub user_agent: String,
     /// Robots-respecting fetches (default true).
     pub respect_robots: bool,
     /// Per-tool output truncation bound.
@@ -71,6 +85,10 @@ impl Default for WebScopeConfig {
         Self {
             enabled: false,
             interact_enabled: false,
+            fetch_enabled: true,
+            render_enabled: false,
+            driver_image: None,
+            user_agent: "agent-vesper".into(),
             respect_robots: true,
             output_budget_bytes: DEFAULT_OUTPUT_BUDGET_BYTES,
             allowlist: Vec::new(),
@@ -129,12 +147,25 @@ pub fn parse_web_table(text: &str) -> Result<WebScopeConfig, WebConfigError> {
     let mut in_table = false;
     let mut in_interact = false;
     let mut seen_interact = false;
+    let mut subsection = String::new();
+    let mut subsections = std::collections::BTreeSet::new();
     for raw_line in text.lines() {
         let line = strip_comment(raw_line).trim().to_string();
         if line.is_empty() {
             continue;
         }
         if line.starts_with('[') {
+            subsection = match line.as_str() {
+                "[web.engine.fetch]" => "engine.fetch.",
+                "[web.engine.render]" => "engine.render.",
+                "[web.driver]" => "driver.",
+                "[web.sandbox]" => "sandbox.",
+                _ => "",
+            }
+            .into();
+            if !subsection.is_empty() && !subsections.insert(subsection.clone()) {
+                return Err(WebConfigError::DuplicateTable);
+            }
             in_interact = line.trim() == "[web.interact]";
             if in_interact {
                 if seen_interact {
@@ -151,13 +182,14 @@ pub fn parse_web_table(text: &str) -> Result<WebScopeConfig, WebConfigError> {
             }
             continue;
         }
-        if !in_table && !in_interact {
+        if !in_table && !in_interact && subsection.is_empty() {
             continue;
         }
         let Some((key, value)) = line.split_once('=') else {
             continue;
         };
-        let key = key.trim();
+        let full_key = format!("{subsection}{}", key.trim());
+        let key = full_key.as_str();
         let key = if in_interact {
             if key == "enabled" {
                 "interact.enabled"
@@ -169,6 +201,53 @@ pub fn parse_web_table(text: &str) -> Result<WebScopeConfig, WebConfigError> {
         };
         let value = value.trim();
         match key {
+            "engine.fetch.enabled" | "engine.render.enabled" => {
+                let flag = parse_bool(value).ok_or_else(|| WebConfigError::MalformedValue {
+                    key: key.into(),
+                    value: value.into(),
+                })?;
+                if key == "engine.fetch.enabled" {
+                    config.fetch_enabled = flag;
+                } else {
+                    config.render_enabled = flag;
+                }
+            }
+            "driver.image" | "user_agent" => {
+                let text = value
+                    .strip_prefix('"')
+                    .and_then(|s| s.strip_suffix('"'))
+                    .filter(|s| !s.is_empty() && !s.chars().any(char::is_control))
+                    .ok_or_else(|| WebConfigError::MalformedValue {
+                        key: key.into(),
+                        value: "invalid string".into(),
+                    })?;
+                if key == "driver.image" {
+                    if !is_digest_pinned_image(text) {
+                        return Err(WebConfigError::MalformedValue {
+                            key: key.into(),
+                            value: "requires image@sha256:<64 lowercase hex>".into(),
+                        });
+                    }
+                    config.driver_image = Some(text.into());
+                } else {
+                    config.user_agent = text.into();
+                }
+            }
+            "deny_private_addresses" | "sandbox.allow_network"
+                if parse_bool(value) != Some(true) =>
+            {
+                return Err(WebConfigError::MalformedValue {
+                    key: key.into(),
+                    value: "web requires private-address denial and an explicit network grant"
+                        .into(),
+                });
+            }
+            "sandbox.requirement" if value != "\"network\"" => {
+                return Err(WebConfigError::MalformedValue {
+                    key: key.into(),
+                    value: "web requires network isolation".into(),
+                });
+            }
             "enabled" => match parse_bool(value) {
                 Some(flag) => config.enabled = flag,
                 None => {
@@ -220,6 +299,27 @@ pub fn parse_web_table(text: &str) -> Result<WebScopeConfig, WebConfigError> {
     Ok(config)
 }
 
+/// Strict immutable OCI reference validation (no tags disguised as digests).
+#[must_use]
+pub fn is_digest_pinned_image(image: &str) -> bool {
+    if let Some(digest) = image.strip_prefix("sha256:") {
+        return digest.len() == 64
+            && digest
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
+    }
+    let Some((name, digest)) = image.split_once("@sha256:") else {
+        return false;
+    };
+    !name.is_empty()
+        && !name.starts_with('-')
+        && !name.chars().any(char::is_whitespace)
+        && digest.len() == 64
+        && digest
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
 /// Strips `# comments` outside double-quoted strings.
 fn strip_comment(line: &str) -> &str {
     let mut quoted = false;
@@ -266,6 +366,35 @@ mod tests {
     //! duplicates, and cross-table isolation.
 
     use super::*;
+
+    #[test]
+    fn complete_nested_web_config_and_immutable_images() {
+        let digest = "a".repeat(64);
+        let text = format!(
+            "[web]\nenabled = true\nuser_agent = \"vesper-test\"\ndeny_private_addresses = true\n[web.engine.fetch]\nenabled = false\n[web.engine.render]\nenabled = true\n[web.driver]\nimage = \"sha256:{digest}\"\n[web.sandbox]\nrequirement = \"network\"\nallow_network = true\n"
+        );
+        let config = parse_web_table(&text).unwrap();
+        assert!(!config.fetch_enabled && config.render_enabled);
+        assert_eq!(config.user_agent, "vesper-test");
+        assert_eq!(config.driver_image, Some(format!("sha256:{digest}")));
+        assert!(is_digest_pinned_image(&format!(
+            "example/image@sha256:{digest}"
+        )));
+        for image in [
+            "example/image:latest",
+            "example/image@sha256:short",
+            "sha256:",
+        ] {
+            assert!(!is_digest_pinned_image(image));
+        }
+        for text in [
+            "[web]\ndeny_private_addresses = false",
+            "[web.sandbox]\nallow_network = false",
+            "[web.sandbox]\nrequirement = \"filesystem\"",
+        ] {
+            assert!(parse_web_table(text).is_err());
+        }
+    }
 
     #[test]
     fn missing_table_yields_disabled_default() {

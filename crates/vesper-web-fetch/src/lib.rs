@@ -32,6 +32,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod browser;
 pub mod parse;
 pub mod route;
 

@@ -1,6 +1,8 @@
 
     Plain div text before any structure.
 
+    [embedded frame]
+
     Entities: & < > " '   © …
 
     Unicode: héllo wörld ünïcode 日本語テキスト 🚀 emoji

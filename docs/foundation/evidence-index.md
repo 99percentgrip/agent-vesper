@@ -59,10 +59,24 @@ Status: COMPLETE
 32. `cargo clean --manifest-path` for each disposable spike removed about 1.7 GiB of ignored build output without touching source or authored spike files.
 33. Required-deliverable existence audit, incomplete-marker search, final source status, and process enumeration: no missing deliverables, incomplete markers, or fixture/oracle descendants.
 
-## Open questions
+## VRO-14 production completion acceptance — 2026-09-07
 
-- Current web-extraction repair and remaining production gaps:
-  `vro14-gap-audit.md`; phase-module landing is not browser acceptance.
+- Baseline `v0.20.88` / `9ff4695b`; requirement-to-source map and exact
+  commands/results: `vro14-gap-audit.md`.
+- Implemented real contained pipe-CDP sessions, render waterfall, bounded
+  sitemap/gzip discovery, shared engine configuration and pinned driver build.
+- Canonical verification passed; MSRV 1.88: 1,672 passed, 0 failed, 20 ignored
+  across 87 suites; both unchanged release-profile performance gates passed.
+- Immutable-image real browser and explicit navigation/chunked-fetch tests
+  passed on Linux x86_64; no provider calls or user-state writes; post-test
+  container enumeration empty. Two native image CI jobs gate public assets.
+- DOX pass updated web/config/harness/sandbox, fixture, workflow and owning
+  documentation contracts. Version-only crate contracts remain unchanged.
+
+## Outstanding acceptance
+
+- Web exact-commit platform/image CI and public release acceptance:
+  `vro14-gap-audit.md`; local acceptance alone does not authorize a tag.
 
 - Historical executor-stall cause is not reconstructable, but the complete source baseline is green and repeatable.
 - Product approvals listed in `decision-register.md` and `blocker-closure-report.md`.

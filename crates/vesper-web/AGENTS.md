@@ -14,7 +14,8 @@ bounded Markdown (`docs/web-oracle-extraction-prd.md`, Feature 1).
 - `src/arena.rs` — arena projection with precomputed density metrics for
   the prune stage; `pre_order`/`post_order`/`parent_of` traversal surface.
 - `src/strip.rs` — alpha-intent unwanted-element removal (script/style/
-  noscript/svg/nav/footer/header/aside/form + hidden elements).
+  noscript/svg/nav/footer/header/aside/form + hidden elements); visible
+  iframes become origin-free `[embedded frame]` placeholders.
 - `src/density.rs` — beta's `PruningContentFilter` port: exact default
   weights (0.4/0.2/0.2/0.1/0.1), fixed 0.48 / dynamic thresholds,
   `min_word_threshold` sentinel, preserve classes/tags with whole-subtree
@@ -31,6 +32,12 @@ bounded Markdown (`docs/web-oracle-extraction-prd.md`, Feature 1).
 - `src/snapshot.rs` — CDP `DOMSnapshot.captureSnapshot` serde types and
   materialization (flat + owned-tree forms, the pinned ten required
   computed styles, string-table resolution).
+- Live snapshot sparse columns (`inputValue`, `textValue`, `isClickable`,
+  `shadowRootType`) are decoded without treating them as dense arrays.
+  Sensitive values are masked during materialization; layout joins are
+  indexed and malformed parent chains cannot create cycles.
+- `src/sitemap.rs` — bounded, namespace-aware sitemap/index parsing and
+  robots Sitemap directives; no external entity resolution or I/O.
 - `src/interactable.rs` — clickability heuristics (JS-listener flag,
   interactive ARIA roles/tags, form-control wrapper search) and the
   sensitive-value gate (password/file/hidden inputs, cc-*/one-time-code
@@ -38,12 +45,15 @@ bounded Markdown (`docs/web-oracle-extraction-prd.md`, Feature 1).
 - `src/selector_map.rs` — the token-efficient numbered map and the
   `(session_id, backend_node_id)` index cache; retired indexes are never
   reassigned within a session (gamma's cross-step stability contract).
+  New indexes are marked on their first observation. Containment and spatial
+  paint filtering exclude fully covered controls, not translucent overlays.
 - `src/action.rs` — the `BrowserAction` enum (navigate/click/type/scroll/
   select/back/forward/reload/screenshot/close) and the model-facing
   action registry.
 - `src/driver.rs` — the pipe-only CDP driver seam (`BrowserDriverPort`):
   NUL-framed JSON over the anonymous fd3/fd4 pair, no TCP anywhere,
-  bounded command plans per action, fail-closed sandbox gating.
+  diagnostic action outlines (not executable wire messages), fail-closed
+  sandbox gating. Executable node resolution lives in `vesper-web-fetch`.
 - `examples/gen-goldens.rs` — maintenance tool regenerating the golden
   corpus under `fixtures/web-oracle/goldens/`.
 
@@ -57,6 +67,8 @@ bounded Markdown (`docs/web-oracle-extraction-prd.md`, Feature 1).
 - `egress.rs` denies IPv6 unique-local/link-local addresses as well as IPv4
   private and loopback ranges; test HTTPS directly so scheme policy cannot
   mask address-class regressions.
+- Origin grants accept explicit scheme/host/port patterns; wildcard
+  subdomains never match suffix lookalikes. URL deduplication sorts query pairs.
 - `crawl.rs` groups robots agents, gives specific agents precedence over
   wildcard groups, supports wildcard/end anchors, and favors Allow on ties.
 - The naming rule (PRD §0) is absolute: upstream projects are referenced
@@ -71,6 +83,7 @@ bounded Markdown (`docs/web-oracle-extraction-prd.md`, Feature 1).
 - Converter determinism is a test contract: identical input renders
   byte-identical output; any intentional change regenerates goldens via
   the example binary in the same commit.
+  Whitespace-only Markdown lines are emitted empty, not as indented code.
 
 ## Work Guidance
 

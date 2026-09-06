@@ -36,6 +36,14 @@ pub fn strip(doc: &mut Document) {
 }
 
 fn strip_element(el: &mut Element) {
+    for child in &mut el.children {
+        if matches!(child, Node::Element(frame) if frame.tag == "iframe" && !element_hidden(frame))
+        {
+            // Label the missing embedded document without echoing an untrusted
+            // origin, srcdoc body, or arbitrary frame attributes.
+            *child = Node::Text("[embedded frame]".into());
+        }
+    }
     el.children.retain(|child| match child {
         Node::Element(e) => !STRIP_TAGS.contains(&e.tag.as_str()) && !element_hidden(e),
         Node::Text(_) => true,

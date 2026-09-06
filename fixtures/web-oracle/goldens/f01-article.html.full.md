@@ -43,7 +43,7 @@ spawn --remote-debugging-pipe --no-sandbox --disable-gpu
 | Docker daemon down | version fail | Unavailable |
 
         The debugging channel as the only boundary crossing.
-      
+
       ## Conclusion
 
       Pipe-based debugging channels, paired with fail-closed capability

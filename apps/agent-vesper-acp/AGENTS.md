@@ -167,6 +167,10 @@ transport, stderr-only tracing, and orderly shutdown.
 
 ## TUI↔ACP Parity Contract
 
+The opt-in web surface uses the shared harness web service and its contained
+fetch/render/browser runtime. No ACP-specific driver or network fallback
+exists; deployment and image prerequisites are in `docs/web-tools.md`.
+
 Every host-agnostic capability shipped in the TUI MUST also be wired here
 (root `AGENTS.md` Project Contracts). Current ledger:
 

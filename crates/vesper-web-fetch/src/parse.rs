@@ -111,6 +111,7 @@ pub fn response_from_parts(
         return Err(format!("HTTP status {}", meta.status));
     }
     Ok(vesper_web::transport::FetchResponse {
+        status: meta.status,
         url: meta.final_url.unwrap_or_else(|| fallback_url.to_string()),
         body,
         content_type: meta

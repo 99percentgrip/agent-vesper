@@ -403,7 +403,9 @@ fn post_process(md: String) -> String {
         } else {
             blank = 0;
         }
-        out.push_str(line);
+        if !empty {
+            out.push_str(line);
+        }
         out.push('\n');
     }
     let trimmed = out.trim_end_matches('\n');

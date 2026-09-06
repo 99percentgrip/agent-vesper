@@ -1,86 +1,82 @@
-# VRO-14 implementation and release audit
+# VRO-14 production acceptance audit
 
-Status: PARTIAL implementation; local repair gates passed, exact-commit CI pending.
-Date: 2026-09-06. Baseline: `a85e79f` (unreleased workspace version 0.20.88).
+Date: 2026-09-07. Baseline: released `v0.20.88` / `9ff4695b`.
+Status: production repairs and local acceptance passed; exact-commit CI and
+public image publication must pass before release. No release tag is created
+on the strength of component tests alone.
 
-## Scope and method
+## Requirement-to-evidence map
 
-Compared `docs/web-oracle-extraction-prd.md` with production call sites,
-helper protocol, configuration, tests, and release packaging. Inspected the
-failed GitHub MSRV run `34006779788`: the watcher responsiveness test sampled
-its counter before joining the worker and could stop it before scheduling.
-Canonical and five-target runs for that baseline succeeded.
-
-## Repaired gaps
-
-| Area | Finding | Repair and evidence |
+| Requirement | Production implementation | Executable evidence |
 | --- | --- | --- |
-| MSRV/TUI test | Zero sweeps observed under scheduler contention; reused PID-named state | Isolated temporary state, handshake inside the real watcher callback, dispatch while the callback is pending, join before reading its counter; retains the 10,000-command/5-second bound |
-| Passive tool execution | All five tools unconditionally refused; no transport injection | Shared `WebService` owns a transport and executes fetch, scrape, page-link map, and bounded BFS crawl; offline execution tests exercise each tool |
-| Discovery | Deferred tools were invisible to `search_tools`; results injected no schemas | Include eligible web definitions in discovery and return executable schemas via `with_injected_tools` |
-| Helper protocol | Emitted JSON lacked `VWMETA:`; redirect count was guessed; empty-stdout errors lost their reason | Shared emission/parser round-trip test, exact redirect count, typed error mapping, last metadata line wins |
-| Egress | No resolved-address checks or redirect policy checks; IPv6 private/link-local tests passed for the wrong reason | Validate each DNS answer, pin addresses into the client, disable proxies and automatic redirects, recheck each hop, add HTTPS IPv6 tests |
-| Robots | Fetch helper never consulted robots; rule parser mishandled grouped agents and ties | Fetch robots inside the sandbox before page requests; bounded fail-closed failures; grouped-agent precedence, wildcard/end-anchor matching, Allow wins ties |
-| Bounds/lifecycle | Ignored route timeout/body cap, charset expansion exceeded the cap, teardown not explicitly awaited | Clamp timeout/body bounds, cap decoded bytes, apply resource limits, await teardown on run success/failure, retain UTF-8 boundaries and truncation evidence |
-| Browser opt-in | Interaction registered with the broad web switch | Separate `interact.enabled` gate; missing production driver remains an explicit capability refusal |
-| Packaging | Helper omitted and Docker support disabled in release builds | Package `vesper-web-fetch` beside both hosts and enable their existing Docker features |
+| Persistent browser session | `vesper-web-fetch/src/browser.rs::BrowserSession`, shared `vesper-harness/src/web_runtime.rs` | Real image opens a pipe, creates/attaches a tab, navigates, captures DOM/AX, and executes real input |
+| Index-to-node actions | DOM.resolveNode with live backend IDs; runtime object connectivity checks; mouse coordinates and insertText | Real click changes text, selection changes DOM value, typing changes the input, stale removal yields UnknownIndex |
+| Snapshot fidelity | Sparse CDP fields, exact ten styles, AX names/roles, listener clickability, shadow/frame linkage, indexed layout joins | Sparse-column regression; real listener-only node indexed; existing recorded/adversarial fixtures |
+| Stable safe maps | Session/backend-ID cache, new markers, retirement, bounded context, containment and opaque paint filtering | Stable button number across mutation; password canaries absent; retired controls never reused |
+| Render escalation | Fetch → one ephemeral renderer on empty/JS-shell/content-type/999 signals; independent engine gates | Counting renderer tests, titled SPA fixture, no escalation on egress refusal; actual public-page navigation and rendered HTML |
+| Sitemap discovery | Robots directives + default sitemap, bounded XML/index traversal, gzip decoding, normalized deduplication | Original sitemap fixtures exercise cycles and duplicates; helper tests cover gzip expansion limits and malformed input |
+| Fetch and egress | In-container DNS validation/pinning, redirects, robots, UA, scheme/host/port grants, bounded charset decoding | Route/egress matrix, RFC octet normalization, Windows-1252 regression, metadata round trip |
+| Larger bodies | NUL-framed helper chunks below 64 KiB, aggregate ≤512 KiB, actual status and truncation metadata | Real HTTP fetch exceeds 64 KiB and stays within 128 KiB with truncated=true |
+| Bounded crawl/output | BFS, normalized visited set, four runtime permits, bounded batch concurrency, 120-second crawl including seed, per-field budgets | Shared-service passive execution/denial tests; corpus goldens; strict argument validation before I/O |
+| Lifecycle/containment | Safe Rust duplex port, explicit image probe, bounded frames/deadlines, resource overrides, RAII teardown and 900-second abandoned-container lease | Real deadline failure, reload, scroll, PNG capture, teardown enumeration; sandbox stream tests |
+| Both hosts/default off | One shared service construction and runtime ownership; separate render/interact switches; deferred schemas | Existing cross-host registration/discovery/default-off tests; nonzero real backend identity equals fetch route identity |
+| Pinned public driver | In-repo Dockerfile pins base manifest indexes and exact headless package; CI tests immutable image IDs on native x86_64/arm64 | web-driver.yml preserves tested archives and IDs; release.yml requires that exact commit and downloads those artifacts without rebuilding |
 
-Pure policy/protocol tests and fixture transports never contact a provider or
-live website. The previous `helper_output_parses_into_fetch_response` test
-contained only `let _ = ReplayingBackend`; it now exercises the production
-output parser with assertions.
+`vesper-web/src/driver.rs::plan_commands` is explicitly diagnostic-only;
+its unresolved hints are never sent to CDP. The production session supplies
+complete wire parameters. A test double is not presented as a working engine.
 
-## Remaining PRD work (not completion claims)
+## Local acceptance commands and results
 
-- Production pipe-CDP session driver, real index-to-node action resolution,
-  live AX/listener enrichment, render waterfall, pinned headless image, and
-  gated real-browser acceptance. `driver.rs::plan_commands` contains internal
-  index hints and incomplete wire parameters; it is not executable CDP.
-- Sitemap discovery, gzip sitemap limits, and sitemap-aware map output.
-  `web_map` currently describes and returns page links only.
-- Full PRD configuration surface (engine/render switches, user agent,
-  scheme/host/port patterns), strict RFC robots normalization, and fetch
-  chunking above the sandbox's 64 KiB stream cap.
-- A supplied digest-pinned Docker image must contain the helper at
-  `/usr/local/bin/vesper-web-fetch`; no image is published by this repair.
-  The Linux namespaces backend isolates networking but does not configure an
-  egress interface. A successful namespace probe is not evidence of usable
-  internet connectivity. Browser interaction remains unavailable on both hosts.
-- The historical tests comparing two zero-valued sandbox-holder IDs were
-  vacuous. The repair checks actual shared service identity, but does not claim
-  the PRD's full browser/fetch route parity acceptance.
-
-These are unfinished requirements, not approved exclusions or impossible
-features. Release notes must describe the repair as partial web support.
-
-## Deployment inputs
-
-Passive Docker execution uses `[web] enabled = true`,
-`AGENT_VESPER_SANDBOX=docker`, and `VESPER_DOCKER_IMAGE=<image>@sha256:<digest>`.
-The image needs the release-compatible helper and CA certificates. Missing
-daemon, image, executable, or isolation fails explicitly. No image is pulled
-or network process started at host boot. Web calls run on blocking workers;
-no browser/network operation enters the TUI rendering path.
-
-## Verification
-
-- Focused TUI, web, helper, and shared-service tests: passed locally.
-- Workspace all-target/all-feature Clippy with `-D warnings`: passed locally.
-- `cargo xtask verify`: passed locally (including architecture, fixture,
-  conformance, host process tests, formatting, Clippy, and workspace tests).
-- `cargo +1.88.0 test --workspace --all-features`: 87 suites, 1,657 passed,
-  0 failed, 18 ignored. No tests removed or weakened; ignored tests remain
-  explicit platform/live/performance gates.
+- `cargo xtask verify`: passed (formatting, strict Clippy, architecture,
+  fixtures, conformance, host process checks, workspace tests).
+- `cargo +1.88.0 test --workspace --all-features`: 87 suites, **1,672 passed,
+  0 failed, 20 ignored**. Baseline was 1,657 passed/18 ignored. No test removed
+  or weakened; two new real-browser tests are explicit gated acceptance.
 - `cargo test --release -p vesper-web --test adversarial -- --ignored`:
-  both performance gates passed.
-- Initial restricted runs failed because offline loopback listeners were
-  denied by the execution sandbox; authorized reruns passed.
-- Cargo Audit and Cargo Deny are not installed locally; the required GitHub
-  supply-chain job must pass before tagging. Exact-commit canonical, MSRV,
-  five-target, and release workflow evidence will be linked in the release.
-- Naming-rule scan over added diff lines and this report: no matches.
+  both unchanged performance ceilings passed (100k-node perception <150 ms,
+  5k-interactable serialization <50 ms).
+- `VESPER_DOCKER_BIN=podman VESPER_WEB_TEST_IMAGE=sha256:8cd9f992c76a9abb08e81e8a5998d15d32f189cf7f2890535fcfe1d021ca52e5 cargo test -p vesper-web-fetch --all-features real_pipe_browser -- --ignored --nocapture`:
+  passed, 11.10 seconds, real Linux x86_64 container. This image ID is local
+  evidence, not a promised release asset ID.
+- Same immutable image, filter `real_navigation_and_chunked_fetch`:
+  passed, 22.82 seconds. Explicit public-site acceptance only; no providers
+  or user credentials. Default/foundation tests remain offline.
+- `podman ps --filter name=agent-vesper-sbx --format '{{.Names}}'` after
+  acceptance: empty; no browser containers left behind.
 
-Primary references for the helper repairs:
-[reqwest ClientBuilder](https://docs.rs/reqwest/0.13.4/reqwest/blocking/struct.ClientBuilder.html)
-(`no_proxy`, `resolve_to_addrs`, redirect policy) and
-[RFC 9309](https://www.rfc-editor.org/rfc/rfc9309.html) (robots groups and rules).
+## Deployment and implementation choices
+
+See `../web-tools.md` for checked-image loading, immutable configuration,
+engine opt-ins, denial behavior and bounds. The release supplies Linux images
+for both architectures used by Docker/Desktop; the namespaces backend has no
+configured egress interface and is not advertised as usable internet access.
+The web route is WebSandboxPort, shared by fetch/render/interact through one
+runtime, rather than the shell executor's differently shaped SandboxRoute.
+
+The pinned gamma source contains **ten**, not eleven, required styles; the PRD
+count is corrected without changing the actual allowlist. The PR-0-selected
+lenient quick-xml DOM and workspace-owned Rust Markdown converter remain
+in production with their byte-exact golden contracts; no claim of a newly
+adopted html5ever/html2text dependency is made. Visible iframe stripping now
+emits the required origin-free placeholder in the two f11-edge goldens;
+other regenerated golden changes normalize whitespace-only blank lines.
+Full subresource enforcement proxy, non-HTML engines,
+stealth, uploads/download management and multi-tab orchestration remain the
+PRD's original explicit non-goals, not newly invented exclusions.
+
+## Release acceptance
+
+Required before tagging: successful canonical (including supply chain),
+MSRV, five-target foundation and native dual-architecture web-driver push
+runs for the exact version commit. Public assets must include five application
+bundles plus both tested driver archives, archive checksums and immutable
+image-ID files. Registry publication updates existing PR #539 in place.
+CI and publication results belong to the immutable release's notes; local
+Linux evidence is not generalized to other platforms before those gates pass.
+
+Primary protocol references:
+[DOMSnapshot](https://chromedevtools.github.io/devtools-protocol/tot/DOMSnapshot/),
+[DOM](https://chromedevtools.github.io/devtools-protocol/tot/DOM/),
+[Target](https://chromedevtools.github.io/devtools-protocol/tot/Target/), and
+[RFC 9309](https://www.rfc-editor.org/rfc/rfc9309.html).

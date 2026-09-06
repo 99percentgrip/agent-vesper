@@ -8,6 +8,42 @@
 use crate::arena::{Dom, NodeId};
 use rust_stemmers::{Algorithm, Stemmer};
 
+/// Beta's explicit query → metadata/headings → significant paragraph chain.
+pub fn page_query(document: &crate::dom::Document, explicit: Option<&str>) -> String {
+    if let Some(query) = explicit.filter(|s| !s.trim().is_empty()) {
+        return query.to_owned();
+    }
+    let metadata = crate::meta::extract_metadata(document);
+    let heading = crate::dom::find_first(&document.root, "h1").map(|h| h.text());
+    let query = [
+        metadata.title,
+        heading,
+        metadata.keywords,
+        metadata.description,
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join(" ");
+    if !query.trim().is_empty() {
+        return query;
+    }
+    let mut queue = vec![&document.root];
+    while let Some(node) = queue.pop() {
+        if node.tag == "p" {
+            let text = node.text();
+            if text.split_whitespace().count() >= 20 {
+                return text;
+            }
+        }
+        queue.extend(node.children.iter().rev().filter_map(|n| match n {
+            crate::dom::Node::Element(el) => Some(el),
+            _ => None,
+        }));
+    }
+    String::new()
+}
+
 /// Beta's priority-tag boost table (`BM25ContentFilter.priority_tags`).
 const PRIORITY_TAGS: &[(&str, f32)] = &[
     ("h1", 5.0),
