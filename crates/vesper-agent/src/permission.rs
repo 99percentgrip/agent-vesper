@@ -224,6 +224,14 @@ mod tests {
             // Process / NestedWorkflow: same rule.
             (code, bypass, Class::Process, true),
             (plan, ask, Class::NestedWorkflow, false),
+            // Network (VRO-14 PR-5): network-egress tools are strictly
+            // stronger than Mutating — ReadOnly permission never grants
+            // them and Plan mode denies before asking.
+            (code, bypass, Class::Network, true),
+            (code, ask, Class::Network, false),
+            (code, read, Class::Network, false),
+            (plan, bypass, Class::Network, false),
+            (plan, ask, Class::Network, false),
         ]
     }
 

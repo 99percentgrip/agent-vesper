@@ -3,6 +3,7 @@
 
 pub mod sandbox_backend;
 pub mod scope_holder;
+pub mod web_service;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -2057,6 +2058,7 @@ mod tests {
             worker_factory: None,
             skill_outcomes: Arc::new(vesper_memory::SkillOutcomeTracker::default()),
             cron_abort: None,
+            web: None,
         };
         let names = service
             .definitions()
@@ -2406,6 +2408,10 @@ pub struct HarnessToolService {
     /// Whether the checkpoint/lineage subsystem may create durable state.
     /// See [`HarnessToolService::new_with_checkpoint_gate`].
     checkpoints_enabled: bool,
+    /// VRO-14 PR-5: the opt-in web tools scope. `None` (the default when
+    /// `[web]` is absent or disabled) registers zero web tools — the
+    /// registry path stays byte-identical to the pre-web build.
+    web: Option<crate::web_service::WebScope>,
     worker_factory: Option<Arc<WorkerFactory>>,
     skill_outcomes: Arc<vesper_memory::SkillOutcomeTracker>,
     cron_abort: Option<tokio::task::AbortHandle>,
@@ -2478,6 +2484,7 @@ impl HarnessToolService {
             plugin_root,
             session_root,
             checkpoints_enabled,
+            web: None,
             worker_factory,
             skill_outcomes: Arc::new(vesper_memory::SkillOutcomeTracker::default()),
             cron_abort,
@@ -2492,12 +2499,32 @@ impl HarnessToolService {
     #[must_use]
     pub fn build_default_registry(self: Arc<Self>) -> ToolRegistry {
         let plugin_root = self.plugin_root.clone();
-        ToolRegistry::parity_default()
-            .with_service(self)
-            .with_gateway(
-                MCP_GATEWAY_PREFIX,
-                Arc::new(McpGatewayExecutor::new(plugin_root)),
+        let hosted: Arc<dyn vesper_agent::ToolService> = Arc::clone(&self) as _;
+        let registry = ToolRegistry::parity_default().with_service(hosted);
+        // VRO-14 PR-5: both hosts share this one construction site, so the
+        // web tools (and their deferred-loading schemas) are attached — or
+        // omitted — identically in TUI and ACP by construction.
+        let registry = match &self.web {
+            Some(scope) => registry.with_service(Arc::new(
+                crate::web_service::WebService::from_scope(scope.clone()),
             )
+                as Arc<dyn vesper_agent::ToolService>),
+            None => registry,
+        };
+        registry.with_gateway(
+            MCP_GATEWAY_PREFIX,
+            Arc::new(McpGatewayExecutor::new(plugin_root)),
+        )
+    }
+
+    /// VRO-14 PR-5: attaches the opt-in `[web]` scope. Called by both
+    /// hosts after reading `.agent-vesper/config.toml`; a `None`/disabled
+    /// scope leaves the registry path byte-identical to the pre-web build
+    /// (zero web tools, zero schema cost, zero advertisement surface).
+    #[must_use]
+    pub fn with_web_scope(mut self, scope: Option<crate::web_service::WebScope>) -> Self {
+        self.web = scope;
+        self
     }
 
     /// The shared durable stores backing slash-command report commands
@@ -2546,6 +2573,7 @@ impl HarnessToolService {
             plugin_root: self.plugin_root.clone(),
             session_root: self.session_root.clone(),
             checkpoints_enabled: self.checkpoints_enabled,
+            web: self.web.clone(),
             worker_factory: None,
             skill_outcomes: Arc::clone(&self.skill_outcomes),
             cron_abort: None,

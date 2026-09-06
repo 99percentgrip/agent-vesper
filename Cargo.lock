@@ -4039,6 +4039,7 @@ dependencies = [
  "vesper-sandbox",
  "vesper-sessions",
  "vesper-testkit",
+ "vesper-web",
 ]
 
 [[package]]

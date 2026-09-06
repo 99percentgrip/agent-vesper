@@ -28,6 +28,11 @@ async fn main() -> ExitCode {
     // `.agent-vesper/config.toml`. No demand → holder stays `None` and the
     // executor keeps the byte-identical legacy path.
     let _ = vesper_harness::sandbox_backend::holder::install_from_env();
+    // VRO-14 PR-5: resolve the opt-in [web] tool scope once at boot —
+    // byte-identical derivation to the TUI's boot (same reader, same
+    // defaults, same enabled gate), so the cross-host parity contract
+    // holds by construction rather than by convention.
+    let _ = vesper_harness::web_service::holder::install_from_env();
     // VRO-13 PR-5: resolve the WorkspaceScope once at boot (identity, layers,
     // per-scope skills, firewall composition) — identical derivation in both
     // hosts, so the TUI and ACP resolve identical ScopeIds for one directory.

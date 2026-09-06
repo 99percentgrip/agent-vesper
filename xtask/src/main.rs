@@ -1300,6 +1300,9 @@ fn allowed_dependencies() -> BTreeMap<&'static str, BTreeSet<&'static str>> {
                 "vesper-runtime",
                 "vesper-sandbox",
                 "vesper-sessions",
+                // VRO-14 PR-5: the WebService hosts the five opt-in web
+                // tools over vesper-web's pure pipeline types.
+                "vesper-web",
             ]),
         ),
         (

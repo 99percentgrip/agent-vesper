@@ -111,6 +111,10 @@ async fn main() -> io::Result<()> {
     // the scope `[sandbox]` demand from `.agent-vesper/config.toml`; with no
     // demand the holder stays `None` → the executor keeps the legacy path.
     let _sandbox_route = vesper_harness::sandbox_backend::holder::install_from_env();
+    // VRO-14 PR-5: resolve the opt-in `[web]` scope once at boot (identical
+    // derivation in both hosts). Absent/disabled → the holder reports
+    // `disabled()` and no web tool is registered (zero-cost legacy path).
+    let _web_scope = vesper_harness::web_service::holder::install_from_env();
     // VRO-13 PR-5: resolve the WorkspaceScope once at boot (identity, layers,
     // per-scope skills, firewall composition). Scope resolution is strictly
     // a host-boot concern: the loop layer never sees or re-resolves scopes.

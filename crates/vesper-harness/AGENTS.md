@@ -108,6 +108,16 @@ Z.ai and Playwright MCP server descriptors.
 - Preserve the fail-closed permission gate in the agent loop; this service
   never bypasses it.
 
+- `src/web_service.rs` (VRO-14 PR-5) hosts the five opt-in web tools
+  (`web_fetch`, `web_scrape`, `web_map`, `web_crawl`, `web_interact`) as
+  `ToolExecutionClass::Network` with `defer_loading = true`. Both hosts
+  attach them through the one shared construction site
+  (`HarnessToolService::build_default_registry` + `with_web_scope`), so
+  TUI/ACP parity is structural. With no `[web]` scope (or
+  `enabled = false`) zero web tools register and the registry path is
+  byte-identical to the pre-web build. The process-global web holder
+  (`web_service::holder`) mirrors the firewall/sandbox holders.
+
 ## Verification
 
 - Run `cargo test -p vesper-harness`.

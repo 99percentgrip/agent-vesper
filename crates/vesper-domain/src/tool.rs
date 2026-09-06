@@ -115,6 +115,10 @@ pub enum ToolExecutionClass {
     Shell,
     /// Process execution without shell interpretation.
     Process,
+    /// Network egress (web fetch/interact). Runs only through the
+    /// sandboxed transport demanding `IsolationRequirement::Network`;
+    /// never ReadOnly-visible, never allowed in Plan mode.
+    Network,
     /// External or nested workflow.
     NestedWorkflow,
 }

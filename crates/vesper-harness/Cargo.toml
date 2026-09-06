@@ -22,6 +22,10 @@ vesper-memory = { path = "../vesper-memory", version = "=0.20.87" }
 vesper-runtime = { path = "../vesper-runtime", version = "=0.20.87" }
 vesper-sandbox = { path = "../vesper-sandbox", version = "=0.20.87" }
 vesper-sessions = { path = "../vesper-sessions", version = "=0.20.87" }
+# VRO-14 PR-5: the web tools' pure surfaces (perception pipeline, egress
+# policy, action vocabulary) live in vesper-web; the transport stays behind
+# the port trait and is supplied by the composition boundary.
+vesper-web = { path = "../vesper-web", version = "=0.20.87" }
 
 [features]
 # VRO-13 PR-6: the daemon's single-writer flock discipline. Unix-only
