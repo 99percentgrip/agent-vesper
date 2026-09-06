@@ -13,9 +13,9 @@ serde.workspace = true
 reqwest.workspace = true
 serde_json.workspace = true
 url.workspace = true
-vesper-sandbox = { path = "../vesper-sandbox", version = "=0.20.87" }
-vesper-security = { path = "../vesper-security", version = "=0.20.87" }
-vesper-web = { path = "../vesper-web", version = "=0.20.87" }
+vesper-sandbox = { path = "../vesper-sandbox", version = "=0.20.88" }
+vesper-security = { path = "../vesper-security", version = "=0.20.88" }
+vesper-web = { path = "../vesper-web", version = "=0.20.88" }
 
 [dev-dependencies]
 tempfile.workspace = true
