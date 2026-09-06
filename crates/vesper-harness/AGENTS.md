@@ -117,6 +117,14 @@ Z.ai and Playwright MCP server descriptors.
   `enabled = false`) zero web tools register and the registry path is
   byte-identical to the pre-web build. The process-global web holder
   (`web_service::holder`) mirrors the firewall/sandbox holders.
+- Passive web tools execute through the shared service's `FetchTransport`;
+  production uses the sandbox helper on a blocking worker, tests use offline
+  pages. Registry builds reuse the service Arc. `search_tools` searches eligible
+  web definitions and injects their schemas for subsequent model requests.
+- `web_interact` requires its separate config opt-in and refuses while no
+  production pipe-CDP session driver exists. Map currently discovers page
+  links only. Do not advertise sitemap/render/browser completion; current
+  outstanding requirements live in `docs/foundation/vro14-gap-audit.md`.
 
 ## Verification
 

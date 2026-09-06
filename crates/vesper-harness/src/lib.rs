@@ -283,7 +283,12 @@ async fn execute_extended_tui_tool(
                     reason: "mode must be `bm25` or `regex`".into(),
                 });
             }
-            let definitions = worker_service.definitions();
+            let mut definitions = worker_service.definitions();
+            if let Some(scope) = &worker_service.web {
+                definitions.extend(crate::web_service::WebService::scoped_definitions(
+                    scope.scope(),
+                ));
+            }
             let mut matches = if mode == "regex" {
                 if intent.chars().count() > 200 {
                     return Err(vesper_agent::ToolError::InvalidArguments {
@@ -334,6 +339,14 @@ async fn execute_extended_tui_tool(
                 })
             });
             matches.truncate(5);
+            let injected = matches
+                .iter()
+                .map(|(_, definition)| {
+                    let mut definition = definition.clone();
+                    definition.defer_loading = false;
+                    definition
+                })
+                .collect();
             let output = matches
                 .into_iter()
                 .map(|(_, definition)| {
@@ -347,6 +360,7 @@ async fn execute_extended_tui_tool(
             vesper_agent::ToolResult::new(
                 serde_json::to_string(&output).map_err(|error| tui_tool_failure(name, error))?,
             )
+            .map(|result| result.with_injected_tools(injected))
         }
         "web_search" => {
             let query = required_string("query")?;
@@ -2411,7 +2425,7 @@ pub struct HarnessToolService {
     /// VRO-14 PR-5: the opt-in web tools scope. `None` (the default when
     /// `[web]` is absent or disabled) registers zero web tools — the
     /// registry path stays byte-identical to the pre-web build.
-    web: Option<crate::web_service::WebScope>,
+    web: Option<Arc<crate::web_service::WebService>>,
     worker_factory: Option<Arc<WorkerFactory>>,
     skill_outcomes: Arc<vesper_memory::SkillOutcomeTracker>,
     cron_abort: Option<tokio::task::AbortHandle>,
@@ -2505,10 +2519,9 @@ impl HarnessToolService {
         // web tools (and their deferred-loading schemas) are attached — or
         // omitted — identically in TUI and ACP by construction.
         let registry = match &self.web {
-            Some(scope) => registry.with_service(Arc::new(
-                crate::web_service::WebService::from_scope(scope.clone()),
-            )
-                as Arc<dyn vesper_agent::ToolService>),
+            Some(service) => {
+                registry.with_service(Arc::clone(service) as Arc<dyn vesper_agent::ToolService>)
+            }
             None => registry,
         };
         registry.with_gateway(
@@ -2523,7 +2536,7 @@ impl HarnessToolService {
     /// (zero web tools, zero schema cost, zero advertisement surface).
     #[must_use]
     pub fn with_web_scope(mut self, scope: Option<crate::web_service::WebScope>) -> Self {
-        self.web = scope;
+        self.web = scope.map(|scope| Arc::new(crate::web_service::WebService::from_scope(scope)));
         self
     }
 

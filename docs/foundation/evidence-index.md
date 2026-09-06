@@ -61,6 +61,9 @@ Status: COMPLETE
 
 ## Open questions
 
+- Current web-extraction repair and remaining production gaps:
+  `vro14-gap-audit.md`; phase-module landing is not browser acceptance.
+
 - Historical executor-stall cause is not reconstructable, but the complete source baseline is green and repeatable.
 - Product approvals listed in `decision-register.md` and `blocker-closure-report.md`.
 - ACP `PromptResponse.userMessageId` compatibility-wrapper detail during Stage 1.

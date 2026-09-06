@@ -7,6 +7,8 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 ## Ownership
 
 - `evidence-index.md` is the durable execution ledger and command record.
+- `vro14-gap-audit.md` owns current web-extraction gaps, repair evidence,
+  deployment prerequisites, and outstanding release acceptance.
 - ADRs under `adr/` record Stage 0 compatibility and product choices.
 - `memory-oracle-cognitive-memory-blueprint.md` is the reconnaissance record for the
   external the memory oracle (`29fa4155`) oracle and the evidence base for ADR 0015

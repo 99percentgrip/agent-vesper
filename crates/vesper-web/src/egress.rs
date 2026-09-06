@@ -103,6 +103,10 @@ pub fn classify_ip(addr: &IpAddr) -> EgressVerdict {
                 EgressVerdict::Deny(EgressDenial::LoopbackAddress)
             } else if v6.is_unspecified() {
                 EgressVerdict::Deny(EgressDenial::UnspecifiedAddress)
+            } else if v6.segments()[0] & 0xfe00 == 0xfc00 {
+                EgressVerdict::Deny(EgressDenial::PrivateAddress)
+            } else if v6.segments()[0] & 0xffc0 == 0xfe80 {
+                EgressVerdict::Deny(EgressDenial::LinkLocalAddress)
             } else {
                 EgressVerdict::Allow
             }
@@ -161,6 +165,25 @@ pub fn evaluate(url: &str, policy: &EgressPolicy, robots_allowed: Option<bool>) 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ipv6_private_and_link_local_are_denied_over_https() {
+        for (address, expected) in [
+            ("fc00::1", EgressDenial::PrivateAddress),
+            ("fd12:3456::1", EgressDenial::PrivateAddress),
+            ("fe80::1", EgressDenial::LinkLocalAddress),
+            ("febf::1", EgressDenial::LinkLocalAddress),
+        ] {
+            assert_eq!(
+                evaluate(
+                    &format!("https://[{address}]/"),
+                    &EgressPolicy::default(),
+                    None
+                ),
+                EgressVerdict::Deny(expected)
+            );
+        }
+    }
 
     fn policy() -> EgressPolicy {
         EgressPolicy {

@@ -197,11 +197,54 @@ impl SandboxBackend for ReplayingBackend {
 
 #[tokio::test]
 async fn helper_output_parses_into_fetch_response() {
-    // Routing through the replay backend exercises the port's run →
-    // VWMETA parse → response assembly. Provisioning fails on this fake
-    // before run, so this documents the parse contract instead via the
-    // parse module directly when provisioning is unavailable.
-    let _ = ReplayingBackend;
+    let output = ExecOutput {
+        exit_code: Some(0), stdout: "<h1>fetched</h1>".into(),
+        stderr: "VWMETA:{\"status\":301}\nVWMETA:{\"status\":200,\"content_type\":\"text/html\",\"final_url\":\"https://example.com/final\"}".into(),
+        timed_out: false,
+    };
+    let response =
+        vesper_web_fetch::route::parse_output(output, "https://example.com", 64 * 1024).unwrap();
+    assert_eq!(response.url, "https://example.com/final");
+    assert_eq!(response.body, "<h1>fetched</h1>");
+    assert_eq!(response.content_type, "text/html");
+    assert!(!response.truncated);
+    assert!(ReplayingBackend.capabilities().network == CapabilityStatus::Available);
+}
+
+#[test]
+fn empty_stdout_errors_and_utf8_caps_survive_the_route() {
+    let output = |code, stdout: &str, stderr: &str| ExecOutput {
+        exit_code: Some(code),
+        stdout: stdout.into(),
+        stderr: stderr.into(),
+        timed_out: false,
+    };
+    assert!(
+        matches!(vesper_web_fetch::route::parse_output(output(1, "", "robots_disallowed"), "https://example.com", 10), Err(FetchError::Egress(reason)) if reason == "robots_disallowed")
+    );
+    assert!(matches!(
+        vesper_web_fetch::route::parse_output(
+            output(3, "", "body cap exceeded"),
+            "https://example.com",
+            10
+        ),
+        Err(FetchError::TooLarge(_))
+    ));
+    let response = vesper_web_fetch::route::parse_output(
+        output(0, "éé", "VWMETA:{\"status\":200}"),
+        "https://example.com",
+        3,
+    )
+    .unwrap();
+    assert_eq!(response.body, "é");
+    assert!(response.truncated);
+    let response = vesper_web_fetch::route::parse_output(
+        output(0, "abc", "VWMETA:{\"status\":200}"),
+        "https://example.com",
+        3,
+    )
+    .unwrap();
+    assert!(!response.truncated);
 }
 
 // ------------------------------------------- ignored live-docker proof

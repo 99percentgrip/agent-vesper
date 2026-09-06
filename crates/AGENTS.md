@@ -43,10 +43,14 @@ test-only conformance support.
   Sandbox Supervisor as the Sole Raw-Syscall Boundary).
 - `vesper-testkit` may depend on all foundational crates and owns synthetic
   read-store/no-write helpers; no production crate may depend on it.
-- `vesper-web` (VRO-14 PR-1) depends only on `quick-xml`; it owns the pure
+- `vesper-web` depends on `quick-xml`, `rust-stemmers`, `serde`,
+  `serde_json`, `thiserror`, and `url`; it owns the pure
   parse/strip/prune/convert DOM pipeline with strictly zero I/O (no network,
   no filesystem, no clock). Transports and the headless renderer are
-  composition-boundary ports in later PRs, never here.
+  composition-boundary ports, never implemented here.
+- `vesper-harness` may compose `vesper-web-fetch` behind the shared opt-in
+  web service. Helper execution stays inside a network-granted sandbox and
+  off the render thread; no host HTTP fallback is permitted.
 - `vesper-web-fetch` (VRO-14 PR-3) may depend on `vesper-web`,
   `vesper-sandbox`, and `vesper-security` (plus `reqwest`/`serde`/`url`); it
   owns the sandbox-routed `FetchTransport` implementation and the

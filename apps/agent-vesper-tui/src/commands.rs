@@ -2664,10 +2664,8 @@ mod tests {
         use std::sync::Arc;
         use std::sync::atomic::{AtomicUsize, Ordering};
 
-        let state_root = Arc::new(
-            std::env::temp_dir().join(format!("vesper-watcher-gate-{}", std::process::id())),
-        );
-        std::fs::create_dir_all(state_root.as_path()).expect("state root");
+        let temporary = tempfile::tempdir().expect("isolated watcher state");
+        let state_root = Arc::new(temporary.path().to_path_buf());
 
         // Register a real watcher so the concurrent sweeps have real work
         // (store open + tail read + decision core per tick).
@@ -2688,6 +2686,8 @@ mod tests {
         let sweep_root = Arc::clone(&state_root);
         let sweeps_done = Arc::new(AtomicUsize::new(0));
         let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (started_tx, started_rx) = std::sync::mpsc::sync_channel(1);
+        let (release_tx, release_rx) = std::sync::mpsc::sync_channel(1);
         let sweeper = {
             let sweeps_done = Arc::clone(&sweeps_done);
             let stop = Arc::clone(&stop);
@@ -2699,12 +2699,22 @@ mod tests {
                         &sweep_root,
                         "gate-scope",
                         std::time::SystemTime::now(),
-                        |_| Ok("gate".to_owned()),
+                        |_| {
+                            started_tx.send(()).expect("announce active sweep");
+                            release_rx
+                                .recv_timeout(std::time::Duration::from_secs(10))
+                                .expect("dispatch must finish while sweep is pending");
+                            Ok("gate".to_owned())
+                        },
                     );
                     sweeps_done.fetch_add(1, Ordering::SeqCst);
                 }
             })
         };
+
+        started_rx
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("real watcher must fire before measuring dispatch");
 
         // 10,000 synthetic keystrokes through the real dispatch path.
         let commands = [
@@ -2733,8 +2743,9 @@ mod tests {
         }
         let elapsed = started.elapsed();
         stop.store(true, Ordering::SeqCst);
+        release_tx.send(()).expect("release active sweep");
+        sweeper.join().expect("sweeper completed successfully");
         let sweeps = sweeps_done.load(Ordering::SeqCst);
-        let _ = sweeper.join();
 
         assert_eq!(dispatched, 10_000, "every keystroke dispatched");
         assert!(

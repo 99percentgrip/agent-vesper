@@ -1,6 +1,8 @@
 # VRO-14 Final Audit — The Web Oracle Extraction
 
-Status: COMPLETE. PR-0 through PR-6 landed (`docs/web-oracle-extraction-prd.md`).
+Status: PARTIAL. PR-0 through PR-6 landed, but landing the modules did not
+complete the PRD's production execution requirements. Current findings and
+repair evidence are recorded in `vro14-gap-audit.md`.
 Audit date: 2026-09-06.
 
 ## 1. Test floor
@@ -81,11 +83,11 @@ use only *web oracle alpha/beta/gamma* and the `<pkg-root>` placeholder.
    byte-determinism is golden-pinned across 12 fixtures × 2 paths.
 4. **Deep-nesting cap.** 5,200-deep chains flatten past `MAX_PARSE_DEPTH`
    rather than exhausting the stack — the same trade browsers make.
-5. **Execution engines.** Tool *wiring* (PR-5) is complete and parity-
-   proven; the sandbox-routed *engines* (fetch transport attaching to the
-   tools, live CDP driver sessions) compose at the host boundary per the
-   PRD's port design and fail closed with model-facing refusals until a
-   host attaches them. The ports themselves are PR-3/PR-4-validated.
+5. **Execution engines.** The initial tool implementation refused every
+   invocation and offered no transport attachment. The gap repair connects
+   passive tools to the sandbox helper and adds offline execution tests;
+   production CDP sessions remain unimplemented. Port and command-shaping
+   tests are not evidence of a working browser driver.
 6. **Live-docker proof** is `#[ignore]`-gated (needs a daemon); the PR-0
    pipe-driver validation proved the CDP-over-anonymous-pipes channel and
    the kernel-level no-TCP/no-port facts against a real Chrome-family

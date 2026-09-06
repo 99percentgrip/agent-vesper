@@ -798,6 +798,9 @@ work (ACP mid-turn-slash-grace parity; see `apps/agent-vesper-acp/AGENTS.md`).
 
 ## Verification
 
+- Concurrent watcher/dispatch tests synchronize on an active real sweep,
+  isolate their state, and join before inspecting completion; scheduler luck
+  and PID-reused temporary directories are not correctness evidence.
 - Run `cargo test -p agent-vesper-tui --lib`.
 - Run `cargo test -p agent-vesper-tui --bins` (Phase 6 wiring:
   provider-aware config, `build_agent_loop`/`build_agent_config`, the

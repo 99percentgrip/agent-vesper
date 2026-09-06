@@ -100,8 +100,11 @@ impl FetchTransport for WebSandboxPort {
         let url = request.url.clone();
         let timeout = request
             .timeout_seconds
-            .min(crate::DEFAULT_FETCH_TIMEOUT_SECONDS);
-        let max_body = request.max_body_bytes;
+            .min(self.config.timeout_seconds)
+            .clamp(1, crate::DEFAULT_FETCH_TIMEOUT_SECONDS);
+        let max_body = request
+            .max_body_bytes
+            .clamp(1, vesper_sandbox::OUTPUT_CAP_BYTES);
         let backend = Arc::clone(&self.backend);
         let helper = self.config.helper_path.clone();
         let writable_root = self.config.writable_root.clone();
@@ -137,6 +140,8 @@ impl FetchTransport for WebSandboxPort {
             let mut spec = SandboxSpec::new(writable_root);
             spec.timeout_seconds = timeout;
             spec.allow_network = true;
+            spec.cpu_limit = Some(2.0);
+            spec.memory_limit_bytes = Some(512 * 1024 * 1024);
 
             let handle = backend.provision(&spec).await.map_err(sandbox_denial)?;
             let argv = Argv {
@@ -144,37 +149,56 @@ impl FetchTransport for WebSandboxPort {
                     helper.to_string_lossy().into_owned(),
                     url.clone(),
                     max_body.to_string(),
+                    serde_json::json!({
+                        "allow_plain_http": policy.allow_plain_http,
+                        "allowed_hosts": policy.allowed_hosts,
+                        "respect_robots": policy.respect_robots,
+                    })
+                    .to_string(),
                 ],
                 cwd: std::path::PathBuf::from("/"),
             };
-            let output = backend.run(&handle, &argv).await.map_err(|error| {
-                let _ = handle;
-                sandbox_denial(error)
-            })?;
-
-            if output.timed_out {
-                return Err(FetchError::Fetch("sandbox fetch timed out".into()));
-            }
-            if !output.stdout.is_empty() && output.exit_code != Some(0) {
-                // Non-zero exit: stderr's first line is the helper's error.
-                let first = output
-                    .stderr
-                    .lines()
-                    .find(|line| !line.starts_with("VWMETA:"))
-                    .unwrap_or("unknown fetch failure");
-                return Err(FetchError::Fetch(first.to_string()));
-            }
-
-            let vmeta = output
-                .stderr
-                .lines()
-                .find_map(parse_helper_meta)
-                .ok_or_else(|| FetchError::Fetch("helper produced no VWMETA line".to_string()))?;
-            let body = output.stdout;
-            let truncated_by_cap = body.len() >= max_body.max(1);
-            response_from_parts(vmeta, &url, body, truncated_by_cap).map_err(FetchError::TooLarge)
+            let output = backend.run(&handle, &argv).await;
+            let teardown = backend.teardown(handle).await;
+            let output = output.map_err(sandbox_denial)?;
+            teardown.map_err(sandbox_denial)?;
+            parse_output(output, &url, max_body)
         })
     }
+}
+
+/// Assemble the actual sandbox output, also used by offline protocol tests.
+pub fn parse_output(
+    output: vesper_sandbox::ExecOutput,
+    url: &str,
+    max_body: usize,
+) -> Result<FetchResponse, FetchError> {
+    if output.timed_out {
+        return Err(FetchError::Fetch("timed_out".into()));
+    }
+    if output.exit_code != Some(0) {
+        let first = output
+            .stderr
+            .lines()
+            .find(|line| !line.starts_with("VWMETA:"))
+            .unwrap_or("unknown fetch failure");
+        return Err(match output.exit_code {
+            Some(1) => FetchError::Egress(first.to_string()),
+            Some(3) => FetchError::TooLarge(first.to_string()),
+            _ => FetchError::Fetch(first.to_string()),
+        });
+    }
+    let vmeta = parse_helper_meta(&output.stderr)
+        .ok_or_else(|| FetchError::Fetch("helper produced no VWMETA line".into()))?;
+    let mut body = output.stdout;
+    let cap = max_body.clamp(1, vesper_sandbox::OUTPUT_CAP_BYTES);
+    let truncated = body.len() > cap;
+    let mut end = cap.min(body.len());
+    while !body.is_char_boundary(end) {
+        end -= 1;
+    }
+    body.truncate(end);
+    response_from_parts(vmeta, url, body, truncated).map_err(FetchError::Fetch)
 }
 
 #[cfg(test)]

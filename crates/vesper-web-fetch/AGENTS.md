@@ -34,6 +34,13 @@ implementation that provisions a backend demanding
 - The harness process never performs a web fetch. Every egress byte flows
   through the helper executing inside a provisioned sandbox with an
   explicit `allow_network = true` grant for that request.
+- The helper accepts URL, byte cap, and serialized policy; validates every
+  resolved address, pins the approved DNS answers, disables proxy inheritance,
+  and checks redirects and robots inside the sandbox. Both raw and decoded
+  bodies must fit the cap. Redirect counts are exact, not inferred.
+- Successful metadata starts with `VWMETA:`; route parsing preserves empty-
+  stdout error reasons, uses the last metadata line, and awaits teardown even
+  after a failed run. CPU/memory bounds and route timeouts apply per call.
 - The egress gate (`vesper-web::egress`) runs before provisioning:
   address-class denials outrank scheme policy so a loopback probe over
   plain http reports as `loopback_address`, not `plain_http_disallowed`.

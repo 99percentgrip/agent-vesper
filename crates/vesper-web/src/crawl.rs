@@ -114,9 +114,11 @@ impl RobotsRules {
     /// Parse robots.txt content for one user agent (plus `*`).
     pub fn parse(body: &str, user_agent: &str) -> Self {
         let agent = user_agent.to_ascii_lowercase();
+        type RuleGroup = (Vec<String>, Vec<(String, bool)>);
+        let mut groups: Vec<RuleGroup> = Vec::new();
+        let mut agents = Vec::new();
         let mut rules = Vec::new();
-        let mut current_agents: Vec<String> = Vec::new();
-        let mut in_scope = false;
+        let mut saw_rule = false;
         for line in body.lines() {
             let line = line.split('#').next().unwrap_or("").trim();
             if line.is_empty() {
@@ -128,32 +130,38 @@ impl RobotsRules {
             };
             match key.as_str() {
                 "user-agent" => {
-                    if !current_agents.is_empty() {
-                        // A rule block ended; reset scope.
-                        current_agents.clear();
+                    if saw_rule {
+                        groups.push((std::mem::take(&mut agents), std::mem::take(&mut rules)));
+                        saw_rule = false;
                     }
-                    let value = value.to_ascii_lowercase();
-                    in_scope = value == agent || value == "*";
-                    if in_scope {
-                        current_agents.push(value);
-                    } else {
-                        // Track group membership even when out of scope so
-                        // the next agent line can close the block.
-                        current_agents.push(value);
-                        in_scope = false;
-                    }
+                    agents.push(value.to_ascii_lowercase());
                 }
                 "allow" | "disallow" => {
-                    if in_scope && !value.is_empty() {
+                    saw_rule = true;
+                    if !agents.is_empty() && !value.is_empty() {
                         rules.push((value.to_string(), key == "allow"));
-                    } else if in_scope && value.is_empty() && key == "disallow" {
-                        // `Disallow:` with an empty value allows everything.
-                        rules.push((String::new(), true));
                     }
                 }
                 _ => {}
             }
         }
+        groups.push((agents, rules));
+        let specific = groups
+            .iter()
+            .any(|(agents, _)| agents.iter().any(|name| name == &agent));
+        let rules = groups
+            .into_iter()
+            .filter(|(agents, _)| {
+                agents.iter().any(|name| {
+                    if specific {
+                        name == &agent
+                    } else {
+                        name == "*"
+                    }
+                })
+            })
+            .flat_map(|(_, rules)| rules)
+            .collect();
         Self { rules }
     }
 
@@ -161,11 +169,54 @@ impl RobotsRules {
     pub fn is_allowed(&self, path: &str) -> bool {
         self.rules
             .iter()
-            .filter(|(prefix, _)| prefix.is_empty() || path.starts_with(prefix.as_str()))
-            .max_by_key(|(prefix, _)| prefix.len())
+            .filter(|(prefix, _)| robots_matches(prefix.as_bytes(), path.as_bytes()))
+            .max_by_key(|(prefix, allowed)| {
+                (
+                    prefix
+                        .bytes()
+                        .filter(|byte| !matches!(byte, b'*' | b'$'))
+                        .count(),
+                    *allowed,
+                )
+            })
             .map(|(_, allowed)| *allowed)
             .unwrap_or(true)
     }
+}
+
+fn robots_matches(pattern: &[u8], path: &[u8]) -> bool {
+    let anchored = pattern.last() == Some(&b'$');
+    let pattern = if anchored {
+        &pattern[..pattern.len() - 1]
+    } else {
+        pattern
+    };
+    let (mut p, mut t) = (0, 0);
+    let mut star = None;
+    let mut retry = 0;
+    while t < path.len() {
+        if p == pattern.len() && !anchored {
+            return true;
+        }
+        if pattern.get(p) == Some(&b'*') {
+            star = Some(p);
+            p += 1;
+            retry = t;
+        } else if pattern.get(p) == path.get(t) {
+            p += 1;
+            t += 1;
+        } else if let Some(index) = star {
+            retry += 1;
+            t = retry;
+            p = index + 1;
+        } else {
+            return false;
+        }
+    }
+    while pattern.get(p) == Some(&b'*') {
+        p += 1;
+    }
+    p == pattern.len()
 }
 
 /// Depth = number of non-empty path segments (alpha's `getURLDepth`).
@@ -267,6 +318,28 @@ fn default_path(url: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn robots_combines_agent_groups_and_prefers_specific_rules() {
+        let rules = RobotsRules::parse(
+            "User-agent: *\nDisallow: /\nUser-agent: agent-vesper\nUser-agent: other\nDisallow: /private\nUser-agent: agent-vesper\nAllow: /private/public\n",
+            "agent-vesper",
+        );
+        assert!(rules.is_allowed("/public"));
+        assert!(!rules.is_allowed("/private/secret"));
+        assert!(rules.is_allowed("/private/public"));
+    }
+
+    #[test]
+    fn robots_wildcards_end_anchor_and_allow_ties() {
+        let rules = RobotsRules::parse(
+            "User-agent: *\nDisallow: /*.pdf$\nAllow: /same\nDisallow: /same\n",
+            "agent-vesper",
+        );
+        assert!(!rules.is_allowed("/nested/file.pdf"));
+        assert!(rules.is_allowed("/nested/file.pdf?download=1"));
+        assert!(rules.is_allowed("/same"));
+    }
 
     fn policy() -> CrawlPolicy {
         CrawlPolicy {

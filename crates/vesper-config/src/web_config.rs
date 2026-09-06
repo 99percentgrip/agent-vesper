@@ -56,6 +56,8 @@ pub struct WebScopeConfig {
     /// Whether the web tools are registered at all. The only path to
     /// `true` is an explicit `enabled = true` in the project config.
     pub enabled: bool,
+    /// Separate opt-in for browser interaction; unavailable drivers refuse.
+    pub interact_enabled: bool,
     /// Robots-respecting fetches (default true).
     pub respect_robots: bool,
     /// Per-tool output truncation bound.
@@ -68,6 +70,7 @@ impl Default for WebScopeConfig {
     fn default() -> Self {
         Self {
             enabled: false,
+            interact_enabled: false,
             respect_robots: true,
             output_budget_bytes: DEFAULT_OUTPUT_BUDGET_BYTES,
             allowlist: Vec::new(),
@@ -124,12 +127,21 @@ pub fn parse_web_table(text: &str) -> Result<WebScopeConfig, WebConfigError> {
     let mut config = WebScopeConfig::default();
     let mut seen = false;
     let mut in_table = false;
+    let mut in_interact = false;
+    let mut seen_interact = false;
     for raw_line in text.lines() {
         let line = strip_comment(raw_line).trim().to_string();
         if line.is_empty() {
             continue;
         }
         if line.starts_with('[') {
+            in_interact = line.trim() == "[web.interact]";
+            if in_interact {
+                if seen_interact {
+                    return Err(WebConfigError::DuplicateTable);
+                }
+                seen_interact = true;
+            }
             in_table = line.trim() == "[web]";
             if in_table {
                 if seen {
@@ -139,17 +151,35 @@ pub fn parse_web_table(text: &str) -> Result<WebScopeConfig, WebConfigError> {
             }
             continue;
         }
-        if !in_table {
+        if !in_table && !in_interact {
             continue;
         }
         let Some((key, value)) = line.split_once('=') else {
             continue;
         };
         let key = key.trim();
+        let key = if in_interact {
+            if key == "enabled" {
+                "interact.enabled"
+            } else {
+                continue;
+            }
+        } else {
+            key
+        };
         let value = value.trim();
         match key {
             "enabled" => match parse_bool(value) {
                 Some(flag) => config.enabled = flag,
+                None => {
+                    return Err(WebConfigError::MalformedValue {
+                        key: key.to_string(),
+                        value: value.to_string(),
+                    });
+                }
+            },
+            "interact.enabled" => match parse_bool(value) {
+                Some(flag) => config.interact_enabled = flag,
                 None => {
                     return Err(WebConfigError::MalformedValue {
                         key: key.to_string(),
@@ -252,6 +282,20 @@ mod tests {
         let config = parse_web_table("[web]\nenabled = true\n").expect("parses");
         assert!(config.enabled);
         assert!(config.is_active());
+        assert!(!config.interact_enabled);
+    }
+
+    #[test]
+    fn browser_opt_in_accepts_dotted_and_nested_forms() {
+        for text in [
+            "[web]\nenabled = true\ninteract.enabled = true\n",
+            "[web]\nenabled = true\n[web.interact]\nenabled = true\n",
+        ] {
+            let config = parse_web_table(text).unwrap();
+            assert!(config.enabled && config.interact_enabled);
+        }
+        assert!(parse_web_table("[web.interact]\nenabled = yes").is_err());
+        assert!(parse_web_table("[web.interact]\n[web.interact]").is_err());
     }
 
     #[test]

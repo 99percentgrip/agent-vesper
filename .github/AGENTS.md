@@ -17,6 +17,9 @@ platform assumptions on hosts unavailable locally.
   already have successful `push` runs for `ci.yml`, `msrv.yml`, and
   `platform-foundation.yml`. Push the version commit to `main`, wait for all
   three workflows to pass, and only then create/push its release tag.
+- Release archives include `vesper-web-fetch` beside ACP and TUI; both hosts
+  build with their existing Docker feature. Browser/image availability remains
+  an explicit runtime prerequisite, not an archive capability claim.
 - The default toolchain is pinned to Rust 1.95.0 via `rust-toolchain.toml`
   (with `clippy` and `rustfmt` components); MSRV 1.88.0 is enforced
   independently in `msrv.yml` and the spike workflows.

@@ -1,8 +1,9 @@
 # PRD — VRO-14: The Web Oracle Extraction
 
-Status: DRAFT — Phase 1 reconnaissance complete; phased implementation not
-started. Implementation evidence for each PR lands under `docs/foundation/`
-per `docs/AGENTS.md`.
+Status: PARTIAL — perception modules and passive tool execution are implemented;
+production browser sessions, render escalation, and sitemap discovery remain
+open. The implementation audit is `docs/foundation/vro14-gap-audit.md`.
+Implementation evidence lands under `docs/foundation/` per `docs/AGENTS.md`.
 
 Reference upstream (the triad), explicitly authorized as trusted data and
 cloned locally:

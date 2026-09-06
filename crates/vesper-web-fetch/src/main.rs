@@ -30,7 +30,9 @@
 #![forbid(unsafe_code)]
 
 use std::io::{Read, Write};
+use std::net::{SocketAddr, ToSocketAddrs};
 use std::process::ExitCode;
+use vesper_web::egress::{EgressPolicy, EgressVerdict};
 // egress policy and the transport trait live in the library; the binary only fetches.
 
 /// Hard streaming cap: read at most this many body bytes (alpha's
@@ -52,19 +54,27 @@ fn main() -> ExitCode {
         return ExitCode::from(1);
     }
 
-    match fetch(&url) {
+    let mut args = std::env::args().skip(2);
+    let cap = args
+        .next()
+        .and_then(|arg| arg.parse::<u64>().ok())
+        .unwrap_or(BODY_CAP_BYTES)
+        .clamp(1, BODY_CAP_BYTES);
+    let policy = match args.next() {
+        Some(json) => match serde_json::from_str::<HelperPolicy>(&json) {
+            Ok(policy) => policy,
+            Err(_) => {
+                eprintln!("invalid fetch policy");
+                return ExitCode::from(4);
+            }
+        },
+        None => HelperPolicy::default(),
+    };
+    match fetch(&url, cap, &policy) {
         Ok(outcome) => {
             // Metadata travels on stderr as one JSON line so stdout stays
             // byte-exact body content.
-            eprintln!(
-                "{{\"vwf\":\"1\",\"status\":{},\"content_type\":{},\"final_url\":{},\"bytes_read\":{},\"redirects\":{},\"charset\":{}}}",
-                outcome.status,
-                json_str(&outcome.content_type),
-                json_str(&outcome.final_url),
-                outcome.bytes_read,
-                outcome.redirects,
-                json_str(&outcome.charset),
-            );
+            eprintln!("{}", metadata_line(&outcome));
             let mut stdout = std::io::stdout().lock();
             if stdout.write_all(&outcome.body).is_err() {
                 return ExitCode::from(2);
@@ -79,6 +89,10 @@ fn main() -> ExitCode {
         Err(FetchError::Transport(message)) => {
             eprintln!("fetch failed: {message}");
             ExitCode::from(2)
+        }
+        Err(FetchError::Policy(reason)) => {
+            eprintln!("egress denied: {reason}");
+            ExitCode::from(1)
         }
     }
 }
@@ -96,24 +110,159 @@ struct Outcome {
 enum FetchError {
     CapExceeded,
     Transport(String),
+    Policy(String),
 }
 
-fn fetch(url: &str) -> Result<Outcome, FetchError> {
-    // Blocking reqwest client with redirect cap and no credential jars.
-    let client = reqwest::blocking::Client::builder()
-        .redirect(reqwest::redirect::Policy::limited(MAX_REDIRECTS))
+#[derive(serde::Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct HelperPolicy {
+    allow_plain_http: bool,
+    allowed_hosts: Vec<String>,
+    respect_robots: bool,
+}
+
+impl Default for HelperPolicy {
+    fn default() -> Self {
+        Self {
+            allow_plain_http: false,
+            allowed_hosts: Vec::new(),
+            respect_robots: true,
+        }
+    }
+}
+
+fn checked_url(url: &str, policy: &HelperPolicy) -> Result<url::Url, FetchError> {
+    let egress = EgressPolicy {
+        allow_plain_http: policy.allow_plain_http,
+        allowed_hosts: policy.allowed_hosts.clone(),
+        respect_robots: policy.respect_robots,
+    };
+    if let EgressVerdict::Deny(denial) = vesper_web::egress::evaluate(url, &egress, None) {
+        return Err(FetchError::Policy(denial.name().into()));
+    }
+    let parsed = url::Url::parse(url).map_err(|_| FetchError::Policy("unparsable_url".into()))?;
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err(FetchError::Policy("url_credentials".into()));
+    }
+    Ok(parsed)
+}
+
+fn checked_addresses(addresses: &[SocketAddr]) -> Result<(), FetchError> {
+    if addresses.is_empty() {
+        return Err(FetchError::Transport("DNS returned no addresses".into()));
+    }
+    for address in addresses {
+        if let EgressVerdict::Deny(denial) = vesper_web::egress::classify_ip(&address.ip()) {
+            return Err(FetchError::Policy(denial.name().into()));
+        }
+    }
+    Ok(())
+}
+
+fn get_one(url: &url::Url) -> Result<reqwest::blocking::Response, FetchError> {
+    // Resolve inside the helper, validate every answer, then pin those
+    // addresses into the client so a second DNS lookup cannot rebind it.
+    let host = url.host_str().unwrap_or_default().trim_matches(['[', ']']);
+    let port = url.port_or_known_default().unwrap_or(443);
+    let addresses: Vec<_> = (host, port)
+        .to_socket_addrs()
+        .map_err(|_| FetchError::Transport("DNS resolution failed".into()))?
+        .collect();
+    checked_addresses(&addresses)?;
+    reqwest::blocking::Client::builder()
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .resolve_to_addrs(host, &addresses)
         .timeout(std::time::Duration::from_secs(30))
         .build()
-        .map_err(|error| FetchError::Transport(error.to_string()))?;
-    let response = client
-        .get(url)
-        .header("user-agent", "agent-vesper-web-oracle/0.1 (+sandboxed)")
+        .map_err(|_| FetchError::Transport("HTTP client initialization failed".into()))?
+        .get(url.clone())
+        .header("user-agent", "agent-vesper")
         .send()
-        .map_err(|error| FetchError::Transport(error.to_string()))?;
+        .map_err(|_| FetchError::Transport("HTTP request failed".into()))
+}
 
+fn robots_check(url: &url::Url, policy: &HelperPolicy) -> Result<(), FetchError> {
+    let mut robots = url
+        .join("/robots.txt")
+        .map_err(|_| FetchError::Policy("robots_url".into()))?;
+    for hop in 0..=MAX_REDIRECTS {
+        robots = checked_url(robots.as_str(), policy)?;
+        let response = get_one(&robots)?;
+        let status = response.status().as_u16();
+        if response.status().is_redirection() {
+            robots = redirect_target(&robots, &response, hop, policy)?;
+            continue;
+        }
+        if (400..500).contains(&status) {
+            return Ok(());
+        }
+        if !(200..300).contains(&status) {
+            return Err(FetchError::Policy("robots_unavailable".into()));
+        }
+        let mut body = Vec::new();
+        response
+            .take(BODY_CAP_BYTES + 1)
+            .read_to_end(&mut body)
+            .map_err(|_| FetchError::Policy("robots_unavailable".into()))?;
+        if body.len() as u64 > BODY_CAP_BYTES {
+            return Err(FetchError::Policy("robots_budget_exceeded".into()));
+        }
+        let rules =
+            vesper_web::crawl::RobotsRules::parse(&String::from_utf8_lossy(&body), "agent-vesper");
+        let path = &url[url::Position::BeforePath..url::Position::AfterQuery];
+        return if rules.is_allowed(path) {
+            Ok(())
+        } else {
+            Err(FetchError::Policy("robots_disallowed".into()))
+        };
+    }
+    Err(FetchError::Policy("robots_redirect_limit".into()))
+}
+
+fn redirect_target(
+    url: &url::Url,
+    response: &reqwest::blocking::Response,
+    hop: usize,
+    policy: &HelperPolicy,
+) -> Result<url::Url, FetchError> {
+    if hop >= MAX_REDIRECTS {
+        return Err(FetchError::Transport("redirect_limit".into()));
+    }
+    let location = response
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .and_then(|value| value.to_str().ok())
+        .ok_or_else(|| FetchError::Transport("redirect without valid location".into()))?;
+    let target = url
+        .join(location)
+        .map_err(|_| FetchError::Policy("invalid_redirect".into()))?;
+    checked_url(target.as_str(), policy)
+}
+
+fn fetch(url: &str, cap: u64, policy: &HelperPolicy) -> Result<Outcome, FetchError> {
+    let mut current = checked_url(url, policy)?;
+    for redirects in 0..=MAX_REDIRECTS {
+        if policy.respect_robots {
+            robots_check(&current, policy)?;
+        }
+        let response = get_one(&current)?;
+        if response.status().is_redirection() {
+            current = redirect_target(&current, &response, redirects, policy)?;
+            continue;
+        }
+        return decode_response(response, redirects, cap);
+    }
+    Err(FetchError::Transport("redirect_limit".into()))
+}
+
+fn decode_response(
+    response: reqwest::blocking::Response,
+    redirects: usize,
+    cap: u64,
+) -> Result<Outcome, FetchError> {
     let status = response.status().as_u16();
     let final_url = response.url().as_str().to_string();
-    let redirects = redirect_count(url, &final_url);
     let content_type = response
         .headers()
         .get(reqwest::header::CONTENT_TYPE)
@@ -137,17 +286,20 @@ fn fetch(url: &str) -> Result<Outcome, FetchError> {
     // Stream with a hard cap: read one extra byte to detect overflow.
     let mut reader = response;
     let mut body = Vec::new();
-    let mut limited = (&mut reader).take(BODY_CAP_BYTES + 1);
+    let mut limited = (&mut reader).take(cap + 1);
     limited
         .read_to_end(&mut body)
         .map_err(|error| FetchError::Transport(error.to_string()))?;
-    if body.len() as u64 > BODY_CAP_BYTES {
+    if body.len() as u64 > cap {
         return Err(FetchError::CapExceeded);
     }
     let bytes_read = body.len() as u64;
 
     let (sniffed_type, charset) = sniff(&content_type, &body);
     let decoded = decode_charset(&body, &charset);
+    if decoded.len() as u64 > cap {
+        return Err(FetchError::CapExceeded);
+    }
     Ok(Outcome {
         status,
         content_type: sniffed_type,
@@ -240,42 +392,76 @@ fn utf16_to_utf8(body: &[u8], big_endian: bool) -> Vec<u8> {
     String::from_utf16_lossy(&units).into_bytes()
 }
 
-/// Estimate redirect count from URL drift (reqwest reports the final URL
-/// only; path-segment difference is a stable enough proxy for metadata).
-fn redirect_count(original: &str, final_url: &str) -> usize {
-    if original == final_url {
-        0
-    } else {
-        // Exact counts are unavailable without redirect hooks; emit the
-        // honest minimum: "some redirects happened" is 1 in metadata.
-        1
-    }
-}
-
-/// Minimal JSON string escaping for the metadata line.
-fn json_str(value: &str) -> String {
-    let mut out = String::with_capacity(value.len() + 2);
-    out.push('"');
-    for ch in value.chars() {
-        match ch {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if (c as u32) < 0x20 => {
-                out.push_str(&format!("\\u{:04x}", c as u32));
-            }
-            c => out.push(c),
-        }
-    }
-    out.push('"');
-    out
+fn metadata_line(outcome: &Outcome) -> String {
+    format!(
+        "VWMETA:{}",
+        serde_json::json!({
+            "vwf": "1", "status": outcome.status,
+            "content_type": outcome.content_type, "final_url": outcome.final_url,
+            "bytes_read": outcome.bytes_read, "redirects": outcome.redirects,
+            "charset": outcome.charset, "truncated": false,
+        })
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn emitted_metadata_round_trips_through_production_parser() {
+        let outcome = Outcome {
+            status: 200,
+            content_type: "text/html".into(),
+            final_url: "https://example.com/final".into(),
+            charset: "utf-8".into(),
+            redirects: 3,
+            bytes_read: 4,
+            body: b"body".to_vec(),
+        };
+        let meta = vesper_web_fetch::parse::parse_helper_meta(&metadata_line(&outcome))
+            .expect("actual helper metadata must parse");
+        assert_eq!(meta.status, 200);
+        assert_eq!(meta.redirects, 3);
+        assert_eq!(meta.final_url.as_deref(), Some("https://example.com/final"));
+    }
+
+    #[test]
+    fn resolved_private_dns_answers_fail_even_when_mixed_with_public() {
+        for private in [
+            "127.0.0.1:443",
+            "10.0.0.1:443",
+            "[fd00::1]:443",
+            "[fe80::1]:443",
+        ] {
+            let answers = [
+                "93.184.216.34:443".parse().unwrap(),
+                private.parse().unwrap(),
+            ];
+            assert!(matches!(
+                checked_addresses(&answers),
+                Err(FetchError::Policy(_))
+            ));
+        }
+        assert!(checked_addresses(&[]).is_err());
+    }
+
+    #[test]
+    fn redirect_policy_rejects_private_credentials_and_off_allowlist() {
+        let policy = HelperPolicy {
+            allowed_hosts: vec!["example.com".into()],
+            ..HelperPolicy::default()
+        };
+        for url in [
+            "https://127.0.0.1/",
+            "https://[fd00::1]/",
+            "https://elsewhere.com/",
+            "https://user:secret@example.com/",
+        ] {
+            assert!(checked_url(url, &policy).is_err());
+        }
+        assert!(checked_url("https://example.com/", &policy).is_ok());
+    }
 
     #[test]
     fn splits_content_type_and_charset() {

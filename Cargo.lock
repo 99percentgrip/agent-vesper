@@ -4027,6 +4027,7 @@ dependencies = [
  "sha2 0.11.0",
  "tempfile",
  "tokio",
+ "url",
  "vesper-agent",
  "vesper-checkpoints",
  "vesper-config",
@@ -4040,6 +4041,7 @@ dependencies = [
  "vesper-sessions",
  "vesper-testkit",
  "vesper-web",
+ "vesper-web-fetch",
 ]
 
 [[package]]

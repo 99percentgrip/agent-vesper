@@ -52,7 +52,13 @@ bounded Markdown (`docs/web-oracle-extraction-prd.md`, Feature 1).
 - Strictly zero I/O: no network, no filesystem, no clock. All input
   arrives as in-memory HTML strings; callers own fetching through the
   sandbox boundary (PRD Feature 4).
-- `#![forbid(unsafe_code)]`; quick-xml is the only dependency.
+- `#![forbid(unsafe_code)]`; parser, URL, stemming, serde, and error utilities
+  remain pure dependencies with no I/O transports.
+- `egress.rs` denies IPv6 unique-local/link-local addresses as well as IPv4
+  private and loopback ranges; test HTTPS directly so scheme policy cannot
+  mask address-class regressions.
+- `crawl.rs` groups robots agents, gives specific agents precedence over
+  wildcard groups, supports wildcard/end anchors, and favors Allow on ties.
 - The naming rule (PRD §0) is absolute: upstream projects are referenced
   only as web oracle alpha/beta/gamma; `<pkg-root>` replaces any
   banned-token-bearing upstream path. The production-sources scan forbids
