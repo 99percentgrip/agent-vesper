@@ -116,6 +116,12 @@ pub const VOID: &[&str] = &[
     "track", "wbr",
 ];
 
+/// Maximum element nesting the parser preserves. Deeper opens attach as
+/// flat children at the cap — the same graceful degradation browsers
+/// apply (~512 in Chrome) — so adversarially deep markup cannot overflow
+/// the recursive tree walks (PR-6 adversarial gate).
+pub const MAX_PARSE_DEPTH: usize = 256;
+
 /// The sibling implicit-close table (HTML5 tag omission, PRD scope).
 fn implicit_close_for(tag: &str) -> &'static [&'static str] {
     match tag {
@@ -156,6 +162,15 @@ pub fn parse(html: &str) -> Document {
                 // PR-0 lesson 2: void elements attach immediately and never
                 // take children regardless of how they were serialized.
                 if VOID.contains(&element.tag.as_str()) {
+                    if let Some(top) = stack.last_mut() {
+                        top.children.push(Node::Element(element));
+                    }
+                } else if stack.len() >= MAX_PARSE_DEPTH {
+                    // PR-6 adversarial gate: hostile nesting beyond the
+                    // browser-comparable cap attaches flat at the cap
+                    // (browsers flatten ~512-deep trees rather than
+                    // recursing). Without this, a 5,000-deep document
+                    // overflows the recursive walks downstream.
                     if let Some(top) = stack.last_mut() {
                         top.children.push(Node::Element(element));
                     }

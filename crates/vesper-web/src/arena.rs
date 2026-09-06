@@ -55,12 +55,18 @@ impl Dom {
 
     fn append_element(&mut self, parent: Option<NodeId>, el: &Element) -> NodeId {
         let id = self.nodes.len();
+        // PR-6 perf: metrics are accumulated bottom-up from the children
+        // once they exist — one post-order pass over the whole projection
+        // is O(N) total. Computing `el.text()`/`el.content_len()` per node
+        // (each O(subtree)) made deep chains O(N²): the 100k-node
+        // adversarial fixture spent ~830 ms in the projection and blew the
+        // 150 ms prune+convert gate.
         self.nodes.push(ArenaNode::Element {
             tag: el.tag.clone(),
             attrs: el.attrs.clone(),
-            text_len: el.text().len(),
-            tag_len: el.content_len().max(1),
-            link_text_len: el.direct_child_link_text_len(),
+            text_len: 0,
+            tag_len: 0,
+            link_text_len: 0,
         });
         self.parent.push(parent);
         self.children.push(Vec::new());
@@ -80,6 +86,42 @@ impl Dom {
                     self.append_element(Some(id), e);
                 }
             }
+        }
+        // Bottom-up metric fill from the now-complete children.
+        let mut text_len = 0usize;
+        let mut tag_len = 0usize;
+        let mut link_text_len = 0usize;
+        for &child in &self.children[id] {
+            match self.get(child) {
+                Some(ArenaNode::Text(t)) => {
+                    text_len += t.len();
+                    tag_len += t.len();
+                }
+                Some(ArenaNode::Element {
+                    tag,
+                    text_len: child_text,
+                    tag_len: child_tag,
+                    ..
+                }) => {
+                    text_len += child_text;
+                    tag_len += tag.len() + 2 + child_tag + tag.len() + 3;
+                    if tag == "a" {
+                        link_text_len += child_text;
+                    }
+                }
+                None => {}
+            }
+        }
+        if let Some(ArenaNode::Element {
+            text_len: slot_text,
+            tag_len: slot_tag,
+            link_text_len: slot_link,
+            ..
+        }) = self.nodes.get_mut(id)
+        {
+            *slot_text = text_len;
+            *slot_tag = tag_len.max(1);
+            *slot_link = link_text_len;
         }
         id
     }

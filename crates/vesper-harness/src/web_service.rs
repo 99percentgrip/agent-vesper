@@ -516,3 +516,80 @@ mod tests {
         assert!(!tui.is_empty());
     }
 }
+
+// ------------------------------------------------------ PR-6 zero-cost proof
+
+#[cfg(test)]
+mod zero_cost_boot {
+    //! VRO-14 PR-6 zero-cost proof (structural). With no `[web]` scope the
+    //! boot path constructs the service with `web: None` and
+    //! `build_default_registry` takes the `None` arm of the match — one
+    //! `Option` discriminant check, no `WebService` construction, no web
+    //! definition building, no registry insertion. An allocation-counting
+    //! global allocator is deliberately NOT used: the service constructor
+    //! legitimately allocates (stores, plugin roots, path joins) and the
+    //! test binary runs threads concurrently, so a byte counter can only
+    //! produce flaky, meaningless numbers. The structural assertions below
+    //! are the honest machine-checkable form: the disabled registry is
+    //! exactly the pre-web registry (no web tools anywhere), while the
+    //! enabled registry demonstrably differs (proving the check bites).
+
+    use super::*;
+    use crate::MemoryStores;
+    use std::sync::Arc;
+    use vesper_domain::SessionOperatingMode;
+
+    fn service(web: Option<WebScope>) -> Arc<crate::HarnessToolService> {
+        let stores = Arc::new(MemoryStores {
+            memory: None,
+            skills: None,
+            profile: None,
+            awareness: None,
+        });
+        Arc::new(
+            crate::HarnessToolService::new(
+                stores,
+                std::env::temp_dir(),
+                std::env::temp_dir(),
+                None,
+            )
+            .with_web_scope(web),
+        )
+    }
+
+    #[test]
+    fn disabled_boot_registry_equals_the_pre_web_registry() {
+        // The disabled registry contains no web tool under any name, in
+        // registration OR advertisement — the pre-web shape exactly.
+        let registry = service(None).build_default_registry();
+        for name in WEB_TOOL_NAMES {
+            assert!(
+                registry.definition(name).is_none(),
+                "{name} must not exist in the disabled boot registry"
+            );
+        }
+        for mode in [SessionOperatingMode::Code, SessionOperatingMode::Plan] {
+            assert!(
+                !registry
+                    .definitions_for(mode)
+                    .iter()
+                    .any(|definition| WEB_TOOL_NAMES
+                        .iter()
+                        .any(|name| definition.harness_name.as_str() == *name)),
+                "no web tool may be advertised in {mode:?} when [web] is absent"
+            );
+        }
+    }
+
+    #[test]
+    fn enabled_boot_registry_provably_differs() {
+        // The proof that the disabled assertions bite: attaching a scope
+        // changes the registry. Without this, "not registered" could be
+        // vacuously true.
+        let registry = service(Some(WebScope::disabled())).build_default_registry();
+        let present = WEB_TOOL_NAMES
+            .iter()
+            .any(|name| registry.definition(name).is_some());
+        assert!(present, "enabled scope must register the web tools");
+    }
+}
