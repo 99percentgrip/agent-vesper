@@ -63,6 +63,10 @@ through safe `std::process`.
   Pinned images are probed locally before provisioning, with no implicit pull.
   Per-request network grants and resource overrides are honored. Concurrent
   bounded stream draining avoids deadlocking on output larger than an OS pipe.
+  Container startup waits at most 30 seconds (or the shorter request budget);
+  cleanup CLI waits at most five seconds and kills/reaps a stalled client.
+  Daemon-side cleanup cannot be promised while the daemon is unavailable;
+  every detached container retains a finite lease as the fallback bound.
 
 ## Work Guidance
 

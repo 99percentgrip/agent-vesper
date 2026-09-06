@@ -10,7 +10,7 @@ discovery and a published pinned driver. Those findings drove the current
 production implementation and real-container acceptance; historical phase
 reports remain historical evidence, not current capability claims.
 
-Local acceptance now covers 1,672 passing workspace tests on MSRV 1.88,
+Local acceptance now covers 1,673 passing workspace tests on MSRV 1.88,
 canonical verification, both unchanged release-profile performance gates,
 real pipe-browser actions/redaction/stale-index/deadline handling, and an
 explicit real navigation/chunked-fetch check. The full requirement-to-source

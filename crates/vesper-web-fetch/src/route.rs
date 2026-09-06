@@ -118,11 +118,9 @@ impl FetchTransport for WebSandboxPort {
         let user_agent = self.config.user_agent.clone();
 
         Box::pin(async move {
-            // 1. Pure pre-flight gate. Robots verdict `None` here: hosts
-            //    that cache robots per origin call `evaluate` themselves
-            //    and pass the verdict down; the port's own fetch treats an
-            //    unknown robots as allowed (respect_robots still gates it
-            //    when the host supplies Some(false)).
+            // 1. Pure pre-flight gate. DNS and robots are not performed on
+            //    the host: the helper enforces both inside the sandbox before
+            //    fetching a page, using the serialized policy below.
             if let vesper_web::egress::EgressVerdict::Deny(denial) =
                 vesper_web::egress::evaluate(&url, &policy, None)
             {

@@ -30,7 +30,7 @@ complete wire parameters. A test double is not presented as a working engine.
 
 - `cargo xtask verify`: passed (formatting, strict Clippy, architecture,
   fixtures, conformance, host process checks, workspace tests).
-- `cargo +1.88.0 test --workspace --all-features`: 87 suites, **1,672 passed,
+- `cargo +1.88.0 test --workspace --all-features`: 87 suites, **1,673 passed,
   0 failed, 20 ignored**. Baseline was 1,657 passed/18 ignored. No test removed
   or weakened; two new real-browser tests are explicit gated acceptance.
 - `cargo test --release -p vesper-web --test adversarial -- --ignored`:
@@ -44,6 +44,9 @@ complete wire parameters. A test double is not presented as a working engine.
   or user credentials. Default/foundation tests remain offline.
 - `podman ps --filter name=agent-vesper-sbx --format '{{.Names}}'` after
   acceptance: empty; no browser containers left behind.
+- Final lifecycle regression: a stalled runtime client is killed/reaped;
+  startup is bounded to 30 seconds and cleanup to five seconds. Browser
+  admission execs no longer inherit the longer abandoned-session lease.
 
 ## Deployment and implementation choices
 

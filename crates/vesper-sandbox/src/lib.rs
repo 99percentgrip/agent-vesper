@@ -196,13 +196,14 @@ impl Drop for SandboxHandle {
         // `rm -f` is idempotent against an already-removed container).
         if let Some(argv) = self.teardown_command.as_ref()
             && let Some((program, rest)) = argv.split_first()
-        {
-            let _ = Command::new(program)
+            && let Ok(mut cleanup) = Command::new(program)
                 .args(rest)
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
-                .status();
+                .spawn()
+        {
+            let _ = wait_bounded(&mut cleanup, std::time::Duration::from_secs(5));
         }
         // Kill the supervisor → PDEATHSIG kills the namespace init → the
         // kernel SIGKILLs every remaining process in the PID namespace.
@@ -212,6 +213,54 @@ impl Drop for SandboxHandle {
             let _ = child.kill();
             let _ = child.wait();
         }
+    }
+}
+
+/// Bound a runtime CLI wait; killing the client is not a claim that a stalled
+/// daemon completed cleanup. Detached containers retain their finite lease.
+pub(crate) fn wait_bounded(
+    child: &mut Child,
+    limit: std::time::Duration,
+) -> std::io::Result<std::process::ExitStatus> {
+    let started = std::time::Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return Ok(status),
+            Ok(None) if started.elapsed() < limit => {
+                std::thread::sleep(std::time::Duration::from_millis(10))
+            }
+            result => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(match result {
+                    Err(error) => error,
+                    _ => std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        "timed_out: sandbox runtime CLI",
+                    ),
+                });
+            }
+        }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod bounded_cli_tests {
+    #[test]
+    fn stalled_runtime_client_is_killed_and_reaped() {
+        let mut child = std::process::Command::new("sleep")
+            .arg("30")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        let started = std::time::Instant::now();
+        let error =
+            super::wait_bounded(&mut child, std::time::Duration::from_millis(20)).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
+        assert!(started.elapsed() < std::time::Duration::from_secs(2));
+        assert!(child.try_wait().unwrap().is_some());
     }
 }
 

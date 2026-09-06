@@ -80,8 +80,11 @@ Fetch may escalate once to a separate ephemeral renderer on JS-shell signals;
 policy refusals never escalate. The interactive page is not modified by a
 scrape. Operations share four runtime permits; CDP actions have 45-second
 deadlines, startup smoke has 30 seconds, and abandoned containers have a
-900-second lease. Output defaults to 96 KiB per field, hard cap 512 KiB;
-the host's 1 MiB envelope may impose an additional reported per-field cut.
+900-second lease. Container startup waits at most 30 seconds and cleanup CLI
+waits five seconds.
+If a daemon stalls, its finite container lease remains the cleanup fallback.
+Output defaults to 96 KiB per field, hard cap 512 KiB; the host's 1 MiB
+envelope may impose an additional reported per-field cut.
 Oversized screenshots fail explicitly instead of returning corrupt base64.
 
 All DNS, TLS, robots checks, redirects and browser execution occur in the

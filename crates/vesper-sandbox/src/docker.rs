@@ -458,14 +458,22 @@ impl SandboxBackend for DockerBackend {
                 SandboxError::Provision(format!("docker run spawn failed: {error}"))
             })?;
             // Detached (`-d`) `docker run` exits once the container starts.
-            let status = child
-                .wait()
+            let stdout_reader = drain_pipe(child.stdout.take().expect("piped stdout"));
+            let stderr_reader = drain_pipe(child.stderr.take().expect("piped stderr"));
+            let status = crate::wait_bounded(
+                &mut child,
+                Duration::from_secs(spec.timeout_seconds.clamp(1, 30)),
+            );
+            let _ = stdout_reader.join();
+            let stderr = stderr_reader
+                .join()
+                .ok()
+                .and_then(Result::ok)
+                .unwrap_or_default();
+            let status = status
                 .map_err(|error| SandboxError::Provision(format!("docker run wait: {error}")))?;
             if !status.success() {
-                let mut stderr = String::new();
-                if let Some(pipe) = child.stderr.take() {
-                    let _ = pipe.take(4096).read_to_string(&mut stderr);
-                }
+                let stderr = String::from_utf8_lossy(&stderr[..stderr.len().min(4096)]);
                 let reason = if stderr.trim().is_empty() {
                     format!("exit status {status}")
                 } else {
@@ -587,10 +595,10 @@ impl SandboxBackend for DockerBackend {
 
     fn teardown<'a>(
         &'a self,
-        handle: SandboxHandle,
+        mut handle: SandboxHandle,
     ) -> SandboxFuture<'a, Result<(), SandboxError>> {
         Box::pin(async move {
-            let Some(argv) = handle.teardown_command.clone() else {
+            let Some(argv) = handle.teardown_command.take() else {
                 // Not a docker provision (should not happen through this
                 // backend); fall back to killing the recorded child so the
                 // drop path stays total.
@@ -607,7 +615,8 @@ impl SandboxBackend for DockerBackend {
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
-                .status();
+                .spawn()
+                .and_then(|mut child| crate::wait_bounded(&mut child, PROBE_TIMEOUT));
             match status {
                 // `docker rm -f` on an already-removed container exits 1
                 // with "No such container"; that is success for teardown
@@ -616,7 +625,7 @@ impl SandboxBackend for DockerBackend {
                 // The docker binary itself vanished (uninstalled
                 // mid-session). Honest failure, surfaced to the caller.
                 Err(error) => Err(SandboxError::Teardown(format!(
-                    "docker rm -f failed to spawn: {error}"
+                    "docker rm -f failed or timed out: {error}"
                 ))),
             }
         })

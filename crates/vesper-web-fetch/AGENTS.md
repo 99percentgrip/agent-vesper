@@ -14,6 +14,8 @@ implementation that provisions a backend demanding
 - `src/browser.rs` — ephemeral container-backed pipe-CDP sessions with real
   node resolution, action dispatch, AX/snapshot observations, stable indexes,
   bounded deadlines, and document-navigation admission inside the sandbox.
+  The 900-second container lease is separate from each admission exec's
+  45-second host-side bound and remaining-deadline in-container timeout.
 - `Dockerfile` and `browser-pipe.sh` — immutable base/build image pins and
   exact headless package version; fd 3/4 mapping uses a fixed shell script,
   never a TCP debugging listener or a new Rust unsafe boundary.

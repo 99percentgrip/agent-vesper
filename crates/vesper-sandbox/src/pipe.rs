@@ -134,8 +134,9 @@ impl Drop for SandboxPipe {
         self.reader.take();
         let _ = self.child.kill();
         let _ = self.child.wait();
-        // Remove the container before joining I/O readers. Closing the local
-        // exec client alone is not a promise that the remote process died.
+        // Release our container reference; another session owner may retain it.
+        // Killing/reaping the local client closes these I/O pipes. The final
+        // handle owner removes the container, whose daemon lease is also finite.
         self.handle.take();
         for thread in self.threads.drain(..) {
             let _ = thread.join();

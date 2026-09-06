@@ -65,7 +65,7 @@ Status: COMPLETE
   commands/results: `vro14-gap-audit.md`.
 - Implemented real contained pipe-CDP sessions, render waterfall, bounded
   sitemap/gzip discovery, shared engine configuration and pinned driver build.
-- Canonical verification passed; MSRV 1.88: 1,672 passed, 0 failed, 20 ignored
+- Canonical verification passed; MSRV 1.88: 1,673 passed, 0 failed, 20 ignored
   across 87 suites; both unchanged release-profile performance gates passed.
 - Immutable-image real browser and explicit navigation/chunked-fetch tests
   passed on Linux x86_64; no provider calls or user-state writes; post-test

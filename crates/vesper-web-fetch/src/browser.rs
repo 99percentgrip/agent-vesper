@@ -57,7 +57,11 @@ impl BrowserSession {
             .with_memory_limit_bytes(1024 * 1024 * 1024);
         // An abandoned host cannot leave an unbounded detached browser.
         spec.timeout_seconds = 900;
-        let handle = Arc::new(route.backend.provision(&spec).await.map_err(pipe_error)?);
+        let mut provisioned = route.backend.provision(&spec).await.map_err(pipe_error)?;
+        // The daemon lease bounds an abandoned session, not an admission call.
+        // A stuck exec client must not inherit the 900-second session lease.
+        provisioned.timeout_seconds = 45;
+        let handle = Arc::new(provisioned);
         let pipe = route
             .backend
             .open_pipe(
