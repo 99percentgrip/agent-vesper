@@ -4207,6 +4207,8 @@ version = "0.20.87"
 dependencies = [
  "quick-xml",
  "rust-stemmers",
+ "serde",
+ "serde_json",
  "thiserror",
  "url",
 ]

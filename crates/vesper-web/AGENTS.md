@@ -28,6 +28,22 @@ bounded Markdown (`docs/web-oracle-extraction-prd.md`, Feature 1).
   priority-tag boost, default threshold 1.0, and `min_word_threshold`
   word floor. `score_all` exposes threshold-free ranking for tests and
   diagnostics; `filter` is the production gate.
+- `src/snapshot.rs` — CDP `DOMSnapshot.captureSnapshot` serde types and
+  materialization (flat + owned-tree forms, the pinned ten required
+  computed styles, string-table resolution).
+- `src/interactable.rs` — clickability heuristics (JS-listener flag,
+  interactive ARIA roles/tags, form-control wrapper search) and the
+  sensitive-value gate (password/file/hidden inputs, cc-*/one-time-code
+  autocomplete → `•` masks, length-capped).
+- `src/selector_map.rs` — the token-efficient numbered map and the
+  `(session_id, backend_node_id)` index cache; retired indexes are never
+  reassigned within a session (gamma's cross-step stability contract).
+- `src/action.rs` — the `BrowserAction` enum (navigate/click/type/scroll/
+  select/back/forward/reload/screenshot/close) and the model-facing
+  action registry.
+- `src/driver.rs` — the pipe-only CDP driver seam (`BrowserDriverPort`):
+  NUL-framed JSON over the anonymous fd3/fd4 pair, no TCP anywhere,
+  bounded command plans per action, fail-closed sandbox gating.
 - `examples/gen-goldens.rs` — maintenance tool regenerating the golden
   corpus under `fixtures/web-oracle/goldens/`.
 

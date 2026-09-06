@@ -18,19 +18,30 @@
 
 #![forbid(unsafe_code)]
 
+pub mod action;
 pub mod arena;
 pub mod bm25;
 pub mod convert;
 pub mod crawl;
 pub mod density;
 pub mod dom;
+pub mod driver;
 pub mod egress;
+pub mod interactable;
 pub mod links;
 pub mod meta;
 pub mod pipeline;
 pub mod rank;
+pub mod selector_map;
+pub mod snapshot;
 pub mod strip;
 pub mod transport;
+
+pub use action::{ActionResult, BrowserAction, action_registry};
+pub use driver::{BrowserDriverPort, DriverError, plan_commands};
+pub use interactable::{is_interactive, is_sensitive_value, redact};
+pub use selector_map::{SelectorMapCache, serialize_interactable_map};
+pub use snapshot::{CaptureSnapshotResult, MaterializedDocument, REQUIRED_COMPUTED_STYLES};
 
 pub use arena::{ArenaNode, Dom, NodeId};
 pub use convert::{ConvertOptions, blocks_to_markdown, document_to_markdown};
