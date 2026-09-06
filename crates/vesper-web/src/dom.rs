@@ -138,11 +138,21 @@ fn implicit_close_for(tag: &str) -> &'static [&'static str] {
 /// Parse HTML bytes into a `Document`. Lenient: unknown entities decode
 /// literally, mismatched closers pop to their opener (or are dropped as
 /// strays), and the unclosed remainder is unwound at EOF.
+///
+/// Line endings are normalized first: the HTML5 spec treats CRLF and CR
+/// as LF everywhere, so a CRLF checkout (Windows git autocrlf rewriting
+/// fixture bytes) must not change any output byte. This is what keeps the
+/// golden corpus byte-stable across platforms (`fixtures/AGENTS.md`).
 pub fn parse(html: &str) -> Document {
+    let html = if html.contains('\r') {
+        html.replace("\r\n", "\n").replace('\r', "\n")
+    } else {
+        html.to_string()
+    };
     use quick_xml::Reader;
     use quick_xml::events::Event;
 
-    let mut reader = Reader::from_str(html);
+    let mut reader = Reader::from_str(&html);
     // PR-0 lesson 1: HTML is not XML; never abort on end-tag mismatch.
     reader.config_mut().check_end_names = false;
     reader.config_mut().trim_text(false);
@@ -554,5 +564,30 @@ mod tests {
             None
         }
         walk(&document.root, tag).unwrap_or(&document.root)
+    }
+}
+
+#[cfg(test)]
+mod crlf_tests {
+    use super::parse;
+
+    /// Platform-checkout resilience (the Windows CI failure): CRLF and CR
+    /// inputs must produce byte-identical trees to their LF form — the
+    /// HTML5 input-stream normalization.
+    #[test]
+    fn crlf_and_cr_inputs_match_lf_outputs() {
+        let lf = "<html><body><p>line one\nline two</p><pre>code\nblock</pre></body></html>";
+        let crlf = lf.replace('\n', "\r\n");
+        let cr = lf.replace('\n', "\r");
+        let a = parse(lf);
+        let b = parse(&crlf);
+        let c = parse(&cr);
+        assert_eq!(a.root.text(), b.root.text(), "CRLF must equal LF");
+        assert_eq!(a.root.text(), c.root.text(), "CR must equal LF");
+        assert_eq!(
+            format!("{:?}", a.root.children),
+            format!("{:?}", b.root.children),
+            "trees must be structurally identical"
+        );
     }
 }
