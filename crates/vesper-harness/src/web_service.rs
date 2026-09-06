@@ -94,7 +94,12 @@ impl WebService {
     /// byte-identical definitions (the cross-host parity proof).
     #[must_use]
     pub fn definitions() -> Vec<vesper_domain::ToolDefinition> {
-        let rows: [(&str, &str, &[(&str, &str, bool)]); 5] = [
+        type ToolRow = (
+            &'static str,
+            &'static str,
+            &'static [(&'static str, &'static str, bool)],
+        );
+        let rows: [ToolRow; 5] = [
             (
                 "web_fetch",
                 "Fetch one http(s) URL through the sandboxed transport and return the raw \
