@@ -409,6 +409,21 @@ fn decode_entities(text: &str) -> String {
     out
 }
 
+/// Find the first element with `tag` in document order (depth-first).
+pub fn find_first<'a>(element: &'a Element, tag: &str) -> Option<&'a Element> {
+    if element.tag == tag {
+        return Some(element);
+    }
+    for child in &element.children {
+        if let Node::Element(el) = child
+            && let Some(found) = find_first(el, tag)
+        {
+            return Some(found);
+        }
+    }
+    None
+}
+
 /// Total decoded text bytes of a document (measurement helper).
 pub fn document_text_bytes(document: &Document) -> usize {
     document.root.text().len()

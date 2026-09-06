@@ -10,8 +10,9 @@ bounded Markdown (`docs/web-oracle-extraction-prd.md`, Feature 1).
 
 - `src/dom.rs` — lenient HTML parser over `quick-xml` (tree `Document`),
   entity decoding, void-element handling, and sibling implicit-close rules.
+  `find_first` is the production element lookup (title/meta/canonical walks).
 - `src/arena.rs` — arena projection with precomputed density metrics for
-  the prune stage.
+  the prune stage; `pre_order`/`post_order`/`parent_of` traversal surface.
 - `src/strip.rs` — alpha-intent unwanted-element removal (script/style/
   noscript/svg/nav/footer/header/aside/form + hidden elements).
 - `src/density.rs` — beta's `PruningContentFilter` port: exact default
@@ -22,6 +23,11 @@ bounded Markdown (`docs/web-oracle-extraction-prd.md`, Feature 1).
   tables, fenced code, nested lists, hard breaks, inline emphasis).
 - `src/pipeline.rs` — stage composition + per-stage byte accounting
   (`DensityReport`).
+- `src/bm25.rs` — beta's `BM25ContentFilter` port: pure Rust Okapi BM25
+  (k1 1.5, b 0.75) with English stemming (`rust-stemmers`), beta's
+  priority-tag boost, default threshold 1.0, and `min_word_threshold`
+  word floor. `score_all` exposes threshold-free ranking for tests and
+  diagnostics; `filter` is the production gate.
 - `examples/gen-goldens.rs` — maintenance tool regenerating the golden
   corpus under `fixtures/web-oracle/goldens/`.
 

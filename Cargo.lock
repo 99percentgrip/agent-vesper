@@ -4206,6 +4206,8 @@ name = "vesper-web"
 version = "0.20.87"
 dependencies = [
  "quick-xml",
+ "rust-stemmers",
+ "url",
 ]
 
 [[package]]

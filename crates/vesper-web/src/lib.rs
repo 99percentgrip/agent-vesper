@@ -19,10 +19,15 @@
 #![forbid(unsafe_code)]
 
 pub mod arena;
+pub mod bm25;
 pub mod convert;
+pub mod crawl;
 pub mod density;
 pub mod dom;
+pub mod links;
+pub mod meta;
 pub mod pipeline;
+pub mod rank;
 pub mod strip;
 
 pub use arena::{ArenaNode, Dom, NodeId};

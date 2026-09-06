@@ -10,6 +10,8 @@ publish = false
 
 [dependencies]
 quick-xml.workspace = true
+rust-stemmers.workspace = true
+url.workspace = true
 
 [lints]
 workspace = true
