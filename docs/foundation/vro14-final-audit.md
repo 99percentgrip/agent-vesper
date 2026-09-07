@@ -1,6 +1,7 @@
 # VRO-14 closeout
 
-Date: 2026-09-07. Current production acceptance and release prerequisites:
+Status: COMPLETE for v1, released as `v0.20.89` on 2026-09-07.
+Verified production, platform, image and public-release evidence:
 [gap audit](vro14-gap-audit.md). Installation and operation:
 [contained web tools](../web-tools.md).
 
@@ -22,6 +23,8 @@ web route type are disclosed in the audit. No mocked action, unavailable image,
 zero-valued identity comparison, or passing pure fixture substitutes for a
 production browser acceptance run.
 
-Release readiness additionally requires successful exact-commit canonical,
-MSRV, five-target and dual-architecture driver CI before tagging. The release
-publishes the already-tested images, never a post-tag untested rebuild.
+Exact-commit canonical, MSRV, five-target and dual-architecture driver CI
+passed before tagging; all five application builds and public publication
+passed afterward. The release contains the already-tested images, not a
+post-tag untested rebuild. Registry PR #539 was updated in place and awaits
+upstream review.

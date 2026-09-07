@@ -72,11 +72,17 @@ Status: COMPLETE
   container enumeration empty. Two native image CI jobs gate public assets.
 - DOX pass updated web/config/harness/sandbox, fixture, workflow and owning
   documentation contracts. Version-only crate contracts remain unchanged.
+- Released `v0.20.89` at `5658da6eefa8a13042e938eaedccfdb7a1537ad5` after
+  exact-commit canonical/supply-chain, MSRV, five-target and both driver-image
+  jobs passed. Release run `34072500086` passed; all 16 public assets and seven
+  archive digests verified, Linux binary version smoke passed, and the exact
+  published x86_64 image passed both real-browser tests. Registry PR #539
+  updated in place at fork commit `4f62da58cc37d6c77425218cc80fdc49db26f920`.
 
 ## Outstanding acceptance
 
-- Web exact-commit platform/image CI and public release acceptance:
-  `vro14-gap-audit.md`; local acceptance alone does not authorize a tag.
+- Registry PR #539 awaits upstream review; the v0.20.89 release and web
+  implementation acceptance are complete (`vro14-gap-audit.md`).
 
 - Historical executor-stall cause is not reconstructable, but the complete source baseline is green and repeatable.
 - Product approvals listed in `decision-register.md` and `blocker-closure-report.md`.

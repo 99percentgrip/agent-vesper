@@ -1,9 +1,9 @@
 # VRO-14 production acceptance audit
 
 Date: 2026-09-07. Baseline: released `v0.20.88` / `9ff4695b`.
-Status: production repairs and local acceptance passed; exact-commit CI and
-public image publication must pass before release. No release tag is created
-on the strength of component tests alone.
+Status: COMPLETE for v1, published as `v0.20.89`. Production acceptance,
+exact-commit CI and public image publication passed. The immutable tag targets
+`5658da6eefa8a13042e938eaedccfdb7a1537ad5`; no tag preceded its required gates.
 
 ## Requirement-to-evidence map
 
@@ -69,6 +69,34 @@ stealth, uploads/download management and multi-tab orchestration remain the
 PRD's original explicit non-goals, not newly invented exclusions.
 
 ## Release acceptance
+
+All gates passed for the exact release commit:
+
+- [Canonical and supply chain](https://github.com/99percentgrip/agent-vesper/actions/runs/34052971764).
+- [MSRV 1.88](https://github.com/99percentgrip/agent-vesper/actions/runs/34052971828).
+- [Five-target foundation](https://github.com/99percentgrip/agent-vesper/actions/runs/34052971778).
+- [Native dual-architecture driver acceptance](https://github.com/99percentgrip/agent-vesper/actions/runs/34052971819).
+- [Five-bundle release and publication](https://github.com/99percentgrip/agent-vesper/actions/runs/34072500086).
+
+[v0.20.89](https://github.com/99percentgrip/agent-vesper/releases/tag/v0.20.89)
+contains all 16 expected public assets. All seven archive digests match their
+checksum files. The downloaded Linux application archive passed SHA-256;
+both hosts report `0.20.89` and the fetch helper is executable. Both public
+image-ID assets were retrieved without authentication and match the tested
+archives. The exact published x86_64 image bytes passed both real-browser
+and navigation/chunked-fetch tests locally (2 passed, 12.04 seconds).
+
+Published image configuration IDs (not registry manifest digests):
+
+- x86_64: `sha256:6de40e0b7df5c14e4921665d4426619ec669c0e4f58dc83f96cb91afcf43eb24`.
+- ARM64: `sha256:a368fbd14f869f146e078956d7a9ab8b017c405ed3480b1347c8c7de749e179a`.
+
+Registry [PR #539](https://github.com/agentclientprotocol/registry/pull/539)
+was updated in place on `agent-vesper/v0.20.51` at fork commit
+`4f62da58cc37d6c77425218cc80fdc49db26f920`. It remains open pending upstream
+review; publication is not a claim that the registry entry has merged.
+
+### Continuing release contract
 
 Required before tagging: successful canonical (including supply chain),
 MSRV, five-target foundation and native dual-architecture web-driver push

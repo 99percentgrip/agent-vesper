@@ -1,9 +1,10 @@
 # PRD — VRO-14: The Web Oracle Extraction
 
-Status: production gap repairs implemented; final acceptance and release gates
-are tracked in `docs/foundation/vro14-gap-audit.md`. Browser sessions, render
-escalation, sitemap discovery and the pinned driver build now have executable
-production paths. Deployment instructions are in `docs/web-tools.md`.
+Status: COMPLETE for VRO-14 v1, released as `v0.20.89`. Browser sessions,
+render escalation, sitemap discovery and the public pinned driver images have
+passed production acceptance and exact-commit release gates. Evidence and
+disclosed implementation choices are in `docs/foundation/vro14-gap-audit.md`;
+deployment instructions are in `docs/web-tools.md`. Original v1 non-goals remain.
 Implementation evidence lands under `docs/foundation/` per `docs/AGENTS.md`.
 
 Reference upstream (the triad), explicitly authorized as trusted data and
