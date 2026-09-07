@@ -1416,6 +1416,28 @@ mod tests {
                     && definition.execution_class == ToolExecutionClass::Network
                     && definition.harness_name.as_str() != "web_interact")
         );
+        // Frontend wrappers use ToolService directly, not just the special
+        // registry builder. Both definition and execution must reach web.
+        let names: Vec<_> = service
+            .definitions()
+            .into_iter()
+            .map(|definition| definition.harness_name.as_str().to_owned())
+            .collect();
+        assert_eq!(names.iter().filter(|name| *name == "web_fetch").count(), 1);
+        let call = vesper_domain::ToolCall {
+            id: vesper_domain::ToolCallId::new("blocked-web").unwrap(),
+            tool_id: vesper_domain::ToolId::new("web_fetch").unwrap(),
+            arguments: serde_json::json!({"url": "http://127.0.0.1/"}),
+            extensions: Default::default(),
+        };
+        let error = ToolService::execute(&service, &call, &context)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("egress") || error.contains("private") || error.contains("loopback"),
+            "must reach the real web egress gate: {error}"
+        );
     }
 
     #[tokio::test]

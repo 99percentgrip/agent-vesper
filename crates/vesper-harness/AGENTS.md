@@ -12,6 +12,23 @@ Z.ai and Playwright MCP server descriptors.
 
 ## Ownership
 
+- `src/web_settings.rs` owns explicit workspace web-setting saves and shared
+  `/web` controls. Atomic private JSON snapshots preserve existing TOML and
+  its initial allowlist/budget values. Read/status/cancel never create state.
+  Docker/Podman discovery honors the operator override, runs only in explicit
+  settings/setup flows, has a five-second timeout, and normalizes bare Podman
+  IDs to `sha256:`. `setup_driver` reads only the executable-adjacent bundle
+  (or explicit `AGENT_VESPER_BUNDLE_DIR`), verifies SHA-256 before importing,
+  caps import at 180 seconds, and verifies the exact bundled image ID after
+  import. This explicit installer/settings operation is the exception to
+  workspace-root I/O confinement; it is never a model-facing tool. No image
+  download or container launch occurs. Both hosts expose `--setup-web-driver`
+  before provider boot and `/web setup` for workspace selection. Web runtime
+  CLI selection also finds Podman when Docker is absent. No sandbox or
+  private-address protection may be switched off by these controls.
+  An enabled runtime without an explicit image override uses the bundled
+  immutable image ID; activation never requires copying a digest by hand.
+
 - `src/lib.rs` owns the shared service, bounded durable-store wiring, and
   provider-worker delegation boundary.
 - Frontends own provider selection, approval UI, ACP/TUI protocol mapping, and
@@ -111,9 +128,10 @@ Z.ai and Playwright MCP server descriptors.
 - `src/web_service.rs` (VRO-14 PR-5) hosts the five opt-in web tools
   (`web_fetch`, `web_scrape`, `web_map`, `web_crawl`, `web_interact`) as
   `ToolExecutionClass::Network` with `defer_loading = true`. Both hosts
-  attach them through the one shared construction site
-  (`HarnessToolService::build_default_registry` + `with_web_scope`), so
-  TUI/ACP parity is structural. With no `[web]` scope (or
+  explicitly attach the boot scope through `with_web_scope`. The hosted
+  service itself advertises and dispatches web tools so direct TUI wrappers,
+  ACP registries, discovery, and worker services all reach the same executor.
+  With no effective web scope (or
   `enabled = false`) zero web tools register and the registry path is
   byte-identical to the pre-web build. The process-global web holder
   (`web_service::holder`) mirrors the firewall/sandbox holders.
@@ -137,6 +155,8 @@ Z.ai and Playwright MCP server descriptors.
 
 ## Verification
 
+- Driver CLI fixtures use a fresh immutable executable per case; tests must
+  not rewrite a just-executed inode while exercising process inspection.
 - Run `cargo test -p vesper-harness`.
 - Run `cargo test -p vesper-harness --test vro13_e2e` (VRO-13 PR-8
   cross-feature fixture: watcher fire → bounded turn → composed

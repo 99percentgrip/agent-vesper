@@ -62,6 +62,12 @@ with each release.
 - Uninstallers never remove provider credentials. OS-keyring entries and the
   private-vault fallback are outside the installer-owned artifact set.
 - The installers call both binaries with `--version` to confirm success.
+- Complete packages include `web-driver/` (archive, checksum, immutable ID).
+  Both installers call the bundled ACP binary's `--setup-web-driver` to
+  verify/import it. Missing or stopped Docker/Podman leaves the archive
+  installed and gives the in-app setup/repair route; it must not require
+  users to search for driver assets. Setup never enables workspace web tools.
+  Older packages without the archive receive an explicit upgrade notice.
 - POSIX upgrades remove legacy launcher symlinks before writing replacement
   launchers; launcher creation must never follow a symlink into the freshly
   installed bundle and overwrite its binaries.

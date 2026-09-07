@@ -21,7 +21,8 @@ Own durable project documentation and evidence-backed engineering records.
 - Root documentation files own current architecture, workspace, dependency,
   security, contribution, migration status, and full-harness parity evidence.
 - `web-tools.md` owns web-driver installation, immutable image identity,
-  opt-in configuration, operation bounds, and deployment troubleshooting.
+  native Settings → Web tools and ACP `/web` activation, advanced opt-in
+  configuration, operation bounds, and deployment troubleshooting.
 - Root PRD files (`*-prd.md`) own accepted phased requirement documents
   (e.g. `agent-vesper-reasoning-orchestrator-prd.md`,
   `provider-capability-gating-prd.md`, `qm-extraction-prd.md`,

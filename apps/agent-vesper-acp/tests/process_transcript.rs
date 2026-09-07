@@ -22,6 +22,30 @@ use support::critical_environment_keys;
 const CANARY: &str = "vesper-stage4-secret-canary";
 
 #[test]
+fn driver_setup_preflight_exits_without_provider_or_workspace_state() {
+    let root = tempfile::tempdir().unwrap();
+    let mut command = Command::new(env!("CARGO_BIN_EXE_agent-vesper-acp"));
+    command
+        .env_clear()
+        .current_dir(root.path())
+        .env("AGENT_VESPER_BUNDLE_DIR", root.path())
+        .arg("--setup-web-driver");
+    for key in critical_environment_keys() {
+        if let Ok(value) = std::env::var(key) {
+            command.env(key, value);
+        }
+    }
+    let output = command.output().unwrap();
+    assert!(!output.status.success());
+    assert!(
+        output.stdout.is_empty(),
+        "setup must not start ACP or pollute stdout"
+    );
+    assert!(String::from_utf8_lossy(&output.stderr).contains("driver is missing"));
+    assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
+}
+
+#[test]
 fn stdio_transcript_reaches_real_glm_adapter_with_protocol_pure_stdout() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
@@ -146,9 +170,9 @@ fn stdio_transcript_reaches_real_glm_adapter_with_protocol_pure_stdout() {
         advertisement["params"]["update"]["availableCommands"]
             .as_array()
             .map(|commands| commands.len()),
-        Some(45),
+        Some(46),
         "the post-response advertisement carries frozen plus host-parity commands \
-         (28 frozen + 17 host-parity, including /skill)"
+         (28 frozen + 18 host-parity, including /skill and /web)"
     );
 
     send(
@@ -378,7 +402,7 @@ fn empty_prompt_and_slash_commands_never_dispatch_provider() {
             break;
         }
     }
-    // The production composition appends 13 implemented host-parity commands
+    // The production composition appends 18 implemented host-parity commands
     // after the 28 frozen entries and advertises the combined catalog once.
     assert_eq!(
         advertisements.len(),
@@ -391,10 +415,11 @@ fn empty_prompt_and_slash_commands_never_dispatch_provider() {
         .iter()
         .map(|command| command["name"].as_str().unwrap())
         .collect();
-    // 28 frozen oracle entries + 17 host-parity extensions, including the
-    // explicit /skill router. The catalog is advertised once, in order, first
+    // 28 frozen oracle entries + 18 host-parity extensions, including the
+    // explicit /skill router and /web settings. The catalog is advertised once, in order, first
     // help → last watch.
-    assert_eq!(advertised.len(), 45);
+    assert_eq!(advertised.len(), 46);
+    assert!(advertised.contains(&"web"));
     assert_eq!(advertised_first_and_last(&advertised), ("help", "watch"));
     send(
         &mut stdin,
@@ -601,6 +626,19 @@ fn host_owned_slash_commands_reach_real_stores_with_tui_parity() {
     assert_eq!(mcp, "mcp: (no servers configured)");
     let plugins = run_command("/plugins");
     assert_eq!(plugins, "plugins: (no plugins loaded)");
+
+    // Explicit web settings write only to the session workspace, without
+    // credentials or provider dispatch; status itself must remain read-only.
+    let settings_path = workspace.join(".agent-vesper/web-settings.json");
+    assert!(run_command("/web status").contains("enabled=false"));
+    assert!(!settings_path.exists());
+    assert!(run_command("/web enabled on").contains("Restart"));
+    assert!(run_command("/web render on").contains("saved"));
+    let saved: Value = serde_json::from_slice(&std::fs::read(&settings_path).unwrap()).unwrap();
+    assert_eq!(saved["enabled"], true);
+    assert_eq!(saved["render_enabled"], true);
+    assert!(run_command("/web enabled off").contains("saved"));
+    assert!(run_command("/web status").contains("enabled=false"));
 
     drop(stdin);
     wait_for_exit(&mut child);

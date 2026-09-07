@@ -146,6 +146,10 @@ pub struct SessionState {
     /// Whether the binary should open the LM Studio provider settings screen
     /// (`/lmstudio`) so the user can adjust the LAN/localhost endpoint.
     pub pending_lmstudio_settings: bool,
+    /// Open the workspace web controls at an idle boundary.
+    pub pending_web_settings: bool,
+    /// Explicit shared web setting operation.
+    pub pending_web_command: Option<String>,
     /// Whether the binary should open the provider selection modal.
     pub pending_provider_switch: bool,
     /// Manual conversation scroll expressed as **lines up from the bottom**.
@@ -459,11 +463,16 @@ fn apply_outcome(
         last_compaction: _,
         pending_reauth,
         pending_lmstudio_settings,
+        pending_web_settings,
+        pending_web_command,
         pending_provider_switch,
         conversation_manual_scroll: _,
         permission_modal_focus: _,
     } = state;
     match outcome {
+        CommandOutcome::WebSettings(argument) => {
+            *pending_web_command = Some(argument);
+        }
         CommandOutcome::Error(message) => {
             *status = Some(message);
         }
@@ -681,6 +690,10 @@ fn apply_outcome(
             ));
         }
         CommandOutcome::Ui(action) => match action {
+            UiAction::OpenWebSettings => {
+                *pending_web_settings = true;
+                *status = Some("Opening Web tools settings…".into());
+            }
             UiAction::OpenSettings => {
                 *status = Some("Select a setting, then choose its value.".into());
             }

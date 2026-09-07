@@ -57,10 +57,11 @@ pub enum WebConfigError {
 }
 
 /// One parsed `[web]` scope configuration.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub struct WebScopeConfig {
     /// Whether the web tools are registered at all. The only path to
-    /// `true` is an explicit `enabled = true` in the project config.
+    /// `true` is an explicit project setting, through the app or TOML.
     pub enabled: bool,
     /// Separate opt-in for browser interaction; unavailable drivers refuse.
     pub interact_enabled: bool,
@@ -120,6 +121,34 @@ impl WebScopeConfig {
 /// - [`WebConfigError::DuplicateTable`] on a second `[web]`.
 /// - [`WebConfigError::MalformedValue`] on an unparseable known value.
 pub fn read_web_scope(root: &Path) -> Result<WebScopeConfig, WebConfigError> {
+    let settings = root.join(".agent-vesper/web-settings.json");
+    match std::fs::read(&settings) {
+        Ok(bytes) => {
+            let config: WebScopeConfig =
+                serde_json::from_slice(&bytes).map_err(|error| WebConfigError::Read {
+                    path: settings.display().to_string(),
+                    reason: error.to_string(),
+                })?;
+            if config
+                .driver_image
+                .as_deref()
+                .is_some_and(|image| !is_digest_pinned_image(image))
+            {
+                return Err(WebConfigError::MalformedValue {
+                    key: "driver.image".into(),
+                    value: "image must be digest-pinned".into(),
+                });
+            }
+            return Ok(config);
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(WebConfigError::Read {
+                path: settings.display().to_string(),
+                reason: error.to_string(),
+            });
+        }
+    }
     let path = root.join(".agent-vesper").join("config.toml");
     let text = match std::fs::read_to_string(&path) {
         Ok(text) => text,
@@ -366,6 +395,22 @@ mod tests {
     //! duplicates, and cross-table isolation.
 
     use super::*;
+
+    #[test]
+    fn malformed_saved_settings_do_not_fall_back_to_enabled_toml() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join(".agent-vesper");
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::write(dir.join("config.toml"), "[web]\nenabled = true\n").unwrap();
+        for body in [
+            "{",
+            "{\"driver_image\":\"image:latest\"}",
+            "{\"enabled\":\"yes\"}",
+        ] {
+            std::fs::write(dir.join("web-settings.json"), body).unwrap();
+            assert!(read_web_scope(root.path()).is_err());
+        }
+    }
 
     #[test]
     fn complete_nested_web_config_and_immutable_images() {

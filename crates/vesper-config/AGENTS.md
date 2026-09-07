@@ -20,6 +20,10 @@ configuration, provider envelopes, secret references, and persistence ports.
   deliberately dependency-free TOML-subset readers (no `toml` crate —
   see their module docs), missing files yield the inactive default, and
   unknown keys are ignored for forward compatibility.
+- An explicitly saved `.agent-vesper/web-settings.json` is the complete web
+  settings snapshot and takes precedence over `[web]` TOML. Missing snapshots
+  fall back to TOML; malformed snapshots fail closed. This crate only reads
+  them; explicit atomic persistence belongs to `vesper-harness::web_settings`.
 
 ## Verification
 

@@ -64,9 +64,10 @@ impl WebRuntime {
             .driver_image
             .clone()
             .or_else(|| std::env::var("VESPER_DOCKER_IMAGE").ok())
+            .or_else(|| crate::web_settings::bundled_image_id().ok())
             .ok_or_else(|| {
                 FetchError::Sandbox(
-                    "configure [web.driver] image with the published image@sha256 digest".into(),
+                    "select Set up / repair driver in Settings > Web tools (ACP: /web setup), save, and restart the host".into(),
                 )
             })?;
         if !vesper_config::is_digest_pinned_image(&image) {
@@ -77,6 +78,7 @@ impl WebRuntime {
         let backend: Arc<dyn vesper_sandbox::SandboxBackend> = Arc::new(
             vesper_sandbox::DockerBackend::new(vesper_sandbox::DockerSandboxConfig {
                 network: true,
+                docker_bin: Some(crate::web_settings::container_cli()),
                 image: Some(image),
                 ..Default::default()
             }),

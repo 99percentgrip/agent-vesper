@@ -37,8 +37,10 @@ pub mod lmstudio_hub;
 pub mod lmstudio_provider;
 pub mod markdown;
 pub mod plan_mode;
+pub mod provider_hub;
 pub mod superpowers;
 pub mod ui;
+pub mod web_hub;
 
 pub use auth_hub::{
     AuthHubAction, AuthHubState, AuthProvider, StartupRoute, render_auth_hub, startup_route,

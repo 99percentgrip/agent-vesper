@@ -6,6 +6,13 @@ use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    if let Some(success) = vesper_harness::web_settings::handle_setup_flag().await {
+        return if success {
+            ExitCode::SUCCESS
+        } else {
+            ExitCode::FAILURE
+        };
+    }
     // Meta flags (`--version`/`--help`) are handled BEFORE the ACP server
     // boots so the installer's `agent-vesper-acp --version` check works and
     // never tries to start the stdio protocol. Mirrors the original Python
@@ -122,6 +129,9 @@ fn print_help() {
     );
     eprintln!("    AGENT_VESPER_VRO_ENABLED=1           Opt in to reasoning orchestration (VRO)");
     eprintln!("    --setup                               Store a Z.ai API key without printing it");
+    eprintln!(
+        "    --setup-web-driver                    Verify/import the bundled web driver (no provider calls)"
+    );
     eprintln!("    --check-auth                          Check configured Z.ai credentials");
 }
 

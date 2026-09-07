@@ -18,9 +18,13 @@ platform assumptions on hosts unavailable locally.
   already have successful `push` runs for `ci.yml`, `msrv.yml`, and
   `platform-foundation.yml`, and `web-driver.yml`. Push the version commit to
   `main`, wait for all four workflows to pass, then create/push its release tag.
-- Release archives include `vesper-web-fetch` beside ACP and TUI; both hosts
-  build with their existing Docker feature. Browser/image availability remains
-  an explicit runtime prerequisite, not an archive capability claim.
+- Release archives include `vesper-web-fetch` beside ACP and TUI, plus the
+  matching Linux-architecture CI-tested image under `web-driver/` as
+  `image.tar.gz`, `image.sha256`, and `image-id`. Each matrix job downloads
+  the successful exact-commit driver artifact selected by the release gate,
+  verifies its hash before packaging, and never rebuilds it. Both hosts build
+  with their Docker feature. Docker/Podman itself remains a host prerequisite;
+  installers and Settings import the bundled image without enabling web access.
 - The default toolchain is pinned to Rust 1.95.0 via `rust-toolchain.toml`
   (with `clippy` and `rustfmt` components); MSRV 1.88.0 is enforced
   independently in `msrv.yml` and the spike workflows.

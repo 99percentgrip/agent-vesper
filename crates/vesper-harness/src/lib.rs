@@ -5,6 +5,7 @@ pub mod sandbox_backend;
 pub mod scope_holder;
 mod web_runtime;
 pub mod web_service;
+pub mod web_settings;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -284,12 +285,7 @@ async fn execute_extended_tui_tool(
                     reason: "mode must be `bm25` or `regex`".into(),
                 });
             }
-            let mut definitions = worker_service.definitions();
-            if let Some(scope) = &worker_service.web {
-                definitions.extend(crate::web_service::WebService::scoped_definitions(
-                    scope.scope(),
-                ));
-            }
+            let definitions = worker_service.definitions();
             let mut matches = if mode == "regex" {
                 if intent.chars().count() > 200 {
                     return Err(vesper_agent::ToolError::InvalidArguments {
@@ -2516,15 +2512,8 @@ impl HarnessToolService {
         let plugin_root = self.plugin_root.clone();
         let hosted: Arc<dyn vesper_agent::ToolService> = Arc::clone(&self) as _;
         let registry = ToolRegistry::parity_default().with_service(hosted);
-        // VRO-14 PR-5: both hosts share this one construction site, so the
-        // web tools (and their deferred-loading schemas) are attached — or
-        // omitted — identically in TUI and ACP by construction.
-        let registry = match &self.web {
-            Some(service) => {
-                registry.with_service(Arc::clone(service) as Arc<dyn vesper_agent::ToolService>)
-            }
-            None => registry,
-        };
+        // The hosted service includes and routes its scoped web tools, also
+        // when wrapped by a frontend's composition-specific tool service.
         registry.with_gateway(
             MCP_GATEWAY_PREFIX,
             Arc::new(McpGatewayExecutor::new(plugin_root)),
@@ -2953,12 +2942,18 @@ impl vesper_agent::ToolService for HarnessToolService {
                 ],
             ),
         ];
-        definitions
+        let mut definitions: Vec<_> = definitions
             .into_iter()
             .map(|(name, description, class, properties)| {
                 vesper_agent::schema_definition(name, description, class, properties)
             })
-            .collect()
+            .collect();
+        if let Some(web) = &self.web {
+            definitions.extend(crate::web_service::WebService::scoped_definitions(
+                web.scope(),
+            ));
+        }
+        definitions
     }
 
     fn execute<'a>(
@@ -2967,6 +2962,16 @@ impl vesper_agent::ToolService for HarnessToolService {
         context: &'a vesper_agent::ToolContext,
     ) -> vesper_agent::ToolFuture<'a, Result<vesper_agent::ToolResult, vesper_agent::ToolError>>
     {
+        if crate::web_service::WEB_TOOL_NAMES.contains(&call.tool_id.as_str()) {
+            if let Some(web) = &self.web {
+                return vesper_agent::ToolService::execute(web.as_ref(), call, context);
+            }
+            return Box::pin(async {
+                Err(vesper_agent::ToolError::Failed(
+                    "Web tools are disabled.".into(),
+                ))
+            });
+        }
         let stores = Arc::clone(&self.stores);
         let core = Arc::clone(&self.core);
         let cron_root = self.cron_root.clone();

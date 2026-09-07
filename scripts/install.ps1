@@ -112,6 +112,23 @@ try {
     Write-Host "Installed Agent Vesper (${installedVersion}; ${tuiVersion}):"
     Write-Host "  $launcher"
     Write-Host "  $tuiLauncher"
+    if (Test-Path -LiteralPath (Join-Path $bundle "web-driver\image.tar.gz") -PathType Leaf) {
+        Write-Host "Setting up bundled web driver..."
+        # The setup CLI writes safe diagnostics to stderr, including success.
+        # Windows PowerShell 5.1 must not turn that stream into a fatal error.
+        $driverErrorPreference = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = "Continue"
+            & (Join-Path $bundle "agent-vesper-acp.exe") --setup-web-driver 2>&1 | ForEach-Object { Write-Host "$_" }
+        } finally {
+            $ErrorActionPreference = $driverErrorPreference
+        }
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "Web driver is included. Start Docker/Podman with Linux containers, then use Settings > Web tools > Set up / repair driver."
+        }
+    } else {
+        Write-Warning "This older release has no bundled web driver; upgrade to a complete driver-bundled release."
+    }
     Write-Host ""
     Write-Host "Next:"
     Write-Host "  agent-vesper-tui                  (launch; Auth Hub opens if needed)"

@@ -112,13 +112,16 @@ where
             Arc::clone(&providers),
             agent_config.clone(),
         ));
-        let hosted = Arc::new(HarnessToolService::new_with_checkpoint_gate(
-            Arc::new(MemoryStores::open_default()),
-            checkpoint_gate().unwrap_or_default(),
-            mcp_root_path(),
-            Some(worker_factory),
-            checkpoint_gate().is_some(),
-        ));
+        let hosted = Arc::new(
+            HarnessToolService::new_with_checkpoint_gate(
+                Arc::new(MemoryStores::open_default()),
+                checkpoint_gate().unwrap_or_default(),
+                mcp_root_path(),
+                Some(worker_factory),
+                checkpoint_gate().is_some(),
+            )
+            .with_web_scope(vesper_harness::web_service::holder::shared()),
+        );
         let engine = Arc::new(AcpHarnessEngine::new(
             Arc::clone(&providers),
             agent_config,
@@ -1018,6 +1021,14 @@ impl AcpHarnessEngine {
                 None => (rest, ""),
             };
             let lowered = raw_name.to_ascii_lowercase();
+            if lowered == "web" {
+                let root = workspace_root_path(&request.workspace_roots);
+                return slash_result(
+                    vesper_harness::web_settings::command(&root, raw_argument)
+                        .await
+                        .unwrap_or_else(|error| error),
+                );
+            }
             if lowered == "skill" {
                 return match vesper_domain::skill_workflow_prompt(raw_argument) {
                     Ok(prompt) => SlashFlow::Workflow(prompt),
@@ -2448,13 +2459,16 @@ pub async fn run_multi_provider(initial: &str) -> Result<(), ()> {
             Arc::clone(&providers),
             agent_config.clone(),
         ));
-        let hosted = Arc::new(HarnessToolService::new_with_checkpoint_gate(
-            Arc::new(MemoryStores::open_default()),
-            checkpoint_gate().unwrap_or_default(),
-            mcp_root_path(),
-            Some(worker_factory),
-            checkpoint_gate().is_some(),
-        ));
+        let hosted = Arc::new(
+            HarnessToolService::new_with_checkpoint_gate(
+                Arc::new(MemoryStores::open_default()),
+                checkpoint_gate().unwrap_or_default(),
+                mcp_root_path(),
+                Some(worker_factory),
+                checkpoint_gate().is_some(),
+            )
+            .with_web_scope(vesper_harness::web_service::holder::shared()),
+        );
         let engine = Arc::new(AcpHarnessEngine::new(
             Arc::clone(&providers),
             agent_config,

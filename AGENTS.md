@@ -78,6 +78,15 @@ Default section order:
 
 When the user requests a durable behavior change, record it here or in the relevant child AGENTS.md
 
+- Feature activation belongs in native `/settings` controls, including
+  Settings → Web tools with persisted on/off choices. Manual configuration
+  file editing must not be the normal activation workflow.
+- Required web-driver images belong in the installation package. Installers
+  and native Settings setup/repair must handle their verified import; users
+  must not have to locate separate driver release assets.
+- Provider selection belongs in Settings and uses the same restrained,
+  bordered Save/Cancel menu style as Web tools, not a separate legacy picker.
+
 ## Project Contracts
 
 - The frozen Python source at `/home/alex/Projects/Native GLM-5.2 Provider`

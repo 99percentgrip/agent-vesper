@@ -16,17 +16,17 @@ serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 url.workspace = true
-vesper-config = { path = "../vesper-config", version = "=0.20.89" }
-vesper-auth = { path = "../vesper-auth", version = "=0.20.89" }
-vesper-domain = { path = "../vesper-domain", version = "=0.20.89" }
-vesper-provider = { path = "../vesper-provider", version = "=0.20.89" }
-vesper-security = { path = "../vesper-security", version = "=0.20.89" }
+vesper-config = { path = "../vesper-config", version = "=0.20.90" }
+vesper-auth = { path = "../vesper-auth", version = "=0.20.90" }
+vesper-domain = { path = "../vesper-domain", version = "=0.20.90" }
+vesper-provider = { path = "../vesper-provider", version = "=0.20.90" }
+vesper-security = { path = "../vesper-security", version = "=0.20.90" }
 
 [dev-dependencies]
 futures-util.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["io-util", "macros", "net", "test-util"] }
-vesper-testkit = { path = "../vesper-testkit", version = "=0.20.89" }
+vesper-testkit = { path = "../vesper-testkit", version = "=0.20.90" }
 
 [lints]
 workspace = true

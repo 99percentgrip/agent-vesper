@@ -27,11 +27,15 @@ jobs:
   release-gate:
     name: Verify exact-commit CI
     runs-on: ubuntu-24.04
+    outputs:
+      driver-run: ${{ steps.validation.outputs.driver-run }}
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
       - name: Require successful main validation for release commit
+        id: validation
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -63,6 +67,9 @@ jobs:
           require_success msrv.yml
           require_success platform-foundation.yml
           require_success web-driver.yml
+          driver_run="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/web-driver.yml/runs" -f head_sha="${release_commit}" -f event=push --jq '[.workflow_runs[] | select(.conclusion == "success")][0].id')"
+          test "$driver_run" != null
+          echo "driver-run=$driver_run" >> "$GITHUB_OUTPUT"
 
   build:
     name: Build ${{ matrix.label }}
@@ -77,29 +84,59 @@ jobs:
             runner: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
             asset: agent-vesper-acp-linux-x86_64.tar.gz
+            driver: linux-x86_64
             platform: unix
           - label: linux-aarch64
             runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             asset: agent-vesper-acp-linux-aarch64.tar.gz
+            driver: linux-aarch64
             platform: unix
           - label: darwin-x86_64
             runner: macos-15-intel
             target: x86_64-apple-darwin
             asset: agent-vesper-acp-darwin-x86_64.tar.gz
+            driver: linux-x86_64
             platform: unix
           - label: darwin-aarch64
             runner: macos-15
             target: aarch64-apple-darwin
             asset: agent-vesper-acp-darwin-aarch64.tar.gz
+            driver: linux-aarch64
             platform: unix
           - label: windows-x86_64
             runner: windows-2025
             target: x86_64-pc-windows-msvc
             asset: agent-vesper-acp-windows-x86_64.zip
+            driver: linux-x86_64
             platform: windows
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
+      - name: Download exact-commit tested bundled driver
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ needs.release-gate.outputs.driver-run }}
+          name: web-driver-${{ matrix.driver }}
+          path: ${{ runner.temp }}/web-driver-assets
+      - name: Verify and stage bundled driver
+        shell: bash
+        run: |
+          source="$RUNNER_TEMP/web-driver-assets"
+          driver="$RUNNER_TEMP/agent-vesper-acp/web-driver"
+          archive="vesper-web-driver-${{ matrix.driver }}.tar.gz"
+          cd "$source"
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum --check "$archive.sha256"
+          else
+            shasum -a 256 --check "$archive.sha256"
+          fi
+          mkdir -p "$driver"
+          cp "$archive" "$driver/image.tar.gz"
+          cp "$archive.sha256" "$driver/image.sha256"
+          cp "vesper-web-driver-${{ matrix.driver }}.image-id" "$driver/image-id"
       - name: Install pinned Rust toolchain
         shell: bash
         run: rustup toolchain install 1.95.0 --profile minimal --target "${{ matrix.target }}"
@@ -159,6 +196,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
       - name: Download release assets
         uses: actions/download-artifact@v4
         with:

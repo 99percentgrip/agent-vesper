@@ -167,9 +167,23 @@ transport, stderr-only tracing, and orderly shutdown.
 
 ## TUI↔ACP Parity Contract
 
+Settings → Providers is a terminal-specific presentation of the existing
+provider selection capability. ACP keeps its native `provider` configuration
+control and next-turn switching; it does not render TUI Save/Cancel modals or
+inherit the TUI's restart-only preference workflow.
+
 The opt-in web surface uses the shared harness web service and its contained
 fetch/render/browser runtime. No ACP-specific driver or network fallback
 exists; deployment and image prerequisites are in `docs/web-tools.md`.
+
+`/web status|detect|setup|<enabled|fetch|render|interact|robots> <on|off>` uses the
+shared web-settings service against the request's primary workspace. Saves
+are explicit user actions, never startup writes or provider tool calls.
+Settings require a host restart and do not change an in-flight turn, so this
+command is concurrent-safe. The TUI-only settings modal has the same controls.
+`--setup-web-driver` is an explicit installer preflight before provider or ACP
+boot. It verifies/imports the bundled image, writes diagnostics only to stderr,
+and does not create workspace state or enable web tools.
 
 Every host-agnostic capability shipped in the TUI MUST also be wired here
 (root `AGENTS.md` Project Contracts). Current ledger:
@@ -187,7 +201,7 @@ Every host-agnostic capability shipped in the TUI MUST also be wired here
   `/embedding clear`), the shared `cognitive_capability_instruction`, and
   the VRO-7 procedural-memory learning sink. Changes to this module MUST
   be evaluated in the TUI composition (and vice versa). The model-facing
-  instruction and 12-command host-parity catalog are shared foundation
+  instruction and host-parity extension catalog are shared foundation
   constants with registration/advertisement tests.
 - **VRO reasoning orchestration**: opt-in via `AGENT_VESPER_VRO_ENABLED=1`
   (TUI parity). `should_orchestrate` routes non-Direct, non-ReAct profiles
@@ -268,7 +282,7 @@ slash response cannot erase the still-running implementation turn.
 later turns, and defaults to disabled while the hard safety ceiling remains.
 Regression suite:
 `apps/agent-vesper-acp/tests/midturn_slash_grace.rs` (real binary, slow
-loopback provider). Adapter unit tests partition all 42 advertised commands
+loopback provider). Adapter unit tests partition all 46 advertised commands
 into exactly one always-safe, argument-dependent, or interrupting class.
 
 ## Verification

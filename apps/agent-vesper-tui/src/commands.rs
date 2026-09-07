@@ -133,6 +133,8 @@ pub enum CommandOutcome {
     /// with the honest edit-config-and-restart step rather than a runtime
     /// toggle, mirroring the ACP host byte-for-byte.
     SandboxControl(SandboxControl),
+    /// Shared text equivalent of the Web tools settings panel.
+    WebSettings(String),
 
     // === Tier C Phase 7 (ADR 0010) — workflow prompts ===
     /// A workflow command built a prompt that should drive a background
@@ -308,12 +310,14 @@ impl InterviewQuestionLimit {
 /// Terminal projections which do not mutate provider/domain state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UiAction {
+    /// Open workspace web-tool toggles.
+    OpenWebSettings,
     OpenSettings,
     /// Re-open the provider authentication screen (provider-routed `/auth`).
     OpenAuth,
     /// Open the LM Studio provider settings screen (adjust LAN/localhost URL + model).
     OpenLmStudioSettings,
-    /// Open the provider selection modal (arrow-key picker).
+    /// Open Settings → Providers (draft selection with explicit Save/Cancel).
     OpenProviderSwitcher,
     ToggleReasoning,
     ToggleTasks,
@@ -1067,6 +1071,14 @@ impl CommandRegistry {
                 SessionConfigKey::MixtureMode,
                 &["off", "enabled"],
             ),
+            "settings" if argument.trim() == "web" => CommandOutcome::Ui(UiAction::OpenWebSettings),
+            "settings" if matches!(argument.trim(), "provider" | "providers") => {
+                CommandOutcome::Ui(UiAction::OpenProviderSwitcher)
+            }
+            "web" if !argument.trim().is_empty() => {
+                CommandOutcome::WebSettings(argument.trim().into())
+            }
+            "web" => CommandOutcome::Ui(UiAction::OpenWebSettings),
             "settings" => CommandOutcome::Ui(UiAction::OpenSettings),
             "auth" => CommandOutcome::Ui(UiAction::OpenAuth),
             "lmstudio" => CommandOutcome::Ui(UiAction::OpenLmStudioSettings),
@@ -1700,6 +1712,10 @@ impl CommandRegistry {
         buffer.push_str("  /auxiliary         select the auxiliary model\n");
         buffer.push_str("  /mixture           toggle reference review\n");
         buffer.push_str("  /settings          browse all settings without typing values\n");
+        buffer.push_str(
+            "  /settings providers  select a provider with Save/Cancel; /provider is a shortcut\n",
+        );
+        buffer.push_str("  /web               open Web tools on/off settings\n");
         buffer.push_str("  /theme             select a native terminal theme\n");
         buffer.push_str("  /screen-reader     toggle the plain accessibility layout\n");
         buffer.push_str("  /native-mouse      release or recapture terminal mouse input\n");
@@ -2009,6 +2025,7 @@ const ORACLE_COMMAND_SURFACE: &[OracleCommandEntry] = &[
     OracleCommandEntry { name: "auxiliary",         description: "Change the auxiliary model" },
     OracleCommandEntry { name: "mixture",           description: "Enable or disable Mixture of Agents" },
     OracleCommandEntry { name: "settings",          description: "Open all live session settings" },
+    OracleCommandEntry { name: "web",               description: "Configure Web tools on/off settings" },
     OracleCommandEntry { name: "reasoning",         description: "Override the VRO reasoning mode: set mode=<auto|fast|balanced|deep|maximum|off> | clear" },
     OracleCommandEntry { name: "api-plan",          description: "Alias for /plan" },
     OracleCommandEntry { name: "endpoint",          description: "Alias for /plan" },
@@ -2641,7 +2658,7 @@ mod tests {
         );
         assert_eq!(
             registry.names().len(),
-            100,
+            101,
             "the complete oracle-compatible and Vesper-native command surface must stay registered"
         );
     }
@@ -3035,6 +3052,26 @@ mod tests {
             CommandOutcome::ContextView(ViewKind::MaxIterations)
         );
         assert_eq!(resolve_bare("usage"), CommandOutcome::ProviderUsage);
+    }
+
+    #[test]
+    fn web_settings_routes_to_native_panel_or_shared_text_controls() {
+        for text in ["/provider", "/settings provider", "/settings providers"] {
+            assert_eq!(
+                resolve_bare_intent(&CommandIntent::parse(text)),
+                CommandOutcome::Ui(UiAction::OpenProviderSwitcher)
+            );
+        }
+        for text in ["/web", "/settings web"] {
+            assert_eq!(
+                resolve_bare_intent(&CommandIntent::parse(text)),
+                CommandOutcome::Ui(UiAction::OpenWebSettings)
+            );
+        }
+        assert_eq!(
+            resolve_bare_intent(&CommandIntent::parse("/web render on")),
+            CommandOutcome::WebSettings("render on".into())
+        );
     }
 
     #[test]

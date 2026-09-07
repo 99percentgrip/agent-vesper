@@ -29,7 +29,8 @@ Orchestrator (VRO) Phase VRO-1 domain contracts.
   `fixtures/acp/slash-command`) plus the pure case-insensitive
   `parse_slash_command` parser. It is plain data — no stores, no I/O;
   store-backed execution lives in `vesper-harness`. It also owns the separate
-  shared host-parity extension descriptors, including ADR 0024 `/skill`, so
+  shared host-parity extension descriptors, including ADR 0024 `/skill` and
+  workspace `/web` settings, so
   ACP advertisement and TUI registration are checked against one foundation
   catalog. The ACP oracle catalog is a
   distinct oracle surface from the TUI's `LOCAL_COMMANDS` palette (79+3

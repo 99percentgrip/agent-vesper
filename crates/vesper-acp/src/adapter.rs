@@ -346,6 +346,7 @@ const CONCURRENT_SAFE_SLASH_COMMANDS: &[&str] = &[
     "journey",
     "firewall",
     "sandbox",
+    "web",
     // Headless daemon health is a read-only report; answering it can never
     // disturb a running turn (VRO-13 PR-7).
     "daemon",
@@ -1365,7 +1366,7 @@ mod command_catalog_tests {
     fn frozen_catalog_stays_exact_and_extensions_append() {
         assert_eq!(catalog_commands(&[]).len(), 28);
         let commands = catalog_commands(&vesper_domain::HOST_PARITY_SLASH_COMMANDS);
-        assert_eq!(commands.len(), 45);
+        assert_eq!(commands.len(), 46);
         let json = serde_json::to_value(commands).unwrap();
         let names: Vec<_> = json
             .as_array()

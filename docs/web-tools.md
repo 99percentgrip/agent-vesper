@@ -4,7 +4,53 @@ Both TUI and ACP use the shared, default-off web service. Enable it only in
 trusted workspace configuration. Network permission approval still applies;
 configuration and tool discovery never grant approval.
 
+## Activate from the app
+
+In the TUI, open `/settings`, select **Web tools**, then use Up/Down and
+Enter/Space to switch web access, fetching, JavaScript rendering, browser
+interaction, and robots.txt handling on or off. `/web` and `/settings web`
+also open this screen. The screen detects the installed driver automatically.
+If setup is needed, choose **Set up / repair driver** to import the image
+included in your installation, then **Save settings** (or S). Esc cancels
+without writing. Restart the host to apply saved choices.
+
+ACP exposes the equivalent `/web status`, `/web detect`, `/web setup`, and
+`/web <enabled|fetch|render|interact|robots> <on|off>` commands. For example,
+`/web enabled on` enables the saved master switch. Configuration does not
+grant permission for network tool calls. Private-address denial and sandbox
+isolation stay enforced, not optional toggles.
+
+The application saves a workspace `.agent-vesper/web-settings.json` snapshot
+without modifying your TOML. That saved snapshot takes precedence over TOML;
+the first save retains its existing allowlist, user agent, and output budget.
+Docker or Podman is detected from PATH; `VESPER_DOCKER_BIN` remains an optional
+operator override. Setup never downloads an image or starts a browser
+container. No manual file editing or driver-asset search is needed.
+
 ## Install the driver
+
+Packaging contract for v0.20.90 and later: drivers ship inside the application
+archive. Older v0.20.89 archives used separate driver assets.
+
+Complete application packages include the exact CI-tested driver image for
+their architecture, its SHA-256 checksum, and immutable image ID under
+`web-driver/`. Both installers automatically verify/import this image using
+`agent-vesper-acp --setup-web-driver`. The standalone command is also available
+for administrators; it needs no provider credentials and changes no workspace
+settings. Setup checks the archive checksum before import, accepts Docker and
+Podman ID formats, and verifies the imported image against the bundled ID.
+An enabled web runtime uses that bundled ID unless an explicit image override
+was configured; users do not need to copy a digest into settings.
+
+Docker or Podman must be installed and running (Linux containers on
+macOS/Windows). If the engine is unavailable during installation, the bundled
+driver remains on disk: start the engine and use **Set up / repair driver**
+in Settings. The UI shows progress and supports Esc cancellation. An import
+already accepted by the engine may remain after cancellation; no web settings
+are saved by cancelling. No administrative engine installation is attempted.
+
+The following separate-asset instructions are only for older packages and
+advanced deployment with a different container-daemon architecture:
 
 Releases that include driver assets publish an image archive for each Linux
 architecture, including Docker Desktop on macOS/Windows. Select `linux-x86_64`
@@ -25,7 +71,7 @@ Source builds must enable the host's `docker` feature. The Linux namespaces
 backend currently has no configured egress interface; it is not a substitute
 for the web driver. No unsandboxed fallback exists.
 
-## Workspace configuration
+## Advanced manual workspace configuration
 
 Merge into `.agent-vesper/config.toml`, replacing the explanatory image value
 with the exact ID from the release asset:

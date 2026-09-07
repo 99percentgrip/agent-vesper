@@ -101,6 +101,13 @@ type Backend = CrosstermBackend<io::Stdout>;
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
+    if let Some(success) = vesper_harness::web_settings::handle_setup_flag().await {
+        return if success {
+            Ok(())
+        } else {
+            Err(io::Error::other("web driver setup failed"))
+        };
+    }
     // VRO-13 PR-2: resolve AGENT_VESPER_FIREWALL once at boot. First
     // resolution wins; the resulting Arc is shared by the TUI session and
     // (via the same process global) any nested loop it spawns. `off`
@@ -1936,6 +1943,27 @@ async fn drive_loop(
                         }
                     }
                 }
+                if session.state.pending_web_settings {
+                    session.state.pending_web_settings = false;
+                    if session.agent_running {
+                        session.state.status =
+                            Some("Open Web tools settings after the active turn finishes.".into());
+                    } else {
+                        session.state.status = Some(
+                            open_web_settings(&mut terminal)
+                                .await
+                                .unwrap_or_else(|error| error),
+                        );
+                    }
+                }
+                if let Some(argument) = session.state.pending_web_command.take() {
+                    let root = std::env::current_dir().map_err(|error| error.to_string())?;
+                    session.state.status = Some(
+                        vesper_harness::web_settings::command(&root, &argument)
+                            .await
+                            .unwrap_or_else(|error| error),
+                    );
+                }
                 if session.state.pending_lmstudio_settings {
                     session.state.pending_lmstudio_settings = false;
                     match open_lmstudio_settings(&mut terminal).await {
@@ -1958,9 +1986,14 @@ async fn drive_loop(
                         }
                     }
                 }
-                // Provider switcher modal (arrow-key picker).
+                // Settings → Providers; persistence follows confirmed setup only.
                 if session.state.pending_provider_switch {
                     session.state.pending_provider_switch = false;
+                    if session.agent_running {
+                        session.state.status =
+                            Some("Open Providers settings after the active turn finishes.".into());
+                        continue;
+                    }
                     match open_provider_switcher(&mut terminal, registry, provider_id).await {
                         Ok(Some(target)) => {
                             // If switching TO LM Studio and the endpoint is the
@@ -2002,14 +2035,11 @@ async fn drive_loop(
                                             modal,
                                         );
                                     }));
-                                    match open_lmstudio_settings(&mut terminal).await {
-                                        Ok(s) if !s.is_empty() => {
+                                    match edit_lmstudio_settings(&mut terminal).await {
+                                        Ok(Some(s)) if !s.is_empty() => {
                                             session.state.transcript.push(format!(
-                                                "LM Studio configured: {}. Provider set to {target}.",
+                                                "LM Studio configured: {}.",
                                                 s.api_base_url
-                                            ));
-                                            session.state.status = Some(format!(
-                                                "Provider saved: {target}. Restart to apply."
                                             ));
                                         }
                                         _ => {
@@ -2021,20 +2051,20 @@ async fn drive_loop(
                                             continue;
                                         }
                                     }
-                                } else {
-                                    session.state.transcript.push(format!(
-                                        "Provider set to {target}. Restart the TUI to apply."
-                                    ));
-                                    session.state.status = Some(format!(
-                                        "Provider saved: {target}. Restart to apply."
-                                    ));
                                 }
-                            } else {
-                                session.state.transcript.push(format!(
-                                    "Provider set to {target}. Restart the TUI to apply."
-                                ));
-                                session.state.status =
-                                    Some(format!("Provider saved: {target}. Restart to apply."));
+                            }
+                            match save_provider_preference(&target) {
+                                Ok(()) => {
+                                    let message = format!(
+                                        "Provider saved: {target}. Restart the TUI to apply."
+                                    );
+                                    session.state.transcript.push(message.clone());
+                                    session.state.status = Some(message);
+                                }
+                                Err(error) => {
+                                    session.state.status =
+                                        Some(format!("Provider was not saved: {error}"))
+                                }
                             }
                         }
                         Ok(None) => {
@@ -2301,98 +2331,139 @@ async fn drive_loop(
     Ok(())
 }
 
-/// Intercepts startup before the conversation loop when the selected real
-/// provider has no locally valid credential. The same terminal is retained so
-/// successful setup transitions without a raw-mode or alternate-screen flash.
-/// The provider descriptor is provider-routed (projected from the active
-/// provider's advertised `ProviderDescriptor`), never hardcoded.
-/// Opens the LM Studio provider settings screen so the user can adjust the
-/// LAN/localhost `api_base_url` and optional model **from inside the TUI**
-/// (not a config file). Mirrors [`ensure_provider_authenticated`]: takes over
-/// the terminal, runs a pure [`LmStudioHub`] event loop, and persists on save.
-///
-/// Returns the settings that are now in effect (the saved ones, or the
-/// pre-existing ones if the user cancelled).
-/// Opens a provider selection modal. Lists registered providers with
-/// arrow-key navigation; Enter saves the choice; Esc cancels.
-/// Mirrors the `ensure_provider_authenticated` modal pattern.
+/// Opens Settings → Providers. Navigation changes only the draft; saving is explicit.
 async fn open_provider_switcher(
     terminal: &mut Terminal<Backend>,
     registry: &vesper_runtime::ProviderRegistry,
     current: &ProviderId,
 ) -> Result<Option<String>, String> {
-    use ratatui::widgets::{List, ListItem, ListState};
-
+    use agent_vesper_tui::provider_hub::{ProviderHub, render};
     let providers = registry.provider_ids().await;
     if providers.is_empty() {
         return Err("No providers are registered.".into());
     }
-    let current_idx = providers.iter().position(|p| p == current).unwrap_or(0);
-    let mut selected = current_idx;
-
+    let mut hub = ProviderHub::new(
+        providers.iter().map(|id| id.as_str().to_owned()).collect(),
+        current.as_str().to_owned(),
+    );
+    if let Some(saved) = hub
+        .providers
+        .iter()
+        .position(|id| id == &provider_name_from_env())
+    {
+        hub.chosen = saved;
+        hub.selected = saved;
+    }
     loop {
         terminal
-            .draw(|frame| {
-                let area = frame.area();
-                frame.render_widget(ratatui::widgets::Clear, area);
-                let modal = ratatui::layout::Rect {
-                    x: area.x + area.width.saturating_sub(50) / 2,
-                    y: area.y + area.height.saturating_sub(9) / 2,
-                    width: area.width.min(50),
-                    height: area.height.min(9),
-                };
-                let block = ratatui::widgets::Block::default()
-                    .borders(ratatui::widgets::Borders::ALL)
-                    .border_style(ratatui::style::Style::default().fg(ratatui::style::Color::Cyan))
-                    .title(ratatui::text::Span::styled(
-                        " Select Provider ",
-                        ratatui::style::Style::default()
-                            .fg(ratatui::style::Color::White)
-                            .add_modifier(ratatui::style::Modifier::BOLD),
-                    ));
-                let items: Vec<ListItem> = providers
-                    .iter()
-                    .map(|p| {
-                        let label = if p == current {
-                            format!("  {} (current)", p.as_str())
-                        } else {
-                            format!("  {}", p.as_str())
-                        };
-                        ListItem::new(label)
-                    })
-                    .collect();
-                let mut list_state = ListState::default().with_selected(Some(selected));
-                let list = List::new(items)
-                    .block(block)
-                    .highlight_symbol("▶")
-                    .highlight_style(
-                        ratatui::style::Style::default()
-                            .bg(ratatui::style::Color::Rgb(17, 49, 75))
-                            .add_modifier(ratatui::style::Modifier::BOLD),
-                    );
-                frame.render_widget(ratatui::widgets::Clear, modal);
-                frame.render_stateful_widget(list, modal, &mut list_state);
-            })
-            .map_err(|e| format!("provider switcher redraw: {e}"))?;
-
-        let event = event::read().map_err(|e| format!("provider switcher input: {e}"))?;
+            .draw(|frame| render(frame, &hub))
+            .map_err(|error| format!("provider settings redraw: {error}"))?;
         if let Event::Key(KeyEvent {
             code,
+            modifiers,
             kind: KeyEventKind::Press,
             ..
-        }) = event
+        }) = event::read().map_err(|error| format!("provider settings input: {error}"))?
         {
             match code {
-                KeyCode::Char('c') if code == KeyCode::Char('c') => return Ok(None),
-                KeyCode::Up => selected = selected.saturating_sub(1),
-                KeyCode::Down => selected = (selected + 1).min(providers.len() - 1),
-                KeyCode::Enter => {
-                    let target = providers[selected].as_str().to_string();
-                    save_provider_preference(&target).map_err(|e| format!("Save failed: {e}"))?;
-                    return Ok(Some(target));
-                }
                 KeyCode::Esc => return Ok(None),
+                KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => return Ok(None),
+                KeyCode::Up => hub.selected = hub.selected.saturating_sub(1),
+                KeyCode::Down => hub.selected = (hub.selected + 1).min(hub.providers.len()),
+                KeyCode::Char('s' | 'S') => return Ok(hub.choice().map(str::to_owned)),
+                KeyCode::Enter | KeyCode::Char(' ') => {
+                    if hub.selected == hub.providers.len() {
+                        return Ok(hub.choice().map(str::to_owned));
+                    }
+                    hub.choose();
+                }
                 _ => {}
+            }
+        }
+    }
+}
+
+async fn open_web_settings(terminal: &mut Terminal<Backend>) -> Result<String, String> {
+    use agent_vesper_tui::web_hub::{WebHub, render};
+    let root = std::env::current_dir().map_err(|error| error.to_string())?;
+    let mut hub = WebHub::new(vesper_harness::web_settings::load(&root)?);
+    if hub.config.driver_image.is_none() {
+        hub.notice = "Checking the installed driver…".into();
+        terminal
+            .draw(|frame| render(frame, &hub))
+            .map_err(|error| error.to_string())?;
+        match vesper_harness::web_settings::detect_driver().await {
+            Ok(image) => {
+                hub.config.driver_image = Some(image);
+                hub.notice =
+                    "Installed driver ready. Save your choices; restart the host to apply.".into();
+            }
+            Err(error) => hub.notice = error,
+        }
+    }
+    loop {
+        terminal
+            .draw(|frame| render(frame, &hub))
+            .map_err(|error| error.to_string())?;
+        let Event::Key(key) = event::read().map_err(|error| error.to_string())? else {
+            continue;
+        };
+        if key.kind == event::KeyEventKind::Release {
+            continue;
+        }
+        match key.code {
+            KeyCode::Esc => return Ok("Web settings cancelled; nothing changed.".into()),
+            KeyCode::Up => hub.selected = (hub.selected + 6) % 7,
+            KeyCode::Down | KeyCode::Tab => hub.selected = (hub.selected + 1) % 7,
+            KeyCode::Char('s' | 'S') => hub.selected = 6,
+            KeyCode::Enter | KeyCode::Char(' ') => {}
+            _ => continue,
+        }
+        if matches!(key.code, KeyCode::Enter | KeyCode::Char(' ' | 's' | 'S')) {
+            match hub.selected {
+                5 => match setup_web_driver_ui(terminal, &mut hub).await {
+                    Ok(image) => {
+                        hub.config.driver_image = Some(image);
+                        hub.notice = "Bundled driver ready. Save to keep this selection.".into();
+                    }
+                    Err(error) => hub.notice = error,
+                },
+                6 => match vesper_harness::web_settings::save(&root, &hub.config) {
+                    Ok(()) => {
+                        return Ok("Web settings saved. Restart the TUI/ACP host to apply.".into());
+                    }
+                    Err(error) => hub.notice = error,
+                },
+                _ => hub.toggle(),
+            }
+        }
+    }
+}
+
+async fn setup_web_driver_ui(
+    terminal: &mut Terminal<Backend>,
+    hub: &mut agent_vesper_tui::web_hub::WebHub,
+) -> Result<String, String> {
+    let setup = vesper_harness::web_settings::setup_driver();
+    tokio::pin!(setup);
+    let mut ticks = 0usize;
+    loop {
+        hub.notice = format!(
+            "Verifying / loading the bundled driver{} Esc cancels. No download required.",
+            ".".repeat(ticks % 4)
+        );
+        terminal
+            .draw(|frame| agent_vesper_tui::web_hub::render(frame, hub))
+            .map_err(|error| error.to_string())?;
+        tokio::select! {
+            result = &mut setup => return result,
+            () = tokio::time::sleep(std::time::Duration::from_millis(100)) => {
+                ticks += 1;
+                if event::poll(std::time::Duration::ZERO).map_err(|error| error.to_string())?
+                    && let Event::Key(key) = event::read().map_err(|error| error.to_string())?
+                    && key.code == KeyCode::Esc {
+                    return Err("Setup cancelled. An already-imported image may remain; settings were not saved.".into());
+                }
             }
         }
     }
@@ -2401,6 +2472,14 @@ async fn open_provider_switcher(
 async fn open_lmstudio_settings(
     terminal: &mut Terminal<Backend>,
 ) -> Result<LmStudioSettings, String> {
+    Ok(edit_lmstudio_settings(terminal)
+        .await?
+        .unwrap_or_else(load_lmstudio_settings))
+}
+
+async fn edit_lmstudio_settings(
+    terminal: &mut Terminal<Backend>,
+) -> Result<Option<LmStudioSettings>, String> {
     let existing = load_lmstudio_settings();
     let mut hub = LmStudioHub::from_settings(&existing);
     loop {
@@ -2449,11 +2528,11 @@ async fn open_lmstudio_settings(
         };
         match action {
             LmStudioSettingsAction::Continue => {}
-            LmStudioSettingsAction::Quit => return Ok(existing),
+            LmStudioSettingsAction::Quit => return Ok(None),
             LmStudioSettingsAction::Save { settings } => match save_lmstudio_settings(&settings) {
                 Ok(()) => {
                     tracing::info!(target: "lmstudio", url = %settings.api_base_url, "LM Studio settings saved");
-                    return Ok(settings);
+                    return Ok(Some(settings));
                 }
                 Err(error) => hub.save_failed(error),
             },
@@ -2639,22 +2718,16 @@ fn command_palette_candidates(
     surface: &ProviderSuperpowerSurface,
     policy: &dyn vesper_provider::SuperpowerPolicy,
     capabilities: &agent_vesper_tui::ModelCapabilityIndex,
-    provider_ids: &[(String, String)],
+    _provider_ids: &[(String, String)],
     state: &SessionState,
 ) -> Vec<(String, String)> {
     let trimmed = input.trim_start();
     let Some((command, argument)) = trimmed.split_once(' ') else {
         return registry.completion_candidates(trimmed);
     };
-    // /provider picker: show registered providers as arrow-key-selectable
-    // candidates (same UX as /model — no name typing required).
+    // Provider choices live in the Settings panel, not a second legacy picker.
     if command == "/provider" {
-        let query = argument.trim().to_ascii_lowercase();
-        return provider_ids
-            .iter()
-            .filter(|(id, _)| query.is_empty() || id.to_ascii_lowercase().starts_with(&query))
-            .map(|(id, name)| (format!("/provider {id}"), name.clone()))
-            .collect();
+        return vec![("/provider".into(), "Open Settings › Providers".into())];
     }
     // VRO-11.3 directive 3 — Autocomplete Disconnect. `/reasoning`'s
     // argument surface is the VRO mode override (PRD §8.1), NOT the legacy
@@ -2958,6 +3031,14 @@ fn session_setting_candidates(
     let choices: Vec<(String, String)> = match command {
         "/settings" => {
             let mut settings: Vec<(String, String)> = vec![
+                (
+                    "/provider".into(),
+                    "Providers · select the provider for your next launch".into(),
+                ),
+                (
+                    "/web".into(),
+                    "Web tools · fetch, rendering and browser interaction".into(),
+                ),
                 (
                     "/permission".to_string(),
                     format!("Permissions · current {:?}", state.controls.permission_mode),
@@ -9786,12 +9867,15 @@ impl TuiToolService {
             ))
         });
         Self {
-            inner: Arc::new(vesper_harness::HarnessToolService::new(
-                Arc::new(vesper_harness::MemoryStores::open_default()),
-                cron_root,
-                plugin_root,
-                worker_factory,
-            )),
+            inner: Arc::new(
+                vesper_harness::HarnessToolService::new(
+                    Arc::new(vesper_harness::MemoryStores::open_default()),
+                    cron_root,
+                    plugin_root,
+                    worker_factory,
+                )
+                .with_web_scope(vesper_harness::web_service::holder::shared()),
+            ),
             lens_review: None,
             lens_url_tx: None,
             interview_question_policy: InterviewQuestionPolicy::default(),
@@ -14264,6 +14348,10 @@ mod tests {
         );
         assert!(settings.iter().any(|choice| choice.0 == "/model"));
         assert!(settings.iter().any(|choice| choice.0 == "/permission"));
+        assert!(settings.iter().any(|choice| choice.0 == "/web"));
+        assert!(settings.iter().any(|choice| choice.0 == "/provider"));
+        assert!(!command_expands_to_argument("/provider", &surface));
+        assert!(!command_expands_to_argument("/web", &surface));
         assert!(command_expands_to_argument("/permission", &surface));
         assert!(!command_expands_to_argument("/permission bypass", &surface));
     }

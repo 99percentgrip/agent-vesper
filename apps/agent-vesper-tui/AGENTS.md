@@ -12,6 +12,24 @@ business logic.
 
 ## Ownership
 
+- `src/provider_hub.rs` owns Settings → Providers (`/settings providers`,
+  `/settings provider`, and compatibility shortcut `/provider`). It mirrors
+  the Web tools panel layout with registry-derived choices, active/draft
+  labels, explicit Save/Cancel, and restart guidance. Navigation alone never
+  saves. Required LM Studio setup must be confirmed before the provider
+  preference is written; cancelling either screen leaves that preference
+  unchanged. This terminal-only presentation maps to ACP's existing native
+  provider control, not an ACP terminal modal.
+- `src/web_hub.rs` owns Settings → Web tools (`/web`, `/settings web`):
+  draft on/off controls, explicit Save/Cancel, automatic installed-driver
+  detection when opened, and bundled-driver setup/repair with visible progress
+  and cancellation. Persistence and setup use shared `vesper-harness::web_settings`.
+  Changes are workspace-scoped and require host restart; the screen must say
+  so. `/web` with arguments uses the same text controls as ACP. The interactive
+  modal is terminal-specific; ACP exposes the shared slash controls instead.
+  `--setup-web-driver` runs the same installer preflight before boot and never
+  opens a terminal or provider session.
+
 - `src/plan_mode.rs` — pure 4-phase Plan Mode state machine
   (NORMAL → PLANNING → REVIEW → EXECUTING) mirroring the Python oracle's
   `PLAN_MODE_PROMPT`.
@@ -30,7 +48,7 @@ business logic.
 - `src/commands.rs` — slash-command parsing, registry, and resolution
   against the active provider's superpowers. Tier C Phase 7 (ADR 0010): the
   registry now covers the complete Python oracle surface plus Vesper-native
-  commands (100 entries including the distinct `/export last` route). The
+  commands (101 entries including the distinct `/export last` route). The
   `ORACLE_COMMAND_SURFACE` const table is the single source of truth for the
   migration matrix. `chat-only` (the `/chat-only` palette twin of the F11
   keybinding) resolves to `UiAction::ToggleChatOnly`; like every registry
@@ -612,8 +630,8 @@ business logic.
 - `AGENT_VESPER_TELEMETRY` opt-in enables the secret-safe trajectory recorder;
   prompts, tool payloads, reasoning, paths, commands, and credentials are
   excluded from JSONL events.
-- Provider selection follows `AGENT_VESPER_PROVIDER` (default `zai`), the
-  same composition-boundary convention as `agent-vesper-acp`.
+- Provider selection first uses the saved preference under `AGENT_VESPER_HOME`
+  (default `.agent-vesper`), then `AGENT_VESPER_PROVIDER`, then `zai`.
 - Missing or locally malformed required credentials route to the Agent
   Vesper Authentication screen before the main loop. Environment credentials retain precedence; new
   stored credentials use the OS credential manager with the documented

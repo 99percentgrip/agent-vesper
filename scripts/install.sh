@@ -115,6 +115,17 @@ printf 'Installed Agent Vesper (%s; %s):\n' "$installed_version" "$tui_version"
 printf '  %s\n' "$install_dir/agent-vesper-acp"
 printf '  %s\n' "$install_dir/agent-vesper-tui"
 
+# The complete release package carries its exact CI-tested driver archive.
+# Import it without enabling web access or changing workspace settings.
+if [ -f "$bundle_dir/web-driver/image.tar.gz" ]; then
+    printf 'Setting up bundled web driver...\n'
+    if ! "$bundle_dir/agent-vesper-acp" --setup-web-driver; then
+        printf 'Web driver is included. Start Docker/Podman, then use Settings > Web tools > Set up / repair driver.\n' >&2
+    fi
+else
+    printf 'This older release has no bundled web driver; upgrade to a complete driver-bundled release.\n' >&2
+fi
+
 # Bundle the standalone `uv` binary so the push-to-talk voice backend can
 # auto-bootstrap a `faster-whisper` venv with no external toolchain required
 # (Linux/macOS only; voice recording is unsupported on Windows). This closes
