@@ -14,8 +14,9 @@ transport, stderr-only tracing, and orderly shutdown.
   composition itself. The shared `vesper-harness` service may perform bounded
   workspace-scoped tool I/O and MCP/plugin subprocess work only after a model
   tool call passes the agent permission gate. The explicit `--setup`
-  authentication command is the sole credential write and delegates the
-  atomic private-file operation to the GLM provider auth boundary.
+  authentication commands (`--setup`, OpenAI `--login`/`--logout`) delegate
+  credential writes to the owning adapter. Native subscription dispatch may
+  persist a refreshed token under the adapter's operation lock.
 - Session readers are disabled unless explicitly enabled, use bounded
   filesystem stores, reject unsafe roots, and never create missing roots.
 - Workspace-scope identity resolution is read-only by default: the
@@ -34,11 +35,11 @@ transport, stderr-only tracing, and orderly shutdown.
   list/load/resume after the editor launches a fresh ACP process. Checkpoint
   enablement is independent and is not required for conversation persistence.
 - Provider selection is a composition-boundary concern resolved before the
-  runtime is constructed. Production registers BOTH real adapters (Z.ai GLM
-  + LM Studio) in every boot so the ACP `provider` footer picker (TUI
+  runtime is constructed. Production registers Z.ai GLM, LM Studio, and
+  native OpenAI in every boot so the ACP `provider` footer picker (TUI
   `/provider` parity) can switch between them mid-session. The initial
   acting provider comes from the `--provider` flag or
-  `AGENT_VESPER_PROVIDER` (accepted tokens: `glm`/`zai`, `lmstudio`). The
+  `AGENT_VESPER_PROVIDER` (accepted tokens: `glm`/`zai`, `lmstudio`, `openai`). The
   deterministic synthetic adapter is reachable only through the
   `integration-test-harness` feature and must never be advertised as a real
   provider or model. The runtime stays provider-neutral; provider-specific
@@ -49,6 +50,16 @@ transport, stderr-only tracing, and orderly shutdown.
   `zai-coding` for the GLM adapter, `lmstudio-local` for the LM Studio
   adapter, and `synthetic` for the synthetic adapter.
   The runtime stays provider-neutral.
+- OpenAI uses the adapter-owned catalog for model/effort controls, vision
+  gates, and the conservative shared context window. Both authentication
+  modes use the same agent loop, tools, workers, compaction, and permissions;
+  native device sign-in needs no Codex installation. The terminal Settings
+  modal is host-specific: ACP users sign in through TUI or explicit
+  `--provider openai --login`; ACP stdout never displays a device code.
+- Memory extraction follows the launch provider. An OpenAI launch uses the
+  native Responses auxiliary path without Z.ai/LM Studio credentials. The
+  independent embedding configuration and local fallback stay unchanged.
+  Restart the host to change the memory extractor after a footer provider swap.
 - The non-default `integration-test-harness` feature may compose generic
   synchronization wrappers, but the default release binary must not contain a
   dispatch gate or scenario behavior.
@@ -288,6 +299,10 @@ into exactly one always-safe, argument-dependent, or interrupting class.
 ## Verification
 
 - Run process transcript tests with isolated environment roots.
+- `tests/openai_native.rs` executes a real confined read and verifies its
+  Responses call/result transaction in both native authentication modes,
+  including provider round trips, effective model/effort changes, and a
+  read-only write denial with proof that no file was created.
 - Run the full-harness ordered-stream regression; it must preserve reasoning
   and content delta order, emit final content exactly once, and accept every
   update at the physical writer before `end_turn`.

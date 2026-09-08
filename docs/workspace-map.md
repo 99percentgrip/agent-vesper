@@ -1,6 +1,11 @@
 # Stage 5 Read-Only Persistence Workspace Map
 
-Status: COMPLETE (local contracts; remote CI pending)
+Historical Stage 5 snapshot below; it is not the current crate inventory.
+The binding [crate index](../crates/AGENTS.md) and
+[migration ledger](migration-status.md) own the current 26-package workspace.
+Both hosts now compose the full harness. The native `vesper-provider-openai`
+leaf depends on auth/domain/provider/security and owns direct OAuth/Responses
+without any Codex runtime dependency.
 
 | Package | Responsibility | Workspace dependencies | Explicitly absent |
 | --- | --- | --- | --- |

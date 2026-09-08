@@ -63,6 +63,10 @@ test-only conformance support.
   crate's sources only.
 - `vesper-provider-glm` may depend on auth/domain/provider/config/security and
   use `vesper-testkit` only as a dev dependency.
+- `vesper-provider-openai` owns native OpenAI authentication, catalog, Responses
+  transport, and tool-free memory extraction; it may depend on
+  auth/domain/provider/config/security, HTTP, and `fs2` credential-operation
+  locks. Both hosts compose it without a Codex runtime dependency.
 - `vesper-runtime` may depend on domain/provider and the read-only repository,
   converted-state, and transactional write ports from `vesper-sessions`;
   filesystem I/O remains implemented only by `vesper-sessions`, and runtime
@@ -76,7 +80,8 @@ test-only conformance support.
   search, and the Stage 6 transactional Agent Vesper session writer. It must
   not depend on runtime,
   ACP, GLM, SQLite, or testkit in production.
-- HTTP and concrete GLM behavior are confined to `vesper-provider-glm`; no crate
+- Provider HTTP belongs to concrete provider adapters; GLM behavior stays in
+  `vesper-provider-glm` and OpenAI behavior in `vesper-provider-openai`. No crate
   may depend on ACP, SQLite, TUI, MCP, or a disposable spike.
 - Unsafe code is denied by the current crates. Future platform exceptions
   require a dedicated module, safety comments, review, and ADR update. ADR 0022
@@ -103,6 +108,8 @@ test-only conformance support.
 - `vesper-policy/AGENTS.md` — pure permission and policy decisions.
 - `vesper-testkit/AGENTS.md` — fixture and fake-conformance helpers.
 - `vesper-provider-glm/AGENTS.md` — Z.ai GLM provider adapter.
+- `vesper-provider-openai/AGENTS.md` — native OpenAI adapter,
+  with no Codex installation or runtime dependency.
 - `vesper-provider-synthetic/AGENTS.md` — deterministic in-process reference
   provider proving multi-provider contract neutrality.
 - `vesper-runtime/AGENTS.md` — provider-neutral session actors and converted

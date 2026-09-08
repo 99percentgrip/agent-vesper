@@ -623,6 +623,13 @@ fn extract_text(parts: &[ContentPart]) -> String {
         .iter()
         .filter_map(|p| match p {
             ContentPart::Text(t) => Some(t.as_str().to_string()),
+            ContentPart::ToolResult(result) => Some(
+                result
+                    .output
+                    .as_str()
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| result.output.to_string()),
+            ),
             _ => None,
         })
         .collect::<Vec<_>>()

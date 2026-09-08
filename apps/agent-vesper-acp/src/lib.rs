@@ -879,6 +879,12 @@ impl AcpHarnessEngine {
         let capability_advisor: Arc<dyn vesper_provider::CapabilityAdvisor> =
             if config.provider_id.as_str() == "zai" {
                 Arc::new(vesper_provider_glm::GlmCapabilityAdvisor)
+            } else if config.provider_id.as_str() == "openai" {
+                Arc::new(vesper_provider::CatalogCapabilityAdvisor::new(
+                    vesper_provider::ModelCapabilityIndex::from_descriptors(
+                        vesper_provider_openai::OpenAiCatalog::snapshot().models,
+                    ),
+                ))
             } else {
                 Arc::new(vesper_provider::CatalogCapabilityAdvisor::new(
                     vesper_provider::ModelCapabilityIndex::empty(),
@@ -2011,6 +2017,14 @@ impl ProviderProfile {
     /// Resolves the profile for a concrete provider identity, failing closed
     /// for any unrecognised adapter.
     fn for_identity(provider: &ProviderId) -> Result<Self, ()> {
+        if provider.as_str() == "openai" {
+            return Ok(Self {
+                provider_configuration:
+                    vesper_provider_openai::OpenAiFactory::default_configuration(),
+                model: ModelId::new(vesper_provider_openai::DEFAULT_MODEL).map_err(|_| ())?,
+                endpoint: EndpointId::new("openai-responses").map_err(|_| ())?,
+            });
+        }
         if provider == &provider_id() {
             // GLM (zai): the production adapter. Endpoint and credential
             // overrides are only consulted here.
@@ -2303,6 +2317,30 @@ pub async fn run() -> Result<(), ()> {
 /// the user authenticates (`--setup` for GLM, `LMSTUDIO_API_KEY` is optional).
 pub async fn run_multi_provider(initial: &str) -> Result<(), ()> {
     let providers = Arc::new(ProviderRegistry::new());
+    let openai = vesper_provider_openai::OpenAiFactory::default();
+    #[cfg(feature = "integration-test-harness")]
+    let openai = if let Ok(url) = std::env::var("AGENT_VESPER_OPENAI_TEST_URL") {
+        vesper_provider_openai::OpenAiFactory::for_loopback(
+            &url,
+            if std::env::var("AGENT_VESPER_OPENAI_TEST_MODE").as_deref() == Ok("chatgpt") {
+                vesper_provider_openai::auth::AuthenticationMode::ChatGpt
+            } else {
+                vesper_provider_openai::auth::AuthenticationMode::ApiKey
+            },
+        )
+        .map_err(|_| ())?
+    } else {
+        openai
+    };
+    providers
+        .register_with_all(
+            openai.clone(),
+            openai.clone(),
+            openai,
+            vesper_provider::PermissiveSuperpowerPolicy,
+        )
+        .await
+        .map_err(|_| ())?;
 
     // Z.ai GLM (production default): full superpowers + credentials + policy.
     let glm = GlmFactory::default();
@@ -2345,6 +2383,7 @@ pub async fn run_multi_provider(initial: &str) -> Result<(), ()> {
     let initial_id = match initial {
         "glm" | "zai" => ProviderId::new("zai").map_err(|_| ())?,
         "lmstudio" => ProviderId::new("lmstudio").map_err(|_| ())?,
+        "openai" => vesper_provider_openai::provider_id(),
         #[cfg(feature = "integration-test-harness")]
         "synthetic" => vesper_provider_synthetic::provider_id(),
         _ => return Err(()),
@@ -2535,6 +2574,12 @@ fn context_window_catalog(
     lm_models: &[controls::LmStudioControlModel],
 ) -> BTreeMap<(String, String), u64> {
     let mut windows = BTreeMap::new();
+    for model in vesper_provider_openai::OpenAiCatalog::snapshot().models {
+        windows.insert(
+            ("openai".into(), model.model.model_id.as_str().to_owned()),
+            vesper_provider_openai::OpenAiCatalog::context_tokens(),
+        );
+    }
     for entry in vesper_provider_glm::GlmCatalog::entries() {
         windows.insert(
             ("zai".to_owned(), entry.id().to_owned()),
@@ -2569,7 +2614,7 @@ fn context_window_catalog(
 /// between them mid-session (TUI `/provider` parity).
 pub async fn boot(provider: &str) -> Result<(), ()> {
     match provider {
-        "glm" | "zai" | "lmstudio" => run_multi_provider(provider).await,
+        "glm" | "zai" | "lmstudio" | "openai" => run_multi_provider(provider).await,
         #[cfg(feature = "integration-test-harness")]
         "synthetic" => run_multi_provider(provider).await,
         _ => Err(()),

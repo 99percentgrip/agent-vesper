@@ -20,6 +20,9 @@ async fn main() -> ExitCode {
     if let Some(code) = handle_meta_flags() {
         return code;
     }
+    if let Some(code) = handle_openai_auth_flags().await {
+        return code;
+    }
     if let Some(code) = handle_auth_flags() {
         return code;
     }
@@ -105,7 +108,7 @@ fn print_help() {
     eprintln!();
     eprintln!("OPTIONS:");
     eprintln!(
-        "        --provider <glm|zai|lmstudio>     Initial provider (default: AGENT_VESPER_PROVIDER or glm)"
+        "        --provider <glm|zai|lmstudio|openai> Initial provider (default: AGENT_VESPER_PROVIDER or glm)"
     );
     eprintln!(
         "                                          All adapters stay registered; switch via the footer Provider picker"
@@ -120,7 +123,9 @@ fn print_help() {
     eprintln!(
         "    LMSTUDIO_API_KEY                     LM Studio API key (optional; local servers usually need none)"
     );
-    eprintln!("    AGENT_VESPER_PROVIDER                Default provider (glm|zai|lmstudio)");
+    eprintln!(
+        "    AGENT_VESPER_PROVIDER                Default provider (glm|zai|lmstudio|openai)"
+    );
     eprintln!(
         "    AGENT_VESPER_LOG                     Tracing filter (default: warn, stderr only)"
     );
@@ -128,7 +133,18 @@ fn print_help() {
         "    AGENT_VESPER_ENABLE_CHECKPOINTS      Opt in to /checkpoint, /rollback, /undo, /sessions, /lineage (default: off)"
     );
     eprintln!("    AGENT_VESPER_VRO_ENABLED=1           Opt in to reasoning orchestration (VRO)");
-    eprintln!("    --setup                               Store a Z.ai API key without printing it");
+    eprintln!(
+        "    --setup                               Store the selected provider API key without printing it"
+    );
+    eprintln!(
+        "    --provider openai --login              Native ChatGPT subscription device sign-in"
+    );
+    eprintln!(
+        "    --provider openai --logout             Sign out locally; disable environment-key fallback"
+    );
+    eprintln!(
+        "    OPENAI_API_KEY                        Optional OpenAI API-key override in API mode"
+    );
     eprintln!(
         "    --setup-web-driver                    Verify/import the bundled web driver (no provider calls)"
     );
@@ -138,6 +154,63 @@ fn print_help() {
 /// Handles the explicit terminal authentication setup path. Credentials are
 /// accepted from the environment or one stdin line and are written only
 /// through the provider's atomic, user-private credential store.
+async fn handle_openai_auth_flags() -> Option<ExitCode> {
+    use std::sync::Arc;
+    use vesper_provider::ProviderCredentialPort;
+    let provider = provider_from_argv().or_else(|| std::env::var("AGENT_VESPER_PROVIDER").ok());
+    if provider.as_deref() != Some("openai") {
+        return None;
+    }
+    let args: Vec<String> = std::env::args().collect();
+    let factory = vesper_provider_openai::OpenAiFactory::default();
+    let result = if args.iter().any(|s| s == "--login") {
+        eprintln!("OpenAI ChatGPT subscription sign-in. No Codex installation is required.");
+        let cancel = Arc::new(vesper_runtime::RuntimeCancellation::new());
+        let login=factory.device_login(cancel.clone(),Arc::new(|url,code|eprintln!("Open {url}\nEnter one-time code: {code}\nOnly continue if you started this login. Ctrl+C cancels.")));
+        tokio::pin!(login);
+        tokio::select! {result=&mut login=>result,_=tokio::signal::ctrl_c()=>{cancel.cancel();login.await}}
+    } else if args.iter().any(|s| s == "--logout") {
+        tokio::task::spawn_blocking(move || factory.logout())
+            .await
+            .unwrap_or(Err(vesper_provider::CredentialError::Failed))
+    } else if args.iter().any(|s| s == "--check-auth") {
+        let present = tokio::task::spawn_blocking(move || factory.credential_present()).await;
+        return Some(if matches!(present, Ok(Ok(true))) {
+            eprintln!("OpenAI credentials are configured.");
+            ExitCode::SUCCESS
+        } else {
+            eprintln!("OpenAI credentials are not configured.");
+            ExitCode::FAILURE
+        });
+    } else if args.iter().any(|s| s == "--setup") {
+        match std::env::var("OPENAI_API_KEY") {
+            Ok(key) => tokio::task::spawn_blocking(move || factory.store_credential(&key))
+                .await
+                .unwrap_or(Err(vesper_provider::CredentialError::Failed)),
+            Err(_) => {
+                eprintln!(
+                    "Use TUI Settings → Providers → OpenAI for masked API-key entry, or supply OPENAI_API_KEY for this setup command."
+                );
+                Err(vesper_provider::CredentialError::Absent)
+            }
+        }
+    } else {
+        return None;
+    };
+    Some(match result {
+        Ok(()) => {
+            eprintln!("OpenAI authentication updated.");
+            ExitCode::SUCCESS
+        }
+        Err(_) => {
+            eprintln!(
+                "OpenAI authentication failed or was cancelled. No API billing fallback was attempted."
+            );
+            ExitCode::FAILURE
+        }
+    })
+}
+
 fn handle_auth_flags() -> Option<ExitCode> {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     if args.iter().any(|arg| arg == "--check-auth") {

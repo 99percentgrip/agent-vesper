@@ -20,6 +20,8 @@ Own durable project documentation and evidence-backed engineering records.
   replay evidence, disk invariance, governance, and Stage 6 readiness.
 - Root documentation files own current architecture, workspace, dependency,
   security, contribution, migration status, and full-harness parity evidence.
+- `openai-provider.md` owns native OpenAI Settings setup, authentication modes,
+  model controls, account prerequisites, and explicit capability limitations.
 - `web-tools.md` owns web-driver installation, immutable image identity,
   native Settings → Web tools and ACP `/web` activation, advanced opt-in
   configuration, operation bounds, and deployment troubleshooting.

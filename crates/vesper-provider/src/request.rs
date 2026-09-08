@@ -17,6 +17,8 @@ pub type ToolChoice = ToolChoiceIntent;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum AuxiliaryRequestIntent {
+    /// Structured durable-memory extraction from explicitly supplied context.
+    MemoryExtraction,
     /// Context compaction summary.
     Compaction,
     /// Advisory permission review.

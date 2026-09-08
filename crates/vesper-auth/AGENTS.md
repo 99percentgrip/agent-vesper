@@ -17,6 +17,9 @@ managers with an explicit owner-only file fallback on Unix systems.
   metadata other than the explicitly authorized private fallback vault.
 - Prefer the native OS credential manager. A fallback vault must be created
   atomically with directory mode `0700` and file mode `0600` on Unix.
+- A successful native write removes that credential's older fallback. A
+  retained fallback is authoritative on reads, preventing an older keyring
+  value from resurfacing after a newer fallback rotation or logout.
 - Fail closed instead of creating a permission-unverified fallback on Windows.
 - Tests use path-explicit private stores and never access live OS keyrings.
 

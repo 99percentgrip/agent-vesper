@@ -481,6 +481,10 @@ the multi-turn, tool-executing layer above it.
 - Hosts own conversation history and may inject memory, MCP, plugin, worker,
   or automation tools through `ToolService`; the core loop remains unaware of
   those concrete subsystems.
+- Working history contains the complete assistant `ToolCall` and a typed
+  `ToolResult` with the same call ID, including bounded denial/failure output.
+  Never silently discard linkage through an invalid extension key. A typed
+  interruption returns before executing any collected calls.
 - Hosts should populate `AgentLoopConfig.system_instructions` at their
   composition boundary with `project_instructions`; the helper is bounded and
   does not persist or mutate project files.

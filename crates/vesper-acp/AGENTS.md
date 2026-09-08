@@ -68,7 +68,9 @@ update mapping, and bounded asynchronous dispatch into `vesper-runtime`.
   path/operation/totals in `raw_output` instead of fabricating the complete
   old/new documents required by ACP's native `Diff` payload.
 - Session config options: `thought_level` and `permission_mode` remain
-  built-in runtime-modeled options (oracle option ids; the permission
+  oracle option ids; `thought_level` routes through an injected provider
+  control surface when present and uses the runtime fallback only without
+  one. `permission_mode` remains runtime-modeled (the permission
   control advertises the oracle value `read`, which the setter accepts).
   Provider-owned footer controls (`model`, `api_endpoint`,
   `generation_profile`, `auxiliary_model`, `mixture_mode`) flow through
@@ -82,6 +84,10 @@ update mapping, and bounded asynchronous dispatch into `vesper-runtime`.
   `unsupported-session-config-value` for invented values), dispatches the
   runtime `UpdateProviderConfiguration` command, and re-advertises the
   options from the fresh snapshot on `session/new`/`load`/`resume`/`set`.
+  A host-supplied refresh closure rebuilds descriptors from each session's
+  current model/provider before validation and advertisement; no static boot
+  model list may authorize a later provider's values. Refresh is read-only and
+  does not mutate another session's controls.
   Without an injected surface only the two built-in options exist.
 - `AcpAdapterConfig::additional_commands` appends only composition-implemented
   host-neutral commands to the frozen 28-entry compatibility catalog. The

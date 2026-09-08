@@ -1,6 +1,21 @@
 # Agent Vesper Architecture
 
-Status: Stage 5 read-only persistence, replay, and governance
+Current status: [migration ledger](migration-status.md).
+
+## Current native provider composition
+
+Both production hosts compose the shared agent loop and hosted services with
+Z.ai, LM Studio, and native OpenAI. `vesper-provider-openai` owns API-key/device
+authentication, credential refresh, catalog, Responses/SSE, and tool-free
+auxiliary extraction. No shared foundation depends on a concrete adapter, and
+no Codex process is installed or launched. Tool calls/results retain their
+provider-neutral identities in working history. See
+[native OpenAI](openai-provider-prd.md) and the binding crate DOX index.
+
+## Historical Stage 5 architecture snapshot
+
+The remaining sections describe the Stage 5 baseline, not current feature
+restrictions. Later accepted ADRs and the migration ledger supersede them.
 
 Agent Vesper preserves the Native GLM ACP harness’s observable behavior while
 redesigning ownership and dependency boundaries for Rust. Stage 5 adds bounded

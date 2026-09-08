@@ -683,32 +683,56 @@ impl AgentLoop {
             let (assistant_parts, tool_calls, finish) =
                 consume_stream(&mut stream, self.progress_port.as_ref()).await?;
             // Append the assistant turn (text + any tool invocations).
+            let mut assistant_history = assistant_parts.clone();
+            for call in &tool_calls {
+                if !assistant_history.iter().any(|part| matches!(part, ContentPart::ToolCall(existing) if existing.id == call.id)) {
+                    assistant_history.push(ContentPart::ToolCall(call.clone()));
+                }
+            }
             messages.push(ConversationMessage {
                 id: ids.message(),
                 role: MessageRole::Assistant,
-                content: assistant_parts.clone(),
+                content: assistant_history,
                 extensions: ExtensionMap::default(),
             });
 
-            if tool_calls.is_empty() {
-                if let FinishOutcome::StreamInterrupted {
-                    cause,
-                    tool_call_started,
-                } = finish
-                {
-                    messages.retain(|message| !is_plan_continuation_message(message));
-                    return Ok((
-                        AgentTurnOutcome::Interrupted {
-                            assistant_content: assistant_parts,
-                            cause,
-                            tool_call_started,
-                            iterations: iteration + 1,
-                            tool_results,
-                            plan,
-                        },
-                        messages,
-                    ));
+            if let FinishOutcome::StreamInterrupted {
+                cause,
+                tool_call_started,
+            } = finish
+            {
+                for call in &tool_calls {
+                    messages.push(ConversationMessage {
+                        id: ids.message(),
+                        role: MessageRole::Tool,
+                        content: vec![ContentPart::ToolResult(vesper_domain::ToolResult {
+                            id: ids.result(),
+                            call_id: call.id.clone(),
+                            output: serde_json::json!(
+                                "Not executed: provider stream interrupted before tool execution."
+                            ),
+                            status: vesper_domain::ToolResultStatus::Cancelled,
+                            locations: Vec::new(),
+                            diff_summary: None,
+                            extensions: ExtensionMap::default(),
+                        })],
+                        extensions: ExtensionMap::default(),
+                    });
                 }
+                messages.retain(|message| !is_plan_continuation_message(message));
+                return Ok((
+                    AgentTurnOutcome::Interrupted {
+                        assistant_content: assistant_parts,
+                        cause,
+                        tool_call_started,
+                        iterations: iteration + 1,
+                        tool_results,
+                        plan,
+                    },
+                    messages,
+                ));
+            }
+            if tool_calls.is_empty() {
                 if !matches!(finish, FinishOutcome::Stop) {
                     return Err(AgentLoopError::Incomplete(finish));
                 }
@@ -827,13 +851,25 @@ impl AgentLoop {
                 if !injected.is_empty() {
                     merge_injected_tools(&mut advertised_tools, injected);
                 }
-                let mut content = vec![ContentPart::Text(bounded)];
+                let mut content = vec![ContentPart::ToolResult(vesper_domain::ToolResult {
+                    id: ids.result(),
+                    call_id: call.id.clone(),
+                    output: serde_json::Value::String(bounded.as_str().to_owned()),
+                    status: if success {
+                        vesper_domain::ToolResultStatus::Succeeded
+                    } else {
+                        vesper_domain::ToolResultStatus::Failed
+                    },
+                    locations: Vec::new(),
+                    diff_summary: None,
+                    extensions: ExtensionMap::default(),
+                })];
                 content.extend(media);
                 messages.push(ConversationMessage {
                     id: ids.message(),
                     role: MessageRole::Tool,
                     content,
-                    extensions: tool_result_extensions(&call),
+                    extensions: ExtensionMap::default(),
                 });
             }
             iteration += 1;
@@ -1288,17 +1324,6 @@ fn flush_text_buffer(buffer: &mut String, parts: &mut Vec<ContentPart>) {
     }
 }
 
-/// Records the originating `tool_call_id` on a tool-result message so adapters
-/// can link call → result when serializing to a provider dialect.
-fn tool_result_extensions(call: &ToolCall) -> ExtensionMap {
-    let mut map = ExtensionMap::default();
-    let _ = map.insert(
-        "tool-call-id",
-        serde_json::Value::String(call.id.as_str().to_string()),
-    );
-    map
-}
-
 /// Monotonic identity generator for messages, requests, and result linkage.
 #[derive(Debug, Default)]
 struct IdGenerator {
@@ -1314,7 +1339,6 @@ impl IdGenerator {
         let value = self.message.fetch_add(1, Ordering::Relaxed);
         MessageId::new(format!("agent-message-{value}")).expect("bounded message id")
     }
-    #[expect(dead_code)]
     fn result(&self) -> ToolResultId {
         ToolResultId::new(format!("tool-result-{}", self.next())).expect("bounded result id")
     }

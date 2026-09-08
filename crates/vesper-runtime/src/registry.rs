@@ -281,6 +281,19 @@ impl ProviderRegistry {
             .map_err(|_| CredentialError::Failed)?
     }
 
+    /// Returns the provider-owned credential operations for native login UI.
+    /// The registry never interprets authentication state or OAuth wire data.
+    pub async fn credential_port(
+        &self,
+        provider_id: &ProviderId,
+    ) -> Option<Arc<dyn ProviderCredentialPort>> {
+        self.factories
+            .read()
+            .await
+            .get(provider_id)
+            .and_then(|entry| entry.credentials.clone())
+    }
+
     /// Persists a credential for `provider_id`, routing through the provider's
     /// [`ProviderCredentialPort`]. Blocking credential I/O runs on a Tokio
     /// blocking thread.

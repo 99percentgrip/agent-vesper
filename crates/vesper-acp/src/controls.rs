@@ -102,6 +102,8 @@ pub struct AppliedSelection {
 /// provider logic.
 #[derive(Clone, Default)]
 pub struct SessionControlSurface {
+    #[allow(clippy::type_complexity)]
+    refresh: Option<Arc<dyn Fn(&ProviderConfiguration) -> SessionControlSurface + Send + Sync>>,
     controls: BTreeMap<String, AcpSessionControl>,
     /// Insertion order of control ids, so clients render the contributed
     /// order (model first, oracle parity) instead of alphabetical order.
@@ -135,6 +137,7 @@ impl SessionControlSurface {
     pub fn new(controls: Vec<AcpSessionControl>) -> Self {
         let order = controls.iter().map(|control| control.id.clone()).collect();
         Self {
+            refresh: None,
             controls: controls
                 .into_iter()
                 .map(|control| (control.id.clone(), control))
@@ -143,6 +146,23 @@ impl SessionControlSurface {
             resolvers: BTreeMap::new(),
             apply: None,
         }
+    }
+
+    /// Attaches the provider-owned apply function mapping a validated
+    /// Rebuilds descriptors from the current session envelope at the host boundary.
+    pub fn with_refresh<F>(mut self, refresh: F) -> Self
+    where
+        F: Fn(&ProviderConfiguration) -> SessionControlSurface + Send + Sync + 'static,
+    {
+        self.refresh = Some(Arc::new(refresh));
+        self
+    }
+
+    /// Resolves the current model/provider controls without mutating other sessions.
+    pub fn for_configuration(&self, configuration: &ProviderConfiguration) -> Self {
+        self.refresh
+            .as_ref()
+            .map_or_else(|| self.clone(), |refresh| refresh(configuration))
     }
 
     /// Attaches the provider-owned apply function mapping a validated

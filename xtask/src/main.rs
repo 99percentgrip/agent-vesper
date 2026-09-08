@@ -1249,6 +1249,16 @@ fn allowed_dependencies() -> BTreeMap<&'static str, BTreeSet<&'static str>> {
             BTreeSet::from(["vesper-domain", "vesper-provider"]),
         ),
         (
+            "vesper-provider-openai",
+            BTreeSet::from([
+                "vesper-auth",
+                "vesper-domain",
+                "vesper-provider",
+                "vesper-config",
+                "vesper-security",
+            ]),
+        ),
+        (
             "vesper-runtime",
             BTreeSet::from([
                 "vesper-domain",
@@ -1309,6 +1319,7 @@ fn allowed_dependencies() -> BTreeMap<&'static str, BTreeSet<&'static str>> {
         (
             "agent-vesper-acp",
             BTreeSet::from([
+                "vesper-provider-openai",
                 "vesper-acp",
                 "vesper-agent",
                 "vesper-cognition",
@@ -1331,6 +1342,7 @@ fn allowed_dependencies() -> BTreeMap<&'static str, BTreeSet<&'static str>> {
             // pure; the binary owns the spawn/drain plumbing.
             "agent-vesper-tui",
             BTreeSet::from([
+                "vesper-provider-openai",
                 "vesper-agent",
                 "vesper-auth",
                 "vesper-checkpoints",
@@ -1427,6 +1439,18 @@ fn scan_production_sources(root: &Path) -> Result<(), String> {
                     "spikes/",
                     "vesper-testkit",
                     "vesper_provider_glm",
+                ]
+            } else if crate_name == Some("vesper-provider-openai") {
+                &[
+                    "agent_client_protocol",
+                    "agent-client-protocol",
+                    "ratatui",
+                    "rusqlite",
+                    "spikes/",
+                    "vesper-testkit",
+                    "vesper_provider_glm",
+                    "std::process",
+                    "tokio::process",
                 ]
             } else if crate_name == Some("vesper-provider-glm") {
                 &[

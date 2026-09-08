@@ -744,7 +744,7 @@ async fn direct_loop_surfaces_loop_guard_warning_without_failing_the_turn() {
     }
     let nudge_seen = history.iter().any(|message| {
         message.content.iter().any(|part| {
-            matches!(part, ContentPart::Text(text) if text.as_str().contains("[VRO-12 Loop Guard]"))
+            matches!(part, ContentPart::ToolResult(result) if result.output.as_str().is_some_and(|text| text.contains("[VRO-12 Loop Guard]")))
         })
     });
     assert!(
@@ -830,7 +830,7 @@ async fn direct_loop_blocks_fourth_identical_call_without_counting_it_as_success
         message.content.iter().any(|part| {
             matches!(
                 part,
-                ContentPart::Text(text) if text.as_str().contains("[SYSTEM OVERRIDE: LOOP BLOCKED")
+                ContentPart::ToolResult(result) if result.output.as_str().is_some_and(|text| text.contains("[SYSTEM OVERRIDE: LOOP BLOCKED"))
             )
         })
     });

@@ -1148,10 +1148,17 @@ async fn handle_request(
         }
         ClientRequest::SetSessionConfigOptionRequest(request) => {
             let session = session_id(&request.session_id);
-            let config_id = request.config_id.to_string();
+            let snapshot = execute!(runtime.snapshot(&session));
+            let controls = controls
+                .as_ref()
+                .map(|surface| surface.for_configuration(&snapshot.provider_configuration));
+            let mut config_id = request.config_id.to_string();
+            if config_id == "reasoning" && controls.is_some() {
+                config_id = "thought_level".into();
+            }
             let value = request.value.as_value_id().map(|value| value.to_string());
             let payload = match config_id.as_str() {
-                "thought_level" | "reasoning" => {
+                "thought_level" | "reasoning" if controls.is_none() => {
                     let Some(value) = value else {
                         return responder.respond_with_error(
                             agent_client_protocol::Error::invalid_params()
@@ -1661,7 +1668,11 @@ fn session_config_options(
 ) -> Vec<SessionConfigOption> {
     let mut options = Vec::new();
     if let Some(surface) = surface {
-        options.extend(surface.acp_config_options(snapshot));
+        options.extend(
+            surface
+                .for_configuration(&snapshot.provider_configuration)
+                .acp_config_options(snapshot),
+        );
     } else {
         // No provider-routed surface: keep the provider-neutral fallbacks.
         options.push(thought_level_option(snapshot));

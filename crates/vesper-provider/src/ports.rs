@@ -194,6 +194,23 @@ pub trait ProviderCredentialPort: Send + Sync {
     fn credential_present(&self) -> Result<bool, CredentialError>;
     /// Persist a credential for this provider (overwrites any existing one).
     fn store_credential(&self, secret: &str) -> Result<(), CredentialError>;
+    /// Locally selected authentication descriptor identity, without credentials.
+    fn authentication_method(&self) -> Result<Option<String>, CredentialError> {
+        Ok(None)
+    }
+    /// Optional native device authorization. The callback carries only the
+    /// user-facing verification URL and one-time code, never OAuth tokens.
+    fn device_login<'a>(
+        &'a self,
+        _cancellation: Arc<dyn CancellationSignal>,
+        _on_challenge: Arc<dyn Fn(String, String) + Send + Sync>,
+    ) -> ProviderFuture<'a, Result<(), CredentialError>> {
+        Box::pin(async { Err(CredentialError::Unavailable) })
+    }
+    /// Explicit local sign-out. Hosts perform blocking storage off UI threads.
+    fn logout(&self) -> Result<(), CredentialError> {
+        Err(CredentialError::Unavailable)
+    }
 }
 
 /// Scoped provider transport/session port.

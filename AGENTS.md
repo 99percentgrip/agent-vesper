@@ -86,6 +86,11 @@ When the user requests a durable behavior change, record it here or in the relev
   must not have to locate separate driver release assets.
 - Provider selection belongs in Settings and uses the same restrained,
   bordered Save/Cancel menu style as Web tools, not a separate legacy picker.
+- The requested OpenAI integration must expose one provider with API-key and
+  ChatGPT subscription authentication choices in native Settings and retain
+  the shared harness features in both hosts. Both authentication modes must
+  run natively in Vesper without installing, bundling, or launching Codex CLI
+  or app-server. Do not advertise OpenAI before its gates pass.
 
 ## Project Contracts
 
@@ -97,15 +102,15 @@ When the user requests a durable behavior change, record it here or in the relev
   migration gates.
 - Never advertise invented providers, models, API plans, reasoning modes, or
   UI controls. Provider-specific values come from the owning real adapter and
-  the frozen oracle; production currently registers Z.ai and LM Studio.
+  the frozen oracle; production registers Z.ai, LM Studio, and native OpenAI.
 - Z.ai model metadata has one production source of truth in
   `vesper-provider-glm`; ACP and TUI must derive their model lists, limits, and
   capability gates from that catalog. Undocumented model-list endpoints or
   identifier-only discovery must not infer vision, reasoning, plan, or limit
   capabilities.
 - “Multi-provider” means the provider-neutral registry/runtime architecture
-  plus the real registered adapters. Z.ai and LM Studio are currently
-  available; no additional provider may be claimed before it has
+  plus the real registered adapters. Z.ai, LM Studio, and OpenAI are the
+  registered adapters; no additional provider may be claimed before it has
   authentication, catalog, transport, fixtures, and CI evidence.
 - A feature may be called impossible or excluded only after checking the
   frozen oracle and current primary documentation and recording concrete

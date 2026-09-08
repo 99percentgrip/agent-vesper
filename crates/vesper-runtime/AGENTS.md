@@ -13,6 +13,8 @@ provider turns, and acceptance of pure converted session state.
 - Do not depend on ACP, GLM, frontends, persistence I/O, SQLite, or tool
   execution.
 - Every session owns mutable state in one serialized actor.
+- `ProviderRegistry::credential_port` clones the registered neutral port;
+  host-driven device login never holds the registry lock across user input.
 - Runtime, session, turn, and provider tasks are cancellation descendants.
 - Channels are bounded; visible events are never silently dropped.
 - A provider tool call is surfaced and terminates as unsupported without

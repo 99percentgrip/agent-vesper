@@ -374,6 +374,8 @@ pub(crate) fn multi_provider_control_surface(
     registered: &[(String, String, bool)],
     lm_models: &[LmStudioControlModel],
 ) -> SessionControlSurface {
+    let refresh_registered = registered.to_vec();
+    let refresh_models = lm_models.to_vec();
     let mut controls = Vec::new();
 
     // Provider picker first (TUI parity: /provider is the top switcher).
@@ -407,6 +409,47 @@ pub(crate) fn multi_provider_control_surface(
 
     let lm_models = lm_models.to_vec();
     match active_provider_of(configuration) {
+        "openai" => {
+            let model = config_str(configuration, "openai:model")
+                .unwrap_or(vesper_provider_openai::DEFAULT_MODEL);
+            controls.push(AcpSessionControl {
+                id: "model".into(),
+                name: "Model".into(),
+                description: Some("OpenAI native Responses model; account access required".into()),
+                category: AcpControlCategory::Model,
+                current_value: model.into(),
+                options: vesper_provider_openai::OpenAiCatalog::snapshot()
+                    .models
+                    .into_iter()
+                    .map(|m| AcpControlOption {
+                        value: m.model.model_id.as_str().into(),
+                        name: m.display_name.as_str().into(),
+                        description: None,
+                    })
+                    .collect(),
+            });
+            let mut efforts = vesper_provider_openai::REASONING_LEVELS.to_vec();
+            if model == "gpt-6-astra" {
+                efforts.push("max");
+            }
+            controls.push(AcpSessionControl {
+                id: "thought_level".into(),
+                name: "Reasoning effort".into(),
+                description: None,
+                category: AcpControlCategory::Other,
+                current_value: config_str(configuration, "openai:reasoning-mode")
+                    .unwrap_or("medium")
+                    .into(),
+                options: efforts
+                    .into_iter()
+                    .map(|v| AcpControlOption {
+                        value: v.into(),
+                        name: v.into(),
+                        description: None,
+                    })
+                    .collect(),
+            });
+        }
         // GLM acting: today's full oracle-parity control set.
         "zai" => {
             let glm = glm_control_surface(configuration);
@@ -459,6 +502,9 @@ pub(crate) fn multi_provider_control_surface(
             Some(active_provider_of(configuration).to_owned())
         })
         .with_current_resolver("model", move |configuration| {
+            if active_provider_of(configuration) == "openai" {
+                return config_str(configuration, "openai:model").map(str::to_owned);
+            }
             if active_provider_of(configuration) == "lmstudio" {
                 return config_str(configuration, "lmstudio:model").map(str::to_owned);
             }
@@ -470,11 +516,45 @@ pub(crate) fn multi_provider_control_surface(
                 .or_else(|| config_str(configuration, "zai:model-id"))
                 .map(str::to_owned)
         })
+        .with_current_resolver("thought_level", |configuration| {
+            let key = match active_provider_of(configuration) {
+                "openai" => "openai:reasoning-mode",
+                "zai" => "zai:reasoning-mode",
+                _ => return None,
+            };
+            config_str(configuration, key).map(str::to_owned)
+        })
         .with_apply(move |configuration, option_id, value| {
             if option_id == PROVIDER_CONTROL_ID {
                 return apply_provider_selection(configuration, value);
             }
             match active_provider_of(configuration) {
+                "openai" => {
+                    let mut next = configuration.clone();
+                    let key = match option_id {
+                        "model" => "openai:model",
+                        "thought_level" => "openai:reasoning-mode",
+                        _ => return None,
+                    };
+                    next.values
+                        .values
+                        .insert(key, serde_json::json!(value))
+                        .ok()?;
+                    let model = config_str(&next, "openai:model")
+                        .unwrap_or(vesper_provider_openai::DEFAULT_MODEL);
+                    let effort = config_str(&next, "openai:reasoning-mode").unwrap_or("medium");
+                    if !vesper_provider_openai::OpenAiCatalog::supports_reasoning(model, effort) {
+                        return None;
+                    }
+                    let model = QualifiedModelId {
+                        provider_id: vesper_provider_openai::provider_id(),
+                        model_id: ModelId::new(model).ok()?,
+                    };
+                    Some(AppliedSelection {
+                        model: Some(model),
+                        configuration: next,
+                    })
+                }
                 "zai" => apply_glm_config_selection(configuration, option_id, value).map(
                     |configuration| AppliedSelection {
                         model: session_model_override(&configuration),
@@ -533,7 +613,9 @@ pub(crate) fn multi_provider_control_surface(
             config_str(configuration, key).map(str::to_owned)
         });
     }
-    surface
+    surface.with_refresh(move |configuration| {
+        multi_provider_control_surface(configuration, &refresh_registered, &refresh_models)
+    })
 }
 
 /// Truthful session context window for the multi-provider composition:
@@ -544,6 +626,9 @@ pub(crate) fn multi_provider_context_window(
     configuration: &ProviderConfiguration,
     lm_models: &[LmStudioControlModel],
 ) -> u64 {
+    if active_provider_of(configuration) == "openai" {
+        return vesper_provider_openai::OpenAiCatalog::context_tokens();
+    }
     if active_provider_of(configuration) == "lmstudio" {
         let acting = config_str(configuration, "lmstudio:model")
             .map(str::to_owned)
@@ -572,6 +657,29 @@ pub(crate) fn apply_provider_selection(
     provider: &str,
 ) -> Option<AppliedSelection> {
     match provider {
+        "openai" => {
+            let mut next = vesper_provider_openai::OpenAiFactory::default_configuration();
+            for key in ["openai:model", "openai:reasoning-mode"] {
+                if let Some(value) = configuration.values.values.get(key) {
+                    next.values.values.insert(key, value.clone()).ok()?;
+                }
+            }
+            next.values
+                .values
+                .insert(ACTIVE_PROVIDER_KEY, serde_json::json!("openai"))
+                .ok()?;
+            let model = ModelId::new(
+                config_str(&next, "openai:model").unwrap_or(vesper_provider_openai::DEFAULT_MODEL),
+            )
+            .ok()?;
+            Some(AppliedSelection {
+                model: Some(QualifiedModelId {
+                    provider_id: vesper_provider_openai::provider_id(),
+                    model_id: model,
+                }),
+                configuration: next,
+            })
+        }
         "zai" => {
             let mut next = crate::ProviderProfile::for_identity(&ProviderId::new("zai").ok()?)
                 .ok()?

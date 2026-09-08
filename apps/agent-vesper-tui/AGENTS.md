@@ -647,6 +647,15 @@ business logic.
 
 ## Work Guidance
 
+- OpenAI is one native provider with API-key and ChatGPT device sign-in
+  choices in Settings → Providers and `/auth`. Method selection, login,
+  cancellation, secure save, and local logout are registry-port driven;
+  device sign-in never launches Codex. The provider preference applies after
+  restart; model and reasoning selections drive the next shared agent turn.
+- OpenAI catalog metadata supplies vision gates and compaction budgets.
+  OpenAI memory extraction uses the same native credential/Responses path;
+  it never needs a Z.ai key. Embeddings remain independently configured.
+
 - Keep the Plan Mode, command registry, superpower adapter, dispatch surface,
   and renderer trait unit-testable without touching a real terminal — the
   production binary is the only module that may invoke crossterm directly.

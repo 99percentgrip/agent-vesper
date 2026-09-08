@@ -419,6 +419,44 @@ impl vesper_cognition::ExtractionLlmPort for LmStudioExtractionAdapter {
 /// Always-error extractor: forces the graceful raw-text fallback.
 struct NoOpExtractionAdapter;
 
+struct OpenAiExtractionAdapter;
+impl vesper_cognition::ExtractionLlmPort for OpenAiExtractionAdapter {
+    fn extract(
+        &self,
+        system: &str,
+        user: &str,
+    ) -> Result<String, vesper_cognition::CognitionError> {
+        let system = system.to_owned();
+        let user = user.to_owned();
+        std::thread::spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|_| ())?;
+            runtime
+                .block_on(
+                    vesper_provider_openai::OpenAiFactory::default().extract_memory(
+                        &system,
+                        &user,
+                        Arc::new(vesper_runtime::RuntimeCancellation::new()),
+                    ),
+                )
+                .map_err(|_| ())
+        })
+        .join()
+        .map_err(|_| {
+            vesper_cognition::CognitionError::Extraction(
+                "Native OpenAI extraction unavailable".into(),
+            )
+        })?
+        .map_err(|_| {
+            vesper_cognition::CognitionError::Extraction(
+                "Native OpenAI extraction failed; check authentication and account access".into(),
+            )
+        })
+    }
+}
+
 impl vesper_cognition::ExtractionLlmPort for NoOpExtractionAdapter {
     fn extract(
         &self,
@@ -678,34 +716,36 @@ impl CognitionBundle {
 
         let zai_cred_ok =
             vesper_provider_glm::resolve_credential(credential_source.as_ref()).is_ok();
-        let extractor: Arc<dyn vesper_cognition::ExtractionLlmPort> =
-            if active_provider == "lmstudio" {
-                lm_settings
-                    .clone()
-                    .map(|(base, model)| {
-                        let arc: Arc<dyn vesper_cognition::ExtractionLlmPort> =
-                            Arc::new(LmStudioExtractionAdapter::new(base, model));
-                        arc
-                    })
-                    .unwrap_or_else(|| {
-                        if zai_cred_ok {
-                            Arc::new(ZaiExtractionAdapter::new(Arc::clone(&credential_source)))
-                        } else {
-                            Arc::new(NoOpExtractionAdapter)
-                        }
-                    })
-            } else if zai_cred_ok {
-                Arc::new(ZaiExtractionAdapter::new(Arc::clone(&credential_source)))
-            } else {
-                lm_settings
-                    .clone()
-                    .map(|(base, model)| {
-                        let arc: Arc<dyn vesper_cognition::ExtractionLlmPort> =
-                            Arc::new(LmStudioExtractionAdapter::new(base, model));
-                        arc
-                    })
-                    .unwrap_or_else(|| Arc::new(NoOpExtractionAdapter))
-            };
+        let extractor: Arc<dyn vesper_cognition::ExtractionLlmPort> = if active_provider == "openai"
+        {
+            Arc::new(OpenAiExtractionAdapter)
+        } else if active_provider == "lmstudio" {
+            lm_settings
+                .clone()
+                .map(|(base, model)| {
+                    let arc: Arc<dyn vesper_cognition::ExtractionLlmPort> =
+                        Arc::new(LmStudioExtractionAdapter::new(base, model));
+                    arc
+                })
+                .unwrap_or_else(|| {
+                    if zai_cred_ok {
+                        Arc::new(ZaiExtractionAdapter::new(Arc::clone(&credential_source)))
+                    } else {
+                        Arc::new(NoOpExtractionAdapter)
+                    }
+                })
+        } else if zai_cred_ok {
+            Arc::new(ZaiExtractionAdapter::new(Arc::clone(&credential_source)))
+        } else {
+            lm_settings
+                .clone()
+                .map(|(base, model)| {
+                    let arc: Arc<dyn vesper_cognition::ExtractionLlmPort> =
+                        Arc::new(LmStudioExtractionAdapter::new(base, model));
+                    arc
+                })
+                .unwrap_or_else(|| Arc::new(NoOpExtractionAdapter))
+        };
 
         let ports = vesper_cognition::CognitionPorts {
             embedder,

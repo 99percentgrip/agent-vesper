@@ -19,6 +19,11 @@ continuation, fallback, and error contracts.
 - Provider cancellation views are owned and remain usable for the lifetime of a
   returned stream.
 - Explicit unsupported controls fail during request validation before dispatch.
+- Credential ports optionally expose selected method identity, cancellable
+  device authorization, and local logout. Default implementations are inert;
+  only explicit host actions may persist credentials. Challenge callbacks
+  expose a verification URL/code, never OAuth tokens.
+- Auxiliary request intent includes bounded structured memory extraction.
 - Capability requirements and same-provider candidates are bounded,
   provider-neutral ports. Payload scans fail closed on unknown capability and
   never infer support from model identifiers.

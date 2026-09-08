@@ -1,6 +1,15 @@
 # Direct Dependency Register
 
-Status: COMPLETE for Stage 5 read-only persistence
+The table below is the historical Stage 5 register, not a current restriction
+on production crates. Current versions and owners are authoritative in Cargo
+manifests, `Cargo.lock`, and the crate DOX index.
+
+Native OpenAI adds pinned `fs2 = 0.4.3` (MIT OR Apache-2.0) for cross-platform
+RAII credential-operation locks. This serializes refresh and logout across
+hosts without unsafe code in Vesper. The adapter otherwise reuses the
+workspace HTTP, JSON, async, URL, base64, auth, and secret-wrapper dependencies;
+it adds no OpenAI SDK or Codex runtime. Canonical MSRV/platform and supply-chain
+gates cover this dependency.
 
 Versions below are exact workspace requirements and resolved versions in
 `Cargo.lock`. All are compatible with the approved Rust 1.88 MSRV.

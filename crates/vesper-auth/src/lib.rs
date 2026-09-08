@@ -111,9 +111,13 @@ impl SecureCredentialStore {
         }
     }
 
-    /// Loads from the native store first, then the compatibility fallback.
+    /// A retained fallback is authoritative: native writes remove it, while
+    /// a newer fallback write must not resurrect an older keyring credential.
     pub fn load(&self, id: CredentialId) -> Result<Option<SecretValue>, CredentialStoreError> {
         validate_identity(id)?;
+        if let Some(value) = self.fallback.load(id)? {
+            return Ok(Some(value));
+        }
         let account = keyring_account(id);
         if let Ok(entry) = Entry::new(self.service, &account)
             && let Ok(value) = entry.get_password()
@@ -121,7 +125,7 @@ impl SecureCredentialStore {
             let value = Zeroizing::new(value);
             return Ok(Some(SecretValue::new(validate_secret(&value)?)));
         }
-        self.fallback.load(id)
+        Ok(None)
     }
 
     /// Saves to the OS manager, falling back only where file permissions can
@@ -137,6 +141,8 @@ impl SecureCredentialStore {
         if let Ok(entry) = Entry::new(self.service, &account)
             && entry.set_password(secret).is_ok()
         {
+            // Prevent an older fallback from resurfacing when keyring is down.
+            self.fallback.remove(id)?;
             return Ok(StoreReceipt {
                 backend: StorageBackend::NativeKeyring,
             });
@@ -169,6 +175,24 @@ impl PrivateFileCredentialStore {
     #[must_use]
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// Removes only this credential, without creating an absent vault.
+    pub fn remove(&self, id: CredentialId) -> Result<(), CredentialStoreError> {
+        validate_identity(id)?;
+        if !self.path.exists() {
+            return Ok(());
+        }
+        let mut vault = self.load_vault()?;
+        let removed = vault
+            .credentials
+            .get_mut(id.provider)
+            .and_then(|entries| entries.remove(id.account));
+        if let Some(mut removed) = removed {
+            removed.zeroize();
+            write_private_vault(&self.path, &vault)?;
+        }
+        Ok(())
     }
 
     /// Reads one bounded credential from the fallback vault.
@@ -335,6 +359,24 @@ mod tests {
     use tempfile::TempDir;
 
     const ZAI: CredentialId = CredentialId::new("zai", "api-key");
+
+    #[cfg(unix)]
+    #[test]
+    fn removing_one_credential_preserves_neighbors_and_does_not_create_a_vault() {
+        let temp = TempDir::new().unwrap();
+        let store = PrivateFileCredentialStore::new(temp.path().join("vault.json"));
+        store.remove(ZAI).unwrap();
+        assert!(!store.path().exists());
+        let other = CredentialId::new("other", "auth");
+        store.store(ZAI, "old-key").unwrap();
+        store.store(other, "neighbor-key").unwrap();
+        store.remove(ZAI).unwrap();
+        assert!(store.load(ZAI).unwrap().is_none());
+        assert_eq!(
+            store.load(other).unwrap().unwrap().expose().as_str(),
+            "neighbor-key"
+        );
+    }
 
     #[cfg(unix)]
     #[test]

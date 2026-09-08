@@ -15,6 +15,8 @@ architecture, MSRV, and source-oracle checks.
   on `vesper-agent`, the TUI may use bounded session search and observability,
   and only `vesper-mcp` may use its bounded HTTP client; runtime/domain/provider
   foundations retain their HTTP and frontend bans.
+- `vesper-provider-openai` is a concrete HTTP adapter boundary with no
+  process-runtime or frontend dependencies; both hosts may compose it.
 - `vesper-harness` may depend on `vesper-web-fetch` to compose the shared
   sandbox-only helper transport; `vesper-web` remains pure.
 

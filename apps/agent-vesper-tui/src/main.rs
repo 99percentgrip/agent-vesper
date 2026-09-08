@@ -669,6 +669,15 @@ fn save_provider_preference(provider: &str) -> Result<(), String> {
 async fn register_default_providers(
     registry: &vesper_runtime::ProviderRegistry,
 ) -> Result<agent_vesper_tui::LmStudioFactory, vesper_runtime::RuntimeError> {
+    let openai = vesper_provider_openai::OpenAiFactory::default();
+    registry
+        .register_with_all(
+            openai.clone(),
+            openai.clone(),
+            openai,
+            vesper_provider::PermissiveSuperpowerPolicy,
+        )
+        .await?;
     // Production ships only credential-backed provider adapters. Deterministic
     // adapters belong in tests and must never appear as user-selectable models.
     let glm = vesper_provider_glm::GlmFactory::default();
@@ -2053,6 +2062,22 @@ async fn drive_loop(
                                     }
                                 }
                             }
+                            if let Ok(id) = ProviderId::new(target.as_str())
+                                && let Some(descriptor) = registry.descriptor(&id).await
+                                && descriptor.authentication_methods.len() > 1
+                                && let Some(auth) =
+                                    agent_vesper_tui::auth_provider_from_descriptor(&descriptor)
+                                && let Err(error) = ensure_provider_authenticated(
+                                    &mut terminal,
+                                    registry,
+                                    auth,
+                                    true,
+                                )
+                                .await
+                            {
+                                session.state.status = Some(error);
+                                continue;
+                            }
                             match save_provider_preference(&target) {
                                 Ok(()) => {
                                     let message = format!(
@@ -2540,6 +2565,201 @@ async fn edit_lmstudio_settings(
     }
 }
 
+/// Registry-driven native authentication choices. `false` selects the
+/// existing masked API-key screen; `true` means device sign-in completed.
+async fn native_authentication_menu(
+    terminal: &mut Terminal<Backend>,
+    registry: &vesper_runtime::ProviderRegistry,
+    descriptor: &vesper_provider::ProviderDescriptor,
+) -> Result<bool, String> {
+    use ratatui::{
+        layout::Rect,
+        widgets::{Block, Borders, Clear, Paragraph, Wrap},
+    };
+    let port = registry
+        .credential_port(&descriptor.provider_id)
+        .await
+        .ok_or("Provider authentication is unavailable")?;
+    let methods = &descriptor.authentication_methods;
+    let status_port = port.clone();
+    let current_method = tokio::task::spawn_blocking(move || status_port.authentication_method())
+        .await
+        .map_err(|_| "Authentication status unavailable")?
+        .map_err(|_| "Authentication status unavailable")?;
+    let mut chosen = methods
+        .iter()
+        .position(|method| Some(method.method_id.as_str()) == current_method.as_deref())
+        .unwrap_or(0);
+    let mut selected = chosen;
+    let mut notice = "Choose authentication, then Save. Esc cancels.".to_owned();
+    loop {
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                let width = area.width.min(88);
+                let height = area.height.min(20);
+                let modal = Rect::new(
+                    area.x + area.width.saturating_sub(width) / 2,
+                    area.y + area.height.saturating_sub(height) / 2,
+                    width,
+                    height,
+                );
+                let mut lines = vec![
+                    "↑/↓ select · Enter/Space choose · S save · Esc cancel".to_owned(),
+                    String::new(),
+                ];
+                for (index, method) in methods.iter().enumerate() {
+                    lines.push(format!(
+                        "{} {}{}",
+                        if selected == index { "›" } else { " " },
+                        method.display_name.as_str(),
+                        if chosen == index { " (selected)" } else { "" }
+                    ));
+                }
+                lines.push(format!(
+                    "{} Sign out locally",
+                    if selected == methods.len() {
+                        "›"
+                    } else {
+                        " "
+                    }
+                ));
+                lines.push(format!(
+                    "{} Save / sign in",
+                    if selected == methods.len() + 1 {
+                        "›"
+                    } else {
+                        " "
+                    }
+                ));
+                lines.push(String::new());
+                lines.push(notice.clone());
+                frame.render_widget(Clear, modal);
+                frame.render_widget(
+                    Paragraph::new(lines.join("\n"))
+                        .block(Block::default().borders(Borders::ALL).title(format!(
+                            " Settings › Providers › {} ",
+                            descriptor.display_name.as_str()
+                        )))
+                        .wrap(Wrap { trim: false }),
+                    modal,
+                );
+            })
+            .map_err(|_| "Authentication redraw failed")?;
+        let Event::Key(key) = event::read().map_err(|_| "Authentication input failed")? else {
+            continue;
+        };
+        if key.kind != KeyEventKind::Press {
+            continue;
+        }
+        match key.code {
+            KeyCode::Esc => {
+                return Err("Authentication cancelled; provider selection unchanged".into());
+            }
+            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                return Err("Authentication cancelled".into());
+            }
+            KeyCode::Up => selected = selected.saturating_sub(1),
+            KeyCode::Down => selected = (selected + 1).min(methods.len() + 1),
+            KeyCode::Enter | KeyCode::Char(' ') if selected < methods.len() => chosen = selected,
+            KeyCode::Enter | KeyCode::Char(' ') if selected == methods.len() => {
+                let port = port.clone();
+                tokio::task::spawn_blocking(move || port.logout())
+                    .await
+                    .map_err(|_| "Sign-out task failed")?
+                    .map_err(|_| "Secure sign-out failed")?;
+                return Err(
+                    "Signed out locally. Open provider authentication to sign in again.".into(),
+                );
+            }
+            KeyCode::Enter | KeyCode::Char(' ' | 's' | 'S') => {
+                if !methods[chosen].secret_reference_fields.is_empty() {
+                    return Ok(false);
+                }
+                let cancel = Arc::new(vesper_runtime::RuntimeCancellation::new());
+                let task_cancel = cancel.clone();
+                let task_port = port.clone();
+                let (tx, mut rx) = tokio::sync::mpsc::channel::<(String, String)>(1);
+                let mut task = tokio::spawn(async move {
+                    task_port
+                        .device_login(
+                            task_cancel,
+                            Arc::new(move |url, code| {
+                                let _ = tx.try_send((url, code));
+                            }),
+                        )
+                        .await
+                });
+                notice = "Requesting secure device sign-in… Esc cancels.".into();
+                loop {
+                    if let Ok((url, code)) = rx.try_recv() {
+                        notice = format!(
+                            "Open {url}\nEnter one-time code: {code}\nOnly continue if you started this login. Esc cancels."
+                        );
+                    }
+                    terminal
+                        .draw(|frame| {
+                            let area = frame.area();
+                            let width = area.width.min(88);
+                            let height = area.height.min(15);
+                            let modal = Rect::new(
+                                area.x + area.width.saturating_sub(width) / 2,
+                                area.y + area.height.saturating_sub(height) / 2,
+                                width,
+                                height,
+                            );
+                            frame.render_widget(Clear, modal);
+                            frame.render_widget(
+                                Paragraph::new(notice.as_str())
+                                    .block(
+                                        Block::default()
+                                            .borders(Borders::ALL)
+                                            .title(" Subscription sign-in "),
+                                    )
+                                    .wrap(Wrap { trim: false }),
+                                modal,
+                            );
+                        })
+                        .map_err(|_| {
+                            cancel.cancel();
+                            "Authentication redraw failed"
+                        })?;
+                    if task.is_finished() {
+                        match task.await {
+                            Ok(Ok(())) => return Ok(true),
+                            _ => {
+                                notice="Sign-in failed or expired. Check account device-login permissions and try again.".into();
+                                break;
+                            }
+                        }
+                    }
+                    if event::poll(std::time::Duration::from_millis(50)).map_err(|_| {
+                        cancel.cancel();
+                        "Authentication input failed"
+                    })? && let Event::Key(key) = event::read().map_err(|_| {
+                        cancel.cancel();
+                        "Authentication input failed"
+                    })? && (key.code == KeyCode::Esc
+                        || key.code == KeyCode::Char('c')
+                            && key.modifiers.contains(KeyModifiers::CONTROL))
+                    {
+                        cancel.cancel();
+                        if tokio::time::timeout(std::time::Duration::from_secs(1), &mut task)
+                            .await
+                            .is_err()
+                        {
+                            task.abort();
+                        }
+                        return Err("Subscription sign-in cancelled".into());
+                    }
+                    tokio::task::yield_now().await;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 async fn ensure_provider_authenticated(
     terminal: &mut Terminal<Backend>,
     registry: &vesper_runtime::ProviderRegistry,
@@ -2558,6 +2778,13 @@ async fn ensure_provider_authenticated(
     // already exists; a forced `/auth` always re-opens the screen so the user
     // can rotate or replace the key (OpenCode `/connect` semantics).
     if !force && startup_route(credential_present) == StartupRoute::Main {
+        return Ok(());
+    }
+
+    if let Some(descriptor) = registry.descriptor(&provider_id).await
+        && descriptor.authentication_methods.len() > 1
+        && native_authentication_menu(terminal, registry, &descriptor).await?
+    {
         return Ok(());
     }
 
@@ -4940,6 +5167,7 @@ fn provider_configuration_for(provider_id: &ProviderId) -> Result<ProviderConfig
     match provider_id.as_str() {
         // The GLM adapter registers under the stable `zai` identity.
         "zai" => Ok(vesper_provider_glm::GlmFactory::default_configuration()),
+        "openai" => Ok(vesper_provider_openai::OpenAiFactory::default_configuration()),
         // The LM Studio local/LAN model server.
         "lmstudio" => Ok(agent_vesper_tui::LmStudioFactory::default_configuration()),
         // The deterministic in-process reference adapter.
@@ -4955,6 +5183,7 @@ fn provider_configuration_for(provider_id: &ProviderId) -> Result<ProviderConfig
 fn model_id_for_provider(provider_id: &ProviderId) -> Result<ModelId, String> {
     let id = match provider_id.as_str() {
         "zai" => "glm-5.3",
+        "openai" => vesper_provider_openai::DEFAULT_MODEL,
         "lmstudio" => "local-model",
         #[cfg(test)]
         "vesper-synthetic" => "synthetic-1",
@@ -4965,6 +5194,7 @@ fn model_id_for_provider(provider_id: &ProviderId) -> Result<ModelId, String> {
 
 fn default_context_window_for_provider(provider_id: &ProviderId) -> Result<u64, String> {
     match provider_id.as_str() {
+        "openai" => Ok(vesper_provider_openai::OpenAiCatalog::context_tokens()),
         "zai" => vesper_provider_glm::GlmCatalog::entries()
             .iter()
             .find(|entry| entry.id() == "glm-5.3")
@@ -4988,6 +5218,9 @@ fn capability_index_for(
     lm_factory: &agent_vesper_tui::LmStudioFactory,
 ) -> agent_vesper_tui::ModelCapabilityIndex {
     match provider_id.as_str() {
+        "openai" => agent_vesper_tui::ModelCapabilityIndex::from_descriptors(
+            vesper_provider_openai::OpenAiCatalog::snapshot().models,
+        ),
         // GLM: the frozen static catalog already carries per-model
         // ProviderCapabilities (vision, tools, reasoning levels).
         "zai" => agent_vesper_tui::ModelCapabilityIndex::from_descriptors(
@@ -5023,6 +5256,7 @@ fn capability_advisor_for(
 
 fn default_endpoint_for_provider(provider_id: &ProviderId) -> Result<EndpointId, String> {
     let endpoint = match provider_id.as_str() {
+        "openai" => "openai-responses",
         "zai" => "zai-coding",
         "lmstudio" => "lmstudio-local",
         #[cfg(test)]
@@ -6996,6 +7230,25 @@ fn turn_configuration(
     let mut config = agent.configuration().clone();
     config.max_tool_iterations = state.controls.max_tool_iterations;
     config.context_window_tokens = session_context_window(&config, state, surface)?;
+    if config.provider_id.as_str() == "openai" {
+        let model = active_superpower_choice(state, surface, "model")
+            .unwrap_or_else(|| vesper_provider_openai::DEFAULT_MODEL.to_owned());
+        let effort = active_superpower_choice(state, surface, "thinking")
+            .unwrap_or_else(|| "medium".to_owned());
+        if !vesper_provider_openai::OpenAiCatalog::supports_reasoning(&model, &effort) {
+            return Err("The selected OpenAI model does not support that reasoning effort".into());
+        }
+        config.model.model_id = ModelId::new(model.as_str()).map_err(|_| "Invalid OpenAI model")?;
+        for (key, value) in [("openai:model", model), ("openai:reasoning-mode", effort)] {
+            config
+                .provider_configuration
+                .values
+                .values
+                .insert(key, serde_json::json!(value))
+                .map_err(|_| "Invalid OpenAI setting")?;
+        }
+        return Ok(config);
+    }
     if config.provider_id.as_str() != "zai" {
         return Ok(config);
     }
@@ -8603,6 +8856,7 @@ impl CognitionBundle {
         let zai_cred_ok =
             vesper_provider_glm::resolve_credential(credential_source.as_ref()).is_ok();
         let extractor: Arc<dyn vesper_cognition::ExtractionLlmPort> = match active_provider {
+            "openai" => Arc::new(OpenAiExtractionAdapter),
             "lmstudio" => LmStudioExtractionAdapter::from_persisted_settings()
                 .map(|adapter| {
                     let arc: Arc<dyn vesper_cognition::ExtractionLlmPort> = Arc::new(adapter);
@@ -8979,6 +9233,44 @@ impl vesper_cognition::ExtractionLlmPort for LmStudioExtractionAdapter {
 /// searchable via BM25 + entity boost — memory still works, just without
 /// LLM type/priority/scene classification.
 struct NoOpExtractionAdapter;
+
+struct OpenAiExtractionAdapter;
+impl vesper_cognition::ExtractionLlmPort for OpenAiExtractionAdapter {
+    fn extract(
+        &self,
+        system: &str,
+        user: &str,
+    ) -> Result<String, vesper_cognition::CognitionError> {
+        let system = system.to_owned();
+        let user = user.to_owned();
+        std::thread::spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|_| ())?;
+            runtime
+                .block_on(
+                    vesper_provider_openai::OpenAiFactory::default().extract_memory(
+                        &system,
+                        &user,
+                        Arc::new(vesper_runtime::RuntimeCancellation::new()),
+                    ),
+                )
+                .map_err(|_| ())
+        })
+        .join()
+        .map_err(|_| {
+            vesper_cognition::CognitionError::Extraction(
+                "Native OpenAI extraction unavailable".into(),
+            )
+        })?
+        .map_err(|_| {
+            vesper_cognition::CognitionError::Extraction(
+                "Native OpenAI extraction failed; check authentication and account access".into(),
+            )
+        })
+    }
+}
 
 impl vesper_cognition::ExtractionLlmPort for NoOpExtractionAdapter {
     fn extract(
@@ -13815,6 +14107,59 @@ mod tests {
     //! touch crossterm or a real terminal.
 
     use super::*;
+
+    #[tokio::test]
+    async fn native_openai_registry_and_model_controls_drive_the_shared_loop() {
+        use vesper_provider::ProviderSuperpowers;
+        let registry = Arc::new(vesper_runtime::ProviderRegistry::new());
+        register_default_providers(&registry).await.unwrap();
+        let provider = vesper_provider_openai::provider_id();
+        let descriptor = registry.descriptor(&provider).await.unwrap();
+        assert_eq!(descriptor.authentication_methods.len(), 2);
+        assert!(
+            descriptor
+                .authentication_methods
+                .iter()
+                .all(|method| !method.external_runtime_owned)
+        );
+        assert!(registry.credential_port(&provider).await.is_some());
+        let surface = ProviderSuperpowerSurface::new(
+            provider.clone(),
+            vesper_provider_openai::OpenAiFactory::default().superpowers(),
+        );
+        let agent = AgentLoop::new(
+            registry,
+            vesper_agent::ToolRegistry::parity_default(),
+            build_agent_config(&provider).unwrap(),
+        );
+        let mut state = SessionState::new();
+        for (alias, value) in [("model", "gpt-6-astra"), ("thinking", "max")] {
+            state.overrides.set(
+                surface.by_alias(alias).unwrap().id.as_str(),
+                SuperpowerValue::Choice {
+                    value: BoundedString::new(value).unwrap(),
+                },
+            );
+        }
+        let config = turn_configuration(&agent, &state, &surface).unwrap();
+        assert_eq!(config.model.model_id.as_str(), "gpt-6-astra");
+        assert_eq!(config.context_window_tokens, 272_000);
+        assert_eq!(
+            config
+                .provider_configuration
+                .values
+                .values
+                .get("openai:reasoning-mode"),
+            Some(&serde_json::json!("max"))
+        );
+        state.overrides.set(
+            surface.by_alias("model").unwrap().id.as_str(),
+            SuperpowerValue::Choice {
+                value: BoundedString::new("gpt-5.4").unwrap(),
+            },
+        );
+        assert!(turn_configuration(&agent, &state, &surface).is_err());
+    }
 
     #[test]
     fn react_prior_context_is_confined_to_same_provider_sessions() {
