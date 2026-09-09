@@ -1,5 +1,7 @@
 //! Provider-neutral, read-only account usage and presentation contract.
 
+use chrono::{DateTime, Local, TimeZone};
+
 /// One independently metered window. Missing values never mean zero usage.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct UsageWindow {
@@ -106,12 +108,10 @@ pub fn render_usage(context: &UsageContext<'_>, usage: &ProviderUsage) -> String
         let reset = window
             .resets_at_unix_ms
             .map(|at| {
-                if at <= context.now_unix_ms {
-                    " · reset due; refresh usage".into()
-                } else {
-                    let seconds = (at - context.now_unix_ms) / 1000;
-                    format!(" · resets in {}", compact_duration(seconds))
-                }
+                format!(
+                    " (resets {})",
+                    reset_timestamp(at, context.now_unix_ms, &Local)
+                )
             })
             .unwrap_or_default();
         let label = safe(&window.label);
@@ -184,12 +184,23 @@ fn compact_count(value: u64) -> String {
     }
 }
 
-fn compact_duration(seconds: u64) -> String {
-    let minutes = seconds / 60;
-    if minutes >= 24 * 60 {
-        format!("{}d {}h", minutes / (24 * 60), minutes % (24 * 60) / 60)
+// Resolve each instant separately so DST changes do not reuse today's offset.
+// Never replace an elapsed provider timestamp with a guessed next reset.
+fn reset_timestamp<T: TimeZone>(at: u64, now: u64, timezone: &T) -> String {
+    let local = |ms| {
+        i64::try_from(ms)
+            .ok()
+            .and_then(DateTime::from_timestamp_millis)
+            .map(|dt| dt.with_timezone(timezone))
+    };
+    let Some(at) = local(at) else {
+        return "time unavailable".into();
+    };
+    let time = at.time().format("%H:%M");
+    if local(now).is_some_and(|now| now.date_naive() == at.date_naive()) {
+        time.to_string()
     } else {
-        format!("{}h {:02}m", minutes / 60, minutes % 60)
+        format!("{time} on {}", at.date_naive().format("%-d %b %Y"))
     }
 }
 
@@ -227,7 +238,10 @@ mod tests {
         assert!(card.contains("Context window:  75% left (25 used / 100, estimated)"));
         assert!(card.contains("0% left"));
         assert!(card.contains("[░░░░░░░░░░░░░░]"));
-        assert!(card.contains("resets in 1h 00m"));
+        assert!(card.contains(&format!(
+            "(resets {})",
+            reset_timestamp(3_601_000, 1000, &Local)
+        )));
         assert!(card.contains("remaining unknown"));
         assert!(!card.contains('\u{1b}'));
         assert!(!card.contains("+---"));
@@ -257,6 +271,30 @@ mod tests {
         assert!(panel.contains("OpenAI · Usage"));
         assert!(panel.contains("99% left (4.0K used / 272K, estimated)"));
         assert!(panel.contains("[██████████░░░░] 70% left"));
-        assert!(panel.contains("resets in 5d 18h"));
+        assert!(panel.contains(&format!(
+            "(resets {})",
+            reset_timestamp(500_001_000, 1000, &Local)
+        )));
+    }
+
+    #[test]
+    fn reset_times_preserve_elapsed_and_future_instants_in_local_timezone() {
+        let timezone = chrono::FixedOffset::east_opt(8 * 3600).unwrap();
+        let now = 12 * 3600 * 1000; // 20:00 local, 1 Jan 1970.
+        let elapsed = (11 * 3600 + 47 * 60) * 1000;
+        assert_eq!(reset_timestamp(elapsed, now, &timezone), "19:47");
+        assert_eq!(reset_timestamp(now, now, &timezone), "20:00");
+        assert_eq!(reset_timestamp(now + 3600 * 1000, now, &timezone), "21:00");
+        assert_eq!(
+            reset_timestamp(now + 5 * 3600 * 1000, now, &timezone),
+            "01:00 on 2 Jan 1970"
+        );
+        assert_eq!(reset_timestamp(0, now, &timezone), "08:00");
+        assert_eq!(
+            reset_timestamp(u64::MAX, now, &timezone),
+            "time unavailable"
+        );
+        let west = chrono::FixedOffset::west_opt(5 * 3600).unwrap();
+        assert_eq!(reset_timestamp(0, now, &west), "19:00 on 31 Dec 1969");
     }
 }

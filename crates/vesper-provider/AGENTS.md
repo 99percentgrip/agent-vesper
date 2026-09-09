@@ -28,7 +28,10 @@ continuation, fallback, and error contracts.
   its default explicitly reports unavailable account limits without inference.
   `ProviderUsage`, `UsageWindow`, and `render_usage` define the shared TUI/ACP
   panel. It uses aligned labels, compact context counts, solid allowance bars,
-  and human-scale reset intervals without an ASCII-art box. Context estimates
+  and provider-reported reset clock times in the host's local timezone without
+  an ASCII-art box. Elapsed reset times remain visible; the separate stale-data
+  warning must not replace them. Other-day resets include a date and year.
+  Context estimates
   stay distinct from account/billing limits; unknown values must never display
   as zero, full allowance, or unlimited.
 - Capability requirements and same-provider candidates are bounded,
