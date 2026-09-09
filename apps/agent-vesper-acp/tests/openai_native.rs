@@ -13,6 +13,69 @@ fn sse(events: Vec<Value>) -> String {
 }
 
 #[test]
+fn usage_reports_native_subscription_windows_without_a_provider_turn() {
+    use std::io::{Read, Write};
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let mut process = ProcessHarness::spawn_with_environment(
+        address,
+        [
+            ("AGENT_VESPER_PROVIDER", "openai".into()),
+            ("AGENT_VESPER_OPENAI_TEST_MODE", "chatgpt".into()),
+            (
+                "AGENT_VESPER_OPENAI_TEST_URL",
+                format!("http://{address}/responses"),
+            ),
+            ("AGENT_VESPER_FULL_HARNESS", "1".into()),
+        ],
+    );
+    let server = thread::spawn(move || {
+        let (mut socket, _) = listener.accept().unwrap();
+        socket
+            .set_read_timeout(Some(Duration::from_secs(20)))
+            .unwrap();
+        let mut bytes = Vec::new();
+        while !bytes.windows(4).any(|v| v == b"\r\n\r\n") {
+            let mut buffer = [0; 4096];
+            let n = socket.read(&mut buffer).unwrap();
+            assert!(n > 0);
+            bytes.extend_from_slice(&buffer[..n]);
+        }
+        let headers = String::from_utf8(bytes).unwrap().to_lowercase();
+        assert!(headers.starts_with("get /usage "));
+        assert!(headers.contains("chatgpt-account-id: fixture-account"));
+        let body = r#"{"plan_type":"plus","rate_limit":{"primary_window":{"used_percent":43,"limit_window_seconds":18000},"secondary_window":{"used_percent":37,"limit_window_seconds":604800}}}"#;
+        write!(socket, "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",body.len()).unwrap();
+    });
+    process
+        .send(json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1}}));
+    process.response(1);
+    process.send(json!({"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":process.isolated_root(),"mcpServers":[]}}));
+    let response = process.response(2);
+    let session = response["result"]["sessionId"].as_str().unwrap();
+    process.prompt(3, session, "/usage", "usage-test");
+    assert!(process.response(3).get("error").is_none());
+    let text = process
+        .transcript()
+        .iter()
+        .filter_map(|v| v["params"]["update"]["content"]["text"].as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    for expected in [
+        "Model:",
+        "Reasoning:",
+        "Context:",
+        "plus",
+        "57% left",
+        "63% left",
+    ] {
+        assert!(text.contains(expected), "missing {expected}: {text}");
+    }
+    server.join().unwrap();
+    process.finish();
+}
+
+#[test]
 fn native_openai_runs_a_real_harness_tool_and_returns_result_to_responses() {
     tool_round_trip("api-key", false);
 }

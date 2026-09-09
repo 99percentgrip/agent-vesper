@@ -26,6 +26,18 @@ impl Default for OpenAiFactory {
     }
 }
 impl OpenAiFactory {
+    /// Resolve mode at composition, never during terminal rendering.
+    pub fn control_policy(&self) -> crate::OpenAiSuperpowerPolicy {
+        crate::OpenAiSuperpowerPolicy {
+            mode: if self.authentication_method().ok().flatten().as_deref()
+                == Some("openai-api-key")
+            {
+                crate::auth::AuthenticationMode::ApiKey
+            } else {
+                crate::auth::AuthenticationMode::ChatGpt
+            },
+        }
+    }
     /// Bounded structured extraction for host-owned memory ports. Runs through
     /// the same native authentication and Responses session as ordinary turns.
     pub async fn extract_memory(
@@ -190,7 +202,13 @@ impl ProviderFactory for OpenAiFactory {
                 .get("openai:reasoning-mode")
                 .and_then(serde_json::Value::as_str)
                 .unwrap_or("medium");
-            if config.provider_id != self.id || !OpenAiCatalog::supports_reasoning(model, effort) {
+            if config.provider_id != self.id
+                || !OpenAiCatalog::reasoning_levels_for(
+                    model,
+                    crate::auth::AuthenticationMode::ApiKey,
+                )
+                .contains(&effort)
+            {
                 return Err(error(
                     "Invalid OpenAI model or reasoning selection",
                     vesper_domain::ErrorCategory::InvalidRequest,
@@ -224,6 +242,16 @@ impl ProviderCredentialPort for OpenAiFactory {
         self.credentials.store_api_key(secret)
     }
     fn authentication_method(&self) -> Result<Option<String>, CredentialError> {
+        #[cfg(feature = "integration-test-harness")]
+        if let Some((_, mode)) = &self.test_route {
+            return Ok(Some(
+                match mode {
+                    crate::auth::AuthenticationMode::ApiKey => "openai-api-key",
+                    crate::auth::AuthenticationMode::ChatGpt => "openai-chatgpt",
+                }
+                .into(),
+            ));
+        }
         self.credentials.authentication_method()
     }
     fn logout(&self) -> Result<(), CredentialError> {
@@ -241,6 +269,7 @@ impl ProviderSuperpowers for OpenAiFactory {
     fn superpowers(&self) -> Vec<SuperpowerDescriptor> {
         let mut values: Vec<&str> = REASONING_LEVELS.to_vec();
         values.push("max");
+        values.insert(0, "none");
         vec![
             choice(
                 "openai:model",

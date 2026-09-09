@@ -21,6 +21,9 @@ quota normalization, and legacy GLM compatibility translation.
 - Credentials are attached only at dispatch and never enter normal formatting,
   serialization, errors, events, or fixtures.
 - Do not expose HTTP or GLM wire types through neutral provider ports.
+- `ProviderSession::query_usage` maps the bounded native monitor response to
+  shared account windows, retaining provider percentages and reset timestamps.
+  Presentation is shared by TUI and ACP, not duplicated in the hosts.
 - Emit no event after terminal completion or cancellation.
 - Never replay after visible output. Reasoning/content-only interruptions use
   the adapter's bounded continuation request with accumulated assistant state;

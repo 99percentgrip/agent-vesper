@@ -24,6 +24,11 @@ continuation, fallback, and error contracts.
   only explicit host actions may persist credentials. Challenge callbacks
   expose a verification URL/code, never OAuth tokens.
 - Auxiliary request intent includes bounded structured memory extraction.
+- `ProviderSession::query_usage` is an independent, read-only account query;
+  its default explicitly reports unavailable account limits without inference.
+  `ProviderUsage`, `UsageWindow`, and `render_usage` define the shared TUI/ACP
+  card. Context estimates stay distinct from account/billing limits; unknown
+  values must never display as zero, full allowance, or unlimited.
 - Capability requirements and same-provider candidates are bounded,
   provider-neutral ports. Payload scans fail closed on unknown capability and
   never infer support from model identifiers.

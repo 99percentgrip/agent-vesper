@@ -215,6 +215,14 @@ pub trait ProviderCredentialPort: Send + Sync {
 
 /// Scoped provider transport/session port.
 pub trait ProviderSession: Send + Sync {
+    /// Independent read-only account snapshot. Never dispatches inference.
+    /// Providers without a quota service keep an explicit unavailable result.
+    fn query_usage<'a>(
+        &'a self,
+        _cancellation: Arc<dyn CancellationSignal>,
+    ) -> ProviderFuture<'a, Result<crate::ProviderUsage, ProviderError>> {
+        Box::pin(async { Ok(crate::ProviderUsage::unavailable()) })
+    }
     /// Optional bounded auxiliary-request surface implemented by this same
     /// scoped session.  Keeping this opt-in lets the provider-neutral agent
     /// use a provider's purpose-built compaction path without requiring every

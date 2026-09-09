@@ -67,8 +67,15 @@ tar -xzf "$temporary/$asset" -C "$temporary"
 
 mkdir -p "$install_dir"
 mkdir -p "$(dirname "$bundle_dir")"
-rm -rf "$bundle_dir"
-mv "$temporary/agent-vesper-acp" "$bundle_dir"
+# The data root also contains live cognition/voice state. Replace only
+# installer-owned payloads; never remove the root or move an open database.
+mkdir -p "$bundle_dir"
+for payload in agent-vesper-acp agent-vesper-tui vesper-web-fetch skills web-driver; do
+    if [ -e "$temporary/agent-vesper-acp/$payload" ]; then
+        rm -rf "$bundle_dir/$payload"
+        mv "$temporary/agent-vesper-acp/$payload" "$bundle_dir/$payload"
+    fi
+done
 # Older installers created these entrypoints as symlinks into the bundle.
 # Remove every existing entrypoint first so redirection cannot follow a legacy
 # symlink and overwrite a freshly installed binary with its own launcher.

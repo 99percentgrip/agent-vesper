@@ -142,8 +142,9 @@ transport, stderr-only tracing, and orderly shutdown.
   ACP session id); `/compact`,
   `/clear-history`, and `/clear-plan` mutate the engine's own per-session
   history and plan maps (`/clear-plan` republishes an empty plan update);
-  `/usage` queries the live provider quota endpoint (truthful
-  no-integration error for providers without one); `/diff` and `/release`
+  `/usage` queries the registered session's neutral read-only account port and
+  renders the same bordered status card as TUI, with explicit unknown limits
+  when unavailable; `/diff` and `/release`
   replace the prompt with the TUI's workflow text and drive one real agent
   turn. Slash turns report `persist_turn == false` and never enter
   conversation history as slash text. `/compact [focus]` is the additional

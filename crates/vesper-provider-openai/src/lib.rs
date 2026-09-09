@@ -4,6 +4,9 @@
 
 pub mod auth;
 mod catalog;
+mod policy;
+mod usage;
+pub use policy::OpenAiSuperpowerPolicy;
 pub mod credentials;
 mod factory;
 mod transport;

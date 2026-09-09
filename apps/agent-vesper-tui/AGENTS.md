@@ -647,6 +647,11 @@ business logic.
 
 ## Work Guidance
 
+- `/usage` uses the registered session's neutral usage port on its independent
+  channel and renders the shared bordered status card without interrupting an
+  active turn. No GLM-only quota branch or host-owned quota parser is allowed.
+  OpenAI model-specific reasoning policy filters menus and repairs incompatible
+  selections when the model changes; API/subscription modes remain distinct.
 - OpenAI is one native provider with API-key and ChatGPT device sign-in
   choices in Settings → Providers and `/auth`. Method selection, login,
   cancellation, secure save, and local logout are registry-port driven;
@@ -787,7 +792,7 @@ business logic.
   strategies fail, the status line names the fix. Ctrl-Shift-C copies only
   app-managed mouse-selected transcript text.
 - Provider catalogs and provider-specific settings belong to adapters. The
-  production composition registers the real Z.ai and LM Studio adapters;
+  production composition registers the real Z.ai, LM Studio, and OpenAI adapters;
   no additional provider may be advertised without its adapter and evidence.
 - When adding a new slash command, register it in
   `CommandRegistry::stage_11b`, document its surface in

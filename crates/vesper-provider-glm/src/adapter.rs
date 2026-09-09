@@ -88,6 +88,36 @@ impl GlmSession {
 }
 
 impl ProviderSession for GlmSession {
+    fn query_usage<'a>(
+        &'a self,
+        cancellation: Arc<dyn CancellationSignal>,
+    ) -> vesper_provider::ProviderFuture<'a, Result<vesper_provider::ProviderUsage, ProviderError>>
+    {
+        Box::pin(async move {
+            let usage = self.query_plan_usage(cancellation).await?;
+            Ok(vesper_provider::ProviderUsage {
+                authentication: Some("API key".into()),
+                plan: Some(format!(
+                    "{} · {:?}",
+                    usage.platform,
+                    self.config().endpoint.plan()
+                )),
+                windows: usage
+                    .quotas
+                    .into_iter()
+                    .map(|quota| vesper_provider::UsageWindow {
+                        label: quota.kind,
+                        used_percent: quota.percentage,
+                        used: quota.used,
+                        remaining: quota.remaining,
+                        limit: quota.limit,
+                        resets_at_unix_ms: quota.next_reset_ms,
+                    })
+                    .collect(),
+                notice: None,
+            })
+        })
+    }
     fn auxiliary(&self) -> Option<&dyn vesper_provider::AuxiliaryRequestPort> {
         Some(self)
     }

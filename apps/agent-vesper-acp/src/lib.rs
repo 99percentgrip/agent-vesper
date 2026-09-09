@@ -1370,42 +1370,82 @@ impl AcpHarnessEngine {
         }
     }
 
-    /// Queries the live provider plan-quota endpoint (TUI `/usage` parity).
-    /// Only the installed GLM adapter registers a quota integration; every
-    /// other provider reports that truthfully without a network call.
+    /// Provider-neutral passive account status, independent of active inference.
     async fn usage_text(&self, request: &AcpPromptRequest) -> String {
-        let active_model = request.model.as_ref().unwrap_or(&self.config.model);
-        if active_model.provider_id != provider_id() {
-            return "usage: The active provider has no registered quota integration.".to_owned();
-        }
-        let active_configuration = request
+        let mut model = request
+            .model
+            .clone()
+            .unwrap_or_else(|| self.config.model.clone());
+        let mut configuration = request
             .provider_configuration
-            .as_ref()
-            .unwrap_or(&self.config.provider_configuration);
-        let glm_config =
-            match vesper_provider_glm::GlmConfig::from_provider_configuration(active_configuration)
+            .clone()
+            .unwrap_or_else(|| self.config.provider_configuration.clone());
+        configuration.provider_id = model.provider_id.clone();
+        // Apply the same per-session slash overrides as the next inference turn.
+        // The map is released before any account/network operation.
+        if let Some(overrides) = self.overrides.lock().await.get(&request.session_id) {
+            if let Some(selected) = &overrides.model
+                && let Ok(id) = ModelId::new(selected.clone())
             {
-                Ok(config) => config,
-                Err(error) => return format!("usage: quota configuration failed: {error}"),
-            };
-        let credential = match vesper_provider_glm::resolve_credential(
-            &vesper_provider_glm::EnvironmentCredentialSource,
-        ) {
-            Ok(credential) => credential,
-            Err(error) => return format!("usage: quota authentication failed: {error}"),
-        };
-        let session =
-            match vesper_provider_glm::GlmSession::from_config(glm_config, credential.secret) {
-                Ok(session) => session,
-                Err(error) => return format!("usage: quota session failed: {error}"),
-            };
-        match session
-            .query_plan_usage(Arc::new(RuntimeCancellation::new()))
+                model.model_id = id;
+            }
+            for (key, value) in [
+                ("zai:reasoning-mode", overrides.reasoning_mode.as_ref()),
+                ("zai:endpoint-plan", overrides.endpoint_plan.as_ref()),
+            ] {
+                if let Some(value) = value {
+                    let _ = configuration
+                        .values
+                        .values
+                        .insert(key, serde_json::json!(value));
+                }
+            }
+        }
+        let _ = configuration.values.values.insert(
+            format!("{}:model", model.provider_id.as_str()),
+            serde_json::json!(model.model_id.as_str()),
+        );
+        let cancel = Arc::new(RuntimeCancellation::new());
+        let result = match self
+            .registry
+            .create_session(&model.provider_id, &configuration, cancel.clone())
             .await
         {
-            Ok(usage) => format_glm_usage(&usage),
-            Err(error) => format!("usage: quota query failed: {error}"),
-        }
+            Ok(session) => session.query_usage(cancel).await.map_err(|e| e.to_string()),
+            Err(error) => Err(error.to_string()),
+        };
+        let usage = result.unwrap_or_else(|error| vesper_provider::ProviderUsage {
+            notice: Some(format!("Usage refresh failed: {error}")),
+            ..Default::default()
+        });
+        let histories = self.histories.lock().await;
+        let history = histories
+            .get(&request.session_id)
+            .unwrap_or(&request.history);
+        let context_used =
+            vesper_agent::estimate_context_tokens(&self.config.system_instructions, history);
+        let reasoning = configuration
+            .values
+            .values
+            .iter()
+            .find(|(key, _)| *key == format!("{}:reasoning-mode", model.provider_id.as_str()))
+            .and_then(|(_, value)| value.as_str())
+            .unwrap_or("provider default");
+        vesper_provider::render_usage(
+            &vesper_provider::UsageContext {
+                provider: model.provider_id.as_str(),
+                model: model.model_id.as_str(),
+                reasoning,
+                permission: &format!("{:?}", request.permission_mode),
+                context_used,
+                context_capacity: self.context_window_for(&model.provider_id, &model.model_id),
+                now_unix_ms: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64,
+            },
+            &usage,
+        )
     }
 
     /// Renders the bounded history as `role: text` lines for `/export`.
@@ -1715,34 +1755,6 @@ fn workspace_root_path(roots: &[vesper_domain::WorkspaceRoot]) -> PathBuf {
         .or_else(|| roots.first())
         .map(|root| PathBuf::from(root.path.as_str()))
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
-}
-
-/// Renders one live plan-usage report (TUI `format_glm_usage` parity).
-fn format_glm_usage(usage: &vesper_provider_glm::GlmPlanUsage) -> String {
-    let windows = usage
-        .quotas
-        .iter()
-        .map(|quota| {
-            format!(
-                "{}: used {}, remaining {}, limit {}{}",
-                quota.kind,
-                quota
-                    .used
-                    .map_or_else(|| "unknown".into(), |value| value.to_string()),
-                quota
-                    .remaining
-                    .map_or_else(|| "unknown".into(), |value| value.to_string()),
-                quota
-                    .limit
-                    .map_or_else(|| "unknown".into(), |value| value.to_string()),
-                quota
-                    .percentage
-                    .map_or_else(String::new, |value| format!(" ({value:.1}%)")),
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("; ");
-    format!("{} quota — {windows}", usage.platform)
 }
 
 /// Static system-prompt instruction mirroring the TUI's
@@ -2336,8 +2348,8 @@ pub async fn run_multi_provider(initial: &str) -> Result<(), ()> {
         .register_with_all(
             openai.clone(),
             openai.clone(),
-            openai,
-            vesper_provider::PermissiveSuperpowerPolicy,
+            openai.clone(),
+            openai.control_policy(),
         )
         .await
         .map_err(|_| ())?;

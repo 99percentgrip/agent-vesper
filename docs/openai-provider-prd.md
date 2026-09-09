@@ -95,10 +95,18 @@ evidence, not proof of a stable third-party API or live account entitlement.
   local logout, redacted secret wrappers, and cross-process credential locks.
   Auth fixtures cover pending/approved/expired/cancelled/oversized/invalid
   responses and refresh rotation. Storage tests use temporary private vaults.
-- Catalog: GPT-5.4 and GPT-6 Astra, supported effort subsets, tool/vision/JSON
+- Catalog: GPT-6 Astra, GPT-5.6 Sol/Terra/Luna, GPT-5.5, GPT-5.4,
+  GPT-5.2, and GPT-5.3 Codex; per-model/auth-mode effort choices, tool/vision/JSON
   capabilities, conservative 272K context, and explicit unsupported controls.
   Public model documentation and the pinned upstream catalog are evidence;
   model identifiers alone never establish capabilities or account entitlement.
+- Usage: `ProviderSession::query_usage` and the shared bordered renderer replace
+  both GLM-only host branches. Native OpenAI subscription GET
+  `/backend-api/wham/usage` preserves primary, secondary, and additional windows,
+  percentages, and reset timestamps. API mode explicitly distinguishes API
+  billing from subscription quotas; missing windows remain unknown. The real
+  ACP process fixture verifies a quota-only turn, account header, and 57%/63%
+  remaining presentation without inference.
 - Transport: native function schemas, linked calls/results, image inputs,
   structured output, usage, encrypted reasoning continuation, fragmented UTF-8
   SSE, typed interruptions, cancellation, and bounded buffers/deadlines.
@@ -142,3 +150,26 @@ native Vesper web tools remain provider-independent and opt-in.
 Codex cloud tasks, hosted computer use, audio, and application-specific UX are
 not parity claims. Native Vesper file/shell/browser/memory/skill/worker features
 remain available under their existing permissions and host-specific policies.
+
+## Model and usage follow-up evidence (2026-09-09)
+
+Public model pages were fetched for [Sol](https://developers.openai.com/api/docs/models/gpt-5.6-sol),
+[Terra](https://developers.openai.com/api/docs/models/gpt-5.6-terra),
+[Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna),
+[GPT-5.5](https://developers.openai.com/api/docs/models/gpt-5.5),
+[GPT-5.4](https://developers.openai.com/api/docs/models/gpt-5.4),
+[GPT-5.2](https://developers.openai.com/api/docs/models/gpt-5.2), and
+[GPT-5.3 Codex](https://developers.openai.com/api/docs/models/gpt-5.3-codex).
+The same pinned upstream source's `models-manager/models.json`,
+`core/src/client_tests.rs::reasoning_effort_for_requests_uses_multi_agent_override_for_ultra`,
+and `backend-client/src/client/rate_limit_resets.rs` establish subscription
+efforts, the host-owned ultra mapping, and the passive usage path. Ultra is
+automatic task delegation, not an extra HTTP effort accepted verbatim.
+Vesper does not advertise it as an alias for max.
+
+Local follow-up verification: `cargo xtask verify` passed (full workspace,
+strict Clippy, architecture and fixture gates), as did Rust 1.88 locked tests
+for `vesper-provider`, `vesper-provider-openai`, and `vesper-provider-glm`.
+These status/catalog fixes target v0.21.1. Publication requires successful
+canonical, MSRV, five-target foundation, and web-driver acceptance workflows
+on its exact version commit before tagging; v0.21.0 does not contain them.

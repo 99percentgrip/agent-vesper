@@ -8,6 +8,8 @@ mod ports;
 mod request;
 mod stream;
 mod superpowers;
+mod usage;
+pub use usage::{ProviderUsage, UsageContext, UsageWindow, render_usage};
 
 pub use capability::{
     AuthenticationCapability, CapabilityResolution, ContinuationCapability,

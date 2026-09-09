@@ -86,6 +86,11 @@ When the user requests a durable behavior change, record it here or in the relev
   must not have to locate separate driver release assets.
 - Provider selection belongs in Settings and uses the same restrained,
   bordered Save/Cancel menu style as Web tools, not a separate legacy picker.
+- `/usage` is a standard provider-neutral status card in both hosts: active
+  model/reasoning/permissions, estimated context, and provider-reported account
+  windows, remaining allowance, and resets. New providers implement the shared
+  usage port or report explicitly unavailable values; never fabricate quotas.
+  Model and reasoning menus must use adapter-owned per-model/auth-mode metadata.
 - The requested OpenAI integration must expose one provider with API-key and
   ChatGPT subscription authentication choices in native Settings and retain
   the shared harness features in both hosts. Both authentication modes must

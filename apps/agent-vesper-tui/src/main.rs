@@ -670,13 +670,9 @@ async fn register_default_providers(
     registry: &vesper_runtime::ProviderRegistry,
 ) -> Result<agent_vesper_tui::LmStudioFactory, vesper_runtime::RuntimeError> {
     let openai = vesper_provider_openai::OpenAiFactory::default();
+    let openai_policy = openai.control_policy();
     registry
-        .register_with_all(
-            openai.clone(),
-            openai.clone(),
-            openai,
-            vesper_provider::PermissiveSuperpowerPolicy,
-        )
+        .register_with_all(openai.clone(), openai.clone(), openai, openai_policy)
         .await?;
     // Production ships only credential-backed provider adapters. Deterministic
     // adapters belong in tests and must never appear as user-selectable models.
@@ -2154,7 +2150,7 @@ async fn drive_loop(
                 }
                 if session.state.pending_provider_usage {
                     session.state.pending_provider_usage = false;
-                    if let Err(error) = spawn_usage_query(agent, session, surface) {
+                    if let Err(error) = spawn_usage_query(registry, agent, session, surface).await {
                         session.state.status = Some(error);
                     }
                 }
@@ -7019,42 +7015,69 @@ fn spawn_manual_compaction(
     Ok(())
 }
 
-fn spawn_usage_query(
+async fn spawn_usage_query(
+    registry: &vesper_runtime::ProviderRegistry,
     agent: &Arc<AgentLoop>,
     session: &mut TuiSession,
     surface: &ProviderSuperpowerSurface,
 ) -> Result<(), String> {
-    if surface.provider_id().as_str() != "zai" {
-        return Err("The active provider has no registered quota integration.".into());
+    if session.usage_rx.is_some() {
+        return Ok(());
     }
     let config = turn_configuration(agent, &session.state, surface)?;
-    let glm_config =
-        vesper_provider_glm::GlmConfig::from_provider_configuration(&config.provider_configuration)
-            .map_err(|error| format!("quota configuration failed: {error}"))?;
-    let credential =
-        vesper_provider_glm::resolve_credential(&vesper_provider_glm::EnvironmentCredentialSource)
-            .map_err(|error| format!("quota authentication failed: {error}"))?;
-    let provider = vesper_provider_glm::GlmSession::from_config(glm_config, credential.secret)
-        .map_err(|error| format!("quota session failed: {error}"))?;
-    // Own channel — NOT the agent channel: the quota query answers even
-    // while an agent turn keeps streaming (`/usage` mid-turn, ACP parity).
+    let cancel = Arc::new(vesper_runtime::RuntimeCancellation::new());
+    let provider = registry
+        .create_session(
+            &config.provider_id,
+            &config.provider_configuration,
+            cancel.clone(),
+        )
+        .await;
+    let context_used =
+        vesper_agent::estimate_context_tokens(&config.system_instructions, &session.conversation);
+    let reasoning = active_superpower_choice(&session.state, surface, "thinking")
+        .or_else(|| {
+            surface
+                .by_alias("thinking")
+                .map(|d| superpower_value_text(&d.default_value))
+        })
+        .unwrap_or_else(|| "not exposed".into());
+    let permission = format!("{:?}", session.state.controls.permission_mode);
     let (tx, rx) = mpsc::unbounded_channel::<AgentEvent>();
     tokio::spawn(async move {
-        let event = match provider
-            .query_plan_usage(Arc::new(vesper_runtime::RuntimeCancellation::new()))
-            .await
-        {
-            Ok(usage) => AgentEvent::Usage {
-                summary: format_glm_usage(&usage),
-            },
-            Err(error) => AgentEvent::Usage {
-                summary: format!("quota query failed: {error}"),
+        let result = match provider {
+            Ok(provider) => provider
+                .query_usage(cancel)
+                .await
+                .map_err(|e| e.to_string()),
+            Err(error) => Err(error.to_string()),
+        };
+        let usage = match result {
+            Ok(usage) => usage,
+            Err(error) => vesper_provider::ProviderUsage {
+                notice: Some(format!("Usage refresh failed: {error}")),
+                ..Default::default()
             },
         };
-        let _ = tx.send(event);
+        let summary = vesper_provider::render_usage(
+            &vesper_provider::UsageContext {
+                provider: config.provider_id.as_str(),
+                model: config.model.model_id.as_str(),
+                reasoning: &reasoning,
+                permission: &permission,
+                context_used,
+                context_capacity: config.context_window_tokens,
+                now_unix_ms: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64,
+            },
+            &usage,
+        );
+        let _ = tx.send(AgentEvent::Usage { summary });
     });
     session.usage_rx = Some(rx);
-    session.state.status = Some("Querying live Z.ai quota…".into());
+    session.state.status = Some("Refreshing provider usage…".into());
     Ok(())
 }
 
@@ -7082,33 +7105,6 @@ fn drain_usage_event(session: &mut TuiSession) {
             session.state.status = Some("quota query aborted.".into());
         }
     }
-}
-
-fn format_glm_usage(usage: &vesper_provider_glm::GlmPlanUsage) -> String {
-    let windows = usage
-        .quotas
-        .iter()
-        .map(|quota| {
-            format!(
-                "{}: used {}, remaining {}, limit {}{}",
-                quota.kind,
-                quota
-                    .used
-                    .map_or_else(|| "unknown".into(), |value| value.to_string()),
-                quota
-                    .remaining
-                    .map_or_else(|| "unknown".into(), |value| value.to_string()),
-                quota
-                    .limit
-                    .map_or_else(|| "unknown".into(), |value| value.to_string()),
-                quota
-                    .percentage
-                    .map_or_else(String::new, |value| format!(" ({value:.1}%)")),
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("; ");
-    format!("{} quota — {windows}", usage.platform)
 }
 
 fn conversation_text_tail(messages: &[ConversationMessage], maximum: usize) -> String {
@@ -7235,7 +7231,12 @@ fn turn_configuration(
             .unwrap_or_else(|| vesper_provider_openai::DEFAULT_MODEL.to_owned());
         let effort = active_superpower_choice(state, surface, "thinking")
             .unwrap_or_else(|| "medium".to_owned());
-        if !vesper_provider_openai::OpenAiCatalog::supports_reasoning(&model, &effort) {
+        if !vesper_provider_openai::OpenAiCatalog::reasoning_levels_for(
+            &model,
+            vesper_provider_openai::auth::AuthenticationMode::ApiKey,
+        )
+        .contains(&effort.as_str())
+        {
             return Err("The selected OpenAI model does not support that reasoning effort".into());
         }
         config.model.model_id = ModelId::new(model.as_str()).map_err(|_| "Invalid OpenAI model")?;
@@ -14107,6 +14108,39 @@ mod tests {
     //! touch crossterm or a real terminal.
 
     use super::*;
+
+    #[test]
+    fn openai_palette_values_follow_model_and_authentication() {
+        use vesper_provider::ProviderSuperpowers;
+        use vesper_provider_openai::{
+            OpenAiFactory, OpenAiSuperpowerPolicy, auth::AuthenticationMode,
+        };
+        let surface = ProviderSuperpowerSurface::new(
+            vesper_provider_openai::provider_id(),
+            OpenAiFactory::default().superpowers(),
+        );
+        let subscription = OpenAiSuperpowerPolicy::default();
+        let api = OpenAiSuperpowerPolicy {
+            mode: AuthenticationMode::ApiKey,
+        };
+        let choices = |policy: &dyn vesper_provider::SuperpowerPolicy, model: &str| {
+            advertised_policy_labels(&surface, policy, "thinking", "", model).unwrap()
+        };
+        assert_eq!(
+            choices(&subscription, "gpt-5.4"),
+            ["low", "medium", "high", "xhigh"]
+        );
+        assert_eq!(
+            choices(&subscription, "gpt-5.6-terra"),
+            ["low", "medium", "high", "xhigh", "max"]
+        );
+        assert_eq!(
+            choices(&api, "gpt-5.6-luna"),
+            ["none", "low", "medium", "high", "xhigh", "max"]
+        );
+        assert!(!choices(&api, "gpt-6-astra").contains(&"none".into()));
+        assert_eq!(surface.by_alias("model").unwrap().allowed_values.len(), 8);
+    }
 
     #[tokio::test]
     async fn native_openai_registry_and_model_controls_drive_the_shared_loop() {

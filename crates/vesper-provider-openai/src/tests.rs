@@ -69,6 +69,34 @@ fn both_auth_modes_use_responses_and_harness_function_schema() {
         assert_eq!(body["include"][0], "reasoning.encrypted_content");
     }
 }
+
+#[test]
+fn every_catalog_model_and_advertised_effort_serializes_natively() {
+    assert!(OpenAiCatalog::snapshot().models.len() >= 8);
+    for model in OpenAiCatalog::snapshot().models {
+        for mode in [
+            auth::AuthenticationMode::ApiKey,
+            auth::AuthenticationMode::ChatGpt,
+        ] {
+            for effort in OpenAiCatalog::reasoning_levels_for(model.model.model_id.as_str(), mode) {
+                let mut request = fixture_request();
+                request.model = model.model.clone();
+                let body = wire::request(&request, mode, effort).unwrap();
+                assert_eq!(body["model"], model.model.model_id.as_str());
+                assert_eq!(body["reasoning"]["effort"], effort);
+            }
+        }
+    }
+    assert!(wire::request(&fixture_request(), auth::AuthenticationMode::ApiKey, "none").is_ok());
+    assert!(
+        wire::request(
+            &fixture_request(),
+            auth::AuthenticationMode::ChatGpt,
+            "none"
+        )
+        .is_err()
+    );
+}
 #[test]
 fn tool_round_trip_preserves_call_identity_and_opaque_reasoning() {
     let mut request = fixture_request();
@@ -244,6 +272,53 @@ mod http {
         fn is_cancelled(&self) -> bool {
             false
         }
+    }
+    #[tokio::test]
+    async fn native_usage_uses_account_headers_without_inference_and_api_is_explicit() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}/responses", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut bytes = vec![];
+            while !bytes.windows(4).any(|v| v == b"\r\n\r\n") {
+                let mut buffer = [0; 4096];
+                let n = socket.read(&mut buffer).await.unwrap();
+                assert!(n > 0);
+                bytes.extend_from_slice(&buffer[..n]);
+            }
+            let headers = String::from_utf8(bytes).unwrap().to_lowercase();
+            assert!(headers.starts_with("get /usage http/1.1"));
+            assert!(headers.contains("authorization: bearer fixture-openai-key"));
+            assert!(headers.contains("chatgpt-account-id: fixture-account"));
+            let body = r#"{"plan_type":"plus","rate_limit":{"primary_window":{"used_percent":43,"limit_window_seconds":18000,"reset_at":9999999999}}}"#;
+            socket.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.unwrap();
+        });
+        let factory =
+            OpenAiFactory::for_loopback(&endpoint, auth::AuthenticationMode::ChatGpt).unwrap();
+        let session = factory
+            .create_session(&OpenAiFactory::default_configuration(), Arc::new(Never))
+            .await
+            .unwrap();
+        let usage = session.query_usage(Arc::new(Never)).await.unwrap();
+        assert_eq!(usage.plan.as_deref(), Some("plus"));
+        assert_eq!(usage.windows[0].used_percent, Some(43.0));
+        server.await.unwrap();
+        // The listener has closed: API status must not call a subscription or
+        // inference endpoint and cannot consume paid generation tokens.
+        let factory =
+            OpenAiFactory::for_loopback(&endpoint, auth::AuthenticationMode::ApiKey).unwrap();
+        let session = factory
+            .create_session(&OpenAiFactory::default_configuration(), Arc::new(Never))
+            .await
+            .unwrap();
+        let usage = session.query_usage(Arc::new(Never)).await.unwrap();
+        assert!(usage.windows.is_empty());
+        assert!(
+            usage
+                .notice
+                .unwrap()
+                .contains("Subscription limits do not apply")
+        );
     }
     async fn factory(
         body: String,

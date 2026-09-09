@@ -48,7 +48,7 @@ impl OpenAiSession {
         self.test_route = route;
         self
     }
-    async fn resolve_auth(
+    pub(crate) async fn resolve_auth(
         &self,
         cancel: Arc<dyn CancellationSignal>,
         refresh: bool,
@@ -118,6 +118,92 @@ impl OpenAiSession {
     }
 }
 impl ProviderSession for OpenAiSession {
+    fn query_usage<'a>(
+        &'a self,
+        cancel: Arc<dyn CancellationSignal>,
+    ) -> ProviderFuture<'a, Result<ProviderUsage, ProviderError>> {
+        Box::pin(async move {
+            let operation = async {
+                let mut auth = self
+                    .resolve_auth(cancel.clone(), false)
+                    .await
+                    .map_err(|_| {
+                        error(
+                            "OpenAI usage authentication failed; sign in through Settings",
+                            ErrorCategory::Authentication,
+                            false,
+                        )
+                    })?;
+                if auth.mode == AuthenticationMode::ApiKey {
+                    return Ok(ProviderUsage { authentication: Some("API key (usage-based billing)".into()), notice: Some("Subscription limits do not apply. API project limits: https://platform.openai.com/settings/organization/limits".into()), ..Default::default() });
+                }
+                let endpoint = "https://chatgpt.com/backend-api/wham/usage";
+                #[cfg(feature = "integration-test-harness")]
+                let test_endpoint = self.test_route.as_ref().map(|(url, _)| {
+                    let mut url = url::Url::parse(url).expect("validated fixture URL");
+                    url.set_path("/usage");
+                    url.to_string()
+                });
+                #[cfg(feature = "integration-test-harness")]
+                let endpoint = test_endpoint.as_deref().unwrap_or(endpoint);
+                for attempt in 0..2 {
+                    let mut builder = self
+                        .client
+                        .get(endpoint)
+                        .bearer_auth(auth.bearer.expose().as_str())
+                        .header("originator", "agent-vesper");
+                    if let Some(account) = &auth.account {
+                        builder = builder.header("ChatGPT-Account-Id", account.expose().as_str());
+                    }
+                    let mut response = builder.send().await.map_err(|_| {
+                        error(
+                            "OpenAI usage connection failed",
+                            ErrorCategory::Transport,
+                            false,
+                        )
+                    })?;
+                    if response.status() == reqwest::StatusCode::UNAUTHORIZED && attempt == 0 {
+                        auth = self.resolve_auth(cancel.clone(), true).await.map_err(|_| {
+                            error(
+                                "OpenAI usage session expired; sign in again",
+                                ErrorCategory::Authentication,
+                                false,
+                            )
+                        })?;
+                        continue;
+                    }
+                    if !response.status().is_success() {
+                        return Err(error(
+                            "OpenAI usage service rejected the request; check account access",
+                            ErrorCategory::Transport,
+                            false,
+                        ));
+                    }
+                    let mut bytes = Vec::new();
+                    while let Some(chunk) = response.chunk().await.map_err(|_| {
+                        error(
+                            "OpenAI usage response interrupted",
+                            ErrorCategory::Transport,
+                            false,
+                        )
+                    })? {
+                        if bytes.len() + chunk.len() > 65_536 {
+                            return Err(crate::wire::invalid());
+                        }
+                        bytes.extend_from_slice(&chunk);
+                    }
+                    let payload =
+                        serde_json::from_slice(&bytes).map_err(|_| crate::wire::invalid())?;
+                    return crate::usage::parse_usage(&payload);
+                }
+                Err(crate::wire::invalid())
+            };
+            tokio::select! {
+                result = tokio::time::timeout(Duration::from_secs(30), operation) => result.map_err(|_| error("OpenAI usage query timed out", ErrorCategory::Transport, false))?,
+                _ = async { while !cancel.is_cancelled() { tokio::time::sleep(Duration::from_millis(25)).await; } } => Err(error("OpenAI usage query cancelled", ErrorCategory::Cancellation, false)),
+            }
+        })
+    }
     fn auxiliary(&self) -> Option<&dyn AuxiliaryRequestPort> {
         Some(self)
     }

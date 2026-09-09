@@ -24,9 +24,15 @@ access is not interchangeable with API credit. See the official
 
 ## Models and harness features
 
-The adapter catalog offers GPT-5.4 (default) and GPT-6 Astra. `/model` changes
-the active model; `/thinking` selects low, medium, high, or xhigh. GPT-6 Astra
-also supports max. Unsupported combinations fail before dispatch. The shared
+The evidence-backed catalog offers GPT-6 Astra, GPT-5.6 Sol, Terra and Luna,
+GPT-5.5, GPT-5.4 (retained default), GPT-5.2, and GPT-5.3 Codex. This is a
+supported catalog, not a live account-entitlement list. `/model` changes
+the active model. `/thinking` offers low, medium, high, and xhigh; Astra and
+the GPT-5.6 models also offer max. API mode additionally offers none for the
+non-Codex models except Astra. Subscription mode does not advertise none.
+Model switches repair incompatible selections. Unsupported combinations fail
+before dispatch. Codex's ultra is a host-owned automatic delegation mode,
+not a literal Responses effort, and is not advertised as one here. The shared
 working-context budget is conservatively 272,000 tokens for both billing modes;
 it is not a claim that the public models have only that capacity. Catalog
 evidence: [GPT-5.4](https://developers.openai.com/api/docs/models/gpt-5.4) and
@@ -47,6 +53,21 @@ Memory extraction uses native OpenAI when the host launches with OpenAI.
 Embeddings use the independently configured source or existing local fallback,
 not an invented subscription embeddings endpoint. In ACP, restart after a
 footer provider swap if you also want to change the memory extraction provider.
+
+## Usage and account limits
+
+Run `/usage` for the shared bordered status card: current model, reasoning,
+permissions, estimated working context, and account usage. ChatGPT subscription
+mode queries the native passive usage endpoint and reports returned primary,
+weekly, and additional/premium windows with remaining percentages and reset
+countdowns. Missing windows remain unknown, never unlimited. Repeat `/usage`
+to refresh; it works independently of an active agent turn.
+
+API-key mode does not have subscription windows. Its card identifies API billing
+and links to the project/organization limits page; it does not invent a credit
+balance or require an organization-admin key. GLM uses its native monitor through
+the same status contract; providers without account endpoints still show the
+model/context card with an explicit unavailable notice.
 
 ## ACP / editor usage
 

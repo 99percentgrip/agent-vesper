@@ -32,6 +32,8 @@ platform assumptions on hosts unavailable locally.
   (fmt, clippy `-D warnings`, architecture, fixtures per stage, contract
   conformance, GLM/runtime/ACP/sessions verify, and the full workspace test
   suite) plus a documentation-structure check.
+- Canonical CI runs the offline POSIX installer upgrade regression to ensure
+  bundle replacement preserves co-located user state and database inodes.
 - The supply-chain job runs `cargo audit` and `cargo deny --all-features check`
   with pinned tool versions (`cargo-audit 0.22.2`, `cargo-deny 0.20.2`).
 - `cargo deny` permits the OSI-approved Boost Software License (`BSL-1.0`),

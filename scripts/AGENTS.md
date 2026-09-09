@@ -71,6 +71,9 @@ with each release.
 - POSIX upgrades remove legacy launcher symlinks before writing replacement
   launchers; launcher creation must never follow a symlink into the freshly
   installed bundle and overwrite its binaries.
+- Upgrades replace only the named binaries, seed library, and driver payloads,
+  never the bundle root. Co-located cognition databases, voice environments,
+  and other user state retain their paths and inodes in both installers.
 - The installers seed the curated skill library (from the bundled
   `skills/` archive directory) into `~/.agent-vesper/memory/`
   non-destructively: existing files win, slugs listed in
@@ -80,6 +83,8 @@ with each release.
 
 ## Verification
 
+- `sh scripts/test_install_upgrade.sh` verifies payload replacement while
+  preserving cognition contents/inode, voice state, and unrelated user files.
 - Shellcheck-clean `install.sh` (POSIX `sh`, no bashisms).
 - Shellcheck-clean `uninstall.sh` (POSIX `sh`, no bashisms).
 - `install.ps1` runs under Windows PowerShell 5.1+ and PowerShell 7.

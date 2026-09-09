@@ -428,10 +428,12 @@ pub(crate) fn multi_provider_control_surface(
                     })
                     .collect(),
             });
-            let mut efforts = vesper_provider_openai::REASONING_LEVELS.to_vec();
-            if model == "gpt-6-astra" {
-                efforts.push("max");
-            }
+            let efforts = vesper_provider_openai::OpenAiCatalog::reasoning_levels_for(
+                model,
+                vesper_provider_openai::OpenAiFactory::default()
+                    .control_policy()
+                    .mode,
+            );
             controls.push(AcpSessionControl {
                 id: "thought_level".into(),
                 name: "Reasoning effort".into(),
@@ -541,10 +543,27 @@ pub(crate) fn multi_provider_control_surface(
                         .insert(key, serde_json::json!(value))
                         .ok()?;
                     let model = config_str(&next, "openai:model")
-                        .unwrap_or(vesper_provider_openai::DEFAULT_MODEL);
+                        .unwrap_or(vesper_provider_openai::DEFAULT_MODEL)
+                        .to_owned();
                     let effort = config_str(&next, "openai:reasoning-mode").unwrap_or("medium");
-                    if !vesper_provider_openai::OpenAiCatalog::supports_reasoning(model, effort) {
-                        return None;
+                    if !vesper_provider_openai::OpenAiCatalog::reasoning_levels_for(
+                        &model,
+                        vesper_provider_openai::OpenAiFactory::default()
+                            .control_policy()
+                            .mode,
+                    )
+                    .contains(&effort)
+                    {
+                        if option_id == "model"
+                            && vesper_provider_openai::OpenAiCatalog::find(&model).is_some()
+                        {
+                            next.values
+                                .values
+                                .insert("openai:reasoning-mode", serde_json::json!("high"))
+                                .ok()?;
+                        } else {
+                            return None;
+                        }
                     }
                     let model = QualifiedModelId {
                         provider_id: vesper_provider_openai::provider_id(),
@@ -995,6 +1014,41 @@ mod tests {
             ("zai".to_owned(), "Z.ai".to_owned(), authenticated_zai),
             ("lmstudio".to_owned(), "LM Studio".to_owned(), true),
         ]
+    }
+
+    #[test]
+    fn openai_model_switch_repairs_incompatible_effort() {
+        let mut configuration = vesper_provider_openai::OpenAiFactory::default_configuration();
+        configuration
+            .values
+            .values
+            .insert("openai:model", serde_json::json!("gpt-6-astra"))
+            .unwrap();
+        configuration
+            .values
+            .values
+            .insert("openai:reasoning-mode", serde_json::json!("max"))
+            .unwrap();
+        let surface = multi_provider_control_surface(
+            &configuration,
+            &[("openai".into(), "OpenAI".into(), true)],
+            &[],
+        );
+        let switched = surface.apply(&configuration, "model", "gpt-5.5").unwrap();
+        assert_eq!(
+            config_str(&switched.configuration, "openai:reasoning-mode"),
+            Some("high")
+        );
+        let surface = multi_provider_control_surface(
+            &switched.configuration,
+            &[("openai".into(), "OpenAI".into(), true)],
+            &[],
+        );
+        assert!(
+            surface
+                .apply(&switched.configuration, "thought_level", "max")
+                .is_none()
+        );
     }
 
     #[test]

@@ -64,7 +64,7 @@ test-only conformance support.
 - `vesper-provider-glm` may depend on auth/domain/provider/config/security and
   use `vesper-testkit` only as a dev dependency.
 - `vesper-provider-openai` owns native OpenAI authentication, catalog, Responses
-  transport, and tool-free memory extraction; it may depend on
+  transport, passive subscription usage, and tool-free memory extraction; it may depend on
   auth/domain/provider/config/security, HTTP, and `fs2` credential-operation
   locks. Both hosts compose it without a Codex runtime dependency.
 - `vesper-runtime` may depend on domain/provider and the read-only repository,

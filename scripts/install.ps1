@@ -51,8 +51,18 @@ try {
 
     New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
     $bundle = Join-Path $InstallDir "agent-vesper-acp.bundle"
-    Remove-Item -LiteralPath $bundle -Recurse -Force -ErrorAction SilentlyContinue
-    Move-Item -LiteralPath $source -Destination $bundle
+    # Preserve user state sharing the bundle root; replace only owned payloads.
+    New-Item -ItemType Directory -Path $bundle -Force | Out-Null
+    foreach ($payload in @("agent-vesper-acp.exe", "agent-vesper-tui.exe", "vesper-web-fetch.exe", "skills", "web-driver")) {
+        $incoming = Join-Path $source $payload
+        if (Test-Path -LiteralPath $incoming) {
+            $destination = Join-Path $bundle $payload
+            if (Test-Path -LiteralPath $destination) {
+                Remove-Item -LiteralPath $destination -Recurse -Force
+            }
+            Move-Item -LiteralPath $incoming -Destination $destination
+        }
+    }
     $launcher = Join-Path $InstallDir "agent-vesper-acp.cmd"
     $launcherContent = "@echo off`r`n`"%~dp0agent-vesper-acp.bundle\agent-vesper-acp.exe`" %*"
     Set-Content -LiteralPath $launcher -Value $launcherContent -NoNewline

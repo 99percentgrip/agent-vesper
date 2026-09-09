@@ -63,7 +63,7 @@ pub(crate) fn request(
         .and_then(|r| r.mode.as_ref())
         .map(|s| s.as_str())
         .unwrap_or(default_effort);
-    if !OpenAiCatalog::supports_reasoning(model, effort) {
+    if !OpenAiCatalog::reasoning_levels_for(model, mode).contains(&effort) {
         return Err(unsupported());
     }
     let mut instructions = Vec::new();

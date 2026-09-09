@@ -13,6 +13,13 @@ Both hosts register one provider with API-key and subscription authentication.
   mode, local logout, bounded refresh, and cross-process RAII file locking.
 - `src/catalog.rs` owns verified model/effort/capability metadata and the
   conservative shared 272K context budget.
+- `src/policy.rs` owns per-model/auth-mode reasoning choices and compatible
+  model-switch cascades. API-only `none` is not offered in subscription mode.
+  `ultra` is a Codex host delegation feature, not a literal Responses effort.
+- `src/usage.rs` owns native subscription quota normalization. The session
+  queries the fixed passive `wham/usage` endpoint with bounded cancellation,
+  size and time limits, preserving primary/secondary/additional windows.
+  It never consumes reset credits or queries subscription limits with API keys.
 - `src/wire.rs` and `src/transport.rs` own Responses serialization, ordered
   bounded SSE, opaque reasoning, call/result identity, and interruption safety.
 - `src/factory.rs` owns the neutral factory, credential/control ports, and
