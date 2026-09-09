@@ -648,7 +648,7 @@ business logic.
 ## Work Guidance
 
 - `/usage` uses the registered session's neutral usage port on its independent
-  channel and renders the shared bordered status card without interrupting an
+  channel and renders the shared clean aligned status panel without interrupting an
   active turn. No GLM-only quota branch or host-owned quota parser is allowed.
   OpenAI model-specific reasoning policy filters menus and repairs incompatible
   selections when the model changes; API/subscription modes remain distinct.
@@ -657,6 +657,9 @@ business logic.
   cancellation, secure save, and local logout are registry-port driven;
   device sign-in never launches Codex. The provider preference applies after
   restart; model and reasoning selections drive the next shared agent turn.
+  Provider switching checks credential presence without forcing the auth menu:
+  a valid stored API key or subscription session is reused when returning to
+  OpenAI. Explicit `/auth` remains the route for rotation or replacement.
 - OpenAI catalog metadata supplies vision gates and compaction budgets.
   OpenAI memory extraction uses the same native credential/Responses path;
   it never needs a Z.ai key. Embeddings remain independently configured.

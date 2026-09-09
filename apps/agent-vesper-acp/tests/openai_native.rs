@@ -64,7 +64,7 @@ fn usage_reports_native_subscription_windows_without_a_provider_turn() {
     for expected in [
         "Model:",
         "Reasoning:",
-        "Context:",
+        "Context window:",
         "plus",
         "57% left",
         "63% left",

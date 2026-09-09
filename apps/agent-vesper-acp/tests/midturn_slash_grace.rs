@@ -158,7 +158,7 @@ fn usage_during_editor_interrupt_keeps_the_turn_running() {
     let texts = support::update_texts(process.transcript(), "agent_message_chunk");
     assert!(
         texts.iter().any(|text| text.contains("· Usage")
-            && text.contains("Context:")
+            && text.contains("Context window:")
             && text.contains("Usage refresh failed:")),
         "{texts:?}"
     );

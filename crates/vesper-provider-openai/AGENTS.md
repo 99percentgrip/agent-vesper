@@ -30,6 +30,8 @@ Both hosts register one provider with API-key and subscription authentication.
 - Never install, bundle, launch, or read credentials from Codex.
 - API-key and subscription modes replace the selected credential record; never fall
   back to API billing when subscription authentication fails.
+- Provider preference changes never mutate this credential record. Returning
+  to OpenAI reuses the valid selected mode until explicit logout or replacement.
 - Depend only on auth/domain/provider/config/security foundations.
 - Authentication uses fixed TLS origins in production. Loopback endpoints
   require an explicit test-only constructor. Redirects are disabled.

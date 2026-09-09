@@ -170,6 +170,9 @@ Vesper does not advertise it as an alias for max.
 Local follow-up verification: `cargo xtask verify` passed (full workspace,
 strict Clippy, architecture and fixture gates), as did Rust 1.88 locked tests
 for `vesper-provider`, `vesper-provider-openai`, and `vesper-provider-glm`.
-These status/catalog fixes target v0.21.1. Publication requires successful
-canonical, MSRV, five-target foundation, and web-driver acceptance workflows
-on its exact version commit before tagging; v0.21.0 does not contain them.
+The catalog and initial provider-neutral status work shipped in v0.21.1.
+The v0.21.2 follow-up removes the ASCII-art status frame, aligns and compacts
+usage fields, uses solid allowance meters and human-scale reset intervals,
+and reuses valid stored OpenAI authentication across provider switches.
+Publication remains exact-commit gated by canonical, MSRV, five-target
+foundation, and web-driver acceptance workflows before tagging.

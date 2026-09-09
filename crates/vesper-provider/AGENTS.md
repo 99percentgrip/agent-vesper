@@ -27,8 +27,10 @@ continuation, fallback, and error contracts.
 - `ProviderSession::query_usage` is an independent, read-only account query;
   its default explicitly reports unavailable account limits without inference.
   `ProviderUsage`, `UsageWindow`, and `render_usage` define the shared TUI/ACP
-  card. Context estimates stay distinct from account/billing limits; unknown
-  values must never display as zero, full allowance, or unlimited.
+  panel. It uses aligned labels, compact context counts, solid allowance bars,
+  and human-scale reset intervals without an ASCII-art box. Context estimates
+  stay distinct from account/billing limits; unknown values must never display
+  as zero, full allowance, or unlimited.
 - Capability requirements and same-provider candidates are bounded,
   provider-neutral ports. Payload scans fail closed on unknown capability and
   never infer support from model identifiers.

@@ -40,7 +40,7 @@ pub struct UsageContext<'a> {
     pub now_unix_ms: u64,
 }
 
-/// Shared bounded plain-text card for terminal and ACP clients.
+/// Shared bounded plain-text status panel for terminal and ACP clients.
 pub fn render_usage(context: &UsageContext<'_>, usage: &ProviderUsage) -> String {
     let safe = |value: &str| {
         value
@@ -49,30 +49,32 @@ pub fn render_usage(context: &UsageContext<'_>, usage: &ProviderUsage) -> String
             .take(160)
             .collect::<String>()
     };
-    let mut rows = vec![
-        format!("{} · Usage", safe(context.provider)),
-        format!("Model:       {}", safe(context.model)),
-        format!("Reasoning:   {}", safe(context.reasoning)),
-        format!("Permissions: {}", safe(context.permission)),
+    let mut fields = vec![
+        ("Model".to_owned(), safe(context.model)),
+        ("Reasoning".to_owned(), safe(context.reasoning)),
+        ("Permissions".to_owned(), safe(context.permission)),
     ];
     if let Some(auth) = &usage.authentication {
-        rows.push(format!("Account:     {}", safe(auth)));
+        fields.push(("Account".to_owned(), safe(auth)));
     }
     if let Some(plan) = &usage.plan {
-        rows.push(format!("Plan:        {}", safe(plan)));
+        fields.push(("Plan".to_owned(), safe(plan)));
     }
     if context.context_capacity > 0 {
         let remaining = context
             .context_capacity
             .saturating_sub(context.context_used);
-        rows.push(format!(
-            "Context:     {:.0}% left ({} / {} tokens used, estimated)",
-            remaining as f64 * 100.0 / context.context_capacity as f64,
-            context.context_used,
-            context.context_capacity
+        fields.push((
+            "Context window".to_owned(),
+            format!(
+                "{:.0}% left ({} used / {}, estimated)",
+                remaining as f64 * 100.0 / context.context_capacity as f64,
+                compact_count(context.context_used),
+                compact_count(context.context_capacity)
+            ),
         ));
     } else {
-        rows.push("Context:     capacity unavailable".into());
+        fields.push(("Context window".to_owned(), "capacity unavailable".into()));
     }
     for window in usage.windows.iter().take(16) {
         let percent = window
@@ -93,11 +95,11 @@ pub fn render_usage(context: &UsageContext<'_>, usage: &ProviderUsage) -> String
         let value = percent
             .map(|used| {
                 let left = 100.0 - used;
-                let filled = (left / 10.0).round() as usize;
+                let filled = (left * 14.0 / 100.0).round() as usize;
                 format!(
                     "[{}{}] {left:.0}% left",
-                    "#".repeat(filled),
-                    " ".repeat(10 - filled)
+                    "█".repeat(filled),
+                    "░".repeat(14 - filled)
                 )
             })
             .unwrap_or_else(|| "remaining unknown".into());
@@ -108,49 +110,87 @@ pub fn render_usage(context: &UsageContext<'_>, usage: &ProviderUsage) -> String
                     " · reset due; refresh usage".into()
                 } else {
                     let seconds = (at - context.now_unix_ms) / 1000;
-                    format!(
-                        " · resets in {}h {:02}m",
-                        seconds / 3600,
-                        seconds % 3600 / 60
-                    )
+                    format!(" · resets in {}", compact_duration(seconds))
                 }
             })
             .unwrap_or_default();
-        rows.push(format!("{}: {value}{reset}", safe(&window.label)));
-        if let Some(limit) = window.limit {
-            rows.push(format!(
-                "  Used: {} · remaining: {} · limit: {limit}",
-                window.used.map_or("unknown".into(), |n| n.to_string()),
-                window.remaining.map_or("unknown".into(), |n| n.to_string())
-            ));
-        }
+        let label = safe(&window.label);
+        let label = if label.to_ascii_lowercase().contains("limit") {
+            label
+        } else {
+            format!("{label} limit")
+        };
+        fields.push((label, format!("{value}{reset}")));
     }
-    if let Some(notice) = &usage.notice {
-        rows.push(format!("Notice: {}", safe(notice)));
-    }
-    if !usage.windows.is_empty() {
-        rows.push("Limits are a snapshot; run /usage again to refresh.".into());
-    }
-    let width = rows
+    let field_width = fields
         .iter()
-        .map(|s| s.chars().count())
+        .map(|(label, _)| label.chars().count())
         .max()
         .unwrap_or(0)
-        .min(100);
-    let border = format!("+{}+", "-".repeat(width + 2));
-    let mut lines = vec![border.clone()];
-    for row in rows {
-        let chars: Vec<_> = row.chars().collect();
-        for chunk in chars.chunks(width.max(1)) {
-            let line: String = chunk.iter().collect();
-            lines.push(format!(
-                "| {line}{} |",
-                " ".repeat(width.saturating_sub(chunk.len()))
-            ));
-        }
+        + 1;
+    let mut rows = vec![
+        format!("{} · Usage", provider_name(context.provider)),
+        String::new(),
+    ];
+    rows.extend(fields.into_iter().map(|(label, value)| {
+        let label = format!("{label}:");
+        format!("{label:field_width$}  {value}")
+    }));
+    if let Some(notice) = &usage.notice {
+        rows.push(String::new());
+        rows.push(format!("Warning: {}", safe(notice)));
     }
-    lines.push(border);
-    lines.join("\n")
+    if !usage.windows.is_empty() {
+        rows.push(String::new());
+        rows.push("Limits may be stale — run /usage again shortly.".into());
+    }
+    rows.join("\n")
+}
+
+fn provider_name(provider: &str) -> String {
+    match provider.to_ascii_lowercase().as_str() {
+        "openai" => "OpenAI".into(),
+        "zai" | "z.ai" => "Z.ai".into(),
+        "lmstudio" | "lm-studio" => "LM Studio".into(),
+        _ => provider
+            .split(['-', '_'])
+            .filter(|part| !part.is_empty())
+            .map(|part| {
+                let mut chars = part.chars();
+                chars.next().map_or_else(String::new, |first| {
+                    first.to_uppercase().chain(chars).collect()
+                })
+            })
+            .collect::<Vec<_>>()
+            .join(" "),
+    }
+}
+
+fn compact_count(value: u64) -> String {
+    if value < 1_000 {
+        return value.to_string();
+    }
+    let (unit, divisor) = if value >= 1_000_000_000 {
+        ('B', 1_000_000_000)
+    } else if value >= 1_000_000 {
+        ('M', 1_000_000)
+    } else {
+        ('K', 1_000)
+    };
+    if value.is_multiple_of(divisor) {
+        format!("{}{unit}", value / divisor)
+    } else {
+        format!("{:.1}{unit}", value as f64 / divisor as f64)
+    }
+}
+
+fn compact_duration(seconds: u64) -> String {
+    let minutes = seconds / 60;
+    if minutes >= 24 * 60 {
+        format!("{}d {}h", minutes / (24 * 60), minutes % (24 * 60) / 60)
+    } else {
+        format!("{}h {:02}m", minutes / 60, minutes % 60)
+    }
 }
 
 #[cfg(test)]
@@ -183,10 +223,40 @@ mod tests {
             ..Default::default()
         };
         let card = render_usage(&context, &usage);
-        assert!(card.contains("75% left"));
+        assert!(card.starts_with("Test · Usage\n\n"));
+        assert!(card.contains("Context window:  75% left (25 used / 100, estimated)"));
         assert!(card.contains("0% left"));
+        assert!(card.contains("[░░░░░░░░░░░░░░]"));
         assert!(card.contains("resets in 1h 00m"));
         assert!(card.contains("remaining unknown"));
         assert!(!card.contains('\u{1b}'));
+        assert!(!card.contains("+---"));
+    }
+
+    #[test]
+    fn panel_compacts_large_counts_and_long_reset_intervals() {
+        let context = UsageContext {
+            provider: "openai",
+            model: "gpt-6-astra",
+            reasoning: "low",
+            permission: "Ask",
+            context_used: 4_048,
+            context_capacity: 272_000,
+            now_unix_ms: 1_000,
+        };
+        let usage = ProviderUsage {
+            windows: vec![UsageWindow {
+                label: "Weekly".into(),
+                used_percent: Some(30.0),
+                resets_at_unix_ms: Some(500_001_000),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let panel = render_usage(&context, &usage);
+        assert!(panel.contains("OpenAI · Usage"));
+        assert!(panel.contains("99% left (4.0K used / 272K, estimated)"));
+        assert!(panel.contains("[██████████░░░░] 70% left"));
+        assert!(panel.contains("resets in 5d 18h"));
     }
 }

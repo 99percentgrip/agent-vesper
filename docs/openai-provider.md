@@ -56,12 +56,16 @@ footer provider swap if you also want to change the memory extraction provider.
 
 ## Usage and account limits
 
-Run `/usage` for the shared bordered status card: current model, reasoning,
+Run `/usage` for the shared aligned status panel: current model, reasoning,
 permissions, estimated working context, and account usage. ChatGPT subscription
 mode queries the native passive usage endpoint and reports returned primary,
 weekly, and additional/premium windows with remaining percentages and reset
 countdowns. Missing windows remain unknown, never unlimited. Repeat `/usage`
 to refresh; it works independently of an active agent turn.
+
+Switching to another provider and back reuses the valid selected OpenAI
+credential. Use `/auth` only to rotate, replace, or sign out; provider
+selection itself does not start another device login.
 
 API-key mode does not have subscription windows. Its card identifies API billing
 and links to the project/organization limits page; it does not invent a credit

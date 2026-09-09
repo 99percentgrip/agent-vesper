@@ -91,11 +91,16 @@ When the user requests a durable behavior change, record it here or in the relev
   windows, remaining allowance, and resets. New providers implement the shared
   usage port or report explicitly unavailable values; never fabricate quotas.
   Model and reasoning menus must use adapter-owned per-model/auth-mode metadata.
+  Its terminal presentation uses clean aligned rows and solid progress bars;
+  raw ASCII-art borders and hash-mark meters are not acceptable.
 - The requested OpenAI integration must expose one provider with API-key and
   ChatGPT subscription authentication choices in native Settings and retain
   the shared harness features in both hosts. Both authentication modes must
   run natively in Vesper without installing, bundling, or launching Codex CLI
   or app-server. Do not advertise OpenAI before its gates pass.
+  Switching to another provider and back must reuse the selected valid OpenAI
+  credential; only explicit sign-out, credential failure, or `/auth` may
+  request authentication again.
 
 ## Project Contracts
 

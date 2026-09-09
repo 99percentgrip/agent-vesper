@@ -1284,7 +1284,13 @@ async fn drive_loop(
     let mut terminal = Terminal::new(Backend::new(stdout()))
         .map_err(|error| format!("terminal init failed: {error}"))?;
     if let Some(provider) = auth.clone() {
-        ensure_provider_authenticated(&mut terminal, registry, provider, false).await?;
+        ensure_provider_authenticated(
+            &mut terminal,
+            registry,
+            provider,
+            AuthenticationIntent::Startup,
+        )
+        .await?;
     }
 
     loop {
@@ -1927,7 +1933,7 @@ async fn drive_loop(
                                 &mut terminal,
                                 registry,
                                 provider,
-                                true,
+                                AuthenticationIntent::ExplicitReauth,
                             )
                             .await
                             {
@@ -2067,7 +2073,7 @@ async fn drive_loop(
                                     &mut terminal,
                                     registry,
                                     auth,
-                                    true,
+                                    AuthenticationIntent::ProviderSwitch,
                                 )
                                 .await
                             {
@@ -2756,11 +2762,24 @@ async fn native_authentication_menu(
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AuthenticationIntent {
+    Startup,
+    ProviderSwitch,
+    ExplicitReauth,
+}
+
+impl AuthenticationIntent {
+    fn requires_screen(self, credential_present: bool) -> bool {
+        self == Self::ExplicitReauth || startup_route(credential_present) != StartupRoute::Main
+    }
+}
+
 async fn ensure_provider_authenticated(
     terminal: &mut Terminal<Backend>,
     registry: &vesper_runtime::ProviderRegistry,
     provider: AuthProvider,
-    force: bool,
+    intent: AuthenticationIntent,
 ) -> Result<(), String> {
     let provider_id = vesper_domain::ProviderId::new(provider.id.as_str())
         .map_err(|error| format!("invalid provider id {0}: {error}", provider.id))?;
@@ -2770,10 +2789,9 @@ async fn ensure_provider_authenticated(
         .credential_present(&provider_id)
         .await
         .unwrap_or(false);
-    // Startup checks first and skips the screen when a valid credential
-    // already exists; a forced `/auth` always re-opens the screen so the user
-    // can rotate or replace the key (OpenCode `/connect` semantics).
-    if !force && startup_route(credential_present) == StartupRoute::Main {
+    // Startup and provider switching reuse a valid stored credential.
+    // Only explicit reauthentication re-opens the screen for rotation.
+    if !intent.requires_screen(credential_present) {
         return Ok(());
     }
 
@@ -14108,6 +14126,14 @@ mod tests {
     //! touch crossterm or a real terminal.
 
     use super::*;
+
+    #[test]
+    fn provider_switch_reuses_a_valid_stored_authentication() {
+        assert!(!AuthenticationIntent::Startup.requires_screen(true));
+        assert!(!AuthenticationIntent::ProviderSwitch.requires_screen(true));
+        assert!(AuthenticationIntent::ExplicitReauth.requires_screen(true));
+        assert!(AuthenticationIntent::ProviderSwitch.requires_screen(false));
+    }
 
     #[test]
     fn openai_palette_values_follow_model_and_authentication() {
