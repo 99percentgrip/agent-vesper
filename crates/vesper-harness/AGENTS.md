@@ -11,6 +11,21 @@ It also exposes the Python-compatible `web_search`, `web_reader`,
 Z.ai and Playwright MCP server descriptors.
 
 ## Ownership
+## Ownership
+
+- `src/swarm_adapter.rs` (VRO-15 PR-9, feature `swarm`, **default-off**)
+  owns the `WorkerPort` execution adapter: one swarm turn maps to one
+  `ProviderSession::start` stream under a cancellation bridge, and the
+  tool registry is filtered per task against the role class allowlist ∩
+  task required capabilities. `vesper-provider` and `vesper-swarm` are
+  optional deps linked **only** when `swarm` is explicitly enabled; the
+  default build (single-agent loop, TUI, ACP) is byte-identical to
+  pre-VRO-15 and links neither. Host parity decision (VRO-15 PR-9): the
+  opt-in `/swarm` host surface is **initially TUI-only**; the ACP host
+  gains it only when a protocol-level interaction model is defined
+  (multi-agent progress is not expressible in ACP v1 session turns
+  without host-owned polling). This exclusion is documented here and in
+  `apps/agent-vesper-acp/AGENTS.md` per the root parity contract.
 
 - `src/web_settings.rs` owns explicit workspace web-setting saves and shared
   `/web` controls. Atomic private JSON snapshots preserve existing TOML and

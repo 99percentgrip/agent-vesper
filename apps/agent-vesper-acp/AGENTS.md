@@ -5,6 +5,16 @@
 Compose configuration, the GLM factory, minimal runtime, ACP adapter, stdio
 transport, stderr-only tracing, and orderly shutdown.
 
+## Ownership
+
+- **Host parity exclusion (VRO-15 PR-9):** the opt-in swarm orchestration
+  surface (`/swarm`) is TUI-only in its initial delivery. Rationale: the
+  swarm's multi-agent progress stream (per-driver turns, ledger growth,
+  event log) has no ACP-v1 expression; a host-owned polling model would
+  be an invented protocol. The shared engine (`vesper-swarm`) and the
+  provider adapter (`vesper-harness` feature `swarm`) are host-neutral
+  and compile for both hosts; only the interactive surface is deferred.
+  Revisit when ACP grows a progress/notification surface.
 ## Local Contracts
 
 - Contain no session, provider-wire, or ACP-mapping business logic.

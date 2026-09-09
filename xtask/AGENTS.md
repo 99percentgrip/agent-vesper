@@ -36,6 +36,9 @@ architecture, MSRV, and source-oracle checks.
 - Run `cargo xtask fixtures coverage --stage 4`.
 - Run `cargo xtask fixtures coverage --stage 5`.
 - Run `cargo xtask sessions verify`.
+- Run `cargo xtask naming-guard` (VRO-15 PR-1: enforce the upstream-brand
+  naming embargo against `xtask/naming-guard-baseline.json`; pass
+  `--regenerate` to re-freeze after a deliberate baseline change).
 - Run `cargo xtask verify`.
 
 ## Child DOX Index

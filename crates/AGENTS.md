@@ -41,6 +41,18 @@ test-only conformance support.
   confined to the Linux-only `sandbox_init` supervisor binary target; it owns
   the opt-in namespaces backend with probed, honest capabilities (ADR 0022 —
   Sandbox Supervisor as the Sole Raw-Syscall Boundary).
+- `vesper-swarm` (VRO-15 PR-1) depends only on `vesper-domain` and
+  `vesper-security` (and, at PR-1, only `serde`/`thiserror`); it owns the
+  pure provider-neutral swarm-coordination foundations extracted from *the
+  swarm oracle* — topology data model now; worker pool, priority message
+  bus, task assignment, shared memory ledger, and sandbox lease
+  coordination in later VRO-15 PRs. Zero I/O by construction: no network,
+  no filesystem, no clock, no process spawning, no provider names, no
+  `vesper-testkit`. Integration is default-off; no production crate or
+  application may depend on it until the VRO-15 composition PR wires a
+  default-off `swarm` feature at the host boundary. The upstream-brand
+  naming embargo is mechanically enforced by `cargo xtask naming-guard`
+  (SHA-256 ratchet against `xtask/naming-guard-baseline.json`).
 - `vesper-testkit` may depend on all foundational crates and owns synthetic
   read-store/no-write helpers; no production crate may depend on it.
 - `vesper-web` depends on `quick-xml`, `rust-stemmers`, `serde`,
@@ -107,6 +119,8 @@ test-only conformance support.
   and owner-only Unix vault fallback.
 - `vesper-policy/AGENTS.md` — pure permission and policy decisions.
 - `vesper-testkit/AGENTS.md` — fixture and fake-conformance helpers.
+- `vesper-swarm/AGENTS.md` — pure provider-neutral swarm-coordination
+  foundations (VRO-15; topology model now, pooling/bus/ledger/leases later).
 - `vesper-provider-glm/AGENTS.md` — Z.ai GLM provider adapter.
 - `vesper-provider-openai/AGENTS.md` — native OpenAI adapter,
   with no Codex installation or runtime dependency.

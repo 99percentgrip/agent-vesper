@@ -1,0 +1,28 @@
+[package]
+name = "vesper-swarm"
+description = "Pure provider-neutral swarm orchestration foundations for Agent Vesper"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+futures-util.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+vesper-domain = { path = "../vesper-domain", version = "=0.21.3" }
+vesper-security = { path = "../vesper-security", version = "=0.21.3" }
+
+[dev-dependencies]
+futures-util.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+
+[features]
+default = []
+
+[lints]
+workspace = true

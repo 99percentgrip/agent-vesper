@@ -11,6 +11,14 @@ natively; it owns no provider-wire, ACP, persistence, or session-mutation
 business logic.
 
 ## Ownership
+## Ownership
+
+- **VRO-15 PR-9 (planned surface):** the opt-in `/swarm` command activates
+  the hive orchestration on its own async task (caller-owned tick loop;
+  never the render thread). Activation is explicit-only; the default
+  single-agent ReAct loop is untouched. The command lands with the host
+  wiring PR; the engine and provider adapter are already available
+  (`vesper-swarm`, `vesper-harness` feature `swarm`).
 
 - `src/provider_hub.rs` owns Settings → Providers (`/settings providers`,
   `/settings provider`, and compatibility shortcut `/provider`). It mirrors

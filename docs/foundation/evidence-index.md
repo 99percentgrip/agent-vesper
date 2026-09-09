@@ -79,6 +79,32 @@ Status: COMPLETE
   published x86_64 image passed both real-browser tests. Registry PR #539
   updated in place at fork commit `4f62da58cc37d6c77425218cc80fdc49db26f920`.
 
+## VRO-15 swarm oracle extraction completion — 2026-09-10
+
+- Pure-logic `vesper-swarm` landed in ten PRs (scaffold+guard, topology
+  manager, worker pool, priority bus, assignment/timeout, HNSW core,
+  hybrid ledger, sandbox leases, hive orchestrator + adapter,
+  documentation closeout); decision record is
+  `docs/adr/0025-provider-neutral-swarm-orchestration.md`, requirements
+  and per-PR evidence live in `docs/swarm-oracle-extraction-prd.md`.
+- Measured floors at close: **1,893 passed / 0 failed**
+  (`cargo test --workspace --all-features`) and **1,869 / 0** (default
+  features — the zero-degradation proof; the default build links no
+  swarm symbols). Monotonic ladder across PRs: 1,741 → 1,767 → 1,785 →
+  1,813 → 1,832 → 1,853 → 1,868 → 1,881 → 1,893; no test deleted or
+  weakened.
+- Quality bars with executable evidence: HNSW Recall@10 = 0.997 @ ef=16
+  and 1.000 @ ef≥64 against brute-force cosine on 10k seeded vectors
+  (`crates/vesper-swarm/tests/hnsw_tests.rs`); sandbox teardown survives
+  holder panics with exact acquire/release pairing
+  (`crates/vesper-swarm/tests/sandbox_tests.rs`); the naming embargo is
+  a CI ratchet (`cargo xtask naming-guard`,
+  `xtask/naming-guard-baseline.json`: 30 frozen pre-existing hits,
+  0 new).
+- `cargo xtask architecture` validates the feature-gated edges
+  (`vesper-harness → vesper-provider/vesper-swarm` as optional deps
+  only); `cargo xtask verify` runs the naming guard in CI.
+
 ## Outstanding acceptance
 
 - Registry PR #539 awaits upstream review; the v0.20.89 release and web

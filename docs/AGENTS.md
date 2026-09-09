@@ -29,7 +29,13 @@ Own durable project documentation and evidence-backed engineering records.
   (e.g. `agent-vesper-reasoning-orchestrator-prd.md`,
   `provider-capability-gating-prd.md`, `qm-extraction-prd.md`,
   `result-aware-loop-detection-prd.md`,
-  `web-oracle-extraction-prd.md`); implementation evidence for their
+  `web-oracle-extraction-prd.md`),
+  and `swarm-oracle-extraction-prd.md` (VRO-15 — **Accepted and
+  Implemented**, closed by PR-1..PR-10 on 2026-09-10; decision record
+  `docs/adr/0025-provider-neutral-swarm-orchestration.md`; upstream is
+  referenced only as the swarm oracle — no upstream brand names may
+  appear in docs or source, enforced by `cargo xtask naming-guard`);
+  implementation evidence for their
   phases lands in the owning stage/foundation/adapter directories.
 
 ## Local Contracts

@@ -58,6 +58,12 @@ enum Task {
         #[command(subcommand)]
         command: SessionsTask,
     },
+    /// Enforce the upstream-brand naming embargo (VRO-15 PR-1).
+    NamingGuard {
+        /// Regenerate the frozen baseline instead of enforcing it.
+        #[arg(long)]
+        regenerate: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -144,6 +150,7 @@ fn main() -> ExitCode {
         Task::Sessions {
             command: SessionsTask::Verify,
         } => sessions_verify(),
+        Task::NamingGuard { regenerate } => naming_guard(regenerate),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -1157,6 +1164,190 @@ fn scan_stage4_sources(root: &Path) -> Result<(), String> {
     Ok(())
 }
 
+fn naming_guard(regenerate: bool) -> Result<(), String> {
+    // VRO-15 PR-1: the upstream-brand naming embargo, enforced as a
+    // fail-closed ratchet. The embargo scope and forbidden patterns are
+    // defined below in hex so this source file contains no upstream brand
+    // strings of its own. The baseline freezes pre-existing mentions
+    // (historical docs, seed skills, host-UX comparisons) as file+line SHA
+    // digests; enforcement fails on any hit not in the baseline. Removing a
+    // baseline entry is allowed and does not fail; `--regenerate` rewrites
+    // the baseline (maintainer action, then commit the result).
+    use sha2::{Digest, Sha256};
+    use std::fmt::Write as _;
+
+    let root = repository_root();
+    let baseline_path = root.join("xtask").join("naming-guard-baseline.json");
+    // UTF-8 lowercase words. Only the standalone brand stems are needed:
+    // substring compounds (e.g. hyphenated or path forms) all contain one
+    // of these stems. Matching is word-bounded so ordinary words that
+    // merely contain a stem cannot false-positive.
+    const FORBIDDEN_HEX: &[&str] = &[
+        // pattern 1 (product name and its owner-handled variants)
+        "7275666c6f",
+        // pattern 2 (owner name and variants)
+        "7275766e6574",
+        "727576696e",
+        "7275766e6f",
+        // pattern 3 (assistant product name; covers hyphenated compounds)
+        "636c61756465",
+        // pattern 4 (vendor name)
+        "616e7468726f706963",
+        // pattern 5 (upstream database product)
+        "6167656e746462",
+        // pattern 6 (upstream memory product)
+        "736f6e61",
+    ];
+
+    let mut pattern_bytes = Vec::with_capacity(FORBIDDEN_HEX.len());
+    for hex in FORBIDDEN_HEX {
+        let mut bytes = Vec::with_capacity(hex.len() / 2);
+        let value = hex.as_bytes();
+        for pair in value.chunks_exact(2) {
+            let high = (pair[0] as char).to_digit(16).ok_or("bad hex")?;
+            let low = (pair[1] as char).to_digit(16).ok_or("bad hex")?;
+            bytes.push(((high << 4) | low) as u8);
+        }
+        pattern_bytes.push(bytes);
+    }
+    let patterns: Vec<String> = pattern_bytes
+        .iter()
+        .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
+        .collect();
+
+    // Embargo scope (directive): docs/, AGENTS.md, README, crates/**.
+    // Exclusions: generated/lock artifacts and the mirror directory. Files
+    // are walked deterministically (sorted) so baselines are reproducible.
+    let scope_dirs = ["docs", "crates"];
+    let root_files = ["AGENTS.md", "README.md"];
+
+    let mut files = Vec::new();
+    for dir in scope_dirs {
+        collect_text_files(&root.join(dir), &mut files)?;
+    }
+    for name in root_files {
+        let path = root.join(name);
+        if path.is_file() {
+            files.push(path);
+        }
+    }
+    files.sort();
+
+    let mut current: Vec<String> = Vec::new();
+    for path in &files {
+        let Ok(source) = fs::read_to_string(path) else {
+            continue;
+        };
+        let relative = path
+            .strip_prefix(&root)
+            .map(|value| value.to_string_lossy().into_owned())
+            .unwrap_or_else(|_| path.to_string_lossy().into_owned());
+        for (index, line) in source.lines().enumerate() {
+            let lower = line.to_lowercase();
+            for pattern in &patterns {
+                if contains_word_bounded(&lower, pattern) {
+                    let mut digest_input = String::with_capacity(relative.len() + line.len() + 8);
+                    let _ = write!(digest_input, "{relative}\n{line}");
+                    let digest = Sha256::digest(digest_input.as_bytes());
+                    current.push(format!("{relative}:{} {}", index + 1, hex_digest(&digest)));
+                    break;
+                }
+            }
+        }
+    }
+
+    if regenerate {
+        fs::write(&baseline_path, format!("{}\n", current.join("\n")))
+            .map_err(|error| error.to_string())?;
+        println!(
+            "naming-guard: regenerated baseline with {} frozen hits",
+            current.len()
+        );
+        return Ok(());
+    }
+
+    let baseline = fs::read_to_string(&baseline_path)
+        .map_err(|_| format!("missing baseline {}", baseline_path.display()))?;
+    let frozen: BTreeSet<&str> = baseline
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .collect();
+    let mut violations = 0;
+    for hit in &current {
+        if !frozen.contains(&hit.as_str()) {
+            violations += 1;
+            eprintln!("naming-guard violation: {hit}");
+        }
+    }
+    if violations > 0 {
+        return Err(format!(
+            "naming embargo violated: {violations} new upstream-brand hit(s) not in {}",
+            baseline_path.display()
+        ));
+    }
+    println!(
+        "naming-guard: clean ({} hits, all frozen in baseline)",
+        current.len()
+    );
+    Ok(())
+}
+
+fn hex_digest(digest: &[u8]) -> String {
+    digest.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+/// Word-bounded containment: the pattern must not be flanked by ASCII
+/// alphanumerics. Keeps hyphenated compounds and standalone names matching
+/// while ordinary words that merely embed a stem stay legal.
+fn contains_word_bounded(haystack: &str, needle: &str) -> bool {
+    let mut offset = 0;
+    while let Some(found) = haystack[offset..].find(needle) {
+        let start = offset + found;
+        let end = start + needle.len();
+        let before_ok = haystack[..start]
+            .chars()
+            .next_back()
+            .is_none_or(|c| !c.is_ascii_alphanumeric());
+        let after_ok = haystack[end..]
+            .chars()
+            .next()
+            .is_none_or(|c| !c.is_ascii_alphanumeric());
+        if before_ok && after_ok {
+            return true;
+        }
+        offset = end;
+    }
+    false
+}
+
+fn collect_text_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
+    for entry in fs::read_dir(dir).map_err(|error| error.to_string())? {
+        let entry = entry.map_err(|error| error.to_string())?;
+        let path = entry.path();
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if path.is_dir() {
+            if matches!(
+                name.as_ref(),
+                "node_modules" | "target" | ".git" | ".agent-vesper"
+            ) {
+                continue;
+            }
+            collect_text_files(&path, out)?;
+        } else if matches!(
+            name.as_ref(),
+            "Cargo.toml" | "Cargo.lock" | "AGENTS.md" | "README.md"
+        ) || name.ends_with(".rs")
+            || name.ends_with(".md")
+            || name.ends_with(".toml")
+        {
+            out.push(path);
+        }
+    }
+    Ok(())
+}
+
 fn allowed_dependencies() -> BTreeMap<&'static str, BTreeSet<&'static str>> {
     BTreeMap::from([
         ("vesper-domain", BTreeSet::new()),
@@ -1307,7 +1498,15 @@ fn allowed_dependencies() -> BTreeMap<&'static str, BTreeSet<&'static str>> {
                 "vesper-domain",
                 "vesper-mcp",
                 "vesper-memory",
+                // VRO-15 PR-9: optional deps behind the default-off `swarm`
+                // feature; the WorkerPort adapter links provider types and
+                // the swarm engine only when swarm is explicitly enabled.
+                "vesper-provider",
+                // dev-only: the deterministic synthetic provider backs the
+                // swarm adapter's integration tests (test kind only).
+                "vesper-provider-synthetic",
                 "vesper-runtime",
+                "vesper-swarm",
                 "vesper-sandbox",
                 "vesper-sessions",
                 // VRO-14 PR-5: the WebService hosts the five opt-in web
@@ -1360,6 +1559,14 @@ fn allowed_dependencies() -> BTreeMap<&'static str, BTreeSet<&'static str>> {
                 "vesper-security",
                 "vesper-sessions",
             ]),
+        ),
+        (
+            // VRO-15 PR-1: the swarm oracle's coordination paradigms as a
+            // pure Rust layer. Structurally limited to domain + security
+            // foundations; execution/inference/sandboxing are trait ports
+            // fulfilled at the composition boundary, never here.
+            "vesper-swarm",
+            BTreeSet::from(["vesper-domain", "vesper-security"]),
         ),
         ("xtask", BTreeSet::from(["vesper-testkit"])),
     ])
@@ -1600,6 +1807,7 @@ fn verify() -> Result<(), String> {
     fixtures_coverage(5)?;
     contracts_verify()?;
     architecture()?;
+    naming_guard(false)?;
     provider_glm_verify()?;
     runtime_verify()?;
     acp_verify()?;

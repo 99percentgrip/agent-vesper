@@ -4048,9 +4048,11 @@ dependencies = [
  "vesper-memory",
  "vesper-policy",
  "vesper-provider",
+ "vesper-provider-synthetic",
  "vesper-runtime",
  "vesper-sandbox",
  "vesper-sessions",
+ "vesper-swarm",
  "vesper-testkit",
  "vesper-web",
  "vesper-web-fetch",
@@ -4220,6 +4222,19 @@ dependencies = [
  "tokio",
  "vesper-config",
  "vesper-domain",
+]
+
+[[package]]
+name = "vesper-swarm"
+version = "0.21.3"
+dependencies = [
+ "futures-util",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "vesper-domain",
+ "vesper-security",
 ]
 
 [[package]]
@@ -4728,6 +4743,7 @@ dependencies = [
  "clap",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
  "vesper-testkit",
 ]
 

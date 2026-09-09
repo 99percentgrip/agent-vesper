@@ -2397,6 +2397,8 @@ impl WorkerFactory {
 pub mod daemon_lock;
 mod host_commands;
 pub mod slash_commands;
+#[cfg(feature = "swarm")]
+pub mod swarm_adapter;
 pub mod watcher_sweep;
 
 pub use daemon_lock::{

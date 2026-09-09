@@ -22,6 +22,7 @@ members = [
     "crates/vesper-sandbox",
     "crates/vesper-sessions",
     "crates/vesper-security",
+    "crates/vesper-swarm",
     "crates/vesper-testkit",
     "crates/vesper-web",
     "crates/vesper-web-fetch",

@@ -29,12 +29,20 @@ vesper-sessions = { path = "../vesper-sessions", version = "=0.21.3" }
 # the port trait and is supplied by the composition boundary.
 vesper-web = { path = "../vesper-web", version = "=0.21.3" }
 vesper-web-fetch = { path = "../vesper-web-fetch", version = "=0.21.3" }
+# VRO-15 PR-9: optional, behind the default-off `swarm` feature.
+vesper-swarm = { path = "../vesper-swarm", version = "=0.21.3", optional = true }
+# The swarm adapter bridges WorkerPort to ProviderSession; provider types
+# are only linked when `swarm` is enabled (default builds stay identical).
+vesper-provider = { path = "../vesper-provider", version = "=0.21.3", optional = true }
 
 [features]
 # VRO-13 PR-6: the daemon's single-writer flock discipline. Unix-only
 
 # Forwards to vesper-sandbox's docker backend so hosts can enable it
 docker = ["vesper-sandbox/docker"]
+# VRO-15 PR-9: the opt-in swarm orchestration layer. Default-off: the
+# single-agent loop, TUI, and ACP build identically without it.
+swarm = ["dep:vesper-swarm", "dep:vesper-provider"]
 
 [dev-dependencies]
 tempfile.workspace = true
@@ -44,6 +52,8 @@ tempfile.workspace = true
 vesper-policy = { path = "../vesper-policy", version = "=0.21.3" }
 vesper-provider = { path = "../vesper-provider", version = "=0.21.3" }
 vesper-testkit = { path = "../vesper-testkit", version = "=0.21.3" }
+# VRO-15 PR-9: deterministic in-process provider for swarm adapter tests.
+vesper-provider-synthetic = { path = "../vesper-provider-synthetic", version = "=0.21.3" }
 
 [lints]
 workspace = true
