@@ -14,9 +14,9 @@ reqwest.workspace = true
 serde_json.workspace = true
 url.workspace = true
 flate2 = { version = "1.1.10", default-features = false, features = ["rust_backend"] }
-vesper-sandbox = { path = "../vesper-sandbox", version = "=0.21.5" }
-vesper-security = { path = "../vesper-security", version = "=0.21.5" }
-vesper-web = { path = "../vesper-web", version = "=0.21.5" }
+vesper-sandbox = { path = "../vesper-sandbox", version = "=0.21.6" }
+vesper-security = { path = "../vesper-security", version = "=0.21.6" }
+vesper-web = { path = "../vesper-web", version = "=0.21.6" }
 
 [dev-dependencies]
 tempfile.workspace = true

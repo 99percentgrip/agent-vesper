@@ -39,6 +39,8 @@ pub mod markdown;
 pub mod plan_mode;
 pub mod provider_hub;
 pub mod superpowers;
+#[cfg(feature = "swarm")]
+pub mod swarm_hub;
 pub mod ui;
 pub mod web_hub;
 

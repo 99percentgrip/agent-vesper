@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum StreamInterruptionCause {
+    /// The host or user cancelled the active turn.
+    Cancelled,
     /// The bounded absolute generation deadline elapsed while data could still
     /// have been arriving.
     GenerationDeadline,

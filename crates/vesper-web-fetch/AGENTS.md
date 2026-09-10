@@ -19,6 +19,13 @@ implementation that provisions a backend demanding
 - `Dockerfile` and `browser-pipe.sh` — immutable base/build image pins and
   exact headless package version; fd 3/4 mapping uses a fixed shell script,
   never a TCP debugging listener or a new Rust unsafe boundary.
+  The image also builds `vesper-setpriv` from checksum-pinned util-linux
+  2.41.6 for the shared swarm scope's Landlock confinement; its complete
+  corresponding source archive remains in `/usr/local/share/vesper-setpriv/`.
+  `procps` supports per-worker descendant cleanup inside that existing container;
+  its `tini` entrypoint reaps orphaned descendants while the lease remains active.
+  Shared-scope admission must probe actual confinement and fail closed when
+  the helper or kernel support is unavailable.
 
 - `src/main.rs` — the helper binary: redirect-capped (≤5) blocking fetch,
   bounded streaming (64 KiB stdio route, up to 512 KiB chunked pipe route),

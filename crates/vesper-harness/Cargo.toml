@@ -15,25 +15,25 @@ tokio = { workspace = true, features = ["process"] }
 tempfile.workspace = true
 url.workspace = true
 futures-util.workspace = true
-vesper-agent = { path = "../vesper-agent", version = "=0.21.5" }
-vesper-checkpoints = { path = "../vesper-checkpoints", version = "=0.21.5" }
-vesper-config = { path = "../vesper-config", version = "=0.21.5" }
-vesper-domain = { path = "../vesper-domain", version = "=0.21.5" }
-vesper-mcp = { path = "../vesper-mcp", version = "=0.21.5" }
-vesper-memory = { path = "../vesper-memory", version = "=0.21.5" }
-vesper-runtime = { path = "../vesper-runtime", version = "=0.21.5" }
-vesper-sandbox = { path = "../vesper-sandbox", version = "=0.21.5" }
-vesper-sessions = { path = "../vesper-sessions", version = "=0.21.5" }
+vesper-agent = { path = "../vesper-agent", version = "=0.21.6" }
+vesper-checkpoints = { path = "../vesper-checkpoints", version = "=0.21.6" }
+vesper-config = { path = "../vesper-config", version = "=0.21.6" }
+vesper-domain = { path = "../vesper-domain", version = "=0.21.6" }
+vesper-mcp = { path = "../vesper-mcp", version = "=0.21.6" }
+vesper-memory = { path = "../vesper-memory", version = "=0.21.6" }
+vesper-runtime = { path = "../vesper-runtime", version = "=0.21.6" }
+vesper-sandbox = { path = "../vesper-sandbox", version = "=0.21.6" }
+vesper-sessions = { path = "../vesper-sessions", version = "=0.21.6" }
 # VRO-14 PR-5: the web tools' pure surfaces (perception pipeline, egress
 # policy, action vocabulary) live in vesper-web; the transport stays behind
 # the port trait and is supplied by the composition boundary.
-vesper-web = { path = "../vesper-web", version = "=0.21.5" }
-vesper-web-fetch = { path = "../vesper-web-fetch", version = "=0.21.5" }
+vesper-web = { path = "../vesper-web", version = "=0.21.6" }
+vesper-web-fetch = { path = "../vesper-web-fetch", version = "=0.21.6" }
 # VRO-15 PR-9: optional, behind the default-off `swarm` feature.
-vesper-swarm = { path = "../vesper-swarm", version = "=0.21.5", optional = true }
+vesper-swarm = { path = "../vesper-swarm", version = "=0.21.6", optional = true }
 # The swarm adapter bridges WorkerPort to ProviderSession; provider types
 # are only linked when `swarm` is enabled (default builds stay identical).
-vesper-provider = { path = "../vesper-provider", version = "=0.21.5", optional = true }
+vesper-provider = { path = "../vesper-provider", version = "=0.21.6", optional = true }
 
 [features]
 # VRO-13 PR-6: the daemon's single-writer flock discipline. Unix-only
@@ -49,11 +49,11 @@ tempfile.workspace = true
 # VRO-13 PR-8: the cross-feature e2e fixture composes the firewall holder
 # (vesper-policy), the provider seam (vesper-provider), and the deterministic
 # fake provider (vesper-testkit) — test-only, mirroring vesper-agent/tests.
-vesper-policy = { path = "../vesper-policy", version = "=0.21.5" }
-vesper-provider = { path = "../vesper-provider", version = "=0.21.5" }
-vesper-testkit = { path = "../vesper-testkit", version = "=0.21.5" }
+vesper-policy = { path = "../vesper-policy", version = "=0.21.6" }
+vesper-provider = { path = "../vesper-provider", version = "=0.21.6" }
+vesper-testkit = { path = "../vesper-testkit", version = "=0.21.6" }
 # VRO-15 PR-9: deterministic in-process provider for swarm adapter tests.
-vesper-provider-synthetic = { path = "../vesper-provider-synthetic", version = "=0.21.5" }
+vesper-provider-synthetic = { path = "../vesper-provider-synthetic", version = "=0.21.6" }
 
 [lints]
 workspace = true

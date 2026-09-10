@@ -518,6 +518,46 @@ pub struct CognitionBundle {
     credential_source: Arc<dyn vesper_provider_glm::GlmCredentialSource>,
 }
 
+#[cfg(feature = "swarm")]
+impl CognitionBundle {
+    /// Called only for an explicit swarm run, on a blocking host task. A local
+    /// hash encoder is never substituted for the required semantic provider.
+    pub(crate) fn swarm_embedding(
+        &self,
+    ) -> Result<
+        (
+            Arc<vesper_harness::swarm_embedding::ConfiguredEmbedding>,
+            usize,
+        ),
+        String,
+    > {
+        let config = EmbeddingConfig::load(&self.root);
+        if !matches!(config.source.as_deref(), Some("lmstudio" | "bigmodel")) {
+            return Err("Swarm requires a real embedding source configured through /embedding (lmstudio or bigmodel).".into());
+        }
+        let (embedder, _, _) = build_independent_embedder(&config, 768, &self.credential_source);
+        let dimensions = embedder
+            .embed(
+                "Swarm embedding capability probe",
+                vesper_cognition::EmbedAction::Search,
+            )
+            .map_err(|_| "Configured embedding probe failed.")?
+            .len();
+        let bridge = vesper_harness::swarm_embedding::ConfiguredEmbedding::new(
+            dimensions,
+            Arc::new(move |texts| {
+                embedder
+                    .embed_batch(
+                        &texts.iter().map(String::as_str).collect::<Vec<_>>(),
+                        vesper_cognition::EmbedAction::Add,
+                    )
+                    .map_err(|_| "Configured embedding failed.".into())
+            }),
+        )?;
+        Ok((Arc::new(bridge), dimensions))
+    }
+}
+
 pub fn global_cognition_root() -> std::path::PathBuf {
     if let Ok(value) = std::env::var("AGENT_VESPER_GLOBAL_COGNITION_ROOT") {
         return std::path::PathBuf::from(value);

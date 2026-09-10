@@ -349,6 +349,12 @@ pub enum AgentLoopError {
 }
 
 /// The Tier C multi-turn agent loop.
+/// Nonblocking in-memory observation of safe native history boundaries. The
+/// observer owns no permission and must not persist data implicitly.
+pub trait AgentHistoryPort: Send + Sync {
+    fn checkpoint(&self, history: &[ConversationMessage]);
+}
+
 #[derive(Clone)]
 pub struct AgentLoop {
     registry: Arc<ProviderRegistry>,
@@ -361,6 +367,7 @@ pub struct AgentLoop {
     capability_context: CapabilityContext,
     active_plan: Option<String>,
     context_pressure_level: Arc<AtomicU8>,
+    history_port: Option<Arc<dyn AgentHistoryPort>>,
 }
 
 impl AgentLoop {
@@ -382,6 +389,19 @@ impl AgentLoop {
             capability_context: CapabilityContext::default(),
             active_plan: None,
             context_pressure_level: Arc::new(AtomicU8::new(0)),
+            history_port: None,
+        }
+    }
+
+    #[must_use]
+    pub fn with_history_port(mut self, port: Arc<dyn AgentHistoryPort>) -> Self {
+        self.history_port = Some(port);
+        self
+    }
+
+    fn checkpoint_history(&self, history: &[ConversationMessage]) {
+        if let Some(port) = &self.history_port {
+            port.checkpoint(history);
         }
     }
 
@@ -540,6 +560,7 @@ impl AgentLoop {
         cancellation: Arc<dyn CancellationSignal>,
     ) -> Result<(AgentTurnOutcome, Vec<ConversationMessage>), AgentLoopError> {
         self.progress_port.emit(AgentProgressEvent::TurnStarted);
+        self.checkpoint_history(&messages);
         let mut advertised_tools = self.tools.definitions_for(mode);
         let session = self
             .registry
@@ -572,6 +593,22 @@ impl AgentLoop {
         let mut pressure_level = self.context_pressure_level.load(Ordering::Relaxed);
 
         loop {
+            self.checkpoint_history(&messages);
+            if cancellation.is_cancelled() {
+                messages.retain(|message| !is_plan_continuation_message(message));
+                self.checkpoint_history(&messages);
+                return Ok((
+                    AgentTurnOutcome::Interrupted {
+                        assistant_content: Vec::new(),
+                        cause: vesper_domain::StreamInterruptionCause::Cancelled,
+                        tool_call_started: false,
+                        iterations: iteration,
+                        tool_results,
+                        plan,
+                    },
+                    messages,
+                ));
+            }
             append_steering_messages(&mut messages, &ids, self.steering_port.as_ref());
             if iteration >= iteration_limit {
                 if plan_has_open_items(plan.as_deref()) && iteration_limit < ultimate_plan_limit {
@@ -626,6 +663,7 @@ impl AgentLoop {
                     {
                         Ok(commit) => {
                             messages = commit.history;
+                            self.checkpoint_history(&messages);
                             self.progress_port
                                 .emit(AgentProgressEvent::CompactionCompleted {
                                     report: Box::new(commit.report),
@@ -660,6 +698,9 @@ impl AgentLoop {
                 .map_err(AgentLoopError::CapabilityRequired)?;
             }
             let request = self.build_request(&ids, &request_messages, &advertised_tools, iteration);
+            if cancellation.is_cancelled() {
+                continue;
+            }
             let mut stream = match session.start(request, Arc::clone(&cancellation)).await {
                 Ok(stream) => stream,
                 Err(error) => {
@@ -680,8 +721,12 @@ impl AgentLoop {
                 }
             };
 
-            let (assistant_parts, tool_calls, finish) =
-                consume_stream(&mut stream, self.progress_port.as_ref()).await?;
+            let (assistant_parts, tool_calls, finish) = consume_stream(
+                &mut stream,
+                self.progress_port.as_ref(),
+                cancellation.as_ref(),
+            )
+            .await?;
             // Append the assistant turn (text + any tool invocations).
             let mut assistant_history = assistant_parts.clone();
             for call in &tool_calls {
@@ -720,6 +765,7 @@ impl AgentLoop {
                     });
                 }
                 messages.retain(|message| !is_plan_continuation_message(message));
+                self.checkpoint_history(&messages);
                 return Ok((
                     AgentTurnOutcome::Interrupted {
                         assistant_content: assistant_parts,
@@ -733,6 +779,7 @@ impl AgentLoop {
                 ));
             }
             if tool_calls.is_empty() {
+                self.checkpoint_history(&messages);
                 if !matches!(finish, FinishOutcome::Stop) {
                     return Err(AgentLoopError::Incomplete(finish));
                 }
@@ -747,6 +794,7 @@ impl AgentLoop {
                     continue;
                 }
                 messages.retain(|message| !is_plan_continuation_message(message));
+                self.checkpoint_history(&messages);
                 return Ok((
                     AgentTurnOutcome::Completed {
                         assistant_content: assistant_parts,
@@ -770,14 +818,15 @@ impl AgentLoop {
                 firewall: self.config.firewall.clone(),
                 sandbox: self.config.sandbox.clone(),
             };
-            for call in tool_calls {
+            for (call_index, call) in tool_calls.iter().enumerate() {
+                let mut loop_break = None;
                 let tool_name = call.tool_id.as_str().to_string();
                 self.progress_port.emit(AgentProgressEvent::ToolStarted {
                     name: tool_name.clone(),
                     hint: tool_arg_hint(&call.arguments),
                 });
                 let outcome = self
-                    .gate_and_execute(&call, &context, &advertised_tools)
+                    .gate_and_execute(call, &context, &advertised_tools)
                     .await;
                 let mut output = outcome.text;
                 let injected = outcome.injected;
@@ -815,7 +864,7 @@ impl AgentLoop {
                             blocked_by_loop_guard = true;
                         }
                         LoopGuardAction::Break(breakage) => {
-                            return Err(AgentLoopError::LoopDetected(breakage.message));
+                            loop_break = Some(breakage.message);
                         }
                     }
                 }
@@ -871,6 +920,28 @@ impl AgentLoop {
                     content,
                     extensions: ExtensionMap::default(),
                 });
+                if let Some(reason) = loop_break {
+                    for pending in &tool_calls[call_index + 1..] {
+                        messages.push(ConversationMessage {
+                            id: ids.message(),
+                            role: MessageRole::Tool,
+                            content: vec![ContentPart::ToolResult(vesper_domain::ToolResult {
+                                id: ids.result(),
+                                call_id: pending.id.clone(),
+                                output: serde_json::json!(
+                                    "Not executed: loop safety ceiling reached."
+                                ),
+                                status: vesper_domain::ToolResultStatus::Cancelled,
+                                locations: Vec::new(),
+                                diff_summary: None,
+                                extensions: ExtensionMap::default(),
+                            })],
+                            extensions: ExtensionMap::default(),
+                        });
+                    }
+                    self.checkpoint_history(&messages);
+                    return Err(AgentLoopError::LoopDetected(reason));
+                }
             }
             iteration += 1;
         }
@@ -943,8 +1014,14 @@ impl AgentLoop {
         request: ProviderRequest,
         cancellation: Arc<dyn CancellationSignal>,
     ) -> Option<String> {
-        let mut stream = session.start(request, cancellation).await.ok()?;
-        let (parts, calls, finish) = consume_stream(&mut stream, &NoopProgressPort).await.ok()?;
+        let mut stream = session
+            .start(request, Arc::clone(&cancellation))
+            .await
+            .ok()?;
+        let (parts, calls, finish) =
+            consume_stream(&mut stream, &NoopProgressPort, cancellation.as_ref())
+                .await
+                .ok()?;
         if !calls.is_empty() || finish != FinishOutcome::Stop {
             return None;
         }
@@ -1026,20 +1103,28 @@ impl AgentLoop {
             system_instructions: self.config.system_instructions.clone(),
             messages: messages.to_vec(),
             tools: tools.to_vec(),
-            tool_choice: ToolChoice::Auto,
-            capabilities: vec![
-                CapabilityRequest {
-                    capability: CapabilityId::new("provider:tools").expect("static capability"),
-                    requirement: FeatureRequirement::Require,
-                    fallback: None,
-                },
-                CapabilityRequest {
-                    capability: CapabilityId::new("provider:tool-choice")
-                        .expect("static capability"),
-                    requirement: FeatureRequirement::Require,
-                    fallback: None,
-                },
-            ],
+            tool_choice: if tools.is_empty() {
+                ToolChoice::None
+            } else {
+                ToolChoice::Auto
+            },
+            capabilities: if tools.is_empty() {
+                Vec::new()
+            } else {
+                vec![
+                    CapabilityRequest {
+                        capability: CapabilityId::new("provider:tools").expect("static capability"),
+                        requirement: FeatureRequirement::Require,
+                        fallback: None,
+                    },
+                    CapabilityRequest {
+                        capability: CapabilityId::new("provider:tool-choice")
+                            .expect("static capability"),
+                        requirement: FeatureRequirement::Require,
+                        fallback: None,
+                    },
+                ]
+            },
             reasoning: None,
             structured_output: StructuredOutputIntent::None,
             sampling: None,
@@ -1245,10 +1330,12 @@ fn merge_injected_tools(advertised: &mut Vec<ToolDefinition>, new_tools: Vec<Too
 async fn consume_stream(
     stream: &mut vesper_provider::ProviderEventStream,
     progress: &dyn AgentProgressPort,
+    cancellation: &dyn CancellationSignal,
 ) -> Result<(Vec<ContentPart>, Vec<ToolCall>, FinishOutcome), AgentLoopError> {
     let mut parts = Vec::new();
     let mut calls = Vec::new();
     let mut finish = None;
+    let mut tool_started = false;
     let mut text_buffer = String::new();
     while let Some(event) = stream.next().await {
         match event {
@@ -1267,11 +1354,21 @@ async fn consume_stream(
                     text_buffer.push_str(text.as_str());
                 }
                 other => {
+                    if matches!(other, ContentPart::ToolCall(_)) {
+                        tool_started = true;
+                    }
                     flush_text_buffer(&mut text_buffer, &mut parts);
                     parts.push(other);
                 }
             },
+            Ok(
+                ProviderStreamEvent::ToolCallStarted { .. }
+                | ProviderStreamEvent::ToolCallDelta { .. },
+            ) => {
+                tool_started = true;
+            }
             Ok(ProviderStreamEvent::ToolCallCompleted(call)) => {
+                tool_started = true;
                 flush_text_buffer(&mut text_buffer, &mut parts);
                 calls.push(call);
             }
@@ -1287,11 +1384,45 @@ async fn consume_stream(
                 break;
             }
             Ok(_) => {}
-            Err(error) => return Err(AgentLoopError::ProviderTurn(error)),
+            Err(error) => {
+                if text_buffer.is_empty()
+                    && parts.is_empty()
+                    && !tool_started
+                    && !cancellation.is_cancelled()
+                {
+                    return Err(AgentLoopError::ProviderTurn(error));
+                }
+                finish = Some(FinishOutcome::StreamInterrupted {
+                    cause: if cancellation.is_cancelled()
+                        || error.info.category == vesper_domain::ErrorCategory::Cancellation
+                    {
+                        vesper_domain::StreamInterruptionCause::Cancelled
+                    } else {
+                        vesper_domain::StreamInterruptionCause::Transport
+                    },
+                    tool_call_started: tool_started,
+                });
+                break;
+            }
         }
     }
     flush_text_buffer(&mut text_buffer, &mut parts);
-    let finish = finish.ok_or(AgentLoopError::StreamWithoutTerminal)?;
+    let finish = if cancellation.is_cancelled() || matches!(finish, Some(FinishOutcome::Cancelled))
+    {
+        FinishOutcome::StreamInterrupted {
+            cause: vesper_domain::StreamInterruptionCause::Cancelled,
+            tool_call_started: tool_started,
+        }
+    } else if let Some(finish) = finish {
+        finish
+    } else if !parts.is_empty() || tool_started {
+        FinishOutcome::StreamInterrupted {
+            cause: vesper_domain::StreamInterruptionCause::RemoteEof,
+            tool_call_started: tool_started,
+        }
+    } else {
+        return Err(AgentLoopError::StreamWithoutTerminal);
+    };
     Ok((parts, calls, finish))
 }
 

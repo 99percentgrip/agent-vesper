@@ -144,6 +144,12 @@ pub const ORACLE_SLASH_COMMANDS: [SlashCommandDescriptor; 28] = [
 /// Host-neutral Vesper extensions implemented by both production hosts.
 /// Kept separate from the frozen oracle catalog so compatibility fixtures
 /// remain byte-stable while ACP clients can discover the real added surface.
+/// Advertised by both hosts only when their default-off swarm build is enabled.
+pub const SWARM_SLASH_COMMAND: SlashCommandDescriptor = SlashCommandDescriptor {
+    name: "swarm",
+    description: "Swarm: /swarm status, /swarm settings, or /swarm run <goal>",
+};
+
 pub const HOST_PARITY_SLASH_COMMANDS: [SlashCommandDescriptor; 18] = [
     SlashCommandDescriptor {
         name: "remember",

@@ -650,6 +650,7 @@ enum Terminal {
 
 const fn interruption_label(cause: StreamInterruptionCause) -> &'static str {
     match cause {
+        StreamInterruptionCause::Cancelled => "cancelled",
         StreamInterruptionCause::GenerationDeadline => "generation-deadline",
         StreamInterruptionCause::ReadInactivity => "read-inactivity",
         StreamInterruptionCause::RemoteEof => "remote-eof",

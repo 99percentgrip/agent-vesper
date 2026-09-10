@@ -16,6 +16,9 @@ quota normalization, and legacy GLM compatibility translation.
 
 ## Local Contracts
 
+- Stream interruption diagnostics preserve the shared explicit `Cancelled` cause
+  when the native agent loop retains a cancelled partial response.
+
 - Depend only on `vesper-auth`, `vesper-domain`, `vesper-provider`,
   `vesper-config`, and `vesper-security` in production.
 - `vesper-testkit` is permitted only as a dev dependency.

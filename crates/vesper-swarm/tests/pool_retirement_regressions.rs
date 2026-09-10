@@ -14,14 +14,30 @@ struct Resources {
     peak: AtomicUsize,
     boots: AtomicUsize,
     fail: AtomicBool,
+    pending: AtomicBool,
+    drop_gate: Mutex<
+        Option<(
+            tokio::sync::oneshot::Sender<()>,
+            std::sync::mpsc::Receiver<()>,
+        )>,
+    >,
 }
 struct Instance(Arc<Resources>);
 impl Drop for Instance {
     fn drop(&mut self) {
+        if let Some((entered, release)) = self.0.drop_gate.lock().unwrap().take() {
+            let _ = entered.send(());
+            release
+                .recv_timeout(Duration::from_secs(5))
+                .expect("retirement must not block the async executor");
+        }
         self.0.live.fetch_sub(1, Ordering::SeqCst);
     }
 }
 impl WorkerPort for Instance {
+    fn pending_work(&self) -> bool {
+        self.0.pending.load(Ordering::Acquire)
+    }
     fn capabilities(&self) -> WorkerCapabilities {
         WorkerCapabilities::minimal()
     }
@@ -90,6 +106,35 @@ fn fail(pool: &WorkerPool) {
     pool.test_freeze_last_seen(Duration::from_secs(10));
     assert_eq!(pool.health_tick(tokio::time::Instant::now()).len(), 1);
 }
+
+#[tokio::test]
+async fn abandoned_blocking_retirement_keeps_admission_reserved_until_completion() {
+    let (pool, factory) = pool(false);
+    let pool = Arc::new(pool);
+    pool.initialize().await.unwrap();
+    fail(&pool);
+    let (entered, waiting) = tokio::sync::oneshot::channel();
+    let (release, gate) = std::sync::mpsc::channel();
+    *factory.resources.drop_gate.lock().unwrap() = Some((entered, gate));
+    let owned = pool.clone();
+    let replacement = tokio::spawn(async move { owned.replace_failed().await });
+    tokio::time::timeout(Duration::from_secs(2), waiting)
+        .await
+        .unwrap()
+        .unwrap();
+    replacement.abort();
+    assert!(replacement.await.unwrap_err().is_cancelled());
+    assert!(pool.replace_failed().await.is_err());
+    assert!(pool.scale_async(1).await.is_err());
+    assert_eq!(factory.resources.boots.load(Ordering::Acquire), 1);
+    assert!(!pool.settle_retirements(Duration::ZERO).await);
+    release.send(()).unwrap();
+    assert!(pool.settle_retirements(Duration::from_secs(2)).await);
+    assert_eq!(pool.replace_failed().await.unwrap(), 1);
+    assert_eq!(factory.resources.peak.load(Ordering::Acquire), 1);
+    pool.close();
+    assert!(pool.settle_retirements(Duration::from_secs(2)).await);
+}
 #[tokio::test]
 async fn replacement_never_overlaps_failed_physical_instance() {
     let (pool, factory) = pool(false);
@@ -99,6 +144,7 @@ async fn replacement_never_overlaps_failed_physical_instance() {
     assert_eq!(factory.resources.live.load(Ordering::SeqCst), 1);
     assert_eq!(factory.resources.peak.load(Ordering::SeqCst), 1);
     pool.close();
+    assert!(pool.settle_retirements(Duration::from_secs(1)).await);
     assert_eq!(factory.resources.live.load(Ordering::SeqCst), 0);
 }
 #[tokio::test]
@@ -141,4 +187,38 @@ async fn upgradeable_weak_owner_also_blocks_retirement() {
     drop(weak);
     assert_eq!(pool.replace_failed().await.unwrap(), 1);
     assert_eq!(factory.resources.peak.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn failed_native_work_must_settle_before_physical_replacement() {
+    let (pool, factory) = pool(false);
+    pool.initialize().await.unwrap();
+    fail(&pool);
+    factory.resources.pending.store(true, Ordering::Release);
+    assert!(pool.replace_failed().await.is_err());
+    assert_eq!(factory.resources.boots.load(Ordering::Acquire), 1);
+    assert_eq!(factory.resources.live.load(Ordering::Acquire), 1);
+    factory.resources.pending.store(false, Ordering::Release);
+    assert_eq!(pool.replace_failed().await.unwrap(), 1);
+    assert_eq!(factory.resources.peak.load(Ordering::Acquire), 1);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn dropping_last_pool_owner_retires_blocking_instances_off_executor() {
+    let (pool, factory) = pool(false);
+    pool.initialize().await.unwrap();
+    let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel();
+    *factory.resources.drop_gate.lock().unwrap() = Some((entered_tx, release_rx));
+    drop(pool);
+    entered_rx.await.unwrap();
+    assert_eq!(factory.resources.live.load(Ordering::SeqCst), 1);
+    release_tx.send(()).unwrap();
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while factory.resources.live.load(Ordering::SeqCst) != 0 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
 }

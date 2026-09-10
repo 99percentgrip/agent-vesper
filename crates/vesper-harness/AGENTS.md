@@ -12,12 +12,46 @@ Z.ai and Playwright MCP server descriptors.
 
 ## Ownership
 
+- `lens_tools` owns shared native artifact-review and planning-interview tools:
+  bounded question validation, workspace confinement, real Lens invocation and
+  provider-visible feedback serialization. Both hosts use the same executor;
+  hosts own URL presentation and the live question limit. ACP emits a review URL
+  through its event sink; TUI also attempts desktop-browser launch.
+  `tests/swarm_lens_browser.mjs` is driven by the explicit native worker browser
+  gate in `swarm_adapter_tests`: actual Chrome submission, returned tool status,
+  captured provider continuation and retained history, with isolated state.
+
+- `swarm_settings` owns bounded workspace preferences and session-local explicit
+  Save/Cancel drafts; reads and cancellation create no state. `swarm_service`
+  owns one admitted native goal, real configured embedding/backend checks,
+  existing tool/permission/progress composition, retained partial results and
+  verified cleanup. Caller drop signals cancellation while the owned task settles.
+  Cleanup uncertainty closes further service admission; preference alone never
+  grants tool/network access. Explicit sandbox disable aliases and backend
+  selection are honored; missing compiled backends and unknown selections refuse.
+  Namespace probing runs off the async executor. Both hosts compose this behind
+  default-off `swarm`.
+- `swarm_inputs` captures bounded project files (4 MiB each, 64 MiB aggregate,
+  4096 files, 64 levels) and materializes separate worker copies. Known project
+  dotfiles (`.github`, `.cargo`, `.gitignore`, `.gitattributes`, `.editorconfig`,
+  `.dockerignore`) are included; other hidden state and generated dependency/build
+  directories are excluded, symlinks/special files and
+  excessive inventories refuse. Source project files are never worker write roots.
+  Explicit-run directories remain as output artifacts.
+- `swarm_embedding` bridges a host's real configured embedding implementation on
+  bounded blocking tasks; unfinished requests retain permits. Setup/recall share a
+  process-wide four-request bound, including abandoned observers. No hash fallback.
+  `swarm_journal` retains native worker/task identities and full returned histories
+  in memory through observer cancellation, with explicit settlement observation.
+
+
 - `src/swarm_adapter.rs` (feature `swarm`, default-off) adapts `WorkerPort`
   through the existing `AgentLoop`, not a second provider-stream loop. Hosts
   inject `WorkerFactory` (registry/config/credentials), real `ToolRegistry`,
   mode/permission, approval and optional progress ports. Role/task restrictions
   remove executable registrations and prefix gateways, not only schemas.
-  Each instance refuses concurrent reuse; each task creates its own native
+  Each instance refuses concurrent reuse and reports pending owned work until
+  its native loop settles, even after observer drop; each task creates its own native
   runtime session. `into_instance_factory` produces the shared native pool
   factory: registry/config/permission/progress services are inherited, but busy
   flags and histories are independent. Session startup remains lazy inside the
@@ -27,8 +61,8 @@ Z.ai and Playwright MCP server descriptors.
   `tests/swarm_adapter_tests.rs` uses a scripted provider and real read/write
   executors to check continuation, denial, restriction, cancellation, bounds
   and interrupted-history preservation with temporary workspace roots.
-  Native Settings and TUI/ACP orchestration composition remain open acceptance
-  work. Both hosts must wire this shared execution path; ACP already has
+  Native Settings and TUI/ACP orchestration composition are wired behind the
+  opt-in build; full cross-host acceptance remains in the repair matrix. ACP has
   `AcpEngineProgressPort`, so lack of progress support is not an exclusion.
 
 - `src/swarm_sandbox.rs` (optional `swarm`) binds native worker factories to
@@ -37,8 +71,15 @@ Z.ai and Playwright MCP server descriptors.
   command route. Worker roots remain output artifacts; cleanup never deletes
   results. Existing/symlinked roots refuse before provisioning. Filesystem
   capability is mandatory; network access also requires full capability and
-  explicit grant provenance. Shared OS boundaries are not implemented by this
-  adapter; it admits isolated scopes only.
+  explicit grant provenance. Explicit shared mode uses one existing Docker
+  supervisor and disjoint `w/<worker-id>` roots. `swarm_shared_scope` invokes
+  the bundled checksum-pinned setpriv utility with Landlock, dropped capabilities,
+  no-new-privileges and unique non-root worker credentials. A real confinement
+  probe is mandatory; the namespace backend retains its isolated one-run protocol.
+  Each command verifies all processes with its worker UID have exited and restores
+  artifact ownership before native tool continuation. The bundled init reaps
+  orphans. Cleanup uncertainty quarantines the scope even if the supervisor is
+  subsequently removed. No new Rust syscall or sandbox backend is introduced.
   Scope preparation owns cancellation cleanup even when its blocking observer
   drops. Native backend work runs outside book/metadata locks; uncertain provision
   or teardown retains quarantine. Detached command ports keep their leases.

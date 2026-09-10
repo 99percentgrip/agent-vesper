@@ -17,7 +17,7 @@ Orchestrator (VRO) Phase VRO-1 domain contracts.
 - Event sequences are scoped to runtime/session/turn ownership and turn
   terminals are unique.
 - `FinishOutcome::StreamInterrupted` carries a provider-neutral classified
-  cause plus the tool-call ambiguity bit; transports must not collapse
+  cause (including explicit cancellation) plus the tool-call ambiguity bit; transports must not collapse
   deadline, inactivity, remote EOF, and transport failures into one label.
 - Hidden internal chain-of-thought is not a domain content requirement.
 - `ModelRequirement`, `ModelCandidate`, and `CapabilitySuggestion` are the
@@ -30,7 +30,8 @@ Orchestrator (VRO) Phase VRO-1 domain contracts.
   `parse_slash_command` parser. It is plain data — no stores, no I/O;
   store-backed execution lives in `vesper-harness`. It also owns the separate
   shared host-parity extension descriptors, including ADR 0024 `/skill` and
-  workspace `/web` settings, so
+  workspace `/web` settings, plus the separately feature-gated
+  `SWARM_SLASH_COMMAND` descriptor, so
   ACP advertisement and TUI registration are checked against one foundation
   catalog. The ACP oracle catalog is a
   distinct oracle surface from the TUI's `LOCAL_COMMANDS` palette (79+3

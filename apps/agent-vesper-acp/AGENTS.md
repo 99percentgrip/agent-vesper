@@ -7,12 +7,17 @@ transport, stderr-only tracing, and orderly shutdown.
 
 ## Ownership
 
-- VRO-15 swarm host activation remains unimplemented and acceptance-gated.
-  Shared execution uses `vesper-harness::swarm_adapter` behind `swarm`.
-  ACP parity is required: `AcpEngineProgressPort` already maps bounded content,
-  tool and plan events; no absence-of-progress protocol exclusion applies.
-  Settings/session controls, worker orchestration and opt-in/no-state acceptance
-  must land with the TUI counterpart before advertising the feature.
+- VRO-15 composition is behind the default-off `swarm` build feature.
+  `src/swarm_host.rs` wires the shared native service and workspace Save/Cancel
+  controls, active provider configuration, configured semantic embeddings,
+  memory recall, scoped tools, permission/progress and cancellation. `/swarm`
+  is advertised from the shared feature descriptor only in that build.
+  Persisted opt-in never bypasses capability, embedding or tool permission checks.
+  Final swarm reports are explicitly emitted after worker progress and include
+  artifact paths. Transport shutdown cancels active work and observes service
+  cleanup; pending human approval observes the same cancellation signal.
+  Full acceptance remains tracked in the F01–F18 matrix; do not advertise broad
+  activation before those gates pass.
 
 ## Local Contracts
 
@@ -231,15 +236,15 @@ Every host-agnostic capability shipped in the TUI MUST also be wired here
   mode=<auto|fast|balanced|deep|maximum|off>` overrides the profiler
   per-session; strategy and ✓ LEARNED notices surface as
   `ReasoningDelta` events (the client's reasoning channel).
-- **Tool-enforcement instruction**: `tool_enforcement_instruction()` (TUI
-  VRO-11.5 text minus the `request_human_review`/`request_human_input`
-  lines — this host does not register those tools).
+- **Native browser feedback**: `tool_registry` composes the shared
+  `vesper-harness::lens_tools` executor in direct, VRO and swarm paths. Review
+  URLs use ACP content events; explicit review/interview results return through
+  the same AgentLoop tool transaction as TUI. ACP does not launch desktop apps.
 - **Justified exclusions** (host-specific UX): TUI rendering niceties
   (single-column layout, markdown renderer, scrollbar, bracketed paste,
   F-keys), push-to-talk voice (interactive terminal capture),
-  VesperLens browser interview + `request_human_review`/`request_human_input`
-  tools (browser-only UX; a future ACP mapping needs an owner design
-  decision), `/interview-limit` (VesperLens-scoped), and terminal-only
+  desktop browser launch, `/interview-limit` (the ACP interview currently uses
+  the bounded automatic 1–12 question policy), and terminal-only
   catalog commands. ACP advertises the frozen 28-command compatibility
   catalog plus the shared implemented host-neutral extension catalog.
 
@@ -307,6 +312,10 @@ loopback provider). Adapter unit tests partition all 46 advertised commands
 into exactly one always-safe, argument-dependent, or interrupting class.
 
 ## Verification
+
+- `tests/swarm_native_process.rs` explicitly checks Settings/run through real ACP
+  transport with isolated state, configured loopback chat/embedding services,
+  both scope modes, overlapping workers and final artifact-report delivery.
 
 - Run process transcript tests with isolated environment roots.
 - `tests/openai_native.rs` executes a real confined read and verifies its

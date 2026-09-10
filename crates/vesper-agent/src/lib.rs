@@ -35,9 +35,9 @@ pub mod tools;
 pub mod vro;
 
 pub use agent_loop::{
-    ABSOLUTE_MAX_TOOL_ITERATIONS, AgentLoop, AgentLoopConfig, AgentLoopError, AgentProgressEvent,
-    AgentProgressPort, AgentSteeringPort, AgentTurnOutcome, DEFAULT_MAX_TOOL_ITERATIONS,
-    ENABLED_DEFAULT_MAX_TOOL_ITERATIONS,
+    ABSOLUTE_MAX_TOOL_ITERATIONS, AgentHistoryPort, AgentLoop, AgentLoopConfig, AgentLoopError,
+    AgentProgressEvent, AgentProgressPort, AgentSteeringPort, AgentTurnOutcome,
+    DEFAULT_MAX_TOOL_ITERATIONS, ENABLED_DEFAULT_MAX_TOOL_ITERATIONS,
 };
 pub use compaction::{
     AUTO_COMPACT_PERCENT, CONTEXT_PRESSURE_THRESHOLDS, CompactionCommit, CompactionError,

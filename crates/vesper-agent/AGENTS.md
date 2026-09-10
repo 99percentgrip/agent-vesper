@@ -63,6 +63,9 @@ the multi-turn, tool-executing layer above it.
   activity without raw tool arguments, outputs, or secrets. Successful
   filesystem mutations may attach the executor-produced bounded
   `FileChangePreview`; hosts must not infer diffs from prose.
+  `AgentHistoryPort` checkpoints complete in-memory transaction boundaries for
+  native worker ownership; cancellation or compaction failure cannot erase prior
+  safe history. Observers must be nonblocking and never write durable user state.
   `AgentSteeringPort` is a non-blocking host inbox drained only between
   complete provider/tool operations; injected user guidance joins the current
   history in submission order and cannot cancel an in-flight operation. Hosts
@@ -76,10 +79,14 @@ the multi-turn, tool-executing layer above it.
   image parts returned by tools produce one typed `CapabilityRequired`
   outcome without stripping content. Adapter-classified unsupported content
   maps to the same outcome only before visible output.
+  Tool-free requests use `ToolChoice::None` and omit tool capability demands;
+  real adapters must accept navigator decomposition/synthesis without tool metadata.
   Provider terminal outcomes other than a normal `Stop` are classified as
   `AgentLoopError::Incomplete` and must never be reported by a host as a
-  completed implementation. The exception is a typed visible
-  `StreamInterrupted` terminal: it returns `AgentTurnOutcome::Interrupted`
+  completed implementation. Cancellation and visible EOF/stream errors are
+  converted into a classified `StreamInterrupted` terminal too; buffered text
+  and complete tool transactions survive and pending tool fragments never replay.
+  A typed `StreamInterrupted` terminal returns `AgentTurnOutcome::Interrupted`
   with partial assistant content, cause, tool-call ambiguity, completed
   results, and current plan; returned history commits the partial assistant
   message so hosts cannot display output the engine subsequently forgets. A

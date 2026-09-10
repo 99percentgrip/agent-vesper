@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 //! Shared hosted tool services for the production ACP and TUI compositions.
 
+pub mod lens_tools;
 pub mod sandbox_backend;
 pub mod scope_holder;
 mod web_runtime;
@@ -2400,7 +2401,17 @@ pub mod slash_commands;
 #[cfg(feature = "swarm")]
 pub mod swarm_adapter;
 #[cfg(feature = "swarm")]
+pub mod swarm_embedding;
+#[cfg(feature = "swarm")]
+pub mod swarm_inputs;
+#[cfg(feature = "swarm")]
+pub mod swarm_journal;
+#[cfg(feature = "swarm")]
 pub mod swarm_sandbox;
+#[cfg(feature = "swarm")]
+pub mod swarm_service;
+#[cfg(feature = "swarm")]
+pub mod swarm_settings;
 pub mod watcher_sweep;
 
 pub use daemon_lock::{

@@ -15,6 +15,118 @@ impl EmbeddingPort for Embedding {
         Box::pin(async move { Ok(vec![vec![1.0, 0.0]; texts.len()]) })
     }
 }
+
+#[tokio::test]
+async fn original_timestamps_survive_transfer_retention_and_snapshot() {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use vesper_swarm::ledger::hnsw::HnswConfig;
+    let clock = Arc::new(AtomicU64::new(1_700_000_000_000));
+    let source = clock.clone();
+    let ledger = Ledger::new(2, Arc::new(Embedding))
+        .unwrap()
+        .with_timestamp_source(Arc::new(move || Some(source.load(Ordering::SeqCst))));
+    let scope = MemoryScope::Worker("worker".into());
+    let first = record(
+        &ledger,
+        scope.clone(),
+        EntryKind::Artifact,
+        "worker",
+        999,
+        1.0,
+    )
+    .await;
+    let retained = ledger.snapshot();
+    clock.store(1_700_000_000_010, Ordering::SeqCst);
+    record(
+        &ledger,
+        scope.clone(),
+        EntryKind::Artifact,
+        "worker",
+        1,
+        1.0,
+    )
+    .await;
+    let filter = LedgerFilter {
+        timestamp_min_ms: Some(1_700_000_000_000),
+        timestamp_max_ms: Some(1_700_000_000_000),
+        ..Default::default()
+    };
+    assert_eq!(
+        ledger.select(&scope, &filter, 10).unwrap()[0].entry.id,
+        first
+    );
+    let copies = ledger
+        .transfer_filtered(&scope, &MemoryScope::Swarm, &[first], &filter)
+        .await
+        .unwrap()
+        .0;
+    let copied = ledger.select(&MemoryScope::Swarm, &filter, 10).unwrap();
+    assert_eq!(copied[0].entry.id, copies[0]);
+    assert_eq!(copied[0].entry.timestamp_ms, Some(1_700_000_000_000));
+    ledger.prune_scope(&scope, 0).unwrap();
+    assert_eq!(retained.select(&scope, &filter, 10).unwrap().len(), 1);
+    let bytes = ledger.to_snapshot().unwrap();
+    assert_eq!(&bytes[8..12], &3u32.to_le_bytes());
+    let mut legacy = bytes.clone();
+    legacy[8..12].copy_from_slice(&2u32.to_le_bytes());
+    assert!(Ledger::from_snapshot(HnswConfig::new(2), &legacy, Arc::new(Embedding)).is_err());
+    let split = 20 + u64::from_le_bytes(bytes[12..20].try_into().unwrap()) as usize;
+    let mut log: serde_json::Value = serde_json::from_slice(&bytes[split..]).unwrap();
+    for entry in log["entries"].as_array_mut().unwrap() {
+        entry.as_object_mut().unwrap().remove("timestamp_ms");
+    }
+    legacy.truncate(split);
+    legacy.extend(serde_json::to_vec(&log).unwrap());
+    let migrated = Ledger::from_snapshot(HnswConfig::new(2), &legacy, Arc::new(Embedding)).unwrap();
+    assert_eq!(migrated.len(), ledger.len());
+    assert!(
+        migrated
+            .select(&MemoryScope::Swarm, &filter, 10)
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(&migrated.to_snapshot().unwrap()[8..12], &3u32.to_le_bytes());
+    let loaded = Ledger::from_snapshot(
+        HnswConfig::new(2),
+        &ledger.to_snapshot().unwrap(),
+        Arc::new(Embedding),
+    )
+    .unwrap();
+    assert_eq!(
+        loaded.select(&MemoryScope::Swarm, &filter, 10).unwrap(),
+        copied
+    );
+    record(
+        &loaded,
+        MemoryScope::Swarm,
+        EntryKind::Artifact,
+        "worker",
+        1_700_000_000_000,
+        1.0,
+    )
+    .await;
+    assert_eq!(
+        loaded
+            .select(&MemoryScope::Swarm, &filter, 10)
+            .unwrap()
+            .len(),
+        1,
+        "unknown time must not match via sequence"
+    );
+    assert!(
+        loaded
+            .select(
+                &MemoryScope::Swarm,
+                &LedgerFilter {
+                    timestamp_min_ms: Some(2),
+                    timestamp_max_ms: Some(1),
+                    ..Default::default()
+                },
+                1
+            )
+            .is_err()
+    );
+}
 async fn record(
     ledger: &Ledger,
     scope: MemoryScope,
@@ -80,6 +192,7 @@ async fn conjunctive_filters_preserve_scope_provenance_and_retained_generations(
         sequence_min: Some(10),
         sequence_max: Some(10),
         confidence_min: Some(0.9),
+        ..Default::default()
     };
     let retained = ledger.snapshot();
     let second = record(

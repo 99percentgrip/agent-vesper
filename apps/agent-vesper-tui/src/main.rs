@@ -26,6 +26,9 @@
 
 mod mobile;
 
+#[cfg(feature = "swarm")]
+mod swarm_host;
+
 use std::collections::VecDeque;
 use std::io::{self, stdout};
 use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
@@ -533,6 +536,31 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
     )
     .await;
     let _ = leave_raw_mode();
+    #[cfg(feature = "swarm")]
+    {
+        let had_swarm = session.state.swarm_cancel.is_some();
+        if let Some(cancel) = session.state.swarm_cancel.as_ref() {
+            cancel.cancel();
+        }
+        if !swarm_host::shutdown().await {
+            eprintln!("agent-vesper-tui: swarm shutdown left unresolved native work or cleanup.");
+        }
+        if had_swarm && let Some(mut task) = session.agent_task.take() {
+            match tokio::time::timeout(std::time::Duration::from_secs(5), &mut task).await {
+                Ok(Ok(())) => {}
+                Ok(Err(_)) => {
+                    eprintln!("agent-vesper-tui: swarm report task failed during shutdown.")
+                }
+                Err(_) => {
+                    task.abort();
+                    eprintln!(
+                        "agent-vesper-tui: swarm report delivery did not settle before shutdown."
+                    );
+                }
+            }
+        }
+        drain_agent_event(&mut session);
+    }
     // Persist the final session state so the resume link below always points
     // at a real file — even if the user quit before any agent turn completed
     // (turns also persist incrementally, this is a safety net for exit time).
@@ -1041,6 +1069,13 @@ fn parse_sidecar_response(line: &str) -> Result<String, String> {
 /// The task sends exactly one of these through the per-turn mpsc channel.
 #[derive(Debug)]
 enum AgentEvent {
+    #[cfg(feature = "swarm")]
+    Swarm {
+        text: String,
+        success: bool,
+        cancelled: bool,
+        history: Vec<ConversationMessage>,
+    },
     /// One live provider/tool/plan progress update.
     Progress(AgentProgressEvent),
     /// The loop returned a terminal outcome.
@@ -1263,7 +1298,7 @@ impl AgentProgressPort for ChannelProgressPort {
 #[allow(clippy::too_many_arguments)] // single-call composition boundary
 async fn drive_loop(
     provider_id: &ProviderId,
-    registry: &vesper_runtime::ProviderRegistry,
+    registry: &Arc<vesper_runtime::ProviderRegistry>,
     auth: Option<AuthProvider>,
     registry_commands: &CommandRegistry,
     surface: &ProviderSuperpowerSurface,
@@ -1953,6 +1988,30 @@ async fn drive_loop(
                             );
                         }
                     }
+                }
+                #[cfg(feature = "swarm")]
+                if let Some(argument) = session.state.pending_swarm_command.take() {
+                    session.state.status = Some(if argument == "settings" {
+                        if session.agent_running {
+                            "Open Swarm settings after the active turn finishes.".into()
+                        } else {
+                            swarm_host::settings(&mut terminal)
+                                .await
+                                .unwrap_or_else(|error| error)
+                        }
+                    } else {
+                        swarm_host::command(
+                            &argument,
+                            registry,
+                            agent,
+                            agent_tools,
+                            &approval_port_for_react,
+                            session,
+                            surface,
+                            cognition_bundle,
+                        )
+                        .unwrap_or_else(|error| error)
+                    });
                 }
                 if session.state.pending_web_settings {
                     session.state.pending_web_settings = false;
@@ -3272,6 +3331,11 @@ fn session_setting_candidates(
     let choices: Vec<(String, String)> = match command {
         "/settings" => {
             let mut settings: Vec<(String, String)> = vec![
+                #[cfg(feature = "swarm")]
+                (
+                    "/settings swarm".into(),
+                    "Swarm · independent scoped workers".into(),
+                ),
                 (
                     "/provider".into(),
                     "Providers · select the provider for your next launch".into(),
@@ -4537,6 +4601,14 @@ fn apply_keybinding_action(
 }
 
 fn cancel_active_turn_preserving_partial(session: &mut TuiSession, cause: &str) {
+    #[cfg(feature = "swarm")]
+    if let Some(flag) = &session.state.swarm_cancel {
+        flag.cancel();
+        session.state.status = Some(
+            "Swarm cancellation requested; retaining worker state and waiting for cleanup.".into(),
+        );
+        return;
+    }
     if let Some(task) = session.agent_task.take() {
         task.abort();
     }
@@ -7464,6 +7536,17 @@ fn drain_agent_event(session: &mut TuiSession) {
                 session.agent_rx = None;
                 session.steering_tx = None;
                 session.agent_task = None;
+                #[cfg(feature = "swarm")]
+                {
+                    session.state.swarm_cancel = None;
+                    if let AgentEvent::Swarm { history, .. } = &event {
+                        session.conversation = history.clone();
+                        if let Err(error) = persist_tui_conversation(session) {
+                            session.state.status =
+                                Some(format!("session persistence failed: {error}"));
+                        }
+                    }
+                }
                 if let AgentEvent::Completed { history, .. } = &event {
                     session.conversation = history.clone();
                     if let Err(error) = persist_tui_conversation(session) {
@@ -7484,6 +7567,10 @@ fn drain_agent_event(session: &mut TuiSession) {
             Err(mpsc::error::TryRecvError::Empty) => return,
             Err(mpsc::error::TryRecvError::Disconnected) => {
                 session.agent_running = false;
+                #[cfg(feature = "swarm")]
+                if let Some(cancel) = session.state.swarm_cancel.take() {
+                    cancel.cancel();
+                }
                 session.agent_rx = None;
                 session.steering_tx = None;
                 session.agent_task = None;
@@ -7774,6 +7861,19 @@ fn build_completion_report(session: &mut TuiSession, event: &AgentEvent) {
             format!("TODO progress   {completed}/{total}"),
             format!("Elapsed         {elapsed:.1}s"),
         ],
+        #[cfg(feature = "swarm")]
+        AgentEvent::Swarm {
+            success, cancelled, ..
+        } => vec![
+            if *success {
+                "✓ Swarm complete".into()
+            } else if *cancelled {
+                "Swarm cancelled; partial state retained".into()
+            } else {
+                "✗ Swarm incomplete".into()
+            },
+            format!("Elapsed         {elapsed:.1}s"),
+        ],
         AgentEvent::Failed(error) => vec![
             "✗ Agent turn failed".into(),
             format!("Error           {error}"),
@@ -7970,6 +8070,17 @@ fn record_agent_event(session: &TuiSession, event: &AgentEvent) {
                 ],
             ),
         },
+        #[cfg(feature = "swarm")]
+        AgentEvent::Swarm {
+            success, cancelled, ..
+        } => session.telemetry.record(
+            "swarm.finished",
+            &session.session_id,
+            [
+                ("success", success.to_string()),
+                ("cancelled", cancelled.to_string()),
+            ],
+        ),
         AgentEvent::Failed(_) => session.telemetry.record(
             "turn.failed",
             &session.session_id,
@@ -8230,6 +8341,22 @@ fn apply_agent_event(event: AgentEvent, state: &mut SessionState) {
             let message = error.to_string();
             state.status = Some(format!("agent loop error: {message}"));
             state.transcript.push(format!("agent error: {message}"));
+        }
+        #[cfg(feature = "swarm")]
+        AgentEvent::Swarm {
+            text,
+            success,
+            cancelled,
+            ..
+        } => {
+            state.transcript.push(format!("assistant: {text}"));
+            state.status = Some(if success {
+                "Swarm completed.".into()
+            } else if cancelled {
+                "Swarm cancelled; partial state retained.".into()
+            } else {
+                "Swarm incomplete; inspect the reported failure.".into()
+            });
         }
         AgentEvent::SideQuestion { answer } => {
             state.transcript.push(format!("btw: {answer}"));
@@ -8552,6 +8679,7 @@ impl vesper_cognition::EmbeddingPort for BigModelEmbeddingAdapter {
     }
 }
 
+#[derive(Clone)]
 struct CognitionBundle {
     /// Existing project-local cognitive store. Its default path is unchanged
     /// so upgrades never strand memories already saved by `/remember`.
@@ -10244,208 +10372,39 @@ impl vesper_agent::ToolService for TuiToolService {
 }
 
 impl TuiToolService {
-    /// Executes the `request_human_review` tool: reads the HTML file, routes
-    /// it through VesperLens, and returns the human's feedback as the tool
-    /// result. The tool BLOCKS until the human submits (matching the
-    /// explicit-invocation model).
+    fn shared_lens(
+        &self,
+    ) -> Result<vesper_harness::lens_tools::LensToolService, vesper_agent::ToolError> {
+        let lens = self
+            .lens_review
+            .clone()
+            .ok_or_else(|| tui_tool_failure("VesperLens", "no review port configured"))?;
+        let limit = self.interview_question_policy.get();
+        Ok(vesper_harness::lens_tools::LensToolService::new(
+            self.inner.clone(),
+            lens,
+            Arc::from(lens_url_callback(self.lens_url_tx.clone())),
+            limit.max_questions(),
+            limit.label(),
+        ))
+    }
     fn execute_request_human_review<'a>(
         &'a self,
         call: &'a vesper_domain::ToolCall,
         context: &'a vesper_agent::ToolContext,
     ) -> vesper_agent::ToolFuture<'a, Result<vesper_agent::ToolResult, vesper_agent::ToolError>>
     {
-        let args = call.arguments.clone();
-        let lens = match &self.lens_review {
-            Some(l) => Arc::clone(l),
-            None => {
-                return Box::pin(async move {
-                    Err(tui_tool_failure(
-                        "request_human_review",
-                        "no VesperLens review port configured",
-                    ))
-                });
-            }
-        };
-        let url_tx = self.lens_url_tx.clone();
         Box::pin(async move {
-            let path = args
-                .get("file_path")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| {
-                    tui_tool_failure("request_human_review", "missing file_path argument")
-                })?;
-            let workspace_root = vesper_agent::confinement::primary_root(context)
-                .map_err(|error| tui_tool_failure("request_human_review", error))?
-                .to_path_buf();
-            let confined = vesper_agent::confinement::confine(&workspace_root, path)
-                .map_err(|error| tui_tool_failure("request_human_review", error))?;
-            // Surface the review URL to the TUI's inline trajectory so the
-            // user sees where to open the browser. The URL arrives through
-            // the on_url callback once VesperLens binds its listener.
-            let on_url = lens_url_callback(url_tx);
-            // Route the content through VesperLens. This BLOCKS until the
-            // human submits feedback (or the 30-minute timeout fires).
-            let feedback = lens
-                .review_file(&confined, &workspace_root, on_url.as_ref())
-                .await
-                .map_err(|e| tui_tool_failure("request_human_review", e))?;
-            // Return the feedback as the tool result. The model sees the
-            // verdict (APPROVED/REJECTED/NEEDS MODIFICATION) + notes +
-            // annotations and can apply corrections on the next step.
-            let msg = vesper_agent::vro::feedback_as_context_message(&feedback);
-            vesper_agent::ToolResult::new(msg)
+            vesper_agent::ToolService::execute(&self.shared_lens()?, call, context).await
         })
     }
-
     fn execute_request_human_input<'a>(
         &'a self,
         call: &'a vesper_domain::ToolCall,
-        _context: &'a vesper_agent::ToolContext,
+        context: &'a vesper_agent::ToolContext,
     ) -> vesper_agent::ToolFuture<'a, Result<vesper_agent::ToolResult, vesper_agent::ToolError>>
     {
-        let args = call.arguments.clone();
-        let lens = match &self.lens_review {
-            Some(lens) => Arc::clone(lens),
-            None => {
-                return Box::pin(async move {
-                    Err(tui_tool_failure(
-                        "request_human_input",
-                        "no VesperLens review port configured",
-                    ))
-                });
-            }
-        };
-        let url_tx = self.lens_url_tx.clone();
-        Box::pin(async move {
-            let raw_questions = args
-                .get("questions")
-                .and_then(serde_json::Value::as_array)
-                .ok_or_else(|| {
-                    tui_tool_failure("request_human_input", "missing questions array")
-                })?;
-            let limit = self.interview_question_policy.get();
-            let max_questions = limit.max_questions();
-            if !(1..=max_questions).contains(&raw_questions.len()) {
-                return Err(tui_tool_failure(
-                    "request_human_input",
-                    format!(
-                        "questions must contain between 1 and {max_questions} items under the current `/interview-limit` policy ({})",
-                        limit.label()
-                    ),
-                ));
-            }
-            let mut questions = Vec::with_capacity(raw_questions.len());
-            let mut question_ids = std::collections::BTreeSet::new();
-            for raw in raw_questions {
-                let id = raw
-                    .get("id")
-                    .and_then(serde_json::Value::as_str)
-                    .map(str::trim)
-                    .filter(|value| !value.is_empty())
-                    .ok_or_else(|| {
-                        tui_tool_failure("request_human_input", "question id must not be empty")
-                    })?;
-                if !question_ids.insert(id.to_owned()) {
-                    return Err(tui_tool_failure(
-                        "request_human_input",
-                        format!("duplicate question id `{id}`"),
-                    ));
-                }
-                if id.chars().count() > 64 {
-                    return Err(tui_tool_failure(
-                        "request_human_input",
-                        "question id must be at most 64 characters",
-                    ));
-                }
-                let prompt = raw
-                    .get("prompt")
-                    .and_then(serde_json::Value::as_str)
-                    .map(str::trim)
-                    .filter(|value| !value.is_empty())
-                    .ok_or_else(|| {
-                        tui_tool_failure("request_human_input", "question prompt must not be empty")
-                    })?;
-                if prompt.chars().count() > 500 {
-                    return Err(tui_tool_failure(
-                        "request_human_input",
-                        "question prompt must be at most 500 characters",
-                    ));
-                }
-                let options = raw
-                    .get("options")
-                    .and_then(serde_json::Value::as_array)
-                    .map(|items| {
-                        items
-                            .iter()
-                            .filter_map(serde_json::Value::as_str)
-                            .map(str::trim)
-                            .filter(|value| !value.is_empty())
-                            .map(str::to_owned)
-                            .collect::<Vec<_>>()
-                    })
-                    .unwrap_or_default();
-                if options.len() > 6 {
-                    return Err(tui_tool_failure(
-                        "request_human_input",
-                        "each question supports at most 6 options",
-                    ));
-                }
-                if options.iter().any(|option| option.chars().count() > 200) {
-                    return Err(tui_tool_failure(
-                        "request_human_input",
-                        "question options must be at most 200 characters",
-                    ));
-                }
-                let description = raw
-                    .get("description")
-                    .and_then(serde_json::Value::as_str)
-                    .map(str::trim)
-                    .unwrap_or_default();
-                let recommended = raw
-                    .get("recommended")
-                    .and_then(serde_json::Value::as_str)
-                    .map(str::trim)
-                    .unwrap_or_default();
-                if description.chars().count() > 1_000 || recommended.chars().count() > 200 {
-                    return Err(tui_tool_failure(
-                        "request_human_input",
-                        "question description or recommendation is too long",
-                    ));
-                }
-                questions.push(vesper_agent::planning::LensQuestion {
-                    id: id.to_owned(),
-                    prompt: prompt.to_owned(),
-                    description: description.to_owned(),
-                    options,
-                    allow_multiple: raw
-                        .get("allow_multiple")
-                        .and_then(serde_json::Value::as_bool)
-                        .unwrap_or(false),
-                    required: raw
-                        .get("required")
-                        .and_then(serde_json::Value::as_bool)
-                        .unwrap_or(true),
-                    recommended: recommended.to_owned(),
-                    allow_other: raw
-                        .get("allow_other")
-                        .and_then(serde_json::Value::as_bool)
-                        .unwrap_or(false),
-                });
-            }
-            let title = args
-                .get("title")
-                .and_then(serde_json::Value::as_str)
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .unwrap_or("Planning interview");
-            let html = vesper_agent::planning::render_interview_artifact(title, &questions);
-            let on_url = lens_url_callback(url_tx);
-            let feedback = lens
-                .review(&html, on_url.as_ref())
-                .await
-                .map_err(|error| tui_tool_failure("request_human_input", error))?;
-            vesper_agent::ToolResult::new(vesper_agent::vro::feedback_as_context_message(&feedback))
-        })
+        self.execute_request_human_review(call, context)
     }
 }
 
@@ -16949,7 +16908,7 @@ mod tests {
     /// Builds a minimal TuiSession for the trajectory-drain tests. We don't
     /// need a real provider registry / approval broker — only the
     /// `trajectory_rx` and `reasoning` fields are exercised.
-    fn fresh_tui_session_for_trajectory_tests() -> TuiSession {
+    pub(super) fn fresh_tui_session_for_trajectory_tests() -> TuiSession {
         use vesper_agent::ApprovalBroker;
         let (_approval_port, approval_rx) = ApprovalBroker::channel();
         // A permissive no-op policy satisfies the trait-object field without
@@ -18237,3 +18196,6 @@ mod tests {
         assert!(!session.state.status.as_deref().unwrap().contains("failed"));
     }
 }
+
+#[cfg(all(test, feature = "swarm", feature = "docker", unix))]
+mod swarm_host_tests;

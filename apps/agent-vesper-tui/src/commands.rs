@@ -135,6 +135,8 @@ pub enum CommandOutcome {
     SandboxControl(SandboxControl),
     /// Shared text equivalent of the Web tools settings panel.
     WebSettings(String),
+    #[cfg(feature = "swarm")]
+    Swarm(String),
 
     // === Tier C Phase 7 (ADR 0010) — workflow prompts ===
     /// A workflow command built a prompt that should drive a background
@@ -1071,6 +1073,10 @@ impl CommandRegistry {
                 SessionConfigKey::MixtureMode,
                 &["off", "enabled"],
             ),
+            #[cfg(feature = "swarm")]
+            "settings" if argument.trim() == "swarm" => CommandOutcome::Swarm("settings".into()),
+            #[cfg(feature = "swarm")]
+            "swarm" => CommandOutcome::Swarm(argument.trim().into()),
             "settings" if argument.trim() == "web" => CommandOutcome::Ui(UiAction::OpenWebSettings),
             "settings" if matches!(argument.trim(), "provider" | "providers") => {
                 CommandOutcome::Ui(UiAction::OpenProviderSwitcher)
@@ -2025,6 +2031,8 @@ const ORACLE_COMMAND_SURFACE: &[OracleCommandEntry] = &[
     OracleCommandEntry { name: "auxiliary",         description: "Change the auxiliary model" },
     OracleCommandEntry { name: "mixture",           description: "Enable or disable Mixture of Agents" },
     OracleCommandEntry { name: "settings",          description: "Open all live session settings" },
+    #[cfg(feature = "swarm")]
+    OracleCommandEntry { name: "swarm", description: vesper_domain::slash_commands::SWARM_SLASH_COMMAND.description },
     OracleCommandEntry { name: "web",               description: "Configure Web tools on/off settings" },
     OracleCommandEntry { name: "reasoning",         description: "Override the VRO reasoning mode: set mode=<auto|fast|balanced|deep|maximum|off> | clear" },
     OracleCommandEntry { name: "api-plan",          description: "Alias for /plan" },
@@ -2658,9 +2666,10 @@ mod tests {
         );
         assert_eq!(
             registry.names().len(),
-            101,
+            101 + usize::from(cfg!(feature = "swarm")),
             "the complete oracle-compatible and Vesper-native command surface must stay registered"
         );
+        assert_eq!(registry.contains("swarm"), cfg!(feature = "swarm"));
     }
 
     /// §5.5 latency gate (VRO-13 PR-7): 10,000 synthetic keystrokes

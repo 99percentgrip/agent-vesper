@@ -855,35 +855,172 @@ including native OpenAI API/subscription rather than assuming Z.ai-only behavior
   are still outstanding; default activation remains off. No commit, release,
   registry, credential or live-provider operation occurred.
 
+## Active full implementation after v0.21.5
+
+The v0.21.5 release is the prior sandbox/native-factory checkpoint, not completion
+of VRO-15. The following implementation is prepared for v0.21.6 under Alex's existing release
+and local-install request. Prior release CI is not evidence for this tree. Tagging
+remains blocked until every exact-commit release workflow passes, including the
+new namespace gate. Swarm remains off until explicitly saved in native Settings.
+
+- Both default-off hosts now expose shared persisted Swarm Settings and `/swarm`
+  composition: explicit Save/Cancel, per-session/workspace drafts, real configured
+  embeddings, actual backend capability and tool-permission checks, bounded project
+  copies and artifact reporting. ACP report snapshots are session/workspace scoped.
+  Setup/recall cancellation retains global blocking-task permits until completion.
+- `swarm_native_hive` shared-service container gate passed all four topologies,
+  three overlapping workers, two permissioned commands each, captured recalled
+  context, 11 provider turns/5 native histories, disabled/missing-embedding/pre-cancel
+  no-state refusal, and cancellation with partial history and verified cleanup.
+  The current combined isolated/shared lifecycle gate also covers active shutdown
+  and admission closure: two tests passed in 20.84s, no fixture panics.
+- Native Hive compaction test passed all four topologies with 8 real file reads per
+  worker, token-pressure summaries, preserved task identity and exact continuation
+  counts. Native adapter tests preserve visible output after observer drop. AgentLoop
+  now checks cancellation between tool transactions and before another dispatch.
+- Shared `lens_tools` serves TUI and ACP direct/VRO/swarm execution. The explicit
+  `swarm_adapter_tests real_browser_feedback` test passed real Chrome submission,
+  human answer + notes, successful native tool result, captured next provider request
+  and retained history with exactly two provider requests (1.15s). Both Linux image
+  jobs now include this gate using pinned Playwright 1.51.1 and the shared-service gate.
+- Real ACP process `swarm_controls` passed Save/Cancel, isolated drafts, default-off
+  and unavailable-real-embedding refusal, saved preference and zero provider requests
+  (0.15s). ACP/TUI library suites passed; TUI binary suite passed 133 tests with 2
+  explicit ignored bodies. Full host-run transport acceptance is recorded below.
+- Ledger timestamps are optional original Unix milliseconds, supplied explicitly or
+  by an injected host source. Ranges exclude unknown timestamps; transfer, retention,
+  retained readers and full snapshots preserve them. Hive selects automatic scope
+  caps; legacy explicit Disabled policy remains available. Sequence is never time.
+- Snapshot regressions passed seeded byte mutations, every truncation, stable accepted
+  reload/continued insertion and an independently encoded two-record little-endian
+  fixture shared by all target runners. High-dimensional gate passed 2048/1536D with
+  default 1M configured capacity: final optimized append 36.503s,
+  13,437,760 encoded bytes, 36.594s total.
+  Raw+normalized 1M/1536D vectors alone require 12.288 GB, excluding graph/log/readers;
+  no million-entry allocation or latency certification is claimed.
+- Tokio virtual-time deadline/grace test passed without wall sleeps. Pool virtual-time
+  heartbeat coverage is added. Owned blocking retirement now retains admission after
+  observer cancellation; its six-test retirement suite passes, including a destructor
+  barrier on a single-thread runtime. Last-owner pool drop and staged-publication retirement now use the owned
+  path; seven instance and seven retirement tests pass. Active native service
+  shutdown is verified in both scope modes.
+
+Current focused logs: `/tmp/vro15-{shared-container,hive-compaction,native-browser,
+acp-controls,host-libs,tui-bin,snapshot-property,portable-snapshot,high-dimensional,
+blocking-retirement,clock}.log`. Final canonical/MSRV/default, strict Clippy and supply-chain gates pass.
+Exact-commit platform and namespace CI acceptance remains pending. Final resource
+and lifecycle evidence appears below.
+
+### Current native host and shared-scope acceptance
+
+- `cargo test -p agent-vesper-acp --all-features --test swarm_native_process
+  --offline -- --ignored --nocapture`: passed (1.49s), real ACP Settings/run in both scope modes,
+  configured loopback embeddings, actual GLM transport, three overlapping native
+  file-reading workers, 16 captured provider requests, grounded synthesis and
+  explicit final artifact report. Tool-free navigator requests now omit tool
+  capability requirements. Worker progress no longer suppresses the final report.
+- `cargo test -p agent-vesper-tui --all-features --bin agent-vesper-tui
+  native_tui_swarm --offline -- --ignored --nocapture`: passed (1.52s), child
+  process with isolated HOME/XDG/workspace, both scope modes, native command/task/
+  event delivery and four retained conversation messages, 16 real loopback provider
+  requests and configured embeddings. The first fixture incorrectly retained the
+  public endpoint and received HTTP 401 with a synthetic key; that failed run is
+  not acceptance evidence. The corrected fixture asserts the resolved custom
+  loopback endpoint before dispatch. No user credential was used.
+- `cargo test -p vesper-harness --all-features --lib native_shared_scope
+  --offline -- --ignored --nocapture`: passed (0.89s), one counted actual provision/teardown for
+  two workers, own-file writes, denied sibling reads/writes and parent writes,
+  detached child reaping, retained artifact ownership and verified final cleanup.
+- `cargo test -p vesper-harness --all-features --test swarm_native_hive
+  native_shared_scope_hive --offline -- --ignored --nocapture`: passed (12.52s),
+  all four topologies, real permissioned command continuations, project copies,
+  cognition/history capture and bounded cancellation/cleanup in shared mode.
+  Both gates use `VESPER_DOCKER_BIN=podman` and
+  `VESPER_DOCKER_IMAGE=localhost/vesper-web-driver:vro15-shared` locally. CI runs
+  these gates against the exact newly built image.
+- Shared scope composes the existing Docker backend; no supervisor protocol or
+  Rust unsafe code changes. The image bundles util-linux 2.41.6 setpriv, source
+  archive and init/reaping utilities. Its source SHA-256 is
+  `e596083744e746be7d2823b62b43f4418dd7bf56303b4dc09e6fe8112fe3d7ed`, from the
+  [upstream checksum manifest](https://www.kernel.org/pub/linux/utils/util-linux/v2.41/sha256sums.asc).
+  Confinement follows the [kernel Landlock contract](https://docs.kernel.org/userspace-api/landlock.html)
+  and [setpriv privilege controls](https://man7.org/linux/man-pages/man1/setpriv.1.html).
+  Missing helper/kernel support refuses admission; no security downgrade occurs.
+- `lease_async_regressions`: eight passed, including a newly arriving shared
+  member during blocked origin provisioning. `swarm_embedding`: two passed,
+  including four abandoned observers retaining global capacity until actual
+  completion and invalid/non-finite embedding refusal with sanitized errors.
+- ACP pending permission cancellation passes its existing permission test extended
+  with an unresolved client request. ACP transport shutdown now awaits engine
+  cleanup. TUI exit waits for its final report task before draining/persisting.
+- Clustered 4096/128D insertion initially measured recall@10 0.7515625. Geometric
+  neighbor diversity repaired cluster bridging; the corrected release gate measured
+  1.00000 with 3.681s build (64 brute-force queries, ef=200). F64 dot accumulation
+  prevents near-parallel rounding inversions. Existing HNSW and swarm suites pass;
+  final resource/whole-tree reruns are recorded separately below.
+
+
+### Resource and retention reconciliation
+
+- Optimized 2048/1536D standalone test binary (no compiler in the measurement):
+  37.354s append, 37.447s total, 13,437,760 snapshot bytes, maximum RSS 125,556 KiB,
+  zero swap. Command: `/usr/bin/time -v target/release/deps/ledger_scale_regressions-88a88618e9d613ed
+  high_dimensional --ignored --nocapture`; log `/tmp/vro15-high-dimensional-only-rss.log`.
+  This supersedes the pre-diversity 3.088s append observation: the recall repair
+  incurs substantially more high-dimensional neighbor-selection work. Configured
+  capacity is 1M; raw and normalized vectors alone need 12.288 GB at that scale.
+  These bounded measurements establish realistic local costs, not 1M throughput
+  or a memory guarantee on arbitrary hosts. Whole-ledger import/export separately
+  caps payloads at 64 MiB and refuses larger snapshots; a configured 1M live-entry
+  capacity is not a promise of whole-ledger export at that size. No quantization
+  claim is made.
+- PRD §2.3 original timestamp filters are implemented independently of producer
+  sequence and ledger admission IDs. Old snapshots with no timestamp retain
+  `None` and do not match time ranges. Transfer preserves the original timestamp.
+  Whole-ledger writes are v3 (HNSW remains v2); legacy v2 loads only unknown
+  timestamps and exports v3. Old readers reject v3 instead of losing timestamps.
+- PRD §2.4 and the pinned oracle's `agent-memory-scope.ts` agree on confidence
+  >=0.8, maximum 20 copies and category filtering. Existing transfer regressions
+  enforce those limits and whole-batch atomicity. The oracle supplies no numeric
+  per-scope retention default; Hive sets each scope cap from the configured global
+  graph cap. PRD §2.5 shared eviction sorts lowest confidence then oldest ledger
+  admission; private scopes use admission FIFO. This stable admission age is not
+  presented as a wall-clock timestamp. Global exhaustion never evicts another
+  scope implicitly. Legacy explicit `Disabled` constructors preserve compatibility.
+- All current pool/turn/heartbeat deadlines use Tokio's virtualizable clock; bus
+  TTL/ACK expiry uses the injected bus clock. Actual blocking-destructor ownership
+  observation is a bounded physical cleanup operation and uses a monotonic wall
+  wait. Deadline expiry never claims it physically stopped an external destructor.
+
 ## Current F01–F18 reconciliation
 
-This matrix supersedes milestone-local pending notes. All named ordinary suites
-below passed in the current canonical and MSRV runs; historical counts are not
-reused as current evidence. Paths under `tests/` are relative to
+This matrix supersedes milestone-local pending notes. The active implementation
+section above distinguishes new focused evidence from the older canonical/MSRV
+checkpoint; old counts are not evidence for the current working tree. Paths under `tests/` are relative to
 `crates/vesper-swarm/` unless a crate is named. **No full VRO-15 completion claim.**
 
 | Finding / requirement | Current implementation and exact assertion evidence | Status / remaining code or acceptance |
 |---|---|---|
-| F01 — real orchestration | DAG, selected instances, bus correlation, routing; `hive_boundary_regressions`, `hive_concurrency_regressions`, harness `swarm_native_hive` including explicit real container gate | Partial: native host service/activation, project-input materialization and complete failover policy acceptance |
-| F02 — native harness reuse | Existing AgentLoop, restricted registries, real scoped commands; harness `swarm_adapter_tests` and `swarm_native_hive` verify successful tool statuses, permission scopes and synthesis | Partial: cognition/semantic compaction/tool-context preservation through composed Hive and both hosts |
-| F03 — bounded goal lifecycle | `hive_boundary_regressions` and `hive_concurrency_regressions`: drop/cancel/deadline and interrupted goals; `lease_async_regressions`: late cleanup without stale publication | Partial: native host cancellation/partial-output lifecycle, full stream no-replay acceptance |
-| F04 — persisted native activation | No product activation implemented or advertised | **Unimplemented:** persisted Settings, shared command service/catalog and both host execution paths |
+| F01 — real orchestration | DAG, selected instances, bus correlation, routing; `hive_boundary_regressions`, `hive_concurrency_regressions`, harness `swarm_native_hive` including explicit real container gate | Native host service, activation and project inputs locally verified; exact-commit platform acceptance pending |
+| F02 — native harness reuse | Existing AgentLoop, restricted registries, real scoped commands; harness `swarm_adapter_tests` and `swarm_native_hive` verify successful tool statuses, permission scopes and synthesis | Native tool continuations, cognition injection, semantic Hive compaction and both host paths verified locally |
+| F03 — bounded goal lifecycle | `hive_boundary_regressions` and `hive_concurrency_regressions`: drop/cancel/deadline and interrupted goals; `lease_async_regressions`: late cleanup without stale publication | Implemented and locally verified: owned service complete/cancel/active shutdown, partial histories and no replay; host report/transport shutdown wired |
+| F04 — persisted native activation | Shared default-off Settings/service/catalog wired into both hosts; settings tests and real ACP process control/refusal test pass | Implemented; native ACP transport and TUI task/history paths pass; final platform acceptance pending |
 | F05 — scorer fidelity | `assignment_regressions`: hard eligibility, corrected arithmetic and all 72 pinned-oracle vectors; native fixture checks distinct selected workers | Local foundation verified; full product/platform acceptance separate |
-| F06 — cancellation ownership | Timeout/pool cancellation suites plus `lease_async_regressions`: caller-drop/timeout retains backend ownership until cleanup | Partial: complete native detached AgentLoop/history shutdown acceptance |
-| F07 — real pool lifecycle | Pool instance/retirement/selected-lease suites; real container Hive proves scale-up, shrink, four actual replacements and execution afterward | Partial: generic blocking/destructor/detached worker retirement acceptance |
-| F08 — topology policy | Centralized/partition/topology regressions; real container Hive executes all four topologies and enabled replacement | Partial: full native disabled-failover and route-loss policy acceptance |
-| F09 — sandbox scope/identity | `sandbox_tests`, `lease_identity_regressions`; harness `swarm_sandbox_tests` checks fresh-root alias refusal/canary invariance; container test proves independent permission roots | Partial: shared OS scopes and broader alias/platform isolation acceptance; native adapter intentionally supports isolated scopes only |
-| F10 — owned verified cleanup | `lease_async_regressions` (7), lease panic/recovery suites, native refusal tests; real container Hive ends with clean report after real command/scale/replacement cleanup | Partial: namespace gate externally blocked; additional native cancellation/runtime-shutdown/destructor cases. Blocking calls retain capacity, never claimed preemptible |
+| F06 — cancellation ownership | Timeout/pool cancellation suites plus `lease_async_regressions`: caller-drop/timeout retains backend ownership until cleanup | Implemented and locally verified: observer-drop history capture, pending-permission cancellation, owned native shutdown in both scope modes |
+| F07 — real pool lifecycle | Pool instance/retirement/selected-lease suites; real container Hive proves scale-up, shrink, four actual replacements and execution afterward | Implemented and locally verified: seven instance and seven retirement regressions, single-thread destructor barrier, last-owner Drop and staged-publication cleanup |
+| F08 — topology policy | Centralized/partition/topology regressions; real container Hive executes all four topologies and enabled replacement | Implemented and locally verified: route/partition regressions plus native disabled-failover health advance with no extra provider dispatch |
+| F09 — sandbox scope/identity | `sandbox_tests`, `lease_identity_regressions`; harness `swarm_sandbox_tests` checks fresh-root alias refusal/canary invariance; container test proves independent permission roots | Isolated and shared native container confinement locally verified; namespace/platform gates remain external |
+| F10 — owned verified cleanup | `lease_async_regressions` (8), lease panic/recovery suites, native refusal tests; real container Hive ends with clean report after real command/scale/replacement cleanup | Native cancellation/shutdown/destructor/shared-descendant cleanup locally verified; namespace CI pending. Blocking calls retain capacity, never claimed preemptible |
 | F11 — bus terminal states | `bus_tests`: close/unsubscribe wake parked readers and reject later operations | Local foundation verified; external target gates pending |
 | F12 — bus resource bounds | `bus_bounds_regressions`, `bus_clock_regressions`: atomic broadcast, ACK/byte/subscriber/TTL bounds, injected expiry | Local foundation verified; external target gates pending |
-| F13 — snapshot validation | `hnsw_regressions`, `hnsw_tests`: checked loader and malformed graph refusal | Partial: broader corruption/property and cross-target coverage |
+| F13 — snapshot validation | `hnsw_regressions`, `hnsw_tests`: checked loader and malformed graph refusal | Seeded mutation/every-truncation and independently encoded portable fixture pass locally; cross-target runs pending |
 | F14 — lossless continuation | `hnsw_regressions`: raw vectors/config/RNG and byte-identical continued insertion | Local foundation verified; cross-target snapshot acceptance pending |
-| F15 — scale/math | Robust arithmetic/pruning tests; explicit release `ledger_scale_regressions` passed (10k/16D and 1k retention) | Partial: high-dimensional/default-capacity memory and adversarial clustering measurement |
-| F16 — complete ledger contract | Immutable-reader, full-snapshot, atomic-transfer, filter/eviction/retention suites plus explicit scale assertions | Partial: timestamps/ranges still unimplemented; full retention/oracle reconciliation and large-scale acceptance |
-| F17 — truthful acceptance | Current canonical/MSRV/default gates; typed tool-status assertion, real permission trace and contained lifecycle gate; this requirement-to-test matrix | Partial: product-host, complete supervisor/cancellation and integrated browser→native continuation→provider acceptance |
-| F18 — governance/timing | Canonical architecture/naming tests pass; injected bus clock; exact-image contained Hive step added to `web-driver.yml` and YAML validated | Partial: remaining timing injection and external two-/five-target CI runs; default-off architecture preserved |
+| F15 — scale/math | Robust arithmetic/pruning tests; explicit release `ledger_scale_regressions` passed (10k/16D and 1k retention) | High-dimensional/default-capacity, standalone RSS and clustered exact-recall measurements recorded; no 1M allocation/latency certification |
+| F16 — complete ledger contract | Immutable-reader, full-snapshot, atomic-transfer, filter/eviction/retention suites plus explicit scale assertions | Timestamps/ranges, automatic Hive caps, transactional snapshots/transfer and retained-reader scale tests pass; PRD/oracle reconciliation recorded above |
+| F17 — truthful acceptance | Current canonical/MSRV/default gates; typed tool-status assertion, real permission trace and contained lifecycle gate; this requirement-to-test matrix | Both native hosts, supervisor/container cancellation and real browser→native continuation→captured provider request verified locally; namespace/platform CI pending |
+| F18 — governance/timing | Canonical architecture/naming tests pass; injected bus clock; exact-image contained Hive step added to `web-driver.yml` and YAML validated | Virtual-time pool/turn deadlines and injected bus expiry verified; external two-/five-target and namespace CI pending; default-off dependency architecture preserved |
 
-## Current verification and exact resume point
+## Prior v0.21.5 verification checkpoint (not current-tree acceptance)
 
 - `cargo xtask verify` exited 0. Its all-feature workspace pass contains
   **2,049 passed / 0 failed / 25 ignored**; later canonical package/doctype
@@ -938,3 +1075,22 @@ lossless whole-ledger snapshots and coherent readers, Settings/TUI/ACP parity,
 default-off/no-user-state regressions, and verified provider-neutral feedback.
 Unexecuted or unavailable gates remain explicit blockers. Never infer quota/model
 capabilities or substitute a fake production embedding backend.
+
+### Final local gate checkpoint
+
+Canonical and MSRV workspace runs passed **2072/0/33**; default workspace passed
+**2015/0/19**, after snapshot/backend regression extensions and dependency patches.
+All four explicit optimized ledger scale tests passed (36.60s combined).
+`cargo audit` initially warned about `lru` 0.18.1 (RUSTSEC-2026-0253) and yanked
+`chacha20` 0.10.1. The lockfile now selects patched 0.18.2 and 0.10.2 respectively;
+no direct dependency or advisory ignore was added. Final audit scans 486 dependencies with no findings; deny passes advisories, bans,
+licenses and sources. Logs: `/tmp/vro15-complete-verify.log`,
+`/tmp/vro15-final-{msrv,default,scale,audit,deny}.log`.
+
+DOX closeout updated the nearest behavior owners and the parent crate timing
+contract. Version-only manifest owners retain their existing contracts; no child
+boundaries or indexes changed. Release builds include optional Swarm support in
+both hosts, with runtime activation still default-off. The exact-commit web-driver
+workflow now also requires real namespace Hive execution on Ubuntu 22.04 without
+changing host security policy. Local namespace refusal remains recorded; CI success
+is required before tagging and installation.

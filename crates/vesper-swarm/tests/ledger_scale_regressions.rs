@@ -9,6 +9,119 @@ use vesper_swarm::ledger::store::{
     MemoryScope, Provenance,
 };
 struct Embedding;
+
+#[test]
+#[ignore = "explicit adversarial clustered-vector recall measurement"]
+fn clustered_insertion_order_measures_recall_against_exact_cosine() {
+    use vesper_swarm::ledger::hnsw::HnswIndex;
+    let mut state = 472u64;
+    let mut random = || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        (state >> 40) as f32 / (1u32 << 24) as f32
+    };
+    let vectors: Vec<Vec<f32>> = (0..4096)
+        .map(|id| {
+            let mut vector: Vec<f32> = (0..128).map(|_| (random() - 0.5) * 0.02).collect();
+            vector[id / 512] += 1.0;
+            vector
+        })
+        .collect();
+    let mut index = HnswIndex::new(HnswConfig::new(128)).unwrap();
+    let start = Instant::now();
+    for (id, vector) in vectors.iter().enumerate() {
+        index.add_point(id as u64, vector).unwrap();
+    }
+    let build = start.elapsed();
+    let cosine = |left: &[f32], right: &[f32]| {
+        let dot: f64 = left
+            .iter()
+            .zip(right)
+            .map(|(a, b)| f64::from(*a) * f64::from(*b))
+            .sum();
+        let a: f64 = left.iter().map(|v| f64::from(*v).powi(2)).sum();
+        let b: f64 = right.iter().map(|v| f64::from(*v).powi(2)).sum();
+        dot / (a * b).sqrt()
+    };
+    let mut correct = 0;
+    for sample in 0..64 {
+        let query = &vectors[(sample * 61) % vectors.len()];
+        let mut exact: Vec<_> = vectors
+            .iter()
+            .enumerate()
+            .map(|(id, v)| (id as u64, cosine(query, v)))
+            .collect();
+        exact.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+        let found = index.search(query, 10, 200);
+        assert_eq!(found.len(), 10);
+        assert!(found.iter().all(|hit| hit.similarity.is_finite()));
+        correct += found
+            .iter()
+            .filter(|hit| exact[..10].iter().any(|(id, _)| *id == hit.id))
+            .count();
+    }
+    let recall = correct as f64 / 640.0;
+    eprintln!(
+        "clustered 4096/128D, 8 ordered clusters: build={build:?}, recall@10={recall:.5}, total={:?}",
+        start.elapsed()
+    );
+    assert!(
+        recall >= 0.95,
+        "clustered recall below the acceptance target: {recall}"
+    );
+}
+
+struct HighDimensional;
+impl EmbeddingPort for HighDimensional {
+    fn embed<'a>(
+        &'a self,
+        texts: Vec<BoundedText>,
+    ) -> BoxFuture<'a, Result<Vec<Vec<f32>>, LedgerError>> {
+        Box::pin(async move {
+            Ok(texts
+                .iter()
+                .map(|text| {
+                    let id: usize = text.as_str().parse().unwrap();
+                    let mut vector = vec![0.00001; 1536];
+                    vector[id % 1536] = 1.0;
+                    vector[(id * 17 + 1) % 1536] += 0.001;
+                    vector
+                })
+                .collect())
+        })
+    }
+}
+
+#[tokio::test]
+#[ignore = "explicit high-dimensional default-capacity measurement"]
+async fn high_dimensional_default_capacity_retains_coherent_readers() {
+    let config = HnswConfig::new(1536);
+    assert_eq!(config.max_elements, 1_000_000);
+    let ledger = Ledger::with_hnsw_config(config.clone(), Arc::new(HighDimensional)).unwrap();
+    let start = Instant::now();
+    for sequence in 0..1536 {
+        record(&ledger, sequence).await;
+    }
+    let retained = ledger.snapshot();
+    for sequence in 1536..2048 {
+        record(&ledger, sequence).await;
+    }
+    assert_eq!(retained.len(), 1536);
+    assert_eq!(ledger.len(), 2048);
+    let append = start.elapsed();
+    let bytes = ledger.to_snapshot().unwrap();
+    let loaded = Ledger::from_snapshot(config, &bytes, Arc::new(HighDimensional)).unwrap();
+    assert_eq!(loaded.to_snapshot().unwrap(), bytes);
+    record(&ledger, 2048).await;
+    record(&loaded, 2048).await;
+    assert_eq!(loaded.to_snapshot().unwrap(), ledger.to_snapshot().unwrap());
+    eprintln!(
+        "ledger default 1M cap, 2048/1536D: append={append:?}, encoded_bytes={}, total={:?}; raw+normalized vectors alone at 1M would require 12,288,000,000 bytes, excluding graph/log/generations",
+        bytes.len(),
+        start.elapsed()
+    );
+}
 impl EmbeddingPort for Embedding {
     fn embed<'a>(
         &'a self,

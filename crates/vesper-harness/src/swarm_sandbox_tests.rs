@@ -176,3 +176,106 @@ async fn filesystem_alias_refuses_before_provisioning_and_does_not_touch_target(
     );
     assert_eq!(std::fs::read_dir(outside.path()).unwrap().count(), 1);
 }
+
+#[cfg(feature = "docker")]
+#[tokio::test]
+#[ignore = "requires the bundled Landlock image and real enforcing container runtime"]
+async fn native_shared_scope_confines_siblings_and_reaps_detached_descendants() {
+    struct CountedBackend {
+        inner: vesper_sandbox::DockerBackend,
+        provisions: AtomicUsize,
+        teardowns: AtomicUsize,
+    }
+    impl SandboxBackend for CountedBackend {
+        fn capabilities(&self) -> SandboxCapabilities {
+            self.inner.capabilities()
+        }
+        fn provision<'a>(
+            &'a self,
+            spec: &'a SandboxSpec,
+        ) -> SandboxFuture<'a, Result<SandboxHandle, SandboxError>> {
+            self.provisions.fetch_add(1, Ordering::SeqCst);
+            self.inner.provision(spec)
+        }
+        fn run<'a>(
+            &'a self,
+            handle: &'a SandboxHandle,
+            argv: &'a Argv,
+        ) -> SandboxFuture<'a, Result<ExecOutput, SandboxError>> {
+            self.inner.run(handle, argv)
+        }
+        fn teardown<'a>(
+            &'a self,
+            handle: SandboxHandle,
+        ) -> SandboxFuture<'a, Result<(), SandboxError>> {
+            self.teardowns.fetch_add(1, Ordering::SeqCst);
+            self.inner.teardown(handle)
+        }
+    }
+    let backend = Arc::new(CountedBackend {
+        inner: vesper_sandbox::DockerBackend::new(Default::default()),
+        provisions: AtomicUsize::new(0),
+        teardowns: AtomicUsize::new(0),
+    });
+    let root = tempfile::tempdir().unwrap();
+    let owner = Arc::new(
+        NativeSandboxLeases::new(
+            backend.clone(),
+            demand(),
+            SandboxBackendChoice::Docker,
+            1,
+            root.path().canonicalize().unwrap(),
+            String::new(),
+        )
+        .unwrap()
+        .with_shared_scope()
+        .unwrap(),
+    );
+    let flag = CancelFlag::new();
+    let (a, b) = tokio::join!(
+        owner.worker("a", 1, flag.signal()),
+        owner.worker("b", 2, flag.signal())
+    );
+    let (a_root, a_route) = a.unwrap();
+    let (b_root, b_route) = b.unwrap();
+    assert_eq!(
+        owner.cleanup_report().held,
+        1,
+        "one shared boundary must serve both members"
+    );
+    assert_eq!(backend.provisions.load(Ordering::SeqCst), 1);
+    std::fs::write(b_root.join("canary"), "untouched").unwrap();
+    struct NeverCancelled;
+    impl vesper_provider::CancellationSignal for NeverCancelled {
+        fn is_cancelled(&self) -> bool {
+            false
+        }
+    }
+    let cancel: Arc<dyn vesper_provider::CancellationSignal> = Arc::new(NeverCancelled);
+    let a = tokio::task::spawn_blocking(move || {
+        let result = a_route.port().run_command(
+            "printf own > own; test ! -r ../b-2/canary; if printf bad > ../b-2/canary; then exit 91; fi; if printf bad > /workspace/outside; then exit 92; fi; sleep 30 >/dev/null 2>&1 & printf done",
+            &a_root, 5, &cancel,
+        );
+        (a_root, a_route, result)
+    }).await.unwrap();
+    assert!(a.2.is_ok(), "{:?}", a.2);
+    assert!(a.2.as_ref().unwrap().output.contains("done"), "{:?}", a.2);
+    assert_eq!(std::fs::read_to_string(a.0.join("own")).unwrap(), "own");
+    assert_eq!(
+        std::fs::read_to_string(b_root.join("canary")).unwrap(),
+        "untouched"
+    );
+    assert!(!root.path().join("outside").exists());
+    drop(a);
+    assert_eq!(owner.cleanup_report().held, 1);
+    drop(b_route);
+    assert!(
+        owner
+            .shutdown(Duration::from_secs(10))
+            .await
+            .unwrap()
+            .is_clean()
+    );
+    assert_eq!(backend.teardowns.load(Ordering::SeqCst), 1);
+}

@@ -899,9 +899,9 @@ impl LeaseBook {
                     .boundaries
                     .get_mut(&boundary_id)
                     .expect("shared reservation");
-                if boundary.phase != Phase::Live {
+                if boundary.phase != Phase::Live && boundary.phase != Phase::Provisioning {
                     return Err(LeaseError::SharedRefused {
-                        reason: "boundary provisioning or teardown is unverified",
+                        reason: "boundary teardown is unverified",
                     });
                 }
                 if let Some(conflict) = boundary
@@ -913,12 +913,14 @@ impl LeaseBook {
                         reason: shared_refusal_reason(conflict, &spec),
                     });
                 }
-                boundary.members.insert(id, spec);
-                state.next_id = id;
-                return Ok(Lease {
-                    id,
-                    book: Arc::clone(&self.inner),
-                });
+                if boundary.phase == Phase::Live {
+                    boundary.members.insert(id, spec);
+                    state.next_id = id;
+                    return Ok(Lease {
+                        id,
+                        book: Arc::clone(&self.inner),
+                    });
+                }
             }
             if state.queue.len() >= 4096 {
                 return Err(LeaseError::ResourceLimit("4096 queued waiters"));

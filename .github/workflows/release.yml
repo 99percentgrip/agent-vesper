@@ -154,7 +154,7 @@ jobs:
           test "$registry_version" = "$workspace_version"
       - name: Build ACP and TUI binaries
         shell: bash
-        run: cargo build --locked --release --package agent-vesper-acp --package agent-vesper-tui --package vesper-web-fetch --features agent-vesper-acp/docker,agent-vesper-tui/docker --target "${{ matrix.target }}"
+        run: cargo build --locked --release --package agent-vesper-acp --package agent-vesper-tui --package vesper-web-fetch --features agent-vesper-acp/docker,agent-vesper-tui/docker,agent-vesper-acp/swarm,agent-vesper-tui/swarm --target "${{ matrix.target }}"
       - name: Package Unix archive
         if: matrix.platform == 'unix'
         shell: bash

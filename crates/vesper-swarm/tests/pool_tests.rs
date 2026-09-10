@@ -173,6 +173,24 @@ async fn boot(min: u32, max: u32, port: Arc<dyn WorkerPort>) -> WorkerPool {
     pool
 }
 
+#[tokio::test(start_paused = true)]
+async fn injected_runtime_clock_controls_heartbeats_and_silence_boundary() {
+    let pool = boot(1, 1, FakeWorkerPort::succeeding()).await;
+    let mut heartbeat = pool.heartbeat_interval();
+    heartbeat.tick().await;
+    let start = tokio::time::Instant::now();
+    tokio::time::advance(Duration::from_millis(199)).await;
+    assert!(pool.health_tick(tokio::time::Instant::now()).is_empty());
+    assert_eq!(pool.live_workers(), 1);
+    tokio::time::advance(Duration::from_millis(1)).await;
+    assert_eq!(pool.health_tick(tokio::time::Instant::now()).len(), 1);
+    assert_eq!(
+        tokio::time::Instant::now().duration_since(start),
+        Duration::from_millis(200)
+    );
+    assert_eq!(pool.idle_workers(), 0);
+}
+
 // ---------------------------------------------------------------------
 // Config validation
 // ---------------------------------------------------------------------

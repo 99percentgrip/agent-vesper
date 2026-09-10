@@ -327,3 +327,33 @@ async fn queued_shared_members_join_only_after_origin_commit() {
     );
     assert_eq!(port.released.load(Ordering::SeqCst), 2);
 }
+
+#[tokio::test]
+async fn shared_member_arriving_during_dispatched_provision_waits_for_commit() {
+    let (gate, entered, resume) = Gate::new();
+    let port = Arc::new(BlockingPort {
+        acquire_gate: Some(gate),
+        ..Default::default()
+    });
+    let book = book(port.clone());
+    let shared = |id| LeaseSpec::shared(id, IsolationRequirement::ProcessTree, "grant", "group");
+    let mut first = Box::pin(book.acquire(shared("first")));
+    poll_pending(first.as_mut());
+    entered.await.unwrap();
+    let mut second = Box::pin(book.acquire(shared("second")));
+    poll_pending(second.as_mut());
+    assert_eq!(port.acquired.load(Ordering::SeqCst), 1);
+    resume.send(()).unwrap();
+    let first = first.await.unwrap();
+    let second = second.await.unwrap();
+    assert_eq!(book.active_count(), 1);
+    assert_eq!(port.acquired.load(Ordering::SeqCst), 1);
+    drop((first, second));
+    assert!(
+        book.shutdown(Duration::from_secs(5))
+            .await
+            .unwrap()
+            .is_clean()
+    );
+    assert_eq!(port.released.load(Ordering::SeqCst), 1);
+}

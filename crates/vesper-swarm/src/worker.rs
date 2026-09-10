@@ -233,6 +233,13 @@ pub enum WorkerError {
 /// task's cancellation signal and must honor it: a cancelled turn returns
 /// [`WorkerError::Cancelled`], never a success receipt.
 pub trait WorkerPort: Send + Sync {
+    /// Nonblocking lifecycle observation. Implementations that own work beyond
+    /// a dropped turn future must report it until that work and its native
+    /// state have settled. Pure caller-owned futures use the default.
+    fn pending_work(&self) -> bool {
+        false
+    }
+
     /// Runs one turn to completion.
     fn run_turn<'a>(
         &'a self,

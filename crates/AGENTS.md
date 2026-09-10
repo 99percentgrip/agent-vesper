@@ -45,9 +45,9 @@ test-only conformance support.
   workspace crates; it owns topology, pooling, priority messaging, assignment,
   the ephemeral ledger, sandbox lease coordination and hive orchestration.
   It performs no network/filesystem I/O or process spawning and names no provider.
-  Bus TTL supports caller clock injection; default bus and pool/turn deadlines
-  use monotonic clocks. Remaining timing/lifecycle work is tracked in the VRO-15
-  repair record. Execution is a trait port.
+  Bus TTL supports caller clock injection; pool/turn deadlines use Tokio
+  virtualizable time. Owned blocking retirement retains uncertain capacity until
+  verified destruction. Execution is a trait port.
   `vesper-harness` composes the adapter behind optional default-off `swarm`;
   host activation remains acceptance-gated. `cargo xtask architecture` validates
   optional dependencies and transitive default-feature exclusion; naming guard

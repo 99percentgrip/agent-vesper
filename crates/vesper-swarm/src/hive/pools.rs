@@ -147,6 +147,18 @@ impl Hive {
             pool.close();
         }
     }
+
+    /// Observe owned external destructor completion across all role pools.
+    /// Port-owned detached tasks and sandbox teardown are separate host gates.
+    pub async fn settle_workers(&self, timeout: std::time::Duration) -> bool {
+        let results = futures_util::future::join_all(
+            self.pools
+                .iter()
+                .map(|pool| pool.settle_retirements(timeout)),
+        )
+        .await;
+        results.into_iter().all(|settled| settled)
+    }
 }
 impl Drop for Hive {
     fn drop(&mut self) {

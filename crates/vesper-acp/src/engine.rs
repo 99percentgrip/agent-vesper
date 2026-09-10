@@ -191,6 +191,10 @@ pub struct AcpPromptResult {
 
 /// Optional full-harness prompt engine.
 pub trait AcpPromptEngine: Send + Sync {
+    /// Settle owned work before the transport host drops its runtime.
+    fn shutdown(&self) -> AcpPromptFuture<'_, Result<(), String>> {
+        Box::pin(async { Ok(()) })
+    }
     /// Runs one multi-turn prompt.
     fn run<'a>(
         &'a self,

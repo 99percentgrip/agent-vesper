@@ -450,3 +450,15 @@ Status: evidence index; acceptance status is scoped to each section.
   all-target/all-feature Clippy and Rust 1.88 locked compilation, formatting,
   architecture, naming guard and whitespace checks pass. Native host/full audit
   acceptance remains open; activation stays default-off.
+
+## VRO-15 native hosts and shared scopes (active working tree)
+
+`vro15-repair-execution.md` records local ACP transport and TUI command/task/history
+acceptance, real configured loopback embeddings, native tool continuations, both
+scope modes, shared-container sibling confinement and descendant cleanup, original
+timestamps, portable snapshots and repaired clustered HNSW recall. Canonical/MSRV each pass 2072 tests; default workspace passes 2015. All four
+optimized scale tests and final audit/deny pass. External exact-commit target and
+namespace gates remain separately tracked for v0.21.6; v0.21.5 CI does not certify
+this implementation. The TUI fixture's rejected synthetic-key public
+request is recorded explicitly and excluded from acceptance; corrected runs assert
+the configured loopback endpoint before dispatch.

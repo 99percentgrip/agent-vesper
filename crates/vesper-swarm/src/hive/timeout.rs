@@ -96,6 +96,52 @@ mod tests {
     use crate::worker::WorkerCapabilities;
     use futures_util::{FutureExt, future::BoxFuture};
 
+    #[tokio::test(start_paused = true)]
+    async fn injected_runtime_clock_controls_deadline_and_grace_exactly() {
+        let task = WorkerTask::new("clock", "work");
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut turn = Box::pin(execute_bounded(
+            &task,
+            |signal| {
+                tx.send(signal).unwrap();
+                std::future::pending()
+            },
+            Duration::from_secs(10),
+            Duration::from_secs(3),
+            Duration::from_secs(1),
+        ));
+        std::future::poll_fn(|cx| {
+            assert!(turn.as_mut().poll(cx).is_pending());
+            std::task::Poll::Ready(())
+        })
+        .await;
+        let signal = rx.try_recv().unwrap();
+        tokio::time::advance(Duration::from_secs(9)).await;
+        std::future::poll_fn(|cx| {
+            assert!(turn.as_mut().poll(cx).is_pending());
+            std::task::Poll::Ready(())
+        })
+        .await;
+        assert!(!signal.is_cancelled());
+        tokio::time::advance(Duration::from_secs(1)).await;
+        std::future::poll_fn(|cx| {
+            assert!(turn.as_mut().poll(cx).is_pending());
+            std::task::Poll::Ready(())
+        })
+        .await;
+        assert!(signal.is_cancelled());
+        tokio::time::advance(Duration::from_secs(2)).await;
+        std::future::poll_fn(|cx| {
+            assert!(turn.as_mut().poll(cx).is_pending());
+            std::task::Poll::Ready(())
+        })
+        .await;
+        tokio::time::advance(Duration::from_secs(1)).await;
+        let (result, outcome) = turn.await;
+        assert_eq!(result, Err(WorkerError::DeadlineExceeded(task.id.clone())));
+        assert_eq!(outcome, BoundedOutcome::TimedOut);
+    }
+
     fn receipt(task: &WorkerTask) -> TurnReceipt {
         TurnReceipt {
             task_id: task.id.clone(),

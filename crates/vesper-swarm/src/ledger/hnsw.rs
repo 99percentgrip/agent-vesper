@@ -260,7 +260,11 @@ fn normalize(vector: &[f32]) -> Vec<f32> {
 }
 
 fn cosine_similarity_normalized(a: &[f32], b: &[f32]) -> f32 {
-    a.iter().zip(b).map(|(x, y)| x * y).sum()
+    a.iter()
+        .zip(b)
+        .map(|(x, y)| f64::from(*x) * f64::from(*y))
+        .sum::<f64>()
+        .clamp(-1.0, 1.0) as f32
 }
 
 /// The HNSW index.
@@ -493,13 +497,27 @@ impl HnswIndex {
             .collect()
     }
 
-    /// Selects up to `m` closest neighbors from candidates.
+    /// Prefer geometrically diverse neighbors before filling remaining slots
+    /// by distance. Pure nearest-only pruning can disconnect ordered clusters.
     fn select_neighbors(&self, candidates: &[(f32, usize)], m: usize) -> Vec<usize> {
-        candidates
-            .iter()
-            .take(m)
-            .map(|(_, ordinal)| *ordinal)
-            .collect()
+        let mut selected = Vec::with_capacity(m.min(candidates.len()));
+        let mut deferred = Vec::new();
+        for &(distance, ordinal) in candidates {
+            if selected.len() == m {
+                break;
+            }
+            let diverse = selected
+                .iter()
+                .all(|&other| self.distance_to(other, &self.nodes[ordinal].normalized) >= distance);
+            if diverse {
+                selected.push(ordinal);
+            } else {
+                deferred.push(ordinal);
+            }
+        }
+        let remaining = m.saturating_sub(selected.len());
+        selected.extend(deferred.into_iter().take(remaining));
+        selected
     }
 
     /// Adds a bidirectional link, pruning the far side to `cap` neighbors.
@@ -527,11 +545,11 @@ impl HnswIndex {
                 })
                 .collect();
             scored.sort();
-            current = scored
+            let candidates: Vec<_> = scored
                 .into_iter()
-                .take(cap)
-                .map(|(_, ordinal)| ordinal)
+                .map(|(key, ordinal)| (key.to_f32(), ordinal))
                 .collect();
+            current = self.select_neighbors(&candidates, cap);
         }
         Arc::make_mut(&mut self.nodes[from]).connections[layer] = current;
     }

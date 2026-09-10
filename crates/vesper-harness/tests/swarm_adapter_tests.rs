@@ -62,6 +62,22 @@ async fn port(
     allowed: &[&str],
     permission: SessionPermissionMode,
 ) -> ProviderWorkerPort {
+    port_with_tools(
+        root,
+        session,
+        allowed,
+        permission,
+        ToolRegistry::parity_default(),
+    )
+    .await
+}
+async fn port_with_tools(
+    root: &std::path::Path,
+    session: FakeProviderSession,
+    allowed: &[&str],
+    permission: SessionPermissionMode,
+    tools: ToolRegistry,
+) -> ProviderWorkerPort {
     let id = ProviderId::new("test.swarm").unwrap();
     let registry = Arc::new(ProviderRegistry::new());
     registry
@@ -98,7 +114,7 @@ async fn port(
     };
     ProviderWorkerPort::new(
         WorkerFactory::new(registry, config),
-        ToolRegistry::parity_default(),
+        tools,
         allowed.iter().map(|name| (*name).into()).collect(),
         SessionOperatingMode::Code,
         permission,
@@ -107,6 +123,83 @@ async fn port(
 }
 fn transcript(port: &ProviderWorkerPort) -> String {
     serde_json::to_string(&port.history()).unwrap()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "explicit real browser -> native worker -> captured provider continuation"]
+async fn real_browser_feedback_reaches_native_provider_continuation() {
+    struct Empty;
+    impl vesper_agent::ToolService for Empty {
+        fn definitions(&self) -> Vec<ToolDefinition> {
+            Vec::new()
+        }
+        fn execute<'a>(
+            &'a self,
+            _: &'a ToolCall,
+            _: &'a vesper_agent::ToolContext,
+        ) -> vesper_agent::ToolFuture<'a, Result<vesper_agent::ToolResult, vesper_agent::ToolError>>
+        {
+            Box::pin(async { Err(vesper_agent::ToolError::Failed("unexpected tool".into())) })
+        }
+    }
+    let root = tempfile::tempdir().unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let service = vesper_harness::lens_tools::LensToolService::new(
+        Arc::new(Empty),
+        Arc::new(vesper_harness::lens_tools::NativeLensPort::new()),
+        Arc::new(move |url| {
+            tx.send(url.to_owned()).unwrap();
+        }),
+        12,
+        "Auto".into(),
+    );
+    let session = script(
+        "request_human_input",
+        serde_json::json!({"title":"Native worker interview", "questions":[{"id":"scope", "prompt":"Choose scope", "options":["Patch", "Minor"], "required":true}]}),
+    );
+    let worker = port_with_tools(
+        root.path(),
+        session.clone(),
+        &["request_human_input"],
+        SessionPermissionMode::ReadOnly,
+        ToolRegistry::parity_default().with_service(Arc::new(service)),
+    )
+    .await;
+    let browser = async {
+        let url = rx.recv().await.unwrap();
+        let status = tokio::process::Command::new(
+            std::env::var("VESPER_TEST_NODE").unwrap_or_else(|_| "node".into()),
+        )
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/swarm_lens_browser.mjs"
+        ))
+        .arg(url)
+        .kill_on_drop(true)
+        .status()
+        .await
+        .unwrap();
+        assert!(status.success());
+    };
+    let task = WorkerTask::new("browser", "Ask for a scope and use the human response");
+    let (receipt, ()) = tokio::time::timeout(std::time::Duration::from_secs(60), async {
+        tokio::join!(worker.run_turn(&task, CancellationSignal::new()), browser)
+    })
+    .await
+    .unwrap();
+    assert!(receipt.unwrap().success);
+    let requests = session.requests();
+    assert_eq!(
+        requests.len(),
+        2,
+        "one tool call and one native continuation, no replay"
+    );
+    let captured = serde_json::to_string(&requests[1].messages).unwrap();
+    assert!(captured.contains("native-browser-feedback-472"));
+    assert!(captured.contains("scope") && captured.contains("Patch"));
+    assert!(requests[1].messages.iter().flat_map(|message| &message.content).any(|part| matches!(part, ContentPart::ToolResult(result) if result.status == ToolResultStatus::Succeeded)));
+    assert!(transcript(&worker).contains("native-browser-feedback-472"));
+    assert!(!root.path().join(".agent-vesper").exists());
 }
 
 #[tokio::test]
@@ -261,6 +354,97 @@ async fn native_interruption_preserves_visible_output_and_history_without_succes
         session.requests().len(),
         1,
         "ambiguous tool activity cannot replay"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn dropped_native_observer_retains_busy_ownership_and_partial_history() {
+    struct Gate {
+        entered: std::sync::Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+        resume: std::sync::Mutex<std::sync::mpsc::Receiver<()>>,
+    }
+    impl vesper_agent::AgentProgressPort for Gate {
+        fn emit(&self, event: vesper_agent::AgentProgressEvent) {
+            if matches!(event, vesper_agent::AgentProgressEvent::ContentDelta { .. })
+                && let Some(entered) = self.entered.lock().unwrap().take()
+            {
+                let _ = entered.send(());
+                self.resume
+                    .lock()
+                    .unwrap()
+                    .recv_timeout(std::time::Duration::from_secs(5))
+                    .unwrap();
+            }
+        }
+    }
+    let root = tempfile::tempdir().unwrap();
+    let provider = FakeProviderSession::with_scripts([Ok(vec![
+        Ok(ProviderStreamEvent::ContentDelta {
+            stream_id: BoundedString::new("text").unwrap(),
+            part: ContentPart::Text(ContentText::new("already visible native evidence").unwrap()),
+        }),
+        Ok(completed(FinishOutcome::Stop)),
+    ])]);
+    let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+    let (resume_tx, resume_rx) = std::sync::mpsc::channel();
+    let worker = Arc::new(
+        port(
+            root.path(),
+            provider.clone(),
+            &[],
+            SessionPermissionMode::ReadOnly,
+        )
+        .await
+        .with_progress_port(Arc::new(Gate {
+            entered: std::sync::Mutex::new(Some(entered_tx)),
+            resume: std::sync::Mutex::new(resume_rx),
+        })),
+    );
+    let observed = worker.clone();
+    let task = tokio::spawn(async move {
+        observed
+            .run_turn(
+                &WorkerTask::new("interrupted", "inspect"),
+                CancellationSignal::new(),
+            )
+            .await
+    });
+    tokio::time::timeout(std::time::Duration::from_secs(5), entered_rx)
+        .await
+        .unwrap()
+        .unwrap();
+    task.abort();
+    assert!(task.await.unwrap_err().is_cancelled());
+    assert!(
+        worker.pending_work(),
+        "caller drop cannot retire native state"
+    );
+    assert!(matches!(
+        worker
+            .run_turn(
+                &WorkerTask::new("overlap", "work"),
+                CancellationSignal::new()
+            )
+            .await,
+        Err(WorkerError::Rejected(_))
+    ));
+    resume_tx.send(()).unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while worker.pending_work() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(
+        transcript(&worker).contains("already visible native evidence"),
+        "{}",
+        transcript(&worker)
+    );
+    assert_eq!(
+        provider.requests().len(),
+        1,
+        "cancelled work must not replay"
     );
 }
 

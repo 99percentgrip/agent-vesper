@@ -298,7 +298,17 @@ impl Hive {
             .map_err(|error| HiveError::Bus(error.to_string()))?;
         let topology_manager = TopologyManager::new(config.topology_kind, config.topology_config)
             .map_err(|error| HiveError::Topology(error.to_string()))?;
-        let ledger = Ledger::new(config.dimensions, embedding)?;
+        let index_config = crate::ledger::hnsw::HnswConfig::new(config.dimensions);
+        let cap = index_config.max_elements;
+        let ledger = Ledger::with_retention(
+            index_config,
+            embedding,
+            crate::ledger::store::LedgerRetention::Limited {
+                swarm: cap,
+                worker: cap,
+                task: cap,
+            },
+        )?;
         let workers = config
             .roles
             .iter()
@@ -356,6 +366,16 @@ impl Hive {
     #[must_use]
     pub fn ledger(&self) -> &Ledger {
         &self.ledger
+    }
+
+    /// Supply original record times without introducing a wall clock into the
+    /// pure ledger. Admission ordering still uses monotonic entry identities.
+    pub fn with_timestamp_source(
+        mut self,
+        source: Arc<dyn Fn() -> Option<u64> + Send + Sync>,
+    ) -> Self {
+        self.ledger = self.ledger.clone().with_timestamp_source(source);
+        self
     }
 
     /// The topology state snapshot.

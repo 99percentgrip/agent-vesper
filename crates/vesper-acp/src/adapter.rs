@@ -181,6 +181,7 @@ impl AcpAdapter {
                 agent_client_protocol::on_receive_notification!(),
             )
             .connect_with(transport, async move |connection| {
+                let shutdown_engine = prompt_engine.clone();
                 let barriers = Arc::new(TerminalBarriers::default());
                 let mut dispatcher = tokio::spawn(dispatch_requests(
                     Arc::clone(&runtime),
@@ -215,19 +216,24 @@ impl AcpAdapter {
                     Ok::<(), agent_client_protocol::Error>(())
                 });
 
-                tokio::select! {
-                    () = connection.incoming_closed() => {}
+                let transport_result = tokio::select! {
+                    () = connection.incoming_closed() => Ok(()),
                     result = &mut dispatcher => {
-                        result.map_err(|_| agent_client_protocol::util::internal_error("ACP dispatcher task failed"))??;
+                        result.map_err(|_| agent_client_protocol::util::internal_error("ACP dispatcher task failed")).and_then(|result| result)
                     }
                     result = &mut event_pump => {
-                        result.map_err(|_| agent_client_protocol::util::internal_error("ACP event task failed"))??;
+                        result.map_err(|_| agent_client_protocol::util::internal_error("ACP event task failed")).and_then(|result| result)
                     }
-                }
+                };
                 dispatcher.abort();
                 event_pump.abort();
+                let engine_shutdown = if let Some(engine) = shutdown_engine {
+                    engine.shutdown().await
+                } else { Ok(()) };
                 let correlation = CorrelationId::new("acp-eof").expect("static correlation");
                 let _ = runtime.shutdown(correlation).await;
+                engine_shutdown.map_err(agent_client_protocol::util::internal_error)?;
+                transport_result?;
                 Ok(())
             })
             .await

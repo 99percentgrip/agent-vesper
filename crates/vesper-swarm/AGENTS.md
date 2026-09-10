@@ -7,8 +7,9 @@ extracted from *the swarm oracle* (an authorized upstream orchestration
 repository): topology, worker pooling, priority messaging, task assignment,
 shared memory ledger and sandbox lease coordination. It delegates turns through
 execution ports, performs no network/filesystem I/O and names no provider.
-Current pool/turn deadlines and bus TTL use monotonic clocks; explicit time
-injection remains an acceptance gap, not a claimed purity guarantee.
+Bus TTL accepts an injected clock; pool/turn deadlines use Tokio's monotonic
+clock and are tested with virtual time. Physical blocking-destructor observation
+uses a bounded wall-clock wait; it cannot preempt external destructors.
 
 ## Ownership
 
@@ -72,6 +73,10 @@ injection remains an acceptance gap, not a claimed purity guarantee.
   independent async creation. Boot waves publish transactionally, reject aliased
   or zero-capacity ports, and cancel on failure/deadline/close/caller drop.
   Factory-backed growth/replacement uses real instances and never reuses IDs;
+  last-owner pool drop closes and dispatches instance retirement. Successful
+  unpublished boot members retain retirement ownership even when publication
+  fails. Retirement waits up to ten seconds for exclusive ownership and pending
+  work; a remaining external owner or panic keeps cleanup unverified.
   failed-but-still-leased slots cannot be replaced. `scale_async` is required
   for factory pools; legacy `new` retains shared-port compatibility only.
   `run_leased_task` executes the exact selected lease instead of reacquiring a
@@ -84,7 +89,8 @@ injection remains an acceptance gap, not a claimed purity guarantee.
   without restoring the retired instance. External strong or upgradeable weak
   owners refuse replacement before new allocation; a raw slot count is not proof
   of physical-resource bounds. Detached cleanup and blocking external destructors
-  still require composition-level acceptance.
+  are covered by owned retirement tasks and explicit settlement. Boot rollback and
+  runtime shutdown remain separately audited.
 - `tests/pool_retirement_regressions.rs` proves peak live RAII instance count,
   failed-boot quarantine/retry and strong/weak external-owner refusal before boot.
 - `tests/pool_selected_lease_regressions.rs` — selected identity preservation,
@@ -169,7 +175,9 @@ injection remains an acceptance gap, not a claimed purity guarantee.
   nonfinite input is refused; adjacency pruning ranks against its owner.
   Cloned graphs share immutable node Arcs; insertion uses copy-on-write before
   changing any adjacency, preserving earlier graph generations and snapshot bytes.
-  Broader corruption/scale acceptance remains open.
+  Seeded byte mutations and every truncation are tested for refusal or valid,
+  deterministic continued insertion. High-dimensional scale remains bounded by
+  the explicit workload evidence.
   **Anti-duplication audit (PR-6):** the workspace's public cosine and
   embedding ports live in `vesper-cognition` (`score.rs::cosine`,
   `ports.rs::EmbeddingPort`); the architecture allowlist keeps
@@ -191,7 +199,7 @@ injection remains an acceptance gap, not a claimed purity guarantee.
   `HYBRID_MAX_RESULTS = 100`, **exact matches win ties and rank first**),
   and `transfer` (copy, never move; `TRANSFER_CONFIDENCE_FLOOR = 0.8`,
   `TRANSFER_CAP = 20`; low-confidence entries are dropped-and-reported;
-  provenance preserved verbatim — worker, role, task, sequence never
+  provenance preserved verbatim — worker, role, task, sequence and original timestamp never
   rewritten; fresh id per copy). Transfers reuse original embeddings and stage
   the complete batch before publication. The ledger is `Clone`: `ArcSwap`
   publishes one coherent immutable log/index generation; a writer-only mutex
@@ -199,7 +207,7 @@ injection remains an acceptance gap, not a claimed purity guarantee.
   locking writers; hybrid query components use the same generation. Structured
   entry payloads use immutable Arcs and graph nodes use copy-on-write; generation
   maps/ordinal tables still clone. Bounded 10k/16D measurement is recorded in the
-  repair evidence, not a million-entry/host-latency claim. `VSWLEDG1` version 2
+  repair evidence, not a million-entry/host-latency claim. `VSWLEDG1` version 3
   whole-ledger snapshots combine HNSW v2 with the structured log, next identity
   and required retention policy; version 1 is refused rather than guessing policy;
   load validates identities/counts/confidence without invoking embeddings. Input
@@ -215,7 +223,12 @@ injection remains an acceptance gap, not a claimed purity guarantee.
   `semantic_filtered` applies predicates after graph traversal and before top-k;
   semantic routes honor configured HNSW over-fetch and the 0.7 threshold.
   Approximate filtering may return fewer results than requested; it never expands
-  the configured candidate budget implicitly. Sequence ranges are not timestamps.
+  the configured candidate budget implicitly. Optional Unix-millisecond timestamp
+  ranges exclude unknown times; `record_at` accepts explicit original timestamps
+  and `with_timestamp_source` injects a cheap host clock. Transfers/snapshots retain
+  original times; v3 writes prevent old readers from silently losing timestamps.
+  Legacy v2 logs load with unknown time and migrate to v3 on export, never sequence-derived
+  values. Native Hive composition supplies wall time; pure defaults remain unknown.
   `transfer_filtered` validates all explicit source IDs even if filtered out,
   reports category/confidence exclusions and cannot lower the 0.8 floor.
 - `Ledger::prune_scope` is explicit caller-owned retention, not automatic cap
@@ -237,7 +250,10 @@ injection remains an acceptance gap, not a claimed purity guarantee.
   10k appends at 16 dimensions with retained-reader, snapshot and exact continued
   insertion checks; 1k automatic evictions at a 64-entry cap with FIFO/count checks.
   These are ignored in ordinary runs and must be explicitly invoked for scale
-  evidence. Wall-clock measurements are observations, not portable timing thresholds.
+  evidence. The 2048-entry/1536D gate uses the default million-entry capacity,
+  immutable readers and exact reload/continuation. A million 1536D raw+normalized
+  vectors alone need 12.288 GB; configured capacity is not a memory certification.
+  Wall-clock measurements are observations, not portable timing thresholds.
 - `tests/ledger_retention_regressions.rs` covers persisted automatic admission,
   private FIFO/isolation, immutable readers, nonfinite-vector rollback, global
   pressure refusal, full-batch reservation and malformed/missing/old policy refusal.
@@ -322,8 +338,8 @@ injection remains an acceptance gap, not a claimed purity guarantee.
   `run_turn` → trajectory `record` into the Swarm ledger scope with
   provenance → load-snapshot updates for scoring), a bounded
   `HiveEvent` log, and the caller-driven `run_tick`/`run_to_completion`
-  loop (the host's `/swarm` task owns the loop; the hive spawns nothing
-  and never touches a render thread). All three turn phases use the shared
+  loop (the host's `/swarm` task owns the loop; pool retirement uses owned
+  blocking tasks and never touches a render thread). All three turn phases use the shared
   deadline/cancellation boundary and reject unsuccessful, mismatched or oversized
   receipts. Admission caps: 128 queued goals, 1,024 lifetime unique identities,
   256-byte IDs, 64 KiB prompts, 64 decomposed tasks, 512 KiB synthesis evidence.
@@ -409,13 +425,32 @@ injection remains an acceptance gap, not a claimed purity guarantee.
 
 ## Local Contracts
 
+- Shared members arriving during dispatched origin provisioning queue until its
+  commit; teardown/quarantine and grant mismatches refuse.
+
+- Factory instance retirement runs in owned blocking tasks outside bookkeeping
+  locks. `settle_retirements` and Hive `settle_workers` observe completion;
+  caller cancellation/timeout does not free unfinished retirement admission.
+  Destructor panic closes admission and retains uncertainty. The captured native
+  runtime must remain available through settlement; observation is not preemption.
+- Runtime deadlines, grace and pool heartbeat time use Tokio's injectable clock;
+  deterministic paused-time tests cover deadline/grace and silence boundaries.
+  Bus TTL uses its separate injected monotonic `BusClock`. Native record timestamps
+  come from the host wall-clock port and never drive deadline or ordering policy.
+
+- `WorkerPort::pending_work` is a nonblocking lifecycle observation. Ports with
+  owned work after caller drop must keep it true until native work settles. Pool
+  shrink/replacement observes it outside bookkeeping locks and refuses retirement
+  while work remains; ordinary pure caller-owned ports use the false default.
+
 - Utility dependencies include `serde`, `serde_json`, `thiserror`, `futures-util`, `tokio`
   and pinned `arc-swap` for coherent lock-free snapshot publication. New
   dependencies require license/advisory and MSRV acceptance.
   Architecturally permitted: `vesper-domain` and `vesper-security`; nothing
   else ever.
 - No network/filesystem I/O or process spawning; no provider crates,
-  `vesper-testkit` or frontend crates. Deadline/TTL clocks are currently local.
+  `vesper-testkit` or frontend crates. Timing policy is stated above; only the
+  physical retirement observer uses a wall-clock bound.
 - `#![forbid(unsafe_code)]`; MSRV 1.88; workspace lints apply.
 - The upstream is referenced ONLY as *the swarm oracle*. The upstream-brand
   embargo is mechanically enforced by `cargo xtask naming-guard` against

@@ -22,6 +22,21 @@ impl Drop for BootGuard {
         self.0.cancel();
     }
 }
+// Successful members of an unfinished boot wave still own external destructors.
+// Dropping try_join_all on sibling failure/cancellation delegates their retirement
+// through the same bounded ownership path as normal replacement.
+struct StagedInstance<'a> {
+    id: u64,
+    port: Option<Arc<dyn WorkerPort>>,
+    owner: &'a WorkerPool,
+}
+impl Drop for StagedInstance<'_> {
+    fn drop(&mut self) {
+        if let Some(port) = self.port.take() {
+            self.owner.dispatch_retirement(vec![port]);
+        }
+    }
+}
 impl WorkerPool {
     /// Creates an empty factory-backed pool. `initialize` performs actual async
     /// boot, not capability probes. Use `scale_async` for this pool's scaling.
@@ -46,6 +61,14 @@ impl WorkerPool {
         &self,
         count: usize,
     ) -> Result<Vec<(u64, Arc<dyn WorkerPort>)>, PoolError> {
+        let runtime = tokio::runtime::Handle::try_current().map_err(|_| {
+            PoolError::Initialization("worker lifecycle requires a native async runtime".into())
+        })?;
+        *self
+            .shared
+            .retirement_runtime
+            .lock()
+            .expect("retirement runtime") = Some(runtime);
         if count == 0 {
             self.check_open()?;
             return Ok(Vec::new());
@@ -72,7 +95,13 @@ impl WorkerPool {
         self.check_open()?;
         let boots = ids.into_iter().map(|id| {
             let signal = guard.0.signal();
-            async move { factory.create(id, signal).await.map(|port| (id, port)) }
+            async move {
+                factory.create(id, signal).await.map(|port| StagedInstance {
+                    id,
+                    port: Some(port),
+                    owner: self,
+                })
+            }
         });
         let resolved = tokio::select! {
             biased;
@@ -80,32 +109,63 @@ impl WorkerPool {
             _ = tokio::time::sleep(self.config.default_turn_deadline) => return Err(PoolError::Initialization("worker boot deadline exceeded".into())),
             result = futures_util::future::try_join_all(boots) => result.map_err(|error| PoolError::Initialization(error.to_string()))?,
         };
+        if resolved.iter().any(|staged| {
+            staged
+                .port
+                .as_ref()
+                .expect("staged port")
+                .capabilities()
+                .max_concurrent_tasks
+                == 0
+        }) {
+            return Err(PoolError::Initialization(
+                "factory returned a zero-capacity instance".into(),
+            ));
+        }
         let instances = self.instances.lock().expect("instance lock");
-        for (index, (_, port)) in resolved.iter().enumerate() {
-            if port.capabilities().max_concurrent_tasks == 0
-                || instances.values().any(|old| Arc::ptr_eq(old, port))
+        for (index, staged) in resolved.iter().enumerate() {
+            let port = staged.port.as_ref().expect("staged port");
+            if instances.values().any(|old| Arc::ptr_eq(old, port))
                 || resolved[..index]
                     .iter()
-                    .any(|(_, other)| Arc::ptr_eq(other, port))
+                    .any(|other| Arc::ptr_eq(other.port.as_ref().expect("staged port"), port))
             {
                 return Err(PoolError::Initialization(
                     "factory returned an aliased or zero-capacity instance".into(),
                 ));
             }
         }
-        Ok(resolved)
+        drop(instances);
+        Ok(resolved
+            .into_iter()
+            .map(|mut staged| (staged.id, staged.port.take().expect("staged port")))
+            .collect())
     }
 
     fn publish_instances(&self, batch: Vec<(u64, Arc<dyn WorkerPort>)>) -> Result<(), PoolError> {
+        let batch: Vec<_> = batch
+            .into_iter()
+            .map(|(id, port)| StagedInstance {
+                id,
+                port: Some(port),
+                owner: self,
+            })
+            .collect();
+        let capabilities: Vec<_> = batch
+            .iter()
+            .map(|staged| staged.port.as_ref().expect("staged port").capabilities())
+            .collect();
         let mut inner = self.shared.lock();
         self.check_open()?;
         let mut instances = self.instances.lock().expect("instance lock");
         let now = tokio::time::Instant::now();
         inner.concurrent_boot_high_water = inner.concurrent_boot_high_water.max(batch.len());
-        for (id, port) in batch {
+        for (mut staged, capabilities) in batch.into_iter().zip(capabilities) {
+            let id = staged.id;
+            let port = staged.port.take().expect("staged port");
             inner.workers.push(PooledWorker::fresh(
                 id,
-                port.capabilities(),
+                capabilities,
                 WorkerStatus::Idle,
                 now,
             ));
@@ -196,6 +256,19 @@ impl WorkerPool {
             .filter(|worker| worker.status == WorkerStatus::Failed && !worker.leased)
             .map(|worker| worker.id)
             .collect();
+        let observed = {
+            let instances = self.instances.lock().expect("instance lock");
+            failed
+                .iter()
+                .filter_map(|id| instances.get(id).cloned())
+                .collect::<Vec<_>>()
+        };
+        if observed.iter().any(|port| port.pending_work()) {
+            return Err(PoolError::Initialization(
+                "failed instance still owns unfinished work".into(),
+            ));
+        }
+        drop(observed);
         // Failed slots stay quarantined until replacement publication, but
         // physical instances must retire before allocating replacements. An
         // external owner means Drop cannot establish retirement, so fail closed.
@@ -217,7 +290,15 @@ impl WorkerPool {
         };
         // Never invoke external destructors under the pool state/instance locks.
         // Detached backend resources still require the host cleanup contract.
-        drop(retired);
+        self.dispatch_retirement(retired);
+        if !self
+            .settle_retirements(self.config.default_turn_deadline)
+            .await
+        {
+            return Err(PoolError::Initialization(
+                "worker retirement deadline exceeded; capacity remains reserved".into(),
+            ));
+        }
         let batch = self.boot_instances(failed.len()).await?;
         let mut inner = self.shared.lock();
         self.check_open()?;
@@ -237,7 +318,7 @@ impl WorkerPool {
         }
         drop(instances);
         drop(inner);
-        drop(retired);
+        self.dispatch_retirement(retired);
         Ok(failed.len())
     }
 
@@ -256,44 +337,86 @@ impl WorkerPool {
             let batch = self.boot_instances((delta as usize).min(room)).await?;
             self.publish_instances(batch)?;
         } else if delta < 0 {
-            let mut inner = self.shared.lock();
-            self.check_open()?;
-            let mut remaining = (delta.unsigned_abs() as usize).min(
+            let candidates = {
+                let inner = self.shared.lock();
+                let count = (delta.unsigned_abs() as usize).min(
+                    inner
+                        .total()
+                        .saturating_sub(self.config.min_workers as usize),
+                );
                 inner
-                    .total()
-                    .saturating_sub(self.config.min_workers as usize),
-            );
-            let mut instances = self.instances.lock().expect("instance lock");
-            // Validate the entire chosen FIFO shrink set before removing any
-            // slot. External owners would otherwise outlive freed capacity.
-            if inner
-                .workers
-                .iter()
-                .filter(|worker| worker.status == WorkerStatus::Idle)
-                .take(remaining)
-                .any(|worker| {
-                    instances.get(&worker.id).is_none_or(|port| {
-                        Arc::strong_count(port) != 1 || Arc::weak_count(port) != 0
-                    })
-                })
-            {
+                    .workers
+                    .iter()
+                    .filter(|worker| worker.status == WorkerStatus::Idle)
+                    .take(count)
+                    .map(|worker| worker.id)
+                    .collect::<std::collections::BTreeSet<_>>()
+            };
+            let observed = {
+                let instances = self.instances.lock().expect("instance lock");
+                candidates
+                    .iter()
+                    .filter_map(|id| instances.get(id).cloned())
+                    .collect::<Vec<_>>()
+            };
+            if observed.iter().any(|port| port.pending_work()) {
                 return Err(PoolError::Initialization(
-                    "idle instance still externally owned or missing".into(),
+                    "instance still owns unfinished work".into(),
                 ));
             }
-            let mut retired = Vec::new();
-            inner.workers.retain(|worker| {
-                if remaining > 0 && worker.status == WorkerStatus::Idle {
-                    remaining -= 1;
-                    retired.extend(instances.remove(&worker.id));
-                    false
-                } else {
-                    true
+            drop(observed);
+            let retired = {
+                let mut inner = self.shared.lock();
+                self.check_open()?;
+                let mut remaining = (delta.unsigned_abs() as usize).min(
+                    inner
+                        .total()
+                        .saturating_sub(self.config.min_workers as usize),
+                );
+                let mut instances = self.instances.lock().expect("instance lock");
+                // Validate the entire chosen FIFO shrink set before removing any
+                // slot. External owners would otherwise outlive freed capacity.
+                if inner
+                    .workers
+                    .iter()
+                    .filter(|worker| {
+                        worker.status == WorkerStatus::Idle && candidates.contains(&worker.id)
+                    })
+                    .take(remaining)
+                    .any(|worker| {
+                        instances.get(&worker.id).is_none_or(|port| {
+                            Arc::strong_count(port) != 1 || Arc::weak_count(port) != 0
+                        })
+                    })
+                {
+                    return Err(PoolError::Initialization(
+                        "idle instance still externally owned or missing".into(),
+                    ));
                 }
-            });
-            drop(instances);
-            drop(inner);
-            drop(retired);
+                let mut retired = Vec::new();
+                inner.workers.retain(|worker| {
+                    if remaining > 0
+                        && worker.status == WorkerStatus::Idle
+                        && candidates.contains(&worker.id)
+                    {
+                        remaining -= 1;
+                        retired.extend(instances.remove(&worker.id));
+                        false
+                    } else {
+                        true
+                    }
+                });
+                retired
+            };
+            self.dispatch_retirement(retired);
+            if !self
+                .settle_retirements(self.config.default_turn_deadline)
+                .await
+            {
+                return Err(PoolError::Initialization(
+                    "worker retirement deadline exceeded; admission remains closed".into(),
+                ));
+            }
         }
         Ok(self.shared.lock().total())
     }

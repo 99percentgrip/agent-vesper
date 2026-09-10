@@ -23,7 +23,8 @@ platform assumptions on hosts unavailable locally.
   `image.tar.gz`, `image.sha256`, and `image-id`. Each matrix job downloads
   the successful exact-commit driver artifact selected by the release gate,
   verifies its hash before packaging, and never rebuilds it. Both hosts build
-  with their Docker feature. Docker/Podman itself remains a host prerequisite;
+  with Docker and Swarm features; Swarm activation remains default-off in native
+  Settings and requires configured embeddings and a permitted backend. Docker/Podman itself remains a host prerequisite;
   installers and Settings import the bundled image without enabling web access.
 - The default toolchain is pinned to Rust 1.95.0 via `rust-toolchain.toml`
   (with `clippy` and `rustfmt` components); MSRV 1.88.0 is enforced
@@ -88,6 +89,19 @@ platform assumptions on hosts unavailable locally.
   independent workers, permissioned command continuations, scale/replacement
   and verified cleanup) using the same immutable built image. The explicit Hive
   gate fails on unavailable isolation; it never counts a skipped body as passing.
+  The shared service gate also checks disabled/missing-embedding/cancelled
+  admission, project copies, captured cognition, native history and cancelled
+  cleanup. The real ACP process gate exercises Settings activation,
+  configured loopback embeddings and provider transport, three overlapping
+  native workers, grounded synthesis and final artifact-report delivery.
+  The TUI gate covers both scope modes through native command/task/history
+  composition. Shared-scope gates verify a single real provision/teardown,
+  denied sibling writes, detached-child reaping and active service shutdown.
+  Pinned Playwright 1.51.1 drives real browser submission through the
+  shared Lens executor into the native worker's captured provider continuation
+  on both Linux architectures. Browser setup failure fails the gate.
+  A separate Ubuntu 22.04 job executes the real namespace supervisor Hive gate
+  without changing host security policy; unavailable isolation fails the job.
   Preserves the exact tested image archives and
   immutable image IDs. Release downloads those artifacts, never rebuilds
   untested images after tagging. Public release assets avoid requiring a

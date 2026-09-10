@@ -150,6 +150,10 @@ pub struct SessionState {
     pub pending_web_settings: bool,
     /// Explicit shared web setting operation.
     pub pending_web_command: Option<String>,
+    #[cfg(feature = "swarm")]
+    pub pending_swarm_command: Option<String>,
+    #[cfg(feature = "swarm")]
+    pub swarm_cancel: Option<vesper_harness::swarm_service::CancelFlag>,
     /// Whether the binary should open the provider selection modal.
     pub pending_provider_switch: bool,
     /// Manual conversation scroll expressed as **lines up from the bottom**.
@@ -465,11 +469,19 @@ fn apply_outcome(
         pending_lmstudio_settings,
         pending_web_settings,
         pending_web_command,
+        #[cfg(feature = "swarm")]
+        pending_swarm_command,
+        #[cfg(feature = "swarm")]
+            swarm_cancel: _,
         pending_provider_switch,
         conversation_manual_scroll: _,
         permission_modal_focus: _,
     } = state;
     match outcome {
+        #[cfg(feature = "swarm")]
+        CommandOutcome::Swarm(argument) => {
+            *pending_swarm_command = Some(argument);
+        }
         CommandOutcome::WebSettings(argument) => {
             *pending_web_command = Some(argument);
         }

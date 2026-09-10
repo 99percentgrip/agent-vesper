@@ -170,7 +170,7 @@ fn stdio_transcript_reaches_real_glm_adapter_with_protocol_pure_stdout() {
         advertisement["params"]["update"]["availableCommands"]
             .as_array()
             .map(|commands| commands.len()),
-        Some(46),
+        Some(46 + usize::from(cfg!(feature = "swarm"))),
         "the post-response advertisement carries frozen plus host-parity commands \
          (28 frozen + 18 host-parity, including /skill and /web)"
     );
@@ -418,9 +418,20 @@ fn empty_prompt_and_slash_commands_never_dispatch_provider() {
     // 28 frozen oracle entries + 18 host-parity extensions, including the
     // explicit /skill router and /web settings. The catalog is advertised once, in order, first
     // help → last watch.
-    assert_eq!(advertised.len(), 46);
+    assert_eq!(advertised.len(), 46 + usize::from(cfg!(feature = "swarm")));
+    assert_eq!(advertised.contains(&"swarm"), cfg!(feature = "swarm"));
     assert!(advertised.contains(&"web"));
-    assert_eq!(advertised_first_and_last(&advertised), ("help", "watch"));
+    assert_eq!(
+        advertised_first_and_last(&advertised),
+        (
+            "help",
+            if cfg!(feature = "swarm") {
+                "swarm"
+            } else {
+                "watch"
+            }
+        )
+    );
     send(
         &mut stdin,
         json!({"jsonrpc":"2.0","id":3,"method":"session/prompt","params":{"sessionId":session,"prompt":[],"_meta":{"userMessageId":"empty-message"}}}),

@@ -12,11 +12,20 @@ business logic.
 
 ## Ownership
 
-- VRO-15 swarm activation remains unimplemented and acceptance-gated.
-  Native Settings must persist explicit on/off choices; orchestration runs on a
-  caller-owned async task, never the render thread. Both hosts must compose the
-  shared native AgentLoop worker adapter and pass permission, progress and
-  default-off/no-state acceptance before exposing `/swarm`.
+- Native Lens review/interview execution delegates to `vesper-harness::lens_tools`;
+  TUI retains its live interview-limit policy, bordered UI and URL/browser-launch
+  presentation. ACP uses the same feedback validation and native tool results.
+
+- VRO-15 composition is behind the default-off `swarm` build feature.
+  `src/swarm_host.rs` wires the shared native service and workspace Save/Cancel
+  controls, active provider configuration, configured semantic embeddings,
+  memory recall, scoped tools, permission/progress and cancellation. `/swarm`
+  is advertised from the shared feature descriptor only in that build.
+  Persisted opt-in never bypasses capability, embedding or tool permission checks.
+  Host exit cancels and observes native service cleanup, then awaits the report
+  task and drains its final history event before persisting the conversation.
+  Full acceptance remains tracked in the F01–F18 matrix; do not advertise broad
+  activation before those gates pass.
 
 - `src/provider_hub.rs` owns Settings → Providers (`/settings providers`,
   `/settings provider`, and compatibility shortcut `/provider`). It mirrors
@@ -841,6 +850,10 @@ moment the turn completes — never silently dropped, never interrupting the
 work (ACP mid-turn-slash-grace parity; see `apps/agent-vesper-acp/AGENTS.md`).
 
 ## Verification
+
+- `src/swarm_host_tests.rs` is an explicit container gate: child-process-isolated
+  HOME/XDG/state, asserted loopback chat endpoint, configured embeddings, both
+  scope modes, three overlapping workers, native task/event and history delivery.
 
 - Concurrent watcher/dispatch tests synchronize on an active real sweep,
   isolate their state, and join before inspecting completion; scheduler luck

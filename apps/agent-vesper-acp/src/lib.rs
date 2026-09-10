@@ -1,6 +1,9 @@
 #![forbid(unsafe_code)]
 //! Thin composition shared by the release binary and process-only conformance driver.
 
+#[cfg(feature = "swarm")]
+mod swarm_host;
+
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 mod cognition;
@@ -88,7 +91,7 @@ where
             controls: Some(controls::glm_control_surface(
                 &profile.provider_configuration,
             )),
-            additional_commands: vesper_domain::HOST_PARITY_SLASH_COMMANDS.to_vec(),
+            additional_commands: host_parity_commands(),
         },
     );
     let adapter = if full_harness_enabled() {
@@ -250,6 +253,8 @@ fn default_agent_root(name: &str) -> PathBuf {
 /// multi-turn loop and hosted tool surface used by the TUI.
 struct AcpHarnessEngine {
     registry: Arc<ProviderRegistry>,
+    #[cfg(feature = "swarm")]
+    swarm: swarm_host::SwarmHost,
     config: vesper_agent::AgentLoopConfig,
     hosted: Arc<HarnessToolService>,
     /// Cognitive-memory bundle (Stage 16 / ADR 0015 + 0016) shared with the
@@ -298,7 +303,7 @@ impl vesper_agent::PermissionPort for AcpHarnessPermissionPort {
         &'a self,
         call: &'a vesper_domain::ToolCall,
         definition: &'a vesper_domain::ToolDefinition,
-        _context: &'a vesper_agent::ToolContext,
+        context: &'a vesper_agent::ToolContext,
     ) -> vesper_agent::ToolFuture<'a, vesper_agent::PermissionDecision> {
         let requester = Arc::clone(&self.requester);
         let request = AcpPermissionRequest {
@@ -309,7 +314,17 @@ impl vesper_agent::PermissionPort for AcpHarnessPermissionPort {
             reason: format!("{} requires one-time approval", definition.description),
         };
         Box::pin(async move {
-            match requester.request(request).await {
+            let cancelled = async {
+                while !context.cancellation.is_cancelled() {
+                    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+                }
+            };
+            let decision = tokio::select! {
+                biased;
+                () = cancelled => AcpPermissionDecision::Cancelled,
+                decision = requester.request(request) => decision,
+            };
+            match decision {
                 AcpPermissionDecision::Allow => vesper_agent::PermissionDecision::Allow,
                 AcpPermissionDecision::Cancelled => vesper_agent::PermissionDecision::Deny(
                     "ACP permission request cancelled".into(),
@@ -323,6 +338,116 @@ impl vesper_agent::PermissionPort for AcpHarnessPermissionPort {
 }
 
 impl AcpHarnessEngine {
+    fn tool_registry(&self, request: &AcpPromptRequest) -> vesper_agent::ToolRegistry {
+        let sink = request.event_sink.clone();
+        let on_url = Arc::new(move |url: &str| {
+            if let Some(sink) = &sink {
+                sink.event(vesper_acp::AcpEngineEvent::ContentDelta {
+                    text: format!(
+                        "\n[VesperLens] Open this review and submit your response:\n{url}\n"
+                    ),
+                });
+            }
+        });
+        let lens = vesper_harness::lens_tools::LensToolService::new(
+            self.hosted.clone(), Arc::new(vesper_harness::lens_tools::NativeLensPort::new()),
+            on_url, 12, "Choose only the unresolved, decision-relevant questions needed (1–12); do not pad the interview.".into(),
+        );
+        self.hosted
+            .clone()
+            .build_default_registry()
+            .with_service(Arc::new(lens))
+    }
+
+    async fn turn_configuration(
+        &self,
+        request: &AcpPromptRequest,
+    ) -> vesper_agent::AgentLoopConfig {
+        let mut config = self.config.clone();
+        // Runtime session state first: footer selectors (ACP
+        // `session/set_config_option`) land in the runtime snapshot, and the
+        // adapter forwards that snapshot here. Merge those provider values
+        // and the session model over the engine defaults so a footer pick
+        // takes effect on the very next turn.
+        if let Some(session_configuration) = request.provider_configuration.clone() {
+            for (key, value) in session_configuration.values.values.iter() {
+                let _ = config
+                    .provider_configuration
+                    .values
+                    .values
+                    .insert(key.to_owned(), value.clone());
+            }
+        }
+        if let Some(session_model) = request.model.clone() {
+            // Provider switch (ACP `provider` footer picker): the session
+            // model carries the acting provider id after a provider switch;
+            // sync the loop's dispatch identity so the next turn routes to
+            // the selected adapter (TUI `/provider` parity). The model
+            // envelope follows the same identity so the adapter sees a
+            // consistent (provider, model) pair.
+            config.provider_id = session_model.provider_id.clone();
+            config.model = session_model;
+        }
+        {
+            let overrides = self.overrides.lock().await;
+            if let Some(session_overrides) = overrides.get(&request.session_id) {
+                if let Some(cap) = session_overrides.max_tool_iterations {
+                    config.max_tool_iterations = cap;
+                }
+                if let Some(model) = &session_overrides.model
+                    && let Ok(model_id) = ModelId::new(model.clone())
+                {
+                    let provider = config.model.provider_id.clone();
+                    config.model = runtime_model(&model_id, &provider);
+                }
+                let entries: &[(&str, Option<&String>)] = &[
+                    (
+                        "zai:endpoint-plan",
+                        session_overrides.endpoint_plan.as_ref(),
+                    ),
+                    (
+                        "zai:reasoning-mode",
+                        session_overrides.reasoning_mode.as_ref(),
+                    ),
+                    (
+                        "zai:generation-profile",
+                        session_overrides.generation_profile.as_ref(),
+                    ),
+                    (
+                        "zai:auxiliary-model",
+                        session_overrides.auxiliary_model.as_ref(),
+                    ),
+                    ("zai:mixture-mode", session_overrides.mixture_mode.as_ref()),
+                ];
+                for (key, value) in entries {
+                    if let Some(value) = value {
+                        let _ = config
+                            .provider_configuration
+                            .values
+                            .values
+                            .insert((*key).to_owned(), serde_json::json!(value));
+                    }
+                }
+            }
+        }
+        config.context_window_tokens =
+            self.context_window_for(&config.provider_id, &config.model.model_id);
+        if !request.workspace_roots.is_empty() {
+            config.workspace_roots = request.workspace_roots.clone();
+        }
+        config.system_instructions = {
+            let mut instructions = vesper_agent::project_instructions(&config.workspace_roots);
+            // VRO-11.5 tool-enforcement mandate + cognitive capability
+            // primer (TUI parity — see the doc comments on each helper).
+            instructions.push(tool_enforcement_instruction());
+            if self.cognition.is_enabled() {
+                instructions.push(cognitive_capability_instruction());
+            }
+            instructions
+        };
+        config
+    }
+
     fn new(
         registry: Arc<ProviderRegistry>,
         config: vesper_agent::AgentLoopConfig,
@@ -333,6 +458,8 @@ impl AcpHarnessEngine {
     ) -> Self {
         Self {
             registry,
+            #[cfg(feature = "swarm")]
+            swarm: Default::default(),
             config,
             hosted,
             cognition: Arc::new(cognition),
@@ -436,7 +563,6 @@ impl AcpHarnessEngine {
         selected_skills: Vec<String>,
     ) -> Result<AcpPromptResult, String> {
         use vesper_domain::{OutcomeStatus, PrivacyMode, ReasoningRequest, RequestId};
-        let hosted = Arc::clone(&self.hosted);
         let permission_port: Arc<dyn vesper_agent::PermissionPort> = request
             .permission_requester
             .as_ref()
@@ -457,7 +583,7 @@ impl AcpHarnessEngine {
         let pressure_state = self.pressure_state(&request.session_id).await;
         let loop_engine = vesper_agent::AgentLoop::new(
             Arc::clone(&self.registry),
-            hosted.build_default_registry(),
+            self.tool_registry(request),
             config,
         )
         .with_active_plan(self.active_plan(&request.session_id))
@@ -684,9 +810,7 @@ impl AcpHarnessEngine {
             message.content.push(ContentPart::Text(extra));
         }
         let available_tools = self
-            .hosted
-            .clone()
-            .build_default_registry()
+            .tool_registry(&request)
             .definitions_for(request.operating_mode)
             .into_iter()
             .map(|definition| definition.harness_name.as_str().to_owned())
@@ -729,88 +853,7 @@ impl AcpHarnessEngine {
             history.push(message);
             history.clone()
         };
-        let mut config = self.config.clone();
-        // Runtime session state first: footer selectors (ACP
-        // `session/set_config_option`) land in the runtime snapshot, and the
-        // adapter forwards that snapshot here. Merge those provider values
-        // and the session model over the engine defaults so a footer pick
-        // takes effect on the very next turn.
-        if let Some(session_configuration) = request.provider_configuration.clone() {
-            for (key, value) in session_configuration.values.values.iter() {
-                let _ = config
-                    .provider_configuration
-                    .values
-                    .values
-                    .insert(key.to_owned(), value.clone());
-            }
-        }
-        if let Some(session_model) = request.model.clone() {
-            // Provider switch (ACP `provider` footer picker): the session
-            // model carries the acting provider id after a provider switch;
-            // sync the loop's dispatch identity so the next turn routes to
-            // the selected adapter (TUI `/provider` parity). The model
-            // envelope follows the same identity so the adapter sees a
-            // consistent (provider, model) pair.
-            config.provider_id = session_model.provider_id.clone();
-            config.model = session_model;
-        }
-        {
-            let overrides = self.overrides.lock().await;
-            if let Some(session_overrides) = overrides.get(&request.session_id) {
-                if let Some(cap) = session_overrides.max_tool_iterations {
-                    config.max_tool_iterations = cap;
-                }
-                if let Some(model) = &session_overrides.model
-                    && let Ok(model_id) = ModelId::new(model.clone())
-                {
-                    let provider = config.model.provider_id.clone();
-                    config.model = runtime_model(&model_id, &provider);
-                }
-                let entries: &[(&str, Option<&String>)] = &[
-                    (
-                        "zai:endpoint-plan",
-                        session_overrides.endpoint_plan.as_ref(),
-                    ),
-                    (
-                        "zai:reasoning-mode",
-                        session_overrides.reasoning_mode.as_ref(),
-                    ),
-                    (
-                        "zai:generation-profile",
-                        session_overrides.generation_profile.as_ref(),
-                    ),
-                    (
-                        "zai:auxiliary-model",
-                        session_overrides.auxiliary_model.as_ref(),
-                    ),
-                    ("zai:mixture-mode", session_overrides.mixture_mode.as_ref()),
-                ];
-                for (key, value) in entries {
-                    if let Some(value) = value {
-                        let _ = config
-                            .provider_configuration
-                            .values
-                            .values
-                            .insert((*key).to_owned(), serde_json::json!(value));
-                    }
-                }
-            }
-        }
-        config.context_window_tokens =
-            self.context_window_for(&config.provider_id, &config.model.model_id);
-        if !request.workspace_roots.is_empty() {
-            config.workspace_roots = request.workspace_roots.clone();
-        }
-        config.system_instructions = {
-            let mut instructions = vesper_agent::project_instructions(&config.workspace_roots);
-            // VRO-11.5 tool-enforcement mandate + cognitive capability
-            // primer (TUI parity — see the doc comments on each helper).
-            instructions.push(tool_enforcement_instruction());
-            if self.cognition.is_enabled() {
-                instructions.push(cognitive_capability_instruction());
-            }
-            instructions
-        };
+        let config = self.turn_configuration(&request).await;
         // VRO dispatch (TUI parity): when orchestration is enabled for this
         // process and the profiled strategy benefits from it, route the turn
         // through the orchestrator instead of the direct loop. `Direct`
@@ -852,7 +895,6 @@ impl AcpHarnessEngine {
             }
             return result;
         }
-        let hosted = Arc::clone(&self.hosted);
         let permission_port: Arc<dyn vesper_agent::PermissionPort> = request
             .permission_requester
             .as_ref()
@@ -893,7 +935,7 @@ impl AcpHarnessEngine {
         let pressure_state = self.pressure_state(&request.session_id).await;
         let loop_engine = vesper_agent::AgentLoop::new(
             Arc::clone(&self.registry),
-            hosted.build_default_registry(),
+            self.tool_registry(&request),
             config,
         )
         .with_active_plan(self.active_plan(&request.session_id))
@@ -1027,6 +1069,21 @@ impl AcpHarnessEngine {
                 None => (rest, ""),
             };
             let lowered = raw_name.to_ascii_lowercase();
+            #[cfg(feature = "swarm")]
+            if lowered == "swarm"
+                || (lowered == "settings"
+                    && (raw_argument == "swarm" || raw_argument.starts_with("swarm ")))
+            {
+                let argument = if lowered == "settings" {
+                    format!("settings{}", &raw_argument[5..])
+                } else {
+                    raw_argument.to_owned()
+                };
+                return match self.swarm_command(request, &argument).await {
+                    Ok(result) => SlashFlow::Respond(result),
+                    Err(error) => slash_result(error),
+                };
+            }
             if lowered == "web" {
                 let root = workspace_root_path(&request.workspace_roots);
                 return slash_result(
@@ -1274,7 +1331,7 @@ impl AcpHarnessEngine {
                     vesper_agent::project_instructions(&config.workspace_roots);
                 let loop_engine = vesper_agent::AgentLoop::new(
                     Arc::clone(&self.registry),
-                    Arc::clone(&self.hosted).build_default_registry(),
+                    self.tool_registry(request),
                     config,
                 );
                 match loop_engine
@@ -1686,6 +1743,20 @@ impl vesper_agent::AgentProgressPort for AcpEngineProgressPort {
 }
 
 impl AcpPromptEngine for AcpHarnessEngine {
+    fn shutdown(&self) -> AcpPromptFuture<'_, Result<(), String>> {
+        Box::pin(async move {
+            for entries in self.cancellations.lock().await.values() {
+                for entry in entries {
+                    entry.cancel();
+                }
+            }
+            #[cfg(feature = "swarm")]
+            if !self.swarm.shutdown().await {
+                return Err("Swarm shutdown left unresolved native work or cleanup.".into());
+            }
+            Ok(())
+        })
+    }
     fn run<'a>(
         &'a self,
         request: AcpPromptRequest,
@@ -1698,14 +1769,18 @@ impl AcpPromptEngine for AcpHarnessEngine {
             // Cancel EVERY in-flight turn for the session: concurrent turns
             // (mid-turn slash + running prompt) each own an entry, and the
             // cancel must reach all of them — never just the latest.
+            #[cfg(feature = "swarm")]
+            let swarm_cancelled = self.swarm.cancel(session_id);
+            #[cfg(not(feature = "swarm"))]
+            let swarm_cancelled = false;
             match self.cancellations.lock().await.get(session_id) {
                 Some(entries) => {
                     for entry in entries {
                         entry.cancel();
                     }
-                    !entries.is_empty()
+                    !entries.is_empty() || swarm_cancelled
                 }
-                None => false,
+                None => swarm_cancelled,
             }
         })
     }
@@ -1760,8 +1835,8 @@ fn workspace_root_path(roots: &[vesper_domain::WorkspaceRoot]) -> PathBuf {
 /// Static system-prompt instruction mirroring the TUI's
 /// `tool_enforcement_instruction` (VRO-11.5). The ACP tool registry exposes
 /// `write_file` and `update_plan`, so the mandate names those only — the
-/// TUI-only `request_human_review`/`request_human_input` lines are
-/// intentionally absent because this host does not register those tools.
+/// Browser feedback tools use the shared native Lens service; ACP emits the
+/// URL through its existing event sink instead of launching a desktop browser.
 fn tool_enforcement_instruction() -> vesper_domain::SystemInstruction {
     let body = "### Tool Execution Enforcement\n\
 When asked to generate code, UI, or artifacts, you MUST execute the write_file \
@@ -2483,7 +2558,7 @@ pub async fn run_multi_provider(initial: &str) -> Result<(), ()> {
                 &registered,
                 &lm_controls,
             )),
-            additional_commands: vesper_domain::HOST_PARITY_SLASH_COMMANDS.to_vec(),
+            additional_commands: host_parity_commands(),
         },
     );
     let adapter = if full_harness_enabled() {
@@ -2637,6 +2712,17 @@ pub async fn boot(provider: &str) -> Result<(), ()> {
 /// `glm` so the production adapter remains the default when unset.
 fn selected_provider_token() -> String {
     std::env::var("AGENT_VESPER_PROVIDER").unwrap_or_else(|_| String::from("glm"))
+}
+
+fn host_parity_commands() -> Vec<vesper_domain::SlashCommandDescriptor> {
+    let commands = vesper_domain::HOST_PARITY_SLASH_COMMANDS.to_vec();
+    #[cfg(feature = "swarm")]
+    let commands = {
+        let mut commands = commands;
+        commands.push(vesper_domain::slash_commands::SWARM_SLASH_COMMAND);
+        commands
+    };
+    commands
 }
 
 #[cfg(test)]
@@ -2970,5 +3056,43 @@ mod tests {
             vesper_agent::PermissionPort::authorize(&port, &call, &definition, &context).await,
             vesper_agent::PermissionDecision::Allow
         );
+        #[derive(Debug)]
+        struct PendingRequester(tokio::sync::Notify);
+        impl AcpPermissionRequester for PendingRequester {
+            fn request(
+                &self,
+                _: AcpPermissionRequest,
+            ) -> AcpPromptFuture<'_, AcpPermissionDecision> {
+                Box::pin(async {
+                    self.0.notify_one();
+                    std::future::pending().await
+                })
+            }
+        }
+        let requester = Arc::new(PendingRequester(tokio::sync::Notify::new()));
+        let port = AcpHarnessPermissionPort {
+            requester: requester.clone(),
+            session_id: port.session_id.clone(),
+        };
+        let cancellation = Arc::new(RuntimeCancellation::new());
+        let context = vesper_agent::ToolContext {
+            cancellation: cancellation.clone(),
+            ..context
+        };
+        let authorize =
+            vesper_agent::PermissionPort::authorize(&port, &call, &definition, &context);
+        let cancel = async {
+            requester.0.notified().await;
+            cancellation.cancel();
+        };
+        let (decision, ()) = tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            tokio::join!(authorize, cancel)
+        })
+        .await
+        .expect("pending human approval must settle after cancellation");
+        assert!(matches!(
+            decision,
+            vesper_agent::PermissionDecision::Deny(_)
+        ));
     }
 }

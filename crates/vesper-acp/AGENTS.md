@@ -96,6 +96,11 @@ update mapping, and bounded asynchronous dispatch into `vesper-runtime`.
 - Session mode/config requests are mapped to runtime mode, reasoning, and
   permission updates; delete and logout have explicit protocol responses.
 - `AcpPromptEngine` is an optional composition port. When injected, prompt
+  engine shutdown is awaited on transport EOF and dispatcher/event-pump exit
+  before runtime shutdown; detached native work must settle or return an
+  explicit cleanup failure. The default shutdown hook is inert for engines
+  without owned background resources.
+  With an injected engine, prompt
   requests route through a host's bounded multi-turn `vesper-agent` loop and
   are published with ACP backpressure. Cancellation notifications are routed
   to the injected engine as well. Editors may precede a concurrent-safe slash

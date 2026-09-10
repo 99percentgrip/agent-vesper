@@ -3,7 +3,7 @@
 //! The host injects its real registry/configuration, tool executors, permission
 //! channel and optional progress channel. Each task gets an independent runtime
 //! session through AgentLoop; this adapter owns no provider-wire or tool loop.
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use crate::WorkerFactory;
@@ -14,17 +14,43 @@ use vesper_domain::{
     SessionPermissionMode,
 };
 use vesper_swarm::worker::{
-    CancellationSignal, TurnReceipt, WorkerCapabilities, WorkerError, WorkerPort, WorkerTask,
+    CancelFlag, CancellationSignal, TurnReceipt, WorkerCapabilities, WorkerError, WorkerPort,
+    WorkerTask,
 };
 
-struct CancellationBridge(CancellationSignal);
-impl vesper_provider::CancellationSignal for CancellationBridge {
-    fn is_cancelled(&self) -> bool {
-        self.0.is_cancelled()
+struct WorkerHistory(Arc<Mutex<Vec<ConversationMessage>>>);
+impl vesper_agent::AgentHistoryPort for WorkerHistory {
+    fn checkpoint(&self, history: &[ConversationMessage]) {
+        *self.0.lock().expect("worker history") = history.to_vec();
     }
 }
-struct BusyGuard<'a>(&'a AtomicBool);
-impl Drop for BusyGuard<'_> {
+
+struct WorkerProgress {
+    turns: Arc<AtomicUsize>,
+    downstream: Option<Arc<dyn AgentProgressPort>>,
+}
+impl AgentProgressPort for WorkerProgress {
+    fn emit(&self, event: vesper_agent::AgentProgressEvent) {
+        if matches!(
+            event,
+            vesper_agent::AgentProgressEvent::ProviderTurnStarted { .. }
+        ) {
+            self.turns.fetch_add(1, Ordering::AcqRel);
+        }
+        if let Some(port) = &self.downstream {
+            port.emit(event);
+        }
+    }
+}
+
+struct CancellationBridge(CancellationSignal, CancellationSignal);
+impl vesper_provider::CancellationSignal for CancellationBridge {
+    fn is_cancelled(&self) -> bool {
+        self.0.is_cancelled() || self.1.is_cancelled()
+    }
+}
+struct BusyGuard(Arc<AtomicBool>);
+impl Drop for BusyGuard {
     fn drop(&mut self) {
         self.0.store(false, Ordering::Release);
     }
@@ -32,6 +58,7 @@ impl Drop for BusyGuard<'_> {
 
 /// One independent worker instance. Concurrent use of the same instance is
 /// refused; hosts must create separate instances for simultaneous worker turns.
+#[derive(Clone)]
 pub struct ProviderWorkerPort {
     factory: WorkerFactory,
     tools: ToolRegistry,
@@ -39,9 +66,11 @@ pub struct ProviderWorkerPort {
     permission: SessionPermissionMode,
     permission_port: Arc<dyn PermissionPort>,
     progress_port: Option<Arc<dyn AgentProgressPort>>,
+    journal: Option<(Arc<crate::swarm_journal::NativeWorkerJournal>, String)>,
+    context: Option<String>,
     capabilities: WorkerCapabilities,
-    busy: AtomicBool,
-    history: Mutex<Vec<ConversationMessage>>,
+    busy: Arc<AtomicBool>,
+    history: Arc<Mutex<Vec<ConversationMessage>>>,
 }
 impl ProviderWorkerPort {
     /// Restricts both advertising and execution to registered role tools.
@@ -71,8 +100,10 @@ impl ProviderWorkerPort {
             permission_port,
             progress_port: None,
             capabilities,
-            busy: AtomicBool::new(false),
-            history: Mutex::new(Vec::new()),
+            journal: None,
+            context: None,
+            busy: Arc::new(AtomicBool::new(false)),
+            history: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -83,6 +114,23 @@ impl ProviderWorkerPort {
         self
     }
 
+    #[must_use]
+    pub fn with_journal(
+        mut self,
+        journal: Arc<crate::swarm_journal::NativeWorkerJournal>,
+        worker: String,
+    ) -> Self {
+        self.journal = Some((journal, worker));
+        self
+    }
+    /// Bounded, untrusted memory/reference context for this run only.
+    pub fn with_context(mut self, context: Option<String>) -> Result<Self, String> {
+        if context.as_ref().is_some_and(|text| text.len() > 65536) {
+            return Err("Worker recalled context exceeds 64 KiB.".into());
+        }
+        self.context = context;
+        Ok(self)
+    }
     /// Last completed or interrupted native history, including tool transactions.
     /// No filesystem persistence is performed; durable checkpoints remain host opt-in.
     #[must_use]
@@ -90,7 +138,17 @@ impl ProviderWorkerPort {
         self.history.lock().expect("worker history lock").clone()
     }
 }
+struct AbandonTurn(CancelFlag);
+impl Drop for AbandonTurn {
+    fn drop(&mut self) {
+        self.0.cancel();
+    }
+}
 impl WorkerPort for ProviderWorkerPort {
+    fn pending_work(&self) -> bool {
+        self.busy.load(Ordering::Acquire)
+    }
+
     fn capabilities(&self) -> WorkerCapabilities {
         self.capabilities.clone()
     }
@@ -111,75 +169,102 @@ impl WorkerPort for ProviderWorkerPort {
             {
                 return Err(WorkerError::Rejected(task.id.clone()));
             }
-            let _busy = BusyGuard(&self.busy);
-            let failure = |reason: String| WorkerError::Failed(task.id.clone(), reason);
-            let message = ConversationMessage {
-                id: MessageId::new(format!("swarm-{}", task.id))
-                    .map_err(|error| failure(error.to_string()))?,
-                role: MessageRole::User,
-                content: vec![ContentPart::Text(
-                    ContentText::new(task.prompt.clone())
-                        .map_err(|error| failure(error.to_string()))?,
-                )],
-                extensions: Default::default(),
-            };
-            self.history.lock().expect("worker history lock").clear();
-            let tools = if task.required_capabilities.is_empty() {
-                self.tools.clone()
-            } else {
-                self.tools.restricted_to(&task.required_capabilities)
-            };
-            let mut engine = AgentLoop::new(
-                self.factory.registry.clone(),
-                tools,
-                self.factory.config.clone(),
-            )
-            .with_permission_port(self.permission_port.clone());
-            if let Some(port) = &self.progress_port {
-                engine = engine.with_progress_port(port.clone());
-            }
-            let started = std::time::Instant::now();
-            let (outcome, history) = engine
-                .run_prompt_with_history_with_cancellation(
-                    vec![message],
-                    self.mode,
-                    self.permission,
-                    Arc::new(CancellationBridge(cancellation.clone())),
+            let worker = self.clone();
+            let owned_task = task.clone();
+            let busy = BusyGuard(self.busy.clone());
+            self.history.lock().expect("worker history").clear();
+            let turns = Arc::new(AtomicUsize::new(0));
+            let journal = self.journal.as_ref().map(|(journal, worker)| {
+                journal.begin(
+                    worker.clone(),
+                    task.id.clone(),
+                    self.history.clone(),
+                    turns.clone(),
                 )
-                .await
-                .map_err(|error| failure(error.to_string()))?;
-            *self.history.lock().expect("worker history lock") = history;
-            if cancellation.is_cancelled() {
-                return Err(WorkerError::Cancelled(task.id.clone()));
-            }
-            let (content, success) = match outcome {
-                AgentTurnOutcome::Completed {
-                    assistant_content, ..
-                } => (assistant_content, true),
-                AgentTurnOutcome::Interrupted {
-                    assistant_content, ..
-                } => (assistant_content, false),
-                AgentTurnOutcome::MaxIterationsReached { .. } => {
-                    return Err(failure(
-                        "native agent iteration safety ceiling reached".into(),
-                    ));
+            });
+            let abandon = AbandonTurn(CancelFlag::new());
+            let abandoned = abandon.0.signal();
+            tokio::spawn(async move {
+                let _busy = busy;
+                let _journal = journal;
+                let task = &owned_task;
+
+                let failure = |reason: String| WorkerError::Failed(task.id.clone(), reason);
+                let message = ConversationMessage {
+                    id: MessageId::new(format!("swarm-{}", task.id))
+                        .map_err(|error| failure(error.to_string()))?,
+                    role: MessageRole::User,
+                    content: vec![ContentPart::Text(
+                        ContentText::new(match &worker.context {
+                            Some(context) => format!("{}\n\n<untrusted-recalled-context>\n{}\n</untrusted-recalled-context>", task.prompt, context),
+                            None => task.prompt.clone(),
+                        })
+                            .map_err(|error| failure(error.to_string()))?,
+                    )],
+                    extensions: Default::default(),
+                };
+                *worker.history.lock().expect("worker history lock") = vec![message.clone()];
+                let tools = if task.required_capabilities.is_empty() {
+                    worker.tools.clone()
+                } else {
+                    worker.tools.restricted_to(&task.required_capabilities)
+                };
+                let mut engine = AgentLoop::new(
+                    worker.factory.registry.clone(),
+                    tools,
+                    worker.factory.config.clone(),
+                )
+                .with_permission_port(worker.permission_port.clone())
+                .with_history_port(Arc::new(WorkerHistory(worker.history.clone())));
+                engine = engine.with_progress_port(Arc::new(WorkerProgress {
+                    turns,
+                    downstream: worker.progress_port.clone(),
+                }));
+                let started = std::time::Instant::now();
+                let (outcome, history) = engine
+                    .run_prompt_with_history_with_cancellation(
+                        vec![message],
+                        worker.mode,
+                        worker.permission,
+                        Arc::new(CancellationBridge(cancellation.clone(), abandoned.clone())),
+                    )
+                    .await
+                    .map_err(|error| failure(error.to_string()))?;
+                *worker.history.lock().expect("worker history lock") = history;
+                if cancellation.is_cancelled() || abandoned.is_cancelled() {
+                    return Err(WorkerError::Cancelled(task.id.clone()));
                 }
-            };
-            let mut output = String::new();
-            for part in content {
-                if let ContentPart::Text(text) = part {
-                    if output.len().saturating_add(text.as_str().len()) > 1_048_576 {
-                        return Err(failure("worker output byte limit exceeded".into()));
+                let (content, success) = match outcome {
+                    AgentTurnOutcome::Completed {
+                        assistant_content, ..
+                    } => (assistant_content, true),
+                    AgentTurnOutcome::Interrupted {
+                        assistant_content, ..
+                    } => (assistant_content, false),
+                    AgentTurnOutcome::MaxIterationsReached { .. } => {
+                        return Err(failure(
+                            "native agent iteration safety ceiling reached".into(),
+                        ));
                     }
-                    output.push_str(text.as_str());
+                };
+                let mut output = String::new();
+                for part in content {
+                    if let ContentPart::Text(text) = part {
+                        if output.len().saturating_add(text.as_str().len()) > 1_048_576 {
+                            return Err(failure("worker output byte limit exceeded".into()));
+                        }
+                        output.push_str(text.as_str());
+                    }
                 }
-            }
-            Ok(TurnReceipt {
-                task_id: task.id.clone(),
-                output,
-                success,
-                duration: started.elapsed(),
+                Ok(TurnReceipt {
+                    task_id: task.id.clone(),
+                    output,
+                    success,
+                    duration: started.elapsed(),
+                })
             })
+            .await
+            .map_err(|_| WorkerError::Failed(task.id.clone(), "native worker task failed".into()))?
         })
     }
 }
@@ -238,6 +323,11 @@ impl vesper_swarm::pool::WorkerInstanceFactory for ProviderWorkerInstanceFactory
                 template.permission_port.clone(),
             );
             worker.progress_port = template.progress_port.clone();
+            worker.context = template.context.clone();
+            worker.journal = template
+                .journal
+                .as_ref()
+                .map(|(journal, role)| (journal.clone(), format!("{role}-{id}")));
             if let Some((leases, role)) = &self.sandbox {
                 let (root, route) = leases
                     .worker(role, id, cancellation.clone())

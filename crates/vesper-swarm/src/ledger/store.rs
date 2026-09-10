@@ -16,7 +16,7 @@
 //!
 //! Determinism: embedding calls go through the caller-supplied async
 //! [`EmbeddingPort`]; the ledger itself owns no clock (sequence numbers,
-//! not timestamps) and no randomness.
+//! with optional caller-supplied Unix millisecond timestamps) and no randomness.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -115,6 +115,10 @@ pub struct EntryDraft {
 pub struct LedgerEntry {
     /// Ledger-assigned monotonic id.
     pub id: u64,
+    /// Original recording time in Unix milliseconds, when supplied by the host.
+    /// Absent in older snapshots; never synthesized from sequence or copy time.
+    #[serde(default)]
+    pub timestamp_ms: Option<u64>,
     /// Scope of the entry.
     pub scope: MemoryScope,
     /// Classification.
@@ -326,6 +330,7 @@ pub struct Ledger {
     port: Arc<dyn EmbeddingPort>,
     inner: Arc<arc_swap::ArcSwap<LedgerInner>>,
     writer: Arc<std::sync::Mutex<()>>,
+    timestamp: Arc<dyn Fn() -> Option<u64> + Send + Sync>,
 }
 
 impl std::fmt::Debug for Ledger {
@@ -364,6 +369,7 @@ impl Ledger {
         Ok(Self {
             dimensions: config.dimensions,
             port,
+            timestamp: Arc::new(|| None),
             writer: Arc::new(std::sync::Mutex::new(())),
             inner: Arc::new(arc_swap::ArcSwap::from_pointee(LedgerInner {
                 retention,
@@ -412,7 +418,7 @@ impl Ledger {
             super::snapshot_writer::SnapshotWriter::new(Vec::new(), MAX_SNAPSHOT_BYTES);
         for bytes in [
             b"VSWLEDG1".as_slice(),
-            &2u32.to_le_bytes(),
+            &3u32.to_le_bytes(),
             &(graph.len() as u64).to_le_bytes(),
             &graph,
         ] {
@@ -444,7 +450,8 @@ impl Ledger {
         if bytes.len() < 20 || bytes.len() > MAX_SNAPSHOT_BYTES || &bytes[..8] != b"VSWLEDG1" {
             return Err(invalid("invalid header or byte limit"));
         }
-        if bytes[8..12] != 2u32.to_le_bytes() {
+        let version = u32::from_le_bytes(bytes[8..12].try_into().expect("four bytes"));
+        if !matches!(version, 2 | 3) {
             return Err(invalid("unsupported version"));
         }
         let graph_len = usize::try_from(u64::from_le_bytes(
@@ -458,6 +465,9 @@ impl Ledger {
         let graph = HnswIndex::from_snapshot(&config, &bytes[20..split])?;
         let mut log: SnapshotLog = serde_json::from_slice(&bytes[split..])
             .map_err(|_| invalid("invalid structured log"))?;
+        if version == 2 && log.entries.iter().any(|entry| entry.timestamp_ms.is_some()) {
+            return Err(invalid("timestamps require ledger snapshot version 3"));
+        }
         log.retention
             .validate(config.max_elements)
             .map_err(|_| invalid("invalid retention caps"))?;
@@ -505,6 +515,7 @@ impl Ledger {
         Ok(Self {
             dimensions: config.dimensions,
             port,
+            timestamp: Arc::new(|| None),
             writer: Arc::new(std::sync::Mutex::new(())),
             inner: Arc::new(arc_swap::ArcSwap::from_pointee(inner)),
         })
@@ -536,6 +547,26 @@ impl Ledger {
     /// mismatch, duplicate point, capacity — the entire write fails and
     /// neither side keeps a trace of it.
     pub async fn record(&self, draft: EntryDraft) -> Result<u64, LedgerError> {
+        self.record_at(draft, (self.timestamp)()).await
+    }
+
+    /// Attach a cheap nonblocking wall-clock source at the composition boundary.
+    /// Loaded snapshots retain their original times; this affects new records only.
+    pub fn with_timestamp_source(
+        mut self,
+        source: Arc<dyn Fn() -> Option<u64> + Send + Sync>,
+    ) -> Self {
+        self.timestamp = source;
+        self
+    }
+
+    /// Record an explicit original Unix millisecond timestamp transactionally.
+    /// `None` means unavailable, never epoch zero or a fabricated sequence time.
+    pub async fn record_at(
+        &self,
+        draft: EntryDraft,
+        timestamp_ms: Option<u64>,
+    ) -> Result<u64, LedgerError> {
         if !(0.0..=1.0).contains(&draft.confidence) {
             return Err(LedgerError::InvalidConfidence(draft.confidence));
         }
@@ -574,6 +605,7 @@ impl Ledger {
         inner.hnsw.add_point(id, vector)?;
         let entry = LedgerEntry {
             id,
+            timestamp_ms,
             scope: draft.scope,
             kind: draft.kind,
             text: draft.text,

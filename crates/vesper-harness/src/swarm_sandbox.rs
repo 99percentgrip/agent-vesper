@@ -19,6 +19,9 @@ use vesper_swarm::worker::CancellationSignal;
 
 use crate::sandbox_backend::{BlockingBridge, build_spec, finish_run, shell_argv};
 
+#[path = "swarm_shared_scope.rs"]
+mod shared_scope;
+
 struct BoundaryState {
     handle: Option<SandboxHandle>,
     running: bool,
@@ -28,10 +31,13 @@ struct Boundary {
     spec: LeaseSpec,
     backend_spec: SandboxSpec,
     state: Mutex<BoundaryState>,
+    uid: u32,
 }
 struct NativePort {
     backend: Arc<dyn SandboxBackend>,
     boundaries: Mutex<BTreeMap<String, Arc<Boundary>>>,
+    shared: std::sync::OnceLock<shared_scope::SharedScope>,
+    next_uid: std::sync::atomic::AtomicU32,
 }
 impl NativePort {
     fn boundary(&self, spec: &LeaseSpec) -> Result<Arc<Boundary>, LeaseError> {
@@ -49,6 +55,9 @@ impl NativePort {
 }
 impl SandboxLeasePort for NativePort {
     fn acquire(&self, spec: &LeaseSpec) -> Result<(), LeaseError> {
+        if let Some(shared) = self.shared.get() {
+            return shared.acquire(self.backend.as_ref());
+        }
         let boundary = self.boundary(spec)?;
         let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             BlockingBridge::block_on(self.backend.provision(&boundary.backend_spec))
@@ -79,6 +88,11 @@ impl SandboxLeasePort for NativePort {
         }
     }
     fn release(&self, spec: &LeaseSpec) -> Result<(), LeaseError> {
+        if let Some(shared) = self.shared.get() {
+            shared.release(self.backend.as_ref())?;
+            self.boundaries.lock().expect("native boundaries").clear();
+            return Ok(());
+        }
         let boundary = self.boundary(spec)?;
         let handle = {
             let mut state = boundary.state.lock().expect("native boundary");
@@ -128,6 +142,7 @@ pub struct NativeSandboxLeases {
     choice: SandboxBackendChoice,
     root: PathBuf,
     network_grant: String,
+    inputs: Option<Arc<crate::swarm_inputs::ProjectInputs>>,
 }
 impl NativeSandboxLeases {
     /// Construct on a blocking composition task: capability probes and root
@@ -173,6 +188,8 @@ impl NativeSandboxLeases {
         let port = Arc::new(NativePort {
             backend,
             boundaries: Mutex::new(BTreeMap::new()),
+            shared: std::sync::OnceLock::new(),
+            next_uid: std::sync::atomic::AtomicU32::new(10000),
         });
         let book = LeaseBook::new(capacity, demand.requirement, capabilities, port.clone())?;
         Ok(Self {
@@ -182,7 +199,33 @@ impl NativeSandboxLeases {
             choice,
             root,
             network_grant,
+            inputs: None,
         })
+    }
+    /// Apply one bounded read snapshot to every fresh worker, including growth
+    /// and replacement. Worker writes never mutate the original project.
+    #[must_use]
+    pub fn with_project_inputs(mut self, inputs: Arc<crate::swarm_inputs::ProjectInputs>) -> Self {
+        self.inputs = Some(inputs);
+        self
+    }
+    /// Explicit shared-container composition. The existing container backend
+    /// owns one supervisor; per-command Landlock and unique credentials enforce
+    /// worker confinement. Namespace backends retain their one-run protocol.
+    pub fn with_shared_scope(self) -> Result<Self, LeaseError> {
+        if !matches!(self.choice, SandboxBackendChoice::Docker) {
+            return Err(LeaseError::ResourceLimit(
+                "shared scope requires a container backend",
+            ));
+        }
+        std::fs::create_dir(self.root.join("w"))
+            .map_err(|_| LeaseError::ResourceLimit("shared worker root must be fresh"))?;
+        let spec = self.worker_spec(&self.root, 900);
+        self.port
+            .shared
+            .set(shared_scope::SharedScope::new(spec))
+            .map_err(|_| LeaseError::ResourceLimit("shared mode is already configured"))?;
+        Ok(self)
     }
     /// Observe/close all workers through the same shared lease book. Held routes
     /// must be retired by the Hive owner; detached commands keep their own lease.
@@ -259,11 +302,19 @@ impl NativeSandboxLeases {
         if self.book.is_closed() {
             return Err(LeaseError::Closed);
         }
-        let root = self.root.join(worker);
+        let root = if self.port.shared.get().is_some() {
+            self.root.join("w").join(worker)
+        } else {
+            self.root.join(worker)
+        };
         let spec = LeaseSpec {
             requirement: self.demand.requirement,
             network_grant: self.network_grant.clone(),
-            mode: LeaseMode::Isolated,
+            mode: if self.port.shared.get().is_some() {
+                LeaseMode::Shared("native-hive".into())
+            } else {
+                LeaseMode::Isolated
+            },
             worker_id: worker.into(),
             write_path: root.to_string_lossy().into_owned(),
         };
@@ -289,6 +340,10 @@ impl NativeSandboxLeases {
                     running: false,
                     uncertain: false,
                 }),
+                uid: self
+                    .port
+                    .next_uid
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             }),
         );
         drop(boundaries);
@@ -308,6 +363,11 @@ impl NativeSandboxLeases {
             ));
         }
 
+        if let Some(inputs) = &self.inputs {
+            inputs
+                .materialize(&root)
+                .map_err(|_| LeaseError::ResourceLimit("project input materialization failed"))?;
+        }
         Ok(prepared)
     }
 }
@@ -357,6 +417,16 @@ impl SandboxBackendPort for ScopedCommandPort {
             return Err(SandboxRunError::Backend(
                 "worker command outside scoped grant".into(),
             ));
+        }
+        if let Some(shared) = self.owner.port.shared.get() {
+            return shared.run(
+                self.owner.port.backend.as_ref(),
+                &self.boundary,
+                command,
+                &canonical,
+                timeout_seconds,
+                cancellation,
+            );
         }
         let mut handle = {
             let mut state = self.boundary.state.lock().expect("native boundary");

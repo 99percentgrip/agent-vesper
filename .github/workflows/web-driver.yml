@@ -13,7 +13,7 @@ jobs:
   browser:
     name: Contained browser ${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -33,10 +33,24 @@ jobs:
           export VESPER_WEB_TEST_IMAGE="$(docker image inspect vesper-web-driver:validated --format '{{.Id}}')"
           cargo test -p vesper-web-fetch --all-features real_pipe_browser -- --ignored --nocapture
       - name: Real scoped Hive lifecycle acceptance
-        timeout-minutes: 5
+        timeout-minutes: 15
         run: |
           export VESPER_DOCKER_IMAGE="$(docker image inspect vesper-web-driver:validated --format '{{.Id}}')"
           cargo test -p vesper-harness --all-features --test swarm_native_hive native_container_hive -- --ignored --nocapture
+          cargo test -p vesper-harness --all-features --test swarm_native_hive native_shared_service -- --ignored --nocapture
+          cargo test -p agent-vesper-acp --all-features --test swarm_native_process -- --ignored --nocapture
+          cargo test -p vesper-harness --all-features --lib native_shared_scope -- --ignored --nocapture
+          cargo test -p vesper-harness --all-features --test swarm_native_hive native_shared_scope_hive -- --ignored --nocapture
+          cargo test -p agent-vesper-tui --all-features --bin agent-vesper-tui native_tui_swarm -- --ignored --nocapture
+      - name: Native browser feedback continuation
+        timeout-minutes: 8
+        shell: bash
+        run: |
+          npm install --prefix "$RUNNER_TEMP/vesper-browser-test" --no-audit --no-fund playwright@1.51.1
+          "$RUNNER_TEMP/vesper-browser-test/node_modules/.bin/playwright" install --with-deps chromium
+          export PLAYWRIGHT_MODULE="$RUNNER_TEMP/vesper-browser-test/node_modules/playwright"
+          export CHROME_PATH="$(node -e 'console.log(require(process.env.PLAYWRIGHT_MODULE).chromium.executablePath())')"
+          cargo test -p vesper-harness --features swarm --test swarm_adapter_tests real_browser_feedback -- --ignored --nocapture
       - name: Preserve exact tested image for release
         shell: bash
         run: |
@@ -51,3 +65,19 @@ jobs:
           path: driver-assets
           compression-level: 0
           if-no-files-found: error
+
+  namespace:
+    name: Native namespace Hive
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install pinned Rust
+        run: rustup toolchain install 1.95.0 --profile minimal
+      - name: Build real namespace supervisor
+        run: cargo build --locked -p vesper-sandbox --bin sandbox_init
+      - name: Real namespace permission and cleanup acceptance
+        timeout-minutes: 5
+        env:
+          VESPER_SANDBOX_INIT: ${{ github.workspace }}/target/debug/sandbox_init
+        run: cargo test --locked -p vesper-harness --features swarm --test swarm_native_hive native_scoped_hive -- --ignored --nocapture

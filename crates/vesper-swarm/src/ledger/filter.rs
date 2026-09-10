@@ -17,12 +17,23 @@ pub struct LedgerFilter {
     pub sequence_min: Option<u64>,
     /// Inclusive maximum original sequence.
     pub sequence_max: Option<u64>,
+    /// Inclusive Unix millisecond lower bound; excludes entries with unknown time.
+    pub timestamp_min_ms: Option<u64>,
+    /// Inclusive Unix millisecond upper bound; excludes entries with unknown time.
+    pub timestamp_max_ms: Option<u64>,
     /// Minimum confidence, in 0..=1.
     pub confidence_min: Option<f32>,
 }
 
 impl LedgerFilter {
     pub(crate) fn validate(&self) -> Result<(), LedgerError> {
+        if self
+            .timestamp_min_ms
+            .zip(self.timestamp_max_ms)
+            .is_some_and(|(min, max)| min > max)
+        {
+            return Err(LedgerError::InvalidFilter("reversed timestamp range"));
+        }
         if self
             .sequence_min
             .zip(self.sequence_max)
@@ -61,6 +72,12 @@ impl LedgerFilter {
                 .as_ref()
                 .is_none_or(|value| *value == entry.provenance.role)
             && self.kind.is_none_or(|value| value == entry.kind)
+            && self
+                .timestamp_min_ms
+                .is_none_or(|value| entry.timestamp_ms.is_some_and(|time| time >= value))
+            && self
+                .timestamp_max_ms
+                .is_none_or(|value| entry.timestamp_ms.is_some_and(|time| time <= value))
             && self
                 .sequence_min
                 .is_none_or(|value| entry.provenance.sequence >= value)

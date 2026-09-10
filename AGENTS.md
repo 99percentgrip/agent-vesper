@@ -78,6 +78,9 @@ Default section order:
 
 When the user requests a durable behavior change, record it here or in the relevant child AGENTS.md
 
+- When a complete repair or implementation is requested, continue across
+  ordinary milestones until its required code and acceptance work are done.
+  Do not substitute a partial checkpoint or a release for completion.
 - Feature activation belongs in native `/settings` controls, including
   Settings → Web tools with persisted on/off choices. Manual configuration
   file editing must not be the normal activation workflow.

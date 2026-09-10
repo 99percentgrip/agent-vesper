@@ -7,7 +7,7 @@
 //! replaces them.
 //!
 //! Pool deadlines use the local monotonic clock. The caller owns health ticks;
-//! the pool spawns no tasks. Factory-backed pools create independent instances
+//! owned blocking tasks retire external instances. Factory-backed pools create independent instances
 //! with bounded async boot waves; the legacy constructor shares one port.
 
 use std::collections::VecDeque;
@@ -256,6 +256,9 @@ struct Shared {
     inner: Mutex<Inner>,
     closed: AtomicBool,
     close_notify: tokio::sync::Notify,
+    retiring: std::sync::atomic::AtomicUsize,
+    retired_notify: tokio::sync::Notify,
+    retirement_runtime: Mutex<Option<tokio::runtime::Handle>>,
 }
 
 impl Shared {
@@ -309,7 +312,7 @@ impl Drop for WorkerLease {
 /// Bounded worker pool over a shared port or an independent instance factory.
 ///
 /// A plain value with interior synchronization: share as
-/// `Arc<WorkerPool>`. It performs no I/O and spawns nothing.
+/// `Arc<WorkerPool>`. It performs no I/O; owned blocking tasks retire instances.
 pub struct WorkerPool {
     config: PoolConfig,
     port: Option<Arc<dyn WorkerPort>>,
@@ -317,6 +320,14 @@ pub struct WorkerPool {
     instances: Mutex<std::collections::BTreeMap<u64, Arc<dyn WorkerPort>>>,
     lifecycle: tokio::sync::Mutex<()>,
     shared: Arc<Shared>,
+}
+
+impl Drop for WorkerPool {
+    fn drop(&mut self) {
+        // Last-owner drop follows the same cancellation/retirement path as
+        // explicit close; external instance destructors stay off the executor.
+        self.close();
+    }
 }
 
 impl std::fmt::Debug for WorkerPool {
@@ -354,6 +365,10 @@ impl WorkerPool {
     fn check_open(&self) -> Result<(), PoolError> {
         if self.shared.closed.load(Ordering::Acquire) {
             Err(PoolError::Closed)
+        } else if self.shared.retiring.load(Ordering::Acquire) != 0 {
+            Err(PoolError::Initialization(
+                "worker retirement remains unresolved".into(),
+            ))
         } else {
             Ok(())
         }
@@ -373,7 +388,69 @@ impl WorkerPool {
         let retired = std::mem::take(&mut *self.instances.lock().expect("instance lock"));
         drop(inner);
         // External destructors must never run while the pool state lock is held.
-        drop(retired);
+        self.dispatch_retirement(retired.into_values().collect());
+    }
+
+    /// Observe actual owned destructor completion. Timeout bounds observation,
+    /// never physical cleanup; unresolved retirement continues to deny admission.
+    pub async fn settle_retirements(&self, timeout: Duration) -> bool {
+        let settled = async {
+            loop {
+                let notified = self.shared.retired_notify.notified();
+                tokio::pin!(notified);
+                notified.as_mut().enable();
+                if self.shared.retiring.load(Ordering::Acquire) == 0 {
+                    return;
+                }
+                notified.await;
+            }
+        };
+        tokio::time::timeout(timeout, settled).await.is_ok()
+    }
+
+    fn dispatch_retirement(&self, retired: Vec<Arc<dyn WorkerPort>>) {
+        if retired.is_empty() {
+            return;
+        }
+        let count = retired.len();
+        self.shared.retiring.fetch_add(count, Ordering::AcqRel);
+        let shared = self.shared.clone();
+        let runtime = tokio::runtime::Handle::try_current()
+            .ok()
+            .or_else(|| {
+                self.shared
+                    .retirement_runtime
+                    .lock()
+                    .expect("retirement runtime")
+                    .clone()
+            })
+            .expect("initialized instances retain their runtime");
+        runtime.spawn_blocking(move || {
+            let verified = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let deadline = std::time::Instant::now() + Duration::from_secs(10);
+                let mut exclusive = false;
+                while std::time::Instant::now() < deadline {
+                    if retired.iter().all(|port| {
+                        Arc::strong_count(port) == 1
+                            && Arc::weak_count(port) == 0
+                            && !port.pending_work()
+                    }) {
+                        exclusive = true;
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                drop(retired);
+                exclusive
+            }));
+            if matches!(verified, Ok(true)) {
+                shared.retiring.fetch_sub(count, Ordering::AcqRel);
+            } else {
+                shared.closed.store(true, Ordering::Release);
+                shared.close_notify.notify_waiters();
+            }
+            shared.retired_notify.notify_waiters();
+        });
     }
 
     /// Live worker count.
