@@ -1094,3 +1094,20 @@ both hosts, with runtime activation still default-off. The exact-commit web-driv
 workflow now also requires real namespace Hive execution on Ubuntu 22.04 without
 changing host security policy. Local namespace refusal remains recorded; CI success
 is required before tagging and installation.
+
+
+### Native operation
+
+Release packages include the optional Swarm code; the saved preference starts off.
+In the TUI, open `/settings`, choose Swarm (or `/settings swarm`), enable it and
+Save. The same workspace controls in ACP are `/swarm settings`,
+`/swarm settings enabled on`, and `/swarm settings save`; Cancel discards a draft.
+Both hosts accept `/swarm run <goal>` and `/swarm status`. Draft controls include
+3–8 drivers, the four topologies, failover and isolated/shared scope. Configure a
+real embedding source through the existing `/embedding` controls first. The active
+chat provider remains unchanged. The installed driver image and running
+Docker/Podman are checked before admission; Web tools setup/repair can import the
+bundled image without enabling web access. Shared scope requires the bundled
+Landlock helper and refuses unsupported kernels. Workers operate on independent
+project copies; the final report identifies retained artifacts for review. Normal
+host cancellation preserves partial output and waits for owned cleanup.

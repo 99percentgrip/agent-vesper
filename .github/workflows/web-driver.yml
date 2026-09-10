@@ -76,6 +76,8 @@ jobs:
         run: rustup toolchain install 1.95.0 --profile minimal
       - name: Build real namespace supervisor
         run: cargo build --locked -p vesper-sandbox --bin sandbox_init
+      - name: Compile namespace acceptance fixture
+        run: cargo test --locked -p vesper-harness --features swarm --test swarm_native_hive --no-run
       - name: Real namespace permission and cleanup acceptance
         timeout-minutes: 5
         env:

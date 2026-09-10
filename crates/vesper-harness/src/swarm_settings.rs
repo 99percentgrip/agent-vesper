@@ -160,11 +160,16 @@ impl SwarmControls {
                 draft.apply(edit)?;
             }
             return Ok(SwarmCommandOutcome::Text(format!(
-                "Swarm draft: enabled={}, drivers={}, topology={:?}, failover={}.\n/swarm settings enabled on|off; drivers 3–8; topology mesh|hierarchical|centralized|hybrid; failover on|off.\n/swarm settings save or /swarm settings cancel.",
+                "Swarm draft: enabled={}, drivers={}, topology={:?}, failover={}, scope={}.\n/swarm settings enabled on|off; drivers 3–8; topology mesh|hierarchical|centralized|hybrid; failover on|off; scope isolated|shared.\n/swarm settings save or /swarm settings cancel.",
                 draft.settings.enabled,
                 draft.settings.drivers,
                 draft.settings.topology,
-                draft.settings.failover
+                draft.settings.failover,
+                if draft.settings.shared_scope {
+                    "shared"
+                } else {
+                    "isolated"
+                }
             )));
         }
         if argument.is_empty() || argument == "status" {
