@@ -67,6 +67,9 @@ jobs:
         shell: bash
         run: rustup toolchain install 1.95.0 --profile minimal
       - name: Configure sccache
+        # The following health probe already selects direct compilation when
+        # the optional cache is absent; a download outage must reach that probe.
+        continue-on-error: true
         uses: mozilla-actions/sccache-action@v0.0.7
       - name: Verify sccache health
         id: sccache_check

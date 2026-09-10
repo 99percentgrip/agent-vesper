@@ -474,3 +474,16 @@ Real local namespace Hive and the explicit security/timeout gate now pass, as do
 shared Podman confinement and original-owner restoration. Candidate CI success
 must be re-established on the final commit before tagging; no release was used to
 discover these failures.
+
+
+## VRO-15 final implementation and release evidence
+
+The final F01–F18 matrix records completed implementation and local acceptance,
+including the corrected namespace supervisor. Canonical/MSRV: 2072 passed, zero
+failed, 34 explicit ignored bodies; default: 2015/0/20. The required real namespace
+and shared-container gates execute separately. Candidate `e6476df` has successful
+canonical, MSRV and both-architecture complete web-driver workflows; its Windows
+platform interruption was an HTTP 500 cache download before tests. Optional cache
+setup now reaches the existing direct-compilation fallback. Final publication still
+requires all four successful push workflows on the exact release commit. The
+v0.21.6 release notes own the final run links, image IDs and local-install receipt.

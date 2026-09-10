@@ -994,31 +994,33 @@ and lifecycle evidence appears below.
 
 ## Current F01–F18 reconciliation
 
-This matrix supersedes milestone-local pending notes. The active implementation
-section above distinguishes new focused evidence from the older canonical/MSRV
-checkpoint; old counts are not evidence for the current working tree. Paths under `tests/` are relative to
-`crates/vesper-swarm/` unless a crate is named. **No full VRO-15 completion claim.**
+This matrix supersedes milestone-local pending implementation notes. Every finding
+has implemented behavior and local assertion evidence. The supervisor follow-up
+below supersedes the earlier namespace-policy diagnosis. Paths under `tests/`
+are relative to `crates/vesper-swarm/` unless named otherwise. Public acceptance
+requires successful canonical, MSRV, five-target and web-driver workflows on the
+exact tagged commit; historical greens never substitute for that release gate.
 
 | Finding / requirement | Current implementation and exact assertion evidence | Status / remaining code or acceptance |
 |---|---|---|
-| F01 — real orchestration | DAG, selected instances, bus correlation, routing; `hive_boundary_regressions`, `hive_concurrency_regressions`, harness `swarm_native_hive` including explicit real container gate | Native host service, activation and project inputs locally verified; exact-commit platform acceptance pending |
+| F01 — real orchestration | DAG, selected instances, bus correlation, routing; `hive_boundary_regressions`, `hive_concurrency_regressions`, harness `swarm_native_hive` including explicit real container gate | Native host service, activation and project inputs locally verified; release governed by exact-commit gates |
 | F02 — native harness reuse | Existing AgentLoop, restricted registries, real scoped commands; harness `swarm_adapter_tests` and `swarm_native_hive` verify successful tool statuses, permission scopes and synthesis | Native tool continuations, cognition injection, semantic Hive compaction and both host paths verified locally |
 | F03 — bounded goal lifecycle | `hive_boundary_regressions` and `hive_concurrency_regressions`: drop/cancel/deadline and interrupted goals; `lease_async_regressions`: late cleanup without stale publication | Implemented and locally verified: owned service complete/cancel/active shutdown, partial histories and no replay; host report/transport shutdown wired |
-| F04 — persisted native activation | Shared default-off Settings/service/catalog wired into both hosts; settings tests and real ACP process control/refusal test pass | Implemented; native ACP transport and TUI task/history paths pass; final platform acceptance pending |
+| F04 — persisted native activation | Shared default-off Settings/service/catalog wired into both hosts; settings tests and real ACP process control/refusal test pass | Implemented; native ACP transport and TUI task/history paths pass; release governed by exact-commit gates |
 | F05 — scorer fidelity | `assignment_regressions`: hard eligibility, corrected arithmetic and all 72 pinned-oracle vectors; native fixture checks distinct selected workers | Local foundation verified; full product/platform acceptance separate |
 | F06 — cancellation ownership | Timeout/pool cancellation suites plus `lease_async_regressions`: caller-drop/timeout retains backend ownership until cleanup | Implemented and locally verified: observer-drop history capture, pending-permission cancellation, owned native shutdown in both scope modes |
 | F07 — real pool lifecycle | Pool instance/retirement/selected-lease suites; real container Hive proves scale-up, shrink, four actual replacements and execution afterward | Implemented and locally verified: seven instance and seven retirement regressions, single-thread destructor barrier, last-owner Drop and staged-publication cleanup |
 | F08 — topology policy | Centralized/partition/topology regressions; real container Hive executes all four topologies and enabled replacement | Implemented and locally verified: route/partition regressions plus native disabled-failover health advance with no extra provider dispatch |
-| F09 — sandbox scope/identity | `sandbox_tests`, `lease_identity_regressions`; harness `swarm_sandbox_tests` checks fresh-root alias refusal/canary invariance; container test proves independent permission roots | Isolated and shared native container confinement locally verified; namespace/platform gates remain external |
-| F10 — owned verified cleanup | `lease_async_regressions` (8), lease panic/recovery suites, native refusal tests; real container Hive ends with clean report after real command/scale/replacement cleanup | Native cancellation/shutdown/destructor/shared-descendant cleanup locally verified; namespace CI pending. Blocking calls retain capacity, never claimed preemptible |
-| F11 — bus terminal states | `bus_tests`: close/unsubscribe wake parked readers and reject later operations | Local foundation verified; external target gates pending |
-| F12 — bus resource bounds | `bus_bounds_regressions`, `bus_clock_regressions`: atomic broadcast, ACK/byte/subscriber/TTL bounds, injected expiry | Local foundation verified; external target gates pending |
-| F13 — snapshot validation | `hnsw_regressions`, `hnsw_tests`: checked loader and malformed graph refusal | Seeded mutation/every-truncation and independently encoded portable fixture pass locally; cross-target runs pending |
-| F14 — lossless continuation | `hnsw_regressions`: raw vectors/config/RNG and byte-identical continued insertion | Local foundation verified; cross-target snapshot acceptance pending |
+| F09 — sandbox scope/identity | `sandbox_tests`, `lease_identity_regressions`; harness `swarm_sandbox_tests` checks fresh-root alias refusal/canary invariance; container test proves independent permission roots | Isolated and shared native container confinement locally verified; native namespace confinement and timeout gates also pass locally |
+| F10 — owned verified cleanup | `lease_async_regressions` (8), lease panic/recovery suites, native refusal tests; real container Hive ends with clean report after real command/scale/replacement cleanup | Native cancellation/shutdown/destructor/shared-descendant cleanup locally verified; direct namespace confinement/timeout and all-topology Hive gates pass. Blocking calls retain capacity, never claimed preemptible |
+| F11 — bus terminal states | `bus_tests`: close/unsubscribe wake parked readers and reject later operations | Local foundation verified; portable tests run in five-target CI |
+| F12 — bus resource bounds | `bus_bounds_regressions`, `bus_clock_regressions`: atomic broadcast, ACK/byte/subscriber/TTL bounds, injected expiry | Local foundation verified; portable tests run in five-target CI |
+| F13 — snapshot validation | `hnsw_regressions`, `hnsw_tests`: checked loader and malformed graph refusal | Seeded mutation/every-truncation and independently encoded portable fixture pass locally; portable fixture runs in five-target CI |
+| F14 — lossless continuation | `hnsw_regressions`: raw vectors/config/RNG and byte-identical continued insertion | Local foundation verified; portable fixture runs in five-target CI |
 | F15 — scale/math | Robust arithmetic/pruning tests; explicit release `ledger_scale_regressions` passed (10k/16D and 1k retention) | High-dimensional/default-capacity, standalone RSS and clustered exact-recall measurements recorded; no 1M allocation/latency certification |
 | F16 — complete ledger contract | Immutable-reader, full-snapshot, atomic-transfer, filter/eviction/retention suites plus explicit scale assertions | Timestamps/ranges, automatic Hive caps, transactional snapshots/transfer and retained-reader scale tests pass; PRD/oracle reconciliation recorded above |
-| F17 — truthful acceptance | Current canonical/MSRV/default gates; typed tool-status assertion, real permission trace and contained lifecycle gate; this requirement-to-test matrix | Both native hosts, supervisor/container cancellation and real browser→native continuation→captured provider request verified locally; namespace/platform CI pending |
-| F18 — governance/timing | Canonical architecture/naming tests pass; injected bus clock; exact-image contained Hive step added to `web-driver.yml` and YAML validated | Virtual-time pool/turn deadlines and injected bus expiry verified; external two-/five-target and namespace CI pending; default-off dependency architecture preserved |
+| F17 — truthful acceptance | Current canonical/MSRV/default gates; typed tool-status assertion, real permission trace and contained lifecycle gate; this requirement-to-test matrix | Both native hosts, supervisor/container cancellation and real browser→native continuation→captured provider request verified locally; real namespace acceptance also passes locally |
+| F18 — governance/timing | Canonical architecture/naming tests pass; injected bus clock; exact-image contained Hive step added to `web-driver.yml` and YAML validated | Virtual-time pool/turn deadlines and injected bus expiry verified; required two-/five-target and namespace CI wired into release gating; default-off dependency architecture preserved |
 
 ## Prior v0.21.5 verification checkpoint (not current-tree acceptance)
 
@@ -1146,3 +1148,29 @@ blocked publication; no v0.21.6 tag existed during repair.
 Prior 2072-test local counts precede this supervisor follow-up. Its final canonical,
 MSRV, default, explicit real-gate and platform results are recorded at release
 closeout; no earlier green commit substitutes for the final release commit.
+
+
+### Final implementation and release contract
+
+All F01–F18 implementation work is complete. After the supervisor follow-up,
+canonical verification and Rust 1.88 pass **2072/0/34**, and the default workspace
+passes **2015/0/20**. The extra ignored body is the explicit namespace security gate,
+which separately passes with real execution. Strict Clippy, formatting, architecture
+and the installer state-preservation check pass. The dependency set is unchanged
+from the clean audit/deny checkpoint except workspace version metadata.
+
+Candidate `e6476df` passed canonical (34477143436), MSRV (34477143440), and complete
+web-driver acceptance (34477143566), including both Docker architectures, both native
+hosts, browser feedback, shared confinement and real namespaces. Four platform
+jobs passed; Windows initially failed before tests on an HTTP 500 compiler-cache
+download. Cache setup is now optional with the existing direct-compilation health
+fallback; tests and acceptance gates remain mandatory. The five-target run is
+34477143287. These candidate results are diagnostic evidence only: the final
+version commit must itself pass all four push workflows before tagging.
+
+The immutable v0.21.6 GitHub Release carries the final run links, tested image IDs,
+publication and local-install results. Its tag-triggered release gate checks the
+exact commit through the Actions API. No unverified tag, skipped isolation body,
+live-provider success claim, or million-entry scale certification is substituted.
+DOX owners for behavior, namespace refinement, packaging and CI are updated;
+version-only owners and unaffected parent/child indexes retain their contracts.

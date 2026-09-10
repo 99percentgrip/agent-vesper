@@ -43,6 +43,9 @@ platform assumptions on hosts unavailable locally.
 - `deny.toml` enforces allowed licenses, bans SQLite crates and wildcard
   dependencies, and treats duplicate versions as warnings (the documented
   Stage 5 baseline) rather than failures.
+- Optional compiler-cache installation may fail; the existing health probe then
+  selects direct compilation. Every test, fixture and architecture gate remains
+  required; cache outages never count as test passes.
 - The five-target matrix runs the Stage 4.1 real-process blocker suite with
   bounded timeouts; Linux-only RSS evidence must not be generalized. The
   Linux sandbox step is stall-proofed in layers: it skips `apt` entirely when
