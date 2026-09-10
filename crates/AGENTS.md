@@ -97,7 +97,7 @@ test-only conformance support.
 - Unsafe code is denied by the current crates. Future platform exceptions
   require a dedicated module, safety comments, review, and ADR update. ADR 0022
   grants exactly one standing exception: `vesper-sandbox`'s `sandbox_init`
-  supervisor binary (raw syscalls for namespaces/mounts/`fork`/`execve`,
+  supervisor binary (raw syscalls for namespaces/mounts/chroot/capabilities/`fork`/`execve`,
   `#![deny(unsafe_op_in_unsafe_fn)]` + documented-block discipline, enforced by
   `cargo xtask architecture`); the `vesper-sandbox` library itself stays
   100% safe code.

@@ -82,4 +82,7 @@ jobs:
         timeout-minutes: 5
         env:
           VESPER_SANDBOX_INIT: ${{ github.workspace }}/target/debug/sandbox_init
-        run: cargo test --locked -p vesper-harness --features swarm --test swarm_native_hive native_scoped_hive -- --ignored --nocapture
+        run: |
+          "$VESPER_SANDBOX_INIT" probe
+          cargo test --locked -p vesper-sandbox --test namespaces namespace_security_and_timeout_acceptance -- --ignored --nocapture
+          cargo test --locked -p vesper-harness --features swarm --test swarm_native_hive native_scoped_hive -- --ignored --nocapture

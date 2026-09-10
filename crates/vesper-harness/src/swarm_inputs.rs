@@ -140,8 +140,12 @@ mod tests {
         let inputs = ProjectInputs::capture(project.path()).unwrap();
         let first = tempfile::tempdir().unwrap();
         let second = tempfile::tempdir().unwrap();
-        inputs.materialize(first.path()).unwrap();
-        inputs.materialize(second.path()).unwrap();
+        inputs
+            .materialize(&first.path().canonicalize().unwrap())
+            .unwrap();
+        inputs
+            .materialize(&second.path().canonicalize().unwrap())
+            .unwrap();
         assert_eq!(
             std::fs::read_to_string(first.path().join(".github/workflows/ci.yml")).unwrap(),
             "name: CI"

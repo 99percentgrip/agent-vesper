@@ -62,6 +62,8 @@ with each release.
 - Uninstallers never remove provider credentials. OS-keyring entries and the
   private-vault fallback are outside the installer-owned artifact set.
 - The installers call both binaries with `--version` to confirm success.
+- Complete packages include the native `sandbox_init` supervisor beside the host
+  binaries (inert off Linux), replaced as an installer-owned payload.
 - Complete packages include `web-driver/` (archive, checksum, immutable ID).
   Both installers call the bundled ACP binary's `--setup-web-driver` to
   verify/import it. Missing or stopped Docker/Podman leaves the archive

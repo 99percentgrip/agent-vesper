@@ -154,7 +154,7 @@ jobs:
           test "$registry_version" = "$workspace_version"
       - name: Build ACP and TUI binaries
         shell: bash
-        run: cargo build --locked --release --package agent-vesper-acp --package agent-vesper-tui --package vesper-web-fetch --features agent-vesper-acp/docker,agent-vesper-tui/docker,agent-vesper-acp/swarm,agent-vesper-tui/swarm --target "${{ matrix.target }}"
+        run: cargo build --locked --release --package agent-vesper-acp --package agent-vesper-tui --package vesper-web-fetch --package vesper-sandbox --features agent-vesper-acp/docker,agent-vesper-tui/docker,agent-vesper-acp/swarm,agent-vesper-tui/swarm --target "${{ matrix.target }}"
       - name: Package Unix archive
         if: matrix.platform == 'unix'
         shell: bash
@@ -165,6 +165,7 @@ jobs:
           cp "target/${{ matrix.target }}/release/agent-vesper-acp" "$staging/agent-vesper-acp"
           cp "target/${{ matrix.target }}/release/agent-vesper-tui" "$staging/agent-vesper-tui"
           cp "target/${{ matrix.target }}/release/vesper-web-fetch" "$staging/vesper-web-fetch"
+          cp "target/${{ matrix.target }}/release/sandbox_init" "$staging/sandbox_init"
           cp -r skills "$staging/skills"
           tar -czf "$assets/${{ matrix.asset }}" -C "$RUNNER_TEMP" agent-vesper-acp
           (cd "$assets" && sha256sum "${{ matrix.asset }}" > "${{ matrix.asset }}.sha256")
@@ -178,6 +179,7 @@ jobs:
           Copy-Item "target/${{ matrix.target }}/release/agent-vesper-acp.exe" (Join-Path $staging "agent-vesper-acp.exe")
           Copy-Item "target/${{ matrix.target }}/release/agent-vesper-tui.exe" (Join-Path $staging "agent-vesper-tui.exe")
           Copy-Item "target/${{ matrix.target }}/release/vesper-web-fetch.exe" (Join-Path $staging "vesper-web-fetch.exe")
+          Copy-Item "target/${{ matrix.target }}/release/sandbox_init.exe" (Join-Path $staging "sandbox_init.exe")
           Copy-Item -Recurse skills (Join-Path $staging "skills")
           $archive = Join-Path $assets "${{ matrix.asset }}"
           Compress-Archive -Path $staging -DestinationPath $archive -Force

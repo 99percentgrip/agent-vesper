@@ -23,7 +23,7 @@
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use vesper_security::{
     CapabilityStatus, IsolationRequirement, SandboxCapabilities, SecurityStrength,
@@ -99,13 +99,16 @@ fn probe_cached() -> Option<SandboxCapabilities> {
 fn probe_once() -> Option<SandboxCapabilities> {
     let supervisor = supervisor_path().ok()?;
     let mut child = spawn_probe(&supervisor).ok()?;
-    let mut line = String::new();
-    if let Some(pipe) = child.stdout.take() {
-        let mut reader = BufReader::new(pipe);
-        // The probe writes exactly one short report line.
-        reader.read_line(&mut line).ok()?;
-    }
-    let status = child.wait().ok()?;
+    let pipe = child.stdout.take()?;
+    let (line, _) = match first_line(BufReader::new(pipe)) {
+        Ok(line) => line,
+        Err(_) => {
+            let _ = child.kill();
+            let _ = crate::wait_bounded(&mut child, Duration::from_millis(500));
+            return None;
+        }
+    };
+    let status = crate::wait_bounded(&mut child, Duration::from_secs(5)).ok()?;
     if !status.success() {
         return None;
     }
@@ -153,16 +156,22 @@ impl SandboxBackend for NamespacesBackend {
                 .stdout
                 .take()
                 .ok_or_else(|| SandboxError::Provision("supervisor stdout missing".into()))?;
-            let mut reader = BufReader::new(stdout);
-            let mut ready = String::new();
-            reader
-                .read_line(&mut ready)
-                .map_err(|error| SandboxError::Provision(format!("read ready line: {error}")))?;
-            if !ready.starts_with("ready ") {
-                return Err(SandboxError::Provision(format!(
-                    "supervisor did not report ready: {ready}"
-                )));
-            }
+            let handshake = first_line(BufReader::new(stdout));
+            let (ready, reader) = match handshake {
+                Ok(value) if value.0.starts_with("ready ") => value,
+                _ => {
+                    let _ = child.kill();
+                    crate::wait_bounded(&mut child, Duration::from_millis(500)).map_err(|_| {
+                        SandboxError::Provision(
+                            "supervisor handshake and cleanup unverified".into(),
+                        )
+                    })?;
+                    return Err(SandboxError::Provision(
+                        "supervisor did not report ready".into(),
+                    ));
+                }
+            };
+            let _ = ready;
             Ok(SandboxHandle {
                 child: Mutex::new(child),
                 teardown_command: None,
@@ -195,51 +204,55 @@ impl SandboxBackend for NamespacesBackend {
                     .map_err(|error| SandboxError::Run(format!("send command: {error}")))?;
                 // stdin drops here → EOF → supervisor forks and execs.
             }
-            let mut stdout_bytes = Vec::new();
-            let mut stderr_bytes = Vec::new();
-            if let Some(reader) = handle.stdout.lock().ok().and_then(|mut slot| slot.take()) {
-                let mut limited = reader.take((OUTPUT_CAP_BYTES + 1) as u64);
-                limited
-                    .read_to_end(&mut stdout_bytes)
-                    .map_err(|error| SandboxError::Run(format!("read stdout: {error}")))?;
-            }
+            let stdout = handle
+                .stdout
+                .lock()
+                .map_err(|_| SandboxError::Run("stdout ownership poisoned".into()))?
+                .take()
+                .ok_or_else(|| SandboxError::Run("stdout already consumed".into()))?;
             let mut child = handle
                 .child
                 .lock()
                 .map_err(|_| SandboxError::Run("sandbox handle poisoned".into()))?;
-            if let Some(pipe) = child.stderr.take() {
-                let mut limited = pipe.take((OUTPUT_CAP_BYTES + 1) as u64);
-                limited
-                    .read_to_end(&mut stderr_bytes)
-                    .map_err(|error| SandboxError::Run(format!("read stderr: {error}")))?;
-            }
-            // Bounded wait: poll `try_wait` until the timeout fires, then
-            // kill (PDEATHSIG → PID-1 death → kernel SIGKILLs the namespace).
-            let deadline = Instant::now() + Duration::from_secs(handle.timeout_seconds.max(1));
-            loop {
-                match child.try_wait() {
-                    Ok(Some(status)) => {
-                        return Ok(ExecOutput {
-                            exit_code: status.code(),
-                            stdout: bounded_text(&mut stdout_bytes),
-                            stderr: bounded_text(&mut stderr_bytes),
-                            timed_out: false,
-                        });
+            let stderr = child
+                .stderr
+                .take()
+                .ok_or_else(|| SandboxError::Run("stderr already consumed".into()))?;
+            let stdout = drain_output(stdout);
+            let stderr = drain_output(stderr);
+            let status = crate::wait_bounded(
+                &mut child,
+                Duration::from_secs(handle.timeout_seconds.max(1)),
+            );
+            let (exit_code, timed_out) = match status {
+                Ok(status) => (status.code(), false),
+                Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {
+                    if child
+                        .try_wait()
+                        .map_err(|error| SandboxError::Teardown(error.to_string()))?
+                        .is_none()
+                    {
+                        return Err(SandboxError::Teardown(
+                            "namespace supervisor reap unresolved".into(),
+                        ));
                     }
-                    Ok(None) if Instant::now() >= deadline => {
-                        let _ = child.kill();
-                        let _ = child.wait();
-                        return Ok(ExecOutput {
-                            exit_code: None,
-                            stdout: bounded_text(&mut stdout_bytes),
-                            stderr: bounded_text(&mut stderr_bytes),
-                            timed_out: true,
-                        });
-                    }
-                    Ok(None) => std::thread::sleep(Duration::from_millis(10)),
-                    Err(error) => return Err(SandboxError::Run(format!("wait: {error}"))),
+                    (None, true)
                 }
-            }
+                Err(error) => return Err(SandboxError::Run(error.to_string())),
+            };
+            let receive = |receiver: std::sync::mpsc::Receiver<Result<Vec<u8>, SandboxError>>| {
+                receiver
+                    .recv_timeout(Duration::from_millis(500))
+                    .map_err(|_| {
+                        SandboxError::Teardown("namespace output pipe did not close".into())
+                    })?
+            };
+            Ok(ExecOutput {
+                exit_code,
+                stdout: bounded_text(&mut receive(stdout)?),
+                stderr: bounded_text(&mut receive(stderr)?),
+                timed_out,
+            })
         })
     }
 
@@ -253,6 +266,61 @@ impl SandboxBackend for NamespacesBackend {
             handle.terminate_supervisor()
         })
     }
+}
+
+/// A malformed or stalled supervisor cannot hold a caller in read_line forever.
+fn first_line<R: Read + Send + 'static>(
+    reader: BufReader<R>,
+) -> Result<(String, BufReader<R>), SandboxError> {
+    let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+    std::thread::spawn(move || {
+        let result = (|| {
+            let mut limited = reader.take(1025);
+            let mut bytes = Vec::new();
+            limited
+                .read_until(b'\n', &mut bytes)
+                .map_err(|_| SandboxError::Provision("supervisor handshake read failed".into()))?;
+            if bytes.len() > 1024 || bytes.last() != Some(&b'\n') {
+                return Err(SandboxError::Provision(
+                    "invalid supervisor handshake".into(),
+                ));
+            }
+            let line = String::from_utf8(bytes).map_err(|_| {
+                SandboxError::Provision("invalid supervisor handshake encoding".into())
+            })?;
+            Ok((line, limited.into_inner()))
+        })();
+        let _ = sender.send(result);
+    });
+    receiver
+        .recv_timeout(Duration::from_secs(5))
+        .map_err(|_| SandboxError::Provision("supervisor handshake deadline exceeded".into()))?
+}
+
+/// Drain both pipes concurrently without retaining unbounded output. Receivers
+/// observe completion with a deadline; a stalled OS pipe is never joined forever.
+fn drain_output(
+    mut pipe: impl Read + Send + 'static,
+) -> std::sync::mpsc::Receiver<Result<Vec<u8>, SandboxError>> {
+    let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+    std::thread::spawn(move || {
+        let result = (|| {
+            let mut kept = Vec::new();
+            let mut bytes = [0; 8192];
+            loop {
+                let count = pipe
+                    .read(&mut bytes)
+                    .map_err(|error| SandboxError::Run(error.to_string()))?;
+                if count == 0 {
+                    return Ok(kept);
+                }
+                let remaining = (OUTPUT_CAP_BYTES + 1).saturating_sub(kept.len());
+                kept.extend_from_slice(&bytes[..count.min(remaining)]);
+            }
+        })();
+        let _ = sender.send(result);
+    });
+    receiver
 }
 
 /// Truncates a byte buffer to the output cap as lossy UTF-8 text.

@@ -77,7 +77,8 @@ Z.ai and Playwright MCP server descriptors.
   no-new-privileges and unique non-root worker credentials. A real confinement
   probe is mandatory; the namespace backend retains its isolated one-run protocol.
   Each command verifies all processes with its worker UID have exited and restores
-  artifact ownership before native tool continuation. The bundled init reaps
+  the original bind-mount owner before native tool continuation (rootful Docker
+  and rootless Podman mappings differ). Ownership records stay supervisor-private. The bundled init reaps
   orphans. Cleanup uncertainty quarantines the scope even if the supervisor is
   subsequently removed. No new Rust syscall or sandbox backend is introduced.
   Scope preparation owns cancellation cleanup even when its blocking observer
@@ -98,7 +99,9 @@ Z.ai and Playwright MCP server descriptors.
   these explicit gates instead of skipping their bodies.
 
 - `src/sandbox_backend.rs` owns the shared native command adapter used by TUI
-  and ACP. Teardown failure overrides run success/cancellation, preserves available
+  and ACP. Current backends execute Linux payloads using absolute `/bin/sh`,
+  including containers hosted on Windows/macOS. Nonzero command exit preserves
+  stdout/stderr as failure; verified cleanup never converts it to success. Teardown failure overrides run success/cancellation, preserves available
   command output or the run error in diagnostics, and permanently quarantines that
   port against subsequent provisioning. Cancellation is rechecked after provision
   and after cleanup. Already-admitted concurrent operations are not retroactively

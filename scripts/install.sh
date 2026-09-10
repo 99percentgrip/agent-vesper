@@ -70,7 +70,7 @@ mkdir -p "$(dirname "$bundle_dir")"
 # The data root also contains live cognition/voice state. Replace only
 # installer-owned payloads; never remove the root or move an open database.
 mkdir -p "$bundle_dir"
-for payload in agent-vesper-acp agent-vesper-tui vesper-web-fetch skills web-driver; do
+for payload in agent-vesper-acp agent-vesper-tui vesper-web-fetch sandbox_init skills web-driver; do
     if [ -e "$temporary/agent-vesper-acp/$payload" ]; then
         rm -rf "$bundle_dir/$payload"
         mv "$temporary/agent-vesper-acp/$payload" "$bundle_dir/$payload"

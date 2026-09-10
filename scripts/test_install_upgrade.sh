@@ -10,7 +10,7 @@ mkdir -p "$bundle_dir/cognition" "$bundle_dir/voice-venv" "$temporary/agent-vesp
 printf 'durable memory\n' > "$bundle_dir/cognition/cognition.db"
 printf 'user voice environment\n' > "$bundle_dir/voice-venv/state"
 printf 'custom user data\n' > "$bundle_dir/custom"
-for payload in agent-vesper-acp agent-vesper-tui vesper-web-fetch; do
+for payload in agent-vesper-acp agent-vesper-tui vesper-web-fetch sandbox_init; do
     printf 'old binary\n' > "$bundle_dir/$payload"
     printf 'new binary\n' > "$temporary/agent-vesper-acp/$payload"
 done
@@ -26,7 +26,7 @@ test "$before" = "$(ls -i "$bundle_dir/cognition/cognition.db")"
 test "$(cat "$bundle_dir/cognition/cognition.db")" = 'durable memory'
 test "$(cat "$bundle_dir/voice-venv/state")" = 'user voice environment'
 test "$(cat "$bundle_dir/custom")" = 'custom user data'
-for payload in agent-vesper-acp agent-vesper-tui vesper-web-fetch; do
+for payload in agent-vesper-acp agent-vesper-tui vesper-web-fetch sandbox_init; do
     test "$(cat "$bundle_dir/$payload")" = 'new binary'
 done
 for payload in skills web-driver; do

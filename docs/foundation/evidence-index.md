@@ -462,3 +462,15 @@ namespace gates remain separately tracked for v0.21.6; v0.21.5 CI does not certi
 this implementation. The TUI fixture's rejected synthetic-key public
 request is recorded explicitly and excluded from acceptance; corrected runs assert
 the configured loopback endpoint before dispatch.
+
+
+## VRO-15 exact-commit supervisor follow-up
+
+Initial candidate CI exposed the post-unshare overflow-ID defect, rootful Docker
+artifact ownership mismatch and noncanonical macOS/Windows fixture roots. The
+repair ledger and ADR 0027 record fixes, including private-root confinement,
+capability drops, bounded pipe/handshake waits and truthful nonzero shell exits.
+Real local namespace Hive and the explicit security/timeout gate now pass, as does
+shared Podman confinement and original-owner restoration. Candidate CI success
+must be re-established on the final commit before tagging; no release was used to
+discover these failures.

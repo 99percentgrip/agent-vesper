@@ -1111,3 +1111,38 @@ bundled image without enabling web access. Shared scope requires the bundled
 Landlock helper and refuses unsupported kernels. Workers operate on independent
 project copies; the final report identifies retained artifacts for review. Normal
 host cancellation preserves partial output and waits for owned cleanup.
+
+
+### Exact-commit CI follow-up: supervisor and host mappings
+
+The initial v0.21.6 candidate passed canonical/MSRV but exposed real gaps in
+required namespace/container and five-platform acceptance. These gates correctly
+blocked publication; no v0.21.6 tag existed during repair.
+
+- Namespace UID mapping read IDs after unshare, yielding overflow IDs. This was a
+  code defect, not the host-policy limitation previously inferred. Correct outer
+  capture makes the local real probe and six direct namespace bodies execute.
+- Private-root confinement now excludes unrelated host trees, maps only the
+  granted workspace, mounts child-scoped procfs and drops every capability set
+  before execution. Environment encoding, absolute Linux shell dispatch and
+  nonzero-exit propagation are repaired. Handshakes, simultaneous output drains,
+  timeouts and reap observations are bounded. ADR 0027 records the refinement.
+- Full native namespace Hive passes all four topologies (0.30s). The new explicit
+  namespace security gate passes (1.05s): host canary isolation, zero effective/
+  bounding capabilities, workspace writes, saturated stderr, partial stdout,
+  bounded descendant timeout and supervisor reap. No skipped body is counted.
+- Shared container cleanup now records the original bind-mount UID/GID in
+  supervisor-private state and restores that owner. The former `0:0` assumption
+  worked with rootless Podman but failed host artifact reads with rootful Docker.
+  The same counted provision/teardown/confinement gate passes locally (0.78s);
+  both Docker architectures must rerun before release.
+- macOS/Windows rejected noncanonical fixture output roots. The fixture now
+  canonicalizes its temporary directories before invoking the internal method,
+  matching the production factory's existing canonical-root contract. Production
+  alias checks remain unchanged.
+- Release archives and both installers now include the native supervisor beside
+  the host binaries. The payload-only upgrade regression includes that binary.
+
+Prior 2072-test local counts precede this supervisor follow-up. Its final canonical,
+MSRV, default, explicit real-gate and platform results are recorded at release
+closeout; no earlier green commit substitutes for the final release commit.

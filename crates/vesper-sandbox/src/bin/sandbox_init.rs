@@ -12,25 +12,18 @@
 //!
 //! # Protocol (both modes write diagnostics to stderr, never stdout)
 //!
-//! * `probe` — create user+mount+PID+net namespaces, mount a tmpfs at
-//!   `/tmp`, and verify `getuid() == 0` inside the userns. Print the
-//!   capability line `linux-namespaces available available available` and
-//!   exit 0 **only if every namespace provisioned**; any failure exits
-//!   non-zero, which the library turns into honest
-//!   `CapabilityStatus::Unavailable`. `probe` never executes a payload.
-//! * `hold --root <dir> [--env K=V]…` — same namespace setup, then build
-//!   the sandbox root: bind `<dir>` over itself read-write; bind `/usr`,
-//!   `/bin`, `/lib`, `/lib64`, `/etc`, `/dev` over themselves read-only;
-//!   fresh tmpfs at `/tmp`; fresh `/proc`. Print `ready <pid>` on stdout,
-//!   then read ONE unit-separator-delimited run line from stdin
-//!   (`<cwd><US>argv0<US>argv1…`). Fork: the child (PID 1 of the PID
-//!   namespace) `execv`s the payload with exactly the allowlisted env; the
-//!   parent waits and relays the exit status. When stdin closes before a
-//!   line arrives, or when the parent is killed, `PR_SET_PDEATHSIG`
-//!   delivers SIGKILL to the child; the death of a PID-namespace init
-//!   makes the kernel SIGKILL every remaining member and the mount
-//!   namespace dies with its last process — total teardown with no
-//!   host-side cleanup.
+//! * `probe` — capture caller IDs, create user+mount+PID+net namespaces,
+//!   exercise a private tmpfs root, chroot and irreversible capability drops.
+//!   Print `linux-namespaces available available available` only on success.
+//! * `hold --root <dir> [--env K=V]…` — construct a namespace-local tmpfs
+//!   root with a non-recursive workspace bind and read-only system trees.
+//!   Print `ready <pid>`, read one `<cwd><US>argv0<US>argv1…` run line, and
+//!   fork the PID-namespace init. The child enters the private root, mounts
+//!   its own procfs, drops all capabilities and applies no-new-privileges
+//!   before executing the absolute payload with exactly the allowlisted env.
+//!   Killing the supervisor chains PDEATHSIG into PID-1 death and namespace
+//!   descendant termination. Empty staging directories remain in artifacts;
+//!   namespace mounts vanish when their last process exits.
 //! * anything else — usage on stderr, exit 2. There is no fallback shell.
 
 #![allow(unsafe_code)]
@@ -175,6 +168,12 @@ mod sys {
     /// returns Ok the caller is root inside its own user namespace and every
     /// subsequent mount is confined to the private mount namespace.
     fn enter_namespaces() -> Result<(), String> {
+        // Capture IDs before unshare: unmapped IDs become the overflow ID in
+        // the new namespace and cannot be used to map the actual caller.
+        // SAFETY: plain integer reads with no preconditions.
+        let outer_uid = unsafe { getuid() };
+        // SAFETY: plain integer read with no preconditions.
+        let outer_gid = unsafe { getgid() };
         let flags = CLONE_NEWUSER | CLONE_NEWNS | CLONE_NEWPID | CLONE_NEWNET;
         // SAFETY: `unshare` takes a plain integer flag set; no pointers, no
         // memory the caller must keep alive. Failure is a -1 return.
@@ -182,10 +181,6 @@ mod sys {
         if rc == -1 {
             return Err("unshare(CLONE_NEWUSER|NEWNS|NEWPID|NEWNET) failed".into());
         }
-        // SAFETY: both are plain integer reads with no preconditions.
-        let outer_uid = unsafe { getuid() };
-        // SAFETY: plain integer read with no preconditions or side effects.
-        let outer_gid = unsafe { getgid() };
         write_proc("/proc/self/setgroups", "deny")?;
         write_proc("/proc/self/uid_map", &format!("0 {} 1\n", outer_uid))?;
         write_proc("/proc/self/gid_map", &format!("0 {} 1\n", outer_gid))?;
@@ -212,16 +207,16 @@ mod sys {
         Ok(())
     }
 
-    /// Bind-mounts `source` onto itself with `read_only` semantics.
-    fn self_bind(path: &CStr, read_only: bool) -> Result<(), String> {
+    /// Non-recursive bind: nested host mounts never enter the private root.
+    fn bind(source: &CStr, path: &CStr, read_only: bool) -> Result<(), String> {
         // SAFETY: caller-owned valid C string used for both source and
         // target; NULL fstype and data are valid for bind mounts.
         let rc = unsafe {
             mount(
-                path.as_ptr(),
+                source.as_ptr(),
                 path.as_ptr(),
                 std::ptr::null(),
-                MS_BIND | MS_REC,
+                MS_BIND,
                 std::ptr::null(),
             )
         };
@@ -290,6 +285,110 @@ mod sys {
         Ok(())
     }
 
+    /// Build a private root on a namespace-local tmpfs. Only the granted
+    /// workspace and selected system paths are mounted into it. The empty
+    /// staging directory remains among the explicitly retained worker artifacts.
+    fn private_root(workspace: &CStr) -> Result<CString, String> {
+        let root = std::path::Path::new(workspace.to_str().map_err(|_| "root UTF-8")?);
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| "clock before epoch")?
+            .as_nanos();
+        let staging = root.join(format!(".vesper-ns-{}-{stamp}", std::process::id()));
+        fs::create_dir(&staging).map_err(|error| format!("create private root: {error}"))?;
+        let jail = CString::new(staging.to_str().ok_or("root UTF-8")?).map_err(|_| "root NUL")?;
+        mount_tmpfs(&jail)?;
+        for name in [
+            "workspace",
+            "usr",
+            "bin",
+            "lib",
+            "lib64",
+            "etc",
+            "dev",
+            "tmp",
+            "proc",
+        ] {
+            fs::create_dir(staging.join(name)).map_err(|error| error.to_string())?;
+        }
+        let target = CString::new(staging.join("workspace").to_str().ok_or("root UTF-8")?)
+            .map_err(|_| "root NUL")?;
+        bind(workspace, &target, false)?;
+        for source in ["/usr", "/bin", "/lib", "/lib64", "/etc"] {
+            if !std::path::Path::new(source).exists() {
+                continue;
+            }
+            let target = CString::new(format!("{}{source}", jail.to_string_lossy()))
+                .map_err(|_| "mount NUL")?;
+            bind(
+                &CString::new(source).map_err(|_| "mount NUL")?,
+                &target,
+                true,
+            )?;
+        }
+        for source in ["/dev/null", "/dev/zero", "/dev/random", "/dev/urandom"] {
+            let target = staging.join(source.trim_start_matches('/'));
+            fs::File::create(&target).map_err(|error| error.to_string())?;
+            bind(
+                &CString::new(source).map_err(|_| "device NUL")?,
+                &CString::new(target.to_str().ok_or("device UTF-8")?).map_err(|_| "device NUL")?,
+                false,
+            )?;
+        }
+        Ok(jail)
+    }
+
+    fn enter_root(jail: &CStr) -> Result<(), String> {
+        // SAFETY: jail is an owned valid NUL-terminated pathname; this is the
+        // single-threaded supervisor child, never the host/library process.
+        if unsafe { libc::chroot(jail.as_ptr()) } != 0 {
+            return Err("private root entry failed".into());
+        }
+        std::env::set_current_dir("/").map_err(|error| error.to_string())
+    }
+
+    fn drop_privileges() -> Result<(), String> {
+        // SAFETY: prctl takes only scalar constants for these operations.
+        if unsafe { prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) } != 0 {
+            return Err("no-new-privileges failed".into());
+        }
+        for capability in 0..64 {
+            // SAFETY: scalar capability number, no pointer arguments.
+            if unsafe { prctl(libc::PR_CAPBSET_DROP, capability, 0, 0, 0) } != 0
+                && std::io::Error::last_os_error().raw_os_error() != Some(libc::EINVAL)
+            {
+                return Err("capability bounding-set drop failed".into());
+            }
+        }
+        #[repr(C)]
+        struct Header {
+            version: u32,
+            pid: i32,
+        }
+        #[repr(C)]
+        #[derive(Clone, Copy)]
+        struct Data {
+            effective: u32,
+            permitted: u32,
+            inheritable: u32,
+        }
+        let header = Header {
+            version: 0x2008_0522,
+            pid: 0,
+        };
+        let data = [Data {
+            effective: 0,
+            permitted: 0,
+            inheritable: 0,
+        }; 2];
+        // SAFETY: Linux capability v3 requires the initialized header and two
+        // contiguous data records; both buffers outlive this synchronous call.
+        if unsafe { libc::syscall(libc::SYS_capset, &header, data.as_ptr()) } != 0 {
+            return Err("capability drop failed".into());
+        }
+        Ok(())
+    }
+
     /// Reads the entire stdin run line (single line, unit-separated).
     fn read_run_line() -> Result<String, String> {
         let mut line = String::new();
@@ -331,6 +430,10 @@ mod sys {
         if uid != 0 {
             return Err(format!("userns mapping failed: uid is {uid}, expected 0"));
         }
+        fs::create_dir("/tmp/probe-work").map_err(|error| error.to_string())?;
+        let jail = private_root(c"/tmp/probe-work")?;
+        enter_root(&jail)?;
+        drop_privileges()?;
         println!("linux-namespaces available available available");
         Ok(())
     }
@@ -341,25 +444,7 @@ mod sys {
         enter_namespaces()?;
         make_mounts_private()?;
 
-        // Writable workspace: bind over itself read-write (the default
-        // bind is writable; the remount-tighten below is only for RO paths).
-        self_bind(&args.root, false)?;
-
-        // Read-only system trees. Missing paths are skipped honestly: the
-        // sandbox root keeps whatever the host provides for them.
-        for path in ["/usr", "/bin", "/lib", "/lib64", "/etc", "/dev"] {
-            let Ok(cpath) = CString::new(path) else {
-                continue;
-            };
-            if std::path::Path::new(path).exists() {
-                self_bind(&cpath, true)?;
-            }
-        }
-
-        // Fresh /tmp and /proc inside the namespaces.
-        let tmp = CString::new("/tmp").map_err(|_| "tmp path NUL")?;
-        mount_tmpfs(&tmp)?;
-        mount_proc()?;
+        let jail = private_root(&args.root)?;
 
         // Report readiness BEFORE reading stdin: the library treats the
         // `ready <pid>` line as the provision-success handshake.
@@ -373,6 +458,21 @@ mod sys {
             return Ok(());
         }
         let (cwd, argv) = parse_run_line(&line)?;
+        let root_path = std::path::Path::new(args.root.to_str().map_err(|_| "root UTF-8")?);
+        let cwd_path = std::path::Path::new(cwd.to_str().map_err(|_| "cwd UTF-8")?);
+        let relative = cwd_path
+            .strip_prefix(root_path)
+            .map_err(|_| "cwd outside grant")?;
+        if relative.components().any(|part| {
+            !matches!(
+                part,
+                std::path::Component::Normal(_) | std::path::Component::CurDir
+            )
+        }) {
+            return Err("cwd traverses outside grant".into());
+        }
+        let cwd = std::path::Path::new("/workspace").join(relative);
+        let parent_pid = std::process::id();
 
         // Build the payload's exact environment: the allowlist only.
         let mut env_cstrings: Vec<CString> = Vec::with_capacity(args.env.len());
@@ -380,7 +480,7 @@ mod sys {
             let mut joined = name.clone().into_bytes();
             joined.push(b'=');
             joined.extend_from_slice(value.as_bytes());
-            env_cstrings.push(CString::from_vec_with_nul(joined).map_err(|_| "env NUL")?);
+            env_cstrings.push(CString::new(joined).map_err(|_| "env NUL")?);
         }
 
         // execve wants NULL-terminated argv/envp arrays of C pointers.
@@ -405,10 +505,15 @@ mod sys {
                 // SAFETY: immediate process termination; no state to clean.
                 unsafe { _exit(127) };
             }
-            // Move to the requested working directory inside the sandbox.
-            if let Err(error) = std::env::set_current_dir(cwd.to_string_lossy().as_ref()) {
-                eprintln!("sandbox_init: cwd {}: {error}", cwd.to_string_lossy());
-                // SAFETY: immediate exit; nothing has been executed.
+            // If the parent died before PDEATHSIG was installed, refuse
+            // before mounting procfs replaces the outer PID view.
+            if !std::path::Path::new(&format!("/proc/{parent_pid}")).exists()
+                || enter_root(&jail).is_err()
+                || mount_proc().is_err()
+                || drop_privileges().is_err()
+                || std::env::set_current_dir(&cwd).is_err()
+            {
+                // SAFETY: immediate exit before any payload is executed.
                 unsafe { _exit(126) };
             }
             // SAFETY: argv/envp are NULL-terminated arrays of valid C

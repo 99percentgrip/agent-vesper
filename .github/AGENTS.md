@@ -18,7 +18,8 @@ platform assumptions on hosts unavailable locally.
   already have successful `push` runs for `ci.yml`, `msrv.yml`, and
   `platform-foundation.yml`, and `web-driver.yml`. Push the version commit to
   `main`, wait for all four workflows to pass, then create/push its release tag.
-- Release archives include `vesper-web-fetch` beside ACP and TUI, plus the
+- Release archives include `vesper-web-fetch` and the `sandbox_init` supervisor
+  beside ACP and TUI, plus the
   matching Linux-architecture CI-tested image under `web-driver/` as
   `image.tar.gz`, `image.sha256`, and `image-id`. Each matrix job downloads
   the successful exact-commit driver artifact selected by the release gate,
@@ -101,7 +102,8 @@ platform assumptions on hosts unavailable locally.
   shared Lens executor into the native worker's captured provider continuation
   on both Linux architectures. Browser setup failure fails the gate.
   A separate Ubuntu 22.04 job executes the real namespace supervisor Hive gate
-  without changing host security policy; unavailable isolation fails the job.
+  plus direct private-root/capability/pipe-timeout acceptance, without changing
+  host security policy; unavailable isolation fails the job.
   Preserves the exact tested image archives and
   immutable image IDs. Release downloads those artifacts, never rebuilds
   untested images after tagging. Public release assets avoid requiring a

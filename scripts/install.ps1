@@ -53,7 +53,7 @@ try {
     $bundle = Join-Path $InstallDir "agent-vesper-acp.bundle"
     # Preserve user state sharing the bundle root; replace only owned payloads.
     New-Item -ItemType Directory -Path $bundle -Force | Out-Null
-    foreach ($payload in @("agent-vesper-acp.exe", "agent-vesper-tui.exe", "vesper-web-fetch.exe", "skills", "web-driver")) {
+    foreach ($payload in @("agent-vesper-acp.exe", "agent-vesper-tui.exe", "vesper-web-fetch.exe", "sandbox_init.exe", "skills", "web-driver")) {
         $incoming = Join-Path $source $payload
         if (Test-Path -LiteralPath $incoming) {
             $destination = Join-Path $bundle $payload

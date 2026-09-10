@@ -26,6 +26,17 @@ through safe `std::process`.
   only if user+mount+PID+network namespaces all provision; any failure
   reports `Unavailable` and every isolation demand fails closed
   (`SandboxError::CapabilityUnavailable`).
+- Caller UID/GID are captured before unshare. The supervisor's private tmpfs
+  root exposes only a non-recursive writable workspace bind, read-only system
+  trees, selected device files, private tmp and child-PID-namespace procfs.
+  The child chroots, translates the granted cwd, clears effective/permitted/
+  inheritable/bounding capabilities and sets no-new-privileges before exec.
+  Absolute payload paths and correctly encoded allowlisted environment values
+  are required. Empty staging directories remain inside retained worker artifacts.
+  ADR 0027 refines confinement without changing the supervisor protocol.
+- Handshakes are bounded to 1024 bytes and five seconds. Stdout/stderr drain
+  concurrently with retained byte caps while the command deadline is enforced;
+  pipe closure and post-kill reaping are separately bounded and fail truthfully.
 - One run per provision: `hold` reads a single unit-separator-delimited
   line from stdin, the child runs as PID 1 of the PID namespace, and killing
   the supervisor chains PDEATHSIG → PID-1 death → kernel SIGKILL of every
@@ -91,13 +102,16 @@ through safe `std::process`.
   probed capabilities; never claim strength the platform did not verify.
 - When changing the supervisor protocol, update this doc, the binary's
   module docs, and ADR 0022 in the same change.
-- The container this repo is usually developed in blocks the `/proc/self/
-  uid_map` write, so namespaces integration tests skip on it — this is the
-  honest behavior, not a failure to be "fixed" by faking capability output.
+- Unavailable namespace policy remains a truthful refusal. Do not attribute a
+  failed UID map to host policy without checking the captured outer IDs; the
+  prior post-unshare overflow-ID bug is repaired and local real gates pass.
 
 ## Verification
 
 - `cargo test -p vesper-sandbox`
+- `cargo test -p vesper-sandbox --test namespaces namespace_security_and_timeout_acceptance -- --ignored --nocapture`
+  requires the real supervisor and checks confinement, zero capabilities,
+  output saturation, timeout and reap. It fails rather than skipping.
 - `cargo clippy -p vesper-sandbox --all-targets --all-features -- -D warnings`
 - `cargo xtask architecture` (enforces the ADR 0022 allowlist)
 

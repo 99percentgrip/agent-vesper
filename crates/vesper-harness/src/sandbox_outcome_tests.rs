@@ -56,6 +56,14 @@ fn successful_cleanup_preserves_normal_output_and_timeout() {
     let result = finish_run(output(), Ok(()), false).unwrap();
     assert_eq!(result.output, "visible stdout\n[stderr]\nvisible stderr");
     assert!(!result.timed_out);
+    let mut failed = output().unwrap();
+    failed.exit_code = Some(127);
+    let error = finish_run(Ok(failed), Ok(()), false)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("127"));
+    assert!(error.contains("visible stdout"));
+    assert!(error.contains("visible stderr"));
     let mut timed = output().unwrap();
     timed.timed_out = true;
     assert!(finish_run(Ok(timed), Ok(()), false).unwrap().timed_out);

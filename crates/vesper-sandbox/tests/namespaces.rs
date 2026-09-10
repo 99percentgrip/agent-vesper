@@ -251,3 +251,60 @@ fn network_is_unreachable_inside_the_sandbox() {
     drop(handle);
     let _ = std::fs::remove_dir_all(&root);
 }
+
+#[test]
+#[ignore = "requires real namespaces; unavailable isolation fails acceptance"]
+fn namespace_security_and_timeout_acceptance() {
+    assert!(namespaces_available(), "real namespace supervisor required");
+    let root = temp_workspace("security-timeout");
+    let outside = temp_workspace("outside-canary");
+    std::fs::write(outside.join("canary"), "untouched").unwrap();
+    let backend = default_backend();
+    let mut spec = SandboxSpec::new(root.clone());
+    spec.timeout_seconds = 1;
+    let handle = block_on(backend.provision(&spec)).unwrap();
+    let command = format!(
+        "printf own > result; test ! -e '{}/canary'; test ! -d /home; test ! -d /root; test \"$(awk '/CapEff:/ {{print $2}}' /proc/self/status)\" = 0000000000000000; test \"$(awk '/CapBnd:/ {{print $2}}' /proc/self/status)\" = 0000000000000000; printf confined",
+        outside.display()
+    );
+    let result = block_on(backend.run(
+        &handle,
+        &Argv {
+            cwd: root.clone(),
+            argv: vec!["/bin/sh".into(), "-ec".into(), command],
+        },
+    ))
+    .unwrap();
+    assert_eq!(result.exit_code, Some(0), "{result:?}");
+    assert!(result.stdout.contains("confined"));
+    assert_eq!(std::fs::read_to_string(root.join("result")).unwrap(), "own");
+    assert_eq!(
+        std::fs::read_to_string(outside.join("canary")).unwrap(),
+        "untouched"
+    );
+    block_on(backend.teardown(handle)).unwrap();
+
+    let handle = block_on(backend.provision(&spec)).unwrap();
+    let started = std::time::Instant::now();
+    let result = block_on(backend.run(
+        &handle,
+        &Argv {
+            cwd: root.clone(),
+            argv: vec![
+                "/bin/sh".into(),
+                "-c".into(),
+                "dd if=/dev/zero bs=8192 count=32 >&2; printf visible; sleep 30 & wait".into(),
+            ],
+        },
+    ))
+    .unwrap();
+    assert!(result.timed_out, "{result:?}");
+    assert!(started.elapsed() < std::time::Duration::from_secs(3));
+    assert!(result.stdout.contains("visible"));
+    assert!(result.stderr.len() < 66000);
+    let pid = handle.pid();
+    block_on(backend.teardown(handle)).unwrap();
+    assert!(!std::path::Path::new(&format!("/proc/{pid}")).exists());
+    std::fs::remove_dir_all(root).unwrap();
+    std::fs::remove_dir_all(outside).unwrap();
+}

@@ -197,6 +197,12 @@ pub(crate) fn finish_run(
         combined.push_str("\n[stderr]\n");
         combined.push_str(&output.stderr);
     }
+    if !output.timed_out && output.exit_code != Some(0) {
+        return Err(SandboxRunError::Backend(format!(
+            "command exited {:?}: {combined}",
+            output.exit_code
+        )));
+    }
     Ok(SandboxOutcome {
         output: combined,
         timed_out: output.timed_out,
@@ -219,15 +225,11 @@ pub(crate) fn build_spec(cwd: &Path, demand: &SandboxDemand, timeout_seconds: u6
     spec
 }
 
-/// Platform shell argv for one command string, mirroring `run_bounded`.
+/// All registered sandbox backends execute Linux payloads, including Linux
+/// containers hosted by Windows/macOS. Never use the host shell or PATH lookup.
 pub(crate) fn shell_argv(command: &str, cwd: &Path) -> Argv {
-    let (program, flag) = if cfg!(windows) {
-        ("cmd", "/C")
-    } else {
-        ("sh", "-c")
-    };
-    vesper_sandbox::Argv {
-        argv: vec![program.to_owned(), flag.to_owned(), command.to_owned()],
+    Argv {
+        argv: vec!["/bin/sh".into(), "-c".into(), command.to_owned()],
         cwd: cwd.to_path_buf(),
     }
 }

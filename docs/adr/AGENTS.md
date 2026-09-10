@@ -61,6 +61,10 @@ Own accepted, durable architecture and compatibility decisions for Agent Vesper.
   Dependency/clock goals and upstream exclusions remain in force; the naming
   embargo is enforced by `cargo xtask naming-guard`.
 
+- ADR 0027 refines ADR 0022 with private-root namespace confinement, dropped
+  capabilities, correct outer IDs and bounded observed cleanup. The sole raw-
+  syscall boundary and supervisor wire protocol remain unchanged.
+
 ## Verification
 
 - Run `cargo xtask architecture`.

@@ -1,6 +1,6 @@
 //! One existing container supervisor with per-command Landlock confinement.
 //! Unique non-root UIDs identify descendants; cleanup verifies their absence
-//! before restoring artifact ownership to the native host's mapped root.
+//! before restoring artifact ownership to the original bind-mount owner.
 use super::*;
 use vesper_sandbox::{Argv, ExecOutput, SandboxError};
 
@@ -109,7 +109,7 @@ impl SharedScope {
                 argv: vec![
                     "/bin/sh".into(),
                     "-ec".into(),
-                    "mkdir -p -- \"$2/.tmp\"; chown -hR -- \"$1:$1\" \"$2\"; chmod 0700 -- \"$2\""
+                    "umask 077; stat -c %u:%g -- \"$2\" > \"/tmp/vesper-owner-$1\"; mkdir -p -- \"$2/.tmp\"; chown -hR -- \"$1:$1\" \"$2\"; chmod 0700 -- \"$2\""
                         .into(),
                     "swarm-setup".into(),
                     uid.clone(),
@@ -170,7 +170,7 @@ impl SharedScope {
             // A shell may leave forked/setsid children after returning. Every
             // descendant retains this unique UID and cannot regain credentials.
             let cleanup = Argv { cwd: self.spec.writable_root.clone(), argv: vec!["/bin/sh".into(), "-ec".into(),
-                "n=0; while :; do if pgrep -u \"$1\" >/dev/null; then pkill -KILL -u \"$1\" || test $? -eq 1; else test $? -eq 1; break; fi; n=$((n+1)); test \"$n\" -lt 30; sleep 0.1; done; chown -hR 0:0 -- \"$2\"".into(), "swarm-cleanup".into(), uid, root] };
+                "n=0; while :; do if pgrep -u \"$1\" >/dev/null; then pkill -KILL -u \"$1\" || test $? -eq 1; else test $? -eq 1; break; fi; n=$((n+1)); test \"$n\" -lt 30; sleep 0.1; done; owner=$(cat \"/tmp/vesper-owner-$1\"); chown -hR -- \"$owner\" \"$2\"; rm -- \"/tmp/vesper-owner-$1\"".into(), "swarm-cleanup".into(), uid, root] };
             if checked(backend, &handle, &cleanup).is_err() {
                 self.uncertain.store(true, Ordering::Release);
                 return Err(SandboxError::Teardown(
