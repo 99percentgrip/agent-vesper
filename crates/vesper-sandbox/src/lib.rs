@@ -29,6 +29,8 @@ use vesper_security::{CapabilityStatus, SandboxCapabilities, SecurityStrength};
 mod linux;
 mod pipe;
 mod stub;
+#[cfg(all(test, unix))]
+mod teardown_tests;
 pub use pipe::SandboxPipe;
 
 #[cfg(feature = "docker")]
@@ -98,6 +100,10 @@ pub struct SandboxSpec {
     /// reachable when a tool or scope explicitly demanded network isolation
     /// *grants* — never silently.
     pub allow_network: bool,
+    /// Explicitly permit private SELinux relabeling of a dedicated worker root.
+    /// Never enable for a shared project/system directory. Container backends
+    /// use a private `:Z` bind label; ordinary roots retain their current labels.
+    pub private_root_label: bool,
 }
 
 impl SandboxSpec {
@@ -111,6 +117,7 @@ impl SandboxSpec {
             cpu_limit: None,
             memory_limit_bytes: None,
             allow_network: false,
+            private_root_label: false,
         }
     }
 
@@ -159,12 +166,12 @@ pub fn baseline_env() -> Vec<String> {
 /// Maximum bytes of stdout/stderr kept per run (each stream independently).
 pub const OUTPUT_CAP_BYTES: usize = 64 * 1024;
 
-/// A provisioned sandbox. Dropping it tears the sandbox down.
+/// A provisioned sandbox. Drop attempts cleanup; explicit teardown reports failures.
 pub struct SandboxHandle {
     /// Supervisor process (`hold` mode: namespace-ready, waiting for one
     /// run request on stdin). Its `stdin` field is the run channel.
     pub(crate) child: Mutex<Child>,
-    /// VRO-13 PR-4 (Docker): total teardown command recorded at provision
+    /// VRO-13 PR-4 (Docker): cleanup command recorded at provision
     /// time (`docker rm -f <name>`). `None` for the namespaces backend,
     /// whose teardown is `Child::kill` + PDEATHSIG chaining.
     pub(crate) teardown_command: Option<Vec<String>>,
@@ -177,6 +184,25 @@ pub struct SandboxHandle {
 }
 
 impl SandboxHandle {
+    /// Explicit cleanup must observe process ownership and successful reaping;
+    /// a best-effort Drop is not proof of teardown. Already-reaped is idempotent.
+    pub(crate) fn terminate_supervisor(&self) -> Result<(), SandboxError> {
+        let mut child = self
+            .child
+            .lock()
+            .map_err(|_| SandboxError::Teardown("supervisor ownership lock poisoned".into()))?;
+        let result = (|| -> std::io::Result<()> {
+            if child.try_wait()?.is_some() {
+                return Ok(());
+            }
+            child.kill()?;
+            wait_bounded(&mut child, std::time::Duration::from_secs(5))?;
+            Ok(())
+        })();
+        result
+            .map_err(|error| SandboxError::Teardown(format!("supervisor cleanup failed: {error}")))
+    }
+
     /// PID of the supervisor process. `run` communicates over its stdin;
     /// teardown kills it, which chains SIGKILL into the namespace init
     /// (`PR_SET_PDEATHSIG`) and the kernel then reaps every namespace member.
@@ -191,9 +217,8 @@ impl SandboxHandle {
 
 impl Drop for SandboxHandle {
     fn drop(&mut self) {
-        // VRO-13 PR-4 (Docker): the recorded teardown command is total even
-        // if the client process already exited (--rm is daemon-side and
-        // `rm -f` is idempotent against an already-removed container).
+        // Best-effort container cleanup remains necessary even if the local
+        // client already exited. Only explicit teardown reports its outcome.
         if let Some(argv) = self.teardown_command.as_ref()
             && let Some((program, rest)) = argv.split_first()
             && let Ok(mut cleanup) = Command::new(program)
@@ -208,10 +233,14 @@ impl Drop for SandboxHandle {
         // Kill the supervisor → PDEATHSIG kills the namespace init → the
         // kernel SIGKILLs every remaining process in the PID namespace.
         // The mount namespace dies with its last member, so no host mount
-        // survives: teardown is total without any unsafe call from here.
-        if let Ok(mut child) = self.child.lock() {
+        // survives after successful termination. Failed kills/reaps cannot
+        // certify teardown; this Drop path is best effort only.
+        // Recover poisoned ownership for best-effort cleanup only. Explicit
+        // teardown still reports poison instead of certifying success.
+        let mut child = self.child.lock().unwrap_or_else(|error| error.into_inner());
+        if !matches!(child.try_wait(), Ok(Some(_))) {
             let _ = child.kill();
-            let _ = child.wait();
+            let _ = wait_bounded(&mut child, std::time::Duration::from_secs(5));
         }
     }
 }
@@ -231,7 +260,15 @@ pub(crate) fn wait_bounded(
             }
             result => {
                 let _ = child.kill();
-                let _ = child.wait();
+                // Even kill can fail or leave a process waiting on the OS.
+                // Never turn the deadline into an unbounded blocking wait.
+                let reap_started = std::time::Instant::now();
+                while reap_started.elapsed() < std::time::Duration::from_millis(500) {
+                    match child.try_wait() {
+                        Ok(Some(_)) | Err(_) => break,
+                        Ok(None) => std::thread::sleep(std::time::Duration::from_millis(10)),
+                    }
+                }
                 return Err(match result {
                     Err(error) => error,
                     _ => std::io::Error::new(

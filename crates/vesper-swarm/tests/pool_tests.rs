@@ -558,3 +558,43 @@ fn worker_status_is_serializable() {
     let decoded: Vec<WorkerStatus> = serde_json::from_str(&encoded).unwrap();
     assert_eq!(decoded, statuses);
 }
+
+#[tokio::test]
+async fn repeated_initialization_never_adds_workers_above_floor() {
+    let config = PoolConfig {
+        min_workers: 2,
+        max_workers: 3,
+        ..PoolConfig::default()
+    };
+    let pool = WorkerPool::new(config, FakeWorkerPort::succeeding()).unwrap();
+    for _ in 0..5 {
+        pool.initialize().await.unwrap();
+    }
+    assert_eq!(pool.live_workers(), 2);
+    pool.scale(1).unwrap();
+    pool.initialize().await.unwrap();
+    assert_eq!(pool.live_workers(), 3);
+}
+
+#[tokio::test]
+async fn failed_workers_can_be_replaced_at_maximum_capacity() {
+    let config = PoolConfig {
+        min_workers: 2,
+        max_workers: 2,
+        ..PoolConfig::default()
+    };
+    let pool = WorkerPool::new(config, FakeWorkerPort::succeeding()).unwrap();
+    pool.initialize().await.unwrap();
+    pool.test_freeze_last_seen(Duration::from_secs(10));
+    pool.health_tick(tokio::time::Instant::now());
+    assert_eq!(pool.replace_failed().await.unwrap(), 2);
+    assert_eq!(pool.live_workers(), 2);
+    assert_eq!(pool.idle_workers(), 2);
+}
+
+#[tokio::test]
+async fn incapable_growth_is_refused_without_allocating_a_worker() {
+    let pool = WorkerPool::new(PoolConfig::default(), FakeWorkerPort::succeeding()).unwrap();
+    assert!(pool.acquire(&["not-supported".into()]).await.is_err());
+    assert_eq!(pool.live_workers(), 0);
+}

@@ -1,30 +1,155 @@
-README.md:27 7c7928b4fed9c6b3bd9375354f9e4181834637180df4476b44ea802ac4795c9b
-README.md:236 2a0a7e00e24286cd8d0d74df704c621b9ae2e4a2d03ccc970441545d4f634773
-README.md:331 8430f6ebebf280349a95a5009ae7ddb8165e03db61665c67232642e5a82e56dd
-README.md:341 2b4d823aaa2a4d31f3b4a3e1560072f0d7db7947537bcfb12f95b6eae769d3a8
-README.md:348 10ffed82f82676aba589f342d09d6324cd35febf87c6c4d5145268c925595ffe
-README.md:353 78aef2477d8c4e7f4b1b40e04a6433733e2ed8bb2e29de3cae4c00db5a614703
-README.md:354 458b26845d5bb9c7edaeda47d18af687a765fccf1a35bb88f8edab83a89ac51e
-README.md:359 8819b42111876f7522efb139360fef915c9e8884d4c0f8d3bca80244516d6c1d
-README.md:363 547030d23f758d432d7e14c6732961a0e59b2ef70439dbc9a9d4bd87f4db3f9b
-crates/vesper-agent/AGENTS.md:523 21321451581afdc95af4134e8ba40a9a993f8ee2499446a963301e020f0a2dfe
-crates/vesper-agent/AGENTS.md:589 a11e289faa4b0e2303c64ac4d2199f92c934e59f55b9a85a81607814b622f48c
-crates/vesper-agent/src/executor.rs:79 d4d1e19a44a862755a86ff605c92d7770f059e7de82125bedede0c28bb325916
-crates/vesper-agent/src/project_context.rs:18 69eb73fb1067b8a488766d7fe8dccddd312175cbe436079195ec65ed32078edd
-crates/vesper-agent/src/registry.rs:193 c333fe9d2297a3ccf84f93e4f81da52f870bec81b100f433c22c39754028d3bc
-crates/vesper-agent/src/vro/learning.rs:182 cafac7880a4d1879ff943425d495b94e9091f5d9f60db8713e66d023261ec95c
-crates/vesper-domain/AGENTS.md:39 d77b5ee5915c289030ddf52d4bd1d83561c564be2d4d6b71b4d8b60cac2ba81d
-crates/vesper-domain/src/tool.rs:146 cf50463b0643003608908c6fbb86bf252e3f4084ead0ebf52a0c1b16dbfc01ce
-docs/adr/0014-agent-vesper-authentication.md:19 f7a4ce830882771f29949b65525d487af41684312b105ed1dbd4669b7c686e24
-docs/adr/0017-vesper-lens-native-oracle.md:174 5e74669d3a6adf367c4b0272a8e2683a6a8de69dbaa9fb8dd21329b215bc3094
-docs/adr/0018-vesper-lens-interactive-interview.md:22 6dc8659ccb902200930e91cf4f49bbc18cae8ece4a297f3164015d7c3f8a136b
-docs/adr/0023-token-aware-semantic-context-compaction.md:18 071f499ec203cedabc6d24a5e297c5fd06bc13df6ddcbf8629b14f7e8f6e8ba5
-docs/adr/0024-provider-neutral-skill-orchestration.md:15 ebdd257d3bef3585d20fb5bd24f4fe7f0a82a1c9ca8e2613c462a477a2c782f1
-docs/agent-vesper-reasoning-orchestrator-prd.md:25 0afeba8628e9087b55aa8d7c1ff5819ac6b1ee80f63db4e856af258c20b89bea
-docs/agent-vesper-reasoning-orchestrator-prd.md:342 1787cfe4bf741f8cc5de0937deeba4a3e6218e48cd9fabad444318382340f34c
-docs/recon/master-migration-plan.md:315 1eabfbe570e0c9584e492fb874a95fed6584daedb61b547dd7999e188774e89c
-docs/recon/provider-abstraction-analysis.md:32 e1550dce845ee225db5d921ba39ad46a5fec7ec5a19b2c5377bcf595409d4ca1
-docs/recon/provider-abstraction-analysis.md:128 b3d2d9758957d046b233f52980fc774d07144c2c565295c9a39b437cf2b7ca79
-docs/recon/provider-abstraction-analysis.md:136 04149021c87e111498602f2db3d4593130dc41463d76cc94b64d4b1f3b1aa945
-docs/recon/rust-architecture-proposal.md:38 d9b687488c9be4198b4d7b9f94854410dfd7642696ff423b168ff1985c143f65
-docs/recon/rust-architecture-proposal.md:146 5009ee286ba3d0091f15738a3cfa6d7ec82374ebc9303ec3e2e7e15e67a22ec4
+{
+  "version": 1,
+  "entries": [
+    {
+      "path": "README.md",
+      "sha256": "10ffed82f82676aba589f342d09d6324cd35febf87c6c4d5145268c925595ffe",
+      "count": 1
+    },
+    {
+      "path": "README.md",
+      "sha256": "2a0a7e00e24286cd8d0d74df704c621b9ae2e4a2d03ccc970441545d4f634773",
+      "count": 1
+    },
+    {
+      "path": "README.md",
+      "sha256": "2b4d823aaa2a4d31f3b4a3e1560072f0d7db7947537bcfb12f95b6eae769d3a8",
+      "count": 1
+    },
+    {
+      "path": "README.md",
+      "sha256": "458b26845d5bb9c7edaeda47d18af687a765fccf1a35bb88f8edab83a89ac51e",
+      "count": 1
+    },
+    {
+      "path": "README.md",
+      "sha256": "547030d23f758d432d7e14c6732961a0e59b2ef70439dbc9a9d4bd87f4db3f9b",
+      "count": 1
+    },
+    {
+      "path": "README.md",
+      "sha256": "78aef2477d8c4e7f4b1b40e04a6433733e2ed8bb2e29de3cae4c00db5a614703",
+      "count": 1
+    },
+    {
+      "path": "README.md",
+      "sha256": "7c7928b4fed9c6b3bd9375354f9e4181834637180df4476b44ea802ac4795c9b",
+      "count": 1
+    },
+    {
+      "path": "README.md",
+      "sha256": "8430f6ebebf280349a95a5009ae7ddb8165e03db61665c67232642e5a82e56dd",
+      "count": 1
+    },
+    {
+      "path": "README.md",
+      "sha256": "8819b42111876f7522efb139360fef915c9e8884d4c0f8d3bca80244516d6c1d",
+      "count": 1
+    },
+    {
+      "path": "crates/vesper-agent/AGENTS.md",
+      "sha256": "21321451581afdc95af4134e8ba40a9a993f8ee2499446a963301e020f0a2dfe",
+      "count": 1
+    },
+    {
+      "path": "crates/vesper-agent/AGENTS.md",
+      "sha256": "a11e289faa4b0e2303c64ac4d2199f92c934e59f55b9a85a81607814b622f48c",
+      "count": 1
+    },
+    {
+      "path": "crates/vesper-agent/src/executor.rs",
+      "sha256": "d4d1e19a44a862755a86ff605c92d7770f059e7de82125bedede0c28bb325916",
+      "count": 1
+    },
+    {
+      "path": "crates/vesper-agent/src/project_context.rs",
+      "sha256": "69eb73fb1067b8a488766d7fe8dccddd312175cbe436079195ec65ed32078edd",
+      "count": 1
+    },
+    {
+      "path": "crates/vesper-agent/src/registry.rs",
+      "sha256": "c333fe9d2297a3ccf84f93e4f81da52f870bec81b100f433c22c39754028d3bc",
+      "count": 1
+    },
+    {
+      "path": "crates/vesper-agent/src/vro/learning.rs",
+      "sha256": "cafac7880a4d1879ff943425d495b94e9091f5d9f60db8713e66d023261ec95c",
+      "count": 1
+    },
+    {
+      "path": "crates/vesper-domain/AGENTS.md",
+      "sha256": "d77b5ee5915c289030ddf52d4bd1d83561c564be2d4d6b71b4d8b60cac2ba81d",
+      "count": 1
+    },
+    {
+      "path": "crates/vesper-domain/src/tool.rs",
+      "sha256": "cf50463b0643003608908c6fbb86bf252e3f4084ead0ebf52a0c1b16dbfc01ce",
+      "count": 1
+    },
+    {
+      "path": "docs/adr/0014-agent-vesper-authentication.md",
+      "sha256": "f7a4ce830882771f29949b65525d487af41684312b105ed1dbd4669b7c686e24",
+      "count": 1
+    },
+    {
+      "path": "docs/adr/0017-vesper-lens-native-oracle.md",
+      "sha256": "5e74669d3a6adf367c4b0272a8e2683a6a8de69dbaa9fb8dd21329b215bc3094",
+      "count": 1
+    },
+    {
+      "path": "docs/adr/0018-vesper-lens-interactive-interview.md",
+      "sha256": "6dc8659ccb902200930e91cf4f49bbc18cae8ece4a297f3164015d7c3f8a136b",
+      "count": 1
+    },
+    {
+      "path": "docs/adr/0023-token-aware-semantic-context-compaction.md",
+      "sha256": "071f499ec203cedabc6d24a5e297c5fd06bc13df6ddcbf8629b14f7e8f6e8ba5",
+      "count": 1
+    },
+    {
+      "path": "docs/adr/0024-provider-neutral-skill-orchestration.md",
+      "sha256": "ebdd257d3bef3585d20fb5bd24f4fe7f0a82a1c9ca8e2613c462a477a2c782f1",
+      "count": 1
+    },
+    {
+      "path": "docs/agent-vesper-reasoning-orchestrator-prd.md",
+      "sha256": "0afeba8628e9087b55aa8d7c1ff5819ac6b1ee80f63db4e856af258c20b89bea",
+      "count": 1
+    },
+    {
+      "path": "docs/agent-vesper-reasoning-orchestrator-prd.md",
+      "sha256": "1787cfe4bf741f8cc5de0937deeba4a3e6218e48cd9fabad444318382340f34c",
+      "count": 1
+    },
+    {
+      "path": "docs/recon/master-migration-plan.md",
+      "sha256": "1eabfbe570e0c9584e492fb874a95fed6584daedb61b547dd7999e188774e89c",
+      "count": 1
+    },
+    {
+      "path": "docs/recon/provider-abstraction-analysis.md",
+      "sha256": "04149021c87e111498602f2db3d4593130dc41463d76cc94b64d4b1f3b1aa945",
+      "count": 1
+    },
+    {
+      "path": "docs/recon/provider-abstraction-analysis.md",
+      "sha256": "b3d2d9758957d046b233f52980fc774d07144c2c565295c9a39b437cf2b7ca79",
+      "count": 1
+    },
+    {
+      "path": "docs/recon/provider-abstraction-analysis.md",
+      "sha256": "e1550dce845ee225db5d921ba39ad46a5fec7ec5a19b2c5377bcf595409d4ca1",
+      "count": 1
+    },
+    {
+      "path": "docs/recon/rust-architecture-proposal.md",
+      "sha256": "5009ee286ba3d0091f15738a3cfa6d7ec82374ebc9303ec3e2e7e15e67a22ec4",
+      "count": 1
+    },
+    {
+      "path": "docs/recon/rust-architecture-proposal.md",
+      "sha256": "d9b687488c9be4198b4d7b9f94854410dfd7642696ff423b168ff1985c143f65",
+      "count": 1
+    }
+  ]
+}

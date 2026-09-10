@@ -18,11 +18,12 @@
 //! second public cosine.
 
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 /// Snapshot format magic bytes (`VSWHNSW1`).
 const SNAPSHOT_MAGIC: [u8; 8] = *b"VSWHNSW1";
 /// Snapshot format version.
-const SNAPSHOT_VERSION: u32 = 1;
+const SNAPSHOT_VERSION: u32 = 2;
 /// Geometric level-draw success probability.
 const LEVEL_P: f64 = 0.5;
 /// Maximum layer height any node may reach.
@@ -69,6 +70,18 @@ impl HnswConfig {
 
     /// Fails closed on impossible shapes.
     pub fn validate(&self) -> Result<(), HnswConfigError> {
+        if [
+            self.dimensions,
+            self.ef_construction,
+            self.max_elements,
+            self.over_fetch_factor,
+        ]
+        .iter()
+        .any(|value| *value > u32::MAX as usize)
+            || self.m > (u32::MAX / 2) as usize
+        {
+            return Err(HnswConfigError::ShapeTooLarge);
+        }
         if self.dimensions == 0 {
             return Err(HnswConfigError::ZeroDimensions);
         }
@@ -91,6 +104,9 @@ impl HnswConfig {
 /// Rejections of an [`HnswConfig`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum HnswConfigError {
+    /// Configuration must fit the portable binary format and link arithmetic.
+    #[error("configuration exceeds portable snapshot bounds")]
+    ShapeTooLarge,
     /// Dimensions must be positive.
     #[error("dimensions must be at least one")]
     ZeroDimensions,
@@ -122,6 +138,9 @@ pub enum HnswError {
         /// Supplied vector length.
         actual: usize,
     },
+    /// Input vectors must contain only finite values.
+    #[error("vector contains nonfinite values")]
+    NonfiniteVector,
     /// A point with this id already exists.
     #[error("point {0} already exists")]
     DuplicatePoint(u64),
@@ -148,6 +167,8 @@ struct Node {
     id: u64,
     /// Pre-normalized vector (cosine similarity is then a plain dot).
     normalized: Vec<f32>,
+    /// Original finite input, preserved losslessly in snapshots.
+    raw: Vec<f32>,
     /// Highest layer this node participates in.
     level: usize,
     /// Neighbor ordinals per layer (index 0 = ground layer).
@@ -164,7 +185,10 @@ impl XorShift64 {
     fn new(seed: u64) -> Self {
         // Zero state is a fixed point; mix to avoid it.
         Self {
-            state: seed ^ 0x9e37_79b9_7f4a_7c15,
+            state: match seed ^ 0x9e37_79b9_7f4a_7c15 {
+                0 => 1,
+                mixed => mixed,
+            },
         }
     }
 
@@ -221,11 +245,18 @@ impl DistKey {
 
 /// Private cosine helpers (see module docs: deliberately not public).
 fn normalize(vector: &[f32]) -> Vec<f32> {
-    let magnitude: f32 = vector.iter().map(|value| value * value).sum::<f32>().sqrt();
-    if magnitude <= f32::EPSILON || !magnitude.is_finite() {
-        return vector.to_vec();
+    let magnitude = vector
+        .iter()
+        .map(|value| f64::from(*value).powi(2))
+        .sum::<f64>()
+        .sqrt();
+    if magnitude == 0.0 {
+        return vec![0.0; vector.len()];
     }
-    vector.iter().map(|value| value / magnitude).collect()
+    vector
+        .iter()
+        .map(|value| (f64::from(*value) / magnitude) as f32)
+        .collect()
 }
 
 fn cosine_similarity_normalized(a: &[f32], b: &[f32]) -> f32 {
@@ -236,7 +267,7 @@ fn cosine_similarity_normalized(a: &[f32], b: &[f32]) -> f32 {
 #[derive(Debug, Clone)]
 pub struct HnswIndex {
     config: HnswConfig,
-    nodes: Vec<Node>,
+    nodes: Vec<Arc<Node>>,
     /// id → ordinal for duplicate detection.
     ordinals: std::collections::HashMap<u64, usize>,
     entry: Option<usize>,
@@ -280,6 +311,14 @@ impl HnswIndex {
         self.nodes.is_empty()
     }
 
+    /// Original vector for a known point, for lossless ledger transfers.
+    #[must_use]
+    pub fn raw_vector(&self, id: u64) -> Option<&[f32]> {
+        self.ordinals
+            .get(&id)
+            .map(|ordinal| self.nodes[*ordinal].raw.as_slice())
+    }
+
     /// Inserts one point with a caller-supplied stable id.
     ///
     /// Deterministic: same insertion sequence + same seed ⇒ identical
@@ -290,6 +329,9 @@ impl HnswIndex {
                 expected: self.config.dimensions,
                 actual: vector.len(),
             });
+        }
+        if vector.iter().any(|value| !value.is_finite()) {
+            return Err(HnswError::NonfiniteVector);
         }
         if self.ordinals.contains_key(&id) {
             return Err(HnswError::DuplicatePoint(id));
@@ -303,12 +345,13 @@ impl HnswIndex {
 
         if self.entry.is_none() {
             // First point seeds the graph and is stored immediately.
-            self.nodes.push(Node {
+            self.nodes.push(Arc::new(Node {
                 id,
                 normalized,
+                raw: vector.to_vec(),
                 level,
                 connections: vec![Vec::new(); level + 1],
-            });
+            }));
             self.ordinals.insert(id, ordinal);
             self.entry = Some(ordinal);
             self.max_level = level;
@@ -317,12 +360,13 @@ impl HnswIndex {
 
         // Store the node FIRST so every later link references a valid
         // ordinal; its per-layer connections are filled in below.
-        self.nodes.push(Node {
+        self.nodes.push(Arc::new(Node {
             id,
             normalized,
+            raw: vector.to_vec(),
             level,
             connections: vec![Vec::new(); level + 1],
-        });
+        }));
         self.ordinals.insert(id, ordinal);
 
         let entry = self.entry.expect("non-empty index has an entry");
@@ -344,7 +388,7 @@ impl HnswIndex {
                 self.config.m
             };
             let selected = self.select_neighbors(&candidates, width);
-            self.nodes[ordinal].connections[layer] = selected.clone();
+            Arc::make_mut(&mut self.nodes[ordinal]).connections[layer] = selected.clone();
             for neighbor in selected {
                 let cap = if layer == 0 {
                     self.m_max0
@@ -398,7 +442,9 @@ impl HnswIndex {
         ef: usize,
         layer: usize,
     ) -> Vec<(f32, usize)> {
-        let mut visited = vec![false; self.nodes.len()];
+        // Sparse per-search membership: allocation follows visited vertices,
+        // not the full million-point capacity on every traversed layer.
+        let mut visited = std::collections::BTreeSet::new();
         // Min-heap of candidates to expand (closest on top).
         let mut candidates: std::collections::BinaryHeap<std::cmp::Reverse<(DistKey, usize)>> =
             std::collections::BinaryHeap::new();
@@ -407,7 +453,7 @@ impl HnswIndex {
             std::collections::BinaryHeap::new();
 
         let entry_distance = self.distance_to(entry, query);
-        visited[entry] = true;
+        visited.insert(entry);
         candidates.push(std::cmp::Reverse((
             DistKey::from_f32(entry_distance),
             entry,
@@ -424,10 +470,9 @@ impl HnswIndex {
                 break;
             }
             for &neighbor in &self.nodes[ordinal].connections[layer] {
-                if visited[neighbor] {
+                if !visited.insert(neighbor) {
                     continue;
                 }
-                visited[neighbor] = true;
                 let neighbor_key = DistKey::from_f32(self.distance_to(neighbor, query));
                 let worst = best
                     .peek()
@@ -459,13 +504,14 @@ impl HnswIndex {
 
     /// Adds a bidirectional link, pruning the far side to `cap` neighbors.
     fn link(&mut self, from: usize, to: usize, layer: usize, cap: usize) {
-        let query = self.nodes[to].normalized.clone();
-        let mut current = std::mem::take(&mut self.nodes[from].connections[layer]);
+        let query = self.nodes[from].normalized.clone();
+        let mut current =
+            std::mem::take(&mut Arc::make_mut(&mut self.nodes[from]).connections[layer]);
         if !current.contains(&to) {
             current.push(to);
         }
         if current.len() > cap {
-            // Prune: keep the cap closest to the far node.
+            // Prune against the owner of the adjacency list, not the incoming node.
             let mut scored: Vec<(DistKey, usize)> = current
                 .iter()
                 .map(|&ordinal| {
@@ -487,13 +533,17 @@ impl HnswIndex {
                 .map(|(_, ordinal)| ordinal)
                 .collect();
         }
-        self.nodes[from].connections[layer] = current;
+        Arc::make_mut(&mut self.nodes[from]).connections[layer] = current;
     }
 
     /// Approximate nearest-neighbor search: top-`k` by cosine similarity.
     #[must_use]
     pub fn search(&self, query: &[f32], k: usize, ef: usize) -> Vec<SearchHit> {
-        if query.len() != self.config.dimensions || self.entry.is_none() || k == 0 {
+        if query.len() != self.config.dimensions
+            || self.entry.is_none()
+            || k == 0
+            || query.iter().any(|value| !value.is_finite())
+        {
             return Vec::new();
         }
         let normalized_query = normalize(query);
@@ -539,11 +589,45 @@ impl HnswIndex {
     /// Layout (all integers little-endian):
     /// magic `VSWHNSW1` · version u32 · dimensions u32 · m u32 ·
     /// ef_construction u32 · max_elements u32 · seed u64 · count u32 ·
-    /// entry u32 · max_level u32 · per node (id u64, level u32, per-layer
-    /// neighbor counts and ordinals u32) · vectors (count × dims × f32).
+    /// entry u32 · max_level u32 · over_fetch_factor u32 · RNG state u64 ·
+    /// per node (id u64, level u32, per-layer
+    /// neighbor counts and ordinals u32) · raw vectors (count × dims × f32).
+    /// Version 1 lacks raw vectors and continuation state and is refused.
     #[must_use]
     pub fn to_snapshot(&self) -> Vec<u8> {
+        self.encode_snapshot(Vec::new())
+    }
+
+    /// Refuses oversized snapshots before allocating their output buffer.
+    pub fn to_snapshot_bounded(&self, limit: usize) -> Result<Vec<u8>, HnswError> {
+        let mut length = 60usize;
+        for node in &self.nodes {
+            length = length
+                .checked_add(16)
+                .and_then(|n| node.raw.len().checked_mul(4).and_then(|v| n.checked_add(v)))
+                .ok_or(HnswError::InvalidSnapshot("snapshot size overflow"))?;
+            for layer in &node.connections {
+                length = layer
+                    .len()
+                    .checked_mul(4)
+                    .and_then(|n| n.checked_add(4))
+                    .and_then(|n| length.checked_add(n))
+                    .ok_or(HnswError::InvalidSnapshot("snapshot size overflow"))?;
+            }
+            if length > limit {
+                return Err(HnswError::InvalidSnapshot("snapshot byte limit exceeded"));
+            }
+        }
+        if length > limit {
+            return Err(HnswError::InvalidSnapshot("snapshot byte limit exceeded"));
+        }
         let mut out = Vec::new();
+        out.try_reserve_exact(length)
+            .map_err(|_| HnswError::InvalidSnapshot("snapshot allocation refused"))?;
+        Ok(self.encode_snapshot(out))
+    }
+
+    fn encode_snapshot(&self, mut out: Vec<u8>) -> Vec<u8> {
         out.extend_from_slice(&SNAPSHOT_MAGIC);
         out.extend_from_slice(&SNAPSHOT_VERSION.to_le_bytes());
         out.extend_from_slice(&(self.config.dimensions as u32).to_le_bytes());
@@ -554,6 +638,8 @@ impl HnswIndex {
         out.extend_from_slice(&(self.nodes.len() as u32).to_le_bytes());
         out.extend_from_slice(&(self.entry.map_or(u32::MAX, |ord| ord as u32)).to_le_bytes());
         out.extend_from_slice(&(self.max_level as u32).to_le_bytes());
+        out.extend_from_slice(&(self.config.over_fetch_factor as u32).to_le_bytes());
+        out.extend_from_slice(&self.rng.state.to_le_bytes());
         for node in &self.nodes {
             out.extend_from_slice(&node.id.to_le_bytes());
             out.extend_from_slice(&(node.level as u32).to_le_bytes());
@@ -566,7 +652,7 @@ impl HnswIndex {
             }
         }
         for node in &self.nodes {
-            for value in &node.normalized {
+            for value in &node.raw {
                 out.extend_from_slice(&value.to_le_bytes());
             }
         }
@@ -613,11 +699,19 @@ impl HnswIndex {
         let count = take_u32(bytes, &mut offset)? as usize;
         let entry_raw = take_u32(bytes, &mut offset)?;
         let max_level = take_u32(bytes, &mut offset)? as usize;
+        let over_fetch_factor = take_u32(bytes, &mut offset)? as usize;
+        let rng_state = take_u64(bytes, &mut offset)?;
+        if rng_state == 0 {
+            return Err(HnswError::InvalidSnapshot("zero RNG state"));
+        }
 
         // Header must agree with the expected configuration.
         if dimensions != expected.dimensions
             || m != expected.m
             || ef_construction != expected.ef_construction
+            || max_elements != expected.max_elements
+            || seed != expected.seed
+            || over_fetch_factor != expected.over_fetch_factor
         {
             return Err(HnswError::InvalidSnapshot("header disagrees with config"));
         }
@@ -625,13 +719,27 @@ impl HnswIndex {
             return Err(HnswError::InvalidSnapshot("count exceeds capacity"));
         }
 
+        // Each node needs at least its id/shape, one layer count and vector.
+        // Bound allocations by actual bytes, not only an attacker supplied count.
+        let minimum_bytes = dimensions
+            .checked_mul(4)
+            .and_then(|size| size.checked_add(20))
+            .and_then(|size| size.checked_mul(count))
+            .ok_or(HnswError::InvalidSnapshot("record size overflow"))?;
+        if minimum_bytes > bytes.len().saturating_sub(offset) {
+            return Err(HnswError::InvalidSnapshot("records exceed input budget"));
+        }
+        let mut ids = std::collections::HashSet::new();
         // Node records.
         let mut records: Vec<(u64, u32, Vec<Vec<usize>>)> = Vec::with_capacity(count);
-        for _ in 0..count {
+        for record_ordinal in 0..count {
             let id = take_u64(bytes, &mut offset)?;
+            if !ids.insert(id) {
+                return Err(HnswError::InvalidSnapshot("duplicate point id"));
+            }
             let level = take_u32(bytes, &mut offset)? as usize;
             let layers = take_u32(bytes, &mut offset)? as usize;
-            if level >= MAX_LEVEL || layers != level + 1 {
+            if level > MAX_LEVEL || layers != level + 1 {
                 return Err(HnswError::InvalidSnapshot("node layer mismatch"));
             }
             let mut connections = Vec::with_capacity(layers);
@@ -640,11 +748,17 @@ impl HnswIndex {
                 if neighbors > m.saturating_mul(2) {
                     return Err(HnswError::InvalidSnapshot("neighbor overflow"));
                 }
+                if neighbors > bytes.len().saturating_sub(offset) / 4 {
+                    return Err(HnswError::InvalidSnapshot("neighbors exceed input budget"));
+                }
                 let mut layer = Vec::with_capacity(neighbors);
                 for _ in 0..neighbors {
                     let ordinal = take_u32(bytes, &mut offset)? as usize;
                     if ordinal >= count {
                         return Err(HnswError::InvalidSnapshot("neighbor ordinal out of range"));
+                    }
+                    if ordinal == record_ordinal || layer.contains(&ordinal) {
+                        return Err(HnswError::InvalidSnapshot("self or duplicate edge"));
                     }
                     layer.push(ordinal);
                 }
@@ -653,8 +767,11 @@ impl HnswIndex {
             records.push((id, level as u32, connections));
         }
         // Vectors.
-        let vector_bytes = count * dimensions * 4;
-        if offset + vector_bytes != bytes.len() {
+        let vector_bytes = count
+            .checked_mul(dimensions)
+            .and_then(|size| size.checked_mul(4))
+            .ok_or(HnswError::InvalidSnapshot("vector size overflow"))?;
+        if offset.checked_add(vector_bytes) != Some(bytes.len()) {
             return Err(HnswError::InvalidSnapshot("vector section length mismatch"));
         }
         let mut vectors: Vec<Vec<f32>> = Vec::with_capacity(count);
@@ -668,7 +785,11 @@ impl HnswIndex {
                         .ok_or(HnswError::InvalidSnapshot("truncated vectors"))?,
                 );
                 offset += 4;
-                vector.push(f32::from_le_bytes(buffer));
+                let value = f32::from_le_bytes(buffer);
+                if !value.is_finite() {
+                    return Err(HnswError::InvalidSnapshot("nonfinite vector"));
+                }
+                vector.push(value);
             }
             vectors.push(vector);
         }
@@ -686,8 +807,28 @@ impl HnswIndex {
         if count == 0 && entry.is_some() {
             return Err(HnswError::InvalidSnapshot("empty index with entry"));
         }
-        if max_level >= MAX_LEVEL {
+        if max_level > MAX_LEVEL {
             return Err(HnswError::InvalidSnapshot("max level out of range"));
+        }
+        let graph_level = records
+            .iter()
+            .map(|(_, level, _)| *level as usize)
+            .max()
+            .unwrap_or(0);
+        if max_level != graph_level
+            || entry.is_some_and(|ordinal| records[ordinal].1 as usize != max_level)
+        {
+            return Err(HnswError::InvalidSnapshot("entry/header layer mismatch"));
+        }
+        for (_, _, connections) in &records {
+            for (layer, neighbors) in connections.iter().enumerate() {
+                if neighbors
+                    .iter()
+                    .any(|ordinal| records[*ordinal].1 < layer as u32)
+                {
+                    return Err(HnswError::InvalidSnapshot("edge targets missing layer"));
+                }
+            }
         }
 
         let mut index = Self::new(HnswConfig {
@@ -696,20 +837,22 @@ impl HnswIndex {
             ef_construction,
             max_elements,
             seed,
-            over_fetch_factor: expected.over_fetch_factor,
+            over_fetch_factor,
         })?;
+        index.rng.state = rng_state;
         index.max_level = max_level;
         index.entry = entry;
         let mut ordinals = std::collections::HashMap::with_capacity(count);
         for ((id, level, connections), vector) in records.into_iter().zip(vectors) {
             let ordinal = index.nodes.len();
             ordinals.insert(id, ordinal);
-            index.nodes.push(Node {
+            index.nodes.push(Arc::new(Node {
                 id,
-                normalized: vector,
+                normalized: normalize(&vector),
+                raw: vector,
                 level: level as usize,
                 connections,
-            });
+            }));
         }
         index.ordinals = ordinals;
         Ok(index)

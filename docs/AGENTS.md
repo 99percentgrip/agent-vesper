@@ -30,9 +30,12 @@ Own durable project documentation and evidence-backed engineering records.
   `provider-capability-gating-prd.md`, `qm-extraction-prd.md`,
   `result-aware-loop-detection-prd.md`,
   `web-oracle-extraction-prd.md`),
-  and `swarm-oracle-extraction-prd.md` (VRO-15 — **Accepted and
-  Implemented**, closed by PR-1..PR-10 on 2026-09-10; decision record
-  `docs/adr/0025-provider-neutral-swarm-orchestration.md`; upstream is
+  and `swarm-oracle-extraction-prd.md` (VRO-15 — accepted requirements;
+  its original completion claim is disputed by `foundation/vro15-gap-audit.md`,
+  with full repairs approved and tracked in `foundation/vro15-repair-execution.md`;
+  original decision record `docs/adr/0025-provider-neutral-swarm-orchestration.md`
+  and superseding repair/parity decision
+  `docs/adr/0026-swarm-repair-and-cross-host-acceptance.md`; upstream is
   referenced only as the swarm oracle — no upstream brand names may
   appear in docs or source, enforced by `cargo xtask naming-guard`);
   implementation evidence for their

@@ -52,15 +52,14 @@ Own accepted, durable architecture and compatibility decisions for Agent Vesper.
   deterministic metadata ranking, fail-closed eligibility, bounded
   composition, transient inline loading, isolated-worker loading, cross-host
   parity, compaction-safe identity audit, and bounded outcome feedback.
-- ADR 0025 (VRO-15) accepts the provider-neutral swarm orchestration layer:
-  a pure-logic `vesper-swarm` crate (topology, pooled workers, priority
-  bus, scoring, HNSW ledger, sandbox lease policy, and the `Hive`
-  orchestrator) over trait ports, plus a default-off `vesper-harness`
-  `swarm` feature bridging `WorkerPort` to `ProviderSession`. Default
-  builds link no swarm symbols (floors 1,893 all-features / 1,869
-  default, both zero-failure); `/swarm` is TUI-only initially with the
-  ACP exclusion documented. The upstream-brand naming embargo is
-  mechanically enforced by `cargo xtask naming-guard`.
+- ADR 0025 preserves the original provider-neutral swarm decision. ADR 0026
+  supersedes its single-stream adapter, TUI-only exclusion and completion claims:
+  approved repairs require native AgentLoop/permission/tool composition, immutable
+  ledger readers, both-host Settings/command parity and actual cleanup acceptance.
+  Activation remains default-off. Current F01–F18 evidence lives in
+  `../foundation/vro15-repair-execution.md`, not historical ADR test counts.
+  Dependency/clock goals and upstream exclusions remain in force; the naming
+  embargo is enforced by `cargo xtask naming-guard`.
 
 ## Verification
 

@@ -32,6 +32,11 @@ jobs:
         run: |
           export VESPER_WEB_TEST_IMAGE="$(docker image inspect vesper-web-driver:validated --format '{{.Id}}')"
           cargo test -p vesper-web-fetch --all-features real_pipe_browser -- --ignored --nocapture
+      - name: Real scoped Hive lifecycle acceptance
+        timeout-minutes: 5
+        run: |
+          export VESPER_DOCKER_IMAGE="$(docker image inspect vesper-web-driver:validated --format '{{.Id}}')"
+          cargo test -p vesper-harness --all-features --test swarm_native_hive native_container_hive -- --ignored --nocapture
       - name: Preserve exact tested image for release
         shell: bash
         run: |

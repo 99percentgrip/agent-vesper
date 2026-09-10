@@ -4,9 +4,7 @@
 //! assignment heuristic, expressed over Vesper's capability vectors:
 //!
 //! ```text
-//! score = 100
-//!       + (50 * type_match)                        // capability-vector match
-//!       - (20 * workload * health)                 // load penalty, scaled by health
+//! score = (100 + 50 * type_match - 20 * workload) * health
 //!       + (10 * success_rate)                      // reliability bonus
 //!       - (5 * avg_turn_secs / 60)                 // speed penalty, per-minute units
 //! ```
@@ -97,20 +95,35 @@ pub fn score(candidate: &WorkerLoad, requirements: &TaskRequirements) -> f64 {
             .capabilities
             .supports(&requirements.required_capabilities),
     ));
-    100.0 + (50.0 * type_match) - (20.0 * candidate.workload * candidate.health)
+    (100.0 + (50.0 * type_match) - (20.0 * candidate.workload)) * candidate.health
         + (10.0 * candidate.success_rate)
         - (5.0 * (candidate.avg_turn_secs / 60.0))
 }
 
 /// Selects the best candidate by [`score`].
 ///
-/// Returns the index of the highest-scoring candidate, or `None` when
-/// `candidates` is empty. Ties resolve to the **earliest index** (stable
+/// Returns the index of the highest-scoring eligible candidate, or `None`
+/// when no capable, live, unsaturated worker with valid metrics is available. Ties resolve to the **earliest index** (stable
 /// selection), so repeated calls over the same slice order always agree.
 #[must_use]
 pub fn select_best(candidates: &[WorkerLoad], requirements: &TaskRequirements) -> Option<usize> {
     let mut best: Option<(usize, f64)> = None;
     for (index, candidate) in candidates.iter().enumerate() {
+        // Eligibility is a hard gate, not a scoring bonus. Invalid metrics
+        // must not poison comparisons or create an implicit fallback.
+        if !candidate
+            .capabilities
+            .supports(&requirements.required_capabilities)
+            || candidate.capabilities.max_concurrent_tasks == 0
+            || !(0.0..1.0).contains(&candidate.workload)
+            || !(0.0..=1.0).contains(&candidate.health)
+            || candidate.health == 0.0
+            || !(0.0..=1.0).contains(&candidate.success_rate)
+            || !candidate.avg_turn_secs.is_finite()
+            || candidate.avg_turn_secs < 0.0
+        {
+            continue;
+        }
         let candidate_score = score(candidate, requirements);
         let better = best.as_ref().is_none_or(|(_, top)| candidate_score > *top);
         if better {
@@ -189,15 +202,15 @@ mod tests {
     }
 
     #[test]
-    fn workload_penalty_scales_with_health() {
+    fn complete_base_score_scales_with_health() {
         // 100 + 50 - 20*(0.5*1.0) + 10 - 0 = 150
         let half_busy = load(0.5, 1.0, 1.0, 0.0);
         let matched = TaskRequirements::of(["read"]);
         assert!((score(&half_busy, &matched) - 150.0).abs() < f64::EPSILON);
-        // A dead worker's workload stops penalizing (0*health... no:
-        // workload 0.5 * health 0.0 = 0 penalty): 160 exactly.
+        // Oracle multiplies the entire adjusted base by health, not just
+        // the workload penalty. Only the reliability bonus survives here.
         let half_busy_dead = load(0.5, 0.0, 1.0, 0.0);
-        assert!((score(&half_busy_dead, &matched) - 160.0).abs() < f64::EPSILON);
+        assert!((score(&half_busy_dead, &matched) - 10.0).abs() < f64::EPSILON);
         // Full load, full health: 100 + 50 - 20 + 10 = 140.
         let saturated = load(1.0, 1.0, 1.0, 0.0);
         assert!((score(&saturated, &matched) - 140.0).abs() < f64::EPSILON);
@@ -230,11 +243,11 @@ mod tests {
 
     #[test]
     fn combined_terms_compute_exactly() {
-        // All terms active: 100 + 50 - 20*(0.75*0.8) + 10*0.9 - 5*(120/60)
-        // = 100 + 50 - 12 + 9 - 10 = 137
+        // All terms active: (100 + 50 - 20*0.75)*0.8 + 10*0.9 - 5*(120/60)
+        // = 108 + 9 - 10 = 107
         let candidate = load(0.75, 0.8, 0.9, 120.0);
         let matched = TaskRequirements::of(["read"]);
-        assert!((score(&candidate, &matched) - 137.0).abs() < 1e-9);
+        assert!((score(&candidate, &matched) - 107.0).abs() < 1e-9);
     }
 
     // -----------------------------------------------------------------

@@ -29,7 +29,12 @@ through safe `std::process`.
 - One run per provision: `hold` reads a single unit-separator-delimited
   line from stdin, the child runs as PID 1 of the PID namespace, and killing
   the supervisor chains PDEATHSIG → PID-1 death → kernel SIGKILL of every
-  namespace member. Teardown is total without unsafe code in the library.
+  namespace member. Explicit teardown observes kill/reap failures; Drop is only
+  best-effort cleanup, not proof that the process tree is gone. Poisoned process
+  ownership fails explicit teardown; Drop recovers the lock for best-effort reaping.
+  Runtime waits use polling deadlines with at most 500 ms post-kill reap grace,
+  never an unbounded final `Child::wait`. OS-stalled process cleanup remains an
+  explicit failure, not an isolation guarantee.
 - Environment hygiene: `SandboxSpec` carries an exact allowlist; the
   supervisor clears every inherited variable. The default baseline
   (`baseline_env`) is credential-free — no provider keys, tokens, or
@@ -64,7 +69,19 @@ through safe `std::process`.
   Per-request network grants and resource overrides are honored. Concurrent
   bounded stream draining avoids deadlocking on output larger than an OS pipe.
   Container startup waits at most 30 seconds (or the shorter request budget);
-  cleanup CLI waits at most five seconds and kills/reaps a stalled client.
+  cleanup CLI waits at most five seconds plus the 500 ms post-kill reap grace.
+  Explicit Docker cleanup accepts only a successful command exit and verified
+  local supervisor reap. Missing/empty commands, nonzero exits, spawn/wait errors
+  and poisoned ownership fail closed; nonzero is never assumed to mean absent.
+  `src/teardown_tests.rs` uses real local child/CLI fixtures for status, ownership
+  and reap checks; it does not substitute for namespace/container acceptance.
+  Ephemeral containers set `--stop-timeout 0`, so force-removal does not wait
+  a runtime's default service-stop grace beyond the cleanup CLI budget.
+  `SandboxSpec::private_root_label` is explicit/default-false: only dedicated
+  worker roots may opt into private SELinux `:Z` labeling through `--volume`.
+  Ordinary workspace mounts preserve labels and keep the existing `--mount`
+  route. Ambiguous private volume separators refuse before spawning; neither
+  privileged mode nor disabled SELinux/network isolation is a repair strategy.
   Daemon-side cleanup cannot be promised while the daemon is unavailable;
   every detached container retains a finite lease as the fallback bound.
 

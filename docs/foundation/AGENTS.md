@@ -9,6 +9,14 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 - `evidence-index.md` is the durable execution ledger and command record.
 - `vro14-gap-audit.md` owns current web-extraction gaps, repair evidence,
   deployment prerequisites, and outstanding release acceptance.
+- `vro15-gap-audit.md` owns independent swarm-extraction acceptance findings,
+  verification limits, and the original repair proposal.
+  `vro15-repair-execution.md` tracks Alex's approved full repair scope, gates and
+  execution evidence, including VesperLens provider-neutral feedback delivery.
+  `vro15-codex-repair-prompt.md` is the external coding-agent handoff for remaining
+  repairs; the PRD, accepted ADRs and current execution matrix remain authoritative.
+  `vro15-audit-probes.rs` is standalone non-production evidence: its assertions
+  reproduce defects, not desired behavior; compile/run as documented in the report.
 - ADRs under `adr/` record Stage 0 compatibility and product choices.
 - `memory-oracle-cognitive-memory-blueprint.md` is the reconnaissance record for the
   external the memory oracle (`29fa4155`) oracle and the evidence base for ADR 0015

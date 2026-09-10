@@ -20,6 +20,18 @@ architecture, MSRV, and source-oracle checks.
 - `vesper-harness` may depend on `vesper-web-fetch` to compose the shared
   sandbox-only helper transport; `vesper-web` remains pure.
 
+- `src/swarm_gate.rs` validates Cargo metadata: production swarm dependencies
+  must be optional, activated through `swarm`, and excluded from transitive
+  default features (including renamed dependencies and host forwarding).
+  Its unit tests exercise unconditional, indirect and renamed bypass attempts.
+- `src/naming_baseline.rs` owns versioned strict JSON naming exceptions, keyed by
+  normalized relative file path plus SHA-256 content digest and occurrence count.
+  Line numbers are diagnostics only: unrelated line shifts do not add violations,
+  but duplicated occurrences, edited content and moved paths do. Malformed,
+  duplicate-entry and unknown-version baselines fail closed. Format migrations
+  preserve existing frozen identities/counts; never regenerate from current hits
+  merely to make the gate pass. Unit fixtures enforce these distinctions.
+
 ## Verification
 
 - Run `cargo xtask architecture`.

@@ -7,14 +7,13 @@ transport, stderr-only tracing, and orderly shutdown.
 
 ## Ownership
 
-- **Host parity exclusion (VRO-15 PR-9):** the opt-in swarm orchestration
-  surface (`/swarm`) is TUI-only in its initial delivery. Rationale: the
-  swarm's multi-agent progress stream (per-driver turns, ledger growth,
-  event log) has no ACP-v1 expression; a host-owned polling model would
-  be an invented protocol. The shared engine (`vesper-swarm`) and the
-  provider adapter (`vesper-harness` feature `swarm`) are host-neutral
-  and compile for both hosts; only the interactive surface is deferred.
-  Revisit when ACP grows a progress/notification surface.
+- VRO-15 swarm host activation remains unimplemented and acceptance-gated.
+  Shared execution uses `vesper-harness::swarm_adapter` behind `swarm`.
+  ACP parity is required: `AcpEngineProgressPort` already maps bounded content,
+  tool and plan events; no absence-of-progress protocol exclusion applies.
+  Settings/session controls, worker orchestration and opt-in/no-state acceptance
+  must land with the TUI counterpart before advertising the feature.
+
 ## Local Contracts
 
 - Contain no session, provider-wire, or ACP-mapping business logic.
@@ -314,6 +313,10 @@ into exactly one always-safe, argument-dependent, or interrupting class.
   Responses call/result transaction in both native authentication modes,
   including provider round trips, effective model/effort changes, and a
   read-only write denial with proof that no file was created.
+- `tests/openai_rejection.rs` verifies that native HTTP context rejections reach
+  the ACP error response as `ContextLimit` in both authentication modes, without
+  provider prose in protocol output or stderr. This does not prove that clients
+  display error data or that arbitrary parameter diagnostics survive host mapping.
 - Run the full-harness ordered-stream regression; it must preserve reasoning
   and content delta order, emit final content exactly once, and accept every
   update at the physical writer before `end_turn`.

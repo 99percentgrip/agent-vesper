@@ -84,7 +84,11 @@ platform assumptions on hosts unavailable locally.
 - `workflows/msrv.yml` — dedicated Rust 1.88.0 foundational verification with
   per-stage fixture coverage.
 - `workflows/web-driver.yml` — native x86_64/arm64 image builds and gated
-  real pipe-browser tests; preserves the exact tested image archives and
+  real pipe-browser tests plus real scoped Hive lifecycle acceptance (three
+  independent workers, permissioned command continuations, scale/replacement
+  and verified cleanup) using the same immutable built image. The explicit Hive
+  gate fails on unavailable isolation; it never counts a skipped body as passing.
+  Preserves the exact tested image archives and
   immutable image IDs. Release downloads those artifacts, never rebuilds
   untested images after tagging. Public release assets avoid requiring a
   separate container-registry credential or visibility change.

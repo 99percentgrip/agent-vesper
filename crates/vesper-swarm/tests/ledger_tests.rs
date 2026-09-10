@@ -556,3 +556,66 @@ async fn concurrent_transfers_respect_bounds_under_interleaving() {
     assert_eq!(total_copied, 40, "each of 4 transfers copies all 10");
     assert_eq!(ledger.len(), 50, "10 originals + 40 copies");
 }
+
+#[tokio::test]
+async fn retained_generation_survives_later_publication() {
+    let ledger = ledger(4).await;
+    ledger
+        .record(draft(MemoryScope::Swarm, "k", "first", 0.9))
+        .await
+        .unwrap();
+    let before = ledger.snapshot();
+    ledger
+        .record(draft(MemoryScope::Swarm, "k", "second", 0.9))
+        .await
+        .unwrap();
+    assert_eq!(before.len(), 1);
+    assert_eq!(before.exact(&MemoryScope::Swarm, "k").len(), 1);
+    assert_eq!(ledger.snapshot().exact(&MemoryScope::Swarm, "k").len(), 2);
+}
+
+#[tokio::test]
+async fn transfer_unknown_later_entry_rolls_back_entire_batch() {
+    let port = FakeEmbeddingPort::new(4);
+    let ledger = Ledger::new(4, port.clone()).unwrap();
+    let id = ledger
+        .record(draft(MemoryScope::Swarm, "k", "first", 0.9))
+        .await
+        .unwrap();
+    let before_calls = port.calls.load(Ordering::Acquire);
+    assert!(
+        ledger
+            .transfer(
+                &MemoryScope::Swarm,
+                &MemoryScope::Worker("dest".into()),
+                &[id, 999]
+            )
+            .await
+            .is_err()
+    );
+    assert_eq!(ledger.len(), 1);
+    assert_eq!(port.calls.load(Ordering::Acquire), before_calls);
+}
+
+#[tokio::test]
+async fn whole_ledger_snapshot_round_trips_without_embedding_calls() {
+    use vesper_swarm::ledger::hnsw::HnswConfig;
+    let port = FakeEmbeddingPort::new(4);
+    let ledger = Ledger::new(4, port.clone()).unwrap();
+    ledger
+        .record(draft(MemoryScope::Swarm, "k", "first", 0.9))
+        .await
+        .unwrap();
+    let bytes = ledger.to_snapshot().unwrap();
+    let calls = port.calls.load(Ordering::Acquire);
+    let loaded = Ledger::from_snapshot(HnswConfig::new(4), &bytes, port.clone()).unwrap();
+    assert_eq!(port.calls.load(Ordering::Acquire), calls);
+    assert_eq!(loaded.to_snapshot().unwrap(), bytes);
+    assert_eq!(
+        loaded.exact(&MemoryScope::Swarm, "k"),
+        ledger.exact(&MemoryScope::Swarm, "k")
+    );
+    for end in [0, 8, 19, 20, bytes.len() - 1] {
+        assert!(Ledger::from_snapshot(HnswConfig::new(4), &bytes[..end], port.clone()).is_err());
+    }
+}

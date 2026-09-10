@@ -4,10 +4,11 @@
 
 Own the provider-neutral, pure-logic swarm coordination foundations
 extracted from *the swarm oracle* (an authorized upstream orchestration
-repository): the topology data model now, and in later VRO-15 PRs the worker
-pool, priority message bus, task assignment, shared memory ledger, and
-sandbox lease coordination. The crate is coordination logic only — it never
-executes turns, never performs I/O, and never names a provider.
+repository): topology, worker pooling, priority messaging, task assignment,
+shared memory ledger and sandbox lease coordination. It delegates turns through
+execution ports, performs no network/filesystem I/O and names no provider.
+Current pool/turn deadlines and bus TTL use monotonic clocks; explicit time
+injection remains an acceptance gap, not a claimed purity guarantee.
 
 ## Ownership
 
@@ -27,11 +28,31 @@ executes turns, never performs I/O, and never names a provider.
   `rebalance` edge construction (bounded-degree symmetric mesh, fanout
   tree, hub/spoke, hybrid backbone + intra-partition mesh). Rebalance is
   idempotent; `NodeUpdate`/`MetadataPatch` patch role/status/metadata.
+  `TopologyState::automatic_election_blocked` persists disabled-failover vacancy
+  across rebalances until explicit election. Removal chooses eligible successors
+  and refuses inconsistent join ledgers before mutation. Partition leaders must
+  be eligible; initial/failover selection follows admission order, not placement
+  sort order. Status/removal reconciles partition leadership even when automatic
+  edge rewiring is off. Disabled-failover dissolution persists affected members in
+  `partition_election_blocked` across serialization/repartitioning; explicit
+  election clears suppression. Surviving partitions clamp replica counts.
+- `tests/partition_lifecycle_regressions.rs` — initializing/failed exclusion,
+  admission-order successors, all auto/failover flag combinations, removal/status
+  loss, serialized suppression and explicit recovery.
+- Centralized rebalancing reconciles leadership before wiring; a disabled-
+  failover vacancy never falls back to an implicit hub. Automatic node updates
+  rebuild wiring to reflect leadership changes.
+- `tests/centralized_lifecycle_regressions.rs` — failed-hub successor wiring,
+  disabled-failover edge vacancy and repeated-rebalance idempotence.
+- `tests/topology_regressions.rs` — disabled-failover vacancy, failed successor
+  exclusion and mutation-free inconsistent-ledger refusal.
 - `src/worker.rs` — `WorkerPort` (the execution seam: `run_turn` returning
   a `BoxFuture` of `TurnReceipt` under a `CancellationSignal`),
   `CancelFlag`/`CancellationSignal` cooperative cancellation pair,
   `WorkerCapabilities`, `WorkerTask`/`TaskKind`/`TaskPriority`,
-  `TurnReceipt`, `WorkerError`.
+  `TurnReceipt`, `WorkerError`. `CancellationSignal::cancelled` parks on shared
+  notifications without timer polling; registration precedes checking the flag,
+  so cancellation before/after registration and across clones cannot be missed.
 - `src/pool.rs` — `WorkerPool` over `Arc<dyn WorkerPort>`:
   `PoolConfig` (validated bounds/timings), parallel `initialize` (one
   `join_all` wave to `min_workers`), lease-guarded `acquire`/`release`
@@ -40,7 +61,40 @@ executes turns, never performs I/O, and never names a provider.
   success), `scale` within bounds (busy workers never shed; floor
   `min_workers`), `health_tick` (fails silent workers and overdue
   in-flight, cancelling the task first) + caller-owned
-  `heartbeat_interval`, `replace_failed`, bounded event log.
+  `heartbeat_interval`, `replace_failed`, bounded event log. Repeated
+  initialization adds only missing floor slots, replacement reuses failed slots
+  even at maximum capacity, and acquisition never grows incapable workers.
+  Pool configuration caps workers at 4,096 and timing budgets at 24 hours;
+  oversized task deadlines are refused before acquisition.
+  Close and dropped in-flight leases signal actual workers; health-cancelled
+  late receipts are refused, and deadline wins simultaneous readiness.
+  `with_factory` uses `src/pool_instances.rs` and `WorkerInstanceFactory` for
+  independent async creation. Boot waves publish transactionally, reject aliased
+  or zero-capacity ports, and cancel on failure/deadline/close/caller drop.
+  Factory-backed growth/replacement uses real instances and never reuses IDs;
+  failed-but-still-leased slots cannot be replaced. `scale_async` is required
+  for factory pools; legacy `new` retains shared-port compatibility only.
+  `run_leased_task` executes the exact selected lease instead of reacquiring a
+  worker. It refuses foreign, released, failed, incapable or over-budget leases
+  before dispatch and consumes/releases the lease on every outcome. `run_task`
+  delegates to this same execution path. Ports own detached cleanup; Hive
+  lease/health composition remains outstanding.
+- Factory replacement retires failed unleased instance Arcs before booting new
+  instances, outside state/instance locks. Failed boot leaves the slot quarantined
+  without restoring the retired instance. External strong or upgradeable weak
+  owners refuse replacement before new allocation; a raw slot count is not proof
+  of physical-resource bounds. Detached cleanup and blocking external destructors
+  still require composition-level acceptance.
+- `tests/pool_retirement_regressions.rs` proves peak live RAII instance count,
+  failed-boot quarantine/retry and strong/weak external-owner refusal before boot.
+- `tests/pool_selected_lease_regressions.rs` — selected identity preservation,
+  cross-pool/failed lease refusal and mutation-free capability/deadline rejection.
+- `tests/pool_instance_regressions.rs` — separate boot/turn barriers proving
+  three independent instances, actual growth/replacement/shrink, alias refusal,
+  transactional boot failure, timeout/close/drop cancellation, and leased-failure
+  quarantine.
+- `tests/pool_cancellation_regressions.rs` — manually polled real boundary signals
+  for close, health cancellation with a success-ignoring port, and caller drop.
 - `tests/pool_tests.rs` — integration battery with in-crate fakes
   (`FakeWorkerPort` succeed/cancel-aware/hang, `WaveTracker`), covering
   bounds state machine, parallel boot wave, deadline enforcement,
@@ -51,15 +105,31 @@ executes turns, never performs I/O, and never names a provider.
 - `src/bus.rs` — `MessageBus`: four-tier strict-priority inboxes
   (`MessagePriority` Low/Normal/High/Urgent, O(1) dequeue from the highest
   non-empty `VecDeque` tier), per-worker `subscribe` with `MessageKind`
-  filters, directed `send` + `broadcast` fanout (filtered deliveries
-  consume no capacity), TTL expiry at dequeue, acknowledgment tracking,
+  filters, directed `send` + `broadcast` fanout (sorted recipients and atomic
+  capacity/eviction preflight; filtered deliveries consume no capacity), TTL
+  expiry before ACK creation, acknowledgment tracking cleaned on unsubscribe
+  and immediate close,
   deterministic bounded eviction (oldest message by global admission
   sequence in the lowest tier below the incoming priority — Urgent is
   never evicted; a lowest-priority arrival with nothing lower to evict is
   refused loudly via `SwarmError::BusFull`), bounded diagnostic event log,
   non-blocking `try_recv`, and task-parking `recv` woken by per-inbox
-  `Arc<Notify>`. `MessageBus` is `Clone` (shared state handle).
-- `tests/bus_tests.rs` — 25-test integration battery: strict priority
+  `Arc<Notify>` registered before rechecking state. Close drops queued traffic
+  and wakes every receiver with `BusClosed`; unsubscribe wakes removed readers.
+  `MessageBus` is `Clone` (shared state handle). ACK debt is capped at message
+  capacity and lazily expires at the original message deadline; saturation
+  refuses delivery without popping it. Resource ceilings: 1 MiB payload,
+  64 MiB aggregate queued payload/identity bytes, 4,096 subscribers, 256-byte
+  identities, 32 filters, 24-hour TTL and 1,000,000 configured message slots.
+  Byte pressure uses the same lower-priority eviction policy; broadcasts
+  preflight both count and bytes. Limits and identity overflow fail loudly.
+  `MessageBus::with_clock` accepts a cheap nonblocking monotonic `BusClock`;
+  clones share it. Default construction uses the system monotonic clock.
+- `tests/bus_clock_regressions.rs` — queue/ACK expiry at exact injected time,
+  without sleeps and across cloned handles.
+- `tests/bus_bounds_regressions.rs` — payload/TTL refusal, ACK cap preserving
+  queued delivery, aggregate byte-budget broadcast refusal and ACK expiry.
+- `tests/bus_tests.rs` — integration battery: strict priority
   ordering (urgent-last-dequeued-first), FIFO within tiers, the eviction
   matrix (low dropped first, oldest-by-sequence wins, urgent never,
   normal-before-high, new-message self-refusal), loud backpressure, TTL
@@ -68,14 +138,18 @@ executes turns, never performs I/O, and never names a provider.
   volume check.
 - `src/hive/` — hive orchestration semantics (PR-5): `assignment.rs` owns
   the pure capability-scoring function (the upstream oracle's formula
-  ported exactly over Vesper capability vectors: `100 + 50*type_match -
-  20*workload*health + 10*success_rate - 5*(avg_turn_secs/60)`), stable
-  `select_best` (ties to the earliest candidate), and the task→bus
+  over Vesper capability vectors: `(100 + 50*type_match -
+  20*workload)*health + 10*success_rate - 5*(avg_turn_secs/60)`), stable
+  `select_best` (ties to the earliest eligible candidate; missing required
+  capabilities, zero capacity, saturation, dead workers, and invalid metrics
+  are refused), and the task→bus
   priority mapping (`Critical→Urgent, High→High, Normal→Normal,
   Low/Background→Low`); `timeout.rs` owns `execute_bounded` — the
-  timeout/cancel/grace boundary for dispatched turns (budget expiry
-  fires the `CancelFlag`, a bounded grace window lets the worker unwind,
-  signal-ignorers are abandoned with `DeadlineExceeded`, and a success
+  timeout/cancel/grace boundary for dispatched turns. `execute_bounded` takes
+  a signal-consuming future factory; `execute_bounded_port` takes a worker port,
+  not an already-constructed future. Expiry and caller drop cancel the exact
+  signal passed to the worker; deadline wins simultaneous readiness. A bounded
+  grace window lets the worker unwind (signal-ignorers are abandoned with `DeadlineExceeded`, and a success
   observed after cancellation is rewritten to `Cancelled` — a cancelled
   or timed-out task never yields a successful receipt).
 - `src/ledger/` — the swarm's ephemeral shared-memory ledger. PR-6 owns
@@ -87,7 +161,15 @@ executes turns, never performs I/O, and never names a provider.
   descent then best-first `ef` layer search; filtered search via
   `over_fetch_factor` so predicates never guide traversal; versioned
   little-endian binary snapshot `VSWHNSW1` with strict header/length/
-  ordinal validation that fails closed on any mismatch).
+  ordinal validation, input-byte allocation budgets, unique identities,
+  finite vectors, caller seed/capacity agreement, entry/header level consistency
+  and neighbor layer/self/duplicate-edge checks). Snapshot version 2 preserves
+  raw vectors, exact RNG state and all semantic configuration; version 1 is
+  refused because it lacks those fields. Finite vectors normalize via f64;
+  nonfinite input is refused; adjacency pruning ranks against its owner.
+  Cloned graphs share immutable node Arcs; insertion uses copy-on-write before
+  changing any adjacency, preserving earlier graph generations and snapshot bytes.
+  Broader corruption/scale acceptance remains open.
   **Anti-duplication audit (PR-6):** the workspace's public cosine and
   embedding ports live in `vesper-cognition` (`score.rs::cosine`,
   `ports.rs::EmbeddingPort`); the architecture allowlist keeps
@@ -110,8 +192,60 @@ executes turns, never performs I/O, and never names a provider.
   and `transfer` (copy, never move; `TRANSFER_CONFIDENCE_FLOOR = 0.8`,
   `TRANSFER_CAP = 20`; low-confidence entries are dropped-and-reported;
   provenance preserved verbatim — worker, role, task, sequence never
-  rewritten; fresh id per copy). The ledger is `Clone` (`Arc` shared
-  state, single interior mutex; no clock, no randomness).
+  rewritten; fresh id per copy). Transfers reuse original embeddings and stage
+  the complete batch before publication. The ledger is `Clone`: `ArcSwap`
+  publishes one coherent immutable log/index generation; a writer-only mutex
+  serializes staged changes. `LedgerSnapshot` retains prior generations without
+  locking writers; hybrid query components use the same generation. Structured
+  entry payloads use immutable Arcs and graph nodes use copy-on-write; generation
+  maps/ordinal tables still clone. Bounded 10k/16D measurement is recorded in the
+  repair evidence, not a million-entry/host-latency claim. `VSWLEDG1` version 2
+  whole-ledger snapshots combine HNSW v2 with the structured log, next identity
+  and required retention policy; version 1 is refused rather than guessing policy;
+  load validates identities/counts/confidence without invoking embeddings. Input
+  and output snapshots are capped at 64 MiB. Output checks HNSW encoded size
+  before allocation and streams borrowed log entries into a bounded memory sink
+  (`src/ledger/snapshot_writer.rs`) instead of cloning/serializing an unbounded log.
+  Sparse visited membership replaces full-index per-layer scratch allocation.
+  Broader corruption/scale and generation-clone acceptance remain open.
+  Identity exhaustion fails transactionally rather than wrapping.
+- `src/ledger/filter.rs` owns validated conjunctive worker/task/role, category,
+  original-sequence range and confidence predicates. `Ledger::select` and retained
+  `LedgerSnapshot::select` return newest admissions first, capped at 100.
+  `semantic_filtered` applies predicates after graph traversal and before top-k;
+  semantic routes honor configured HNSW over-fetch and the 0.7 threshold.
+  Approximate filtering may return fewer results than requested; it never expands
+  the configured candidate budget implicitly. Sequence ranges are not timestamps.
+  `transfer_filtered` validates all explicit source IDs even if filtered out,
+  reports category/confidence exclusions and cannot lower the 0.8 floor.
+- `Ledger::prune_scope` is explicit caller-owned retention, not automatic cap
+  enforcement. Swarm evicts lowest confidence then oldest admission; Worker/Task
+  use FIFO. A single publication replaces log, exact index and rebuilt HNSW;
+  original vectors/identities and retained snapshots survive without embeddings.
+  Rebuild reclaims capacity without tombstones; rebuild/clone scale remains an
+  acceptance gap.
+- `src/ledger/retention.rs` defines persisted `LedgerRetention`; `with_retention`
+  opts into positive per-Swarm/per-Worker/per-Task caps bounded by global capacity.
+  Legacy constructors use explicit Disabled policy. Record admission and complete
+  transfer batches reserve receiving-scope capacity transactionally, evicting only
+  existing entries in that scope under the same confidence/FIFO rules as pruning.
+  Batch size above the destination cap fails without publication; successful
+  transfers never return IDs evicted within the same batch. Other scopes are never
+  evicted to satisfy global pressure. Failed vector admission rolls eviction back.
+  Snapshot load validates required policy, cap ranges and per-scope entry counts.
+- `tests/ledger_scale_regressions.rs` contains explicit release-mode measurements:
+  10k appends at 16 dimensions with retained-reader, snapshot and exact continued
+  insertion checks; 1k automatic evictions at a 64-entry cap with FIFO/count checks.
+  These are ignored in ordinary runs and must be explicitly invoked for scale
+  evidence. Wall-clock measurements are observations, not portable timing thresholds.
+- `tests/ledger_retention_regressions.rs` covers persisted automatic admission,
+  private FIFO/isolation, immutable readers, nonfinite-vector rollback, global
+  pressure refusal, full-batch reservation and malformed/missing/old policy refusal.
+- `tests/ledger_filter_regressions.rs`, `tests/ledger_eviction_regressions.rs`,
+  `tests/ledger_semantic_regressions.rs` cover conjunction/isolation, retained
+  generations, transactional selective transfers, invalid bounds, result caps,
+  eviction order, capacity reclamation, snapshot round-trip after eviction,
+  documented semantic threshold and configured over-fetch.
 - `tests/ledger_tests.rs` — 15-test integration battery: dual-write
   admission + fail-closed (confidence bounds, dimension mismatch,
   embedding-port failure — no partial writes), strict Worker/Task/Swarm
@@ -129,18 +263,45 @@ executes turns, never performs I/O, and never names a provider.
   allowlisted since PR-1): `SandboxLeasePort` (composition-boundary
   acquire/release seam), `LeaseSpec`/`LeaseMode`/`NetworkGrant` with
   strict `can_share` (same group, same requirement, same grant
-  provenance, disjoint write paths), `Lease` RAII guard, and `LeaseBook`
+  provenance, component-disjoint absolute logical paths checked against every
+  current member; traversal and ambiguous forms refused, case-folded for
+  conservative collision detection), `Lease` RAII guard, and `LeaseBook`
   — **boundary-based accounting** (a shared group is ONE boundary
   however many members; capacity counts boundaries, never members),
   pre-spawn fail-closed capability gate (`unmet_axis` diagnostic with
   `Unknown`/`Unavailable` = denial; zero-capacity refused), FIFO queue
   on exhaustion (never over-provision; shared joins are exempt from the
   capacity count), cancellation-safe parked waiters (a dropped acquire
-  removes its queue entry via an armed-guard `Drop`; no `mem::forget`
-  leaks), `close()` failing queued waiters with `Closed`, and guaranteed
-  teardown: member `Drop` → last-member boundary release through the
-  port → waiter fulfilment; panic unwinds run the same path.
-- `tests/sandbox_tests.rs` — 13-test integration battery:
+  removes its queue entry; dispatched work retains ownership), and `close()`
+  failing queued/in-flight callers with `Closed`. Backend calls run on the captured
+  Tokio blocking pool outside the book lock. Admission reserves identity, group,
+  member and boundary capacity before dispatch; commit rejects cancelled/closed
+  publication and schedules late-success teardown. At most one operation per
+  boundary is in flight. A hung call keeps capacity and its owning task; dropping
+  a caller or join observer does not cancel it or certify physical cleanup.
+  Member Drop schedules release. `settle`/`shutdown` report held, pending,
+  quarantined and queued state; deadlines bound observation only. Only verified
+  teardown frees capacity or increments releases. Runtime-abandoned operations
+  quarantine and close admission. `ProvisioningUncertain` explicitly preserves
+  partial provisioning; ordinary acquisition refusal must mean no resources exist.
+  Async `retry_quarantined` reserves at most 4,096 quarantined boundaries once
+  each and observes per-operation completion, preventing concurrent duplicate
+  cleanup. The port defaults to retry refusal; implemented recovery must be safe
+  and idempotent after partial cleanup. Backend unwind closes admission without
+  poisoning the book. Abort/double-panic and arbitrary backend destructors remain
+  outside this containment guarantee.
+  `tests/lease_async_regressions.rs` covers reentrant inspection (failed before
+  repair), blocked acquisition/release, timeout, dropped observers, close/late
+  cleanup, partial provisioning, single retry ownership and queued shared joins.
+  Existing recovery/panic/identity regressions observe explicit cleanup completion.
+  Admission caps boundaries, reserved members and waiters at 4,096 each;
+  worker/group identities at 256 bytes, grants at 1,024 bytes, paths at 4,096
+  bytes, wait budgets at 24 hours, and diagnostics at 64 × 4,096 bytes.
+  Origins remain reserved through provisioning and quarantine. Shared joins
+  check every live member and never join an unverified boundary. Filesystem alias
+  enforcement and real supervisor execution belong to the native composition.
+- `tests/sandbox_tests.rs` — integration battery (including nested-path,
+  pairwise-member and failed-teardown regressions):
   `FakeSandboxLeasePort` with exact acquire/release pair accounting and
   live-boundary tracking, the capability denial matrix (full backend ✓
   ×5, process-only denied naming the axis ×3, Unknown = denial),
@@ -162,16 +323,81 @@ executes turns, never performs I/O, and never names a provider.
   provenance → load-snapshot updates for scoring), a bounded
   `HiveEvent` log, and the caller-driven `run_tick`/`run_to_completion`
   loop (the host's `/swarm` task owns the loop; the hive spawns nothing
-  and never touches a render thread). Fail-loud: a failing driver turn
-  aborts the tick with the worker error — no silent retry.
-- `tests/hive_tests.rs` — 8-test synthetic e2e battery: 1 Navigator +
-  3 Drivers across **mesh and hierarchical** topologies (decomposition →
-  3 bus assignments → 3 scored driver turns → 3 ledger trajectories →
+  and never touches a render thread). All three turn phases use the shared
+  deadline/cancellation boundary and reject unsuccessful, mismatched or oversized
+  receipts. Admission caps: 128 queued goals, 1,024 lifetime unique identities,
+  256-byte IDs, 64 KiB prompts, 64 decomposed tasks, 512 KiB synthesis evidence.
+  `submit` returns a refusal on overflow/duplicate identity. Role bounds are
+  validated; interrupted goals remain inspectable and block automatic replay
+  after caller drop/error. Synthesis receives completed task outputs explicitly.
+  `src/hive/decomposition.rs` accepts strict bounded JSON task prompts, required
+  capabilities and indexed dependencies (acyclic, deterministic ordering); it
+  refuses count-only output and preserves prerequisite outputs in task context.
+  Selection consumes per-instance scores over the intersection of role tools and
+  execution-port capabilities. `src/hive/routing.rs` gates candidates by directed
+  reachability from the active elected navigator; missing/failed intermediates and
+  invalid edge weights cannot grant routes, while declared bidirectional edges do.
+  Dispatch transport remains direct in-process delivery, not simulated relay turns.
+  Each task consumes exactly its issued bus message ID plus actual sender/recipient,
+  kind and payload; an unrelated identical-prompt message interrupts without worker
+  execution or automatic replay. `routing_tests.rs` proves disconnected refusal in
+  all four topologies; routing unit tests cover direction/liveness/weight gates and
+  `tests/hive_tests.rs` covers identical-prompt assignment substitution.
+  Ready independent tasks execute in bounded concurrent waves, at most one per
+  distinct execution-port Arc; aliasing a port under class names never multiplies
+  capacity. Prerequisites must finish before dependent dispatch. Evidence remains
+  in admission order within each wave; failed siblings or caller drop cancel all
+  polled turns and leave the goal interrupted. Ledger embedding writes use the
+  issuing role's deadline and do not publish when the embedding future is dropped.
+  `src/hive/pools.rs` owns `Hive::with_factories`: validated role pools boot
+  concurrently and concrete pool IDs drive topology, bus, scoring and provenance.
+  Instance wrappers atomically acquire that exact worker and propagate outer
+  cancellation through the shared pool execution boundary. Cross-role Arc aliasing
+  is rejected. `Hive::new` accepts only one supplied instance per class and refuses
+  inflated worker floors. Topology admission stages mutations, rolls back new
+  subscriptions on failure and is idempotent after success. Close/drop closes pools
+  and bus; closed Hive rejects submission, admission and execution.
+  `src/hive/lifecycle.rs` adds caller-driven `scale_role` and `maintain_workers`.
+  Scaling fixes navigator cardinality, refuses interrupted/unadmitted/legacy/closed
+  hives and preflights topology capacity. Reconciliation stages topology, adjusts
+  inbox membership, rechecks cross-pool Arc aliasing and preserves surviving load
+  history before replacing concrete routes. Post-boot reconciliation failure closes
+  the hive rather than allowing stale dispatch. Health passes take caller monotonic
+  time and never invent heartbeats. Navigator failure with disabled failover closes
+  the hive; otherwise failed pools replace and reconcile. Dropped/failed maintenance
+  closes all pools and bus, since retired IDs cannot safely remain dispatchable.
+  Native monitor/heartbeat integration, verified sandbox leases/teardown and native
+  host overlap acceptance remain gaps; close does not prove detached cleanup.
+- `tests/hive_scaling_regressions.rs` covers real grow/shrink dispatch/provenance,
+  retired inbox removal, capacity/cardinality refusal, post-boot inbox-conflict
+  closure, health replacement IDs, disabled navigator failover and manually polled
+  cancellation during replacement with stale-route refusal.
+- `tests/hive_pool_regressions.rs` — actual 1+3 pool overlap, exact assignment and
+  ledger provenance, cross-role alias refusal, cancellation/no replay, notification
+  ordering, nominal-slot refusal and transactional/idempotent topology admission.
+- `tests/hive_concurrency_regressions.rs` — barrier-proven three-port overlap,
+  dependent output ordering, sibling cancellation/no replay and alias capacity.
+  This is execution-port evidence, not native host/pool lifecycle acceptance.
+- `tests/hive_boundary_regressions.rs` — actual cancellation signals and retained
+  goals at all three hanging phases, unsuccessful receipt refusal, caller drop,
+  and hanging embedding refusal without publication or replay.
+- `tests/assignment_regressions.rs` — desired-behavior audit regressions for
+  whole-base health scaling and fail-closed candidate eligibility. The adjacent
+  `assignment_oracle_vectors.json` contains 72 outputs captured by executing the
+  pinned oracle scoring method (commit and method SHA-256 recorded), with only
+  TypeScript annotation removal and milliseconds/seconds input conversion. The
+  test maps oracle type matching to Vesper capability inclusion; it does not claim
+  equivalence of their type systems. Hive routing has separate integration tests.
+- `tests/hive_tests.rs` — synthetic pipeline battery: one navigator port and
+  one driver port across mesh and hierarchical topologies (decomposition →
+  3 bus assignments → 3 sequential driver turns → 3 ledger trajectories →
   synthesis; exact turn counts, event pipeline order, ledger contents,
   exact-key trajectory queries), sequential multi-goal draining, failed
   driver turns surfacing as worker errors, empty-queue no-op, assembly
   refusals (missing ports, navigator-not-first), and Queen/Worker
   topology role structure.
+- `tests/hnsw_regressions.rs` — malformed header level, caller capacity/seed,
+  nonfinite vector and count/input-budget refusal regressions.
 - `tests/hnsw_tests.rs` — 13-test integration battery: the directive's
   Recall@10 ≥ 0.95 bar on 10k seeded vectors vs brute-force cosine
   (measured 0.997 @ ef=16, 1.000 @ ef≥64), ef scaling, byte-identical
@@ -183,11 +409,13 @@ executes turns, never performs I/O, and never names a provider.
 
 ## Local Contracts
 
-- Depends only on standard utility crates (`serde`, `thiserror`).
+- Utility dependencies include `serde`, `serde_json`, `thiserror`, `futures-util`, `tokio`
+  and pinned `arc-swap` for coherent lock-free snapshot publication. New
+  dependencies require license/advisory and MSRV acceptance.
   Architecturally permitted: `vesper-domain` and `vesper-security`; nothing
   else ever.
-- Zero I/O by construction: no network, no filesystem, no clock, no process
-  spawning, no provider crates, no `vesper-testkit`, no frontend crates.
+- No network/filesystem I/O or process spawning; no provider crates,
+  `vesper-testkit` or frontend crates. Deadline/TTL clocks are currently local.
 - `#![forbid(unsafe_code)]`; MSRV 1.88; workspace lints apply.
 - The upstream is referenced ONLY as *the swarm oracle*. The upstream-brand
   embargo is mechanically enforced by `cargo xtask naming-guard` against
@@ -196,9 +424,8 @@ executes turns, never performs I/O, and never names a provider.
 - Divergences from the upstream model are deliberate and documented in
   source doc comments: `auto_rebalance` and `failover_enabled` default to
   `false`, and topology state carries no wall-clock timestamps.
-- Integration is default-off: no production crate or application may depend
-  on `vesper-swarm` until the VRO-15 composition PR wires a default-off
-  `swarm` feature at the host boundary.
+- Integration is default-off: `vesper-harness` uses an optional dependency
+  enabled by its `swarm` feature. Native host activation remains acceptance-gated.
 
 ## Work Guidance
 
@@ -212,6 +439,7 @@ executes turns, never performs I/O, and never names a provider.
 ## Verification
 
 - `cargo test -p vesper-swarm`
+- `cargo test -p vesper-swarm --release --test ledger_scale_regressions -- --ignored --nocapture`
 - `cargo clippy -p vesper-swarm --all-targets -- -D warnings`
 - `cargo tree -p vesper-swarm` (purity: only permitted deps)
 - `cargo xtask naming-guard`

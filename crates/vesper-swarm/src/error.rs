@@ -9,6 +9,9 @@ use crate::bus::MessagePriority;
 /// Errors surfaced by the swarm coordination layers.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SwarmError {
+    /// A bounded coordination resource refused growth.
+    #[error("bus resource limit exceeded: {0}")]
+    ResourceLimit(&'static str),
     /// The bus was constructed with a capacity below one.
     #[error("bus capacity must be at least one, got {0}")]
     InvalidCapacity(usize),

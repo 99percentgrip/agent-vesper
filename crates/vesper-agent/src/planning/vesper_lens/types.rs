@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 
 /// Whether the human approved, rejected, or wants to modify the artifact.
 ///
-/// Wire form is lowercase (`"approve" | "reject" | "modify"`).
+/// Wire form is lowercase (`"approve" | "reject" | "modify" | "answer"`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Action {
@@ -32,6 +32,8 @@ pub enum Action {
     Reject,
     /// Artifact is close but needs changes; resume with annotations.
     Modify,
+    /// Planning answers submitted; not an artifact approval/rejection verdict.
+    Answer,
 }
 
 /// A specific DOM node the human highlighted or commented on.

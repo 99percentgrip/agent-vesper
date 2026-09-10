@@ -18,7 +18,8 @@
 //!   PID 1 of the new PID namespace. The parent relays the payload's exit
 //!   status. Killing the supervisor chains `PR_SET_PDEATHSIG` into the
 //!   namespace init, and the kernel then SIGKILLs every namespace member —
-//!   so plain safe `Child::kill` from the library is total teardown.
+//!   so successful `Child::kill` starts namespace teardown. Explicit cleanup
+//!   reports kill/reap failures rather than treating Drop as confirmation.
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::sync::Mutex;
@@ -247,11 +248,9 @@ impl SandboxBackend for NamespacesBackend {
         handle: SandboxHandle,
     ) -> SandboxFuture<'a, Result<(), SandboxError>> {
         Box::pin(async move {
-            // The handle's Drop impl performs kill+wait (and the namespace
-            // teardown chains through it); moving it here makes that
-            // observable for the caller.
-            drop(handle);
-            Ok(())
+            // Explicitly observe cleanup errors; Drop remains a best-effort
+            // fallback and cannot certify that termination succeeded.
+            handle.terminate_supervisor()
         })
     }
 }

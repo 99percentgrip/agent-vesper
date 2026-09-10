@@ -1,0 +1,584 @@
+{
+  "source_commit": "e341ec8c4aba8ea616499180dee53035af7e295c",
+  "source_symbol": "swarm/src/unified-coordinator.ts::scoreAgentForTask",
+  "method_sha256": "0cdbe2f756098d4c629d15c9345bf060af037928a671d730cca2bf326fa0b052",
+  "adaptation": "Remove only the local typeScores TypeScript annotation; invoke the original method body with coding task and coder/researcher agent types. Vesper seconds are converted to oracle milliseconds.",
+  "vectors": [
+    {
+      "type_match": false,
+      "workload": 0,
+      "health": 0,
+      "success_rate": 0,
+      "avg_turn_secs": 0,
+      "expected": 0
+    },
+    {
+      "type_match": false,
+      "workload": 0,
+      "health": 0,
+      "success_rate": 0,
+      "avg_turn_secs": 60,
+      "expected": -5
+    },
+    {
+      "type_match": false,
+      "workload": 0,
+      "health": 0,
+      "success_rate": 1,
+      "avg_turn_secs": 0,
+      "expected": 10
+    },
+    {
+      "type_match": false,
+      "workload": 0,
+      "health": 0,
+      "success_rate": 1,
+      "avg_turn_secs": 60,
+      "expected": 5
+    },
+    {
+      "type_match": false,
+      "workload": 0,
+      "health": 0.5,
+      "success_rate": 0,
+      "avg_turn_secs": 0,
+      "expected": 50
+    },
+    {
+      "type_match": false,
+      "workload": 0,
+      "health": 0.5,
+      "success_rate": 0,
+      "avg_turn_secs": 60,
+      "expected": 45
+    },
+    {
+      "type_match": false,
+      "workload": 0,
+      "health": 0.5,
+      "success_rate": 1,
+      "avg_turn_secs": 0,
+      "expected": 60
+    },
+    {
+      "type_match": false,
+      "workload": 0,
+      "health": 0.5,
+      "success_rate": 1,
+      "avg_turn_secs": 60,
+      "expected": 55
+    },
+    {
+      "type_match": false,
+      "workload": 0,
+      "health": 1,
+      "success_rate": 0,
+      "avg_turn_secs": 0,
+      "expected": 100
+    },
+    {
+      "type_match": false,
+      "workload": 0,
+      "health": 1,
+      "success_rate": 0,
+      "avg_turn_secs": 60,
+      "expected": 95
+    },
+    {
+      "type_match": false,
+      "workload": 0,
+      "health": 1,
+      "success_rate": 1,
+      "avg_turn_secs": 0,
+      "expected": 110
+    },
+    {
+      "type_match": false,
+      "workload": 0,
+      "health": 1,
+      "success_rate": 1,
+      "avg_turn_secs": 60,
+      "expected": 105
+    },
+    {
+      "type_match": false,
+      "workload": 0.5,
+      "health": 0,
+      "success_rate": 0,
+      "avg_turn_secs": 0,
+      "expected": 0
+    },
+    {
+      "type_match": false,
+      "workload": 0.5,
+      "health": 0,
+      "success_rate": 0,
+      "avg_turn_secs": 60,
+      "expected": -5
+    },
+    {
+      "type_match": false,
+      "workload": 0.5,
+      "health": 0,
+      "success_rate": 1,
+      "avg_turn_secs": 0,
+      "expected": 10
+    },
+    {
+      "type_match": false,
+      "workload": 0.5,
+      "health": 0,
+      "success_rate": 1,
+      "avg_turn_secs": 60,
+      "expected": 5
+    },
+    {
+      "type_match": false,
+      "workload": 0.5,
+      "health": 0.5,
+      "success_rate": 0,
+      "avg_turn_secs": 0,
+      "expected": 45
+    },
+    {
+      "type_match": false,
+      "workload": 0.5,
+      "health": 0.5,
+      "success_rate": 0,
+      "avg_turn_secs": 60,
+      "expected": 40
+    },
+    {
+      "type_match": false,
+      "workload": 0.5,
+      "health": 0.5,
+      "success_rate": 1,
+      "avg_turn_secs": 0,
+      "expected": 55
+    },
+    {
+      "type_match": false,
+      "workload": 0.5,
+      "health": 0.5,
+      "success_rate": 1,
+      "avg_turn_secs": 60,
+      "expected": 50
+    },
+    {
+      "type_match": false,
+      "workload": 0.5,
+      "health": 1,
+      "success_rate": 0,
+      "avg_turn_secs": 0,
+      "expected": 90
+    },
+    {
+      "type_match": false,
+      "workload": 0.5,
+      "health": 1,
+      "success_rate": 0,
+      "avg_turn_secs": 60,
+      "expected": 85
+    },
+    {
+      "type_match": false,
+      "workload": 0.5,
+      "health": 1,
+      "success_rate": 1,
+      "avg_turn_secs": 0,
+      "expected": 100
+    },
+    {
+      "type_match": false,
+      "workload": 0.5,
+      "health": 1,
+      "success_rate": 1,
+      "avg_turn_secs": 60,
+      "expected": 95
+    },
+    {
+      "type_match": false,
+      "workload": 1,
+      "health": 0,
+      "success_rate": 0,
+      "avg_turn_secs": 0,
+      "expected": 0
+    },
+    {
+      "type_match": false,
+      "workload": 1,
+      "health": 0,
+      "success_rate": 0,
+      "avg_turn_secs": 60,
+      "expected": -5
+    },
+    {
+      "type_match": false,
+      "workload": 1,
+      "health": 0,
+      "success_rate": 1,
+      "avg_turn_secs": 0,
+      "expected": 10
+    },
+    {
+      "type_match": false,
+      "workload": 1,
+      "health": 0,
+      "success_rate": 1,
+      "avg_turn_secs": 60,
+      "expected": 5
+    },
+    {
+      "type_match": false,
+      "workload": 1,
+      "health": 0.5,
+      "success_rate": 0,
+      "avg_turn_secs": 0,
+      "expected": 40
+    },
+    {
+      "type_match": false,
+      "workload": 1,
+      "health": 0.5,
+      "success_rate": 0,
+      "avg_turn_secs": 60,
+      "expected": 35
+    },
+    {
+      "type_match": false,
+      "workload": 1,
+      "health": 0.5,
+      "success_rate": 1,
+      "avg_turn_secs": 0,
+      "expected": 50
+    },
+    {
+      "type_match": false,
+      "workload": 1,
+      "health": 0.5,
+      "success_rate": 1,
+      "avg_turn_secs": 60,
+      "expected": 45
+    },
+    {
+      "type_match": false,
+      "workload": 1,
+      "health": 1,
+      "success_rate": 0,
+      "avg_turn_secs": 0,
+      "expected": 80
+    },
+    {
+      "type_match": false,
+      "workload": 1,
+      "health": 1,
+      "success_rate": 0,
+      "avg_turn_secs": 60,
+      "expected": 75
+    },
+    {
+      "type_match": false,
+      "workload": 1,
+      "health": 1,
+      "success_rate": 1,
+      "avg_turn_secs": 0,
+      "expected": 90
+    },
+    {
+      "type_match": false,
+      "workload": 1,
+      "health": 1,
+      "success_rate": 1,
+      "avg_turn_secs": 60,
+      "expected": 85
+    },
+    {
+      "type_match": true,
+      "workload": 0,
+      "health": 0,
+      "success_rate": 0,
+      "avg_turn_secs": 0,
+      "expected": 0
+    },
+    {
+      "type_match": true,
+      "workload": 0,
+      "health": 0,
+      "success_rate": 0,
+      "avg_turn_secs": 60,
+      "expected": -5
+    },
+    {
+      "type_match": true,
+      "workload": 0,
+      "health": 0,
+      "success_rate": 1,
+      "avg_turn_secs": 0,
+      "expected": 10
+    },
+    {
+      "type_match": true,
+      "workload": 0,
+      "health": 0,
+      "success_rate": 1,
+      "avg_turn_secs": 60,
+      "expected": 5
+    },
+    {
+      "type_match": true,
+      "workload": 0,
+      "health": 0.5,
+      "success_rate": 0,
+      "avg_turn_secs": 0,
+      "expected": 75
+    },
+    {
+      "type_match": true,
+      "workload": 0,
+      "health": 0.5,
+      "success_rate": 0,
+      "avg_turn_secs": 60,
+      "expected": 70
+    },
+    {
+      "type_match": true,
+      "workload": 0,
+      "health": 0.5,
+      "success_rate": 1,
+      "avg_turn_secs": 0,
+      "expected": 85
+    },
+    {
+      "type_match": true,
+      "workload": 0,
+      "health": 0.5,
+      "success_rate": 1,
+      "avg_turn_secs": 60,
+      "expected": 80
+    },
+    {
+      "type_match": true,
+      "workload": 0,
+      "health": 1,
+      "success_rate": 0,
+      "avg_turn_secs": 0,
+      "expected": 150
+    },
+    {
+      "type_match": true,
+      "workload": 0,
+      "health": 1,
+      "success_rate": 0,
+      "avg_turn_secs": 60,
+      "expected": 145
+    },
+    {
+      "type_match": true,
+      "workload": 0,
+      "health": 1,
+      "success_rate": 1,
+      "avg_turn_secs": 0,
+      "expected": 160
+    },
+    {
+      "type_match": true,
+      "workload": 0,
+      "health": 1,
+      "success_rate": 1,
+      "avg_turn_secs": 60,
+      "expected": 155
+    },
+    {
+      "type_match": true,
+      "workload": 0.5,
+      "health": 0,
+      "success_rate": 0,
+      "avg_turn_secs": 0,
+      "expected": 0
+    },
+    {
+      "type_match": true,
+      "workload": 0.5,
+      "health": 0,
+      "success_rate": 0,
+      "avg_turn_secs": 60,
+      "expected": -5
+    },
+    {
+      "type_match": true,
+      "workload": 0.5,
+      "health": 0,
+      "success_rate": 1,
+      "avg_turn_secs": 0,
+      "expected": 10
+    },
+    {
+      "type_match": true,
+      "workload": 0.5,
+      "health": 0,
+      "success_rate": 1,
+      "avg_turn_secs": 60,
+      "expected": 5
+    },
+    {
+      "type_match": true,
+      "workload": 0.5,
+      "health": 0.5,
+      "success_rate": 0,
+      "avg_turn_secs": 0,
+      "expected": 70
+    },
+    {
+      "type_match": true,
+      "workload": 0.5,
+      "health": 0.5,
+      "success_rate": 0,
+      "avg_turn_secs": 60,
+      "expected": 65
+    },
+    {
+      "type_match": true,
+      "workload": 0.5,
+      "health": 0.5,
+      "success_rate": 1,
+      "avg_turn_secs": 0,
+      "expected": 80
+    },
+    {
+      "type_match": true,
+      "workload": 0.5,
+      "health": 0.5,
+      "success_rate": 1,
+      "avg_turn_secs": 60,
+      "expected": 75
+    },
+    {
+      "type_match": true,
+      "workload": 0.5,
+      "health": 1,
+      "success_rate": 0,
+      "avg_turn_secs": 0,
+      "expected": 140
+    },
+    {
+      "type_match": true,
+      "workload": 0.5,
+      "health": 1,
+      "success_rate": 0,
+      "avg_turn_secs": 60,
+      "expected": 135
+    },
+    {
+      "type_match": true,
+      "workload": 0.5,
+      "health": 1,
+      "success_rate": 1,
+      "avg_turn_secs": 0,
+      "expected": 150
+    },
+    {
+      "type_match": true,
+      "workload": 0.5,
+      "health": 1,
+      "success_rate": 1,
+      "avg_turn_secs": 60,
+      "expected": 145
+    },
+    {
+      "type_match": true,
+      "workload": 1,
+      "health": 0,
+      "success_rate": 0,
+      "avg_turn_secs": 0,
+      "expected": 0
+    },
+    {
+      "type_match": true,
+      "workload": 1,
+      "health": 0,
+      "success_rate": 0,
+      "avg_turn_secs": 60,
+      "expected": -5
+    },
+    {
+      "type_match": true,
+      "workload": 1,
+      "health": 0,
+      "success_rate": 1,
+      "avg_turn_secs": 0,
+      "expected": 10
+    },
+    {
+      "type_match": true,
+      "workload": 1,
+      "health": 0,
+      "success_rate": 1,
+      "avg_turn_secs": 60,
+      "expected": 5
+    },
+    {
+      "type_match": true,
+      "workload": 1,
+      "health": 0.5,
+      "success_rate": 0,
+      "avg_turn_secs": 0,
+      "expected": 65
+    },
+    {
+      "type_match": true,
+      "workload": 1,
+      "health": 0.5,
+      "success_rate": 0,
+      "avg_turn_secs": 60,
+      "expected": 60
+    },
+    {
+      "type_match": true,
+      "workload": 1,
+      "health": 0.5,
+      "success_rate": 1,
+      "avg_turn_secs": 0,
+      "expected": 75
+    },
+    {
+      "type_match": true,
+      "workload": 1,
+      "health": 0.5,
+      "success_rate": 1,
+      "avg_turn_secs": 60,
+      "expected": 70
+    },
+    {
+      "type_match": true,
+      "workload": 1,
+      "health": 1,
+      "success_rate": 0,
+      "avg_turn_secs": 0,
+      "expected": 130
+    },
+    {
+      "type_match": true,
+      "workload": 1,
+      "health": 1,
+      "success_rate": 0,
+      "avg_turn_secs": 60,
+      "expected": 125
+    },
+    {
+      "type_match": true,
+      "workload": 1,
+      "health": 1,
+      "success_rate": 1,
+      "avg_turn_secs": 0,
+      "expected": 140
+    },
+    {
+      "type_match": true,
+      "workload": 1,
+      "health": 1,
+      "success_rate": 1,
+      "avg_turn_secs": 60,
+      "expected": 135
+    }
+  ]
+}

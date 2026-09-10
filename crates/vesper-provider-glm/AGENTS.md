@@ -9,7 +9,10 @@ quota normalization, and legacy GLM compatibility translation.
 ## Ownership
 
 - `src/` owns production adapter behavior behind `vesper-provider` ports.
-- `tests/` owns deterministic loopback integration and fixture conformance.
+- `src/integration_tests.rs` owns deterministic loopback integration and fixture
+  conformance. Its `lens_wire_tests.rs` child verifies interview schema/name,
+  call linkage and complete structured notes/answers serialization, as the GLM
+  counterpart to native OpenAI tests; it does not certify browser/host delivery.
 
 ## Local Contracts
 

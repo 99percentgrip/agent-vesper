@@ -59,6 +59,7 @@ try {
   await page.locator("#changes").click();
   await page.locator("#status").filter({ hasText: "Answer the required questions" }).waitFor();
   await artifact.locator('input[value="Patch"]').check();
+  await page.locator("#notes").fill("Approved: implement the complete scope.");
   await page.locator("#changes").click();
   await page.locator("#status").filter({ hasText: "Feedback delivered" }).waitFor();
 
@@ -69,7 +70,8 @@ try {
 }
 
 const feedback = JSON.parse(await feedbackPromise);
-assert.equal(feedback.action, "modify");
+assert.equal(feedback.action, "answer");
+assert.equal(feedback.notes, "Approved: implement the complete scope.");
 assert.deepEqual(feedback.answers, [{ question: "scope", value: "Patch" }]);
 assert.equal(await helperExit, 0);
 console.log("VesperLens interview browser E2E passed");

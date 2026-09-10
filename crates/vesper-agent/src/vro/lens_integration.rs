@@ -136,6 +136,7 @@ pub fn feedback_as_context_message(feedback: &LensFeedback) -> String {
         Action::Approve => "APPROVED",
         Action::Reject => "REJECTED",
         Action::Modify => "NEEDS MODIFICATION",
+        Action::Answer => "PLANNING ANSWERS SUBMITTED (read answers and overall notes)",
     };
     let mut out = format!("VesperLens human review: {verdict}\n");
     if !feedback.notes.is_empty() {
@@ -381,6 +382,26 @@ mod tests {
         assert!(msg.contains("Planning answers (2):"));
         assert!(msg.contains("framework: Rust"));
         assert!(msg.contains("targets: Web, Desktop"));
+    }
+
+    #[test]
+    fn interview_response_preserves_overall_approval_note_and_choice() {
+        let feedback = LensFeedback {
+            action: Action::Answer,
+            notes: "Approved: implement the complete scope.".into(),
+            answers: vec![crate::planning::LensAnswer {
+                question: "scope".into(),
+                value: "All findings".into(),
+            }],
+            ..Default::default()
+        };
+        let wire = serde_json::to_string(&feedback).unwrap();
+        let decoded = serde_json::from_str(&wire).unwrap();
+        let context = feedback_as_context_message(&decoded);
+        assert!(context.contains("PLANNING ANSWERS SUBMITTED"));
+        assert!(!context.contains("NEEDS MODIFICATION"));
+        assert!(context.contains("Overall notes: Approved: implement the complete scope."));
+        assert!(context.contains("scope: All findings"));
     }
 
     #[test]

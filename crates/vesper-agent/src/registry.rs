@@ -141,6 +141,22 @@ impl ToolRegistry {
         self
     }
 
+    /// Produces an execution-restricted registry for a bounded worker role.
+    /// Unnamed registrations and all prefix gateways are removed, so model
+    /// discovery cannot widen the worker's authority after construction.
+    #[must_use]
+    pub fn restricted_to(&self, allowed: &[String]) -> Self {
+        Self {
+            entries: self
+                .entries
+                .iter()
+                .filter(|(name, _)| allowed.contains(name))
+                .map(|(name, entry)| (name.clone(), entry.clone()))
+                .collect(),
+            gateways: Vec::new(),
+        }
+    }
+
     /// Registers a gateway executor for a name prefix. When [`execute`]
     /// encounters a tool name not present in `entries` but matching a
     /// registered prefix, it routes the call to the matching gateway. The
@@ -190,7 +206,7 @@ impl ToolRegistry {
     /// are excluded from the advertised list — they remain registered for
     /// execution if the model (or a host) calls them by name, but they do not
     /// appear in the initial context-window advertisement. This is the
-    /// Claude Code-style deferred-loading seam.
+    /// provider-neutral deferred-loading seam.
     #[must_use]
     pub fn definitions_for(&self, mode: SessionOperatingMode) -> Vec<ToolDefinition> {
         self.entries

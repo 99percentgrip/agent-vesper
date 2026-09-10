@@ -215,8 +215,14 @@ async fn inspect_driver(cli: &Path, reference: &str) -> Result<String, String> {
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null());
-    let mut child = command.spawn().map_err(|_| {
-        "Docker/Podman is unavailable. Install or start your container engine.".to_string()
+    let mut child = command.spawn().map_err(|error| {
+        // Preserve OS classification without leaking executable paths or arguments.
+        // Missing executables, permission failures and transient process-resource
+        // errors are different failures; none proves that the daemon is stopped.
+        format!(
+            "Cannot start Docker/Podman: {:?} (OS code {:?}). Check the container executable and host process resources.",
+            error.kind(), error.raw_os_error()
+        )
     })?;
     let stdout = child
         .stdout
@@ -291,6 +297,23 @@ pub async fn command(root: &Path, argument: &str) -> Result<String, String> {
 mod tests {
     use super::*;
 
+    #[cfg(unix)]
+    fn fixture_cli(dir: &Path, output: &str, requires_load: bool) -> PathBuf {
+        // Never exec a file written by this test process: concurrent fork/exec
+        // can briefly inherit writable file references and cause ETXTBSY.
+        let cli = dir.join("engine");
+        std::fs::write(dir.join("engine.response"), output).unwrap();
+        if requires_load {
+            std::fs::write(dir.join("engine.require-load"), "").unwrap();
+        }
+        std::os::unix::fs::symlink(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/container_cli_fixture.sh"),
+            &cli,
+        )
+        .unwrap();
+        cli
+    }
+
     fn bundle_fixture(dir: &Path) -> String {
         use sha2::{Digest, Sha256};
         let image = format!("sha256:{}", "a".repeat(64));
@@ -329,16 +352,9 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn bundled_setup_imports_once_and_corruption_never_reaches_engine() {
-        use std::os::unix::fs::PermissionsExt;
         let root = tempfile::tempdir().unwrap();
         let expected = bundle_fixture(root.path());
-        let cli = root.path().join("engine");
-        let script = format!(
-            "#!/bin/sh\nif [ \"$1\" = image ]; then\n  test -f \"$0.loaded\" || exit 1\n  printf '%s\\n' '{}'\nelif [ \"$1\" = load ] && [ \"$2\" = --input ]; then\n  printf 'load\\n' >> \"$0.loaded\"\nelse\n  exit 1\nfi\n",
-            "a".repeat(64)
-        );
-        std::fs::write(&cli, script).unwrap();
-        std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let cli = fixture_cli(root.path(), &"a".repeat(64), true);
         for _ in 0..2 {
             assert_eq!(
                 setup_driver_from(root.path(), &cli).await.unwrap(),
@@ -362,19 +378,9 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn setup_rejects_wrong_imported_identity() {
-        use std::os::unix::fs::PermissionsExt;
         let root = tempfile::tempdir().unwrap();
         bundle_fixture(root.path());
-        let cli = root.path().join("engine");
-        std::fs::write(
-            &cli,
-            format!(
-                "#!/bin/sh\nif [ \"$1\" = image ]; then printf '%s\\n' '{}'; fi\n",
-                "b".repeat(64)
-            ),
-        )
-        .unwrap();
-        std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let cli = fixture_cli(root.path(), &"b".repeat(64), false);
         assert!(
             setup_driver_from(root.path(), &cli)
                 .await
@@ -385,21 +391,13 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn driver_detection_pins_only_valid_installed_ids() {
-        use std::os::unix::fs::PermissionsExt;
-        let root = tempfile::tempdir().unwrap();
-        for (index, output) in [
+        for output in [
             format!("sha256:{}", "a".repeat(64)),
             "a".repeat(64),
             "image:latest".into(),
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            // Each executable is immutable once spawned; never rewrite an
-            // executable inode that the OS may still retain after child exit.
-            let cli = root.path().join(format!("engine-{index}"));
-            std::fs::write(&cli, format!("#!/bin/sh\nprintf '%s\\n' '{output}'\n")).unwrap();
-            std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o700)).unwrap();
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let cli = fixture_cli(root.path(), &output, false);
             let result = inspect_driver(&cli, "vesper-web-driver:validated").await;
             assert_eq!(
                 result.is_ok(),
@@ -408,6 +406,17 @@ mod tests {
             );
         }
     }
+    #[tokio::test]
+    async fn missing_driver_reports_os_classification_without_private_path() {
+        let root = tempfile::tempdir().unwrap();
+        let cli = root.path().join("private-executable-canary");
+        let error = inspect_driver(&cli, "unused").await.unwrap_err();
+        assert!(error.contains("NotFound"), "{error}");
+        assert!(error.contains("OS code"));
+        assert!(!error.contains("private-executable-canary"));
+        assert!(!error.contains(&root.path().display().to_string()));
+    }
+
     #[test]
     fn settings_round_trip_preserves_toml_and_is_explicit() {
         let root = tempfile::tempdir().unwrap();

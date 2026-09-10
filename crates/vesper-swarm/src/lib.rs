@@ -3,19 +3,14 @@
 //!
 //! VRO-15 extracts the coordination paradigms of *the swarm oracle* — a
 //! trusted upstream orchestration repository — into a native Rust layer.
-//! This crate is **pure logic by construction**: no network, no filesystem,
-//! no clock, no process spawning, and no provider names. Execution,
-//! inference, and sandboxing are trait ports fulfilled at the composition
-//! boundary in later PRs; nothing in here can even name a provider.
+//! Coordination performs no network/filesystem I/O or process spawning and
+//! names no provider. Execution, inference and sandboxing use composition ports.
+//! Pool/turn deadlines and bus TTL currently use monotonic clocks; clock injection
+//! remains tracked acceptance work rather than an asserted purity property.
 //!
-//! PR-1 owns only the topology data model ([`topology`]). Later PRs add
-//! worker pooling, the priority message bus, task assignment, the shared
-//! memory ledger, and sandbox lease coordination per
-//! `docs/swarm-oracle-extraction-prd.md`.
-//!
-//! Integration is default-off: no production crate or application depends on
-//! `vesper-swarm` until the composition PR wires a default-off `swarm`
-//! feature at the host boundary.
+//! Modules own topology, pooling, priority messaging, assignment, the ephemeral
+//! ledger, lease coordination and hive orchestration. The harness adapter is an
+//! optional default-off `swarm` dependency; host activation remains gated.
 
 pub mod topology;
 

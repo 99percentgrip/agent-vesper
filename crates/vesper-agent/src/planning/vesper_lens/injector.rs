@@ -65,7 +65,7 @@ pub(crate) const CHROME_SCRIPT: &str = r#"(function(){
     const selectedDiagnostics=layoutWarnings.filter(function(warning){return warning.selected}).map(function(warning){return '[Layout: '+warning.rule+'] '+warning.message+' ('+warning.selector+')'}).join('\n');
     const submittedNotes=[notes.value,selectedDiagnostics].filter(Boolean).join('\n');
     fetch('/s/'+token+'/feedback',{method:'POST',headers:{'content-type':'application/json','x-vesper-lens-token':token},
-      body:JSON.stringify({action:action,annotations:annotations,notes:submittedNotes,answers:answers,end_session:Boolean(endSession)})})
+      body:JSON.stringify({action:interviewMode&&action==='modify'?'answer':action,annotations:annotations,notes:submittedNotes,answers:answers,end_session:Boolean(endSession)})})
       .then(function(response){if(!response.ok)throw new Error('HTTP '+response.status);return response.json()})
       .then(function(){setStatus(endSession?'Session ended.':'Feedback delivered. Keep this tab open for the next round.','ok');submitting=false})
       .catch(function(error){submitting=false;setStatus('Could not send feedback: '+error.message,'error')});

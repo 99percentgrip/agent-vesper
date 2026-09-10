@@ -274,6 +274,14 @@ pub struct TopologyState {
     pub edges: Vec<TopologyEdge>,
     /// The topology-wide leader, once elected.
     pub leader: Option<NodeId>,
+    /// A leader was lost while automatic failover was disabled. Only an
+    /// explicit election clears this latch; rebalancing is not permission.
+    #[serde(default)]
+    pub automatic_election_blocked: bool,
+    /// Members of partitions dissolved under disabled failover. Repartitioning
+    /// cannot reassign them until an explicit election clears this suppression.
+    #[serde(default)]
+    pub partition_election_blocked: std::collections::BTreeSet<NodeId>,
     /// All partitions, in creation order.
     pub partitions: Vec<TopologyPartition>,
 }
@@ -288,6 +296,8 @@ impl TopologyState {
             join_order: Vec::new(),
             edges: Vec::new(),
             leader: None,
+            automatic_election_blocked: false,
+            partition_election_blocked: std::collections::BTreeSet::new(),
             partitions: Vec::new(),
         }
     }

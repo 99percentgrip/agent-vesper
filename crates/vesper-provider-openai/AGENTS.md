@@ -22,6 +22,20 @@ Both hosts register one provider with API-key and subscription authentication.
   It never consumes reset credits or queries subscription limits with API keys.
 - `src/wire.rs` and `src/transport.rs` own Responses serialization, ordered
   bounded SSE, opaque reasoning, call/result identity, and interruption safety.
+- `src/http_error.rs` owns bounded HTTP rejection diagnostics shared by both
+  authentication modes and hosts: at most 16 KiB and two seconds of body reading,
+  cancellable, with exact code/parameter allowlists. Preserve HTTP status and
+  authentication/rate classifications; never echo provider prose or arbitrary
+  identifiers, or grant retries from error-body claims. Unknown, malformed,
+  oversized and stalled bodies retain the safe status-based fallback.
+  `src/http_error_tests.rs` exercises native loopback transport in both modes;
+  `src/http_error_bounds_tests.rs` verifies stalled-body and cancellation bounds.
+  `src/http_error_parameter_tests.rs` proves safe parameter diagnostics survive
+  null/unknown error codes in both modes without exposing provider prose or IDs.
+- `src/lens_wire_tests.rs` verifies native interview function-call decoding and
+  next-request serialization in both authentication modes, preserving call identity,
+  schema, action, Unicode notes and all selected answers. It is adapter-boundary
+  evidence, not browser submission, host registration or end-to-end Lens acceptance.
 - `src/factory.rs` owns the neutral factory, credential/control ports, and
   bounded structured memory extraction used by both host cognition adapters.
 

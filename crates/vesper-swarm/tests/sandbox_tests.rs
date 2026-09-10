@@ -224,6 +224,13 @@ async fn exhaustion_queues_never_over_provisions() {
     assert_eq!(ledger.active_count(), 2, "slot handed over exactly");
     drop(second);
     drop(third_lease);
+    assert!(
+        !ledger
+            .settle(Duration::from_secs(5))
+            .await
+            .unwrap()
+            .timed_out
+    );
     assert_eq!(ledger.active_count(), 0);
 }
 
@@ -261,6 +268,13 @@ async fn queue_is_strictly_fifo() {
     drop(first_lease);
     let second_lease = second.await.expect("join").expect("fifo second");
     drop(second_lease);
+    assert!(
+        !ledger
+            .settle(Duration::from_secs(5))
+            .await
+            .unwrap()
+            .timed_out
+    );
     assert_eq!(ledger.active_count(), 0);
 }
 
@@ -350,16 +364,12 @@ async fn shared_group_refusals_name_the_exact_rule() {
         }
     );
 
-    // Colliding write paths (same worker id ⇒ same path).
-    let error = ledger
-        .acquire(LeaseSpec::shared(
-            "w1",
-            IsolationRequirement::ProcessTree,
-            "grant-x",
-            "team",
-        ))
-        .await
-        .unwrap_err();
+    // Colliding paths with distinct identities: identity rejection must not
+    // mask the independent path-isolation policy under test.
+    let mut collision =
+        LeaseSpec::shared("w2", IsolationRequirement::ProcessTree, "grant-x", "team");
+    collision.write_path = "/w/w1/".into();
+    let error = ledger.acquire(collision).await.unwrap_err();
     assert_eq!(
         error,
         LeaseError::SharedRefused {
@@ -403,6 +413,13 @@ async fn shared_group_dissolves_when_last_member_leaves() {
     assert!(rejoin.is_ok(), "group must survive while a member holds it");
     drop(b);
     drop(rejoin.unwrap());
+    assert!(
+        ledger
+            .settle(Duration::from_secs(5))
+            .await
+            .unwrap()
+            .is_clean()
+    );
     // All members gone: a fresh group may restart under the same name
     // with different parameters.
     let fresh = ledger
@@ -436,7 +453,14 @@ async fn drop_releases_every_lease_and_pairs_match_exactly() {
         }
         assert_eq!(ledger.active_count(), 4);
         assert_eq!(port.live_count(), 4);
-    } // scope drop = swarm shutdown
+    } // Scope drop dispatches owned cleanup; shutdown observes completion.
+    assert!(
+        !ledger
+            .settle(Duration::from_secs(5))
+            .await
+            .unwrap()
+            .timed_out
+    );
     assert_eq!(ledger.active_count(), 0, "shutdown released everything");
     assert_eq!(port.live_count(), 0);
     assert_eq!(
@@ -464,6 +488,12 @@ async fn panic_in_holder_scope_still_releases_leases() {
         })
     };
     let _ = holder.await; // JoinError expected: the task panicked.
+    assert!(
+        book.shutdown(Duration::from_secs(5))
+            .await
+            .unwrap()
+            .is_clean()
+    );
     assert_eq!(book.active_count(), 0, "panic path released the lease");
     assert_eq!(port.live_count(), 0);
     assert_eq!(port.acquires.load(Ordering::Acquire), 1);
@@ -511,6 +541,13 @@ async fn port_refusal_surfaces_loudly_and_reserves_nothing() {
         .await
         .unwrap_err();
     assert!(matches!(error, LeaseError::PortRefused { .. }));
+    assert!(
+        !ledger
+            .settle(Duration::from_secs(5))
+            .await
+            .unwrap()
+            .timed_out
+    );
     assert_eq!(ledger.active_count(), 0, "refused lease reserves nothing");
 }
 
@@ -535,6 +572,13 @@ async fn timeout_bounds_the_wait() {
     // book drains it on the next release cycle either way.)
     drop(_blocker);
     tokio::time::sleep(Duration::from_millis(10)).await;
+    assert!(
+        !ledger
+            .settle(Duration::from_secs(5))
+            .await
+            .unwrap()
+            .timed_out
+    );
     assert_eq!(ledger.active_count(), 0);
 }
 
@@ -548,4 +592,235 @@ fn book_and_lease_are_debug() {
     assert_debug::<LeaseBook>();
     assert_debug::<LeaseSpec>();
     assert_debug::<LeaseMode>();
+}
+
+#[test]
+fn sharing_refuses_nested_and_ambiguous_paths() {
+    let base = LeaseSpec::shared("a", IsolationRequirement::None, "", "g");
+    for path in [
+        "/w/a/child",
+        "/w/a",
+        "/w/a/",
+        "/w/b/../a",
+        "relative",
+        "/",
+        "/w/a\\child",
+    ] {
+        let incoming = LeaseSpec {
+            write_path: path.into(),
+            ..base.clone()
+        };
+        assert!(!base.can_share(&incoming), "accepted {path}");
+    }
+    let sibling = LeaseSpec {
+        write_path: "/w/ab".into(),
+        ..base.clone()
+    };
+    assert!(base.can_share(&sibling));
+}
+
+#[tokio::test]
+async fn sharing_checks_every_current_member() {
+    let book = LeaseBook::new(
+        1,
+        IsolationRequirement::None,
+        full_backend(),
+        FakeSandboxLeasePort::new(),
+    )
+    .unwrap();
+    let a = book
+        .acquire(LeaseSpec::shared("a", IsolationRequirement::None, "", "g"))
+        .await
+        .unwrap();
+    let b = book
+        .acquire(LeaseSpec::shared("b", IsolationRequirement::None, "", "g"))
+        .await
+        .unwrap();
+    assert!(
+        book.acquire(LeaseSpec::shared("b", IsolationRequirement::None, "", "g"))
+            .await
+            .is_err()
+    );
+    drop((a, b));
+}
+
+#[tokio::test]
+async fn failed_teardown_keeps_capacity_quarantined() {
+    struct FailingRelease;
+    impl SandboxLeasePort for FailingRelease {
+        fn acquire(&self, _: &LeaseSpec) -> Result<(), LeaseError> {
+            Ok(())
+        }
+        fn release(&self, spec: &LeaseSpec) -> Result<(), LeaseError> {
+            Err(LeaseError::PortRefused {
+                worker: spec.worker_id.clone(),
+                reason: "cleanup failed".into(),
+            })
+        }
+    }
+    let book = LeaseBook::new(
+        1,
+        IsolationRequirement::None,
+        full_backend(),
+        Arc::new(FailingRelease),
+    )
+    .unwrap();
+    let spec = LeaseSpec::shared("a", IsolationRequirement::None, "", "g");
+    drop(book.acquire(spec).await.unwrap());
+    assert_eq!(book.active_count(), 1);
+    assert_eq!(book.releases(), 0);
+    assert_eq!(
+        book.settle(Duration::from_secs(5))
+            .await
+            .unwrap()
+            .quarantined,
+        1
+    );
+    assert_eq!(book.release_errors().len(), 1);
+    assert!(
+        book.acquire(LeaseSpec::shared("b", IsolationRequirement::None, "", "g"))
+            .await
+            .is_err()
+    );
+    book.close();
+}
+
+#[tokio::test]
+async fn lease_resource_limits_refuse_before_backend_or_queue_mutation() {
+    let port = FakeSandboxLeasePort::new();
+    assert!(matches!(
+        LeaseBook::new(
+            4097,
+            IsolationRequirement::ProcessTree,
+            full_backend(),
+            port.clone()
+        ),
+        Err(LeaseError::ResourceLimit(_))
+    ));
+    let book = LeaseBook::new(
+        1,
+        IsolationRequirement::ProcessTree,
+        full_backend(),
+        port.clone(),
+    )
+    .unwrap();
+    let mut oversized = LeaseSpec::isolated("worker", IsolationRequirement::ProcessTree);
+    oversized.write_path = "/".repeat(4097);
+    assert!(matches!(
+        book.acquire(oversized).await,
+        Err(LeaseError::ResourceLimit(_))
+    ));
+    assert!(matches!(
+        book.acquire_with_timeout(
+            LeaseSpec::isolated("worker", IsolationRequirement::ProcessTree),
+            Duration::MAX
+        )
+        .await,
+        Err(LeaseError::ResourceLimit(_))
+    ));
+    assert_eq!(book.active_count(), 0);
+    assert_eq!(book.queued_count(), 0);
+    assert_eq!(port.acquires.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn lease_waiter_limit_preserves_fifo_queue_and_dropped_waiters_free_it() {
+    use std::future::Future;
+    use std::task::{Context, Waker};
+    let port = FakeSandboxLeasePort::new();
+    let book = LeaseBook::new(
+        1,
+        IsolationRequirement::ProcessTree,
+        full_backend(),
+        port.clone(),
+    )
+    .unwrap();
+    let held = book
+        .acquire(LeaseSpec::isolated(
+            "held",
+            IsolationRequirement::ProcessTree,
+        ))
+        .await
+        .unwrap();
+    let mut queued = Vec::new();
+    for index in 0..4096 {
+        let mut future = Box::pin(book.acquire(LeaseSpec::isolated(
+            format!("wait-{index}"),
+            IsolationRequirement::ProcessTree,
+        )));
+        assert!(
+            future
+                .as_mut()
+                .poll(&mut Context::from_waker(Waker::noop()))
+                .is_pending()
+        );
+        queued.push(future);
+    }
+    assert_eq!(book.queued_count(), 4096);
+    assert!(matches!(
+        book.acquire(LeaseSpec::isolated(
+            "overflow",
+            IsolationRequirement::ProcessTree
+        ))
+        .await,
+        Err(LeaseError::ResourceLimit(_))
+    ));
+    assert_eq!(book.queued_count(), 4096);
+    assert_eq!(port.acquires.load(Ordering::SeqCst), 1);
+    drop(queued);
+    assert_eq!(book.queued_count(), 0);
+    drop(held);
+    assert!(
+        book.shutdown(Duration::from_secs(5))
+            .await
+            .unwrap()
+            .is_clean()
+    );
+    assert_eq!(port.live_count(), 0);
+}
+
+#[tokio::test]
+async fn shared_joins_cannot_bypass_global_member_limit() {
+    let port = FakeSandboxLeasePort::new();
+    let book = LeaseBook::new(
+        4096,
+        IsolationRequirement::ProcessTree,
+        full_backend(),
+        port.clone(),
+    )
+    .unwrap();
+    let mut leases = Vec::new();
+    for index in 0..4096 {
+        leases.push(
+            book.acquire(LeaseSpec::shared(
+                format!("member-{index}"),
+                IsolationRequirement::ProcessTree,
+                "",
+                format!("group-{index}"),
+            ))
+            .await
+            .unwrap(),
+        );
+    }
+    assert!(matches!(
+        book.acquire(LeaseSpec::shared(
+            "overflow",
+            IsolationRequirement::ProcessTree,
+            "",
+            "group-0"
+        ))
+        .await,
+        Err(LeaseError::ResourceLimit(_))
+    ));
+    assert_eq!(port.acquires.load(Ordering::SeqCst), 4096);
+    assert_eq!(book.queued_count(), 0);
+    drop(leases);
+    assert!(
+        book.shutdown(Duration::from_secs(5))
+            .await
+            .unwrap()
+            .is_clean()
+    );
+    assert_eq!(port.live_count(), 0);
+    assert_eq!(book.acquisitions(), book.releases());
 }

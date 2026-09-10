@@ -23,6 +23,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone)]
 pub struct CancellationSignal {
     flag: Arc<std::sync::atomic::AtomicBool>,
+    notify: Arc<tokio::sync::Notify>,
 }
 
 impl CancellationSignal {
@@ -31,6 +32,17 @@ impl CancellationSignal {
     pub fn new() -> Self {
         Self {
             flag: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            notify: Arc::new(tokio::sync::Notify::new()),
+        }
+    }
+
+    /// Parks without polling a clock until cancellation. Clones share wakeups.
+    pub async fn cancelled(&self) {
+        let notified = self.notify.notified();
+        tokio::pin!(notified);
+        notified.as_mut().enable();
+        if !self.is_cancelled() {
+            notified.await;
         }
     }
 
@@ -73,6 +85,7 @@ impl CancelFlag {
         self.signal
             .flag
             .store(true, std::sync::atomic::Ordering::Release);
+        self.signal.notify.notify_waiters();
     }
 }
 

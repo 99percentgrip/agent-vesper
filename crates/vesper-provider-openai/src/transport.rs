@@ -239,25 +239,7 @@ impl ProviderSession for OpenAiSession {
                 response = self.dispatch(&request, &auth, cancel.as_ref()).await?;
             }
             if !response.status().is_success() {
-                let status = response.status().as_u16();
-                let (category, message) = match status {
-                    401 | 403 => (
-                        ErrorCategory::Authentication,
-                        "OpenAI denied access; check authentication and model entitlement",
-                    ),
-                    429 => (
-                        ErrorCategory::QuotaOrRate,
-                        "OpenAI rate or quota limit reached",
-                    ),
-                    400 | 404 | 422 => (
-                        ErrorCategory::InvalidRequest,
-                        "OpenAI rejected the request or selected model",
-                    ),
-                    _ => (ErrorCategory::Transport, "OpenAI service request failed"),
-                };
-                let mut result = error(message, category, false);
-                result.http_status = Some(status);
-                return Err(result);
+                return Err(crate::http_error::rejection(response, cancel.as_ref()).await);
             }
             let (tx, rx) = mpsc::channel(32);
             let decoder = wire::Decoder::new(&request);

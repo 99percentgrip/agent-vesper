@@ -1,7 +1,7 @@
 //! End-to-end synthetic swarm tests (VRO-15 PR-9).
 //!
-//! One Navigator + three Driver class workers, driven across mesh and
-//! hierarchical topologies with fake ports: the full pipeline — goal →
+//! One navigator port and one driver port, driven across mesh and
+//! hierarchical topologies with fake turns: the current pipeline — goal →
 //! decomposition → bus assignment (priority-mapped) → scored driver turns
 //! → ledger trajectory writes → synthesis — runs in-process with zero
 //! network, zero providers.
@@ -75,8 +75,13 @@ impl WorkerPort for FakeNavigator {
         Box::pin(async move {
             turns.fetch_add(1, Ordering::AcqRel);
             let output = if task.id.ends_with("-decompose") {
-                format!("tasks: {tasks}")
+                serde_json::json!({"tasks": (0..tasks.min(65)).map(|index| serde_json::json!({"prompt":format!("concrete task {index}"), "required_capabilities":["read"]})).collect::<Vec<_>>()}).to_string()
             } else {
+                assert!(task.prompt.contains("Completed task evidence"));
+                assert!(
+                    task.prompt.contains("did:"),
+                    "synthesis needs real completed task output"
+                );
                 format!("synthesis of {}", task.id)
             };
             Ok(TurnReceipt {
@@ -214,7 +219,7 @@ impl WorkerPort for CountingPort {
 // ---------------------------------------------------------------------
 
 #[tokio::test]
-async fn one_navigator_three_drivers_mesh_end_to_end() {
+async fn one_navigator_three_driver_turns_mesh() {
     let (mut hive, nav_turns, driver_turns) = assembled(TopologyKind::Mesh, 3).await;
 
     // Topology: navigator (queen) + drivers admitted, wired, led.
@@ -229,7 +234,8 @@ async fn one_navigator_three_drivers_mesh_end_to_end() {
     );
     assert!(!topology.edges.is_empty(), "mesh wiring present");
 
-    hive.submit(HiveGoal::new("g1", "ship the feature"));
+    hive.submit(HiveGoal::new("g1", "ship the feature"))
+        .unwrap();
     let completed = hive.run_to_completion().await.expect("hive completes");
     assert_eq!(completed, 1);
 
@@ -294,9 +300,10 @@ async fn one_navigator_three_drivers_mesh_end_to_end() {
 }
 
 #[tokio::test]
-async fn one_navigator_three_drivers_hierarchical_end_to_end() {
+async fn one_navigator_three_driver_turns_hierarchical() {
     let (mut hive, nav_turns, driver_turns) = assembled(TopologyKind::Hierarchical, 3).await;
-    hive.submit(HiveGoal::new("h1", "migrate the module"));
+    hive.submit(HiveGoal::new("h1", "migrate the module"))
+        .unwrap();
     hive.run_to_completion().await.expect("completes");
     assert_eq!(nav_turns.load(Ordering::Acquire), 2);
     assert_eq!(driver_turns.load(Ordering::Acquire), 3);
@@ -313,7 +320,8 @@ async fn one_navigator_three_drivers_hierarchical_end_to_end() {
 async fn multiple_goals_run_sequentially_through_one_pipeline() {
     let (mut hive, _, driver_turns) = assembled(TopologyKind::Mesh, 2).await;
     for index in 0..3 {
-        hive.submit(HiveGoal::new(format!("multi-{index}"), "work"));
+        hive.submit(HiveGoal::new(format!("multi-{index}"), "work"))
+            .unwrap();
     }
     let completed = hive.run_to_completion().await.expect("completes");
     assert_eq!(completed, 3);
@@ -322,7 +330,7 @@ async fn multiple_goals_run_sequentially_through_one_pipeline() {
 }
 
 #[tokio::test]
-async fn failing_driver_turn_is_recorded_with_lower_confidence() {
+async fn failing_driver_turn_retains_goal_without_automatic_replay() {
     let config = config_for(TopologyKind::Mesh);
     let navigator = Arc::new(FakeNavigator {
         tasks: 1,
@@ -350,7 +358,8 @@ async fn failing_driver_turn_is_recorded_with_lower_confidence() {
     )
     .expect("assembles");
     hive.admit_topology().expect("admits");
-    hive.submit(HiveGoal::new("fail-1", "will fail a task"));
+    hive.submit(HiveGoal::new("fail-1", "will fail a task"))
+        .unwrap();
     // A failing driver turn surfaces as a Worker error through the hive.
     let outcome = hive.run_tick().await;
     match outcome {
@@ -359,9 +368,11 @@ async fn failing_driver_turn_is_recorded_with_lower_confidence() {
         }
         other => panic!("expected worker failure, got {other:?}"),
     }
-    // The failure is still an observable turn-completed event? No: the
-    // error aborts the tick before the event. The goal is dropped from
-    // the queue either way (fail-loud, no silent retry loop).
+    assert_eq!(hive.interrupted_goal().unwrap().id, "fail-1");
+    assert!(matches!(
+        hive.run_tick().await,
+        Err(HiveError::Interrupted(_))
+    ));
     assert!(
         hive.events()
             .iter()
@@ -413,11 +424,8 @@ async fn navigator_must_be_the_first_role() {
 #[test]
 fn topology_roles_reflect_the_hive_structure() {
     // Driver classes join as Workers; the navigator is the Queen.
-    let config = config_for(TopologyKind::Centralized);
-    let mut roles: Vec<RoleProfile> = config.roles.clone();
-    roles.push(RoleProfile::driver(&["browser"]));
-    let mut config = config;
-    config.roles = roles;
+    let mut config = config_for(TopologyKind::Centralized);
+    config.roles[1].min_workers = 1;
     let navigator = Arc::new(FakeNavigator {
         tasks: 1,
         turns: AtomicUsize::new(0),
@@ -448,10 +456,159 @@ fn topology_roles_reflect_the_hive_structure() {
         .values()
         .filter(|node| node.role == TopologyRole::Worker)
         .count();
-    assert_eq!(workers, 2, "both driver classes joined as workers");
+    assert_eq!(workers, 1, "only the supplied driver instance joins");
 }
 
 #[allow(dead_code)]
 fn _silence_helper() {
     let _ = ports;
+}
+
+#[tokio::test]
+async fn excessive_task_count_is_refused_before_driver_dispatch() {
+    let (mut hive, _, drivers) = assembled(TopologyKind::Mesh, usize::MAX).await;
+    hive.submit(HiveGoal::new("too-many", "work")).unwrap();
+    assert!(hive.run_tick().await.is_err());
+    assert_eq!(drivers.load(Ordering::Acquire), 0);
+    assert_eq!(hive.interrupted_goal().unwrap().id, "too-many");
+    assert!(
+        hive.run_tick().await.is_err(),
+        "no ambiguous automatic replay"
+    );
+}
+
+#[tokio::test]
+async fn duplicate_and_oversized_goals_are_refused_without_enqueueing() {
+    let (mut hive, _, _) = assembled(TopologyKind::Mesh, 1).await;
+    hive.submit(HiveGoal::new("same", "work")).unwrap();
+    assert!(hive.submit(HiveGoal::new("same", "repeat")).is_err());
+    assert!(
+        hive.submit(HiveGoal::new("large", "x".repeat(65_537)))
+            .is_err()
+    );
+    assert_eq!(hive.run_to_completion().await.unwrap(), 1);
+    assert!(hive.submit(HiveGoal::new("same", "replay")).is_err());
+}
+
+struct StructuredNavigator;
+impl WorkerPort for StructuredNavigator {
+    fn capabilities(&self) -> WorkerCapabilities {
+        WorkerCapabilities::minimal()
+    }
+    fn run_turn<'a>(
+        &'a self,
+        task: &'a WorkerTask,
+        _: CancellationSignal,
+    ) -> futures_util::future::BoxFuture<'a, Result<TurnReceipt, WorkerError>> {
+        Box::pin(async move {
+            let output = if task.id.ends_with("decompose") {
+                r#"{"tasks":[{"prompt":"apply the discovered change","required_capabilities":["write"],"depends_on":[1]},{"prompt":"inspect the source","required_capabilities":["read"]}]}"#.to_owned()
+            } else {
+                assert!(task.prompt.contains("inspect the source"));
+                assert!(task.prompt.contains("Prerequisite 1 output"));
+                "grounded synthesis".into()
+            };
+            Ok(TurnReceipt {
+                task_id: task.id.clone(),
+                output,
+                success: true,
+                duration: Duration::ZERO,
+            })
+        })
+    }
+}
+
+#[tokio::test]
+async fn structured_tasks_select_capable_classes_and_deliver_prerequisite_output() {
+    let mut config = HiveConfig::balanced(&["read"]);
+    let mut writer = RoleProfile::driver(&["write"]);
+    writer.name = "writer".into();
+    config.roles.push(writer);
+    let reader_count = Arc::new(AtomicUsize::new(0));
+    let writer_count = Arc::new(AtomicUsize::new(0));
+    let driver = || {
+        Arc::new(FakeDriver {
+            turns: AtomicUsize::new(0),
+            fail_on: None,
+        })
+    };
+    let mut hive = Hive::new(
+        config,
+        vec![
+            ("navigator".into(), Arc::new(StructuredNavigator)),
+            (
+                "driver".into(),
+                Arc::new(CountingPort {
+                    inner: driver(),
+                    counter: reader_count.clone(),
+                }),
+            ),
+            (
+                "writer".into(),
+                Arc::new(CountingPort {
+                    inner: driver(),
+                    counter: writer_count.clone(),
+                }),
+            ),
+        ],
+        Arc::new(FakeEmbeddingPort),
+    )
+    .unwrap();
+    hive.admit_topology().unwrap();
+    hive.submit(HiveGoal::new(
+        "structured",
+        "original goal must not replace decomposition",
+    ))
+    .unwrap();
+    assert_eq!(hive.run_to_completion().await.unwrap(), 1);
+    assert_eq!(reader_count.load(Ordering::Acquire), 1);
+    assert_eq!(writer_count.load(Ordering::Acquire), 1);
+    let assignments: Vec<_> = hive
+        .events()
+        .into_iter()
+        .filter_map(|event| match event {
+            HiveEvent::TaskAssigned(task, worker, _) => Some((task, worker)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        assignments,
+        vec![
+            ("structured-task-1".into(), "driver-0".into()),
+            ("structured-task-0".into(), "writer-0".into())
+        ]
+    );
+    let trajectory = hive
+        .ledger()
+        .exact(&MemoryScope::Swarm, "structured-task-0");
+    assert_eq!(trajectory[0].entry.provenance.role, "writer");
+    assert!(
+        trajectory[0]
+            .entry
+            .text
+            .as_str()
+            .contains("inspect the source")
+    );
+}
+
+#[tokio::test]
+async fn unrelated_bus_message_with_identical_prompt_cannot_substitute_for_assignment() {
+    use vesper_swarm::bus::{MessageKind, MessagePriority, OutgoingMessage};
+    let (mut hive, _, driver_turns) = assembled(TopologyKind::Mesh, 1).await;
+    hive.bus()
+        .send(
+            OutgoingMessage::new("navigator", "driver-0")
+                .kind(MessageKind::TaskAssign)
+                .priority(MessagePriority::Urgent)
+                .payload("concrete task 0"),
+        )
+        .unwrap();
+    hive.submit(HiveGoal::new("correlation", "work")).unwrap();
+    assert!(matches!(hive.run_tick().await, Err(HiveError::Bus(_))));
+    assert_eq!(driver_turns.load(Ordering::SeqCst), 0);
+    assert!(hive.interrupted_goal().is_some());
+    assert!(matches!(
+        hive.run_tick().await,
+        Err(HiveError::Interrupted(_))
+    ));
 }

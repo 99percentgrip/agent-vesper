@@ -2399,6 +2399,8 @@ mod host_commands;
 pub mod slash_commands;
 #[cfg(feature = "swarm")]
 pub mod swarm_adapter;
+#[cfg(feature = "swarm")]
+pub mod swarm_sandbox;
 pub mod watcher_sweep;
 
 pub use daemon_lock::{

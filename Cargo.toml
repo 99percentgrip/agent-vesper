@@ -32,7 +32,7 @@ exclude = ["spikes/*"]
 resolver = "3"
 
 [workspace.package]
-version = "0.21.4"
+version = "0.21.5"
 authors = ["Aleksejs Kozlitins"]
 edition = "2024"
 rust-version = "1.88"
@@ -47,6 +47,7 @@ rand = { version = "=0.8.7" }
 qrcode = { version = "=0.14.1", default-features = false }
 clap = { version = "=4.6.4", default-features = false, features = ["derive", "error-context", "help", "std", "usage"] }
 futures-core = { version = "=0.3.33", default-features = false, features = ["std"] }
+arc-swap = "=1.9.2"
 futures-util = { version = "=0.3.33", default-features = false, features = ["std"] }
 glob = { version = "0.3", default-features = false }
 httpdate = { version = "=1.0.3" }

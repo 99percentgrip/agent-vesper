@@ -6,15 +6,18 @@
 //! monitor that fails silent workers, cancels their in-flight task, and
 //! replaces them.
 //!
-//! The pool owns no clock and no randomness. Time enters only through
-//! deadlines the caller supplies and the tokio interval the *caller* owns
-//! for monitoring (see [`WorkerPool::heartbeat_interval`]); the pool never
-//! spawns threads or timers on its own.
+//! Pool deadlines use the local monotonic clock. The caller owns health ticks;
+//! the pool spawns no tasks. Factory-backed pools create independent instances
+//! with bounded async boot waves; the legacy constructor shares one port.
 
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
+#[path = "pool_instances.rs"]
+mod instances;
+pub use instances::WorkerInstanceFactory;
 
 use crate::worker::{
     CancelFlag, TurnReceipt, WorkerCapabilities, WorkerError, WorkerPort, WorkerTask,
@@ -77,11 +80,27 @@ pub enum PoolConfigError {
     /// The default turn deadline must be positive.
     #[error("default_turn_deadline must be positive")]
     ZeroTurnDeadline,
+    /// A hard resource ceiling was exceeded.
+    #[error("pool resource limit exceeded: {0}")]
+    ResourceLimit(&'static str),
 }
 
 impl PoolConfig {
     /// Fails closed on impossible shapes.
     pub fn validate(&self) -> Result<(), PoolConfigError> {
+        if self.max_workers > 4096 {
+            return Err(PoolConfigError::ResourceLimit("4096 workers"));
+        }
+        if [
+            self.heartbeat_interval,
+            self.heartbeat_timeout,
+            self.default_turn_deadline,
+        ]
+        .iter()
+        .any(|duration| *duration > Duration::from_secs(86_400))
+        {
+            return Err(PoolConfigError::ResourceLimit("24-hour duration"));
+        }
         if self.min_workers == 0 {
             return Err(PoolConfigError::ZeroMinWorkers);
         }
@@ -124,6 +143,7 @@ pub enum WorkerStatus {
 struct PooledWorker {
     id: u64,
     status: WorkerStatus,
+    leased: bool,
     capabilities: WorkerCapabilities,
     /// Liveness instant, refreshed by activity and heartbeats.
     last_seen: tokio::time::Instant,
@@ -140,6 +160,7 @@ impl PooledWorker {
         Self {
             id,
             status,
+            leased: status == WorkerStatus::Busy,
             capabilities,
             last_seen: now,
             in_flight: None,
@@ -179,10 +200,16 @@ pub enum PoolError {
     /// The config is invalid.
     #[error("invalid pool config: {0}")]
     InvalidConfig(PoolConfigError),
+    /// Independent instance creation failed before publication.
+    #[error("worker initialization failed: {0}")]
+    Initialization(String),
+    /// Factory pools require the asynchronous scaling entry point.
+    #[error("factory-backed pools require scale_async")]
+    AsyncScaleRequired,
     /// The pool is closed.
     #[error("pool is closed")]
     Closed,
-    /// At `max_workers` with no idle worker available.
+    /// No capable idle worker and no eligible growth within pool bounds.
     #[error("pool exhausted: {idle} idle of {total} workers, max {max}")]
     Exhausted {
         /// Idle workers at refusal time.
@@ -228,6 +255,7 @@ impl Inner {
 struct Shared {
     inner: Mutex<Inner>,
     closed: AtomicBool,
+    close_notify: tokio::sync::Notify,
 }
 
 impl Shared {
@@ -257,12 +285,15 @@ impl WorkerLease {
         let now = tokio::time::Instant::now();
         let mut inner = self.shared.lock();
         if let Some(worker) = inner.workers.iter_mut().find(|w| w.id == self.worker_id) {
+            worker.leased = false;
             // Never resurrect a failed worker: the health monitor's verdict
             // outranks a late release.
             if worker.status == WorkerStatus::Busy {
                 worker.status = WorkerStatus::Idle;
             }
-            worker.in_flight = None;
+            if let Some(flight) = worker.in_flight.take() {
+                flight.cancel.cancel();
+            }
             worker.last_seen = now;
         }
         inner.push_event(PoolEvent::WorkerReleased(self.worker_id));
@@ -275,13 +306,16 @@ impl Drop for WorkerLease {
     }
 }
 
-/// Bounded pool of workers over one [`WorkerPort`].
+/// Bounded worker pool over a shared port or an independent instance factory.
 ///
 /// A plain value with interior synchronization: share as
 /// `Arc<WorkerPool>`. It performs no I/O and spawns nothing.
 pub struct WorkerPool {
     config: PoolConfig,
-    port: Arc<dyn WorkerPort>,
+    port: Option<Arc<dyn WorkerPort>>,
+    factory: Option<Arc<dyn WorkerInstanceFactory>>,
+    instances: Mutex<std::collections::BTreeMap<u64, Arc<dyn WorkerPort>>>,
+    lifecycle: tokio::sync::Mutex<()>,
     shared: Arc<Shared>,
 }
 
@@ -297,12 +331,16 @@ impl std::fmt::Debug for WorkerPool {
 }
 
 impl WorkerPool {
-    /// Creates an empty pool; boot it with [`initialize`](Self::initialize).
+    /// Creates a legacy shared-port pool; boot it with [`initialize`](Self::initialize).
+    /// Use [`with_factory`](Self::with_factory) for independently owned instances.
     pub fn new(config: PoolConfig, port: Arc<dyn WorkerPort>) -> Result<Self, PoolError> {
         config.validate().map_err(PoolError::InvalidConfig)?;
         Ok(Self {
             config,
-            port,
+            port: Some(port),
+            factory: None,
+            instances: Mutex::new(Default::default()),
+            lifecycle: tokio::sync::Mutex::new(()),
             shared: Arc::new(Shared::default()),
         })
     }
@@ -321,9 +359,21 @@ impl WorkerPool {
         }
     }
 
-    /// Marks the pool closed; all subsequent operations refuse.
+    /// Marks the pool closed and signals every in-flight worker.
+    /// Execution ports remain responsible for cleanup of detached work.
     pub fn close(&self) {
+        let inner = self.shared.lock();
         self.shared.closed.store(true, Ordering::Release);
+        self.shared.close_notify.notify_waiters();
+        for worker in &inner.workers {
+            if let Some(flight) = &worker.in_flight {
+                flight.cancel.cancel();
+            }
+        }
+        let retired = std::mem::take(&mut *self.instances.lock().expect("instance lock"));
+        drop(inner);
+        // External destructors must never run while the pool state lock is held.
+        drop(retired);
     }
 
     /// Live worker count.
@@ -351,14 +401,17 @@ impl WorkerPool {
         self.shared.lock().concurrent_boot_high_water
     }
 
-    /// Boots the pool to `min_workers`, composing all boot probes
-    /// concurrently with `join_all` so minimum capacity comes up as one
-    /// parallel wave rather than serially.
+    /// Boots the pool to `min_workers`. Factory pools await a bounded parallel
+    /// creation wave; legacy shared-port pools only collect capability probes.
+    /// Repeated initialization creates only the missing floor slots.
     pub async fn initialize(&self) -> Result<(), PoolError> {
+        if self.factory.is_some() {
+            return self.initialize_instances().await;
+        }
         self.check_open()?;
         let target = self.config.min_workers as usize;
         let boots = std::iter::repeat_with(|| {
-            let port = Arc::clone(&self.port);
+            let port = Arc::clone(self.port.as_ref().expect("legacy pool"));
             async move { port.capabilities() }
         })
         .take(target);
@@ -366,8 +419,10 @@ impl WorkerPool {
         debug_assert_eq!(resolved.len(), target);
         let now = tokio::time::Instant::now();
         let mut inner = self.shared.lock();
+        self.check_open()?;
         inner.concurrent_boot_high_water = inner.concurrent_boot_high_water.max(target);
-        for capability in resolved {
+        let missing = target.saturating_sub(inner.total());
+        for capability in resolved.into_iter().take(missing) {
             inner.next_id += 1;
             let id = inner.next_id;
             inner
@@ -384,19 +439,28 @@ impl WorkerPool {
         &self,
         required: &[String],
     ) -> Result<(WorkerLease, WorkerCapabilities), PoolError> {
+        if self.factory.is_some() {
+            return self.acquire_instance(required).await;
+        }
         self.check_open()?;
         let now = tokio::time::Instant::now();
         let mut inner = self.shared.lock();
+        self.check_open()?;
         if let Some(idle_worker) = inner
             .workers
             .iter_mut()
-            .find(|w| w.status == WorkerStatus::Idle && w.capabilities.supports(required))
+            .find(|w| {
+                w.status == WorkerStatus::Idle
+                    && w.capabilities.max_concurrent_tasks > 0
+                    && w.capabilities.supports(required)
+            })
             .map(|worker| (worker.id, worker.capabilities.clone()))
         {
             let worker_id = idle_worker.0;
             let capabilities = idle_worker.1;
             if let Some(worker) = inner.workers.iter_mut().find(|w| w.id == worker_id) {
                 worker.status = WorkerStatus::Busy;
+                worker.leased = true;
                 worker.last_seen = now;
             }
             inner.push_event(PoolEvent::WorkerAcquired(worker_id, String::new()));
@@ -407,10 +471,13 @@ impl WorkerPool {
             };
             return Ok((lease, capabilities));
         }
-        if inner.total() < self.config.max_workers as usize {
+        let capabilities = self.port.as_ref().expect("legacy pool").capabilities();
+        if inner.total() < self.config.max_workers as usize
+            && capabilities.max_concurrent_tasks > 0
+            && capabilities.supports(required)
+        {
             inner.next_id += 1;
             let id = inner.next_id;
-            let capabilities = self.port.capabilities();
             inner.workers.push(PooledWorker::fresh(
                 id,
                 capabilities.clone(),
@@ -464,35 +531,87 @@ impl WorkerPool {
         } else {
             task.deadline
         };
+        if budget > Duration::from_secs(86_400) {
+            return Err(WorkerError::Rejected(task.id.clone()));
+        }
         let (lease, _capabilities) = self
             .acquire(&task.required_capabilities)
             .await
             .map_err(|error| WorkerError::Failed(task.id.clone(), error.to_string()))?;
+        self.run_leased_task(lease, task).await
+    }
+
+    /// Executes on the exact selected lease, consuming it on every outcome.
+    /// Foreign, released, failed or incapable leases fail before worker dispatch.
+    /// This preserves selection/provenance without a second arbitrary acquisition.
+    pub async fn run_leased_task(
+        &self,
+        lease: WorkerLease,
+        task: WorkerTask,
+    ) -> Result<TurnReceipt, WorkerError> {
+        let budget = if task.deadline.is_zero() {
+            self.config.default_turn_deadline
+        } else {
+            task.deadline
+        };
+        if budget > Duration::from_secs(86_400)
+            || !Arc::ptr_eq(&lease.shared, &self.shared)
+            || lease.released.load(Ordering::Acquire)
+        {
+            return Err(WorkerError::Rejected(task.id.clone()));
+        }
         let cancel = CancelFlag::new();
         {
             let now = tokio::time::Instant::now();
             let mut inner = self.shared.lock();
-            if let Some(worker) = inner.workers.iter_mut().find(|w| w.id == lease.worker_id()) {
-                worker.in_flight = Some(InFlight {
-                    task_id: task.id.clone(),
-                    deadline: now + budget,
-                    cancel: cancel.clone(),
-                });
+            if self.shared.closed.load(Ordering::Acquire) {
+                return Err(WorkerError::Cancelled(task.id.clone()));
             }
+            let worker = inner
+                .workers
+                .iter_mut()
+                .find(|w| w.id == lease.worker_id())
+                .ok_or_else(|| WorkerError::Rejected(task.id.clone()))?;
+            if worker.status != WorkerStatus::Busy
+                || !worker.leased
+                || !worker.capabilities.supports(&task.required_capabilities)
+                || worker.capabilities.max_concurrent_tasks == 0
+            {
+                return Err(WorkerError::Rejected(task.id.clone()));
+            }
+            worker.in_flight = Some(InFlight {
+                task_id: task.id.clone(),
+                deadline: now + budget,
+                cancel: cancel.clone(),
+            });
         }
         let signal = cancel.signal();
-        let mut turn = std::pin::pin!(self.port.run_turn(&task, signal));
+        let port = if let Some(port) = &self.port {
+            Arc::clone(port)
+        } else {
+            self.instances
+                .lock()
+                .expect("instance lock")
+                .get(&lease.worker_id())
+                .cloned()
+                .ok_or_else(|| WorkerError::Cancelled(task.id.clone()))?
+        };
+        let mut turn = std::pin::pin!(port.run_turn(&task, signal));
         let mut sleep = std::pin::pin!(tokio::time::sleep(budget));
-        let result = tokio::select! {
-            outcome = &mut turn => outcome,
+        let mut result = tokio::select! {
+            biased;
             _ = &mut sleep => {
                 cancel.cancel();
                 Err(WorkerError::DeadlineExceeded(task.id.clone()))
             }
+            outcome = &mut turn => outcome,
         };
         {
             let now = tokio::time::Instant::now();
             let mut inner = self.shared.lock();
+            if cancel.signal().is_cancelled() && result.is_ok() {
+                result = Err(WorkerError::Cancelled(task.id.clone()));
+            }
             if let Some(worker) = inner.workers.iter_mut().find(|w| w.id == lease.worker_id()) {
                 worker.in_flight = None;
                 worker.last_seen = now;
@@ -558,6 +677,9 @@ impl WorkerPool {
 
     /// Replaces every failed worker with a fresh idle one, within bounds.
     pub async fn replace_failed(&self) -> Result<usize, PoolError> {
+        if self.factory.is_some() {
+            return self.replace_instances().await;
+        }
         self.check_open()?;
         let now = tokio::time::Instant::now();
         let mut inner = self.shared.lock();
@@ -569,16 +691,13 @@ impl WorkerPool {
             .collect();
         let mut replaced = 0;
         for old in failed {
-            if inner.total() >= self.config.max_workers as usize {
-                inner.push_event(PoolEvent::CapacityRefused(self.config.max_workers));
-                break;
-            }
+            // Replacement consumes the failed record's slot, not an extra one.
             inner.workers.retain(|w| w.id != old);
             inner.next_id += 1;
             let fresh = inner.next_id;
             inner.workers.push(PooledWorker::fresh(
                 fresh,
-                self.port.capabilities(),
+                self.port.as_ref().expect("legacy pool").capabilities(),
                 WorkerStatus::Idle,
                 now,
             ));
@@ -594,6 +713,9 @@ impl WorkerPool {
     /// idle workers only — a busy worker is never killed mid-turn — and
     /// never below `min_workers`.
     pub fn scale(&self, delta: i32) -> Result<usize, PoolError> {
+        if self.factory.is_some() {
+            return Err(PoolError::AsyncScaleRequired);
+        }
         self.check_open()?;
         let now = tokio::time::Instant::now();
         let mut inner = self.shared.lock();
@@ -606,7 +728,7 @@ impl WorkerPool {
                 let id = inner.next_id;
                 inner.workers.push(PooledWorker::fresh(
                     id,
-                    self.port.capabilities(),
+                    self.port.as_ref().expect("legacy pool").capabilities(),
                     WorkerStatus::Idle,
                     now,
                 ));

@@ -9,6 +9,7 @@ mod usage;
 pub use policy::OpenAiSuperpowerPolicy;
 pub mod credentials;
 mod factory;
+mod http_error;
 mod transport;
 mod wire;
 
@@ -16,6 +17,14 @@ pub use catalog::{DEFAULT_MODEL, OpenAiCatalog, REASONING_LEVELS};
 pub use factory::OpenAiFactory;
 pub use transport::OpenAiSession;
 
+#[cfg(test)]
+mod http_error_bounds_tests;
+#[cfg(all(test, feature = "integration-test-harness"))]
+mod http_error_parameter_tests;
+#[cfg(all(test, feature = "integration-test-harness"))]
+mod http_error_tests;
+#[cfg(test)]
+mod lens_wire_tests;
 #[cfg(test)]
 mod tests;
 

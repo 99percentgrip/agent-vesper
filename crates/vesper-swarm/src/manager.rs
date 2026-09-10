@@ -145,8 +145,8 @@ impl TopologyManager {
     /// Applies a partial update to one admitted node.
     ///
     /// Identity is immutable; role, status, and metadata are patchable.
-    /// With `auto_rebalance` enabled, a status change re-reconciles
-    /// leadership (eligibility depends on status) but never rewires edges.
+    /// With `auto_rebalance` enabled, updates reconcile leadership and
+    /// rebuild wiring so centralized edges follow the current leader.
     pub fn update_node(
         &self,
         state: &mut TopologyState,
@@ -174,8 +174,10 @@ impl TopologyManager {
             }
             None => {}
         }
+        self.reconcile_partitions(state);
+        self.reconcile_leadership(state)?;
         if self.config.auto_rebalance {
-            self.reconcile_leadership(state)?;
+            self.rebalance(state)?;
         }
         Ok(())
     }
@@ -194,18 +196,13 @@ impl TopologyManager {
     ///   any partition it led is **dissolved** rather than left holding a
     ///   dangling leader reference. No implicit promotion ever happens.
     pub fn remove_node(&self, state: &mut TopologyState, id: &NodeId) -> Result<(), TopologyError> {
-        if state.nodes.remove(id).is_none() {
+        if !state.nodes.contains_key(id) {
             return Err(TopologyError::UnknownNode(id.clone()));
         }
         let Some(removal_index) = state.join_order.iter().position(|member| member == id) else {
-            // Consistency guard: the node map and the join ledger disagree.
-            // Refuse the mutation rather than corrupting the ledger.
-            state.nodes.insert(
-                id.clone(),
-                TopologyNode::new(id.clone(), TopologyRole::Worker),
-            );
             return Err(TopologyError::UnknownNode(id.clone()));
         };
+        state.nodes.remove(id);
         state.join_order.remove(removal_index);
         state
             .edges
@@ -216,22 +213,12 @@ impl TopologyManager {
         let was_topology_leader = state.leader.as_ref() == Some(id);
         if was_topology_leader {
             state.leader = None;
+            state.automatic_election_blocked = !self.config.failover_enabled;
         }
-        state.partitions.retain_mut(|partition| {
-            let was_leader = partition.leader == *id;
-            partition.nodes.retain(|member| member != id);
-            if partition.nodes.is_empty() {
-                return false;
-            }
-            if was_leader && self.config.failover_enabled {
-                partition.leader = partition.nodes[0].clone();
-            } else if was_leader {
-                return false;
-            }
-            true
-        });
-        if was_topology_leader && self.config.failover_enabled && !state.join_order.is_empty() {
-            state.leader = Some(state.join_order[0].clone());
+        state.partition_election_blocked.remove(id);
+        self.reconcile_partitions(state);
+        if was_topology_leader && self.config.failover_enabled {
+            state.leader = self.leader_candidate(state);
         }
         if self.config.auto_rebalance {
             self.rebalance(state)?;
@@ -250,6 +237,8 @@ impl TopologyManager {
             return Err(TopologyError::NoEligibleLeader(state.nodes.len()));
         };
         state.leader = Some(leader.clone());
+        state.automatic_election_blocked = false;
+        state.partition_election_blocked.clear();
         Ok(leader)
     }
 
@@ -271,13 +260,14 @@ impl TopologyManager {
     /// - **Hybrid** — the hierarchical backbone plus a bounded mesh inside
     ///   each partition (the mesh rule at intra-partition scope).
     ///
-    /// Leadership is reconciled after wiring: a leader that vanished or
-    /// became ineligible is re-elected; a membered topology with no leader
-    /// elects its first eligible candidate.
+    /// Leadership is reconciled before wiring. A lost leader is replaced
+    /// only when failover is enabled; disabled-failover vacancy has no hub.
+    /// Initial election selects the first eligible candidate.
     ///
     /// Rebalancing is idempotent: rebalancing an already-balanced state
     /// changes nothing.
     pub fn rebalance(&self, state: &mut TopologyState) -> Result<(), TopologyError> {
+        self.reconcile_leadership(state)?;
         self.rebuild_partitions(state);
         state.edges.clear();
         let members = state.join_order.clone();
@@ -298,7 +288,7 @@ impl TopologyManager {
             }
         }
         self.sync_connections(state);
-        self.reconcile_leadership(state)
+        Ok(())
     }
 
     fn leader_candidate(&self, state: &TopologyState) -> Option<NodeId> {
@@ -330,8 +320,12 @@ impl TopologyManager {
         match state.leader.as_ref() {
             Some(current) if self.is_eligible_leader(state, current) => Ok(()),
             _ => {
-                if self.leader_candidate(state).is_some() {
-                    self.elect_leader(state)?;
+                if state.leader.is_some() && !self.config.failover_enabled {
+                    state.automatic_election_blocked = true;
+                }
+                state.leader = None;
+                if !state.automatic_election_blocked && self.leader_candidate(state).is_some() {
+                    state.leader = self.leader_candidate(state);
                 } else {
                     state.leader = None;
                 }
@@ -340,12 +334,51 @@ impl TopologyManager {
         }
     }
 
+    fn reconcile_partitions(&self, state: &mut TopologyState) {
+        let eligible: Vec<_> = state
+            .join_order
+            .iter()
+            .filter(|id| self.is_eligible_leader(state, id))
+            .cloned()
+            .collect();
+        let existing = &state.nodes;
+        let blocked = &mut state.partition_election_blocked;
+        state.partitions.retain_mut(|partition| {
+            partition.nodes.retain(|id| existing.contains_key(id));
+            if partition.nodes.is_empty() {
+                return false;
+            }
+            partition.replica_count = self
+                .config
+                .replication_factor
+                .min(partition.nodes.len() as u32);
+            if eligible.contains(&partition.leader) {
+                return true;
+            }
+            if !self.config.failover_enabled {
+                blocked.extend(partition.nodes.iter().cloned());
+                return false;
+            }
+            let Some(leader) = eligible.iter().find(|id| partition.nodes.contains(id)) else {
+                return false;
+            };
+            partition.leader = leader.clone();
+            true
+        });
+    }
+
     fn rebuild_partitions(&self, state: &mut TopologyState) {
-        state.partitions.clear();
+        self.reconcile_partitions(state);
+        let previous = std::mem::take(&mut state.partitions);
         if state.join_order.is_empty() {
             return;
         }
-        let mut ordered = state.join_order.clone();
+        let mut ordered: Vec<_> = state
+            .join_order
+            .iter()
+            .filter(|id| !state.partition_election_blocked.contains(*id))
+            .cloned()
+            .collect();
         match self.config.partition_strategy {
             PartitionStrategy::RoundRobin => {}
             PartitionStrategy::Range => ordered.sort(),
@@ -354,7 +387,19 @@ impl TopologyManager {
         let capacity = self.config.nodes_per_partition.max(1) as usize;
         for (partition_index, chunk) in ordered.chunks(capacity).enumerate() {
             let nodes = chunk.to_vec();
-            let leader = nodes[0].clone();
+            let leader = previous
+                .iter()
+                .map(|partition| &partition.leader)
+                .find(|id| nodes.contains(id) && self.is_eligible_leader(state, id))
+                .or_else(|| {
+                    state
+                        .join_order
+                        .iter()
+                        .find(|id| nodes.contains(id) && self.is_eligible_leader(state, id))
+                });
+            let Some(leader) = leader.cloned() else {
+                continue;
+            };
             let replica_count = self.config.replication_factor.min(nodes.len() as u32);
             state.partitions.push(TopologyPartition {
                 id: format!("partition_{partition_index}"),
@@ -401,7 +446,7 @@ impl TopologyManager {
     }
 
     fn wire_centralized(&self, state: &mut TopologyState, members: &[NodeId]) {
-        if members.len() < 2 {
+        if members.len() < 2 || state.automatic_election_blocked {
             return;
         }
         let hub = state
@@ -910,12 +955,15 @@ mod tests {
         .unwrap();
         let mut state = manager.initial_state();
         admit(&manager, &mut state, &["a", "b"]);
+        activate_all(&manager, &mut state);
         manager.rebalance(&mut state).unwrap();
         assert_eq!(state.partitions.len(), 1);
         admit(&manager, &mut state, &["c"]);
+        activate_all(&manager, &mut state);
         manager.rebalance(&mut state).unwrap();
         assert_eq!(state.partitions.len(), 1, "three nodes still fit");
         admit(&manager, &mut state, &["d"]);
+        activate_all(&manager, &mut state);
         manager.rebalance(&mut state).unwrap();
         assert_eq!(state.partitions.len(), 2, "fourth node opens partition 1");
         assert_eq!(state.partitions[0].nodes.len(), 3);
@@ -936,6 +984,7 @@ mod tests {
         .unwrap();
         let mut state = manager.initial_state();
         admit(&manager, &mut state, &["a", "b", "c", "d", "e"]);
+        activate_all(&manager, &mut state);
         manager.rebalance(&mut state).unwrap();
         assert_eq!(state.partitions[0].nodes, ids(&["a", "b"]));
         assert_eq!(state.partitions[1].nodes, ids(&["c", "d"]));
@@ -959,6 +1008,7 @@ mod tests {
             &mut state,
             &["delta", "alpha", "charlie", "bravo"],
         );
+        activate_all(&manager, &mut state);
         manager.rebalance(&mut state).unwrap();
         assert_eq!(state.partitions[0].nodes, ids(&["alpha", "bravo"]));
         assert_eq!(state.partitions[1].nodes, ids(&["charlie", "delta"]));
@@ -977,12 +1027,20 @@ mod tests {
         .unwrap();
         let mut state = manager.initial_state();
         admit(&manager, &mut state, &["n1", "n2", "n3", "n4"]);
+        activate_all(&manager, &mut state);
         manager.rebalance(&mut state).unwrap();
         let mut expected = ids(&["n1", "n2", "n3", "n4"]);
         expected.sort_by_key(|id| fnv1a(id.as_str().as_bytes()));
         assert_eq!(state.partitions[0].nodes, expected[..2].to_vec());
         assert_eq!(state.partitions[1].nodes, expected[2..].to_vec());
-        assert_eq!(state.partitions[0].leader, expected[0]);
+        assert_eq!(
+            state.partitions[0].leader,
+            *state
+                .join_order
+                .iter()
+                .find(|id| state.partitions[0].nodes.contains(id))
+                .unwrap()
+        );
     }
 
     #[test]
@@ -995,9 +1053,11 @@ mod tests {
         let manager = TopologyManager::new(TopologyKind::Mesh, config).unwrap();
         let mut forward = manager.initial_state();
         admit(&manager, &mut forward, &["a", "b", "c", "d", "e", "f"]);
+        activate_all(&manager, &mut forward);
         manager.rebalance(&mut forward).unwrap();
         let mut reverse = manager.initial_state();
         admit(&manager, &mut reverse, &["f", "e", "d", "c", "b", "a"]);
+        activate_all(&manager, &mut reverse);
         manager.rebalance(&mut reverse).unwrap();
         let membership = |state: &TopologyState| {
             state
@@ -1119,6 +1179,7 @@ mod tests {
         .unwrap();
         let mut state = manager.initial_state();
         admit(&manager, &mut state, &["a", "b", "c", "d"]);
+        activate_all(&manager, &mut state);
         manager.rebalance(&mut state).unwrap();
         // Backbone: a roots the tree and reaches every node (fanout 4).
         assert!(

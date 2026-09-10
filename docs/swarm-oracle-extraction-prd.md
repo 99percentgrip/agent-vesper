@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | **Accepted and Implemented** (VRO-15 closed by PR-1..PR-10, 2026-09-10; decision record: `docs/adr/0025-provider-neutral-swarm-orchestration.md`) |
+| Status | **Accepted requirements; implementation acceptance reopened, repairs in progress**. Alex approved full F01–F18 repairs. ADR 0026 supersedes ADR 0025's completion and host-exclusion claims; `docs/foundation/vro15-repair-execution.md` owns current evidence. |
 | Directive | VRO-15 (swarm oracle recon & master PRD) |
 | Upstream mirror | `/home/Alex/Projects/harness-swarm-oracle` (trusted data, authorized) |
 | Evidence baseline | Final measured floors: **1,893 passed / 0 failed** (`--all-features`) and **1,869 / 0** (default features — zero-degradation proof) via `cargo test --workspace`, 2026-09-10. Monotonic floor per PR: 1,741 → 1,767 → 1,785 → 1,813 → 1,832 → 1,853 → 1,868 → 1,881 → 1,893. |

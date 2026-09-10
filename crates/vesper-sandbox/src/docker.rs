@@ -16,8 +16,8 @@
 //! * **run** — `docker exec -w <container-cwd> <name> <argv…>` with bounded
 //!   output capture, wall-clocked against `spec.timeout_seconds`.
 //! * **teardown** — `docker rm -f <name>` (recorded as the handle's
-//!   `teardown_command`, so dropping the handle is total teardown even if
-//!   the client process already exited; `rm -f` is idempotent).
+//!   `teardown_command`). Explicit cleanup requires a successful CLI exit
+//!   and local supervisor reap; Drop makes only a best-effort attempt.
 //!
 //! **Cold-start guard**: [`DockerBackend::probe_daemon`] runs a bounded
 //! `docker version --format {{.Server.Version}}` before anything else. An
@@ -294,6 +294,11 @@ impl DockerBackend {
             self.config.resolved_memory(),
             "--pids-limit".into(),
             DEFAULT_PIDS_LIMIT.into(),
+            // Ephemeral supervisors have no graceful service shutdown phase.
+            // Podman force-removal otherwise waits its default stop grace,
+            // exceeding our five-second cleanup CLI budget.
+            "--stop-timeout".into(),
+            "0".into(),
             // Strictly no network unless explicitly granted.
             "--network".into(),
             if self.config.network {
@@ -341,6 +346,27 @@ impl DockerBackend {
             _ => "/workspace".to_owned(),
         }
     }
+}
+
+// Private labeling is granted only for dedicated worker directories. Docker
+// does not support SELinux relabeling via --mount; --volume :Z is supported by
+// both runtimes and does not disable SELinux confinement.
+fn private_root_mount(args: &mut [String], root: &std::path::Path) -> Result<(), SandboxError> {
+    let root = root
+        .to_str()
+        .ok_or_else(|| SandboxError::Provision("private root must be UTF-8".into()))?;
+    if root.contains(':') {
+        return Err(SandboxError::Provision(
+            "private root contains a volume separator".into(),
+        ));
+    }
+    let index = args
+        .iter()
+        .position(|arg| arg == "--mount")
+        .ok_or_else(|| SandboxError::Provision("private root mount missing".into()))?;
+    args[index] = "--volume".into();
+    args[index + 1] = format!("{root}:/workspace:Z");
+    Ok(())
 }
 
 /// Model-facing daemon-unreachable error (PRD §2.2 cold-start guard).
@@ -449,8 +475,12 @@ impl SandboxBackend for DockerBackend {
             if let Some(memory) = spec.memory_limit_bytes {
                 effective.memory = Some(memory.to_string());
             }
+            let mut args = Self::new(effective).run_args(&name, &root, spec.timeout_seconds);
+            if spec.private_root_label {
+                private_root_mount(&mut args, &root)?;
+            }
             command
-                .args(Self::new(effective).run_args(&name, &root, spec.timeout_seconds))
+                .args(args)
                 .stdin(Stdio::null())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped());
@@ -483,8 +513,8 @@ impl SandboxBackend for DockerBackend {
                     "docker run failed: {reason}"
                 )));
             }
-            // Total teardown command, recorded on the handle so Drop is
-            // total even if this client process exits before teardown.
+            // Record cleanup independently of client lifetime so Drop can
+            // attempt removal even if this client exits first.
             let mut teardown = vec![
                 binary.to_string_lossy().into_owned(),
                 "rm".into(),
@@ -598,35 +628,40 @@ impl SandboxBackend for DockerBackend {
         mut handle: SandboxHandle,
     ) -> SandboxFuture<'a, Result<(), SandboxError>> {
         Box::pin(async move {
-            let Some(argv) = handle.teardown_command.take() else {
-                // Not a docker provision (should not happen through this
-                // backend); fall back to killing the recorded child so the
-                // drop path stays total.
-                if let Ok(mut child) = handle.child.lock() {
-                    let _ = child.kill();
+            // Consume exactly one recorded cleanup command. Never infer that a
+            // nonzero exit means "already removed": it can also mean permission
+            // denial or an unavailable daemon. Absence needs separate evidence.
+            let cleanup = match handle.teardown_command.take() {
+                Some(argv) if !argv.is_empty() => {
+                    let status = Command::new(&argv[0])
+                        .args(&argv[1..])
+                        .stdin(Stdio::null())
+                        .stdout(Stdio::null())
+                        .stderr(Stdio::null())
+                        .spawn()
+                        .and_then(|mut child| crate::wait_bounded(&mut child, PROBE_TIMEOUT));
+                    match status {
+                        Ok(status) if status.success() => Ok(()),
+                        Ok(status) => Err(SandboxError::Teardown(format!(
+                            "container cleanup unverified: runtime exited {status}"
+                        ))),
+                        Err(error) => Err(SandboxError::Teardown(format!(
+                            "container cleanup failed or timed out: {error}"
+                        ))),
+                    }
                 }
-                return Ok(());
+                _ => Err(SandboxError::Teardown(
+                    "container cleanup command missing or empty".into(),
+                )),
             };
-            let Some((program, rest)) = argv.split_first() else {
-                return Ok(());
-            };
-            let status = Command::new(program)
-                .args(rest)
-                .stdin(Stdio::null())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .spawn()
-                .and_then(|mut child| crate::wait_bounded(&mut child, PROBE_TIMEOUT));
-            match status {
-                // `docker rm -f` on an already-removed container exits 1
-                // with "No such container"; that is success for teardown
-                // purposes (`--rm` already collected it).
-                Ok(_) => Ok(()),
-                // The docker binary itself vanished (uninstalled
-                // mid-session). Honest failure, surfaced to the caller.
-                Err(error) => Err(SandboxError::Teardown(format!(
-                    "docker rm -f failed or timed out: {error}"
-                ))),
+            // Always reap the local supervisor even when daemon cleanup failed.
+            let supervisor = handle.terminate_supervisor();
+            match (cleanup, supervisor) {
+                (Err(cleanup), Err(supervisor)) => {
+                    Err(SandboxError::Teardown(format!("{cleanup}; {supervisor}")))
+                }
+                (Err(error), _) | (_, Err(error)) => Err(error),
+                (Ok(()), Ok(())) => Ok(()),
             }
         })
     }
@@ -823,5 +858,41 @@ mod tests {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod private_root_tests {
+    use super::*;
+    #[test]
+    fn private_root_relabel_is_explicit_and_preserves_confinement_and_cleanup_bounds() {
+        let backend = DockerBackend::new(Default::default());
+        let root = std::path::Path::new("/tmp/private-worker");
+        let mut args = backend.run_args("worker", root, 120);
+        assert!(args.windows(2).any(|a| a
+            == [
+                "--mount",
+                "type=bind,source=/tmp/private-worker,target=/workspace"
+            ]));
+        assert!(!SandboxSpec::new(root.into()).private_root_label);
+        private_root_mount(&mut args, root).unwrap();
+        assert!(
+            args.windows(2)
+                .any(|a| a == ["--volume", "/tmp/private-worker:/workspace:Z"])
+        );
+        assert!(args.windows(2).any(|a| a == ["--network", "none"]));
+        assert!(args.windows(2).any(|a| a == ["--stop-timeout", "0"]));
+        assert!(
+            !args
+                .iter()
+                .any(|arg| arg.contains("label=disable") || arg == "--privileged")
+        );
+        assert!(
+            private_root_mount(
+                &mut backend.run_args("worker", root, 120),
+                std::path::Path::new("/tmp/invalid:root")
+            )
+            .is_err()
+        );
     }
 }

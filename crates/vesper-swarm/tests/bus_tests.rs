@@ -508,3 +508,70 @@ fn large_volume_preserves_order_and_never_loses_urgent() {
     assert_eq!(second, "0");
     assert_eq!(bus.queued(), 49_999);
 }
+
+#[tokio::test]
+async fn close_and_unsubscribe_release_parked_receivers() {
+    for close in [true, false] {
+        let bus = bus(2);
+        subscribe(&bus, "w");
+        let mut receive = Box::pin(bus.recv("w"));
+        std::future::poll_fn(|cx| {
+            use std::future::Future;
+            assert!(receive.as_mut().poll(cx).is_pending());
+            std::task::Poll::Ready(())
+        })
+        .await;
+        if close {
+            bus.close();
+        } else {
+            bus.unsubscribe("w").unwrap();
+        }
+        let error = tokio::time::timeout(Duration::from_secs(1), receive)
+            .await
+            .expect("receiver wakes")
+            .unwrap_err();
+        assert_eq!(
+            error,
+            if close {
+                SwarmError::BusClosed
+            } else {
+                SwarmError::UnknownSubscriber("w".into())
+            }
+        );
+        if close {
+            assert_eq!(bus.try_recv("w"), Err(SwarmError::BusClosed));
+        }
+    }
+}
+
+#[test]
+fn refused_broadcast_has_no_partial_deliveries() {
+    let bus = bus(1);
+    subscribe(&bus, "a");
+    subscribe(&bus, "b");
+    assert!(
+        bus.broadcast(OutgoingBroadcast::new("q").priority(MessagePriority::Urgent))
+            .is_err()
+    );
+    assert_eq!(bus.queued(), 0);
+}
+
+#[test]
+fn expired_and_unsubscribed_traffic_leaves_no_ack_debt() {
+    let bus = bus(2);
+    subscribe(&bus, "w");
+    bus.send(
+        OutgoingMessage::new("q", "w")
+            .ttl(Duration::ZERO)
+            .requires_ack(),
+    )
+    .unwrap();
+    assert!(bus.try_recv("w").unwrap().is_none());
+    assert_eq!(bus.pending_ack_count(), 0);
+    bus.send(OutgoingMessage::new("q", "w").requires_ack())
+        .unwrap();
+    bus.try_recv("w").unwrap().unwrap();
+    assert_eq!(bus.pending_ack_count(), 1);
+    bus.unsubscribe("w").unwrap();
+    assert_eq!(bus.pending_ack_count(), 0);
+}

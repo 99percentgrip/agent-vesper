@@ -576,6 +576,26 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn interview_notes_and_answers_reach_model_context_together() {
+        let session = start_review_session(
+            ArtifactSource::inline("<html><body>interview</body></html>"),
+            Duration::from_secs(3),
+        )
+        .await
+        .unwrap();
+        session.begin_round();
+        let (address, token) = address_and_token(session.url());
+        let body = r#"{"action":"answer","annotations":[],"notes":"Approved: implement all findings.","answers":[{"question":"scope","value":"Full completion"}]}"#;
+        let response = request(address, format!("POST /s/{token}/feedback HTTP/1.1\r\nHost: {address}\r\nOrigin: http://{address}\r\nContent-Type: application/json\r\nX-Vesper-Lens-Token: {token}\r\nContent-Length: {}\r\n\r\n{body}", body.len())).await;
+        assert!(response.starts_with("HTTP/1.1 200"));
+        let feedback = session.next_feedback(Duration::from_secs(1)).await.unwrap();
+        let context = crate::vro::feedback_as_context_message(&feedback);
+        assert!(context.contains("PLANNING ANSWERS SUBMITTED"));
+        assert!(context.contains("Approved: implement all findings."));
+        assert!(context.contains("scope: Full completion"));
+    }
+
+    #[tokio::test]
     async fn host_header_rebinding_is_rejected() {
         let session = start_review_session(
             ArtifactSource::inline("<html></html>"),

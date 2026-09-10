@@ -1169,3 +1169,6 @@ async fn generation_deadline_and_read_inactivity_remain_distinct() {
         );
     }
 }
+
+#[path = "lens_wire_tests.rs"]
+mod lens_wire_tests;

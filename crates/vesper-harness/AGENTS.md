@@ -11,28 +11,79 @@ It also exposes the Python-compatible `web_search`, `web_reader`,
 Z.ai and Playwright MCP server descriptors.
 
 ## Ownership
-## Ownership
 
-- `src/swarm_adapter.rs` (VRO-15 PR-9, feature `swarm`, **default-off**)
-  owns the `WorkerPort` execution adapter: one swarm turn maps to one
-  `ProviderSession::start` stream under a cancellation bridge, and the
-  tool registry is filtered per task against the role class allowlist ∩
-  task required capabilities. `vesper-provider` and `vesper-swarm` are
-  optional deps linked **only** when `swarm` is explicitly enabled; the
-  default build (single-agent loop, TUI, ACP) is byte-identical to
-  pre-VRO-15 and links neither. Host parity decision (VRO-15 PR-9): the
-  opt-in `/swarm` host surface is **initially TUI-only**; the ACP host
-  gains it only when a protocol-level interaction model is defined
-  (multi-agent progress is not expressible in ACP v1 session turns
-  without host-owned polling). This exclusion is documented here and in
-  `apps/agent-vesper-acp/AGENTS.md` per the root parity contract.
+- `src/swarm_adapter.rs` (feature `swarm`, default-off) adapts `WorkerPort`
+  through the existing `AgentLoop`, not a second provider-stream loop. Hosts
+  inject `WorkerFactory` (registry/config/credentials), real `ToolRegistry`,
+  mode/permission, approval and optional progress ports. Role/task restrictions
+  remove executable registrations and prefix gateways, not only schemas.
+  Each instance refuses concurrent reuse; each task creates its own native
+  runtime session. `into_instance_factory` produces the shared native pool
+  factory: registry/config/permission/progress services are inherited, but busy
+  flags and histories are independent. Session startup remains lazy inside the
+  existing AgentLoop, not a second boot-time provider call.
+  Completed/interrupted histories remain in memory, never
+  implicitly persisted. Incomplete/cancelled outcomes cannot become success.
+  `tests/swarm_adapter_tests.rs` uses a scripted provider and real read/write
+  executors to check continuation, denial, restriction, cancellation, bounds
+  and interrupted-history preservation with temporary workspace roots.
+  Native Settings and TUI/ACP orchestration composition remain open acceptance
+  work. Both hosts must wire this shared execution path; ACP already has
+  `AcpEngineProgressPort`, so lack of progress support is not an exclusion.
+
+- `src/swarm_sandbox.rs` (optional `swarm`) binds native worker factories to
+  one shared `LeaseBook` and real `SandboxBackend`. Each role/instance receives a
+  fresh canonical child directory, the same permission port, and a scoped native
+  command route. Worker roots remain output artifacts; cleanup never deletes
+  results. Existing/symlinked roots refuse before provisioning. Filesystem
+  capability is mandatory; network access also requires full capability and
+  explicit grant provenance. Shared OS boundaries are not implemented by this
+  adapter; it admits isolated scopes only.
+  Scope preparation owns cancellation cleanup even when its blocking observer
+  drops. Native backend work runs outside book/metadata locks; uncertain provision
+  or teardown retains quarantine. Detached command ports keep their leases.
+  One-run backends rotate supervisors only after verified teardown while retaining
+  the worker reservation across continuations. Dedicated roots explicitly permit
+  private SELinux labels; ordinary project roots are never relabeled by this path.
+  `settle`/`shutdown` and bounded error diagnostics expose actual cleanup outcomes;
+  consuming backend teardown offers no assumed safe retry. The factory's
+  `with_sandbox_leases` applies to startup, growth and replacement. Host commands
+  and Settings remain acceptance-gated; the adapter alone is not product activation.
+  `src/swarm_sandbox_tests.rs` verifies no-state refusals, unused preparation,
+  uncertainty and symlink canary preservation. `tests/swarm_native_hive.rs` has
+  explicit namespace/container gates for real 1+3-worker execution, two approved
+  commands per worker, scoped permission traces, grounded synthesis, scale,
+  retirement, replacement and verified shutdown. Unavailable capabilities fail
+  these explicit gates instead of skipping their bodies.
+
+- `src/sandbox_backend.rs` owns the shared native command adapter used by TUI
+  and ACP. Teardown failure overrides run success/cancellation, preserves available
+  command output or the run error in diagnostics, and permanently quarantines that
+  port against subsequent provisioning. Cancellation is rechecked after provision
+  and after cleanup. Already-admitted concurrent operations are not retroactively
+  cancelled. Unwinding backend panics during provision/run/teardown construction
+  or polling become errors and permanently quarantine the route. A run panic still
+  reaches explicit teardown. Panic payloads are excluded from tool diagnostics;
+  the process panic hook is unchanged. Abort/double-panic, blocking hangs and
+  process-tree verification remain acceptance gaps. No automatic cleanup retry or
+  quarantine reset is exposed. `src/sandbox_outcome_tests.rs` checks outcome
+  arbitration and quarantined refusal; `src/sandbox_panic_tests.rs` covers provision
+  construction/poll panics, phase guards and ordinary refusal without quarantine.
+- `tests/swarm_native_hive.rs` runs real Hive/native-factory/AgentLoop/read_file
+  composition under all four topology configurations. Three independent provider
+  sessions must overlap at a barrier; tool results feed continuation and synthesis,
+  and temporary roots must remain free of implicit durable state. Provider and
+  embedding fixtures are test-only. This is not supervisor or native host activation
+  acceptance, nor proof that topology edges constrain all dispatch.
 
 - `src/web_settings.rs` owns explicit workspace web-setting saves and shared
   `/web` controls. Atomic private JSON snapshots preserve existing TOML and
   its initial allowlist/budget values. Read/status/cancel never create state.
   Docker/Podman discovery honors the operator override, runs only in explicit
   settings/setup flows, has a five-second timeout, and normalizes bare Podman
-  IDs to `sha256:`. `setup_driver` reads only the executable-adjacent bundle
+  IDs to `sha256:`. Inspection spawn failures retain OS error kind/code without
+  leaking executable paths or falsely diagnosing daemon availability.
+  `setup_driver` reads only the executable-adjacent bundle
   (or explicit `AGENT_VESPER_BUNDLE_DIR`), verifies SHA-256 before importing,
   caps import at 180 seconds, and verifies the exact bundled image ID after
   import. This explicit installer/settings operation is the exception to
@@ -170,8 +221,12 @@ Z.ai and Playwright MCP server descriptors.
 
 ## Verification
 
-- Driver CLI fixtures use a fresh immutable executable per case; tests must
-  not rewrite a just-executed inode while exercising process inspection.
+- Driver CLI fixtures use the immutable executable `tests/container_cli_fixture.sh`
+  through per-test symlinks with response/load state in temporary roots. Do not
+  execute freshly written test scripts: concurrent fork/exec can retain a writable
+  reference and trigger Linux ETXTBSY even when the writing thread closed its file.
+  Never rewrite a just-executed inode or add production retries to mask this fixture
+  race.
 - Run `cargo test -p vesper-harness`.
 - Run `cargo test -p vesper-harness --test vro13_e2e` (VRO-13 PR-8
   cross-feature fixture: watcher fire → bounded turn → composed

@@ -30,6 +30,37 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::SwarmError;
 
+/// Hard per-message payload byte ceiling.
+pub const MAX_MESSAGE_BYTES: usize = 1024 * 1024;
+/// Aggregate queued payload and identity byte ceiling.
+pub const MAX_QUEUED_BYTES: usize = 64 * 1024 * 1024;
+/// Hard subscriber ceiling, independent of message capacity.
+pub const MAX_SUBSCRIBERS: usize = 4096;
+const MAX_ID_BYTES: usize = 256;
+const MAX_TTL: Duration = Duration::from_secs(24 * 60 * 60);
+
+fn validate_message(
+    from: &str,
+    to: &str,
+    payload: &str,
+    ttl: Option<Duration>,
+) -> Result<(), SwarmError> {
+    if from.len() > MAX_ID_BYTES || to.len() > MAX_ID_BYTES {
+        return Err(SwarmError::ResourceLimit("identity bytes"));
+    }
+    if payload.len() > MAX_MESSAGE_BYTES {
+        return Err(SwarmError::ResourceLimit("payload bytes"));
+    }
+    if ttl.is_some_and(|ttl| ttl > MAX_TTL) {
+        return Err(SwarmError::ResourceLimit("TTL"));
+    }
+    Ok(())
+}
+
+fn message_bytes(message: &Message) -> usize {
+    message.from.len() + message.to.len() + message.payload.len()
+}
+
 /// Four message priority tiers. Higher is dequeued first; ordering inside
 /// one tier is FIFO by admission sequence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -105,7 +136,7 @@ struct Inbox {
     /// Message kinds this inbox accepts; empty means unfiltered.
     filters: Vec<MessageKind>,
     /// Acks still owed by this subscriber.
-    pending_acks: HashMap<u64, MessagePriority>,
+    pending_acks: HashMap<u64, std::time::Instant>,
     /// Wakeup primitive for parked `recv` waiters; `Arc` so a waiter can
     /// hold it after the state lock is released.
     notify: std::sync::Arc<tokio::sync::Notify>,
@@ -156,6 +187,7 @@ struct BusState {
     inboxes: HashMap<String, Inbox>,
     /// Total queued messages across all inboxes.
     queued: usize,
+    queued_bytes: usize,
     /// Global admission sequence.
     next_seq: u64,
     next_message_id: u64,
@@ -193,9 +225,18 @@ impl Shared {
         }
         log.push_back(event);
     }
+}
 
-    fn notify_all_waiters(&self) {
-        // Wakeup is per-inbox via Arc<Notify>; nothing to do globally.
+/// Monotonic caller-time seam for queue and acknowledgement TTL accounting.
+/// Implementations must be cheap, nonblocking and never re-enter the bus.
+pub trait BusClock: Send + Sync {
+    /// Current monotonic time. Implementations must not move backwards.
+    fn now(&self) -> std::time::Instant;
+}
+struct MonotonicClock;
+impl BusClock for MonotonicClock {
+    fn now(&self) -> std::time::Instant {
+        std::time::Instant::now()
     }
 }
 
@@ -208,6 +249,7 @@ impl Shared {
 /// thread) until traffic for the subscriber arrives.
 pub struct MessageBus {
     capacity: usize,
+    clock: Arc<dyn BusClock>,
     shared: Arc<Shared>,
     /// Mirror of `closed` for lock-free fast checks.
     closed_flag: Arc<AtomicBool>,
@@ -231,6 +273,7 @@ impl Clone for MessageBus {
     fn clone(&self) -> Self {
         Self {
             capacity: self.capacity,
+            clock: self.clock.clone(),
             shared: Arc::clone(&self.shared),
             closed_flag: Arc::clone(&self.closed_flag),
         }
@@ -240,11 +283,20 @@ impl Clone for MessageBus {
 impl MessageBus {
     /// Creates a bus with the given global queued-message capacity.
     pub fn new(capacity: usize) -> Result<Self, SwarmError> {
+        Self::with_clock(capacity, Arc::new(MonotonicClock))
+    }
+
+    /// Creates a bus driven by a caller-owned monotonic clock.
+    pub fn with_clock(capacity: usize, clock: Arc<dyn BusClock>) -> Result<Self, SwarmError> {
+        if capacity > 1_000_000 {
+            return Err(SwarmError::ResourceLimit("message capacity"));
+        }
         if capacity == 0 {
             return Err(SwarmError::InvalidCapacity(0));
         }
         Ok(Self {
             capacity,
+            clock,
             shared: Arc::new(Shared::default()),
             closed_flag: Arc::new(AtomicBool::new(false)),
         })
@@ -284,6 +336,15 @@ impl MessageBus {
         if state.inboxes.contains_key(worker_id) {
             return Err(SwarmError::DuplicateSubscriber(worker_id.to_string()));
         }
+        if worker_id.len() > MAX_ID_BYTES || worker_id.is_empty() {
+            return Err(SwarmError::ResourceLimit("subscriber identity"));
+        }
+        if state.inboxes.len() >= MAX_SUBSCRIBERS {
+            return Err(SwarmError::ResourceLimit("subscribers"));
+        }
+        if filters.len() > 32 {
+            return Err(SwarmError::ResourceLimit("subscriber filters"));
+        }
         state.inboxes.insert(
             worker_id.to_string(),
             Inbox {
@@ -303,6 +364,16 @@ impl MessageBus {
             return Err(SwarmError::UnknownSubscriber(worker_id.to_string()));
         };
         state.queued = state.queued.saturating_sub(inbox.len());
+        state.queued_bytes -= inbox
+            .tiers
+            .iter()
+            .flatten()
+            .map(|item| message_bytes(&item.message))
+            .sum::<usize>();
+        self.shared
+            .live_acks
+            .fetch_sub(inbox.pending_acks.len() as u64, Ordering::AcqRel);
+        inbox.notify.notify_waiters();
         Ok(())
     }
 
@@ -316,18 +387,55 @@ impl MessageBus {
     /// Each delivery counts toward capacity; the fanout is admitted as a
     /// unit (all-or-nothing per recipient count).
     pub fn broadcast(&self, message: OutgoingBroadcast) -> Result<Vec<u64>, SwarmError> {
-        let recipients = {
-            let state = self.shared.lock();
-            if state.closed {
-                return Err(SwarmError::BusClosed);
-            }
-            state.inboxes.keys().cloned().collect::<Vec<_>>()
-        };
+        let mut state = self.shared.lock();
+        if state.closed {
+            return Err(SwarmError::BusClosed);
+        }
+        validate_message(&message.from, "", &message.payload, message.ttl)?;
+        let mut recipients: Vec<_> = state.inboxes.keys().cloned().collect();
+        recipients.sort();
+        let required = state
+            .inboxes
+            .values()
+            .filter(|inbox| inbox.accepts(message.kind))
+            .count();
+        let tier = Inbox::tier_index(message.priority);
+        let evictable: usize = state
+            .inboxes
+            .values()
+            .map(|inbox| inbox.tiers[..tier].iter().map(VecDeque::len).sum::<usize>())
+            .sum();
+        let required_bytes: usize = state
+            .inboxes
+            .iter()
+            .filter(|(_, inbox)| inbox.accepts(message.kind))
+            .map(|(to, _)| message.from.len() + to.len() + message.payload.len())
+            .sum();
+        let evictable_bytes: usize = state
+            .inboxes
+            .values()
+            .flat_map(|inbox| inbox.tiers[..tier].iter().flatten())
+            .map(|envelope| message_bytes(&envelope.message))
+            .sum();
+        if required_bytes > MAX_QUEUED_BYTES - state.queued_bytes + evictable_bytes {
+            return Err(SwarmError::ResourceLimit("queued bytes"));
+        }
+        if state.next_message_id.checked_add(required as u64).is_none()
+            || state.next_seq.checked_add(required as u64).is_none()
+        {
+            return Err(SwarmError::ResourceLimit("message identities"));
+        }
+        if required > self.capacity.saturating_sub(state.queued) + evictable {
+            return Err(SwarmError::BusFull {
+                capacity: self.capacity,
+                priority: message.priority,
+            });
+        }
         let mut ids = Vec::with_capacity(recipients.len());
-        for recipient in &recipients {
+        for recipient in recipients {
             let mut outgoing = OutgoingMessage::from(message.clone());
             outgoing.to = recipient.clone();
-            ids.push(self.admit(outgoing, Some(recipient.clone()))?);
+            ids.push(self.admit_locked(&mut state, outgoing, Some(recipient))?);
         }
         Ok(ids)
     }
@@ -340,29 +448,51 @@ impl MessageBus {
         loop {
             let popped = {
                 let mut state = self.shared.lock();
+                if state.closed {
+                    return Err(SwarmError::BusClosed);
+                }
+                self.expire_acks(&mut state, self.clock.now());
                 let Some(inbox) = state.inboxes.get_mut(worker_id) else {
                     return Err(SwarmError::UnknownSubscriber(worker_id.to_string()));
                 };
+                if inbox
+                    .tiers
+                    .iter()
+                    .rev()
+                    .find_map(|tier| tier.front())
+                    .is_some_and(|envelope| {
+                        envelope.message.requires_ack
+                            && envelope
+                                .expires_at
+                                .is_some_and(|expires| expires > self.clock.now())
+                    })
+                    && self.shared.live_acks.load(Ordering::Acquire) >= self.capacity as u64
+                {
+                    return Err(SwarmError::ResourceLimit("pending acknowledgments"));
+                }
                 let Some(envelope) = inbox.pop_highest() else {
                     return Ok(None);
                 };
                 state.queued = state.queued.saturating_sub(1);
+                state.queued_bytes -= message_bytes(&envelope.message);
+                if envelope
+                    .expires_at
+                    .is_some_and(|expires| self.clock.now() >= expires)
+                {
+                    self.shared.record(BusEvent::Expired(envelope.message.id));
+                    continue;
+                }
                 if envelope.message.requires_ack {
                     if let Some(inbox) = state.inboxes.get_mut(worker_id) {
-                        inbox
-                            .pending_acks
-                            .insert(envelope.message.id, envelope.message.priority);
+                        inbox.pending_acks.insert(
+                            envelope.message.id,
+                            envelope.expires_at.expect("admission validates TTL"),
+                        );
                     }
                     self.shared.live_acks.fetch_add(1, Ordering::AcqRel);
                 }
                 envelope
             };
-            if let Some(expires_at) = popped.expires_at
-                && std::time::Instant::now() >= expires_at
-            {
-                self.shared.record(BusEvent::Expired(popped.message.id));
-                continue;
-            }
             return Ok(Some(Received {
                 message: popped.message,
             }));
@@ -373,14 +503,16 @@ impl MessageBus {
     /// message exists for the subscriber.
     pub async fn recv(&self, worker_id: &str) -> Result<Received, SwarmError> {
         loop {
-            // Fast path: something already queued.
+            // Register before checking state so send/close/unsubscribe cannot
+            // slip between an empty check and notification registration.
+            let notify = self.waiter_notify(worker_id)?;
+            let notified = notify.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
             if let Some(received) = self.try_recv(worker_id)? {
                 return Ok(received);
             }
-            // Park until any admission wakes us, then re-check. The notify
-            // primitive is cloned out of the lock and awaited in this frame.
-            let notify = self.waiter_notify(worker_id)?;
-            notify.notified().await;
+            notified.await;
         }
     }
 
@@ -391,6 +523,9 @@ impl MessageBus {
         worker_id: &str,
     ) -> Result<std::sync::Arc<tokio::sync::Notify>, SwarmError> {
         let state = self.shared.lock();
+        if state.closed {
+            return Err(SwarmError::BusClosed);
+        }
         let Some(inbox) = state.inboxes.get(worker_id) else {
             return Err(SwarmError::UnknownSubscriber(worker_id.to_string()));
         };
@@ -400,6 +535,7 @@ impl MessageBus {
     /// Acknowledges a previously delivered message that required one.
     pub fn ack(&self, worker_id: &str, message_id: u64) -> Result<(), SwarmError> {
         let mut state = self.shared.lock();
+        self.expire_acks(&mut state, self.clock.now());
         let Some(inbox) = state.inboxes.get_mut(worker_id) else {
             return Err(SwarmError::UnknownSubscriber(worker_id.to_string()));
         };
@@ -413,15 +549,36 @@ impl MessageBus {
     /// Number of acknowledgments still owed across the bus.
     #[must_use]
     pub fn pending_ack_count(&self) -> u64 {
+        self.expire_acks(&mut self.shared.lock(), self.clock.now());
         self.shared.live_acks.load(Ordering::Acquire)
+    }
+
+    fn expire_acks(&self, state: &mut BusState, now: std::time::Instant) {
+        let mut expired = 0;
+        for inbox in state.inboxes.values_mut() {
+            let before = inbox.pending_acks.len();
+            inbox.pending_acks.retain(|_, expires| *expires > now);
+            expired += before - inbox.pending_acks.len();
+        }
+        self.shared
+            .live_acks
+            .fetch_sub(expired as u64, Ordering::AcqRel);
     }
 
     /// Closes the bus: no further admissions; parked receivers wake and
     /// observe [`SwarmError::BusClosed`] on their next operation.
     pub fn close(&self) {
-        self.shared.lock().closed = true;
+        let mut state = self.shared.lock();
+        state.closed = true;
         self.closed_flag.store(true, Ordering::Release);
-        self.shared.notify_all_waiters();
+        state.queued = 0;
+        state.queued_bytes = 0;
+        for inbox in state.inboxes.values_mut() {
+            inbox.tiers.iter_mut().for_each(VecDeque::clear);
+            inbox.pending_acks.clear();
+            inbox.notify.notify_waiters();
+        }
+        self.shared.live_acks.store(0, Ordering::Release);
     }
 
     /// Admits one message into one inbox under the capacity + eviction
@@ -432,12 +589,26 @@ impl MessageBus {
         message: OutgoingMessage,
         explicit_target: Option<String>,
     ) -> Result<u64, SwarmError> {
+        self.admit_locked(&mut self.shared.lock(), message, explicit_target)
+    }
+
+    fn admit_locked(
+        &self,
+        state: &mut BusState,
+        message: OutgoingMessage,
+        explicit_target: Option<String>,
+    ) -> Result<u64, SwarmError> {
         let priority = message.priority;
-        let mut state = self.shared.lock();
         if state.closed {
             return Err(SwarmError::BusClosed);
         }
         let target = explicit_target.unwrap_or_else(|| message.to.clone());
+        validate_message(&message.from, &target, &message.payload, message.ttl)?;
+        let expires_at = self
+            .clock
+            .now()
+            .checked_add(message.ttl.unwrap_or(DEFAULT_TTL))
+            .ok_or(SwarmError::ResourceLimit("TTL overflow"))?;
         // Filter check first (immutable borrow, then release).
         let accepted = state
             .inboxes
@@ -453,9 +624,15 @@ impl MessageBus {
         }
         // Assign identity and sequence deterministically before the inbox
         // borrow so no borrow overlaps a state mutation.
-        state.next_message_id += 1;
+        state.next_message_id = state
+            .next_message_id
+            .checked_add(1)
+            .ok_or(SwarmError::ResourceLimit("message identities"))?;
         let id = state.next_message_id;
-        state.next_seq += 1;
+        state.next_seq = state
+            .next_seq
+            .checked_add(1)
+            .ok_or(SwarmError::ResourceLimit("message sequence"))?;
         let seq = state.next_seq;
         let envelope = Envelope {
             message: Message {
@@ -469,19 +646,19 @@ impl MessageBus {
                 requires_ack: message.requires_ack,
             },
             admitted_seq: seq,
-            expires_at: std::time::Instant::now().checked_add(message.ttl.unwrap_or(DEFAULT_TTL)),
+            expires_at: Some(expires_at),
         };
         // Capacity: evict deterministically when full.
-        if state.queued >= self.capacity {
-            self.evict_one(&mut state, priority)?;
+        let bytes = message_bytes(&envelope.message);
+        while state.queued >= self.capacity || state.queued_bytes + bytes > MAX_QUEUED_BYTES {
+            self.evict_one(state, priority)?;
         }
+        state.queued_bytes += bytes;
         if let Some(inbox) = state.inboxes.get_mut(&target) {
             inbox.push(envelope);
             inbox.notify.notify_one();
         }
         state.queued += 1;
-        drop(state);
-        self.shared.notify_all_waiters();
         Ok(id)
     }
 
@@ -535,6 +712,7 @@ impl MessageBus {
             && let Some(removed) = inbox.tiers[tier].remove(position)
         {
             evicted_id = Some(removed.message.id);
+            state.queued_bytes -= message_bytes(&removed.message);
             state.queued = state.queued.saturating_sub(1);
         }
         if let Some(id) = evicted_id {

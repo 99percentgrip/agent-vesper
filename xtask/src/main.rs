@@ -7,6 +7,9 @@ use std::{
     process::{Command, ExitCode},
 };
 
+mod naming_baseline;
+mod swarm_gate;
+
 use clap::{Parser, Subcommand};
 use serde::Deserialize;
 use vesper_testkit::{FixtureCorpus, fixture_root};
@@ -929,6 +932,7 @@ fn architecture() -> Result<(), String> {
         .iter()
         .filter(|package| workspace.contains(&package.id))
     {
+        swarm_gate::validate(package)?;
         for dependency in &package.dependencies {
             let workspace_target = dependency
                 .path
@@ -1169,8 +1173,8 @@ fn naming_guard(regenerate: bool) -> Result<(), String> {
     // fail-closed ratchet. The embargo scope and forbidden patterns are
     // defined below in hex so this source file contains no upstream brand
     // strings of its own. The baseline freezes pre-existing mentions
-    // (historical docs, seed skills, host-UX comparisons) as file+line SHA
-    // digests; enforcement fails on any hit not in the baseline. Removing a
+    // (historical docs, seed skills, host-UX comparisons) as counted file/content
+    // SHA digests; line shifts do not change identity. Removing a
     // baseline entry is allowed and does not fail; `--regenerate` rewrites
     // the baseline (maintainer action, then commit the result).
     use sha2::{Digest, Sha256};
@@ -1233,7 +1237,7 @@ fn naming_guard(regenerate: bool) -> Result<(), String> {
     }
     files.sort();
 
-    let mut current: Vec<String> = Vec::new();
+    let mut current: Vec<naming_baseline::Hit> = Vec::new();
     for path in &files {
         let Ok(source) = fs::read_to_string(path) else {
             continue;
@@ -1241,7 +1245,8 @@ fn naming_guard(regenerate: bool) -> Result<(), String> {
         let relative = path
             .strip_prefix(&root)
             .map(|value| value.to_string_lossy().into_owned())
-            .unwrap_or_else(|_| path.to_string_lossy().into_owned());
+            .unwrap_or_else(|_| path.to_string_lossy().into_owned())
+            .replace('\\', "/");
         for (index, line) in source.lines().enumerate() {
             let lower = line.to_lowercase();
             for pattern in &patterns {
@@ -1249,7 +1254,11 @@ fn naming_guard(regenerate: bool) -> Result<(), String> {
                     let mut digest_input = String::with_capacity(relative.len() + line.len() + 8);
                     let _ = write!(digest_input, "{relative}\n{line}");
                     let digest = Sha256::digest(digest_input.as_bytes());
-                    current.push(format!("{relative}:{} {}", index + 1, hex_digest(&digest)));
+                    current.push(naming_baseline::Hit {
+                        path: relative.clone(),
+                        line: index + 1,
+                        sha256: hex_digest(&digest),
+                    });
                     break;
                 }
             }
@@ -1257,7 +1266,7 @@ fn naming_guard(regenerate: bool) -> Result<(), String> {
     }
 
     if regenerate {
-        fs::write(&baseline_path, format!("{}\n", current.join("\n")))
+        fs::write(&baseline_path, naming_baseline::encode(&current)?)
             .map_err(|error| error.to_string())?;
         println!(
             "naming-guard: regenerated baseline with {} frozen hits",
@@ -1268,18 +1277,14 @@ fn naming_guard(regenerate: bool) -> Result<(), String> {
 
     let baseline = fs::read_to_string(&baseline_path)
         .map_err(|_| format!("missing baseline {}", baseline_path.display()))?;
-    let frozen: BTreeSet<&str> = baseline
-        .lines()
-        .map(str::trim)
-        .filter(|l| !l.is_empty())
-        .collect();
-    let mut violations = 0;
-    for hit in &current {
-        if !frozen.contains(&hit.as_str()) {
-            violations += 1;
-            eprintln!("naming-guard violation: {hit}");
-        }
+    let rejected = naming_baseline::violations(&baseline, &current)?;
+    for hit in &rejected {
+        eprintln!(
+            "naming-guard violation: {}:{} {}",
+            hit.path, hit.line, hit.sha256
+        );
     }
+    let violations = rejected.len();
     if violations > 0 {
         return Err(format!(
             "naming embargo violated: {violations} new upstream-brand hit(s) not in {}",
@@ -1853,11 +1858,16 @@ struct Package {
     id: String,
     name: String,
     dependencies: Vec<Dependency>,
+    #[serde(default)]
+    features: BTreeMap<String, Vec<String>>,
 }
 
 #[derive(Deserialize)]
 struct Dependency {
     name: String,
+    #[serde(default)]
+    optional: bool,
+    rename: Option<String>,
     #[serde(rename = "req")]
     requirement: String,
     source: Option<String>,

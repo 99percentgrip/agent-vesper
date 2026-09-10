@@ -31,7 +31,10 @@ the multi-turn, tool-executing layer above it.
   also excludes any `ToolDefinition` whose `defer_loading` is `true` — those
   tools remain registered for execution but are hidden from the initial
   advertisement so the model does not see them until they are surfaced on
-  demand.
+  demand. `restricted_to` creates a worker execution allowlist, removing
+  unnamed registrations and all prefix gateways; it never mutates the source
+  registry. This host-neutral primitive does not change either host unless
+  explicitly composed for a restricted worker.
 - `src/permission.rs` — pure `check_tool_permission(mode, permission, class)`
   plus the host-owned asynchronous `PermissionPort`; `Ask` never authorizes
   by itself and the default port fails closed.
@@ -520,7 +523,7 @@ the multi-turn, tool-executing layer above it.
   When an executor returns `ToolResult.injected_tools`, the loop merges those
   schemas into the advertised pool, deduplicating by `ToolId` or
   `harness_name`, so the next iteration advertises them. This is the
-  Claude Code-style deferred-loading seam — the loop never re-references
+  provider-neutral deferred-loading seam — the loop never re-references
   the registry between turns, so injected schemas live only inside the
   per-turn advertised list (Phase 2 does not register them for execution;
   that is a future phase's concern).
@@ -558,6 +561,12 @@ the multi-turn, tool-executing layer above it.
   symlink containment beneath the artifact directory. Canonical file paths
   reuse an in-process session; queued feedback survives cancelled tool waits,
   browser drafts survive reloads, and revision polling live-reloads the iframe.
+- Interview submission uses typed `Action::Answer` (`"answer"`), distinct from
+  artifact `Modify`; context says planning answers were submitted, not that a
+  plan was rejected. Overall notes and structured choices are preserved together.
+  Answer submission alone grants no execution/tool permission. The shared
+  formatter applies in all provider paths; current ACP browser-UX exclusion
+  remains documented by its owning app, not silently removed here.
 - Annotations carry stable IDs, editable comments/replacement HTML, and typed
   element or text-range targets. Planning questions support descriptions,
   required/optional state, recommendations, and Other while ADR 0019 retains
@@ -586,7 +595,7 @@ the multi-turn, tool-executing layer above it.
   Host-owned memory, checkpoint, MCP, plugin, worker, and automation tools
   are injected through `ToolService::with_service`; set their
   `ToolExecutionClass` in the host definition and add a mode-eligibility
-  test for the composition boundary. To opt a tool into Claude Code-style
+  test for the composition boundary. To opt a tool into
   deferred loading (hide it from the initial advertisement while keeping it
   executable), set `ToolDefinition.defer_loading = true` on the registered
   definition; `definitions_for(mode)` will then exclude it from both `Plan`

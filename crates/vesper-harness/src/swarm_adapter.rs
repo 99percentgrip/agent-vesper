@@ -1,185 +1,266 @@
-//! Provider-facing WorkerPort adapter (VRO-15 PR-9).
+//! Native swarm execution through the existing AgentLoop, feature `swarm`.
 //!
-//! Bridges [`vesper_swarm::worker::WorkerPort`] to Vesper's real
-//! provider-neutral execution seams: one bounded turn maps to one
-//! [`ProviderSession::start`] stream, and the task's required
-//! capabilities filter the tool registry per task. This is the
-//! composition boundary — the only place the swarm meets providers.
-//!
-//! Feature-gated: the entire module compiles only under the harness's
-//! default-off `swarm` feature, so the single-agent ReAct loop, the TUI,
-//! and the ACP host build and behave identically without it.
+//! The host injects its real registry/configuration, tool executors, permission
+//! channel and optional progress channel. Each task gets an independent runtime
+//! session through AgentLoop; this adapter owns no provider-wire or tool loop.
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
-use std::sync::Arc;
-
-use futures_util::StreamExt;
+use crate::WorkerFactory;
 use futures_util::future::BoxFuture;
+use vesper_agent::{AgentLoop, AgentProgressPort, AgentTurnOutcome, PermissionPort, ToolRegistry};
 use vesper_domain::{
-    ContentPart, ConversationMessage, MessageId, MessageRole, ProviderId, ProviderRequestId,
-    QualifiedModelId, SystemInstruction,
-};
-use vesper_provider::{
-    CancellationSignal as ProviderCancellation, FallbackPolicy, ProviderError, ProviderEventStream,
-    ProviderRequest, ProviderSession, ProviderStreamEvent, StructuredOutputIntent, ToolChoice,
+    ContentPart, ContentText, ConversationMessage, MessageId, MessageRole, SessionOperatingMode,
+    SessionPermissionMode,
 };
 use vesper_swarm::worker::{
-    CancellationSignal as SwarmCancellation, TurnReceipt, WorkerCapabilities, WorkerError,
-    WorkerPort, WorkerTask,
+    CancellationSignal, TurnReceipt, WorkerCapabilities, WorkerError, WorkerPort, WorkerTask,
 };
 
-/// Shared session + model identity for swarm turns.
-#[derive(Clone)]
-pub struct SwarmSession {
-    /// The provider-neutral session adapters expose.
-    pub session: Arc<dyn ProviderSession>,
-    /// Provider identity for requests.
-    pub provider_id: ProviderId,
-    /// The qualified model every swarm turn uses.
-    pub model: QualifiedModelId,
-    /// System instructions every swarm turn receives (role instructions
-    /// are appended per task).
-    pub system_instructions: Vec<SystemInstruction>,
-    /// Full tool registry; filtered per task by required capabilities.
-    pub registry: Vec<vesper_domain::ToolDefinition>,
-}
-
-/// Maps the swarm's cooperative cancellation to the provider's.
-struct SwarmCancellationBridge {
-    signal: SwarmCancellation,
-}
-
-impl ProviderCancellation for SwarmCancellationBridge {
+struct CancellationBridge(CancellationSignal);
+impl vesper_provider::CancellationSignal for CancellationBridge {
     fn is_cancelled(&self) -> bool {
-        self.signal.is_cancelled()
+        self.0.is_cancelled()
+    }
+}
+struct BusyGuard<'a>(&'a AtomicBool);
+impl Drop for BusyGuard<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
     }
 }
 
-/// The adapter: one `WorkerPort` implementation per hive class.
+/// One independent worker instance. Concurrent use of the same instance is
+/// refused; hosts must create separate instances for simultaneous worker turns.
 pub struct ProviderWorkerPort {
-    session: SwarmSession,
-    /// Tool names this class may use (the per-task filter applied on
-    /// top of the registry).
-    allowed_tools: Vec<String>,
+    factory: WorkerFactory,
+    tools: ToolRegistry,
+    mode: SessionOperatingMode,
+    permission: SessionPermissionMode,
+    permission_port: Arc<dyn PermissionPort>,
+    progress_port: Option<Arc<dyn AgentProgressPort>>,
+    capabilities: WorkerCapabilities,
+    busy: AtomicBool,
+    history: Mutex<Vec<ConversationMessage>>,
 }
-
 impl ProviderWorkerPort {
-    /// Creates an adapter for one role class.
-    pub fn new(session: SwarmSession, allowed_tools: Vec<String>) -> Self {
+    /// Restricts both advertising and execution to registered role tools.
+    /// The supplied permission mode/port and sandbox/firewall configuration are
+    /// inherited unchanged. Requirements never grant permission.
+    pub fn new(
+        factory: WorkerFactory,
+        tools: ToolRegistry,
+        allowed_tools: Vec<String>,
+        mode: SessionOperatingMode,
+        permission: SessionPermissionMode,
+        permission_port: Arc<dyn PermissionPort>,
+    ) -> Self {
+        let tools = tools.restricted_to(&allowed_tools);
+        let capabilities = WorkerCapabilities {
+            tools: allowed_tools
+                .into_iter()
+                .filter(|name| tools.contains(name))
+                .collect(),
+            max_concurrent_tasks: 1,
+        };
         Self {
-            session,
-            allowed_tools,
+            factory,
+            tools,
+            mode,
+            permission,
+            permission_port,
+            progress_port: None,
+            capabilities,
+            busy: AtomicBool::new(false),
+            history: Mutex::new(Vec::new()),
         }
     }
 
-    /// Registry filtered to the intersection of the class allowlist and
-    /// the task's required capabilities (dynamic per-task filtering).
-    fn filtered_tools(&self, task: &WorkerTask) -> Vec<vesper_domain::ToolDefinition> {
-        self.session
-            .registry
-            .iter()
-            .filter(|definition| {
-                let name = definition.harness_name.as_str();
-                self.allowed_tools.iter().any(|allowed| allowed == name)
-                    && (task.required_capabilities.is_empty()
-                        || task
-                            .required_capabilities
-                            .iter()
-                            .any(|required| required == name))
-            })
-            .cloned()
-            .collect()
+    /// Connects partial output and tool progress to the host's existing sink.
+    #[must_use]
+    pub fn with_progress_port(mut self, port: Arc<dyn AgentProgressPort>) -> Self {
+        self.progress_port = Some(port);
+        self
     }
 
-    fn build_request(&self, task: &WorkerTask) -> ProviderRequest {
-        let request_id = ProviderRequestId::new(format!("swarm-{}", task.id))
-            .unwrap_or_else(|_| ProviderRequestId::new("swarm-turn").expect("non-empty"));
-        ProviderRequest {
-            request_id,
-            provider_id: self.session.provider_id.clone(),
-            model: self.session.model.clone(),
-            endpoint_id: None,
-            system_instructions: self.session.system_instructions.clone(),
-            messages: vec![ConversationMessage {
-                id: MessageId::new(format!("swarm-msg-{}", task.id))
-                    .unwrap_or_else(|_| MessageId::new("swarm-msg").expect("non-empty")),
-                role: MessageRole::User,
-                content: vec![ContentPart::Text(
-                    vesper_domain::ContentText::new(task.prompt.clone())
-                        .expect("bounded task prompt"),
-                )],
-                extensions: Default::default(),
-            }],
-            tools: self.filtered_tools(task),
-            tool_choice: ToolChoice::Auto,
-            capabilities: Vec::new(),
-            reasoning: None,
-            structured_output: StructuredOutputIntent::None,
-            sampling: None,
-            maximum_output_tokens: None,
-            continuation: None,
-            fallback_policy: FallbackPolicy::Strict,
-            provider_extensions: None,
-        }
+    /// Last completed or interrupted native history, including tool transactions.
+    /// No filesystem persistence is performed; durable checkpoints remain host opt-in.
+    #[must_use]
+    pub fn history(&self) -> Vec<ConversationMessage> {
+        self.history.lock().expect("worker history lock").clone()
     }
 }
-
 impl WorkerPort for ProviderWorkerPort {
+    fn capabilities(&self) -> WorkerCapabilities {
+        self.capabilities.clone()
+    }
     fn run_turn<'a>(
         &'a self,
         task: &'a WorkerTask,
-        cancellation: SwarmCancellation,
+        cancellation: CancellationSignal,
     ) -> BoxFuture<'a, Result<TurnReceipt, WorkerError>> {
         Box::pin(async move {
             if cancellation.is_cancelled() {
                 return Err(WorkerError::Cancelled(task.id.clone()));
             }
-            let request = self.build_request(task);
-            let bridge = Arc::new(SwarmCancellationBridge {
-                signal: cancellation,
-            });
+            if !self.capabilities.supports(&task.required_capabilities)
+                || self
+                    .busy
+                    .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                    .is_err()
+            {
+                return Err(WorkerError::Rejected(task.id.clone()));
+            }
+            let _busy = BusyGuard(&self.busy);
+            let failure = |reason: String| WorkerError::Failed(task.id.clone(), reason);
+            let message = ConversationMessage {
+                id: MessageId::new(format!("swarm-{}", task.id))
+                    .map_err(|error| failure(error.to_string()))?,
+                role: MessageRole::User,
+                content: vec![ContentPart::Text(
+                    ContentText::new(task.prompt.clone())
+                        .map_err(|error| failure(error.to_string()))?,
+                )],
+                extensions: Default::default(),
+            };
+            self.history.lock().expect("worker history lock").clear();
+            let tools = if task.required_capabilities.is_empty() {
+                self.tools.clone()
+            } else {
+                self.tools.restricted_to(&task.required_capabilities)
+            };
+            let mut engine = AgentLoop::new(
+                self.factory.registry.clone(),
+                tools,
+                self.factory.config.clone(),
+            )
+            .with_permission_port(self.permission_port.clone());
+            if let Some(port) = &self.progress_port {
+                engine = engine.with_progress_port(port.clone());
+            }
             let started = std::time::Instant::now();
-            let stream: ProviderEventStream = self
-                .session
-                .session
-                .start(request, bridge)
+            let (outcome, history) = engine
+                .run_prompt_with_history_with_cancellation(
+                    vec![message],
+                    self.mode,
+                    self.permission,
+                    Arc::new(CancellationBridge(cancellation.clone())),
+                )
                 .await
-                .map_err(map_provider_error(task))?;
+                .map_err(|error| failure(error.to_string()))?;
+            *self.history.lock().expect("worker history lock") = history;
+            if cancellation.is_cancelled() {
+                return Err(WorkerError::Cancelled(task.id.clone()));
+            }
+            let (content, success) = match outcome {
+                AgentTurnOutcome::Completed {
+                    assistant_content, ..
+                } => (assistant_content, true),
+                AgentTurnOutcome::Interrupted {
+                    assistant_content, ..
+                } => (assistant_content, false),
+                AgentTurnOutcome::MaxIterationsReached { .. } => {
+                    return Err(failure(
+                        "native agent iteration safety ceiling reached".into(),
+                    ));
+                }
+            };
             let mut output = String::new();
-            let mut success = false;
-            let mut stream = stream;
-            while let Some(event) = stream.next().await {
-                match event {
-                    Ok(ProviderStreamEvent::ContentDelta { part, .. }) => {
-                        // Accumulate visible text parts only.
-                        if let ContentPart::Text(text) = part {
-                            output.push_str(text.as_str());
-                        }
+            for part in content {
+                if let ContentPart::Text(text) = part {
+                    if output.len().saturating_add(text.as_str().len()) > 1_048_576 {
+                        return Err(failure("worker output byte limit exceeded".into()));
                     }
-                    Ok(ProviderStreamEvent::Completed { .. }) => {
-                        success = true;
-                    }
-                    Ok(_) => {}
-                    Err(error) => return Err(map_provider_error(task)(error)),
+                    output.push_str(text.as_str());
                 }
             }
-            let duration = started.elapsed();
             Ok(TurnReceipt {
                 task_id: task.id.clone(),
                 output,
                 success,
-                duration,
+                duration: started.elapsed(),
             })
         })
     }
+}
 
-    fn capabilities(&self) -> WorkerCapabilities {
-        WorkerCapabilities {
-            tools: self.allowed_tools.clone(),
-            max_concurrent_tasks: 1,
+/// Native factory recipe. It shares registry/configuration and permission/progress
+/// services, never an instance's busy flag or conversation history. Provider
+/// sessions are opened lazily by the existing AgentLoop at turn execution.
+pub struct ProviderWorkerInstanceFactory {
+    template: ProviderWorkerPort,
+    sandbox: Option<(Arc<crate::swarm_sandbox::NativeSandboxLeases>, String)>,
+}
+impl ProviderWorkerPort {
+    /// Consumes this worker as a configuration recipe for independent pool slots.
+    #[must_use]
+    pub fn into_instance_factory(self) -> ProviderWorkerInstanceFactory {
+        ProviderWorkerInstanceFactory {
+            template: self,
+            sandbox: None,
         }
     }
 }
-
-fn map_provider_error(task: &WorkerTask) -> impl Fn(ProviderError) -> WorkerError + '_ {
-    move |error: ProviderError| WorkerError::Failed(task.id.clone(), error.to_string())
+impl ProviderWorkerInstanceFactory {
+    /// Bind every concrete instance (including scale/replacement) to a fresh
+    /// worker root and the shared native lease book. The host's permission port
+    /// remains unchanged; a sandbox scope does not authorize any tool call.
+    #[must_use]
+    pub fn with_sandbox_leases(
+        mut self,
+        leases: Arc<crate::swarm_sandbox::NativeSandboxLeases>,
+        role: String,
+    ) -> Self {
+        self.sandbox = Some((leases, role));
+        self
+    }
+}
+impl vesper_swarm::pool::WorkerInstanceFactory for ProviderWorkerInstanceFactory {
+    fn capabilities(&self) -> WorkerCapabilities {
+        self.template.capabilities.clone()
+    }
+    fn create<'a>(
+        &'a self,
+        id: u64,
+        cancellation: CancellationSignal,
+    ) -> BoxFuture<'a, Result<Arc<dyn WorkerPort>, WorkerError>> {
+        Box::pin(async move {
+            if cancellation.is_cancelled() {
+                return Err(WorkerError::Cancelled(format!("boot-{id}")));
+            }
+            let template = &self.template;
+            let mut worker = ProviderWorkerPort::new(
+                template.factory.clone(),
+                template.tools.clone(),
+                template.capabilities.tools.clone(),
+                template.mode,
+                template.permission,
+                template.permission_port.clone(),
+            );
+            worker.progress_port = template.progress_port.clone();
+            if let Some((leases, role)) = &self.sandbox {
+                let (root, route) = leases
+                    .worker(role, id, cancellation.clone())
+                    .await
+                    .map_err(|error| {
+                        WorkerError::Failed(format!("boot-{id}"), error.to_string())
+                    })?;
+                worker.factory.config.workspace_roots = vec![vesper_domain::WorkspaceRoot {
+                    name: vesper_domain::BoundedString::new(format!("{role}-{id}")).map_err(
+                        |error| WorkerError::Failed(format!("boot-{id}"), error.to_string()),
+                    )?,
+                    path: vesper_domain::BoundedString::new(root.to_string_lossy().into_owned())
+                        .map_err(|error| {
+                            WorkerError::Failed(format!("boot-{id}"), error.to_string())
+                        })?,
+                    primary: true,
+                }];
+                worker.factory.config.sandbox = Some(route);
+            }
+            if cancellation.is_cancelled() {
+                return Err(WorkerError::Cancelled(format!("boot-{id}")));
+            }
+            Ok(Arc::new(worker) as Arc<dyn WorkerPort>)
+        })
+    }
 }

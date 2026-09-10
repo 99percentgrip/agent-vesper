@@ -28,13 +28,21 @@ use vesper_agent::sandbox_route::{
 };
 use vesper_sandbox::{Argv, SandboxBackend, SandboxSpec};
 
+#[cfg(test)]
+#[path = "sandbox_outcome_tests.rs"]
+mod outcome_tests;
+
+#[cfg(test)]
+#[path = "sandbox_panic_tests.rs"]
+mod panic_tests;
+
 /// Single-shot blocking bridge for backend futures on a `spawn_blocking`
 /// thread, where no ambient runtime context may exist.
-struct BlockingBridge;
+pub(crate) struct BlockingBridge;
 
 impl BlockingBridge {
     /// Polls `future` to completion without an ambient tokio runtime.
-    fn block_on<F: std::future::Future>(future: F) -> F::Output {
+    pub(crate) fn block_on<F: std::future::Future>(future: F) -> F::Output {
         use std::task::{Context, Poll, Waker};
         struct ThreadWaker(std::thread::Thread);
         impl std::task::Wake for ThreadWaker {
@@ -60,6 +68,8 @@ pub struct BackendPort {
     backend: Arc<dyn SandboxBackend>,
     /// This port's view of the file-driven demand (resource bounds).
     demand: SandboxDemand,
+    /// Sticky refusal after unverified teardown. No automatic replay or reset.
+    cleanup_unverified: std::sync::atomic::AtomicBool,
 }
 
 impl std::fmt::Debug for BackendPort {
@@ -74,7 +84,34 @@ impl BackendPort {
     /// Wraps a host-constructed backend.
     #[must_use]
     pub fn new(backend: Arc<dyn SandboxBackend>, demand: SandboxDemand) -> Self {
-        Self { backend, demand }
+        Self {
+            backend,
+            demand,
+            cleanup_unverified: std::sync::atomic::AtomicBool::new(false),
+        }
+    }
+}
+
+impl BackendPort {
+    // Catch both future construction and polling. A panicking backend may have
+    // partially changed external state, so never trust this instance again.
+    // AssertUnwindSafe does not certify backend recovery: sticky quarantine is
+    // the recovery policy. Do not include arbitrary panic payloads in tool output.
+    fn backend_call<T>(
+        &self,
+        phase: &'static str,
+        call: impl FnOnce() -> Result<T, vesper_sandbox::SandboxError>,
+    ) -> Result<T, vesper_sandbox::SandboxError> {
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(call)) {
+            Ok(result) => result,
+            Err(_) => {
+                self.cleanup_unverified
+                    .store(true, std::sync::atomic::Ordering::Release);
+                Err(vesper_sandbox::SandboxError::Run(format!(
+                    "sandbox backend panicked during {phase}; route quarantined, cleanup unverified"
+                )))
+            }
+        }
     }
 }
 
@@ -94,29 +131,80 @@ impl SandboxBackendPort for BackendPort {
         if cancellation.is_cancelled() {
             return Err(SandboxRunError::Cancelled);
         }
+        if self
+            .cleanup_unverified
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            return Err(SandboxRunError::Backend(
+                "sandbox route quarantined after unverified teardown; verify backend cleanup before rebuilding the route".into(),
+            ));
+        }
         let spec = build_spec(cwd, &self.demand, timeout_seconds);
-        let handle = BlockingBridge::block_on(self.backend.provision(&spec))
+        let handle = self
+            .backend_call("provision", || {
+                BlockingBridge::block_on(self.backend.provision(&spec))
+            })
             .map_err(|error| SandboxRunError::Backend(format!("provision failed: {error}")))?;
         let argv = shell_argv(command, cwd);
-        let outcome = BlockingBridge::block_on(self.backend.run(&handle, &argv));
-        let _ = BlockingBridge::block_on(self.backend.teardown(handle));
-        let output =
-            outcome.map_err(|error| SandboxRunError::Backend(format!("run failed: {error}")))?;
-
-        let mut combined = output.stdout;
-        if !output.stderr.is_empty() {
-            combined.push_str("\n[stderr]\n");
-            combined.push_str(&output.stderr);
+        // Cancellation can arrive during provisioning. Never dispatch a command
+        // after observing it, but always clean up the provisioned handle.
+        let outcome = if cancellation.is_cancelled() {
+            Err(vesper_sandbox::SandboxError::Run(
+                "cancelled before dispatch".into(),
+            ))
+        } else {
+            self.backend_call("run", || {
+                BlockingBridge::block_on(self.backend.run(&handle, &argv))
+            })
+        };
+        // Even a panicked run must reach explicit teardown. Teardown itself may
+        // panic during future construction, polling or owned-handle destruction.
+        let cleanup = self.backend_call("teardown", || {
+            BlockingBridge::block_on(self.backend.teardown(handle))
+        });
+        if cleanup.is_err() {
+            self.cleanup_unverified
+                .store(true, std::sync::atomic::Ordering::Release);
         }
-        Ok(SandboxOutcome {
-            output: combined,
-            timed_out: output.timed_out,
-        })
+        finish_run(outcome, cleanup, cancellation.is_cancelled())
     }
 }
 
+/// Arbitrate both outcomes: unverified teardown cannot become tool success or
+/// disappear behind an execution error/cancellation. Keep bounded backend output
+/// in the failure diagnostic so the host does not lose the command's evidence.
+pub(crate) fn finish_run(
+    outcome: Result<vesper_sandbox::ExecOutput, vesper_sandbox::SandboxError>,
+    cleanup: Result<(), vesper_sandbox::SandboxError>,
+    cancelled: bool,
+) -> Result<SandboxOutcome, SandboxRunError> {
+    if let Err(error) = cleanup {
+        let execution = match outcome {
+            Ok(output) => format!("stdout: {}\nstderr: {}", output.stdout, output.stderr),
+            Err(error) => format!("run failed: {error}"),
+        };
+        return Err(SandboxRunError::Backend(format!(
+            "teardown unverified: {error}\n{execution}"
+        )));
+    }
+    if cancelled {
+        return Err(SandboxRunError::Cancelled);
+    }
+    let output =
+        outcome.map_err(|error| SandboxRunError::Backend(format!("run failed: {error}")))?;
+    let mut combined = output.stdout;
+    if !output.stderr.is_empty() {
+        combined.push_str("\n[stderr]\n");
+        combined.push_str(&output.stderr);
+    }
+    Ok(SandboxOutcome {
+        output: combined,
+        timed_out: output.timed_out,
+    })
+}
+
 /// Builds the sandbox spec from the demand, with the run timeout applied.
-fn build_spec(cwd: &Path, demand: &SandboxDemand, timeout_seconds: u64) -> SandboxSpec {
+pub(crate) fn build_spec(cwd: &Path, demand: &SandboxDemand, timeout_seconds: u64) -> SandboxSpec {
     let mut spec = SandboxSpec::new(cwd.to_path_buf());
     spec.timeout_seconds = timeout_seconds.max(1);
     if let Some(cpus) = demand.cpu_limit {
@@ -132,7 +220,7 @@ fn build_spec(cwd: &Path, demand: &SandboxDemand, timeout_seconds: u64) -> Sandb
 }
 
 /// Platform shell argv for one command string, mirroring `run_bounded`.
-fn shell_argv(command: &str, cwd: &Path) -> Argv {
+pub(crate) fn shell_argv(command: &str, cwd: &Path) -> Argv {
     let (program, flag) = if cfg!(windows) {
         ("cmd", "/C")
     } else {
