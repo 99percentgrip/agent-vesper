@@ -32,6 +32,19 @@ fn location(root: &Path) -> Result<std::path::PathBuf, String> {
 
 impl AcceptanceSettings {
     pub fn load(root: &Path) -> Result<Self, String> {
+        // Ordinary ACP sessions can carry an unresolved/virtual cwd. No saved
+        // activation exists there; opt-in discovery must not reject ungated work.
+        // Explicit enrollment and saves still require an existing absolute root.
+        if !root.is_absolute() {
+            return Ok(Self::default());
+        }
+        match root.metadata() {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(Self::default());
+            }
+            Err(_) => return Err("cannot inspect acceptance workspace".into()),
+            Ok(_) => {}
+        }
         let path = location(root)?;
         let file = match std::fs::File::open(path) {
             Ok(file) => file,
@@ -82,6 +95,23 @@ impl AcceptanceSettings {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn absent_workspace_has_no_activation_but_cannot_be_saved() {
+        let parent = tempfile::tempdir().unwrap();
+        let missing = parent.path().join("absent");
+        for root in [missing.as_path(), Path::new("unresolved-workspace")] {
+            assert_eq!(
+                AcceptanceSettings::load(root).unwrap(),
+                AcceptanceSettings::default()
+            );
+            assert!(AcceptanceSettings::default().save(root).is_err());
+        }
+        assert!(!missing.exists());
+        let file = parent.path().join("not-a-workspace");
+        std::fs::write(&file, "not a directory").unwrap();
+        assert!(AcceptanceSettings::load(&file).is_err());
+    }
+
     #[test]
     fn default_and_cancel_write_nothing_explicit_save_roundtrips() {
         let root = tempfile::tempdir().unwrap();

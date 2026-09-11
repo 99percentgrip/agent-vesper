@@ -6,6 +6,12 @@ Scope: approved native PRD completion gate, verification and regression preventi
 Status: implemented and locally verified; v0.21.7 release preparation is authorized.
 Publication and installation require the exact-commit gates below.
 
+Windows release validation exposed an opt-in discovery regression for ACP sessions
+with unresolved/virtual workspace paths. Saved activation now defaults to inactive
+only for unresolved or absent roots; explicit enrollment/saves remain strict and
+unreadable/malformed existing settings still refuse. A cross-platform regression
+checks absent-root reads, rejected saves and non-directory refusal.
+
 ## User workflow
 
 - One objective: `/acceptance start docs/my-prd.md`.

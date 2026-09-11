@@ -153,6 +153,9 @@ Z.ai and Playwright MCP server descriptors.
   .env inputs refuse. Default reads write nothing; settings saves/audit export are
   explicit. Resume imports history only, never verification. `acceptance_tests` covers
   real defective/repair execution and adversarial failures.
+  Saved opt-in discovery treats unresolved or absent workspaces as inactive, so
+  ordinary ACP sessions remain usable. Explicit enrollment/saves require an existing
+  absolute workspace; unreadable or malformed existing settings still refuse.
 
 - Every filesystem path is confined to the caller's primary workspace root
   before access.
