@@ -1,6 +1,10 @@
 #![forbid(unsafe_code)]
 //! Shared hosted tool services for the production ACP and TUI compositions.
 
+pub mod acceptance;
+mod acceptance_runner;
+pub mod acceptance_settings;
+mod acceptance_snapshot;
 pub mod lens_tools;
 pub mod sandbox_backend;
 pub mod scope_holder;
@@ -1375,6 +1379,7 @@ async fn execute_worktree_worker(
 
 fn outcome_text(outcome: &AgentTurnOutcome) -> String {
     match outcome {
+        AgentTurnOutcome::Acceptance { report, .. } => report.render(),
         AgentTurnOutcome::Completed {
             assistant_content, ..
         } => assistant_content

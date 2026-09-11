@@ -7,6 +7,11 @@ update mapping, and bounded asynchronous dispatch into `vesper-runtime`.
 
 ## Local Contracts
 
+- `/acceptance` is argument-dependent for concurrency: status/settings inspection is
+  safe, while start/resume/revise/stop/export interrupt or serialize against active
+  work. Native completion reports remain host-owned results rather than model-supplied
+  status.
+
 - ACP SDK and wire types remain inside this crate.
 - SDK callbacks enqueue bounded work and never await provider completion.
 - The compatibility layer owns legacy `PromptResponse.userMessageId` placement.

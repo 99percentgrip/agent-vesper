@@ -150,6 +150,7 @@ pub struct SessionState {
     pub pending_web_settings: bool,
     /// Explicit shared web setting operation.
     pub pending_web_command: Option<String>,
+    pub pending_acceptance_command: Option<String>,
     #[cfg(feature = "swarm")]
     pub pending_swarm_command: Option<String>,
     #[cfg(feature = "swarm")]
@@ -469,6 +470,7 @@ fn apply_outcome(
         pending_lmstudio_settings,
         pending_web_settings,
         pending_web_command,
+        pending_acceptance_command,
         #[cfg(feature = "swarm")]
         pending_swarm_command,
         #[cfg(feature = "swarm")]
@@ -478,6 +480,9 @@ fn apply_outcome(
         permission_modal_focus: _,
     } = state;
     match outcome {
+        CommandOutcome::Acceptance(argument) => {
+            *pending_acceptance_command = Some(argument);
+        }
         #[cfg(feature = "swarm")]
         CommandOutcome::Swarm(argument) => {
             *pending_swarm_command = Some(argument);

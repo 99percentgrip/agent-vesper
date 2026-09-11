@@ -20,6 +20,7 @@
 //! See `crates/vesper-agent/AGENTS.md` for purpose, ownership, contracts, and
 //! verification.
 
+pub mod acceptance;
 pub mod agent_loop;
 pub mod compaction;
 pub mod confinement;

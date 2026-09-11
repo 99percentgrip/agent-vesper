@@ -63,7 +63,7 @@ business logic.
 - `src/commands.rs` — slash-command parsing, registry, and resolution
   against the active provider's superpowers. Tier C Phase 7 (ADR 0010): the
   registry now covers the complete Python oracle surface plus Vesper-native
-  commands (101 entries including the distinct `/export last` route). The
+  commands (102 entries, or 103 with `swarm`, including `/export last`). The
   `ORACLE_COMMAND_SURFACE` const table is the single source of truth for the
   migration matrix. `chat-only` (the `/chat-only` palette twin of the F11
   keybinding) resolves to `UiAction::ToggleChatOnly`; like every registry
@@ -563,6 +563,13 @@ business logic.
   user's choice.
 
 ## Local Contracts
+
+- ADR 0028 `acceptance_host` owns Settings → Implementation acceptance with PRD
+  selection, ON/OFF and Save/Cancel. `/acceptance` uses shared harness controls. Direct,
+  VRO, ReAct and Swarm composition retains the parent gate; candidate/Finish prose
+  cannot replace its report. Cancellation displays incomplete scope. Native settings and
+  event tests enforce presentation parity with ACP.
+  Objective enrollment uses the current validated model and reasoning configuration.
 
 - The opt-in web surface uses the shared harness web service and its contained
   fetch/render/browser runtime, off the render thread. No TUI-specific driver

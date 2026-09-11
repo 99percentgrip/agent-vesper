@@ -9,6 +9,10 @@ Orchestrator (VRO) Phase VRO-1 domain contracts.
 
 ## Local Contracts
 
+- `src/acceptance.rs` owns ADR 0028 strict versioned requirement, platform, evidence,
+  finding, receipt and report values. DTO deserialization is not verification authority.
+  `/acceptance` is in the shared host-parity command catalog.
+
 - This crate depends on no workspace crate and performs no I/O.
 - No ACP SDK, provider SDK, frontend, transport, or concrete-provider type may
   enter these DTOs.

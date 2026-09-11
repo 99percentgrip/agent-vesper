@@ -27,6 +27,10 @@ struct Cli {
 enum Task {
     /// Run the complete local contract-foundation verification set.
     Verify,
+    /// Run exact completion-assurance regression cases, refusing empty/ignored selections.
+    Acceptance,
+    /// Prove critical acceptance tests kill two bounded evaluator mutations.
+    AcceptanceMutations,
     /// Validate architecture dependency and source boundaries.
     Architecture,
     /// Run checks under Rust 1.88.
@@ -125,6 +129,8 @@ enum SessionsTask {
 fn main() -> ExitCode {
     let result = match Cli::parse().command {
         Task::Verify => verify(),
+        Task::Acceptance => acceptance_verify(),
+        Task::AcceptanceMutations => acceptance_mutations(),
         Task::Architecture => architecture(),
         Task::Msrv => msrv(),
         Task::Fixtures {
@@ -1816,7 +1822,8 @@ fn verify() -> Result<(), String> {
     provider_glm_verify()?;
     runtime_verify()?;
     acp_verify()?;
-    sessions_verify()
+    sessions_verify()?;
+    acceptance_verify()
 }
 
 fn msrv() -> Result<(), String> {
@@ -1873,4 +1880,248 @@ struct Dependency {
     source: Option<String>,
     path: Option<PathBuf>,
     kind: Option<String>,
+}
+
+/// External coding agents and CI run the same runtime/evaluator regression gate.
+/// Exact names make a deleted, renamed, ignored, or zero-match case a failure.
+fn acceptance_verify() -> Result<(), String> {
+    let cases: &[(&str, &[&str], &str)] = &[
+        (
+            "vesper-agent",
+            &["--test", "acceptance_policy"],
+            "every_required_host_needs_its_own_evidence",
+        ),
+        (
+            "vesper-agent",
+            &["--test", "acceptance_policy"],
+            "unit_tests_cannot_substitute_for_native_tests",
+        ),
+        (
+            "vesper-agent",
+            &["--test", "acceptance_policy"],
+            "changed_source_contract_checks_platform_or_test_invalidates",
+        ),
+        (
+            "vesper-agent",
+            &["--test", "acceptance_policy"],
+            "duplicate_unknown_and_wrong_command_receipts_refuse",
+        ),
+        (
+            "vesper-agent",
+            &["--test", "acceptance_policy"],
+            "omitted_source_and_removed_scenario_checks_refuse",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "acceptance::tests::native_agent_cannot_stop_early_then_repairs_and_earns_real_evidence",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "acceptance::tests::delegated_finish_and_empty_deleted_or_replaced_plans_cannot_certify_parent",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "acceptance::tests::wrong_platform_and_verification_timeout_fail_closed",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "acceptance::tests::reviewer_unavailable_or_without_source_inspection_cannot_approve",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "acceptance::tests::explicit_scope_revision_and_resume_preserve_history_but_never_import_verification",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "acceptance::tests::independent_reexamination_resolves_spurious_finding_without_forged_override",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "acceptance::tests::cancelled_and_exhausted_turns_publish_incomplete_history",
+        ),
+        (
+            "agent-vesper-acp",
+            &["--test", "acceptance_controls"],
+            "native_acceptance_controls_persist_only_explicit_activation",
+        ),
+        (
+            "agent-vesper-tui",
+            &["--bin", "agent-vesper-tui"],
+            "acceptance_host::tests::acceptance_native_settings_show_scope_and_save_cancel",
+        ),
+        (
+            "agent-vesper-tui",
+            &["--bin", "agent-vesper-tui"],
+            "tests::acceptance_event_cannot_be_overridden_by_completed_plan",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "acceptance::tests::verification_never_bypasses_shell_permission_or_command_firewall",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "acceptance::tests::publication_rechecks_live_source_after_snapshot_review",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "acceptance::tests::project_rules_are_frozen_and_runtime_configuration_is_snapshotted",
+        ),
+        (
+            "vesper-agent",
+            &["--lib"],
+            "vro::react::tests::acceptance_parent_controls_reach_react_tools",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "acceptance::tests::saved_activation_restores_unverified_scope_and_cannot_disable_an_active_contract",
+        ),
+    ];
+    let started = std::time::Instant::now();
+    for (package, target, name) in cases {
+        let output = Command::new("cargo")
+            .current_dir(repository_root())
+            .args([
+                "test",
+                "--locked",
+                "--offline",
+                "--color",
+                "never",
+                "--all-features",
+                "-p",
+                package,
+            ])
+            .args(*target)
+            .args([name, "--", "--exact", "--test-threads=1"])
+            .output()
+            .map_err(|error| format!("acceptance case {name}: {error}"))?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if !output.status.success()
+            || !stdout
+                .lines()
+                .any(|line| line.trim() == format!("test {name} ... ok"))
+            || !stdout.contains("test result: ok. 1 passed; 0 failed; 0 ignored;")
+        {
+            return Err(format!(
+                "acceptance case did not execute and pass: {name}\n{stdout}\n{}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+        println!("acceptance verified: {name}");
+    }
+    println!(
+        "Acceptance regression gate: {} exact cases passed in {} ms. Offline fixture model cost: zero; live-model effectiveness is not measured.",
+        cases.len(),
+        started.elapsed().as_millis()
+    );
+    Ok(())
+}
+
+fn acceptance_mutations() -> Result<(), String> {
+    fn copy_tree(source: &Path, destination: &Path) -> Result<(), String> {
+        fs::create_dir_all(destination).map_err(|e| e.to_string())?;
+        for entry in fs::read_dir(source).map_err(|e| e.to_string())? {
+            let entry = entry.map_err(|e| e.to_string())?;
+            let name = entry.file_name();
+            if matches!(
+                name.to_str(),
+                Some("target" | ".git" | "node_modules" | ".agent-vesper")
+            ) {
+                continue;
+            }
+            let kind = entry.file_type().map_err(|e| e.to_string())?;
+            if kind.is_symlink() {
+                return Err("mutation source symlink refused".into());
+            }
+            if kind.is_dir() {
+                copy_tree(&entry.path(), &destination.join(name))?;
+            } else if kind.is_file() {
+                fs::copy(entry.path(), destination.join(name)).map_err(|e| e.to_string())?;
+            }
+        }
+        Ok(())
+    }
+    let root = repository_root();
+    let temp = tempfile::tempdir().map_err(|e| e.to_string())?;
+    for directory in ["crates", "apps", "xtask", "fixtures", ".cargo", "skills"] {
+        copy_tree(&root.join(directory), &temp.path().join(directory))?;
+    }
+    for file in ["Cargo.toml", "Cargo.lock"] {
+        fs::copy(root.join(file), temp.path().join(file)).map_err(|e| e.to_string())?;
+    }
+    let source_path = temp.path().join("crates/vesper-agent/src/acceptance.rs");
+    let original = fs::read_to_string(&source_path).map_err(|e| e.to_string())?;
+    let mutations = [
+        (
+            "receipt.source_digest != source_digest",
+            "false",
+            "changed_source_contract_checks_platform_or_test_invalidates",
+        ),
+        (
+            "if state != AcceptanceState::Verified {",
+            "if false {",
+            "all_nonpositive_states_refuse_completion",
+        ),
+    ];
+    for (needle, replacement, name) in mutations {
+        if original.matches(needle).count() != 1 {
+            return Err(format!(
+                "mutation location changed: {needle}; update the explicit gate"
+            ));
+        }
+        for mutated in [false, true] {
+            fs::write(
+                &source_path,
+                if mutated {
+                    original.replacen(needle, replacement, 1)
+                } else {
+                    original.clone()
+                },
+            )
+            .map_err(|e| e.to_string())?;
+            let output = Command::new("cargo")
+                .current_dir(temp.path())
+                .env("CARGO_TARGET_DIR", root.join("target/acceptance-mutations"))
+                .args([
+                    "test",
+                    "--offline",
+                    "--locked",
+                    "--color",
+                    "never",
+                    "-p",
+                    "vesper-agent",
+                    "--test",
+                    "acceptance_policy",
+                    name,
+                    "--",
+                    "--exact",
+                ])
+                .output()
+                .map_err(|e| e.to_string())?;
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let expected = if mutated { "FAILED" } else { "ok" };
+            if output.status.success() == mutated
+                || !stdout
+                    .lines()
+                    .any(|line| line.trim() == format!("test {name} ... {expected}"))
+            {
+                return Err(format!(
+                    "mutation was not killed by the expected assertion (compile errors do not count): {name}, mutated={mutated}\n{stdout}\n{}",
+                    String::from_utf8_lossy(&output.stderr)
+                ));
+            }
+        }
+        println!("Acceptance mutation killed: {name} ({needle})");
+    }
+    Ok(())
 }

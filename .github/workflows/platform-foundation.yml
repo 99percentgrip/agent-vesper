@@ -113,6 +113,7 @@ jobs:
           cargo xtask acp verify
           cargo xtask sessions verify
           cargo xtask architecture
+          cargo xtask acceptance
       - name: Run Stage 4.1 process transcript blockers
         shell: bash
         timeout-minutes: 12

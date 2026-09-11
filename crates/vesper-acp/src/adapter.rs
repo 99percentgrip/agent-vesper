@@ -362,7 +362,8 @@ const CONCURRENT_SAFE_SLASH_COMMANDS: &[&str] = &[
 ];
 
 /// Commands whose concurrency safety depends on the requested subcommand.
-const CONDITIONAL_CONCURRENT_SLASH_COMMANDS: &[&str] = &["checkpoint", "plugins", "mcp"];
+const CONDITIONAL_CONCURRENT_SLASH_COMMANDS: &[&str] =
+    &["checkpoint", "plugins", "mcp", "acceptance"];
 
 /// Advertised commands that must interrupt a live implementation turn.
 const INTERRUPTING_SLASH_COMMANDS: &[&str] = &[
@@ -418,6 +419,7 @@ fn is_concurrent_safe_slash(text: &str) -> bool {
         "checkpoint" => subcommand == "list",
         "plugins" => matches!(subcommand.as_str(), "" | "list" | "publishers" | "verify"),
         "mcp" => matches!(subcommand.as_str(), "" | "list" | "tools"),
+        "acceptance" => matches!(subcommand.as_str(), "" | "status" | "settings"),
         _ => false,
     }
 }
@@ -1379,7 +1381,7 @@ mod command_catalog_tests {
     fn frozen_catalog_stays_exact_and_extensions_append() {
         assert_eq!(catalog_commands(&[]).len(), 28);
         let commands = catalog_commands(&vesper_domain::HOST_PARITY_SLASH_COMMANDS);
-        assert_eq!(commands.len(), 46);
+        assert_eq!(commands.len(), 47);
         let json = serde_json::to_value(commands).unwrap();
         let names: Vec<_> = json
             .as_array()

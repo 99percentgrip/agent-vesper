@@ -93,6 +93,19 @@ pub fn command(
     }
     let saved = vesper_harness::swarm_settings::load(&root)?;
     let config = turn_configuration(agent, &session.state, surface)?;
+    vesper_harness::acceptance::activate_saved(
+        &mut session.acceptance,
+        &root,
+        vesper_harness::WorkerFactory::new(registry.clone(), config.clone()),
+    )?;
+    let parent = session.acceptance.as_ref().map(|acceptance| {
+        acceptance.attach(
+            agent
+                .as_ref()
+                .clone()
+                .with_turn_configuration(config.clone()),
+        )
+    });
     let embedding_config = EmbeddingConfig::load(&cognition.root);
     if !matches!(
         embedding_config.source.as_deref(),
@@ -133,6 +146,25 @@ pub fn command(
     let mut history = session.conversation.clone();
     history.push(build_user_message(&goal));
     let task = tokio::spawn(async move {
+        if let Some(parent) = &parent
+            && let Err(error) = parent
+                .prepare_acceptance(
+                    mode,
+                    permission_mode,
+                    vesper_harness::swarm_service::parent_cancellation(cancel.signal()),
+                )
+                .await
+        {
+            let _ = tx.send(AgentEvent::Failed(AgentLoopError::LoopDetected(format!(
+                "Acceptance incomplete: {error}"
+            ))));
+            return;
+        }
+        let progress: Arc<dyn vesper_agent::AgentProgressPort> = if parent.is_some() {
+            Arc::new(vesper_agent::acceptance::HoldCompletionProgress(progress))
+        } else {
+            progress
+        };
         let result = async {
             let recalled_context = vesper_harness::swarm_embedding::cancellable_setup(
                 move || cognitive_context_for_prompt(&cognition, &recall_goal),
@@ -212,6 +244,26 @@ pub fn command(
                 cancel.signal().is_cancelled(),
             ),
         };
+        if let Some(parent) = parent {
+            match parent
+                .finish_delegated_acceptance(
+                    history,
+                    &text,
+                    mode,
+                    permission_mode,
+                    vesper_harness::swarm_service::parent_cancellation(cancel.signal()),
+                )
+                .await
+            {
+                Ok((outcome, history)) => {
+                    let _ = tx.send(AgentEvent::Completed { outcome, history });
+                }
+                Err(error) => {
+                    let _ = tx.send(AgentEvent::Failed(error));
+                }
+            }
+            return;
+        }
         if let Ok(content) = ContentText::new(text.clone()) {
             history.push(ConversationMessage {
                 id: MessageId::new(format!("swarm-result-{}", uuid::Uuid::new_v4()))

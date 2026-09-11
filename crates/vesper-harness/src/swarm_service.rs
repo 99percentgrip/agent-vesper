@@ -23,6 +23,19 @@ pub use vesper_swarm::{
     worker::{CancelFlag, CancellationSignal},
 };
 
+/// Keep parent acceptance cancellation tied to the same owned hive run.
+pub fn parent_cancellation(
+    signal: CancellationSignal,
+) -> Arc<dyn vesper_agent::CancellationSignal> {
+    struct Bridge(CancellationSignal);
+    impl vesper_agent::CancellationSignal for Bridge {
+        fn is_cancelled(&self) -> bool {
+            self.0.is_cancelled()
+        }
+    }
+    Arc::new(Bridge(signal))
+}
+
 /// Resolve the installed native backend without downloads or implicit network
 /// permission. Docker builds use the same digest-pinned bundle as Web Settings.
 pub async fn configured_backend(

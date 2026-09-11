@@ -486,6 +486,13 @@ the multi-turn, tool-executing layer above it.
 
 ## Local Contracts
 
+- ADR 0028: `src/acceptance.rs` owns pure acceptance policy and `CompletionPort`. An
+  enrolled objective retains authority outside model history. AgentLoop withholds
+  provider prose, preserves complete tool transactions, feeds gaps into bounded repair
+  and returns `AgentTurnOutcome::Acceptance`; plan checkmarks never certify it.
+  Delegated results return through `finish_delegated_acceptance`; worker contexts cannot
+  publish parent completion.
+
 - Compose `vesper-runtime::ProviderRegistry` for turn dispatch; do NOT add
   multi-turn state or tool execution to the runtime itself.
 - Hosts own conversation history and may inject memory, MCP, plugin, worker,

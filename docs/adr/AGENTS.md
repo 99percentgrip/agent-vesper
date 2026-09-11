@@ -6,6 +6,11 @@ Own accepted, durable architecture and compatibility decisions for Agent Vesper.
 
 ## Local Contracts
 
+- ADR 0028 defines scoped native implementation acceptance, original-requirement
+  coverage, collector-owned evidence, independent review, bounded repair, both-host
+  publication and opt-in audit lineage. The live gate is separate from model plan status
+  and provider stop.
+
 - Accepted ADRs are immutable decisions; superseding requires a new ADR.
 - Every ADR links historical foundation evidence and executable verification.
 - Existing foundation ADRs remain preserved under `docs/foundation/adr/`.

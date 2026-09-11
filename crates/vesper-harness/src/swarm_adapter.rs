@@ -235,6 +235,7 @@ impl WorkerPort for ProviderWorkerPort {
                     return Err(WorkerError::Cancelled(task.id.clone()));
                 }
                 let (content, success) = match outcome {
+                    AgentTurnOutcome::Acceptance { report, .. } => (vec![ContentPart::Text(vesper_domain::ContentText::new(report.render()).map_err(|_| failure("acceptance report too large".into()))?)], report.is_verified()),
                     AgentTurnOutcome::Completed {
                         assistant_content, ..
                     } => (assistant_content, true),

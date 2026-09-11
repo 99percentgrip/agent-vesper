@@ -151,13 +151,51 @@ impl AcpHarnessEngine {
                     }) as Arc<dyn vesper_agent::PermissionPort>
                 })
                 .unwrap_or_else(|| Arc::new(vesper_agent::DenyPermissionPort));
-            let progress = Arc::new(AcpEngineProgressPort {
-                sink: request.event_sink.clone(),
-                tool_seq: std::sync::atomic::AtomicU64::new(0),
-                outstanding: std::sync::Mutex::new(BTreeMap::new()),
-                session_id: request.session_id.clone(),
-                plans: self.plans_shared(),
+            let progress: Arc<dyn vesper_agent::AgentProgressPort> =
+                Arc::new(AcpEngineProgressPort {
+                    sink: request.event_sink.clone(),
+                    tool_seq: std::sync::atomic::AtomicU64::new(0),
+                    outstanding: std::sync::Mutex::new(BTreeMap::new()),
+                    session_id: request.session_id.clone(),
+                    plans: self.plans_shared(),
+                });
+            let mut active_acceptance = self.acceptance_session(&request.session_id);
+            vesper_harness::acceptance::activate_saved(
+                &mut active_acceptance,
+                &root,
+                WorkerFactory::new(self.registry.clone(), config.clone()),
+            )?;
+            if let Some(active) = &active_acceptance {
+                self.acceptance
+                    .lock()
+                    .expect("acceptance sessions")
+                    .insert(request.session_id.clone(), active.clone());
+            }
+            let parent = active_acceptance.map(|acceptance| {
+                acceptance.attach(
+                    vesper_agent::AgentLoop::new(
+                        self.registry.clone(),
+                        self.tool_registry(request),
+                        config.clone(),
+                    )
+                    .with_permission_port(permission_port.clone()),
+                )
             });
+            if let Some(parent) = &parent {
+                parent
+                    .prepare_acceptance(
+                        request.operating_mode,
+                        request.permission_mode,
+                        vesper_harness::swarm_service::parent_cancellation(flag.signal()),
+                    )
+                    .await?;
+            }
+            let progress = if parent.is_some() {
+                Arc::new(vesper_agent::acceptance::HoldCompletionProgress(progress))
+                    as Arc<dyn vesper_agent::AgentProgressPort>
+            } else {
+                progress
+            };
             let tools = self.tool_registry(request);
             let allowed_tools = [
                 "read_file",
@@ -210,6 +248,46 @@ impl AcpHarnessEngine {
                 report.output,
                 report.artifacts.display()
             );
+            if let Some(parent) = parent {
+                let mut history = self
+                    .histories
+                    .lock()
+                    .await
+                    .get(&request.session_id)
+                    .cloned()
+                    .unwrap_or_else(|| request.history.clone());
+                history.push(ConversationMessage {
+                    id: MessageId::new(format!("acceptance-swarm-{}", next_id()))
+                        .map_err(|error| error.to_string())?,
+                    role: MessageRole::User,
+                    content: vec![ContentPart::Text(
+                        vesper_domain::ContentText::new(goal.clone())
+                            .map_err(|error| error.to_string())?,
+                    )],
+                    extensions: Default::default(),
+                });
+                let (outcome, history) = parent
+                    .finish_delegated_acceptance(
+                        history,
+                        &text,
+                        request.operating_mode,
+                        request.permission_mode,
+                        vesper_harness::swarm_service::parent_cancellation(flag.signal()),
+                    )
+                    .await
+                    .map_err(|error| error.to_string())?;
+                let text = outcome_text(&outcome);
+                self.histories
+                    .lock()
+                    .await
+                    .insert(request.session_id.clone(), history.clone());
+                return Ok(AcpPromptResult {
+                    text,
+                    cancelled: flag.signal().is_cancelled(),
+                    persist_turn: true,
+                    history_replacement: Some(history),
+                });
+            }
             // Worker progress has already streamed content, so the protocol
             // adapter will not synthesize another final chunk from result.text.
             // Deliver the complete report explicitly before ending the turn.

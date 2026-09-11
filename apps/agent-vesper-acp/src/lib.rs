@@ -252,6 +252,9 @@ fn default_agent_root(name: &str) -> PathBuf {
 /// ACP composition engine that routes prompts through the same bounded
 /// multi-turn loop and hosted tool surface used by the TUI.
 struct AcpHarnessEngine {
+    acceptance: std::sync::Mutex<
+        BTreeMap<vesper_domain::SessionId, Arc<vesper_harness::acceptance::AcceptanceSession>>,
+    >,
     registry: Arc<ProviderRegistry>,
     #[cfg(feature = "swarm")]
     swarm: swarm_host::SwarmHost,
@@ -338,6 +341,17 @@ impl vesper_agent::PermissionPort for AcpHarnessPermissionPort {
 }
 
 impl AcpHarnessEngine {
+    fn acceptance_session(
+        &self,
+        id: &vesper_domain::SessionId,
+    ) -> Option<Arc<vesper_harness::acceptance::AcceptanceSession>> {
+        self.acceptance
+            .lock()
+            .expect("acceptance sessions")
+            .get(id)
+            .cloned()
+    }
+
     fn tool_registry(&self, request: &AcpPromptRequest) -> vesper_agent::ToolRegistry {
         let sink = request.event_sink.clone();
         let on_url = Arc::new(move |url: &str| {
@@ -353,10 +367,16 @@ impl AcpHarnessEngine {
             self.hosted.clone(), Arc::new(vesper_harness::lens_tools::NativeLensPort::new()),
             on_url, 12, "Choose only the unresolved, decision-relevant questions needed (1–12); do not pad the interview.".into(),
         );
-        self.hosted
+        let tools = self
+            .hosted
             .clone()
             .build_default_registry()
-            .with_service(Arc::new(lens))
+            .with_service(Arc::new(lens));
+        if let Some(session) = self.acceptance_session(&request.session_id) {
+            tools.with_service(session)
+        } else {
+            tools
+        }
     }
 
     async fn turn_configuration(
@@ -458,6 +478,7 @@ impl AcpHarnessEngine {
     ) -> Self {
         Self {
             registry,
+            acceptance: std::sync::Mutex::new(BTreeMap::new()),
             #[cfg(feature = "swarm")]
             swarm: Default::default(),
             config,
@@ -562,178 +583,255 @@ impl AcpHarnessEngine {
         original_user_content: Vec<ContentPart>,
         selected_skills: Vec<String>,
     ) -> Result<AcpPromptResult, String> {
-        use vesper_domain::{OutcomeStatus, PrivacyMode, ReasoningRequest, RequestId};
-        let permission_port: Arc<dyn vesper_agent::PermissionPort> = request
-            .permission_requester
-            .as_ref()
-            .map(|requester| {
-                Arc::new(AcpHarnessPermissionPort {
-                    requester: Arc::clone(requester),
-                    session_id: request.session_id.clone(),
-                }) as Arc<dyn vesper_agent::PermissionPort>
-            })
-            .unwrap_or_else(|| Arc::new(vesper_agent::DenyPermissionPort));
-        let progress: Arc<dyn vesper_agent::AgentProgressPort> = Arc::new(AcpEngineProgressPort {
-            sink: request.event_sink.clone(),
-            tool_seq: std::sync::atomic::AtomicU64::new(0),
-            outstanding: std::sync::Mutex::new(BTreeMap::new()),
-            session_id: request.session_id.clone(),
-            plans: self.plans_shared(),
-        });
-        let pressure_state = self.pressure_state(&request.session_id).await;
-        let loop_engine = vesper_agent::AgentLoop::new(
-            Arc::clone(&self.registry),
-            self.tool_registry(request),
-            config,
-        )
-        .with_active_plan(self.active_plan(&request.session_id))
-        .with_context_pressure_state(pressure_state)
-        .with_permission_port(permission_port)
-        .with_progress_port(Arc::clone(&progress));
-        let history = self
-            .histories
+        let cancellation = Arc::new(RuntimeCancellation::new());
+        self.cancellations
             .lock()
             .await
-            .get(&request.session_id)
-            .cloned()
-            .unwrap_or_default();
-        let capacity = loop_engine.configuration().context_window_tokens;
-        let reserve =
-            vesper_agent::RESPONSE_RESERVE_TOKENS.min(capacity.saturating_div(10).max(256));
-        let used = vesper_agent::estimate_context_tokens(
-            &loop_engine.configuration().system_instructions,
-            &history,
-        )
-        .saturating_add(reserve);
-        if capacity > 0 && used.saturating_mul(100) >= capacity.saturating_mul(85) {
-            let commit = loop_engine
-                .compact_history(history, None)
-                .await
-                .map_err(|error| format!("VRO context compaction failed safely: {error}"))?;
-            progress.emit(vesper_agent::AgentProgressEvent::CompactionCompleted {
-                report: Box::new(commit.report.clone()),
-            });
-            self.histories
-                .lock()
-                .await
-                .insert(request.session_id.clone(), commit.history);
-        }
-        let generator = AcpCandidateGenerator {
-            agent: loop_engine.clone(),
-            history: self
+            .entry(request.session_id.clone())
+            .or_default()
+            .push(cancellation.clone());
+        let result = async {
+            use vesper_domain::{OutcomeStatus, PrivacyMode, ReasoningRequest, RequestId};
+            let permission_port: Arc<dyn vesper_agent::PermissionPort> = request
+                .permission_requester
+                .as_ref()
+                .map(|requester| {
+                    Arc::new(AcpHarnessPermissionPort {
+                        requester: Arc::clone(requester),
+                        session_id: request.session_id.clone(),
+                    }) as Arc<dyn vesper_agent::PermissionPort>
+                })
+                .unwrap_or_else(|| Arc::new(vesper_agent::DenyPermissionPort));
+            let progress: Arc<dyn vesper_agent::AgentProgressPort> =
+                Arc::new(AcpEngineProgressPort {
+                    sink: request.event_sink.clone(),
+                    tool_seq: std::sync::atomic::AtomicU64::new(0),
+                    outstanding: std::sync::Mutex::new(BTreeMap::new()),
+                    session_id: request.session_id.clone(),
+                    plans: self.plans_shared(),
+                });
+            let pressure_state = self.pressure_state(&request.session_id).await;
+            let loop_engine = vesper_agent::AgentLoop::new(
+                Arc::clone(&self.registry),
+                self.tool_registry(request),
+                config,
+            )
+            .with_active_plan(self.active_plan(&request.session_id))
+            .with_optional_completion_port(
+                self.acceptance_session(&request.session_id)
+                    .map(|session| session as Arc<dyn vesper_agent::acceptance::CompletionPort>),
+            )
+            .with_context_pressure_state(pressure_state)
+            .with_permission_port(permission_port)
+            .with_progress_port(Arc::clone(&progress));
+            let history = self
                 .histories
                 .lock()
                 .await
                 .get(&request.session_id)
                 .cloned()
-                .unwrap_or_default(),
-        };
-        let reasoning_request = ReasoningRequest {
-            request_id: RequestId::new(format!("acp-vro-{}", next_engine_id()))
-                .map_err(|_| "request id bound exceeded".to_owned())?,
-            session_id: request.session_id.clone(),
-            user_message: user_text.to_owned(),
-            context_refs: vec![],
-            mode,
-            risk_hint: None,
-            budget_override: None,
-            privacy_mode: PrivacyMode::Private,
-        };
-        let root = workspace_root_path(&self.config.workspace_roots);
-        let seed = next_engine_id();
-        // VRO-7 learning sink: successful complex turns persist sanitized
-        // procedural recipes into the project cognitive store.
-        let procedural_sink = sink.map(cognition::CognitionProceduralSink);
-        let sink_ref: Option<&dyn vesper_agent::vro::ProceduralMemorySink> = procedural_sink
-            .as_ref()
-            .map(|sink| sink as &dyn vesper_agent::vro::ProceduralMemorySink);
-        let strategy_header = self.vro.profile(user_text);
-        if let Some(event_sink) = request.event_sink.as_ref() {
-            event_sink.event(vesper_acp::AcpEngineEvent::ReasoningDelta {
-                text: format!(
-                    "🧩 VRO strategy: {:?} · mode: {mode:?} · seed: {seed}",
-                    strategy_header.recommended_strategy
-                ),
-            });
-        }
-        let outcome = self
-            .vro
-            .execute_with_learning(
-                &reasoning_request,
-                &generator,
-                &root,
-                None,
-                None,
-                None,
-                None,
-                None,
-                seed,
-                &[],
-                sink_ref,
-                &vesper_agent::vro::WorkflowExtractor::new(),
-                &rfc3339_now(),
+                .unwrap_or_default();
+            let capacity = loop_engine.configuration().context_window_tokens;
+            let reserve =
+                vesper_agent::RESPONSE_RESERVE_TOKENS.min(capacity.saturating_div(10).max(256));
+            let used = vesper_agent::estimate_context_tokens(
+                &loop_engine.configuration().system_instructions,
+                &history,
             )
-            .await;
-        let content = outcome
-            .final_output
-            .as_ref()
-            .and_then(|value| {
-                value
-                    .get("content")
-                    .and_then(|c| c.as_str())
-                    .map(String::from)
-            })
-            .unwrap_or_else(|| match outcome.status {
-                OutcomeStatus::Succeeded => "(VRO: empty output)".into(),
-                OutcomeStatus::Failed => {
-                    format!("VRO failed: {}", outcome.unresolved_risks.join("; "))
-                }
-                OutcomeStatus::BudgetExceeded => "VRO: budget exhausted".into(),
-                other => format!("VRO: {other:?}"),
-            });
-        if outcome.status == OutcomeStatus::Succeeded
-            && outcome.cost.model_calls > 0
-            && let Some(event_sink) = request.event_sink.as_ref()
-        {
-            event_sink.event(vesper_acp::AcpEngineEvent::ReasoningDelta {
-                text: format!(
-                    "**✓ LEARNED** Workflow extracted ({} step(s)) and saved to cognitive \
+            .saturating_add(reserve);
+            if capacity > 0 && used.saturating_mul(100) >= capacity.saturating_mul(85) {
+                let commit = loop_engine
+                    .compact_history(history, None)
+                    .await
+                    .map_err(|error| format!("VRO context compaction failed safely: {error}"))?;
+                progress.emit(vesper_agent::AgentProgressEvent::CompactionCompleted {
+                    report: Box::new(commit.report.clone()),
+                });
+                self.histories
+                    .lock()
+                    .await
+                    .insert(request.session_id.clone(), commit.history);
+            }
+
+            loop_engine
+                .prepare_acceptance(
+                    request.operating_mode,
+                    request.permission_mode,
+                    cancellation.clone(),
+                )
+                .await
+                .map_err(|error| format!("Acceptance incomplete: {error}"))?;
+            let generator = AcpCandidateGenerator {
+                mode: request.operating_mode,
+                permission: request.permission_mode,
+                cancellation: cancellation.clone(),
+                agent: if loop_engine.completion_port().is_some() {
+                    loop_engine.clone().into_acceptance_worker()
+                } else {
+                    loop_engine.clone()
+                },
+                history: self
+                    .histories
+                    .lock()
+                    .await
+                    .get(&request.session_id)
+                    .cloned()
+                    .unwrap_or_default(),
+            };
+            let reasoning_request = ReasoningRequest {
+                request_id: RequestId::new(format!("acp-vro-{}", next_engine_id()))
+                    .map_err(|_| "request id bound exceeded".to_owned())?,
+                session_id: request.session_id.clone(),
+                user_message: user_text.to_owned(),
+                context_refs: vec![],
+                mode,
+                risk_hint: None,
+                budget_override: None,
+                privacy_mode: PrivacyMode::Private,
+            };
+            let root = workspace_root_path(&self.config.workspace_roots);
+            let seed = next_engine_id();
+            // VRO-7 learning sink: successful complex turns persist sanitized
+            // procedural recipes into the project cognitive store.
+            let procedural_sink = sink
+                .filter(|_| loop_engine.completion_port().is_none())
+                .map(cognition::CognitionProceduralSink);
+            let sink_ref: Option<&dyn vesper_agent::vro::ProceduralMemorySink> = procedural_sink
+                .as_ref()
+                .map(|sink| sink as &dyn vesper_agent::vro::ProceduralMemorySink);
+            let strategy_header = self.vro.profile(user_text);
+            if let Some(event_sink) = request.event_sink.as_ref() {
+                event_sink.event(vesper_acp::AcpEngineEvent::ReasoningDelta {
+                    text: format!(
+                        "🧩 VRO strategy: {:?} · mode: {mode:?} · seed: {seed}",
+                        strategy_header.recommended_strategy
+                    ),
+                });
+            }
+            let outcome = self
+                .vro
+                .execute_with_learning(
+                    &reasoning_request,
+                    &generator,
+                    &root,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    seed,
+                    &[],
+                    sink_ref,
+                    &vesper_agent::vro::WorkflowExtractor::new(),
+                    &rfc3339_now(),
+                )
+                .await;
+            if loop_engine.completion_port().is_some() {
+                let draft = outcome
+                    .final_output
+                    .as_ref()
+                    .map(ToString::to_string)
+                    .unwrap_or_else(|| format!("VRO stopped: {:?}", outcome.status));
+                let history = self
+                    .histories
+                    .lock()
+                    .await
+                    .get(&request.session_id)
+                    .cloned()
+                    .unwrap_or_default();
+                let (result, history) = loop_engine
+                    .finish_delegated_acceptance(
+                        history,
+                        &draft,
+                        request.operating_mode,
+                        request.permission_mode,
+                        cancellation.clone(),
+                    )
+                    .await
+                    .map_err(|error| error.to_string())?;
+                self.hosted
+                    .record_skill_outcome(&selected_skills, result.is_success());
+                let text = outcome_text(&result);
+                self.histories
+                    .lock()
+                    .await
+                    .insert(request.session_id.clone(), history.clone());
+                return Ok(AcpPromptResult {
+                    text,
+                    cancelled: cancellation.is_cancelled(),
+                    persist_turn: true,
+                    history_replacement: Some(history),
+                });
+            }
+            let content = outcome
+                .final_output
+                .as_ref()
+                .and_then(|value| {
+                    value
+                        .get("content")
+                        .and_then(|c| c.as_str())
+                        .map(String::from)
+                })
+                .unwrap_or_else(|| match outcome.status {
+                    OutcomeStatus::Succeeded => "(VRO: empty output)".into(),
+                    OutcomeStatus::Failed => {
+                        format!("VRO failed: {}", outcome.unresolved_risks.join("; "))
+                    }
+                    OutcomeStatus::BudgetExceeded => "VRO: budget exhausted".into(),
+                    other => format!("VRO: {other:?}"),
+                });
+            if outcome.status == OutcomeStatus::Succeeded
+                && outcome.cost.model_calls > 0
+                && let Some(event_sink) = request.event_sink.as_ref()
+            {
+                event_sink.event(vesper_acp::AcpEngineEvent::ReasoningDelta {
+                    text: format!(
+                        "**✓ LEARNED** Workflow extracted ({} step(s)) and saved to cognitive \
                      memory.",
-                    outcome.cost.model_calls
-                ),
-            });
+                        outcome.cost.model_calls
+                    ),
+                });
+            }
+            // Persist the turn like an ordinary prompt: assistant reply joins
+            // the session history (the user message is already there).
+            let assistant = ConversationMessage {
+                id: MessageId::new(format!("acp-vro-{}", next_engine_id()))
+                    .map_err(|_| "message id bound exceeded".to_owned())?,
+                role: MessageRole::Assistant,
+                content: vec![ContentPart::Text(
+                    vesper_domain::ContentText::new(content.clone())
+                        .map_err(|_| "prompt too large".to_owned())?,
+                )],
+                extensions: ExtensionMap::default(),
+            };
+            let mut histories = self.histories.lock().await;
+            let history = histories.entry(request.session_id.clone()).or_default();
+            if let Some(latest_user) = history
+                .iter_mut()
+                .rev()
+                .find(|message| message.role == MessageRole::User)
+            {
+                latest_user.content = original_user_content;
+            }
+            history.push(assistant);
+            let history_replacement = Some(history.clone());
+            self.hosted
+                .record_skill_outcome(&selected_skills, outcome.status == OutcomeStatus::Succeeded);
+            Ok(AcpPromptResult {
+                text: content,
+                cancelled: cancellation.is_cancelled(),
+                persist_turn: true,
+                history_replacement,
+            })
         }
-        // Persist the turn like an ordinary prompt: assistant reply joins
-        // the session history (the user message is already there).
-        let assistant = ConversationMessage {
-            id: MessageId::new(format!("acp-vro-{}", next_engine_id()))
-                .map_err(|_| "message id bound exceeded".to_owned())?,
-            role: MessageRole::Assistant,
-            content: vec![ContentPart::Text(
-                vesper_domain::ContentText::new(content.clone())
-                    .map_err(|_| "prompt too large".to_owned())?,
-            )],
-            extensions: ExtensionMap::default(),
-        };
-        let mut histories = self.histories.lock().await;
-        let history = histories.entry(request.session_id.clone()).or_default();
-        if let Some(latest_user) = history
-            .iter_mut()
-            .rev()
-            .find(|message| message.role == MessageRole::User)
-        {
-            latest_user.content = original_user_content;
-        }
-        history.push(assistant);
-        let history_replacement = Some(history.clone());
-        self.hosted
-            .record_skill_outcome(&selected_skills, outcome.status == OutcomeStatus::Succeeded);
-        Ok(AcpPromptResult {
-            text: content,
-            cancelled: false,
-            persist_turn: true,
-            history_replacement,
-        })
+        .await;
+        self.cancellations
+            .lock()
+            .await
+            .entry(request.session_id.clone())
+            .or_default()
+            .retain(|entry| !Arc::ptr_eq(entry, &cancellation));
+        result
     }
 
     async fn run_inner(&self, request: AcpPromptRequest) -> Result<AcpPromptResult, String> {
@@ -772,6 +870,20 @@ impl AcpHarnessEngine {
                 }
                 SlashFlow::Ordinary => {}
             }
+        }
+        let config = self.turn_configuration(&request).await;
+        let root = workspace_root_path(&request.workspace_roots);
+        let mut acceptance = self.acceptance_session(&request.session_id);
+        vesper_harness::acceptance::activate_saved(
+            &mut acceptance,
+            &root,
+            WorkerFactory::new(self.registry.clone(), config),
+        )?;
+        if let Some(acceptance) = acceptance {
+            self.acceptance
+                .lock()
+                .expect("acceptance sessions")
+                .insert(request.session_id.clone(), acceptance);
         }
         let content = if workflow_replaced {
             vec![ContentPart::Text(
@@ -939,6 +1051,10 @@ impl AcpHarnessEngine {
             config,
         )
         .with_active_plan(self.active_plan(&request.session_id))
+        .with_optional_completion_port(
+            self.acceptance_session(&request.session_id)
+                .map(|session| session as Arc<dyn vesper_agent::acceptance::CompletionPort>),
+        )
         .with_context_pressure_state(pressure_state)
         .with_permission_port(permission_port)
         .with_capability_advisor(capability_advisor, capability_context)
@@ -972,6 +1088,25 @@ impl AcpHarnessEngine {
             .retain(|entry| !Arc::ptr_eq(entry, &cancellation));
         if cancellation.is_cancelled() {
             self.hosted.record_skill_outcome(&selected_skills, false);
+            if let Ok((outcome @ vesper_agent::AgentTurnOutcome::Acceptance { .. }, history)) =
+                &run_result
+            {
+                let text = outcome_text(outcome);
+                if let Some(sink) = &request.event_sink {
+                    sink.event(vesper_acp::AcpEngineEvent::ContentDelta { text: text.clone() });
+                }
+                self.histories
+                    .lock()
+                    .await
+                    .insert(request.session_id.clone(), history.clone());
+                return Ok(AcpPromptResult {
+                    text,
+                    cancelled: true,
+                    persist_turn: true,
+                    history_replacement: Some(history.clone()),
+                });
+            }
+
             let mut histories = self.histories.lock().await;
             if let Some(history) = histories.get_mut(&request.session_id)
                 && let Some(latest_user) = history
@@ -989,10 +1124,8 @@ impl AcpHarnessEngine {
             });
         }
         if let Ok((outcome, _)) = &run_result {
-            self.hosted.record_skill_outcome(
-                &selected_skills,
-                matches!(outcome, vesper_agent::AgentTurnOutcome::Completed { .. }),
-            );
+            self.hosted
+                .record_skill_outcome(&selected_skills, outcome.is_success());
         } else {
             self.hosted.record_skill_outcome(&selected_skills, false);
         }
@@ -1069,6 +1202,54 @@ impl AcpHarnessEngine {
                 None => (rest, ""),
             };
             let lowered = raw_name.to_ascii_lowercase();
+            if lowered == "acceptance"
+                || (lowered == "settings"
+                    && (raw_argument == "acceptance" || raw_argument.starts_with("acceptance ")))
+            {
+                let settings_argument = format!(
+                    "settings{}",
+                    raw_argument.strip_prefix("acceptance").unwrap_or_default()
+                );
+                let argument = if lowered == "settings" {
+                    settings_argument.as_str()
+                } else {
+                    raw_argument
+                };
+                if !matches!(argument, "" | "status" | "settings")
+                    && self
+                        .cancellations
+                        .lock()
+                        .await
+                        .get(&request.session_id)
+                        .is_some_and(|c| !c.is_empty())
+                {
+                    return slash_result("Wait for the active turn to settle before changing its acceptance objective.".into());
+                }
+                let config = self.turn_configuration(request).await;
+                let root = workspace_root_path(&request.workspace_roots);
+                let factory = WorkerFactory::new(self.registry.clone(), config);
+                let mut active = self.acceptance_session(&request.session_id);
+                let result =
+                    vesper_harness::acceptance::control(&mut active, argument, &root, factory);
+                let mut sessions = self.acceptance.lock().expect("acceptance sessions");
+                match active {
+                    Some(session) => {
+                        sessions.insert(request.session_id.clone(), session);
+                    }
+                    None => {
+                        sessions.remove(&request.session_id);
+                    }
+                }
+                return match result {
+                    Ok(vesper_harness::acceptance::AcceptanceControlResult::Message(text)) => {
+                        slash_result(text)
+                    }
+                    Ok(vesper_harness::acceptance::AcceptanceControlResult::Run(prompt)) => {
+                        SlashFlow::Workflow(prompt)
+                    }
+                    Err(error) => slash_result(error),
+                };
+            }
             #[cfg(feature = "swarm")]
             if lowered == "swarm"
                 || (lowered == "settings"
@@ -1915,6 +2096,9 @@ fn rfc3339_now() -> String {
 /// (TUI `AgentCandidateGenerator` parity: corrections become repair
 /// feedback, the outcome text becomes the candidate payload).
 struct AcpCandidateGenerator {
+    mode: vesper_domain::SessionOperatingMode,
+    permission: vesper_domain::SessionPermissionMode,
+    cancellation: Arc<RuntimeCancellation>,
     agent: vesper_agent::AgentLoop,
     history: Vec<ConversationMessage>,
 }
@@ -1927,10 +2111,7 @@ impl vesper_agent::vro::CandidateGenerator for AcpCandidateGenerator {
     ) -> std::pin::Pin<
         Box<dyn std::future::Future<Output = vesper_agent::vro::GeneratedCandidate> + Send + 'a>,
     > {
-        use vesper_domain::{
-            ContentText, InferenceCost, MessageId, MessageRole, SessionOperatingMode,
-            SessionPermissionMode,
-        };
+        use vesper_domain::{ContentText, InferenceCost, MessageId, MessageRole};
         Box::pin(async move {
             let mut full_prompt = prompt.to_string();
             if !corrections.is_empty() {
@@ -1974,10 +2155,11 @@ impl vesper_agent::vro::CandidateGenerator for AcpCandidateGenerator {
             history.push(message);
             let outcome = self
                 .agent
-                .run_prompt_with_history(
+                .run_prompt_with_history_with_cancellation(
                     history,
-                    SessionOperatingMode::Code,
-                    SessionPermissionMode::Ask,
+                    self.mode,
+                    self.permission,
+                    self.cancellation.clone(),
                 )
                 .await;
             match outcome {
@@ -2010,6 +2192,9 @@ impl vesper_agent::vro::CandidateGenerator for AcpCandidateGenerator {
 
     fn boxed_clone(&self) -> Box<dyn vesper_agent::vro::CandidateGenerator> {
         Box::new(AcpCandidateGenerator {
+            cancellation: self.cancellation.clone(),
+            mode: self.mode,
+            permission: self.permission,
             agent: self.agent.clone(),
             history: self.history.clone(),
         })
@@ -2018,6 +2203,7 @@ impl vesper_agent::vro::CandidateGenerator for AcpCandidateGenerator {
 
 fn outcome_text(outcome: &vesper_agent::AgentTurnOutcome) -> String {
     match outcome {
+        vesper_agent::AgentTurnOutcome::Acceptance { report, .. } => report.render(),
         vesper_agent::AgentTurnOutcome::Completed {
             assistant_content, ..
         } => assistant_content

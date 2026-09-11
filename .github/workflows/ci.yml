@@ -18,6 +18,8 @@ jobs:
         run: rustup toolchain install 1.95.0 --profile minimal --component clippy,rustfmt
       - name: Verify workspace
         run: cargo xtask verify
+      - name: Completion assurance mutation gate
+        run: cargo xtask acceptance-mutations
       - name: Verify installer user-state preservation
         run: sh scripts/test_install_upgrade.sh
       - name: Verify documentation structure

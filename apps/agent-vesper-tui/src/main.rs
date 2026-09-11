@@ -24,6 +24,7 @@
 //! binary's stdout stays free of any ACP/JSON-RPC contract — it writes only
 //! terminal escapes via crossterm.
 
+mod acceptance_host;
 mod mobile;
 
 #[cfg(feature = "swarm")]
@@ -442,6 +443,8 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
     );
 
     let mut session = TuiSession {
+        turn_cancellation: None,
+        acceptance: None,
         // The active provider's superpower policy (provider-routed model/plan/
         // reasoning logic), shared with every helper via this session wrapper.
         policy: policy.clone(),
@@ -764,6 +767,8 @@ async fn register_default_providers(
 ///
 /// Wraps the library-owned [`SessionState`] (pure Plan Mode + override +
 struct TuiSession {
+    turn_cancellation: Option<Arc<vesper_runtime::RuntimeCancellation>>,
+    acceptance: Option<Arc<vesper_harness::acceptance::AcceptanceSession>>,
     policy: Arc<dyn vesper_provider::SuperpowerPolicy>,
     provider_ids: Vec<(String, String)>,
     /// Per-model capability index for the ACTIVE provider (PRD
@@ -1986,6 +1991,73 @@ async fn drive_loop(
                                 "auth: the active provider advertised no authentication descriptor."
                                     .into(),
                             );
+                        }
+                    }
+                }
+                if let Some(argument) = session.state.pending_acceptance_command.take() {
+                    if session.agent_running && matches!(argument.as_str(), "" | "status") {
+                        let text = session
+                            .acceptance
+                            .as_ref()
+                            .map(|active| {
+                                vesper_agent::acceptance::CompletionPort::status(active.as_ref())
+                                    .render()
+                            })
+                            .unwrap_or_else(|| "No acceptance objective is active.".into());
+                        session.state.transcript.push(text);
+                    } else if session.agent_running {
+                        session.state.status = Some("Wait for the active turn to settle before changing acceptance controls.".into());
+                    } else {
+                        let root = std::env::current_dir().unwrap_or_default();
+                        let config = match turn_configuration(agent, &session.state, surface) {
+                            Ok(config) => config,
+                            Err(error) => {
+                                session.state.status = Some(format!(
+                                    "Acceptance provider configuration failed: {error}"
+                                ));
+                                continue;
+                            }
+                        };
+                        let factory = vesper_harness::WorkerFactory::new(registry.clone(), config);
+                        let argument = if argument == "settings" {
+                            let initial = session
+                                .acceptance
+                                .as_ref()
+                                .map(|active| active.settings_preferences());
+                            match acceptance_host::settings(&mut terminal, &root, initial).await {
+                                Ok(Some(settings)) if settings.enabled => {
+                                    format!("settings on {}", settings.prd)
+                                }
+                                Ok(Some(_)) => "settings off".into(),
+                                Ok(None) => {
+                                    session.state.status =
+                                        Some("Acceptance settings cancelled.".into());
+                                    continue;
+                                }
+                                Err(error) => {
+                                    session.state.status = Some(error);
+                                    continue;
+                                }
+                            }
+                        } else {
+                            argument
+                        };
+                        match vesper_harness::acceptance::control(
+                            &mut session.acceptance,
+                            &argument,
+                            &root,
+                            factory,
+                        ) {
+                            Ok(vesper_harness::acceptance::AcceptanceControlResult::Run(
+                                prompt,
+                            )) => session.state.pending_prompt = Some(prompt),
+                            Ok(vesper_harness::acceptance::AcceptanceControlResult::Message(
+                                text,
+                            )) => {
+                                session.state.transcript.push(format!("acceptance: {text}"));
+                                session.state.status = Some("Acceptance status updated.".into());
+                            }
+                            Err(error) => session.state.status = Some(error),
                         }
                     }
                 }
@@ -3331,6 +3403,10 @@ fn session_setting_candidates(
     let choices: Vec<(String, String)> = match command {
         "/settings" => {
             let mut settings: Vec<(String, String)> = vec![
+                (
+                    "/settings acceptance".into(),
+                    "Implementation acceptance · PRD, evidence and gaps".into(),
+                ),
                 #[cfg(feature = "swarm")]
                 (
                     "/settings swarm".into(),
@@ -4601,6 +4677,24 @@ fn apply_keybinding_action(
 }
 
 fn cancel_active_turn_preserving_partial(session: &mut TuiSession, cause: &str) {
+    if session.agent_running
+        && let Some(cancel) = &session.turn_cancellation
+    {
+        cancel.cancel();
+        session.state.status = Some("Cancellation requested; waiting for verification/tool cleanup. Acceptance remains incomplete.".into());
+        return;
+    }
+
+    if let Some(acceptance) = &session.acceptance {
+        let mut report = vesper_agent::acceptance::CompletionPort::status(acceptance.as_ref());
+        report.gaps.push(vesper_domain::acceptance::AcceptanceGap {
+            subject: "cancellation".into(),
+            state: vesper_domain::acceptance::AcceptanceState::Inconclusive,
+            reason: format!("Turn interrupted: {cause}; no completion granted"),
+        });
+        session.state.transcript.push(report.render());
+    }
+
     #[cfg(feature = "swarm")]
     if let Some(flag) = &session.state.swarm_cancel {
         flag.cancel();
@@ -5459,6 +5553,8 @@ fn spawn_agent_turn(
         .with_steering_port(steering);
     let operating_mode = session.state.controls.operating_mode;
     let permission_mode = session.state.controls.permission_mode;
+    let cancellation = Arc::new(vesper_runtime::RuntimeCancellation::new());
+    session.turn_cancellation = Some(cancellation.clone());
     let task = tokio::spawn(async move {
         let mut history = history;
         if !reference_models.is_empty() {
@@ -5492,6 +5588,7 @@ fn spawn_agent_turn(
                     .clone()
                     .with_turn_configuration(config)
                     .with_tool_registry(ToolRegistry::empty())
+                    .into_acceptance_worker()
                     .without_progress();
                 let source = adviser_source.clone();
                 advisers.spawn(async move {
@@ -5535,14 +5632,18 @@ fn spawn_agent_turn(
             }
         }
         let result = agent
-            .run_prompt_with_history(history, operating_mode, permission_mode)
+            .run_prompt_with_history_with_cancellation(
+                history,
+                operating_mode,
+                permission_mode,
+                cancellation.clone(),
+            )
             .await;
         let event = match result {
             Ok((outcome, mut history)) => {
-                routed_skills.outcomes.record(
-                    &routed_skills.selected,
-                    matches!(&outcome, vesper_agent::AgentTurnOutcome::Completed { .. }),
-                );
+                routed_skills
+                    .outcomes
+                    .record(&routed_skills.selected, outcome.is_success());
                 if let Some(latest_user) = history
                     .iter_mut()
                     .rev()
@@ -5627,6 +5728,21 @@ fn spawn_submitted_prompt(
     session: &mut TuiSession,
 ) {
     let root = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let config = match turn_configuration(agent, &session.state, surface) {
+        Ok(config) => config,
+        Err(error) => {
+            session.state.status = Some(error);
+            return;
+        }
+    };
+    if let Err(error) = vesper_harness::acceptance::activate_saved(
+        &mut session.acceptance,
+        &root,
+        vesper_harness::WorkerFactory::new(agent.provider_registry(), config),
+    ) {
+        session.state.status = Some(format!("Acceptance incomplete: {error}"));
+        return;
+    }
     match vesper_agent::expand_references(&root, &text) {
         Ok(expanded) => {
             if let Ok(config) = turn_configuration(agent, &session.state, surface) {
@@ -5716,6 +5832,11 @@ fn spawn_submitted_prompt(
                         },
                     ),
             );
+            let turn_agent = if let Some(acceptance) = &session.acceptance {
+                Arc::new(acceptance.attach(turn_agent.as_ref().clone()))
+            } else {
+                turn_agent
+            };
             // VRO-8 (PRD §8.1): compute the diagnostic
             // projection before the turn spawns so the
             // Reasoning Panel shows the chosen strategy /
@@ -5821,13 +5942,28 @@ fn spawn_submitted_prompt(
 /// Bridges the AgentLoop into a [`CandidateGenerator`] for VRO. Each generate
 /// step runs one agent turn with the corrections appended as repair feedback.
 struct AgentCandidateGenerator {
+    mode: SessionOperatingMode,
+    permission: SessionPermissionMode,
+    cancellation: Arc<vesper_runtime::RuntimeCancellation>,
     agent: Arc<AgentLoop>,
     history: Vec<ConversationMessage>,
 }
 
 impl AgentCandidateGenerator {
-    fn new(agent: Arc<AgentLoop>, history: Vec<ConversationMessage>) -> Self {
-        Self { agent, history }
+    fn new(
+        agent: Arc<AgentLoop>,
+        history: Vec<ConversationMessage>,
+        cancellation: Arc<vesper_runtime::RuntimeCancellation>,
+        mode: SessionOperatingMode,
+        permission: SessionPermissionMode,
+    ) -> Self {
+        Self {
+            mode,
+            permission,
+            agent,
+            history,
+            cancellation,
+        }
     }
 }
 
@@ -5841,7 +5977,6 @@ impl vesper_agent::vro::CandidateGenerator for AgentCandidateGenerator {
     > {
         use vesper_domain::{
             ContentPart, ContentText, ConversationMessage, InferenceCost, MessageId, MessageRole,
-            SessionOperatingMode, SessionPermissionMode,
         };
 
         Box::pin(async move {
@@ -5888,10 +6023,11 @@ impl vesper_agent::vro::CandidateGenerator for AgentCandidateGenerator {
             history.push(message);
             let outcome = self
                 .agent
-                .run_prompt_with_history(
+                .run_prompt_with_history_with_cancellation(
                     history,
-                    SessionOperatingMode::Code,
-                    SessionPermissionMode::Ask,
+                    self.mode,
+                    self.permission,
+                    self.cancellation.clone(),
                 )
                 .await;
 
@@ -5931,6 +6067,9 @@ impl vesper_agent::vro::CandidateGenerator for AgentCandidateGenerator {
         Box::new(Self {
             agent: Arc::clone(&self.agent),
             history: self.history.clone(),
+            mode: self.mode,
+            permission: self.permission,
+            cancellation: self.cancellation.clone(),
         })
     }
 }
@@ -5979,7 +6118,20 @@ fn spawn_vro_turn(
     // orchestrator's budget preset matches the user's choice.
     let effective_mode = session.state.effective_reasoning_mode();
 
-    tokio::spawn(async move {
+    let mode = session.state.controls.operating_mode;
+    let permission = session.state.controls.permission_mode;
+    let cancellation = Arc::new(vesper_runtime::RuntimeCancellation::new());
+    session.turn_cancellation = Some(cancellation.clone());
+    let task = tokio::spawn(async move {
+        if let Err(error) = compaction_agent
+            .prepare_acceptance(mode, permission, cancellation.clone())
+            .await
+        {
+            let _ = tx.send(AgentEvent::Failed(AgentLoopError::LoopDetected(format!(
+                "Acceptance incomplete: {error}"
+            ))));
+            return;
+        }
         let capacity = compaction_agent.configuration().context_window_tokens;
         let reserve =
             vesper_agent::RESPONSE_RESERVE_TOKENS.min(capacity.saturating_div(10).max(256));
@@ -6007,7 +6159,17 @@ fn spawn_vro_turn(
                 }
             }
         }
-        let generator = AgentCandidateGenerator::new(agent, history.clone());
+        let generator = AgentCandidateGenerator::new(
+            if agent.completion_port().is_some() {
+                Arc::new(agent.as_ref().clone().into_acceptance_worker())
+            } else {
+                agent.clone()
+            },
+            history.clone(),
+            cancellation.clone(),
+            mode,
+            permission,
+        );
         let request = vesper_domain::ReasoningRequest {
             request_id: vesper_domain::RequestId::new(uuid::Uuid::new_v4().to_string())
                 .expect("valid request id"),
@@ -6021,6 +6183,28 @@ fn spawn_vro_turn(
         };
 
         let outcome = vro.execute(&request, &generator, &root).await;
+        if compaction_agent.completion_port().is_some() {
+            let draft = outcome
+                .final_output
+                .as_ref()
+                .map(ToString::to_string)
+                .unwrap_or_else(|| format!("VRO stopped: {:?}", outcome.status));
+            match compaction_agent
+                .finish_delegated_acceptance(history, &draft, mode, permission, cancellation)
+                .await
+            {
+                Ok((outcome, history)) => {
+                    routed_skills
+                        .outcomes
+                        .record(&routed_skills.selected, outcome.is_success());
+                    let _ = tx.send(AgentEvent::Completed { outcome, history });
+                }
+                Err(error) => {
+                    let _ = tx.send(AgentEvent::Failed(error));
+                }
+            }
+            return;
+        }
         routed_skills.outcomes.record(
             &routed_skills.selected,
             outcome.status == vesper_domain::OutcomeStatus::Succeeded,
@@ -6083,6 +6267,7 @@ fn spawn_vro_turn(
         });
     });
 
+    session.agent_task = Some(task);
     session.agent_rx = Some(rx);
     session.steering_tx = Some(steering_tx);
     session.trajectory_rx = Some(traj_rx);
@@ -6431,6 +6616,7 @@ pub(crate) struct TrajectoryCapturingReactAgent<A> {
     inner: A,
     tx: mpsc::UnboundedSender<String>,
     steering: Option<Mutex<mpsc::UnboundedReceiver<String>>>,
+    hold_completion: bool,
 }
 
 impl<A> TrajectoryCapturingReactAgent<A> {
@@ -6441,6 +6627,7 @@ impl<A> TrajectoryCapturingReactAgent<A> {
             inner,
             tx,
             steering: None,
+            hold_completion: false,
         }
     }
 
@@ -6465,6 +6652,7 @@ where
         let tx = &self.tx;
         let inner = &self.inner;
         let steering = &self.steering;
+        let hold_completion = self.hold_completion;
         Box::pin(async move {
             let pending = steering
                 .as_ref()
@@ -6492,7 +6680,11 @@ where
                     format_react_action_entry(name, arguments)
                 }
                 vesper_agent::vro::react::ReactDecision::Finish { output } => {
-                    format_react_finish_entry(output)
+                    if hold_completion {
+                        "ReAct returned; parent acceptance is pending.".into()
+                    } else {
+                        format_react_finish_entry(output)
+                    }
                 }
             };
             let _ = tx.send(entry);
@@ -6686,11 +6878,13 @@ fn build_vro_react_bundle(
     // hosted tools work identically on both paths.
     let registry = ToolRegistry::parity_default().with_service(Arc::clone(agent_tools));
     let agent_config = agent.configuration();
-    let context = uncancellable_context(
+    let mut context = uncancellable_context(
         agent_config.workspace_roots.clone(),
         SessionOperatingMode::Code,
         SessionPermissionMode::Ask,
     );
+    context.firewall = agent_config.firewall.clone();
+    context.sandbox = agent_config.sandbox.clone();
     let invoker =
         vesper_agent::vro::react::RegistryToolInvoker::new(registry, approval_port, context);
 
@@ -6718,6 +6912,8 @@ fn spawn_vro_react_turn(
     session: &mut TuiSession,
 ) -> Result<(), String> {
     let selected_for_display = routed_skills.selected.clone();
+    let cancellation = Arc::new(vesper_runtime::RuntimeCancellation::new());
+    session.turn_cancellation = Some(cancellation.clone());
     let bundle = build_vro_react_bundle(agent, agent_tools, approval_port).ok_or_else(|| {
         "VRO Tool-Grounded ReAct requires LM Studio settings \
          (open /lmstudio to configure api_base_url)"
@@ -6730,16 +6926,24 @@ fn spawn_vro_react_turn(
     // `session.reasoning` so the Reasoning panel renders the
     // Action/Observation cycle live as the loop runs.
     let (traj_tx, traj_rx) = mpsc::unbounded_channel::<String>();
-    let capturing_agent = TrajectoryCapturingReactAgent::new(bundle.agent, traj_tx.clone())
+    let mut capturing_agent = TrajectoryCapturingReactAgent::new(bundle.agent, traj_tx.clone())
         .with_steering(steering_rx);
+    capturing_agent.hold_completion = agent.completion_port().is_some();
     // Keep one sender for the VRO-7 learning-extraction notice so the
     // Reasoning Panel renders it below the Action/Observation cycle when a
     // ReAct turn succeeds (directive 3).
     let traj_tx_for_notice = traj_tx.clone();
     let vro = vro.clone();
     let root = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-    let capturing_invoker =
-        TrajectoryCapturingInvoker::new(bundle.invoker, traj_tx).with_workspace_root(root.clone());
+    let capturing_invoker = TrajectoryCapturingInvoker::new(
+        bundle.invoker.with_turn_controls(
+            session.state.controls.operating_mode,
+            session.state.controls.permission_mode,
+            cancellation.clone(),
+        ),
+        traj_tx,
+    )
+    .with_workspace_root(root.clone());
     // VRO-8: honor a manual `/reasoning set mode=<X>` override so the
     // orchestrator's ReAct budget preset matches the user's choice.
     let effective_mode = session.state.effective_reasoning_mode();
@@ -6754,7 +6958,21 @@ fn spawn_vro_react_turn(
     }
     history.push(user_message);
 
-    tokio::spawn(async move {
+    let mode = session.state.controls.operating_mode;
+    let permission = session.state.controls.permission_mode;
+    let task = tokio::spawn(async move {
+        let acceptance_instructions = match compaction_agent
+            .prepare_acceptance(mode, permission, cancellation.clone())
+            .await
+        {
+            Ok(instructions) => instructions,
+            Err(error) => {
+                let _ = tx.send(AgentEvent::Failed(AgentLoopError::LoopDetected(format!(
+                    "Acceptance incomplete: {error}"
+                ))));
+                return;
+            }
+        };
         let capacity = compaction_agent.configuration().context_window_tokens;
         let reserve =
             vesper_agent::RESPONSE_RESERVE_TOKENS.min(capacity.saturating_div(10).max(256));
@@ -6799,6 +7017,7 @@ fn spawn_vro_react_turn(
         if let Some(skill_context) = routed_skills.context {
             react_prompt.push_str(&skill_context);
         }
+        react_prompt.push_str(&acceptance_instructions);
         let request = vesper_domain::ReasoningRequest {
             request_id: vesper_domain::RequestId::new(uuid::Uuid::new_v4().to_string())
                 .expect("valid request id"),
@@ -6811,9 +7030,40 @@ fn spawn_vro_react_turn(
             privacy_mode: vesper_domain::PrivacyMode::Private,
         };
 
-        let outcome = vro
-            .execute_react(&request, &capturing_agent, &capturing_invoker, &root)
-            .await;
+        let outcome = tokio::select! {
+            outcome = vro.execute_react(&request, &capturing_agent, &capturing_invoker, &root) => outcome,
+            _ = cancellation.cancelled() => {
+                if compaction_agent.completion_port().is_some() {
+                    match compaction_agent.finish_delegated_acceptance(history, "ReAct cancelled; no success granted", mode, permission, cancellation.clone()).await {
+                        Ok((outcome, history)) => { let _ = tx.send(AgentEvent::Completed { outcome, history }); }
+                        Err(error) => { let _ = tx.send(AgentEvent::Failed(error)); }
+                    }
+                } else { let _ = tx.send(AgentEvent::Failed(AgentLoopError::LoopDetected("ReAct cancelled".into()))); }
+                return;
+            }
+        };
+        if compaction_agent.completion_port().is_some() {
+            let draft = outcome
+                .final_output
+                .as_ref()
+                .map(ToString::to_string)
+                .unwrap_or_else(|| format!("ReAct stopped: {:?}", outcome.status));
+            match compaction_agent
+                .finish_delegated_acceptance(history, &draft, mode, permission, cancellation)
+                .await
+            {
+                Ok((outcome, history)) => {
+                    routed_skills
+                        .outcomes
+                        .record(&routed_skills.selected, outcome.is_success());
+                    let _ = tx.send(AgentEvent::Completed { outcome, history });
+                }
+                Err(error) => {
+                    let _ = tx.send(AgentEvent::Failed(error));
+                }
+            }
+            return;
+        }
         routed_skills.outcomes.record(
             &routed_skills.selected,
             outcome.status == vesper_domain::OutcomeStatus::Succeeded,
@@ -6890,6 +7140,7 @@ fn spawn_vro_react_turn(
         });
     });
 
+    session.agent_task = Some(task);
     session.agent_rx = Some(rx);
     session.steering_tx = Some(steering_tx);
     session.trajectory_rx = Some(traj_rx);
@@ -7533,6 +7784,7 @@ fn drain_agent_event(session: &mut TuiSession) {
             Ok(AgentEvent::Progress(progress)) => apply_agent_progress(progress, session),
             Ok(mut event) => {
                 session.agent_running = false;
+                session.turn_cancellation = None;
                 session.agent_rx = None;
                 session.steering_tx = None;
                 session.agent_task = None;
@@ -7567,6 +7819,7 @@ fn drain_agent_event(session: &mut TuiSession) {
             Err(mpsc::error::TryRecvError::Empty) => return,
             Err(mpsc::error::TryRecvError::Disconnected) => {
                 session.agent_running = false;
+                session.turn_cancellation = None;
                 #[cfg(feature = "swarm")]
                 if let Some(cancel) = session.state.swarm_cancel.take() {
                     cancel.cancel();
@@ -7816,6 +8069,25 @@ fn build_completion_report(session: &mut TuiSession, event: &AgentEvent) {
     session.last_report = match event {
         AgentEvent::Completed {
             outcome:
+                AgentTurnOutcome::Acceptance {
+                    report, iterations, ..
+                },
+            ..
+        } => vec![
+            if report.is_verified() {
+                "✓ Acceptance verified".into()
+            } else {
+                "✗ Acceptance incomplete".into()
+            },
+            format!(
+                "Scenarios       {}/{}",
+                report.verified_scenarios, report.total_scenarios
+            ),
+            format!("Provider turns  {iterations}"),
+            format!("Gaps            {}", report.gaps.len()),
+        ],
+        AgentEvent::Completed {
+            outcome:
                 AgentTurnOutcome::Completed {
                     iterations,
                     tool_results,
@@ -8033,6 +8305,24 @@ fn record_agent_event(session: &TuiSession, event: &AgentEvent) {
     let result = match event {
         AgentEvent::Progress(_) => return,
         AgentEvent::Completed { outcome, .. } => match outcome {
+            AgentTurnOutcome::Acceptance {
+                report, iterations, ..
+            } => session.telemetry.record(
+                "turn.acceptance",
+                &session.session_id,
+                [
+                    (
+                        "status",
+                        if report.is_verified() {
+                            "verified"
+                        } else {
+                            "incomplete"
+                        }
+                        .to_owned(),
+                    ),
+                    ("iterations", iterations.to_string()),
+                ],
+            ),
             AgentTurnOutcome::Completed {
                 iterations,
                 tool_results,
@@ -8265,6 +8555,22 @@ fn apply_agent_event(event: AgentEvent, state: &mut SessionState) {
     match event {
         AgentEvent::Progress(_) => {}
         AgentEvent::Completed { outcome, .. } => match outcome {
+            AgentTurnOutcome::Acceptance { report, plan, .. } => {
+                state
+                    .transcript
+                    .push(format!("assistant: {}", report.render()));
+                state.status = Some(
+                    if report.is_verified() {
+                        "Implementation acceptance verified."
+                    } else {
+                        "Implementation acceptance incomplete; see remaining gaps."
+                    }
+                    .into(),
+                );
+                if let Some(plan) = plan {
+                    apply_task_plan(state, &plan);
+                }
+            }
             AgentTurnOutcome::Completed {
                 assistant_content,
                 iterations,
@@ -11335,6 +11641,7 @@ async fn execute_worktree_worker(
 
 fn outcome_text(outcome: &AgentTurnOutcome) -> String {
     match outcome {
+        AgentTurnOutcome::Acceptance { report, .. } => report.render(),
         AgentTurnOutcome::Completed {
             assistant_content, ..
         } => assistant_content
@@ -15426,6 +15733,31 @@ mod tests {
     }
 
     #[test]
+    fn acceptance_event_cannot_be_overridden_by_completed_plan() {
+        let mut state = SessionState::default();
+        let report: vesper_domain::acceptance::AcceptanceReport = serde_json::from_value(serde_json::json!({
+            "version":1,"objective":"Both native hosts", "contract_digest":"scope", "source_digest":"source", "verified_scenarios":1,"total_scenarios":2,
+            "gaps":[{"subject":"ACP","state":"missing","reason":"No native evidence"}],"receipts":[]
+        })).unwrap();
+        apply_agent_event(
+            AgentEvent::Completed {
+                outcome: AgentTurnOutcome::Acceptance {
+                    report,
+                    iterations: 1,
+                    tool_results: vec![],
+                    plan: Some("[x] Everything complete".into()),
+                },
+                history: vec![],
+            },
+            &mut state,
+        );
+        let text = state.transcript.join("\n");
+        assert!(text.contains("INCOMPLETE"), "{text}");
+        assert!(text.contains("No native evidence"), "{text}");
+        assert!(!text.contains("Implementation acceptance: VERIFIED"));
+    }
+
+    #[test]
     fn apply_agent_event_with_no_plan_records_completion() {
         // A turn that produces text without an update_plan must surface the
         // assistant text and a completion notice, leaving Plan Mode alone.
@@ -15521,6 +15853,8 @@ mod tests {
         // task panicked), the drain must clear the in-flight flag and surface
         // an abort notice instead of wedging the UI on WORKING... forever.
         let mut session = TuiSession {
+            turn_cancellation: None,
+            acceptance: None,
             policy: std::sync::Arc::new(vesper_provider::PermissiveSuperpowerPolicy),
             provider_ids: vec![("zai".into(), "Z.ai".into())],
             capabilities: agent_vesper_tui::ModelCapabilityIndex::empty(),
@@ -15587,6 +15921,8 @@ mod tests {
         // While the channel is still empty (the task is still running), the
         // drain must NOT clear the in-flight flag — the WORKING banner stays.
         let mut session = TuiSession {
+            turn_cancellation: None,
+            acceptance: None,
             policy: std::sync::Arc::new(vesper_provider::PermissiveSuperpowerPolicy),
             provider_ids: vec![("zai".into(), "Z.ai".into())],
             capabilities: agent_vesper_tui::ModelCapabilityIndex::empty(),
@@ -15651,6 +15987,8 @@ mod tests {
         // which `ViewModel.reasoning` / `ViewModel.live_response` clone each
         // frame for the Conversation and Reasoning panels.
         let mut session = TuiSession {
+            turn_cancellation: None,
+            acceptance: None,
             policy: std::sync::Arc::new(vesper_provider::PermissiveSuperpowerPolicy),
             provider_ids: vec![("zai".into(), "Z.ai".into())],
             capabilities: agent_vesper_tui::ModelCapabilityIndex::empty(),
@@ -16914,6 +17252,8 @@ mod tests {
         // A permissive no-op policy satisfies the trait-object field without
         // re-implementing all 5 trait methods.
         TuiSession {
+            turn_cancellation: None,
+            acceptance: None,
             policy: Arc::new(vesper_provider::PermissiveSuperpowerPolicy)
                 as Arc<dyn vesper_provider::SuperpowerPolicy>,
             provider_ids: Vec::new(),

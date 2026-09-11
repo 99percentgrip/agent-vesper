@@ -7,6 +7,12 @@ architecture, MSRV, and source-oracle checks.
 
 ## Local Contracts
 
+- ADR 0028 `acceptance` runs fixed named policy/runtime/native-host cases and rejects
+  missing, ignored or zero-match selections. `verify` includes it.
+  `acceptance-mutations` copies source to a temporary workspace and requires two
+  deliberate evaluator defects to fail their named assertion tests; a compile failure is
+  not a mutation kill. Build artifacts stay under `target/acceptance-mutations`.
+
 - `xtask` may depend on `vesper-testkit`; production crates may not depend on it.
 - Commands must not call providers or mutate source/user state.
 - Verification failures return nonzero and never fabricate success.

@@ -2,6 +2,16 @@
 
 Status: evidence index; acceptance status is scoped to each section.
 
+## Completion assurance research — 2026-09-11
+
+`completion-assurance-proposal.md` records source inspection at `8083f9f`,
+primary-source open-source research, and a proposed Rust completion gate.
+The inspected loop accepts model-updated plan completion without a requirement
+evidence verdict; streamed content can precede the terminal decision. The proposal
+separates coverage review, observed verification, and permission to claim completion.
+Status: research/design only; no runtime implementation, dependency installation,
+provider experiment, release, or measured effectiveness claim.
+
 ## VRO-15 asynchronous lease and contained native Hive checkpoint
 
 - `vro15-repair-execution.md` owns the current F01–F18 matrix and exact resume
@@ -487,3 +497,13 @@ platform interruption was an HTTP 500 cache download before tests. Optional cach
 setup now reaches the existing direct-compilation fallback. Final publication still
 requires all four successful push workflows on the exact release commit. The
 v0.21.6 release notes own the final run links, image IDs and local-install receipt.
+
+## Native completion assurance implementation — 2026-09-11
+
+- Approved ADR 0028 and `completion-assurance-execution.md` own the native gate,
+  adversarial/real-repair cases, exact-case CI and bounded mutation evidence.
+- Final repository verification and release readiness are reported there;
+  research references alone do not establish implementation completion.
+- Final canonical verification and both native binary builds passed. All 20
+  exact acceptance cases passed; both deliberate evaluator mutations were caught.
+  Local implementation evidence does not imply a release or installed update.

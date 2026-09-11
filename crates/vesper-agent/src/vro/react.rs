@@ -238,6 +238,20 @@ impl std::fmt::Debug for RegistryToolInvoker {
 }
 
 impl RegistryToolInvoker {
+    /// Native composition supplies the same cancellation, operating mode and
+    /// permission choice as its parent loop, without replacing scope policy.
+    #[must_use]
+    pub fn with_turn_controls(
+        mut self,
+        mode: vesper_domain::SessionOperatingMode,
+        permission: vesper_domain::SessionPermissionMode,
+        cancellation: Arc<dyn vesper_provider::CancellationSignal>,
+    ) -> Self {
+        self.context.operating_mode = mode;
+        self.context.permission_mode = permission;
+        self.context.cancellation = cancellation;
+        self
+    }
     /// Creates a new invoker bound to the given registry, permission port,
     /// and execution context.
     ///
@@ -277,6 +291,11 @@ impl ToolInvoker for RegistryToolInvoker {
         let context = &self.context;
         let counter = &self.call_counter;
         Box::pin(async move {
+            if context.cancellation.is_cancelled() {
+                return Err(ToolInvocationError::ExecutionFailed(
+                    "turn cancelled before tool execution".into(),
+                ));
+            }
             // --- Definition lookup (covers gateway-prefixed tools too via
             // the registry's execute path, but class_of is restricted to the
             // static definitions list — that is intentional: Read-Before-Write
@@ -337,6 +356,11 @@ impl ToolInvoker for RegistryToolInvoker {
             // longest-matching gateway). ToolError is mapped 1:1 to the
             // invocation-error variants so the loop surfaces a structured
             // failure observation rather than crashing. ---
+            if context.cancellation.is_cancelled() {
+                return Err(ToolInvocationError::ExecutionFailed(
+                    "turn cancelled after permission decision".into(),
+                ));
+            }
             match registry.execute(&call, context).await {
                 Ok(result) => Ok(result.text.as_str().to_string()),
                 Err(error) => Err(match error {
@@ -1189,6 +1213,45 @@ mod tests {
             .await
             .expect("ReadOnly tool must pass the static gate");
         assert_eq!(result, "registry invoker");
+    }
+
+    #[tokio::test]
+    async fn acceptance_parent_controls_reach_react_tools() {
+        use vesper_domain::{SessionOperatingMode, SessionPermissionMode};
+        let cancellation = Arc::new(vesper_runtime::RuntimeCancellation::new());
+        let invoker = RegistryToolInvoker::new(
+            ToolRegistry::parity_default(),
+            Arc::new(crate::permission::DenyPermissionPort),
+            crate::executor::uncancellable_context(
+                vec![],
+                SessionOperatingMode::Code,
+                SessionPermissionMode::Bypass,
+            ),
+        )
+        .with_turn_controls(
+            SessionOperatingMode::Plan,
+            SessionPermissionMode::ReadOnly,
+            cancellation.clone(),
+        );
+        assert!(matches!(
+            invoker
+                .invoke(
+                    "write_file",
+                    &serde_json::json!({"path":"must-not-write","content":"data"})
+                )
+                .await,
+            Err(ToolInvocationError::PermissionDenied(_))
+        ));
+        cancellation.cancel();
+        let error = invoker
+            .invoke("read_file", &serde_json::json!({"path":"must-not-read"}))
+            .await
+            .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("cancelled before tool execution")
+        );
     }
 
     #[tokio::test]

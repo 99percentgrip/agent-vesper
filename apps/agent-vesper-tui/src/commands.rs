@@ -73,7 +73,9 @@ pub enum CommandOutcome {
     /// Free-text prompt — pass straight to the runtime.
     Prompt(String),
     /// Plan Mode was invoked with a PRD.
-    Plan { prd: String },
+    Plan {
+        prd: String,
+    },
     /// Plan Mode gesture that did not require text (`approve`, `cancel`).
     PlanGesture(PlanGesture),
     /// A superpower command targeted one descriptor.
@@ -104,23 +106,34 @@ pub enum CommandOutcome {
     Ui(UiAction),
 
     /// Search the visible conversation for a case-insensitive query.
-    Search { query: String },
+    Search {
+        query: String,
+    },
     /// Load one persisted TUI session selected from the native history picker.
-    History { session_id: String },
+    History {
+        session_id: String,
+    },
     /// Queue, render, or capture an image through the native media bridge.
     Media(MediaOp),
     /// Ask the configured auxiliary model without mutating main history.
-    AuxiliaryQuestion { question: String },
+    AuxiliaryQuestion {
+        question: String,
+    },
     /// Query the active provider's live account/plan usage endpoint.
     ProviderUsage,
     /// Copy or write one fenced code block from recent assistant output.
-    CodeBlock { index: usize, write: bool },
+    CodeBlock {
+        index: usize,
+        write: bool,
+    },
 
     // === Tier C Phase 7 (ADR 0010) — context mutations ===
     /// `/clear-plan`, `/clear-history` — clear Plan Mode back to NORMAL.
     ClearPlan,
     /// `/compact [focus]` — transactionally summarize older provider context.
-    Compact { focus: Option<String> },
+    Compact {
+        focus: Option<String>,
+    },
 
     // === Tier C Phase 7 (ADR 0010) — context views ===
     /// Read-only view of session state. The dispatch surface inspects
@@ -135,6 +148,7 @@ pub enum CommandOutcome {
     SandboxControl(SandboxControl),
     /// Shared text equivalent of the Web tools settings panel.
     WebSettings(String),
+    Acceptance(String),
     #[cfg(feature = "swarm")]
     Swarm(String),
 
@@ -143,7 +157,10 @@ pub enum CommandOutcome {
     /// `AgentLoop` turn. `display` is shown in the transcript; `prompt` is
     /// what the binary feeds to the loop (drained via
     /// [`crate::dispatch::SessionState::pending_prompt`]).
-    Workflow { display: String, prompt: String },
+    Workflow {
+        display: String,
+        prompt: String,
+    },
 
     // === Tier C Phase 8 (ADR 0011) — memory subsystem commands ===
     /// A memory command resolved to a structured [`MemoryOp`] that the
@@ -1077,6 +1094,13 @@ impl CommandRegistry {
             "settings" if argument.trim() == "swarm" => CommandOutcome::Swarm("settings".into()),
             #[cfg(feature = "swarm")]
             "swarm" => CommandOutcome::Swarm(argument.trim().into()),
+            "settings" if argument.trim() == "acceptance" => {
+                CommandOutcome::Acceptance("settings".into())
+            }
+            "settings" if argument.trim().starts_with("acceptance ") => {
+                CommandOutcome::Acceptance(format!("settings {}", argument.trim()[11..].trim()))
+            }
+            "acceptance" => CommandOutcome::Acceptance(argument.trim().into()),
             "settings" if argument.trim() == "web" => CommandOutcome::Ui(UiAction::OpenWebSettings),
             "settings" if matches!(argument.trim(), "provider" | "providers") => {
                 CommandOutcome::Ui(UiAction::OpenProviderSwitcher)
@@ -1719,6 +1743,9 @@ impl CommandRegistry {
         buffer.push_str("  /mixture           toggle reference review\n");
         buffer.push_str("  /settings          browse all settings without typing values\n");
         buffer.push_str(
+            "  /acceptance start <PRD>  enforce scoped completion; status, resume, export, stop\n",
+        );
+        buffer.push_str(
             "  /settings providers  select a provider with Save/Cancel; /provider is a shortcut\n",
         );
         buffer.push_str("  /web               open Web tools on/off settings\n");
@@ -2034,6 +2061,7 @@ const ORACLE_COMMAND_SURFACE: &[OracleCommandEntry] = &[
     #[cfg(feature = "swarm")]
     OracleCommandEntry { name: "swarm", description: vesper_domain::slash_commands::SWARM_SLASH_COMMAND.description },
     OracleCommandEntry { name: "web",               description: "Configure Web tools on/off settings" },
+    OracleCommandEntry { name: "acceptance", description: "Enforce PRD completion: start <path>, status, resume, export <path>, stop" },
     OracleCommandEntry { name: "reasoning",         description: "Override the VRO reasoning mode: set mode=<auto|fast|balanced|deep|maximum|off> | clear" },
     OracleCommandEntry { name: "api-plan",          description: "Alias for /plan" },
     OracleCommandEntry { name: "endpoint",          description: "Alias for /plan" },
@@ -2666,7 +2694,7 @@ mod tests {
         );
         assert_eq!(
             registry.names().len(),
-            101 + usize::from(cfg!(feature = "swarm")),
+            102 + usize::from(cfg!(feature = "swarm")),
             "the complete oracle-compatible and Vesper-native command surface must stay registered"
         );
         assert_eq!(registry.contains("swarm"), cfg!(feature = "swarm"));
@@ -3081,6 +3109,24 @@ mod tests {
             resolve_bare_intent(&CommandIntent::parse("/web render on")),
             CommandOutcome::WebSettings("render on".into())
         );
+    }
+
+    #[test]
+    fn acceptance_settings_and_objective_commands_share_native_controls() {
+        for (input, expected) in [
+            ("/settings acceptance", "settings"),
+            (
+                "/settings acceptance on docs/PRD.md",
+                "settings on docs/PRD.md",
+            ),
+            ("/settings acceptance off", "settings off"),
+            ("/acceptance resume", "resume"),
+        ] {
+            assert_eq!(
+                resolve_bare_intent(&CommandIntent::parse(input)),
+                CommandOutcome::Acceptance(expected.into())
+            );
+        }
     }
 
     #[test]

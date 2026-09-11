@@ -7,6 +7,11 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 ## Ownership
 
 - `evidence-index.md` is the durable execution ledger and command record.
+- `completion-assurance-proposal.md` owns the researched proposal for native
+  requirement coverage, execution receipts, and enforced completion decisions.
+  It records inspected sources and the approved acceptance criteria.
+- `completion-assurance-execution.md` owns ADR 0028 implementation evidence,
+  executable coverage, measured limits and release readiness.
 - `vro14-gap-audit.md` owns current web-extraction gaps, repair evidence,
   deployment prerequisites, and outstanding release acceptance.
 - `vro15-gap-audit.md` owns independent swarm-extraction acceptance findings,

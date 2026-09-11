@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 //! Provider-neutral values shared across Agent Vesper ports and adapters.
 
+pub mod acceptance;
 pub mod bounded;
 pub mod capability;
 pub mod command;

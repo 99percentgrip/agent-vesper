@@ -13,7 +13,8 @@ clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
-vesper-testkit = { path = "../crates/vesper-testkit", version = "=0.21.6" }
+tempfile.workspace = true
+vesper-testkit = { path = "../crates/vesper-testkit", version = "=0.21.7" }
 
 [lints]
 workspace = true

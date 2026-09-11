@@ -30,3 +30,6 @@ jobs:
         run: |
           cargo +1.88.0 xtask fixtures coverage --stage 5
           cargo +1.88.0 xtask sessions verify
+
+      - name: Exact completion assurance cases
+        run: cargo +1.88.0 xtask acceptance

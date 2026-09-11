@@ -150,7 +150,11 @@ pub const SWARM_SLASH_COMMAND: SlashCommandDescriptor = SlashCommandDescriptor {
     description: "Swarm: /swarm status, /swarm settings, or /swarm run <goal>",
 };
 
-pub const HOST_PARITY_SLASH_COMMANDS: [SlashCommandDescriptor; 18] = [
+pub const HOST_PARITY_SLASH_COMMANDS: [SlashCommandDescriptor; 19] = [
+    SlashCommandDescriptor {
+        name: "acceptance",
+        description: "Enforce PRD completion: start <path>, status, resume, export <path>, stop",
+    },
     SlashCommandDescriptor {
         name: "remember",
         description: "Save a fact to cognitive memory",

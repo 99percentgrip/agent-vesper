@@ -7,6 +7,11 @@ platform assumptions on hosts unavailable locally.
 
 ## Local Contracts
 
+- ADR 0028 acceptance regressions are mandatory in canonical, MSRV and five-target
+  foundation workflows. Canonical CI also kills two bounded evaluator mutations. The
+  existing exact-commit release prerequisite therefore includes these gates; local
+  evidence alone cannot authorize a release.
+
 - Keep the five release-target families explicit in the matrix: linux-x86_64,
   linux-arm64, macos-intel, macos-apple-silicon, windows-x86_64.
 - Validation workflows must not call live providers or require credentials.

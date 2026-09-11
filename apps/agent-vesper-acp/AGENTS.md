@@ -21,6 +21,13 @@ transport, stderr-only tracing, and orderly shutdown.
 
 ## Local Contracts
 
+- ADR 0028 `/acceptance` and `/settings acceptance on <PRD>|off` compose the shared
+  native completion gate. Saved activation is loaded before dispatch; live authority
+  remains per-session and outside compaction. VRO/Swarm drafts return through the parent
+  gate; direct cancellation retains the incomplete report/history. Default controls
+  create no evidence state; `tests/acceptance_controls.rs` checks the real isolated ACP
+  process.
+
 - Contain no session, provider-wire, or ACP-mapping business logic.
 - Stdout is exclusively newline-delimited ACP JSON-RPC.
 - Tests use loopback endpoints and synthetic credentials only.

@@ -81,6 +81,14 @@ When the user requests a durable behavior change, record it here or in the relev
 - When a complete repair or implementation is requested, continue across
   ordinary milestones until its required code and acceptance work are done.
   Do not substitute a partial checkpoint or a release for completion.
+- PRD completion claims must trace every required behavior to current,
+  scope-appropriate evidence. Model-written plan checkmarks, passing unrelated
+  tests, and another agent's assurance are not completion evidence. Preserve
+  missing, failed, stale, and unexecuted acceptance items in reports; never
+  silently weaken the scope to obtain a completed status. The native
+  enforcement contract is ADR 0028; implementation evidence and limitations live
+  in `docs/foundation/completion-assurance-execution.md`. Run `cargo xtask
+  acceptance` before claiming changes to this gate are verified.
 - Feature activation belongs in native `/settings` controls, including
   Settings → Web tools with persisted on/off choices. Manual configuration
   file editing must not be the normal activation workflow.

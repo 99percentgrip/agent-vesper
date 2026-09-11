@@ -146,6 +146,14 @@ Z.ai and Playwright MCP server descriptors.
 
 ## Local Contracts
 
+- ADR 0028: `acceptance`, `acceptance_snapshot`, `acceptance_runner` and
+  `acceptance_settings` own original PRD/project-rule capture, independent read-only
+  review, exact Rust test execution, private in-memory receipts and native controls.
+  Snapshot bounds are 128 MiB/16384 files/64 levels; symlinks, special files and private
+  .env inputs refuse. Default reads write nothing; settings saves/audit export are
+  explicit. Resume imports history only, never verification. `acceptance_tests` covers
+  real defective/repair execution and adversarial failures.
+
 - Every filesystem path is confined to the caller's primary workspace root
   before access.
 - `src/slash_commands.rs` owns store-backed slash-command execution for the
