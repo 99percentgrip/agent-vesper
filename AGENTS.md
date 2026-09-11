@@ -78,6 +78,11 @@ Default section order:
 
 When the user requests a durable behavior change, record it here or in the relevant child AGENTS.md
 
+- Keep the GitHub README a concise user-facing front page: capabilities, install,
+  first use, dependencies, uninstall, and a clear documentation link. Put detailed
+  setup and commands in user guides, and keep PRDs, implementation milestones,
+  internal identifiers and historical repair narratives in engineering documents.
+  Prefer concrete supported behavior over inflated guarantees or stale counts.
 - When a complete repair or implementation is requested, continue across
   ordinary milestones until its required code and acceptance work are done.
   Do not substitute a partial checkpoint or a release for completion.

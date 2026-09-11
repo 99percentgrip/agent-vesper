@@ -6,6 +6,14 @@ Own durable project documentation and evidence-backed engineering records.
 
 ## Ownership
 
+- `README.md` is the documentation landing page, separating user guides from
+  contributor references, specifications, and historical evidence.
+- `installation.md` owns user prerequisites, dependency setup, installation,
+  updates, paths, troubleshooting, and the actual uninstall/data-removal behavior.
+- `using-vesper.md` owns everyday workflows and a curated command reference;
+  `zed.md` owns custom ACP registration, provider selection and chat persistence.
+- Keep user guides task-oriented and link to detailed engineering records rather
+  than repeating implementation diaries or unverified capability claims.
 - `recon/` owns the frozen Python-harness reconnaissance and Rust migration design.
 - `foundation/` owns blocker-resolution evidence, compatibility decisions, fixture contracts, and disposable-spike verdicts.
 - `adr/` owns accepted production architecture decisions.
@@ -53,6 +61,9 @@ Own durable project documentation and evidence-backed engineering records.
 
 ## Verification
 
+- Check changed Markdown links and anchors, parse documented JSON, and compare
+  install/uninstall commands against the scripts. Do not run a user's installer
+  or uninstaller just to validate documentation examples.
 - Review reconnaissance documents against `recon/AGENTS.md` and the mission completeness audit.
 
 ## Child DOX Index
