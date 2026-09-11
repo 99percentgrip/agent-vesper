@@ -2662,7 +2662,37 @@ pub async fn run_multi_provider(initial: &str) -> Result<(), ()> {
         _ => return Err(()),
     };
 
-    let profile = ProviderProfile::for_identity(&initial_id)?;
+    let openai_models = if providers
+        .credential_present(&vesper_provider_openai::provider_id())
+        .await
+        .unwrap_or(false)
+    {
+        match openai
+            .available_models(Arc::new(vesper_runtime::RuntimeCancellation::new()))
+            .await
+        {
+            Ok(models) => models,
+            Err(error) => {
+                tracing::warn!(message = %error.info.safe_message, "OpenAI model choices unavailable; restart after checking authentication/connectivity");
+                vesper_provider_openai::AvailableModels::unavailable(openai.control_policy().mode)
+            }
+        }
+    } else {
+        vesper_provider_openai::AvailableModels::unavailable(openai.control_policy().mode)
+    };
+    let mut profile = ProviderProfile::for_identity(&initial_id)?;
+    if initial_id.as_str() == "openai"
+        && !openai_models.contains(profile.model.as_str())
+        && let Some(first) = openai_models.models.first()
+    {
+        profile.model = first.model.model_id.clone();
+        profile
+            .provider_configuration
+            .values
+            .values
+            .insert("openai:model", serde_json::json!(&profile.model))
+            .map_err(|_| ())?;
+    }
     let qualified_model = runtime_model(&profile.model, &initial_id);
 
     // PRD provider-capability-gating P5: when LM Studio is the acting
@@ -2739,10 +2769,11 @@ pub async fn run_multi_provider(initial: &str) -> Result<(), ()> {
                 &profile.provider_configuration,
                 &lm_controls,
             ),
-            controls: Some(controls::multi_provider_control_surface(
+            controls: Some(controls::multi_provider_control_surface_with_openai(
                 &profile.provider_configuration,
                 &registered,
                 &lm_controls,
+                &openai_models,
             )),
             additional_commands: host_parity_commands(),
         },
@@ -2850,7 +2881,9 @@ fn context_window_catalog(
     for model in vesper_provider_openai::OpenAiCatalog::snapshot().models {
         windows.insert(
             ("openai".into(), model.model.model_id.as_str().to_owned()),
-            vesper_provider_openai::OpenAiCatalog::context_tokens(),
+            vesper_provider_openai::OpenAiCatalog::context_tokens_for(
+                model.model.model_id.as_str(),
+            ),
         );
     }
     for entry in vesper_provider_glm::GlmCatalog::entries() {

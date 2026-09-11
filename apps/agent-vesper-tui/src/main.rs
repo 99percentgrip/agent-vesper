@@ -101,6 +101,8 @@ impl InterviewQuestionPolicy {
     }
 }
 
+mod landing_host;
+
 type Backend = CrosstermBackend<io::Stdout>;
 
 #[tokio::main]
@@ -300,7 +302,7 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
         .map_err(|error| format!("invalid provider id: {error}"))?;
 
     let registry = Arc::new(vesper_runtime::ProviderRegistry::new());
-    let lm_factory = register_default_providers(&registry)
+    let (lm_factory, openai_factory) = register_default_providers(&registry)
         .await
         .map_err(|error| format!("provider registration failed: {error:?}"))?;
     if !registry.contains(&provider_id).await {
@@ -370,10 +372,17 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
     // cognitive-memory features disabled. Concrete trait-impl wiring lives
     // in `CognitionBundle::open_default`; the slash-command surface for
     // `/remember` `/recall` `/forget` is additive and ships independently.
-    let cognition_bundle = Arc::new(CognitionBundle::open_default(
-        Arc::new(vesper_provider_glm::EnvironmentCredentialSource),
-        provider_id.as_str(),
-    ));
+    // Cognition constructs blocking HTTP clients and may read/migrate local stores.
+    // Keep both outside Tokio's async runtime context before opening the terminal.
+    let cognition_provider = provider_id.as_str().to_owned();
+    let cognition_bundle = tokio::task::spawn_blocking(move || {
+        Arc::new(CognitionBundle::open_default(
+            Arc::new(vesper_provider_glm::EnvironmentCredentialSource),
+            &cognition_provider,
+        ))
+    })
+    .await
+    .map_err(|error| format!("cognition initialization failed: {error}"))?;
     // Directive 2 (ADR 0016 follow-up) — kick off the embedder startup probe
     // in a background OS thread. The TUI loads instantly; if a memory search
     // runs before the probe completes it falls back to BM25-only results and
@@ -458,7 +467,26 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
         // lifecycle is unit-testable; the binary only owns the input buffer
         // and the in-flight agent-turn channel.
         capabilities: capability_index_for(&provider_id, &lm_factory),
-        state: SessionState::new(),
+        state: {
+            let mut state = SessionState::new();
+            let legacy = std::env::var("AGENT_VESPER_HOME")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|_| std::path::PathBuf::from(".agent-vesper"));
+            match theme_preference_root().and_then(|root| migrate_theme_preference(&root, &legacy))
+            {
+                Ok(Some(theme)) => state.preferences.theme = theme,
+                Ok(None) => {}
+                Err(error) => {
+                    if let Some(theme) = load_theme_preference(&legacy) {
+                        state.preferences.theme = theme;
+                    }
+                    state.status = Some(format!(
+                        "Could not restore the user-wide theme preference: {error}"
+                    ));
+                }
+            }
+            state
+        },
         input: String::new(),
         conversation: Vec::new(),
         agent_rx: None,
@@ -476,6 +504,7 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
         keybindings: load_keybindings(),
         command_matches: Vec::new(),
         command_selected: 0,
+        settings_menu_open: false,
         session_id: runtime_session_id.as_str().to_owned(),
         telemetry: Arc::new(trajectory_recorder()),
         activity: Vec::new(),
@@ -518,6 +547,8 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
     enter_raw_mode(session.state.preferences.native_mouse)
         .map_err(|error| format!("failed to enter raw mode: {error}"))?;
     let result = drive_loop(
+        resume_id.is_none(),
+        &openai_factory,
         &provider_id,
         &registry,
         startup.auth.clone(),
@@ -667,6 +698,49 @@ fn reasoning_seq() -> u64 {
 #[allow(dead_code)]
 const _: Option<Revision> = None;
 
+fn theme_preference_root() -> std::io::Result<std::path::PathBuf> {
+    let variable = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+    let home = std::env::var_os(variable)
+        .filter(|value| !value.is_empty())
+        .map(std::path::PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .ok_or_else(|| std::io::Error::other("User home directory is unavailable"))?;
+    Ok(home.join(".agent-vesper").join("ui"))
+}
+
+/// Import an existing local choice once; a user-wide choice always takes precedence.
+fn migrate_theme_preference(
+    global: &std::path::Path,
+    legacy: &std::path::Path,
+) -> std::io::Result<Option<String>> {
+    if let Some(theme) = load_theme_preference(global) {
+        return Ok(Some(theme));
+    }
+    let theme = load_theme_preference(legacy);
+    if let Some(theme) = &theme {
+        save_theme_preference(global, theme)?;
+    }
+    Ok(theme)
+}
+
+fn load_theme_preference(root: &std::path::Path) -> Option<String> {
+    use std::io::Read;
+    let file = std::fs::File::open(root.join("theme")).ok()?;
+    let mut value = String::new();
+    file.take(64).read_to_string(&mut value).ok()?;
+    let value = value.trim();
+    matches!(
+        value,
+        "chatgpt-black" | "chatgpt-white" | "ansi" | "light" | "dracula" | "nord"
+    )
+    .then(|| value.to_owned())
+}
+
+fn save_theme_preference(root: &std::path::Path, theme: &str) -> std::io::Result<()> {
+    std::fs::create_dir_all(root)?;
+    std::fs::write(root.join("theme"), theme)
+}
+
 fn provider_name_from_env() -> String {
     // 1. Persisted preference (from /provider command).
     let pref_path = std::env::var("AGENT_VESPER_HOME")
@@ -699,11 +773,22 @@ fn save_provider_preference(provider: &str) -> Result<(), String> {
 
 async fn register_default_providers(
     registry: &vesper_runtime::ProviderRegistry,
-) -> Result<agent_vesper_tui::LmStudioFactory, vesper_runtime::RuntimeError> {
+) -> Result<
+    (
+        agent_vesper_tui::LmStudioFactory,
+        vesper_provider_openai::OpenAiFactory,
+    ),
+    vesper_runtime::RuntimeError,
+> {
     let openai = vesper_provider_openai::OpenAiFactory::default();
     let openai_policy = openai.control_policy();
     registry
-        .register_with_all(openai.clone(), openai.clone(), openai, openai_policy)
+        .register_with_all(
+            openai.clone(),
+            openai.clone(),
+            openai.clone(),
+            openai_policy,
+        )
         .await?;
     // Production ships only credential-backed provider adapters. Deterministic
     // adapters belong in tests and must never appear as user-selectable models.
@@ -754,7 +839,7 @@ async fn register_default_providers(
         .await?;
     // The retained handle shares the factory's catalog cache, so the caller
     // can refresh it before querying the advertised surface (PRD P5).
-    Ok(factory)
+    Ok((factory, openai))
 }
 
 /// Mutable per-session state held across the event loop.
@@ -833,6 +918,7 @@ struct TuiSession {
     command_matches: Vec<(String, String)>,
     /// Highlighted slash-command palette entry.
     command_selected: usize,
+    settings_menu_open: bool,
     /// Stable persisted transcript id used by the local search bridge.
     session_id: String,
     /// Opt-in secret-safe trajectory sink.
@@ -1302,6 +1388,8 @@ impl AgentProgressPort for ChannelProgressPort {
 
 #[allow(clippy::too_many_arguments)] // single-call composition boundary
 async fn drive_loop(
+    show_landing: bool,
+    openai_factory: &vesper_provider_openai::OpenAiFactory,
     provider_id: &ProviderId,
     registry: &Arc<vesper_runtime::ProviderRegistry>,
     auth: Option<AuthProvider>,
@@ -1333,7 +1421,93 @@ async fn drive_loop(
         .await?;
     }
 
+    // Refresh only at an interaction boundary; never perform network I/O in rendering.
+    let mut openai_controls = None;
+    let mut openai_model_notice = String::new();
+    let mut refresh_openai_models = provider_id.as_str() == "openai";
+    let mut was_in_settings = false;
+    let mut landing_pending = show_landing;
+    let mut settings_from_landing = false;
     loop {
+        if provider_id.as_str() == "openai"
+            && (refresh_openai_models || (session.settings_menu_open && !was_in_settings))
+        {
+            refresh_openai_models = false;
+            terminal
+                .draw(|frame| {
+                    frame.render_widget(
+                        ratatui::widgets::Paragraph::new("Loading OpenAI account models…"),
+                        frame.area(),
+                    )
+                })
+                .map_err(|_| "Could not redraw model loading status")?;
+            let factory = openai_factory;
+            let available = match factory
+                .available_models(Arc::new(vesper_runtime::RuntimeCancellation::new()))
+                .await
+            {
+                Ok(available) => {
+                    openai_model_notice = if available.models.is_empty() {
+                        "No supported models returned for this account. Check sign-in or retry."
+                            .into()
+                    } else {
+                        "Select a model with ↑/↓, then press Enter.".into()
+                    };
+                    available
+                }
+                Err(error) => {
+                    openai_model_notice = format!(
+                        "{}{}",
+                        error.info.safe_message.as_str(),
+                        error
+                            .http_status
+                            .map(|status| format!(" (HTTP {status})"))
+                            .unwrap_or_default()
+                    );
+                    vesper_provider_openai::AvailableModels::unavailable(
+                        factory.control_policy().mode,
+                    )
+                }
+            };
+            session.state.status = Some(openai_model_notice.clone());
+            session.policy = Arc::new(available.policy());
+            let descriptors = factory.superpowers_for(&available);
+            openai_controls = Some((
+                ProviderSuperpowerSurface::new(provider_id.clone(), descriptors),
+                available.policy(),
+            ));
+        }
+        was_in_settings = session.settings_menu_open;
+        let surface = openai_controls
+            .as_ref()
+            .map(|(surface, _)| surface)
+            .unwrap_or(surface);
+        let policy: &dyn vesper_provider::SuperpowerPolicy = openai_controls
+            .as_ref()
+            .map(|(_, policy)| policy as &dyn vesper_provider::SuperpowerPolicy)
+            .unwrap_or(policy);
+        if landing_pending {
+            landing_pending = false;
+            match landing_host::open(
+                &mut terminal,
+                provider_id.as_str(),
+                &active_model_label(&session.state, surface),
+                &session.state.preferences.theme,
+            )
+            .await?
+            {
+                agent_vesper_tui::landing::LandingAction::Quit => return Ok(()),
+                agent_vesper_tui::landing::LandingAction::Settings => {
+                    settings_from_landing = true;
+                    session.settings_menu_open = true;
+                    session.input.clear();
+                }
+                _ => {
+                    settings_from_landing = false;
+                }
+            }
+        }
+        restore_settings_menu(session, registry_commands, surface);
         // Phase 6: drain any completed agent turn BEFORE redrawing so the
         // "WORKING..." banner clears the moment the result lands. The drain
         // is non-blocking (`try_recv`); if the turn is still running we just
@@ -1438,8 +1612,32 @@ async fn drive_loop(
         // VRO-11.9: stash the frame's view model so the click handler can
         // inverse-map transcript rows (click-on-URL opens the browser).
         session.last_model = Some(model.clone());
+        let model_discovery_unavailable = openai_controls.is_some()
+            && unavailable_model_menu(session.settings_menu_open, &session.input, surface);
         if let Err(error) = terminal.draw(|frame| {
-            render_to_frame(frame, &model);
+            if session.settings_menu_open
+                && session.pending_approval.is_none()
+                && !session.state.preferences.screen_reader
+            {
+                if model_discovery_unavailable {
+                    agent_vesper_tui::settings_menu::render_model_unavailable(
+                        frame,
+                        &openai_model_notice,
+                        &session.state.preferences.theme,
+                    );
+                } else {
+                    agent_vesper_tui::settings_menu::render(
+                        frame,
+                        &session.command_matches,
+                        session.command_selected,
+                        &session.input,
+                        session.state.status.as_deref(),
+                        &session.state.preferences.theme,
+                    );
+                }
+            } else {
+                render_to_frame(frame, &model);
+            }
         }) {
             return Err(format!("redraw failed: {error}"));
         }
@@ -1450,6 +1648,58 @@ async fn drive_loop(
             continue;
         }
         let mut event = event::read().map_err(|error| format!("event read failed: {error}"))?;
+        if model_discovery_unavailable && session.pending_approval.is_none() {
+            let size = terminal.size().map_err(|error| error.to_string())?;
+            let viewport = ratatui::layout::Rect::new(0, 0, size.width, size.height);
+            if agent_vesper_tui::settings_menu::retry_models(&event, viewport) {
+                refresh_openai_models = true;
+                continue;
+            }
+            // This is a retry/back screen, never a free-form command editor.
+            if !matches!(
+                event,
+                Event::Key(KeyEvent {
+                    code: KeyCode::Esc,
+                    ..
+                })
+            ) && !matches!(event, Event::Key(KeyEvent { code: KeyCode::Char('c' | 'd'), modifiers, .. }) if modifiers.contains(KeyModifiers::CONTROL))
+            {
+                continue;
+            }
+        }
+        if session.settings_menu_open
+            && session.pending_approval.is_none()
+            && !session.state.preferences.screen_reader
+            && let Event::Mouse(mouse) = event.clone()
+        {
+            match mouse.kind {
+                MouseEventKind::Down(MouseButton::Left) => {
+                    let size = terminal.size().map_err(|error| error.to_string())?;
+                    if let Some(index) = agent_vesper_tui::settings_menu::item_at(
+                        ratatui::layout::Rect::new(0, 0, size.width, size.height),
+                        session.command_matches.len(),
+                        session.command_selected,
+                        mouse.column,
+                        mouse.row,
+                    ) {
+                        session.command_selected = index;
+                        event = Event::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+                    } else {
+                        continue;
+                    }
+                }
+                MouseEventKind::ScrollDown => {
+                    session.command_selected = (session.command_selected + 1)
+                        .min(session.command_matches.len().saturating_sub(1));
+                    continue;
+                }
+                MouseEventKind::ScrollUp => {
+                    session.command_selected = session.command_selected.saturating_sub(1);
+                    continue;
+                }
+                _ => continue,
+            }
+        }
         if let Event::Mouse(mouse) = event.clone() {
             if mouse.kind == MouseEventKind::Down(MouseButton::Left) {
                 let area = terminal.size().map_err(|error| error.to_string())?;
@@ -1803,13 +2053,22 @@ async fn drive_loop(
                         session.input = selected;
                         session.state.preferences.composer_cursor = session.input.len();
                     }
-                    if selected_from_palette && command_expands_to_argument(&session.input, surface)
+                    if (selected_from_palette || session.settings_menu_open)
+                        && command_expands_to_argument(&session.input, surface)
                     {
                         session.input.push(' ');
                         session.command_selected = 0;
                         refresh_command_menu(session, registry_commands, surface);
                         session.state.status = Some(if session.command_matches.is_empty() {
-                            "Type the command argument, then press Enter.".into()
+                            if unavailable_model_menu(
+                                session.settings_menu_open,
+                                &session.input,
+                                surface,
+                            ) {
+                                format!("{openai_model_notice} Enter retry · Esc back")
+                            } else {
+                                "Type the command argument, then press Enter.".into()
+                            }
                         } else {
                             "Select a value with ↑/↓, then press Enter.".into()
                         });
@@ -1843,6 +2102,7 @@ async fn drive_loop(
                 // Single integration point with the pure dispatch surface:
                 // resolve the intent and mutate session state in place. The
                 // Quit decision short-circuits the loop.
+                let previous_theme = session.state.preferences.theme.clone();
                 let outcome = dispatch(
                     &intent,
                     registry_commands,
@@ -1851,6 +2111,15 @@ async fn drive_loop(
                     provider_id,
                     &mut session.state,
                 );
+                if session.state.preferences.theme != previous_theme
+                    && let Err(error) = theme_preference_root().and_then(|root| {
+                        save_theme_preference(&root, &session.state.preferences.theme)
+                    })
+                {
+                    session.state.status = Some(format!(
+                        "Theme applied for this session, but could not save it: {error}"
+                    ));
+                }
                 if matches!(intent, CommandIntent::Prompt(_))
                     && let Some(compact) = compact_paste_display
                     && let Some(last_user) = session
@@ -1977,10 +2246,13 @@ async fn drive_loop(
                             )
                             .await
                             {
-                                Ok(()) => session
-                                    .state
-                                    .transcript
-                                    .push("auth: provider credential is ready.".into()),
+                                Ok(()) => {
+                                    refresh_openai_models = provider_id.as_str() == "openai";
+                                    session
+                                        .state
+                                        .transcript
+                                        .push("auth: provider credential is ready.".into());
+                                }
                                 Err(error) => {
                                     session.state.status = Some(format!("auth: {error}"));
                                 }
@@ -2092,7 +2364,7 @@ async fn drive_loop(
                             Some("Open Web tools settings after the active turn finishes.".into());
                     } else {
                         session.state.status = Some(
-                            open_web_settings(&mut terminal)
+                            open_web_settings(&mut terminal, &session.state.preferences.theme)
                                 .await
                                 .unwrap_or_else(|error| error),
                         );
@@ -2463,9 +2735,23 @@ async fn drive_loop(
                 session.command_selected = (session.command_selected + 1)
                     .min(session.command_matches.len().saturating_sub(1));
             }
-            KeyCode::Esc if !session.command_matches.is_empty() => {
-                session.command_matches.clear();
-                session.command_selected = 0;
+            KeyCode::Esc if session.settings_menu_open || !session.command_matches.is_empty() => {
+                if session.settings_menu_open && !session.input.trim().starts_with("/settings") {
+                    session.input = "/settings ".into();
+                    session.state.preferences.composer_cursor = session.input.len();
+                    session.command_selected = 0;
+                    refresh_command_menu(session, registry_commands, surface);
+                } else {
+                    if session.settings_menu_open {
+                        session.input.clear();
+                        session.state.preferences.composer_cursor = 0;
+                        session.settings_menu_open = false;
+                        landing_pending = settings_from_landing;
+                        settings_from_landing = false;
+                    }
+                    session.command_matches.clear();
+                    session.command_selected = 0;
+                }
             }
             KeyCode::Char(ch) => {
                 let cursor = session
@@ -2541,14 +2827,17 @@ async fn open_provider_switcher(
     }
 }
 
-async fn open_web_settings(terminal: &mut Terminal<Backend>) -> Result<String, String> {
+async fn open_web_settings(
+    terminal: &mut Terminal<Backend>,
+    theme: &str,
+) -> Result<String, String> {
     use agent_vesper_tui::web_hub::{WebHub, render};
     let root = std::env::current_dir().map_err(|error| error.to_string())?;
     let mut hub = WebHub::new(vesper_harness::web_settings::load(&root)?);
     if hub.config.driver_image.is_none() {
         hub.notice = "Checking the installed driver…".into();
         terminal
-            .draw(|frame| render(frame, &hub))
+            .draw(|frame| render(frame, &hub, theme))
             .map_err(|error| error.to_string())?;
         match vesper_harness::web_settings::detect_driver().await {
             Ok(image) => {
@@ -2561,25 +2850,50 @@ async fn open_web_settings(terminal: &mut Terminal<Backend>) -> Result<String, S
     }
     loop {
         terminal
-            .draw(|frame| render(frame, &hub))
+            .draw(|frame| render(frame, &hub, theme))
             .map_err(|error| error.to_string())?;
-        let Event::Key(key) = event::read().map_err(|error| error.to_string())? else {
-            continue;
+        let input = event::read().map_err(|error| error.to_string())?;
+        let key = match input {
+            Event::Key(key) => key,
+            Event::Mouse(mouse) => {
+                let code = match mouse.kind {
+                    MouseEventKind::Down(MouseButton::Left) => {
+                        let size = terminal.size().map_err(|error| error.to_string())?;
+                        let Some(index) = agent_vesper_tui::settings_menu::item_at(
+                            ratatui::layout::Rect::new(0, 0, size.width, size.height),
+                            hub.rows().len(),
+                            hub.selected,
+                            mouse.column,
+                            mouse.row,
+                        ) else {
+                            continue;
+                        };
+                        hub.selected = index;
+                        KeyCode::Enter
+                    }
+                    MouseEventKind::ScrollUp => KeyCode::Up,
+                    MouseEventKind::ScrollDown => KeyCode::Down,
+                    _ => continue,
+                };
+                KeyEvent::new(code, KeyModifiers::NONE)
+            }
+            _ => continue,
         };
         if key.kind == event::KeyEventKind::Release {
             continue;
         }
         match key.code {
             KeyCode::Esc => return Ok("Web settings cancelled; nothing changed.".into()),
-            KeyCode::Up => hub.selected = (hub.selected + 6) % 7,
-            KeyCode::Down | KeyCode::Tab => hub.selected = (hub.selected + 1) % 7,
+            KeyCode::Up => hub.selected = (hub.selected + 7) % 8,
+            KeyCode::Down | KeyCode::Tab => hub.selected = (hub.selected + 1) % 8,
             KeyCode::Char('s' | 'S') => hub.selected = 6,
             KeyCode::Enter | KeyCode::Char(' ') => {}
             _ => continue,
         }
         if matches!(key.code, KeyCode::Enter | KeyCode::Char(' ' | 's' | 'S')) {
             match hub.selected {
-                5 => match setup_web_driver_ui(terminal, &mut hub).await {
+                7 => return Ok("Web settings cancelled; nothing changed.".into()),
+                5 => match setup_web_driver_ui(terminal, &mut hub, theme).await {
                     Ok(image) => {
                         hub.config.driver_image = Some(image);
                         hub.notice = "Bundled driver ready. Save to keep this selection.".into();
@@ -2601,6 +2915,7 @@ async fn open_web_settings(terminal: &mut Terminal<Backend>) -> Result<String, S
 async fn setup_web_driver_ui(
     terminal: &mut Terminal<Backend>,
     hub: &mut agent_vesper_tui::web_hub::WebHub,
+    theme: &str,
 ) -> Result<String, String> {
     let setup = vesper_harness::web_settings::setup_driver();
     tokio::pin!(setup);
@@ -2611,7 +2926,7 @@ async fn setup_web_driver_ui(
             ".".repeat(ticks % 4)
         );
         terminal
-            .draw(|frame| agent_vesper_tui::web_hub::render(frame, hub))
+            .draw(|frame| agent_vesper_tui::web_hub::render(frame, hub, theme))
             .map_err(|error| error.to_string())?;
         tokio::select! {
             result = &mut setup => return result,
@@ -3049,11 +3364,42 @@ fn page_size_for_scroll(terminal_height: u16) -> u16 {
     (conversation_estimate / 2).max(3)
 }
 
+/// Applying a settings action returns to its menu, never implicitly enters chat.
+fn restore_settings_menu(
+    session: &mut TuiSession,
+    registry: &CommandRegistry,
+    surface: &ProviderSuperpowerSurface,
+) {
+    if session.settings_menu_open && session.input.is_empty() {
+        session.input = "/settings ".into();
+        session.state.preferences.composer_cursor = session.input.len();
+        session.command_selected = 0;
+        refresh_command_menu(session, registry, surface);
+    }
+}
+
+fn unavailable_model_menu(
+    settings_open: bool,
+    input: &str,
+    surface: &ProviderSuperpowerSurface,
+) -> bool {
+    settings_open
+        && input.trim() == "/model"
+        && surface
+            .by_alias("model")
+            .is_some_and(|d| d.allowed_values.is_empty())
+}
+
 fn refresh_command_menu(
     session: &mut TuiSession,
     registry: &CommandRegistry,
     surface: &ProviderSuperpowerSurface,
 ) {
+    if session.input.trim() == "/settings" {
+        session.settings_menu_open = true;
+    } else if !session.input.trim_start().starts_with('/') {
+        session.settings_menu_open = false;
+    }
     // Slash autocomplete stays available while a turn runs: informational
     // commands answer mid-turn (ACP grace parity) and free text queues.
     if !session.input.trim_start().starts_with('/') {
@@ -7570,6 +7916,9 @@ fn turn_configuration(
     if config.provider_id.as_str() == "openai" {
         let model = active_superpower_choice(state, surface, "model")
             .unwrap_or_else(|| vesper_provider_openai::DEFAULT_MODEL.to_owned());
+        if surface.by_alias("model").is_none_or(|descriptor| !descriptor.allowed_values.iter().any(|value| matches!(value, vesper_provider::SuperpowerValue::Choice { value } if value.as_str() == model))) {
+            return Err("Choose an available OpenAI model in Settings; reopen Settings to refresh the account list".into());
+        }
         let effort = active_superpower_choice(state, surface, "thinking")
             .unwrap_or_else(|| "medium".to_owned());
         if !vesper_provider_openai::OpenAiCatalog::reasoning_levels_for(
@@ -7626,7 +7975,7 @@ fn session_context_window(
     state: &SessionState,
     surface: &ProviderSuperpowerSurface,
 ) -> Result<u64, String> {
-    let model = if config.provider_id.as_str() == "zai" {
+    let model = if matches!(config.provider_id.as_str(), "zai" | "openai") {
         active_superpower_choice(state, surface, "model")
             .unwrap_or_else(|| config.model.model_id.as_str().to_owned())
     } else {
@@ -7640,6 +7989,9 @@ fn session_context_window(
 
 fn active_model_context_window(config: &AgentLoopConfig, model: &str) -> Result<u64, String> {
     match config.provider_id.as_str() {
+        "openai" => Ok(vesper_provider_openai::OpenAiCatalog::context_tokens_for(
+            model,
+        )),
         "zai" => vesper_provider_glm::GlmCatalog::entries()
             .iter()
             .find(|entry| entry.id() == model)
@@ -14394,6 +14746,50 @@ mod tests {
     use super::*;
 
     #[test]
+    fn openai_account_choices_and_spark_context_reach_turn_configuration() {
+        use vesper_provider::{SuperpowerPolicy, SuperpowerValue};
+        let factory = vesper_provider_openai::OpenAiFactory::default();
+        let available = vesper_provider_openai::AvailableModels {
+            mode: vesper_provider_openai::auth::AuthenticationMode::ChatGpt,
+            models: vec![
+                vesper_provider_openai::OpenAiCatalog::find("gpt-5.3-codex-spark").unwrap(),
+            ],
+        };
+        let surface = ProviderSuperpowerSurface::new(
+            vesper_provider_openai::provider_id(),
+            factory.superpowers_for(&available),
+        );
+        let policy = available.policy();
+        assert_eq!(
+            advertised_policy_labels(&surface, &policy, "model", "", "gpt-5.4").unwrap(),
+            ["gpt-5.3-codex-spark"]
+        );
+        let unavailable = SuperpowerValue::Choice {
+            value: vesper_domain::BoundedString::new("gpt-5.4").unwrap(),
+        };
+        assert!(
+            policy
+                .validate("model", &unavailable, "", "gpt-5.3-codex-spark")
+                .is_err()
+        );
+        let config = build_agent_config(&vesper_provider_openai::provider_id()).unwrap();
+        assert_eq!(
+            session_context_window(&config, &SessionState::default(), &surface).unwrap(),
+            128_000
+        );
+        let empty = factory.superpowers_for(&vesper_provider_openai::AvailableModels::unavailable(
+            available.mode,
+        ));
+        assert!(empty[0].allowed_values.is_empty());
+        let empty_surface =
+            ProviderSuperpowerSurface::new(vesper_provider_openai::provider_id(), empty);
+        assert!(unavailable_model_menu(true, "/model ", &empty_surface));
+        assert!(!unavailable_model_menu(true, "/model ", &surface));
+        assert!(!unavailable_model_menu(true, "/settings", &empty_surface));
+        assert!(!unavailable_model_menu(false, "/model ", &empty_surface));
+    }
+
+    #[test]
     fn provider_switch_reuses_a_valid_stored_authentication() {
         assert!(!AuthenticationIntent::Startup.requires_screen(true));
         assert!(!AuthenticationIntent::ProviderSwitch.requires_screen(true));
@@ -14413,6 +14809,7 @@ mod tests {
         );
         let subscription = OpenAiSuperpowerPolicy::default();
         let api = OpenAiSuperpowerPolicy {
+            available: None,
             mode: AuthenticationMode::ApiKey,
         };
         let choices = |policy: &dyn vesper_provider::SuperpowerPolicy, model: &str| {
@@ -14431,7 +14828,7 @@ mod tests {
             ["none", "low", "medium", "high", "xhigh", "max"]
         );
         assert!(!choices(&api, "gpt-6-astra").contains(&"none".into()));
-        assert_eq!(surface.by_alias("model").unwrap().allowed_values.len(), 8);
+        assert!(surface.by_alias("model").unwrap().allowed_values.iter().any(|v| matches!(v, vesper_provider::SuperpowerValue::Choice { value } if value.as_str() == "gpt-5.3-codex-spark")));
     }
 
     #[tokio::test]
@@ -14985,6 +15382,105 @@ mod tests {
             .0,
             "/model glm-5-turbo"
         );
+    }
+
+    #[test]
+    fn saved_theme_follows_the_user_across_projects_and_migrates_once() {
+        let temp = tempfile::tempdir().unwrap();
+        let global = temp.path().join("home/ui");
+        let project_a = temp.path().join("project-a/.agent-vesper");
+        let project_b = temp.path().join("project-b/.agent-vesper");
+        save_theme_preference(&project_a, "dracula").unwrap();
+        assert_eq!(
+            migrate_theme_preference(&global, &project_a)
+                .unwrap()
+                .as_deref(),
+            Some("dracula")
+        );
+        assert_eq!(load_theme_preference(&global).as_deref(), Some("dracula"));
+        assert_eq!(
+            migrate_theme_preference(&global, &project_b)
+                .unwrap()
+                .as_deref(),
+            Some("dracula")
+        );
+        save_theme_preference(&project_b, "light").unwrap();
+        assert_eq!(
+            migrate_theme_preference(&global, &project_b)
+                .unwrap()
+                .as_deref(),
+            Some("dracula")
+        );
+        save_theme_preference(&global, "nord").unwrap();
+        assert_eq!(
+            migrate_theme_preference(&global, &project_a)
+                .unwrap()
+                .as_deref(),
+            Some("nord")
+        );
+    }
+
+    #[test]
+    fn theme_preference_round_trips_and_invalid_preferences_are_ignored() {
+        let root = tempfile::tempdir().unwrap();
+        assert_eq!(load_theme_preference(root.path()), None);
+        for theme in [
+            "chatgpt-black",
+            "chatgpt-white",
+            "ansi",
+            "light",
+            "dracula",
+            "nord",
+        ] {
+            save_theme_preference(root.path(), theme).unwrap();
+            assert_eq!(load_theme_preference(root.path()).as_deref(), Some(theme));
+        }
+        std::fs::write(root.path().join("theme"), "invalid-theme").unwrap();
+        assert_eq!(load_theme_preference(root.path()), None);
+    }
+
+    #[test]
+    fn applying_a_model_keeps_settings_open_and_preserves_the_selection() {
+        let mut session = fresh_tui_session_for_trajectory_tests();
+        let registry = CommandRegistry::stage_11b();
+        let surface = palette_surface();
+        session.settings_menu_open = true;
+        session.input = "/model ".into();
+        refresh_command_menu(&mut session, &registry, &surface);
+        let command = session
+            .command_matches
+            .first()
+            .expect("model choices")
+            .0
+            .clone();
+        let policy = Arc::clone(&session.policy);
+        let outcome = dispatch(
+            &CommandIntent::parse(&command),
+            &registry,
+            &surface,
+            &*policy,
+            &ProviderId::new("zai").unwrap(),
+            &mut session.state,
+        );
+        assert_ne!(outcome, DispatchOutcome::Quit);
+        session.input.clear();
+        restore_settings_menu(&mut session, &registry, &surface);
+        assert!(session.settings_menu_open);
+        assert_eq!(session.input, "/settings ");
+        assert!(
+            session
+                .command_matches
+                .iter()
+                .any(|(command, _)| command == "/model")
+        );
+        assert_eq!(
+            active_model_label(&session.state, &surface),
+            command.strip_prefix("/model ").unwrap()
+        );
+        session.settings_menu_open = false;
+        session.input.clear();
+        restore_settings_menu(&mut session, &registry, &surface);
+        assert!(session.input.is_empty(), "coding must not reopen Settings");
     }
 
     #[test]
@@ -15876,6 +16372,7 @@ mod tests {
             keybindings: default_keybindings(),
             command_matches: Vec::new(),
             command_selected: 0,
+            settings_menu_open: false,
             session_id: "test-session".into(),
             telemetry: Arc::new(vesper_observability::TrajectoryRecorder::disabled()),
             activity: Vec::new(),
@@ -15944,6 +16441,7 @@ mod tests {
             keybindings: default_keybindings(),
             command_matches: Vec::new(),
             command_selected: 0,
+            settings_menu_open: false,
             session_id: "test-session".into(),
             telemetry: Arc::new(vesper_observability::TrajectoryRecorder::disabled()),
             activity: Vec::new(),
@@ -16010,6 +16508,7 @@ mod tests {
             keybindings: default_keybindings(),
             command_matches: Vec::new(),
             command_selected: 0,
+            settings_menu_open: false,
             session_id: "test-session".into(),
             telemetry: Arc::new(vesper_observability::TrajectoryRecorder::disabled()),
             activity: Vec::new(),
@@ -17276,6 +17775,7 @@ mod tests {
             keybindings: load_keybindings(),
             command_matches: Vec::new(),
             command_selected: 0,
+            settings_menu_open: false,
             session_id: "test".to_owned(),
             telemetry: Arc::new(trajectory_recorder()),
             activity: Vec::new(),

@@ -96,8 +96,12 @@ evidence, not proof of a stable third-party API or live account entitlement.
   Auth fixtures cover pending/approved/expired/cancelled/oversized/invalid
   responses and refresh rotation. Storage tests use temporary private vaults.
 - Catalog: GPT-6 Astra, GPT-5.6 Sol/Terra/Luna, GPT-5.5, GPT-5.4,
-  GPT-5.2, and GPT-5.3 Codex; per-model/auth-mode effort choices, tool/vision/JSON
-  capabilities, conservative 272K context, and explicit unsupported controls.
+  GPT-5.2, GPT-5.3 Codex, and GPT-5.3 Codex Spark; per-model/auth-mode effort
+  choices and explicit capability controls. Spark is text-only with a 128K context
+  budget and no reasoning-summary parameter; other entries use a conservative 272K.
+  Native authenticated discovery intersects API model identifiers or visible subscription
+  entries with this capability index. Both hosts filter choices and the shared factory
+  blocks dispatch outside its account snapshot. Failed refresh clears old choices.
   Public model documentation and the pinned upstream catalog are evidence;
   model identifiers alone never establish capabilities or account entitlement.
 - Usage: `ProviderSession::query_usage` and the shared bordered renderer replace
@@ -139,8 +143,11 @@ No live account authentication/inference was performed by foundation tests.
 The inspected subscription client/endpoint protocol is not a promise of stable
 third-party registration or account entitlement. Failure never enables API
 billing. Subscription visible-byte output bounds are not server-side reasoning
-token/billing limits. The static catalog is a supported subset, not account
-discovery or a claim of access to every Codex model.
+token/billing limits. The static capability index is a verified subset, not a claim
+of access to every Codex model. Account discovery is a snapshot, refreshed on TUI
+Settings entry/reauthentication and ACP startup; service authorization can change
+later. Unknown discovered identifiers remain excluded until adapter support is verified.
+No live account discovery or inference is part of foundation verification.
 
 Memory extraction follows the host's launch provider; ACP footer switching
 does not replace its already-open memory extractor. Restart with OpenAI to use
@@ -176,3 +183,41 @@ usage fields, uses solid allowance meters and human-scale reset intervals,
 and reuses valid stored OpenAI authentication across provider switches.
 Publication remains exact-commit gated by canonical, MSRV, five-target
 foundation, and web-driver acceptance workflows before tagging.
+
+## Account model discovery evidence
+
+The public [Models list API](https://developers.openai.com/api/reference/resources/models/methods/list)
+returns available API identifiers; it does not establish tool, vision or reasoning
+capabilities. Subscription request shape follows
+[`codex-api/src/endpoint/models.rs`](https://github.com/openai/codex/blob/8e694e955ae02ca737230a5468c55d5847074072/codex-rs/codex-api/src/endpoint/models.rs)
+(`models` plus `client_version`) at the existing pinned protocol revision. Vesper
+identifies itself in User-Agent and uses only its own credentials. The query's
+`client_version=0.153.0` is a separate protocol compatibility floor, matching Astra's
+`minimal_client_version` in the pinned
+[`models.json`](https://github.com/openai/codex/blob/8e694e955ae02ca737230a5468c55d5847074072/codex-rs/models-manager/models.json).
+It must not follow Vesper's independent release number. Subscription
+picker visibility comes from the returned rows, not a copied screenshot.
+[OpenAI's Spark announcement](https://openai.com/index/introducing-gpt-5-3-codex-spark/)
+documents text-only input and the 128K context window. Native wire and real ACP
+loopback tests prove Spark tool transactions and summary omission; they do not
+prove a particular account's entitlement or live service availability.
+
+Verification lives in adapter `discovery.rs`/`tests.rs`, TUI account-choice/context
+unit tests, and ACP `openai_native`/`openai_rejection` process fixtures. All use
+synthetic credentials and isolated storage; failed, malformed, oversized, redirected,
+cancelled and stalled discovery never restores the static menu.
+
+The empty-picker regression was reproduced with a separate native, read-only account
+diagnostic on 2026-09-11: Vesper's 0.21.8 query version yielded no usable models;
+changing only that query to 0.153.0 returned Astra, Sol, Terra, Luna, GPT-5.5 and
+Codex Spark. No inference request was made. This is evidence for that account at
+that time, not a universal entitlement claim or a foundation test. The loopback
+request assertion now pins the protocol version; TUI tests cover visible failure
+reasons, retry keyboard/mouse actions and empty-to-populated menu state.
+The rebuilt TUI was also exercised in a temporary-workspace PTY: native account
+discovery displayed those six choices, selecting a model stayed in Settings, and
+Esc returned to the landing page. A separate network-isolated PTY used a synthetic
+credential vault to verify visible connection failure, retry and back navigation.
+Neither walkthrough submitted a prompt. Workspace verification passed 2,129 tests
+with zero failures and 34 explicitly ignored tests; Clippy and the 27-package
+architecture check passed. This does not certify unexecuted release/platform gates.

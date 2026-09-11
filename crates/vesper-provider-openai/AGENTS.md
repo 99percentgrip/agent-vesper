@@ -11,8 +11,23 @@ Both hosts register one provider with API-key and subscription authentication.
 - `src/auth_tests.rs` owns offline loopback authentication protocol evidence.
 - `src/credentials.rs` owns Vesper-only credential records, selected billing
   mode, local logout, bounded refresh, and cross-process RAII file locking.
-- `src/catalog.rs` owns verified model/effort/capability metadata and the
-  conservative shared 272K context budget.
+  An environment/scoped API key reports API authentication metadata when no stored
+  mode is selected; a selected subscription or sign-out tombstone takes precedence.
+- `src/catalog.rs` owns verified model/effort/capability metadata. The conservative
+  context budget is 272K except text-only Codex Spark at 128K; Spark requests omit
+  `reasoning.summary` and reject images before transport.
+- `src/discovery.rs` owns authenticated account model choices: API `GET /v1/models`
+  and subscription `GET /backend-api/codex/models`. Intersect returned identifiers
+  with verified adapter capabilities; subscription rows require `visibility: list`.
+  The capability catalog alone is never evidence of account availability.
+  Discovery has a ten-second deadline, cancellation, a 4 MiB body limit, fixed TLS
+  origins and no redirects. Failure clears previous choices; no static fallback.
+  Snapshots stay in the factory/session instance, never global or on disk. Credential
+  replacement/logout invalidates them; dispatch rejects absent models or a different
+  authentication mode. The service remains authoritative after discovery.
+  Subscription `client_version` is the pinned catalog protocol compatibility
+  version (0.153.0), independent of Vesper's package version. Keep Vesper's own
+  User-Agent identity. HTTP failures use the bounded shared rejection classifier.
 - `src/policy.rs` owns per-model/auth-mode reasoning choices and compatible
   model-switch cascades. API-only `none` is not offered in subscription mode.
   `ultra` is a Codex host delegation feature, not a literal Responses effort.
@@ -56,7 +71,7 @@ Both hosts register one provider with API-key and subscription authentication.
 - Subscription protocol evidence is pinned upstream source, not a claim that
   OpenAI publishes a stable third-party subscription API or grants entitlement.
 - Production endpoints are fixed. The non-default integration-test feature
-  permits only loopback Responses endpoints with synthetic credentials.
+  permits only loopback Responses, discovery and usage endpoints with synthetic credentials.
 - Subscription inference uses the pinned upstream protocol. Its visible-byte
   output guard is not a guarantee about hidden reasoning or billed tokens;
   account entitlement and device-login policy remain service-controlled.
@@ -68,7 +83,10 @@ Both hosts register one provider with API-key and subscription authentication.
 
 ## Verification
 
-- Run `cargo test -p vesper-provider-openai --all-features`.
+- Run `cargo test -p vesper-provider-openai --all-features`. Discovery tests cover
+  account filtering, failed refresh, cancellation, redirects, body limits and deadline;
+  Spark tests cover summary omission and image rejection. Memory extraction discovers
+  an available account model rather than assuming the historical default is accessible.
 - Run ACP `openai_native` process tests and TUI native OpenAI wiring tests.
 - Run `cargo xtask architecture`.
 

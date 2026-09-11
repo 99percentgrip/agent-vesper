@@ -1090,21 +1090,21 @@ fn wrap_text_simple(text: &str, width: usize) -> Vec<String> {
 }
 
 #[derive(Clone, Copy)]
-struct ThemePalette {
-    background: Color,
-    surface: Color,
-    raised: Color,
-    text: Color,
-    muted: Color,
-    accent: Color,
-    border: Color,
-    selection: Color,
-    selected_text: Color,
-    warning: Color,
-    added: Color,
-    added_bg: Color,
-    removed: Color,
-    removed_bg: Color,
+pub(crate) struct ThemePalette {
+    pub(crate) background: Color,
+    pub(crate) surface: Color,
+    pub(crate) raised: Color,
+    pub(crate) text: Color,
+    pub(crate) muted: Color,
+    pub(crate) accent: Color,
+    pub(crate) border: Color,
+    pub(crate) selection: Color,
+    pub(crate) selected_text: Color,
+    pub(crate) warning: Color,
+    pub(crate) added: Color,
+    pub(crate) added_bg: Color,
+    pub(crate) removed: Color,
+    pub(crate) removed_bg: Color,
 }
 
 impl ThemePalette {
@@ -1113,7 +1113,7 @@ impl ThemePalette {
     }
 }
 
-fn theme_palette(theme: &str) -> ThemePalette {
+pub(crate) fn theme_palette(theme: &str) -> ThemePalette {
     match theme {
         "chatgpt-white" => ThemePalette {
             background: Color::Rgb(255, 255, 255),

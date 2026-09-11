@@ -67,9 +67,14 @@ fn footer_controls_are_advertised_and_settable_end_to_end() {
         std::thread::current().name().unwrap_or("t")
     ));
     std::fs::create_dir_all(&temp).unwrap();
+    let openai_fixture = support::signed_out_openai_fixture();
     let mut command = Command::new(env!("CARGO_BIN_EXE_agent-vesper-acp"));
     command
         .env_clear()
+        .env(
+            "AGENT_VESPER_OPENAI_CREDENTIALS_PATH",
+            openai_fixture.path(),
+        )
         .env("HOME", &temp)
         .env("XDG_CONFIG_HOME", temp.join("config"))
         .env("XDG_CACHE_HOME", temp.join("cache"))

@@ -12,6 +12,42 @@ business logic.
 
 ## Ownership
 
+- `src/landing.rs` owns the responsive theme-aware character-art welcome screen and
+  pure navigation/layout; `src/landing_host.rs` owns its terminal event loop.
+  Fresh interactive sessions show it after required authentication; explicit
+  `--resume` skips it. Start coding enters the conversation; Settings opens the
+  centered theme-aware settings menu. Keyboard and mouse use the same menu layout.
+  Mascot rows use one fixed-width mirrored canvas; never center each row separately.
+  Welcome, Settings and Web tools share the active `ui::theme_palette`, including
+  background, text, accent, border and selected-row colors. A saved theme change
+  applies when returning to the welcome screen, without restarting. Native theme
+  choices persist user-wide in `~/.agent-vesper/ui/theme` (USERPROFILE on Windows,
+  HOME elsewhere), independent of the workspace. If no global choice exists, a
+  valid legacy `AGENT_VESPER_HOME/theme` (default `.agent-vesper/theme`) is imported
+  once. Global choices take precedence over stale project files. Missing user-home
+  information fails visibly rather than silently saving a workspace-only choice;
+  malformed values fall back to the default.
+  A failed save stays visible and never claims persistence.
+  Web tools uses the same centered menu renderer and mouse geometry, with draft
+  toggles, driver setup, Save and Cancel; navigation/cancellation never persists.
+  `src/settings_menu.rs` presents registry-derived Settings and value choices as
+  compact single-line rows with a selected-item description, matching the welcome
+  menu. Applying a value or closing a native settings editor returns to Settings,
+  with the action result visible. Esc returns from values to Settings; at the
+  root it returns to the welcome screen when opened there, or to the existing
+  conversation when opened during coding. Only Start coding leaves the welcome
+  flow for chat. Mouse
+  clicks/releases and wheel events stay inside this menu, never select transcript
+  text. Native configuration handlers and their Save/Cancel behavior are retained.
+  Check for updates explicitly fetches bounded public GitHub release metadata
+  with a timeout, no credentials, and no installation side effects. Animation
+  indicates an actual in-flight check, never fabricated startup progress.
+  Cognition startup runs on a blocking thread before terminal entry because its
+  client construction and local-store migration are synchronous.
+  Provider/model labels come from the active registry surface and version from
+  the package. This welcome/menu presentation is terminal-specific; ACP editors
+  own their launch UI, so no shared capability or slash-command change is needed.
+
 - Native Lens review/interview execution delegates to `vesper-harness::lens_tools`;
   TUI retains its live interview-limit policy, bordered UI and URL/browser-launch
   presentation. ACP uses the same feedback validation and native tool results.
@@ -564,6 +600,16 @@ business logic.
 
 ## Local Contracts
 
+- OpenAI account models refresh after native authentication and when reopening
+  Settings. Render from the bounded result, use an available default for a fresh
+  surface, retain explicit selections for validation, and reject unavailable choices
+  before dispatch. Failed or empty discovery shows its safe reason and a clickable
+  Retry model list row (Enter/R retry, Esc back), never a blank command input.
+  Preserve discovery diagnostics separately from transient command-menu notices;
+  successful retry refreshes both the surface and session policy.
+  The adapter snapshot also guards workers; no account lookup runs inside rendering.
+  Spark selection must use its adapter-owned 128K context budget.
+
 - ADR 0028 `acceptance_host` owns Settings → Implementation acceptance with PRD
   selection, ON/OFF and Save/Cancel. `/acceptance` uses shared harness controls. Direct,
   VRO, ReAct and Swarm composition retains the parent gate; candidate/Finish prose
@@ -857,6 +903,11 @@ moment the turn completes — never silently dropped, never interrupting the
 work (ACP mid-turn-slash-grace parity; see `apps/agent-vesper-acp/AGENTS.md`).
 
 ## Verification
+
+- Landing tests cover navigation, shared mouse geometry, compact/tiny rendering,
+  and numeric release comparisons; binary tests reject malformed or non-stable
+  release metadata. Exercise startup, Settings, coding, resize, update failure,
+  quit and resume in an isolated PTY without provider access or user-state writes.
 
 - `src/swarm_host_tests.rs` is an explicit container gate: child-process-isolated
   HOME/XDG/state, asserted loopback chat endpoint, configured embeddings, both

@@ -5,13 +5,16 @@ use vesper_provider::{
 };
 
 /// Model-specific native control policy shared by host menus and validation.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct OpenAiSuperpowerPolicy {
+    /// None is capability-only validation; host pickers supply an account snapshot.
+    pub available: Option<Vec<String>>,
     pub mode: crate::auth::AuthenticationMode,
 }
 impl Default for OpenAiSuperpowerPolicy {
     fn default() -> Self {
         Self {
+            available: None,
             mode: crate::auth::AuthenticationMode::ChatGpt,
         }
     }
@@ -33,10 +36,15 @@ impl SuperpowerPolicy for OpenAiSuperpowerPolicy {
         advertised
             .iter()
             .filter(|v| {
-                alias != "thinking"
-                    || label(v).is_some_and(|v| {
-                        OpenAiCatalog::reasoning_levels_for(model, self.mode).contains(&v)
-                    })
+                (alias != "model"
+                    || self
+                        .available
+                        .as_ref()
+                        .is_none_or(|ids| label(v).is_some_and(|v| ids.iter().any(|id| id == v))))
+                    && (alias != "thinking"
+                        || label(v).is_some_and(|v| {
+                            OpenAiCatalog::reasoning_levels_for(model, self.mode).contains(&v)
+                        }))
             })
             .cloned()
             .collect()
@@ -54,8 +62,16 @@ impl SuperpowerPolicy for OpenAiSuperpowerPolicy {
         {
             return Err("Reasoning effort is not supported by the selected OpenAI model".into());
         }
-        if alias == "model" && label(value).is_none_or(|v| OpenAiCatalog::find(v).is_none()) {
-            return Err("Unknown OpenAI model".into());
+        if alias == "model"
+            && label(value).is_none_or(|v| {
+                OpenAiCatalog::find(v).is_none()
+                    || self
+                        .available
+                        .as_ref()
+                        .is_some_and(|ids| !ids.iter().any(|id| id == v))
+            })
+        {
+            return Err("OpenAI model is not available in the current account model list".into());
         }
         Ok(())
     }

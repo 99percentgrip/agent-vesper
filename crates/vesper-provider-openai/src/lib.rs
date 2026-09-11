@@ -4,6 +4,8 @@
 
 pub mod auth;
 mod catalog;
+mod discovery;
+pub use discovery::AvailableModels;
 mod policy;
 mod usage;
 pub use policy::OpenAiSuperpowerPolicy;

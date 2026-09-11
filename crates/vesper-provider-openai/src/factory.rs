@@ -11,14 +11,16 @@ use vesper_provider::*;
 #[derive(Clone)]
 pub struct OpenAiFactory {
     id: ProviderId,
-    credentials: Credentials,
+    pub(crate) availability: Arc<std::sync::RwLock<Option<crate::AvailableModels>>>,
+    pub(crate) credentials: Credentials,
     #[cfg(feature = "integration-test-harness")]
-    test_route: Option<(String, crate::auth::AuthenticationMode)>,
+    pub(crate) test_route: Option<(String, crate::auth::AuthenticationMode)>,
 }
 impl Default for OpenAiFactory {
     fn default() -> Self {
         Self {
             id: provider_id(),
+            availability: Default::default(),
             credentials: Credentials::default(),
             #[cfg(feature = "integration-test-harness")]
             test_route: None,
@@ -26,9 +28,49 @@ impl Default for OpenAiFactory {
     }
 }
 impl OpenAiFactory {
+    fn invalidate_models(&self) -> Result<(), CredentialError> {
+        let mut snapshot = self
+            .availability
+            .write()
+            .map_err(|_| CredentialError::Failed)?;
+        *snapshot = Some(crate::AvailableModels::unavailable(
+            self.control_policy().mode,
+        ));
+        Ok(())
+    }
+    /// Project account choices without promoting the capability catalog to availability.
+    pub fn superpowers_for(&self, available: &crate::AvailableModels) -> Vec<SuperpowerDescriptor> {
+        let mut descriptors = self.superpowers();
+        for descriptor in &mut descriptors {
+            if descriptor
+                .command_alias
+                .as_ref()
+                .is_some_and(|alias| alias.as_str() == "model")
+            {
+                descriptor.allowed_values.retain(|value| match value {
+                    SuperpowerValue::Choice { value } => available.contains(value.as_str()),
+                    _ => false,
+                });
+                if !descriptor
+                    .allowed_values
+                    .contains(&descriptor.default_value)
+                    && let Some(first) = descriptor.allowed_values.first()
+                {
+                    descriptor.default_value = first.clone();
+                }
+                descriptor.help = BoundedString::new(if available.models.is_empty() {
+                    "No verified account models available. Check sign-in and reopen Settings to retry."
+                } else {
+                    "Models returned for this account and authentication method."
+                }).ok();
+            }
+        }
+        descriptors
+    }
     /// Resolve mode at composition, never during terminal rendering.
     pub fn control_policy(&self) -> crate::OpenAiSuperpowerPolicy {
         crate::OpenAiSuperpowerPolicy {
+            available: None,
             mode: if self.authentication_method().ok().flatten().as_deref()
                 == Some("openai-api-key")
             {
@@ -47,14 +89,35 @@ impl OpenAiFactory {
         cancel: Arc<dyn CancellationSignal>,
     ) -> Result<String, ProviderError> {
         use vesper_domain::*;
-        let configuration = Self::default_configuration();
+        let available = self.available_models(cancel.clone()).await?;
+        let model = available
+            .models
+            .iter()
+            .find(|m| m.model.model_id.as_str() == DEFAULT_MODEL)
+            .or_else(|| available.models.first())
+            .ok_or_else(|| {
+                error(
+                    "No verified OpenAI account model is available for memory extraction",
+                    ErrorCategory::InvalidRequest,
+                    false,
+                )
+            })?;
+        let mut configuration = Self::default_configuration();
+        configuration
+            .values
+            .values
+            .insert(
+                "openai:model",
+                serde_json::json!(model.model.model_id.as_str()),
+            )
+            .map_err(|_| crate::wire::invalid())?;
         let session = self.create_session(&configuration, cancel.clone()).await?;
         let request = ProviderRequest {
             request_id: ProviderRequestId::new("memory-extraction").expect("static"),
             provider_id: provider_id(),
             model: QualifiedModelId {
                 provider_id: provider_id(),
-                model_id: ModelId::new(DEFAULT_MODEL).expect("static"),
+                model_id: model.model.model_id.clone(),
             },
             endpoint_id: None,
             system_instructions: vec![SystemInstruction {
@@ -203,11 +266,8 @@ impl ProviderFactory for OpenAiFactory {
                 .and_then(serde_json::Value::as_str)
                 .unwrap_or("medium");
             if config.provider_id != self.id
-                || !OpenAiCatalog::reasoning_levels_for(
-                    model,
-                    crate::auth::AuthenticationMode::ApiKey,
-                )
-                .contains(&effort)
+                || !OpenAiCatalog::reasoning_levels_for(model, self.control_policy().mode)
+                    .contains(&effort)
             {
                 return Err(error(
                     "Invalid OpenAI model or reasoning selection",
@@ -215,7 +275,8 @@ impl ProviderFactory for OpenAiFactory {
                     false,
                 ));
             }
-            let session = OpenAiSession::new(self.credentials.clone(), effort.to_owned())?;
+            let session = OpenAiSession::new(self.credentials.clone(), effort.to_owned())?
+                .with_availability(self.availability.clone());
             #[cfg(feature = "integration-test-harness")]
             let session = session.with_test_route(self.test_route.clone());
             Ok(session)
@@ -227,7 +288,14 @@ impl ModelCatalog for OpenAiFactory {
         &'a self,
         cancel: Arc<dyn CancellationSignal>,
     ) -> ProviderFuture<'a, Result<ModelCatalogSnapshot, ProviderError>> {
-        OpenAiCatalog.models(cancel)
+        Box::pin(async move {
+            let available = self.available_models(cancel).await?;
+            Ok(ModelCatalogSnapshot {
+                models: available.models,
+                provenance: ModelCatalogProvenance::Discovered,
+                expires_at_unix_ms: None,
+            })
+        })
     }
 }
 impl ProviderCredentialPort for OpenAiFactory {
@@ -239,7 +307,8 @@ impl ProviderCredentialPort for OpenAiFactory {
         self.credentials.present()
     }
     fn store_credential(&self, secret: &str) -> Result<(), CredentialError> {
-        self.credentials.store_api_key(secret)
+        self.credentials.store_api_key(secret)?;
+        self.invalidate_models()
     }
     fn authentication_method(&self) -> Result<Option<String>, CredentialError> {
         #[cfg(feature = "integration-test-harness")]
@@ -255,14 +324,18 @@ impl ProviderCredentialPort for OpenAiFactory {
         self.credentials.authentication_method()
     }
     fn logout(&self) -> Result<(), CredentialError> {
-        self.credentials.logout()
+        self.credentials.logout()?;
+        self.invalidate_models()
     }
     fn device_login<'a>(
         &'a self,
         cancel: Arc<dyn CancellationSignal>,
         on_challenge: Arc<dyn Fn(String, String) + Send + Sync>,
     ) -> ProviderFuture<'a, Result<(), CredentialError>> {
-        Box::pin(self.credentials.login(cancel, on_challenge))
+        Box::pin(async move {
+            self.credentials.login(cancel, on_challenge).await?;
+            self.invalidate_models()
+        })
     }
 }
 impl ProviderSuperpowers for OpenAiFactory {

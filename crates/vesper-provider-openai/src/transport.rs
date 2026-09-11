@@ -16,10 +16,11 @@ use vesper_provider::*;
 #[derive(Clone)]
 pub struct OpenAiSession {
     credentials: Credentials,
-    client: reqwest::Client,
+    availability: Arc<std::sync::RwLock<Option<crate::AvailableModels>>>,
+    pub(crate) client: reqwest::Client,
     effort: String,
     #[cfg(feature = "integration-test-harness")]
-    test_route: Option<(String, AuthenticationMode)>,
+    pub(crate) test_route: Option<(String, AuthenticationMode)>,
 }
 impl OpenAiSession {
     pub(crate) fn new(credentials: Credentials, effort: String) -> Result<Self, ProviderError> {
@@ -37,11 +38,19 @@ impl OpenAiSession {
             })?;
         Ok(Self {
             credentials,
+            availability: Default::default(),
             client,
             effort,
             #[cfg(feature = "integration-test-harness")]
             test_route: None,
         })
+    }
+    pub(crate) fn with_availability(
+        mut self,
+        availability: Arc<std::sync::RwLock<Option<crate::AvailableModels>>>,
+    ) -> Self {
+        self.availability = availability;
+        self
     }
     #[cfg(feature = "integration-test-harness")]
     pub(crate) fn with_test_route(mut self, route: Option<(String, AuthenticationMode)>) -> Self {
@@ -76,6 +85,18 @@ impl OpenAiSession {
         auth: &DispatchAuth,
         cancel: &dyn CancellationSignal,
     ) -> Result<reqwest::Response, ProviderError> {
+        {
+            let availability = self.availability.read().map_err(|_| wire::invalid())?;
+            if availability.as_ref().is_some_and(|available| {
+                available.mode != auth.mode || !available.contains(request.model.model_id.as_str())
+            }) {
+                return Err(error(
+                    "Selected OpenAI model is not in the current account model list; reopen Settings and choose an available model",
+                    ErrorCategory::InvalidRequest,
+                    false,
+                ));
+            }
+        }
         let body = wire::request(request, auth.mode, &self.effort)?;
         let endpoint = match auth.mode {
             AuthenticationMode::ApiKey => "https://api.openai.com/v1/responses",

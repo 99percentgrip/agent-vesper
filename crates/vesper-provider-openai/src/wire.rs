@@ -101,7 +101,7 @@ pub(crate) fn request(
                 ContentPart::Text(text)=>input.push(json!({"role":role,"content":[{"type":if assistant{"output_text"}else{"input_text"},"text":text.as_str()}]})),
                 ContentPart::Image(image)=>{
                     image_count+=1;
-                    if assistant || image_count>50 || !["image/png","image/jpeg","image/webp"].contains(&image.media_type.as_str()){return Err(unsupported());}
+                    if model == "gpt-5.3-codex-spark" || assistant || image_count>50 || !["image/png","image/jpeg","image/webp"].contains(&image.media_type.as_str()){return Err(unsupported());}
                     let MediaSource::Reference{reference}=&image.source else{return Err(unsupported());};
                     let url=url::Url::parse(reference).map_err(|_|unsupported())?;
                     if !["https","data"].contains(&url.scheme()) || reference.len()>8*MAX_EVENT {return Err(unsupported());}
@@ -147,6 +147,12 @@ pub(crate) fn request(
         _ => return Err(unsupported()),
     };
     let mut body = json!({"model":model,"instructions":instructions.join("\n\n"),"input":input,"tools":tools,"tool_choice":choice,"parallel_tool_calls":true,"store":false,"stream":true,"include":["reasoning.encrypted_content"],"reasoning":{"effort":effort,"summary":"auto"}});
+    if model == "gpt-5.3-codex-spark" {
+        body["reasoning"]
+            .as_object_mut()
+            .expect("object")
+            .remove("summary");
+    }
     if mode == AuthenticationMode::ApiKey
         && let Some(max) = request.maximum_output_tokens
     {

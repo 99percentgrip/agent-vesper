@@ -369,11 +369,30 @@ fn active_provider_of(configuration: &ProviderConfiguration) -> &str {
 /// model picker when acting on `lmstudio`, nothing else. GLM-only
 /// selections made while another provider is acting are rejected
 /// fail-closed (apply returns `None`), never silently misrouted.
+#[cfg(test)]
 pub(crate) fn multi_provider_control_surface(
     configuration: &ProviderConfiguration,
     registered: &[(String, String, bool)],
     lm_models: &[LmStudioControlModel],
 ) -> SessionControlSurface {
+    multi_provider_control_surface_with_openai(
+        configuration,
+        registered,
+        lm_models,
+        &vesper_provider_openai::AvailableModels::unavailable(
+            vesper_provider_openai::auth::AuthenticationMode::ChatGpt,
+        ),
+    )
+}
+
+pub(crate) fn multi_provider_control_surface_with_openai(
+    configuration: &ProviderConfiguration,
+    registered: &[(String, String, bool)],
+    lm_models: &[LmStudioControlModel],
+    openai: &vesper_provider_openai::AvailableModels,
+) -> SessionControlSurface {
+    let refresh_openai = openai.clone();
+    let apply_openai = openai.clone();
     let refresh_registered = registered.to_vec();
     let refresh_models = lm_models.to_vec();
     let mut controls = Vec::new();
@@ -415,12 +434,16 @@ pub(crate) fn multi_provider_control_surface(
             controls.push(AcpSessionControl {
                 id: "model".into(),
                 name: "Model".into(),
-                description: Some("OpenAI native Responses model; account access required".into()),
+                description: Some(if openai.models.is_empty() {
+                    "OpenAI models unavailable. Check sign-in/network, then restart the agent."
+                } else {
+                    "Models discovered for the selected OpenAI account and authentication method."
+                }.into()),
                 category: AcpControlCategory::Model,
                 current_value: model.into(),
-                options: vesper_provider_openai::OpenAiCatalog::snapshot()
+                options: openai
                     .models
-                    .into_iter()
+                    .iter()
                     .map(|m| AcpControlOption {
                         value: m.model.model_id.as_str().into(),
                         name: m.display_name.as_str().into(),
@@ -428,12 +451,8 @@ pub(crate) fn multi_provider_control_surface(
                     })
                     .collect(),
             });
-            let efforts = vesper_provider_openai::OpenAiCatalog::reasoning_levels_for(
-                model,
-                vesper_provider_openai::OpenAiFactory::default()
-                    .control_policy()
-                    .mode,
-            );
+            let efforts =
+                vesper_provider_openai::OpenAiCatalog::reasoning_levels_for(model, openai.mode);
             controls.push(AcpSessionControl {
                 id: "thought_level".into(),
                 name: "Reasoning effort".into(),
@@ -532,6 +551,9 @@ pub(crate) fn multi_provider_control_surface(
             }
             match active_provider_of(configuration) {
                 "openai" => {
+                    if option_id == "model" && !apply_openai.contains(value) {
+                        return None;
+                    }
                     let mut next = configuration.clone();
                     let key = match option_id {
                         "model" => "openai:model",
@@ -548,9 +570,7 @@ pub(crate) fn multi_provider_control_surface(
                     let effort = config_str(&next, "openai:reasoning-mode").unwrap_or("medium");
                     if !vesper_provider_openai::OpenAiCatalog::reasoning_levels_for(
                         &model,
-                        vesper_provider_openai::OpenAiFactory::default()
-                            .control_policy()
-                            .mode,
+                        apply_openai.mode,
                     )
                     .contains(&effort)
                     {
@@ -633,7 +653,12 @@ pub(crate) fn multi_provider_control_surface(
         });
     }
     surface.with_refresh(move |configuration| {
-        multi_provider_control_surface(configuration, &refresh_registered, &refresh_models)
+        multi_provider_control_surface_with_openai(
+            configuration,
+            &refresh_registered,
+            &refresh_models,
+            &refresh_openai,
+        )
     })
 }
 
@@ -646,7 +671,10 @@ pub(crate) fn multi_provider_context_window(
     lm_models: &[LmStudioControlModel],
 ) -> u64 {
     if active_provider_of(configuration) == "openai" {
-        return vesper_provider_openai::OpenAiCatalog::context_tokens();
+        return vesper_provider_openai::OpenAiCatalog::context_tokens_for(
+            config_str(configuration, "openai:model")
+                .unwrap_or(vesper_provider_openai::DEFAULT_MODEL),
+        );
     }
     if active_provider_of(configuration) == "lmstudio" {
         let acting = config_str(configuration, "lmstudio:model")
@@ -1018,6 +1046,10 @@ mod tests {
 
     #[test]
     fn openai_model_switch_repairs_incompatible_effort() {
+        let available = vesper_provider_openai::AvailableModels {
+            mode: vesper_provider_openai::auth::AuthenticationMode::ChatGpt,
+            models: vec![vesper_provider_openai::OpenAiCatalog::find("gpt-5.5").unwrap()],
+        };
         let mut configuration = vesper_provider_openai::OpenAiFactory::default_configuration();
         configuration
             .values
@@ -1029,20 +1061,22 @@ mod tests {
             .values
             .insert("openai:reasoning-mode", serde_json::json!("max"))
             .unwrap();
-        let surface = multi_provider_control_surface(
+        let surface = multi_provider_control_surface_with_openai(
             &configuration,
             &[("openai".into(), "OpenAI".into(), true)],
             &[],
+            &available,
         );
         let switched = surface.apply(&configuration, "model", "gpt-5.5").unwrap();
         assert_eq!(
             config_str(&switched.configuration, "openai:reasoning-mode"),
             Some("high")
         );
-        let surface = multi_provider_control_surface(
+        let surface = multi_provider_control_surface_with_openai(
             &switched.configuration,
             &[("openai".into(), "OpenAI".into(), true)],
             &[],
+            &available,
         );
         assert!(
             surface

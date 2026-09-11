@@ -30,7 +30,10 @@ transport, stderr-only tracing, and orderly shutdown.
 
 - Contain no session, provider-wire, or ACP-mapping business logic.
 - Stdout is exclusively newline-delimited ACP JSON-RPC.
-- Tests use loopback endpoints and synthetic credentials only.
+- Tests use loopback endpoints and synthetic credentials only. The shared process
+  harness supplies an explicit signed-out OpenAI vault under its temporary root;
+  environment/HOME isolation alone does not isolate an OS credential manager.
+  Native OpenAI fixtures override transport with their synthetic loopback constructor.
 - No provider child process or raw credential I/O is created by the ACP
   composition itself. The shared `vesper-harness` service may perform bounded
   workspace-scoped tool I/O and MCP/plugin subprocess work only after a model
@@ -71,8 +74,13 @@ transport, stderr-only tracing, and orderly shutdown.
   `zai-coding` for the GLM adapter, `lmstudio-local` for the LM Studio
   adapter, and `synthetic` for the synthetic adapter.
   The runtime stays provider-neutral.
-- OpenAI uses the adapter-owned catalog for model/effort controls, vision
-  gates, and the conservative shared context window. Both authentication
+- OpenAI model controls use authenticated discovery at startup, intersected with
+  the adapter capability catalog. Missing/hidden/unverified choices cannot be selected;
+  a failed lookup leaves an empty picker and explicit restart guidance. Refresh requires
+  restarting ACP after authentication/connectivity changes (TUI refreshes on Settings
+  entry). Keep the same discovered factory instance in registry and controls so
+  dispatch/worker gates reject unavailable models. Vision and per-model context limits
+  remain adapter-owned, including text-only Spark's 128K window. Both authentication
   modes use the same agent loop, tools, workers, compaction, and permissions;
   native device sign-in needs no Codex installation. The terminal Settings
   modal is host-specific: ACP users sign in through TUI or explicit
@@ -328,7 +336,9 @@ into exactly one always-safe, argument-dependent, or interrupting class.
 - `tests/openai_native.rs` executes a real confined read and verifies its
   Responses call/result transaction in both native authentication modes,
   including provider round trips, effective model/effort changes, and a
-  read-only write denial with proof that no file was created.
+  read-only write denial with proof that no file was created. It also checks account
+  discovery headers, hidden/unknown model exclusion, rejection of unavailable model
+  changes, and Spark's real tool transaction without `reasoning.summary`.
 - `tests/openai_rejection.rs` verifies that native HTTP context rejections reach
   the ACP error response as `ContextLimit` in both authentication modes, without
   provider prose in protocol output or stderr. This does not prove that clients

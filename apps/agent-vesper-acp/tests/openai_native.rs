@@ -5,6 +5,34 @@ use std::{net::TcpListener, thread, time::Duration};
 mod support;
 use support::{ProcessHarness, read_http_request, write_sse};
 
+fn serve_models(listener: &TcpListener, mode: &str) {
+    use std::io::{Read, Write};
+    let (mut socket, _) = listener.accept().unwrap();
+    socket
+        .set_read_timeout(Some(Duration::from_secs(20)))
+        .unwrap();
+    let mut bytes = Vec::new();
+    while !bytes.windows(4).any(|v| v == b"\r\n\r\n") {
+        let mut buffer = [0; 4096];
+        let n = socket.read(&mut buffer).unwrap();
+        assert!(n > 0);
+        bytes.extend_from_slice(&buffer[..n]);
+    }
+    let headers = String::from_utf8(bytes).unwrap().to_lowercase();
+    assert!(headers.starts_with("get /models"));
+    assert!(headers.contains("authorization: bearer fixture-openai-key"));
+    assert_eq!(
+        headers.contains("chatgpt-account-id: fixture-account"),
+        mode == "chatgpt"
+    );
+    let body = if mode == "chatgpt" {
+        json!({"models":[{"slug":"gpt-6-astra","visibility":"list"},{"slug":"gpt-5.3-codex-spark","visibility":"list"},{"slug":"gpt-5.4","visibility":"hide"},{"slug":"unverified-model","visibility":"list"}]})
+    } else {
+        json!({"data":[{"id":"gpt-6-astra"},{"id":"unverified-model"}]})
+    }.to_string();
+    write!(socket, "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",body.len()).unwrap();
+}
+
 fn sse(events: Vec<Value>) -> String {
     events
         .into_iter()
@@ -30,6 +58,7 @@ fn usage_reports_native_subscription_windows_without_a_provider_turn() {
         ],
     );
     let server = thread::spawn(move || {
+        serve_models(&listener, "chatgpt");
         let (mut socket, _) = listener.accept().unwrap();
         socket
             .set_read_timeout(Some(Duration::from_secs(20)))
@@ -92,7 +121,19 @@ fn both_native_modes_honor_read_only_permission_and_return_the_denial() {
     }
 }
 
+#[test]
+fn spark_native_tool_round_trip_omits_summary() {
+    tool_round_trip_model("chatgpt", false, "gpt-5.3-codex-spark", "high");
+}
 fn tool_round_trip(mode: &'static str, denied: bool) {
+    tool_round_trip_model(mode, denied, "gpt-6-astra", "max");
+}
+fn tool_round_trip_model(
+    mode: &'static str,
+    denied: bool,
+    model: &'static str,
+    effort: &'static str,
+) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
     let mut process = ProcessHarness::spawn_with_environment(
@@ -116,6 +157,7 @@ fn tool_round_trip(mode: &'static str, denied: bool) {
         .into_owned();
     let tool = if denied { "write_file" } else { "read_file" };
     let server = thread::spawn(move || {
+        serve_models(&listener, mode);
         let (mut first, _) = listener.accept().unwrap();
         first
             .set_read_timeout(Some(Duration::from_secs(20)))
@@ -127,8 +169,11 @@ fn tool_round_trip(mode: &'static str, denied: bool) {
             mode == "chatgpt"
         );
         let body: Value = serde_json::from_str(wire.split_once("\r\n\r\n").unwrap().1).unwrap();
-        assert_eq!(body["model"], "gpt-6-astra");
-        assert_eq!(body["reasoning"]["effort"], "max");
+        assert_eq!(body["model"], model);
+        if model == "gpt-5.3-codex-spark" {
+            assert!(body["reasoning"].get("summary").is_none());
+        }
+        assert_eq!(body["reasoning"]["effort"], effort);
         assert!(
             body["tools"]
                 .as_array()
@@ -195,11 +240,23 @@ fn tool_round_trip(mode: &'static str, denied: bool) {
     process.send(json!({"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":root,"mcpServers":[]}}));
     let response = process.response(2);
     let session = response["result"]["sessionId"].as_str().expect("session");
+    let model_options = response["result"]["configOptions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|option| option["id"] == "model")
+        .unwrap();
+    let advertised = model_options["options"].to_string();
+    assert!(advertised.contains("gpt-6-astra"), "{model_options}");
+    assert!(!advertised.contains("gpt-5.4"), "{model_options}");
+    assert!(!advertised.contains("unverified-model"), "{model_options}");
+    process.send(json!({"jsonrpc":"2.0","id":7,"method":"session/set_config_option","params":{"sessionId":session,"configId":"model","value":"gpt-5.4"}}));
+    assert!(process.response(7).get("error").is_some());
     for (id, control, value) in [
         (8, "provider", "lmstudio"),
         (9, "provider", "openai"),
-        (10, "model", "gpt-6-astra"),
-        (11, "thought_level", "max"),
+        (10, "model", model),
+        (11, "thought_level", effort),
         (12, "permission_mode", "read"),
     ] {
         process.send(json!({"jsonrpc":"2.0","id":id,"method":"session/set_config_option","params":{"sessionId":session,"configId":control,"value":value}}));

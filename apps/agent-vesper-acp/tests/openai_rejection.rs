@@ -2,7 +2,12 @@
 #![cfg(feature = "integration-test-harness")]
 #![allow(dead_code)]
 use serde_json::json;
-use std::{io::Write, net::TcpListener, thread, time::Duration};
+use std::{
+    io::{Read, Write},
+    net::TcpListener,
+    thread,
+    time::Duration,
+};
 mod support;
 use support::{ProcessHarness, read_http_request};
 
@@ -25,6 +30,26 @@ fn native_rejections_are_safe_and_actionable_in_both_authentication_modes() {
             ],
         );
         let server = thread::spawn(move || {
+            let (mut catalog, _) = listener.accept().unwrap();
+            catalog
+                .set_read_timeout(Some(Duration::from_secs(20)))
+                .unwrap();
+            let mut bytes = Vec::new();
+            while !bytes.windows(4).any(|v| v == b"\r\n\r\n") {
+                let mut buffer = [0; 4096];
+                let count = catalog.read(&mut buffer).unwrap();
+                assert!(count > 0);
+                bytes.extend_from_slice(&buffer[..count]);
+            }
+            assert!(String::from_utf8_lossy(&bytes).starts_with("GET /models"));
+            let models = if mode == "chatgpt" {
+                json!({"models":[{"slug":"gpt-5.4","visibility":"list"}]})
+            } else {
+                json!({"data":[{"id":"gpt-5.4"}]})
+            }
+            .to_string();
+            write!(catalog, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{models}", models.len()).unwrap();
+            drop(catalog);
             let (mut socket, _) = listener.accept().unwrap();
             socket
                 .set_read_timeout(Some(Duration::from_secs(20)))

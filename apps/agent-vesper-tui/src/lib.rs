@@ -33,11 +33,13 @@ pub mod auth_hub;
 pub mod capabilities;
 pub mod commands;
 pub mod dispatch;
+pub mod landing;
 pub mod lmstudio_hub;
 pub mod lmstudio_provider;
 pub mod markdown;
 pub mod plan_mode;
 pub mod provider_hub;
+pub mod settings_menu;
 pub mod superpowers;
 #[cfg(feature = "swarm")]
 pub mod swarm_hub;

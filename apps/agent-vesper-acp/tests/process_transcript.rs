@@ -24,9 +24,14 @@ const CANARY: &str = "vesper-stage4-secret-canary";
 #[test]
 fn driver_setup_preflight_exits_without_provider_or_workspace_state() {
     let root = tempfile::tempdir().unwrap();
+    let openai_fixture = support::signed_out_openai_fixture();
     let mut command = Command::new(env!("CARGO_BIN_EXE_agent-vesper-acp"));
     command
         .env_clear()
+        .env(
+            "AGENT_VESPER_OPENAI_CREDENTIALS_PATH",
+            openai_fixture.path(),
+        )
         .current_dir(root.path())
         .env("AGENT_VESPER_BUNDLE_DIR", root.path())
         .arg("--setup-web-driver");
@@ -91,9 +96,14 @@ fn stdio_transcript_reaches_real_glm_adapter_with_protocol_pure_stdout() {
 
     let temp = std::env::temp_dir().join(format!("agent-vesper-stage4-{}", std::process::id()));
     std::fs::create_dir_all(&temp).unwrap();
+    let openai_fixture = support::signed_out_openai_fixture();
     let mut command = Command::new(env!("CARGO_BIN_EXE_agent-vesper-acp"));
     command
         .env_clear()
+        .env(
+            "AGENT_VESPER_OPENAI_CREDENTIALS_PATH",
+            openai_fixture.path(),
+        )
         .env("HOME", &temp)
         .env("XDG_CONFIG_HOME", temp.join("config"))
         .env("XDG_CACHE_HOME", temp.join("cache"))
@@ -319,9 +329,14 @@ fn empty_prompt_and_slash_commands_never_dispatch_provider() {
         std::process::id()
     ));
     std::fs::create_dir_all(&temp).unwrap();
+    let openai_fixture = support::signed_out_openai_fixture();
     let mut command = Command::new(env!("CARGO_BIN_EXE_agent-vesper-acp"));
     command
         .env_clear()
+        .env(
+            "AGENT_VESPER_OPENAI_CREDENTIALS_PATH",
+            openai_fixture.path(),
+        )
         .env("HOME", &temp)
         .env("XDG_CONFIG_HOME", temp.join("config"))
         .env("XDG_CACHE_HOME", temp.join("cache"))
@@ -527,9 +542,14 @@ fn host_owned_slash_commands_reach_real_stores_with_tui_parity() {
     .unwrap();
     std::fs::write(workspace.join("tracked.txt"), "parity payload").unwrap();
 
+    let openai_fixture = support::signed_out_openai_fixture();
     let mut command = Command::new(env!("CARGO_BIN_EXE_agent-vesper-acp"));
     command
         .env_clear()
+        .env(
+            "AGENT_VESPER_OPENAI_CREDENTIALS_PATH",
+            openai_fixture.path(),
+        )
         .env("HOME", &temp)
         .env("XDG_CONFIG_HOME", temp.join("config"))
         .env("XDG_CACHE_HOME", temp.join("cache"))
@@ -665,9 +685,14 @@ fn advertised_first_and_last<'a>(advertised: &[&'a str]) -> (&'a str, &'a str) {
 }
 #[test]
 fn malformed_input_exits_without_stdout_contamination() {
+    let openai_fixture = support::signed_out_openai_fixture();
     let mut command = Command::new(env!("CARGO_BIN_EXE_agent-vesper-acp"));
     command
         .env_clear()
+        .env(
+            "AGENT_VESPER_OPENAI_CREDENTIALS_PATH",
+            openai_fixture.path(),
+        )
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -717,9 +742,14 @@ fn cancellation_after_reasoning_emits_no_post_cancel_content() {
     let temp =
         std::env::temp_dir().join(format!("agent-vesper-stage4-cancel-{}", std::process::id()));
     std::fs::create_dir_all(&temp).unwrap();
+    let openai_fixture = support::signed_out_openai_fixture();
     let mut command = Command::new(env!("CARGO_BIN_EXE_agent-vesper-acp"));
     command
         .env_clear()
+        .env(
+            "AGENT_VESPER_OPENAI_CREDENTIALS_PATH",
+            openai_fixture.path(),
+        )
         .env("HOME", &temp)
         .env("ZAI_API_KEY", CANARY)
         .env("AGENT_VESPER_GLM_BASE_URL", format!("http://{address}/v4"))
@@ -797,9 +827,14 @@ fn session_new_with_client_mcp_servers_creates_session() {
     // during session creation, so no loopback fixture is needed.
     let temp = std::env::temp_dir().join(format!("agent-vesper-mcp-parity-{}", std::process::id()));
     std::fs::create_dir_all(&temp).unwrap();
+    let openai_fixture = support::signed_out_openai_fixture();
     let mut command = Command::new(env!("CARGO_BIN_EXE_agent-vesper-acp"));
     command
         .env_clear()
+        .env(
+            "AGENT_VESPER_OPENAI_CREDENTIALS_PATH",
+            openai_fixture.path(),
+        )
         .env("HOME", &temp)
         .env("XDG_CONFIG_HOME", temp.join("config"))
         .env("XDG_CACHE_HOME", temp.join("cache"))

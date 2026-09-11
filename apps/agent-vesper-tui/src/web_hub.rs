@@ -1,9 +1,5 @@
 //! Native Settings → Web tools editor; no file editing required.
-use ratatui::{
-    Frame,
-    layout::Rect,
-    widgets::{Block, Borders, Clear, Paragraph},
-};
+use ratatui::Frame;
 use vesper_harness::web_settings::WebScopeConfig;
 
 /// Draft settings: cancelling never persists a toggle.
@@ -36,73 +32,38 @@ impl WebHub {
     pub fn rows(&self) -> Vec<String> {
         let mut rows: Vec<_> = [
             ("Web tools", self.config.enabled),
-            ("Fetch / scrape / map / crawl", self.config.fetch_enabled),
+            ("Fetch, scrape, map, crawl", self.config.fetch_enabled),
             ("JavaScript rendering", self.config.render_enabled),
-            (
-                "Browser interaction (click/type/submit)",
-                self.config.interact_enabled,
-            ),
+            ("Browser interaction", self.config.interact_enabled),
             ("Respect robots.txt", self.config.respect_robots),
         ]
         .into_iter()
         .map(|(label, value)| format!("{label}: {}", if value { "ON" } else { "OFF" }))
         .collect();
         rows.extend([
-            "Set up / repair driver (included in installation)".into(),
+            "Set up / repair driver".into(),
             "Save settings".into(),
+            "Cancel".into(),
         ]);
         rows
     }
 }
 
-pub fn render(frame: &mut Frame<'_>, hub: &WebHub) {
-    let area = frame.area();
-    if area.width < 60 || area.height < 18 {
-        frame.render_widget(Clear, area);
-        frame.render_widget(
-            Paragraph::new("Web tools settings: resize to at least 60×18. Esc cancels; S saves."),
-            area,
-        );
-        return;
-    }
-    let width = area.width.min(88);
-    let height = area.height.min(20);
-    let panel = Rect::new(
-        (area.width - width) / 2,
-        (area.height - height) / 2,
-        width,
-        height,
-    );
-    let mut lines = vec![
-        "↑/↓ select · Enter/Space toggle · S save · Esc cancel".into(),
-        String::new(),
-    ];
-    lines.extend(
-        hub.rows()
-            .iter()
-            .enumerate()
-            .map(|(index, row)| format!("{} {row}", if index == hub.selected { "›" } else { " " })),
-    );
-    lines.push(String::new());
-    lines.push(format!(
-        "Driver: {}",
-        hub.config
-            .driver_image
-            .as_deref()
-            .unwrap_or("not configured — select Set up / repair driver")
-    ));
-    lines.push("Private-address blocking and sandbox isolation: always ON".into());
-    lines.push(hub.notice.clone());
-    frame.render_widget(Clear, panel);
-    frame.render_widget(
-        Paragraph::new(lines.join("\n"))
-            .wrap(ratatui::widgets::Wrap { trim: false })
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title(" Settings › Web tools (saved configuration) "),
-            ),
-        panel,
+pub fn render(frame: &mut Frame<'_>, hub: &WebHub, theme: &str) {
+    let driver = if hub.config.driver_image.is_some() {
+        "Driver configured"
+    } else {
+        "Driver not configured"
+    };
+    let detail = format!("{driver} · {}", hub.notice);
+    crate::settings_menu::render_menu(
+        frame,
+        &hub.rows(),
+        hub.selected,
+        "Settings · Web tools",
+        &detail,
+        "↑↓ select · Enter toggle · S save · Esc cancel",
+        theme,
     );
 }
 
@@ -120,7 +81,36 @@ mod tests {
             hub.toggle();
             assert_eq!(hub.config, before);
         }
-        assert_eq!(hub.rows().len(), 7);
+        assert_eq!(hub.rows().len(), 8);
+    }
+
+    #[test]
+    fn web_editor_shares_menu_geometry_colors_and_cancel_row() {
+        for theme in [
+            "chatgpt-black",
+            "chatgpt-white",
+            "dracula",
+            "nord",
+            "light",
+            "ansi",
+        ] {
+            let mut terminal =
+                ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).unwrap();
+            let hub = WebHub::new(WebScopeConfig::default());
+            terminal.draw(|frame| render(frame, &hub, theme)).unwrap();
+            let palette = crate::ui::theme_palette(theme);
+            let buffer = terminal.backend().buffer();
+            assert_eq!(buffer[(0, 0)].bg, palette.background);
+            let viewport = ratatui::layout::Rect::new(0, 0, 80, 24);
+            let menu = crate::settings_menu::area(viewport, hub.rows().len());
+            assert_eq!(buffer[(menu.x + 3, menu.y + 1)].bg, palette.selection);
+            assert_eq!(
+                crate::settings_menu::item_at(viewport, 8, 0, menu.x + 2, menu.y + 8),
+                Some(7)
+            );
+            let row: String = (0..80).map(|x| buffer[(x, menu.y + 8)].symbol()).collect();
+            assert!(row.contains("Cancel"));
+        }
     }
 
     #[test]
@@ -128,7 +118,13 @@ mod tests {
         let mut terminal =
             ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 24)).unwrap();
         terminal
-            .draw(|frame| render(frame, &WebHub::new(WebScopeConfig::default())))
+            .draw(|frame| {
+                render(
+                    frame,
+                    &WebHub::new(WebScopeConfig::default()),
+                    "chatgpt-black",
+                )
+            })
             .unwrap();
         let text: String = terminal
             .backend()

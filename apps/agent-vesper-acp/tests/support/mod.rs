@@ -99,10 +99,28 @@ impl ProcessHarness {
             unique_suffix()
         ));
         fs::create_dir_all(&temp).unwrap();
+        // HOME/env isolation does not isolate OS credential managers. An explicit
+        // signed-out Vesper record prevents inactive OpenAI discovery from seeing
+        // host credentials; native OpenAI fixtures use their synthetic loopback route.
+        let openai_fixture = temp.join("openai-signed-out.json");
+        fs::write(
+            &openai_fixture,
+            serde_json::to_vec(&serde_json::json!({
+                "credentials": {"openai": {"native-auth": "{\"mode\":\"signed-out\"}"}}
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&openai_fixture, fs::Permissions::from_mode(0o600)).unwrap();
+        }
         let mut command = Command::new(binary);
         command
             .env_clear()
             .env("HOME", &temp)
+            .env("AGENT_VESPER_OPENAI_CREDENTIALS_PATH", &openai_fixture)
             .env("XDG_CONFIG_HOME", temp.join("config"))
             .env("XDG_CACHE_HOME", temp.join("cache"))
             .env("XDG_DATA_HOME", temp.join("data"))
@@ -413,4 +431,18 @@ pub fn critical_environment_keys() -> &'static [&'static str] {
             "PATH", "LANG", "LC_ALL", "LC_CTYPE", "USER", "LOGNAME", "SHELL", "TZ", "TMPDIR",
         ]
     }
+}
+
+/// Keeps native OS credential managers out of independent process fixtures too.
+#[allow(dead_code)] // Consumed by separate process-test binaries sharing this module.
+pub fn signed_out_openai_fixture() -> tempfile::NamedTempFile {
+    let mut file = tempfile::NamedTempFile::new().unwrap();
+    serde_json::to_writer(
+        &mut file,
+        &serde_json::json!({
+            "credentials": {"openai": {"native-auth": "{\"mode\":\"signed-out\"}"}}
+        }),
+    )
+    .unwrap();
+    file
 }

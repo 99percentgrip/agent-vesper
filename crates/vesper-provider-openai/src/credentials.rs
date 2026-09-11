@@ -212,6 +212,7 @@ impl Credentials {
         match value.get("mode").and_then(Value::as_str) {
             Some("chatgpt") => Ok(Some("openai-chatgpt".into())),
             Some("api-key") => Ok(Some("openai-api-key".into())),
+            None if api_key(&value).is_some() => Ok(Some("openai-api-key".into())),
             Some("signed-out") | None => Ok(None),
             _ => Err(CredentialError::InvalidSecret),
         }
@@ -383,6 +384,35 @@ fn account(tokens: &SubscriptionTokens) -> Result<SecretValue, CredentialError> 
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn scoped_api_key_has_api_metadata_without_overriding_selected_subscription_or_logout() {
+        let temp = tempfile::tempdir().unwrap();
+        let credentials = Credentials {
+            test_store: Some(vesper_auth::PrivateFileCredentialStore::new(
+                temp.path().join("credentials.json"),
+            )),
+            lock: Arc::new(Mutex::new(())),
+            ..Credentials::default()
+        };
+        SecretScope::empty()
+            .with("OPENAI_API_KEY", SecretValue::new("fixture-api-key"))
+            .install(async {
+                assert_eq!(
+                    credentials.authentication_method().unwrap().as_deref(),
+                    Some("openai-api-key")
+                );
+                credentials.write(json!({"mode":"chatgpt"})).unwrap();
+                assert_eq!(
+                    credentials.authentication_method().unwrap().as_deref(),
+                    Some("openai-chatgpt")
+                );
+                credentials.write(json!({"mode":"signed-out"})).unwrap();
+                assert_eq!(credentials.authentication_method().unwrap(), None);
+                assert!(!credentials.present().unwrap());
+            })
+            .await;
+    }
 
     #[test]
     fn isolated_storage_switches_modes_and_logout_cannot_restore_a_key() {

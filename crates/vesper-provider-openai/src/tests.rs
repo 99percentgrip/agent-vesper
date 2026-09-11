@@ -227,10 +227,10 @@ fn catalog_has_no_process_runtime_or_invented_capabilities() {
             model.capabilities.tools,
             SupportLevel::Native { .. }
         ));
-        assert!(matches!(
-            model.capabilities.vision,
-            SupportLevel::Native { .. }
-        ));
+        assert_eq!(
+            matches!(model.capabilities.vision, SupportLevel::Native { .. }),
+            model.model.model_id.as_str() != "gpt-5.3-codex-spark"
+        );
     }
     let descriptor = OpenAiFactory::default().descriptor();
     assert_eq!(descriptor.authentication_methods.len(), 2);
@@ -327,45 +327,57 @@ mod http {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}/responses", listener.local_addr().unwrap());
         let server = tokio::spawn(async move {
-            let (mut socket, _) = listener.accept().await.unwrap();
-            let mut bytes = vec![];
-            let (start, length) = loop {
-                let mut buf = [0; 4096];
-                let count = socket.read(&mut buf).await.unwrap();
-                assert!(count > 0);
-                bytes.extend_from_slice(&buf[..count]);
-                if let Some(i) = bytes.windows(4).position(|p| p == b"\r\n\r\n") {
-                    let header = std::str::from_utf8(&bytes[..i]).unwrap();
-                    assert!(
-                        header
-                            .to_lowercase()
-                            .contains("authorization: bearer fixture-openai-key")
-                    );
-                    let length = header
-                        .lines()
-                        .find_map(|l| {
-                            let (k, v) = l.split_once(':')?;
-                            k.eq_ignore_ascii_case("content-length")
-                                .then(|| v.trim().parse::<usize>().unwrap())
-                        })
-                        .unwrap();
-                    break (i + 4, length);
+            loop {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut bytes = vec![];
+                let (start, length) = loop {
+                    let mut buf = [0; 4096];
+                    let count = socket.read(&mut buf).await.unwrap();
+                    assert!(count > 0);
+                    bytes.extend_from_slice(&buf[..count]);
+                    if let Some(i) = bytes.windows(4).position(|p| p == b"\r\n\r\n") {
+                        let header = std::str::from_utf8(&bytes[..i]).unwrap();
+                        assert!(
+                            header
+                                .to_lowercase()
+                                .contains("authorization: bearer fixture-openai-key")
+                        );
+                        let length = header
+                            .lines()
+                            .find_map(|l| {
+                                let (k, v) = l.split_once(':')?;
+                                k.eq_ignore_ascii_case("content-length")
+                                    .then(|| v.trim().parse::<usize>().unwrap())
+                            })
+                            .unwrap_or(0);
+                        break (i + 4, length);
+                    }
+                };
+                if bytes.starts_with(b"GET /models") {
+                    let catalog = if mode == auth::AuthenticationMode::ApiKey {
+                        json!({"data":[{"id":"gpt-5.5"}]})
+                    } else {
+                        json!({"models":[{"slug":"gpt-5.5","visibility":"list"}]})
+                    }
+                    .to_string();
+                    socket.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{catalog}",catalog.len()).as_bytes()).await.unwrap();
+                    continue;
                 }
-            };
-            while bytes.len() < start + length {
-                let mut buf = [0; 4096];
-                let n = socket.read(&mut buf).await.unwrap();
-                assert!(n > 0);
-                bytes.extend_from_slice(&buf[..n]);
-            }
-            let request = serde_json::from_slice(&bytes[start..start + length]).unwrap();
-            socket.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",body.len()).as_bytes()).await.unwrap();
-            for chunk in body.as_bytes().chunks(3) {
-                if socket.write_all(chunk).await.is_err() {
-                    break;
+                while bytes.len() < start + length {
+                    let mut buf = [0; 4096];
+                    let n = socket.read(&mut buf).await.unwrap();
+                    assert!(n > 0);
+                    bytes.extend_from_slice(&buf[..n]);
                 }
+                let request = serde_json::from_slice(&bytes[start..start + length]).unwrap();
+                socket.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",body.len()).as_bytes()).await.unwrap();
+                for chunk in body.as_bytes().chunks(3) {
+                    if socket.write_all(chunk).await.is_err() {
+                        break;
+                    }
+                }
+                break request;
             }
-            request
         });
         let factory = OpenAiFactory::for_loopback(&url, mode).unwrap();
         (factory, server)
@@ -397,6 +409,7 @@ mod http {
                 "{\"facts\":[]}"
             );
             let body = server.await.unwrap();
+            assert_eq!(body["model"], "gpt-5.5");
             assert_eq!(body["tools"], json!([]));
             assert_eq!(body["text"]["format"]["type"], "json_object");
         }
@@ -486,4 +499,26 @@ mod http {
         assert_eq!(terminal, 1);
         server.await.unwrap();
     }
+}
+
+#[test]
+fn spark_omits_summary_and_rejects_images() {
+    let mut request = fixture_request();
+    request.model.model_id = ModelId::new("gpt-5.3-codex-spark").unwrap();
+    assert_eq!(
+        OpenAiCatalog::context_tokens_for("gpt-5.3-codex-spark"),
+        128_000
+    );
+    let body = wire::request(&request, auth::AuthenticationMode::ChatGpt, "high").unwrap();
+    assert!(body["reasoning"].get("summary").is_none());
+    request.messages[0]
+        .content
+        .push(ContentPart::Image(ImageDescriptor {
+            media_type: "image/png".into(),
+            source: MediaSource::Reference {
+                reference: "data:image/png;base64,iVBORw0KGgo=".into(),
+            },
+            alt_text: None,
+        }));
+    assert!(wire::request(&request, auth::AuthenticationMode::ChatGpt, "high").is_err());
 }
