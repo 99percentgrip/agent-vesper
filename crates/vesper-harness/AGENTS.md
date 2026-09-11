@@ -156,6 +156,8 @@ Z.ai and Playwright MCP server descriptors.
   Saved opt-in discovery treats unresolved or absent workspaces as inactive, so
   ordinary ACP sessions remain usable. Explicit enrollment/saves require an existing
   absolute workspace; unreadable or malformed existing settings still refuse.
+  Verification forwards only the explicit toolchain environment allowlist, including
+  Windows SDK/MSVC discovery roots; those same values bind the receipt environment.
 
 - Every filesystem path is confined to the caller's primary workspace root
   before access.

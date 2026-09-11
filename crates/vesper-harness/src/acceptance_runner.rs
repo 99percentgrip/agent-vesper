@@ -21,6 +21,39 @@ pub(crate) struct CheckOutcome {
 
 const MAX_OUTPUT: usize = 1024 * 1024;
 
+// Toolchain discovery needs the Windows installation roots even outside a
+// developer shell. Without them rustc can select Git's unrelated link.exe.
+// The same allowlist supplies subprocesses and binds their receipt identity.
+const TOOLCHAIN_ENV: &[&str] = &[
+    "PATH",
+    "HOME",
+    "USERPROFILE",
+    "SYSTEMROOT",
+    "SystemRoot",
+    "CARGO_HOME",
+    "RUSTUP_HOME",
+    "RUSTUP_TOOLCHAIN",
+    "TMP",
+    "TEMP",
+    "TMPDIR",
+    "ProgramFiles",
+    "ProgramFiles(x86)",
+    "ProgramW6432",
+    "SystemDrive",
+    "COMSPEC",
+    "PATHEXT",
+    "VSINSTALLDIR",
+    "VCINSTALLDIR",
+    "VCToolsInstallDir",
+    "WindowsSdkDir",
+    "WindowsSDKVersion",
+    "UniversalCRTSdkDir",
+    "UCRTVersion",
+    "LIB",
+    "LIBPATH",
+    "INCLUDE",
+];
+
 pub(crate) fn classify(
     check: &AcceptanceCheck,
     success: bool,
@@ -84,17 +117,7 @@ pub(crate) fn environment(root: &Path) -> Result<String, String> {
         }
         identity.push_str(&output);
     }
-    for key in [
-        "PATH",
-        "HOME",
-        "USERPROFILE",
-        "CARGO_HOME",
-        "RUSTUP_HOME",
-        "RUSTUP_TOOLCHAIN",
-        "TMP",
-        "TEMP",
-        "TMPDIR",
-    ] {
+    for key in TOOLCHAIN_ENV {
         identity.push_str(key);
         identity.push_str(&std::env::var(key).unwrap_or_default());
     }
@@ -232,19 +255,7 @@ fn run_process(
         .stderr(Stdio::piped());
     // No provider credentials are passed to build scripts or test programs.
     command.env_clear();
-    for key in [
-        "PATH",
-        "HOME",
-        "USERPROFILE",
-        "SYSTEMROOT",
-        "SystemRoot",
-        "CARGO_HOME",
-        "RUSTUP_HOME",
-        "RUSTUP_TOOLCHAIN",
-        "TMP",
-        "TEMP",
-        "TMPDIR",
-    ] {
+    for key in TOOLCHAIN_ENV {
         if let Some(value) = std::env::var_os(key) {
             command.env(key, value);
         }

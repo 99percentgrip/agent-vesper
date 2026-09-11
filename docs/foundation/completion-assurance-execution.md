@@ -11,6 +11,12 @@ with unresolved/virtual workspace paths. Saved activation now defaults to inacti
 only for unresolved or absent roots; explicit enrollment/saves remain strict and
 unreadable/malformed existing settings still refuse. A cross-platform regression
 checks absent-root reads, rejected saves and non-directory refusal.
+The next Windows run reached real Cargo verification and exposed missing MSVC
+discovery variables in the sanitized subprocess environment: rustc invoked Git's
+unrelated `link.exe`. The verifier now shares one explicit toolchain-variable
+allowlist between execution and receipt identity, including Windows SDK/MSVC roots.
+Provider credentials remain excluded. The existing real compile/fail/repair tests
+must pass on Windows before release; a Linux pass cannot establish that repair.
 
 ## User workflow
 
