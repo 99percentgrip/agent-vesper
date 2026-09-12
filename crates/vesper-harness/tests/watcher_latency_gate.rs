@@ -22,11 +22,15 @@
 //! resolver is TUI-internal and cannot be imported from here.
 
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use vesper_harness::watcher_sweep;
+
+// Descriptor counts are process-wide. Keep the sibling file-reading test out
+// of the measured interval; the sweep/input concurrency inside it stays real.
+static PROCESS_FD_MEASUREMENT: Mutex<()> = Mutex::new(());
 
 /// Reads the process's open-descriptor count from procfs (Linux-only; the
 /// gate skips the parity assert rather than failing on a missing
@@ -65,6 +69,7 @@ fn seed_watcher(root: &Path, name: &str, size_kb: usize) -> std::path::PathBuf {
 
 #[test]
 fn sweep_never_blocks_ten_thousand_keystrokes_and_holds_no_extra_fds() {
+    let _measurement = PROCESS_FD_MEASUREMENT.lock().expect("measurement lock");
     let state_root = tempfile::tempdir().expect("state root");
     let root = state_root.path().to_path_buf();
 
@@ -153,6 +158,7 @@ fn sweep_never_blocks_ten_thousand_keystrokes_and_holds_no_extra_fds() {
 
 #[test]
 fn tail_reads_are_bounded_to_four_kib_regardless_of_file_size() {
+    let _measurement = PROCESS_FD_MEASUREMENT.lock().expect("measurement lock");
     let state_root = tempfile::tempdir().expect("state root");
     let root = state_root.path().to_path_buf();
 

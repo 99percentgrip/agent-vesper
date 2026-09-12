@@ -283,6 +283,9 @@ Z.ai and Playwright MCP server descriptors.
 
 ## Verification
 
+- `tests/watcher_latency_gate.rs` serializes sibling tests around process-wide
+  descriptor measurements; sweep/input concurrency remains inside the measured test.
+
 - Driver CLI fixtures use the immutable executable `tests/container_cli_fixture.sh`
   through per-test symlinks with response/load state in temporary roots. Do not
   execute freshly written test scripts: concurrent fork/exec can retain a writable
