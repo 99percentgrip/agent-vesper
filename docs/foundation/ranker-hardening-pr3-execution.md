@@ -70,18 +70,29 @@ zero-blast-radius finding E7, now empirically confirmed on the hardened tree.)
 Sequence: version commit on `main` → all four push workflows green **on that
 commit** → immutable tag → release workflow builds/publishes from the tag.
 
-- Version commit: `chore(release): v0.22.0 — ranker hardening (chunk-tier alias decoupling) + advanced context paging + completion-reporting productization`
-- Push workflow receipts (canonical CI, MSRV, five-target foundation,
-  dual-arch web-driver) on the exact version commit — see §4.1.
-- Tag: `v0.22.0` created only after those workflows were green.
-- Registry PR: updated in place on the same branch per the
-  continuous-update contract.
+- Version commit: `9b56a9e` (`chore(release): v0.22.0`), preceded by the
+  hardening commit `fb121bf` on `main`.
+- Push workflow receipts on the exact version commit `9b56a9e` — see §4.1.
+- Tag: `v0.22.0` created only after all four workflows were green.
+- Registry PR #539 updated in place on the same branch (head `55973fe`),
+  title → v0.22.0, per the continuous-update contract.
 
-### 4.1 Workflow receipts
+### 4.1 Workflow receipts (verified via gh run list --json headSha)
 
-Recorded at release time (run IDs from `gh run list`):
-`ci.yml`, `msrv.yml`, `platform-foundation.yml` (5 targets),
-`web-driver.yml` — all green on the version commit before tagging.
+| workflow | run id | commit | result |
+|---|---|---|---|
+| pull-request-validation (canonical) | 34691160789 | 9b56a9e | success |
+| msrv | 34691160751 | 9b56a9e | success |
+| five-target-foundation | 34691160754 | 9b56a9e | success |
+| web-driver (dual-arch) | 34691160884 | 9b56a9e | success |
+| release (triggered by tag v0.22.0) | 34691968917 | tag | success |
+
+Post-publish verification: release `v0.22.0` carries 16 assets — five
+platform archives (darwin-x86_64, darwin-aarch64, linux-x86_64,
+linux-aarch64, windows-x86_64) each with a SHA-256 sidecar, plus both Linux
+web-driver images with immutable image IDs and sidecars. The published
+linux-x86_64 binary was downloaded, extracted, and executed:
+`agent-vesper-acp 0.22.0`.
 
 ## 5. Deviations
 
