@@ -998,6 +998,9 @@ mod selected_model_wire_tests {
                     Err(error) => panic!("fixture accept failed: {error}"),
                 }
             };
+            // Accepted sockets may inherit listener nonblocking mode on macOS.
+            // The bounded fixture reader below requires blocking reads.
+            stream.set_nonblocking(false).unwrap();
             stream
                 .set_read_timeout(Some(std::time::Duration::from_secs(10)))
                 .unwrap();

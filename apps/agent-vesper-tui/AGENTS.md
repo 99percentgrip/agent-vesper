@@ -927,6 +927,10 @@ work (ACP mid-turn-slash-grace parity; see `apps/agent-vesper-acp/AGENTS.md`).
 
 ## Verification
 
+- Loopback fixtures accepting from nonblocking listeners explicitly switch accepted
+  streams to blocking mode before applying read timeouts; macOS may inherit the
+  listener's mode. Retain bounded accept/read deadlines and wire assertions.
+
 - `ui::output_upgrade_reference` checks report alignment and actual frame cells
   across six themes and 40/80/120 columns, including clock-driven dots and source
   line numbers. `VESPER_OUTPUT_CAPTURE_DIR` optionally writes JSON frame captures
