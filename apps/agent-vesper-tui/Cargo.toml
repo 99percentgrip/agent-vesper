@@ -14,7 +14,7 @@ docker = ["vesper-harness/docker"]
 swarm = ["vesper-harness/swarm"]
 
 [dependencies]
-vesper-provider-openai = { path = "../../crates/vesper-provider-openai", version = "=0.21.9" }
+vesper-provider-openai = { path = "../../crates/vesper-provider-openai", version = "=0.22.0" }
 arboard.workspace = true
 base64.workspace = true
 crossterm.workspace = true
@@ -32,27 +32,27 @@ tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 uuid.workspace = true
-vesper-agent = { path = "../../crates/vesper-agent", version = "=0.21.9" }
-vesper-policy = { path = "../../crates/vesper-policy", version = "=0.21.9" }
-vesper-auth = { path = "../../crates/vesper-auth", version = "=0.21.9" }
-vesper-checkpoints = { path = "../../crates/vesper-checkpoints", version = "=0.21.9" }
-vesper-cognition = { path = "../../crates/vesper-cognition", version = "=0.21.9" }
-vesper-domain = { path = "../../crates/vesper-domain", version = "=0.21.9" }
-vesper-harness = { path = "../../crates/vesper-harness", version = "=0.21.9" }
-vesper-mcp = { path = "../../crates/vesper-mcp", version = "=0.21.9" }
-vesper-memory = { path = "../../crates/vesper-memory", version = "=0.21.9" }
-vesper-observability = { path = "../../crates/vesper-observability", version = "=0.21.9" }
-vesper-provider = { path = "../../crates/vesper-provider", version = "=0.21.9" }
-vesper-provider-glm = { path = "../../crates/vesper-provider-glm", version = "=0.21.9" }
-vesper-runtime = { path = "../../crates/vesper-runtime", version = "=0.21.9" }
-vesper-sessions = { path = "../../crates/vesper-sessions", version = "=0.21.9" }
+vesper-agent = { path = "../../crates/vesper-agent", version = "=0.22.0" }
+vesper-policy = { path = "../../crates/vesper-policy", version = "=0.22.0" }
+vesper-auth = { path = "../../crates/vesper-auth", version = "=0.22.0" }
+vesper-checkpoints = { path = "../../crates/vesper-checkpoints", version = "=0.22.0" }
+vesper-cognition = { path = "../../crates/vesper-cognition", version = "=0.22.0" }
+vesper-domain = { path = "../../crates/vesper-domain", version = "=0.22.0" }
+vesper-harness = { path = "../../crates/vesper-harness", version = "=0.22.0" }
+vesper-mcp = { path = "../../crates/vesper-mcp", version = "=0.22.0" }
+vesper-memory = { path = "../../crates/vesper-memory", version = "=0.22.0" }
+vesper-observability = { path = "../../crates/vesper-observability", version = "=0.22.0" }
+vesper-provider = { path = "../../crates/vesper-provider", version = "=0.22.0" }
+vesper-provider-glm = { path = "../../crates/vesper-provider-glm", version = "=0.22.0" }
+vesper-runtime = { path = "../../crates/vesper-runtime", version = "=0.22.0" }
+vesper-sessions = { path = "../../crates/vesper-sessions", version = "=0.22.0" }
 zeroize.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
 tempfile.workspace = true
-vesper-provider-synthetic = { path = "../../crates/vesper-provider-synthetic", version = "=0.21.9" }
-vesper-security = { path = "../../crates/vesper-security", version = "=0.21.9" }
+vesper-provider-synthetic = { path = "../../crates/vesper-provider-synthetic", version = "=0.22.0" }
+vesper-security = { path = "../../crates/vesper-security", version = "=0.22.0" }
 
 [lints]
 workspace = true
