@@ -5,8 +5,9 @@ Status: evidence index; acceptance status is scoped to each section.
 ## v0.22.2 Settings repair release — 2026-09-12
 
 [Release execution](v0.22.2-release-execution.md) tracks the authorized version
-bump, exact-commit gates, publication and existing registry PR update. Local
-TUI/plugin installation is reserved for the user's own update test.
+bump and completed publication: all four exact-commit gates passed on `c9c85fe`,
+release run 34703586198 published 16 assets, and registry PR #539 was updated
+in place. Local TUI/plugin installation remains reserved for the user's test.
 
 ## Native Settings and confirmed updates — 2026-09-12
 
