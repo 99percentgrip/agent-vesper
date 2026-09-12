@@ -2,6 +2,13 @@
 
 Status: evidence index; acceptance status is scoped to each section.
 
+## GitHub front-page refresh — 2026-09-13
+
+[Execution report](readme-refresh-execution.md) records the README update for
+native installation, Settings, activity rendering and confirmed updates. Alex’s
+five screenshots establish the Linux 0.22.2 → 0.22.3 update and restart, appended
+to the release report; other platform and coding-output visual checks remain open.
+
 ## v0.22.3 visual upgrade release — 2026-09-13
 
 [Release execution](v0.22.3-release-execution.md) tracks version synchronization,

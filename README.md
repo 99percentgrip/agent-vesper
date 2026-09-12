@@ -8,7 +8,7 @@
 [![CI](https://github.com/99percentgrip/agent-vesper/actions/workflows/ci.yml/badge.svg)](https://github.com/99percentgrip/agent-vesper/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-[Get started](#install) · [Capabilities](#what-you-can-do) · [Documentation](docs/README.md) · [Releases](https://github.com/99percentgrip/agent-vesper/releases)
+[Get started](#install) · [Capabilities](#what-you-can-do) · [Update](#update-or-uninstall) · [Documentation](docs/README.md) · [Releases](https://github.com/99percentgrip/agent-vesper/releases)
 
 </div>
 
@@ -21,12 +21,24 @@ Choose **Z.ai, OpenAI, or local models through LM Studio**. Vesper runs on your 
 | Capability | What it means for your work |
 |---|---|
 | **Work on real code** | Explore repositories, make changes, run tests, and review results with tool-permission controls. |
+| **Follow the work clearly** | Colored activity, live status dots, expandable command output, syntax-colored diffs with line numbers, and aligned reports in the native terminal. |
 | **Plan and track tasks** | Review a plan and follow progress in the terminal or your editor. Unfinished plans trigger bounded continuation. |
 | **Keep project knowledge** | Save preferences and project facts, search memory, and control what belongs to one project or follows you across projects. |
-| **Check completion against requirements** | Enroll a requirements document and require current verification evidence before the harness reports completion. Missing or failing checks stay visible. |
+| **Check completion against requirements** | Enable enforced completion in Settings. The agent recognizes and remembers the task’s requirements document; current verification evidence is required before completion. Missing or failing checks stay visible. |
 | **Review visual work** | Use VesperLens to review local HTML artifacts in a browser and return annotations or answers to planning questions. |
 | **Use the web when needed** | Enable contained fetching, scraping, crawling, and browser interaction from Settings. Requires Docker or Podman. |
 | **Extend your workflow** | Use bundled skills, connect MCP tools, and enable reasoning or multi-worker workflows when a task needs them. |
+
+<details>
+<summary><strong>Preview the terminal output</strong></summary>
+
+![Native terminal renderer example in the Nord theme: colored commands, green success dots, red failure dots, orange running dots, numbered diffs, and aligned reports](docs/foundation/output-reference-nord.png)
+
+Example captured from Vesper’s renderer with sample activity. Running dots blink
+orange; completed tools show green for success or red for failure. Use **Ctrl+T**
+to expand activity output and diffs. Six themes are available in Settings.
+
+</details>
 
 [Explore the user guide →](docs/using-vesper.md)
 
@@ -65,7 +77,13 @@ cd path/to/your-project
 agent-vesper-tui
 ```
 
-Complete the authentication screen. Use **`/settings` → Providers** to select or change your provider, and restart when prompted.
+Complete the authentication screen. On the welcome screen, open **Settings** to
+choose your provider, model, permissions, and theme, then select **Start coding**.
+During a conversation, use **`/settings`** to return to these controls.
+
+When you leave Settings after making ordinary changes, choose **Save changes**,
+**Discard changes**, or **Keep editing**. Provider setup has its own confirmation;
+restart when prompted.
 
 | Provider | What you need |
 |---|---|
@@ -95,7 +113,14 @@ Start with the app and your chosen provider. Add dependencies only for the featu
 
 ## Update or uninstall
 
-**Update:** rerun the installer, then restart Vesper. Upgrades preserve co-located user state and your existing skill edits.
+**Update from the app:** on the welcome screen, choose **Check for updates →
+Install update** and confirm. Vesper shows installation progress and tells you
+when to close and reopen it. Restart any running editor agents too. On Windows,
+the installer runs in a separate console after Vesper closes.
+
+You can also rerun the installer above. Updates verify the package checksum and
+preserve co-located user state and existing skill edits.
+[Update details and version selection](docs/installation.md#update-or-choose-a-version).
 
 **Uninstall:** back up data stored inside the application bundle first, including global memory at its default Linux/macOS location. The uninstaller removes that directory; provider credentials are preserved. [Paths and backup details](docs/installation.md#uninstall).
 

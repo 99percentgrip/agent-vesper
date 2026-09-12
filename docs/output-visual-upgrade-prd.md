@@ -25,10 +25,15 @@ Status and exact evidence: [execution report](foundation/output-visual-upgrade-e
 - Output excerpts strip terminal controls and known credential patterns. This is
   bounded presentation, not a guarantee that arbitrary shell output is nonsensitive.
 - No provider calls or real user-state writes in verification. Public release,
-  version bump and installation are separate from this implementation. Preserve the
-  installed 0.22.2 TUI for Alex's next-version update test.
+  version bump and installation are separate from this implementation. Alex owns
+  local update acceptance; release work does not authorize local installation.
 - The execution report records current evidence, failures encountered and remaining
   platform/user acceptance. Code and plan checkmarks alone do not close requirements.
 
 [Release execution](foundation/v0.22.3-release-execution.md) tracks the authorized
-0.22.3 publication and the preserved local installation for updater testing.
+0.22.3 publication, the installation preserved before testing, and Alex’s
+subsequent successful Linux update and restart.
+
+[Front-page refresh](foundation/readme-refresh-execution.md) records user-facing
+publication of the shipped controls and the subsequent user-supplied Linux updater
+acceptance in the v0.22.3 release report.

@@ -142,10 +142,9 @@ When the user requests a durable behavior change, record it here or in the relev
   source tokens. Tool dots reflect actual outcomes: green success, blinking orange
   while running, red failure; missing completion never implies success. Reports
   share a consistent left edge with hanging list indents and responsive tables.
-- For the next release, leave the installed TUI at 0.22.2 so Alex can test the
-  native Check for updates → confirmed installation workflow. Commit/push/version
-  and release work does not authorize replacing that local installation; wait for
-  Alex's explicit installation instruction.
+- Commit/push/version and release work does not authorize replacing Alex's local
+  installation. Leave native update testing to Alex unless he explicitly requests
+  installation; do not run an installer merely to verify a release.
 
 ## Project Contracts
 

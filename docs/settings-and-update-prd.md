@@ -36,3 +36,7 @@ complete by the existence of code or this table.
 
 [Release execution](foundation/v0.22.2-release-execution.md) tracks the authorized
 0.22.2 publication separately from the user-reserved installation test.
+
+[Front-page refresh](foundation/readme-refresh-execution.md) records user-facing
+publication of the shipped controls and the subsequent user-supplied Linux updater
+acceptance in the v0.22.3 release report.
