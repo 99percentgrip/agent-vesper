@@ -865,7 +865,14 @@ fn rank_chunks<'a>(
         .iter()
         .map(|entry| {
             let routing_text = condition.routing_text_for(entry);
-            let entry_tokens = semantic_tokens(&routing_text);
+            // Option A (ranker-hardening PRD): the chunk pool is RAW —
+            // stemmed, stop-worded, but NOT alias-expanded. The prompt-side
+            // pool (`prompt_tokens`, built by `semantic_tokens` at :422)
+            // keeps its expansion. One-sided expansion bounds any
+            // alias-driven intersection to a single literal token (520 pts,
+            // PRD §1 residual), eliminating the manufactured multi-token
+            // fan-out that displaced honest targets (PR-4 incident).
+            let entry_tokens = raw_semantic_tokens(&routing_text);
             let overlap = prompt_tokens.intersection(&entry_tokens).count();
             let similarity = hashed_cosine(prompt_tokens, &entry_tokens);
             let mut score = 0_i32;
@@ -1287,6 +1294,31 @@ fn prompt_file_extensions(prompt: &str) -> BTreeSet<String> {
         })
         .filter(|extension| !extension.is_empty() && extension.len() <= 12)
         .collect()
+}
+
+/// Same normalization, stop-word filtering, and stemming as
+/// [`semantic_tokens`], but WITHOUT the `SEMANTIC_ALIASES` expansion loop.
+///
+/// Used only by the chunk tier (`rank_chunks`): chunk pools must not
+/// inherit alias expansion they never authored. This is the ranker-hardening
+/// PRD Option A decoupling — see `docs/ranker-hardening-prd.md` §1 and the
+/// cross-talk pin in `tests/chunk_routing_eval.rs`. The prompt-side pool
+/// keeps its expansion (skill-tier behavior, out of scope), leaving the
+/// disclosed 520-pt literal residual: a prompt token that alias-expands may
+/// still meet ONE literal token in chunk routing text, but the multi-token
+/// fan-out (`deploy`→`{publish, release, production}` meeting
+/// `release`→`{publish, deploy, version}` for a manufactured 3-token
+/// intersection) is impossible once one side is raw.
+fn raw_semantic_tokens(text: &str) -> BTreeSet<String> {
+    let mut tokens = BTreeSet::new();
+    for raw in text.split(|character: char| !character.is_alphanumeric()) {
+        let token = stem(raw);
+        if token.len() < 2 || STOP_WORDS.contains(&token.as_str()) {
+            continue;
+        }
+        tokens.insert(token);
+    }
+    tokens
 }
 
 fn semantic_tokens(text: &str) -> BTreeSet<String> {

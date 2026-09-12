@@ -314,6 +314,121 @@ fn d3_verdict_follows_the_decision_rule() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// PR-1 anchor (ranker-hardening PRD, Option D): the cross-talk pin
+//
+// A fixture whose ONLY overlap between prompt and chunk routing text is
+// alias-manufactured, reproducing the PR-4 incident shape:
+//   prompt slug `deploy-runbook` → token `deploy` is an alias SOURCE
+//   (`:1384`) → prompt pool gains {publish, release, production};
+//   rollback's literal `release` (`:1385` related) → chunk pool gains
+//   {publish, deploy, version}; the join at `:869` manufactures
+//   {deploy, publish, release} = 3 tokens = 1,560 pts (:873).
+//
+// TODAY this fixture FAILS: rollback rides manufactured overlap (1,560 +
+// cosine ≈ ≥1,700) past migrate's honest two-token score (1,040 + cosine)
+// and displaces it. It must keep failing until Option A (chunk pools from
+// raw stemmed tokens) lands; afterwards the residual is bounded to one
+// 520-pt literal match (prompt `deploy→release` expansion × rollback's
+// literal `release`), which must LOSE to migrate's honest 1,040.
+//
+// Deliberately NOT part of CORPUS: the pin must not perturb the D3 verdict
+// inputs or the canonical results table (PRD M4).
+// ---------------------------------------------------------------------------
+
+/// Builds the pin skill directly (mirrors `build_store`'s body, but with a
+/// runtime slug so the manifest `name:` matches the directory). The manifest
+/// text is PR-4's `cutover-runbook` corpus entry with the slug substituted:
+/// rollback "Undo an unsuccessful release" (literal `release`, related to the
+/// alias row `:1385`), migrate carrying `canary, rehearsal` in key_elements
+/// (the probe's honest target), certificates distinct.
+fn build_pin_store(slug: &str) -> (tempfile::TempDir, SkillStore) {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path().join("memory-root");
+    std::fs::create_dir_all(&root).unwrap();
+    let store = SkillStore::open(&root).unwrap();
+    let manifest = format!(
+        "---\nname: {slug}\ndescription: Operational runbook for staging and production cutover procedures\nchunks:\n  - name: rollback\n    description: Undo an unsuccessful release\n    summary: Database rollback choreography and restore points\n    key_elements: [restore-point, choreography]\n  - name: migrate\n    description: Apply forward database changes\n    summary: Forward-only migration discipline and ordering\n    key_elements: [canary, rehearsal]\n  - name: certificates\n    description: Rotate TLS certificates\n    summary: Certificate rotation ceremony and expiry monitoring\n    key_elements: [expiry, ceremony]\n"
+    );
+    store
+        .write(
+            &SkillSlug::new(slug).unwrap(),
+            &format!("{manifest}---\n# {slug}\nPrimary body."),
+        )
+        .unwrap();
+    for (name, body) in [
+        ("rollback", "Rollback chunk body."),
+        ("migrate", "Migration chunk body."),
+        ("certificates", "Certificate chunk body."),
+    ] {
+        let dir = root.join("skills").join(slug).join("chunks");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(format!("{name}.md")), body).unwrap();
+    }
+    (directory, store)
+}
+
+/// Runs the probe under full metadata routing and returns the routed
+/// chunk-name order of the first selected skill.
+fn routed_positions(store: &SkillStore, prompt: &str) -> Vec<String> {
+    let env = QueryEnv::default();
+    let report = store.orchestrate_with_condition(
+        &env.query(prompt),
+        ChunkRoutingCondition::SummaryKeyElements,
+    );
+    assert!(
+        !report.selected.is_empty(),
+        "pin skill must be selected (explicit marker): {prompt}"
+    );
+    report.selected[0]
+        .chunks
+        .iter()
+        .map(|c| c.name.clone())
+        .collect()
+}
+
+/// The pin: slug token `deploy` is an alias source; the ONLY prompt<->rollback
+/// overlap is manufactured by the two-sided alias fan-out. Desired behavior
+/// is `migrate` first (honest two-token key_elements overlap: canary,
+/// rehearsal). Pre-fix this FAILS: rollback's manufactured 3-token overlap
+/// (1,560 pts) plus cosine outranks migrate. Post-Option-A it must PASS:
+/// rollback falls to its bounded 520-pt literal residual, which loses to
+/// migrate's honest 1,040.
+///
+/// Post-Option-A invariant: this test must now PASS. Any change that
+/// reintroduces two-sided alias expansion into the chunk tier (or degrades
+/// migrate's honest overlap) fails it. The pre-fix failure receipt is
+/// recorded in `docs/foundation/ranker-hardening-pr1-execution.md` §4.1.
+#[test]
+fn cross_talk_pin_deploy_slug_manufactures_rollback_overlap() {
+    let (_dir, store) = build_pin_store("deploy-runbook");
+    let positions = routed_positions(&store, "use skill deploy-runbook: canary rehearsal");
+    assert_eq!(
+        positions.first().map(String::as_str),
+        Some("migrate"),
+        "\nCROSS-TALK PIN regression: chunk-tier alias expansion leaked back.\n\
+         Expected migrate first (honest two-token overlap); got rollback,\n\
+         which can only win via the manufactured two-sided fan-out\n\
+         ({{deploy, publish, release}} = 1,560 pts).\n\
+         positions: {positions:?}"
+    );
+}
+
+/// No-alias control: identical fixture shape and probe, but an alias-free
+/// slug. Proves the displacement mechanism is the alias fan-out, not general
+/// overlap. Must pass BOTH pre- and post-fix - Option A is chunk-pool-local
+/// and must never degrade honest overlap.
+#[test]
+fn cross_talk_control_no_alias_slug_routes_honestly() {
+    let (_dir, store) = build_pin_store("cutover-runbook");
+    let positions = routed_positions(&store, "use skill cutover-runbook: canary rehearsal");
+    assert_eq!(
+        positions.first().map(String::as_str),
+        Some("migrate"),
+        "no-alias control must route migrate first, got {positions:?}"
+    );
+}
+
 // keep Path import used for future corpus-directory variants
 #[allow(dead_code)]
 fn _path_helper(_: &Path) {}

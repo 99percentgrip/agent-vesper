@@ -111,6 +111,12 @@ subsystem that backs the Tier C Phase 8 un-stubbed commands
   composition boundary that legitimately depends on both `vesper-memory`
   and `vesper-agent` (the architecture gate rejects a direct
   `vesper-agent → vesper-memory` edge).
+  - Ranker hardening (its PRD): the chunk tier tokenizes routing text
+    with `raw_semantic_tokens` — stemmed, stop-worded, NOT alias-expanded.
+    The prompt-side pool keeps expansion (skill-tier scope). The
+    cross-talk pin (`tests/chunk_routing_eval.rs::cross_talk_pin_…`)
+    guards this permanently: two-sided chunk-tier alias expansion
+    fails it.
 
 ## Work Guidance
 

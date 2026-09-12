@@ -1,6 +1,6 @@
 # Ranker Hardening PRD
 
-- **Status:** Planning
+- **Status:** COMPLETE — PR-3 re-eval passed the stop rule (canonical table identical under the hardened ranker; verdict re-derived ADOPT)
 - **Target:** `crates/vesper-memory` (chunk-tier routing only)
 - **Owner:** `vesper-memory` maintainers; docs owned by `docs/AGENTS.md`
 - **Related:** `docs/architecture/recon_alias_crosstalk.md` (recon evidence),
