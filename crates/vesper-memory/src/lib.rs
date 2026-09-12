@@ -46,7 +46,8 @@ pub use awareness::{AwarenessLedger, MAX_RECORDS as MAX_AWARENESS_RECORDS};
 pub use error::MemoryError;
 pub use profile::{MAX_PROFILE_BYTES, MAX_PROFILE_LINE_CHARS, PROFILE_FILENAME, UserProfile};
 pub use skill_orchestrator::{
-    AUTO_ACTIVATION_SCORE, LoadedSkill, MAX_SELECTED_SKILLS, MAX_SKILL_CONTEXT_CHARS,
+    AUTO_ACTIVATION_SCORE, CHUNK_METADATA_ROUTING_ENABLED, ChunkRoutingCondition, LoadedChunk,
+    LoadedSkill, MAX_CHUNKS_PER_SELECTION, MAX_SELECTED_SKILLS, MAX_SKILL_CONTEXT_CHARS,
     MAX_TOTAL_SKILL_CONTEXT_CHARS, SkillCandidate, SkillExecutionMode, SkillInvocationPolicy,
     SkillMetadata, SkillOutcomeTracker, SkillRisk, SkillRoutingQuery, SkillRoutingReport,
     parse_metadata,
@@ -57,6 +58,7 @@ pub use skills::{
 };
 pub use store::MemoryStore;
 pub use types::{
-    Confidence, EpistemicRecord, EvidenceEvent, EvidenceSource, MAX_ENTRIES, MAX_EVIDENCE,
-    MAX_ID_CHARS, MAX_SCOPES, MAX_SUMMARY_CHARS, MemoryEntry, MemoryKind, RecordStatus, SkillSlug,
+    Confidence, EpistemicRecord, EvidenceEvent, EvidenceSource, MAX_CHUNK_BYTES,
+    MAX_CHUNKS_PER_SKILL, MAX_ENTRIES, MAX_EVIDENCE, MAX_ID_CHARS, MAX_SCOPES, MAX_SUMMARY_CHARS,
+    MemoryEntry, MemoryKind, RecordStatus, SkillChunkManifestEntry, SkillSlug,
 };

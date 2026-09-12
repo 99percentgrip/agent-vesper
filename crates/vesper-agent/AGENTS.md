@@ -328,6 +328,12 @@ the multi-turn, tool-executing layer above it.
   -- --ignored --nocapture`. Zero-breakage: the binary is never built by
   the canonical `cargo xtask verify` gate's
   `cargo test --workspace --all-features` unless explicitly invoked.
+  **Architecture boundary note (advanced-context-paging PR-3):**
+  `vesper-agent` remains skill-unaware; the AC-3 composition proofs for
+  skill-chunk envelopes live in `crates/vesper-harness/tests/
+  context_paging_composition.rs` because the architecture gate forbids a
+  `vesper-agent → vesper-memory` dependency edge (dev-scope included).
+  The harness is the composition boundary owning both dependencies.
 - `src/vro/strategies.rs` — VRO-4 + VRO-6 strategy handlers (PRD §11.4 +
   §11.5 + §11.7 + §11.8). `normalize_output` strips whitespace + sorts JSON
   keys for canonical comparison (PRD §11.4). `quorum_threshold(n) =

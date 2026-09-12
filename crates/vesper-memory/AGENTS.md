@@ -69,6 +69,48 @@ subsystem that backs the Tier C Phase 8 un-stubbed commands
 - Catalog discovery reads at most 32,000 bytes from each skill file. Full
   bodies are read only for selected inline skills; the main process never
   reads a selected isolated skill's full body.
+- The on-demand chunk tier (advanced-context-paging PRD PR-1, D1/D2) is
+  declared by a nested `chunks:` frontmatter block (one entry per chunk:
+  `name`, required `description`, optional `summary`, optional
+  `key_elements`). The block is split out before flat frontmatter parsing
+  so nested `description:` lines never corrupt skill-level fields. Chunk
+  files live under `<root>/skills/<slug>/chunks/<name>.md` and are read
+  through `read_chunk` (global-layer fallback included). Enforcement is
+  fail-closed at every layer: `MAX_CHUNKS_PER_SKILL = 32`,
+  `MAX_CHUNK_BYTES = 24_000`, plus per-field caps (description 240,
+  summary 480, ≤ 8 key elements), duplicate-name rejection, and
+  manifest-vs-disk validation (every declared chunk must exist and be in
+  size). Any violation makes the skill routing-ineligible with an explicit
+  `invalid chunk manifest: …` reason — never a silent truncation. Skills
+  without a `chunks:` block take the byte-identical pre-chunk code path:
+  no extra filesystem reads, identical catalog summaries, identical
+  routing reports (`tests/chunk_store.rs` G5 proofs). PR-4's D3 eval
+  returned **ADOPT** (2026-09-12,
+  `docs/foundation/context-paging-pr4-eval.md`), so
+  `CHUNK_METADATA_ROUTING_ENABLED = true` ships — automatic chunk routing
+  feeds on `description` + `summary` + `key_elements`, with the eval
+  harness (`tests/chunk_routing_eval.rs`) asserting flag/verdict
+  consistency. PR-2 adds two-level routing:
+  a bounded second pass ranks each selected inline skill's manifest
+  entries (feed per the shipped condition; `orchestrate_with_condition`
+  is the eval seam), loads at most
+  `MAX_CHUNKS_PER_SELECTION = 3` bodies into `SkillRoutingReport.chunks`
+  (`LoadedChunk { skill, name, body }`), counting them against the
+  per-skill 24K pool and the shared 60K total; over-budget or unreadable
+  chunks are skipped with `skill::chunk` rejection reasons, never
+  truncated; isolated skills load no chunks; zero-overlap chunks never
+  auto-load. `tests/skill_routing.rs` owns the AC-2 proofs. PR-3 moves the
+  chunk payloads onto `LoadedSkill` (the report-level `chunks` view stays
+  as a flattened accessor) and emits them in `context()` inside the skill's
+  envelope block as named
+  `<agent-vesper-skill-chunk skill name>` sections after the primary
+  slice. Hosts append the envelope transiently and restore the original
+  user message before persistence (AC-3); direct, VRO, and ReAct paths all
+  consume the same host-composed history. AC-3 integration proofs live in
+  `crates/vesper-harness/tests/context_paging_composition.rs` — the
+  composition boundary that legitimately depends on both `vesper-memory`
+  and `vesper-agent` (the architecture gate rejects a direct
+  `vesper-agent → vesper-memory` edge).
 
 ## Work Guidance
 

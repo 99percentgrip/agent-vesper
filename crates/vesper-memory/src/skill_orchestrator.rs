@@ -7,6 +7,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Mutex;
 
+use crate::types::{MAX_CHUNK_KEY_ELEMENTS, MAX_CHUNKS_PER_SKILL, SkillChunkManifestEntry};
 use crate::{SkillBundle, SkillStore, SkillSummary};
 
 /// Maximum number of skills composed into one turn.
@@ -17,6 +18,91 @@ pub const MAX_SKILL_CONTEXT_CHARS: usize = 24_000;
 pub const MAX_TOTAL_SKILL_CONTEXT_CHARS: usize = 60_000;
 /// Minimum score for automatic activation.
 pub const AUTO_ACTIVATION_SCORE: u16 = 2_200;
+/// Maximum chunk bodies loaded per selected skill (PRD D1/PR-2). Chunk
+/// loads additionally share the per-skill and total character budgets.
+pub const MAX_CHUNKS_PER_SELECTION: usize = 3;
+/// D3 verdict (2026-09-12, `docs/foundation/context-paging-pr4-eval.md`):
+/// **ADOPT** — improvement repeated across both eval task families with
+/// measured overhead (16 semantic tokens/skill), so automatic
+/// chunk-metadata routing feeds on `description` + `summary` +
+/// `key_elements`. Flipping back requires a superseding eval report.
+pub const CHUNK_METADATA_ROUTING_ENABLED: bool = true;
+
+/// D3 eval condition (advanced-context-paging PRD §4-D3): which manifest
+/// fields feed automatic chunk routing. Production routing uses
+/// [`CHUNK_METADATA_ROUTING_ENABLED`] to select the default; the PR-4
+/// harness varies this axis alone across
+/// FLAT_DESCRIPTION / SUMMARY_ONLY / SUMMARY_KEY_ELEMENTS.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChunkRoutingCondition {
+    /// Status quo: only each chunk's `description` feeds ranking.
+    FlatDescription,
+    /// `description` + optional `summary`.
+    SummaryOnly,
+    /// `description` + optional `summary` + optional `key_elements`.
+    SummaryKeyElements,
+}
+
+impl ChunkRoutingCondition {
+    /// The production-selected condition per the shipped flag state.
+    #[must_use]
+    pub fn production() -> Self {
+        if CHUNK_METADATA_ROUTING_ENABLED {
+            Self::SummaryKeyElements
+        } else {
+            Self::FlatDescription
+        }
+    }
+
+    /// Routing text contributed by one manifest entry under this condition.
+    #[must_use]
+    fn routing_text_for(&self, entry: &SkillChunkManifestEntry) -> String {
+        let mut text = entry.description.clone();
+        match self {
+            Self::FlatDescription => {}
+            Self::SummaryOnly => {
+                if let Some(summary) = &entry.summary {
+                    text.push(' ');
+                    text.push_str(summary);
+                }
+            }
+            Self::SummaryKeyElements => {
+                if let Some(summary) = &entry.summary {
+                    text.push(' ');
+                    text.push_str(summary);
+                }
+                if let Some(elements) = &entry.key_elements {
+                    for element in elements {
+                        text.push(' ');
+                        text.push_str(element);
+                    }
+                }
+            }
+        }
+        text
+    }
+
+    /// Metadata token overhead this condition adds to the always-loaded
+    /// routing tier, in semantic-token units (the D3 metric pair: routing
+    /// success AND overhead must be reported together).
+    #[must_use]
+    fn metadata_token_overhead(&self, manifest: &[SkillChunkManifestEntry]) -> usize {
+        // Audit F2: each condition's overhead must be measured against ITS
+        // OWN routing text — SUMMARY_ONLY must not inherit
+        // SUMMARY_KEY_ELEMENTS tokens it never reads.
+        manifest
+            .iter()
+            .map(|entry| {
+                let own = semantic_tokens(&self.routing_text_for(entry));
+                let flat = semantic_tokens(&Self::FlatDescription.routing_text_for(entry));
+                match self {
+                    Self::FlatDescription => 0,
+                    Self::SummaryOnly | Self::SummaryKeyElements => own.difference(&flat).count(),
+                }
+            })
+            .sum()
+    }
+}
 
 /// Who may activate a skill.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -70,6 +156,23 @@ pub struct SkillMetadata {
     pub risk: SkillRisk,
     pub pinned: bool,
     pub archived: bool,
+    /// Declared on-demand chunk manifest (advanced-context-paging PRD D1).
+    /// Empty for every skill without a `chunks:` frontmatter block.
+    pub chunks: Vec<SkillChunkManifestEntry>,
+    /// Fail-closed manifest rejection reason. `Some` makes the skill
+    /// ineligible for routing (over-limit counts, malformed entries, or
+    /// oversize fields); never a silent truncation. Partial valid entries
+    /// stay in `chunks` for diagnostics only.
+    pub chunk_manifest_error: Option<String>,
+}
+
+impl SkillMetadata {
+    /// True when a `chunks:` block (valid or not) was declared. Skills
+    /// without one take the byte-identical pre-chunk code path (G5).
+    #[must_use]
+    pub fn declares_chunks(&self) -> bool {
+        !self.chunks.is_empty() || self.chunk_manifest_error.is_some()
+    }
 }
 
 /// One request to the skill router.
@@ -100,6 +203,23 @@ pub struct LoadedSkill {
     pub candidate: SkillCandidate,
     pub body: String,
     pub truncated: bool,
+    /// On-demand chunk bodies routed for this skill (PRD PR-2/PR-3).
+    /// Injected transiently inside the skill's envelope block; hosts
+    /// restore the original user message before persistence (AC-3).
+    pub chunks: Vec<LoadedChunk>,
+}
+
+/// One on-demand chunk body routed for a selected skill (PRD PR-2).
+/// Emission into the model-facing envelope is PR-3 composition; this type
+/// is the routing-tier payload only.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoadedChunk {
+    /// Owning skill slug.
+    pub skill: String,
+    /// Chunk name (manifest entry name).
+    pub name: String,
+    /// Full chunk body (already bounded by `MAX_CHUNK_BYTES`).
+    pub body: String,
 }
 
 /// Observable routing result. Rejections are names/reasons only and never
@@ -109,6 +229,10 @@ pub struct SkillRoutingReport {
     pub selected: Vec<LoadedSkill>,
     /// Explicitly activated bundles and their bounded composition guidance.
     pub selected_bundles: Vec<(String, String)>,
+    /// On-demand chunk bodies routed for selected inline skills (PR-2).
+    /// Empty when no selected skill declares a valid chunk manifest, so
+    /// chunk-less routing reports are unchanged (G5).
+    pub chunks: Vec<LoadedChunk>,
     pub considered: usize,
     pub rejected: Vec<(String, String)>,
     /// User-facing failure for an explicit skill/bundle request. Automatic
@@ -169,7 +293,9 @@ impl SkillOutcomeTracker {
 }
 
 impl SkillRoutingReport {
-    /// Model-facing progressive-disclosure envelope.
+    /// Inline-instruction composition (primary slice + routed chunks) for
+    /// the active provider request only. Chunks ride the same transient
+    /// envelope: hosts append and restore, never persist (AC-3).
     #[must_use]
     pub fn context(&self) -> Option<String> {
         if self.selected.is_empty() {
@@ -216,6 +342,18 @@ the skill body in the main conversation.\n",
             } else {
                 output.push_str(&loaded.body);
             }
+            // Advanced context paging (PRD PR-3): the primary slice is
+            // followed by its routed on-demand chunks, each wrapped in a
+            // named block so the model can attribute provenance. Emission
+            // is transient — hosts append this envelope to the active
+            // provider request and restore the original user message
+            // before persistence (AC-3), so chunk bodies never persist.
+            for chunk in &loaded.chunks {
+                output.push_str(&format!(
+                    "\n<agent-vesper-skill-chunk skill=\"{}\" name=\"{}\">\n{}\n</agent-vesper-skill-chunk>\n",
+                    loaded.candidate.metadata.slug, chunk.name, chunk.body
+                ));
+            }
             output.push_str("\n</agent-vesper-skill>\n");
         }
         Some(output)
@@ -231,9 +369,49 @@ the skill body in the main conversation.\n",
 }
 
 impl SkillStore {
+    /// D3 eval metrics for the routed chunk tier (PR-4): per selected
+    /// skill, the number of routed chunks and the semantic-token overhead
+    /// the given condition adds to the always-loaded routing tier relative
+    /// to the flat-description baseline. Routing success itself is
+    /// measured by the harness against expected target chunks; this
+    /// accessor supplies the overhead half of the metric pair.
+    #[must_use]
+    pub fn chunk_routing_metrics(
+        &self,
+        report: &SkillRoutingReport,
+        condition: ChunkRoutingCondition,
+    ) -> Vec<(String, usize, usize)> {
+        report
+            .selected
+            .iter()
+            .map(|skill| {
+                let overhead = condition.metadata_token_overhead(&skill.candidate.metadata.chunks);
+                (
+                    skill.candidate.metadata.slug.clone(),
+                    skill.chunks.len(),
+                    overhead,
+                )
+            })
+            .collect()
+    }
+
     /// Selects and loads the smallest useful skill set for one prompt.
     #[must_use]
     pub fn orchestrate(&self, query: &SkillRoutingQuery<'_>) -> SkillRoutingReport {
+        self.orchestrate_with_condition(query, ChunkRoutingCondition::production())
+    }
+
+    /// D3 eval entry point (advanced-context-paging PRD §4-D3): identical
+    /// to [`orchestrate`](Self::orchestrate) except the chunk-routing
+    /// condition is caller-selected, varying that single axis while every
+    /// other input stays fixed. Used by the PR-4 harness; production
+    /// callers use `orchestrate`, which pins the shipped flag state.
+    #[must_use]
+    pub fn orchestrate_with_condition(
+        &self,
+        query: &SkillRoutingQuery<'_>,
+        condition: ChunkRoutingCondition,
+    ) -> SkillRoutingReport {
         let summaries = self.list();
         let bundles = self.list_bundles();
         let mut report = SkillRoutingReport {
@@ -318,6 +496,37 @@ impl SkillStore {
             let metadata = parse_metadata(&summary, &catalog_prefix);
             let directly_explicit = explicit.as_deref() == Some(metadata.slug.as_str());
             let bundle_explicit = bundle_members.contains(&metadata.slug);
+            // Audit F4: `archived` is a deliberate user state and must be
+            // reported even when a manifest defect also exists.
+            if metadata.archived {
+                report
+                    .rejected
+                    .push((metadata.slug.clone(), "archived".into()));
+                continue;
+            }
+            if metadata.declares_chunks()
+                && let Some(reason) = self.validate_chunk_manifest(&slug, &metadata.chunks)
+            {
+                // Audit F3: an explicit (or bundle) request must fail
+                // loudly — a silent `continue` here swallows the user's
+                // named-skill request, unlike parse-level manifest errors.
+                if directly_explicit {
+                    report.explicit_error = Some(format!(
+                        "skill `{}` is unavailable: invalid chunk manifest: {reason}",
+                        metadata.slug
+                    ));
+                } else if bundle_explicit {
+                    report.explicit_error = Some(format!(
+                        "skill bundle member `{}` is unavailable: invalid chunk manifest: {reason}",
+                        metadata.slug
+                    ));
+                }
+                report.rejected.push((
+                    metadata.slug.clone(),
+                    format!("invalid chunk manifest: {reason}"),
+                ));
+                continue;
+            }
             let user_explicit = directly_explicit || bundle_explicit;
             if let Some(reason) = ineligible_reason(&metadata, query, user_explicit, &prompt) {
                 if directly_explicit {
@@ -411,12 +620,86 @@ impl SkillStore {
                 total_chars = total_chars.saturating_add(body.chars().count());
                 (body, truncated)
             };
-            report.selected.push(LoadedSkill {
+            let mut selected_skill = LoadedSkill {
                 candidate,
                 body,
                 truncated,
-            });
+                chunks: Vec::new(),
+            };
+            // PR-2 second pass: bounded on-demand chunk routing for inline
+            // skills with a valid manifest. Chunks draw from the same
+            // per-skill and total character budgets as the body (E5); an
+            // unreadable or over-budget chunk is skipped (fail-closed),
+            // never silently truncated. Isolated skills never load chunks
+            // (the main context stays identity-only for them).
+            if selected_skill.candidate.metadata.execution == SkillExecutionMode::Inline
+                && !selected_skill.candidate.metadata.chunks.is_empty()
+            {
+                let slug = crate::SkillSlug::new(&selected_skill.candidate.metadata.slug)
+                    .expect("validated slug");
+                // Audit F1: the per-skill allowance DECREMENTS as chunks
+                // load — without this, N chunks each fitting the initial
+                // allowance collectively exceed the per-skill cap.
+                let mut per_skill_remaining =
+                    MAX_SKILL_CONTEXT_CHARS.saturating_sub(selected_skill.body.chars().count());
+                for ranked in rank_chunks(
+                    condition,
+                    &prompt_tokens,
+                    &prompt,
+                    &selected_skill.candidate.metadata.chunks,
+                )
+                .into_iter()
+                .take(MAX_CHUNKS_PER_SELECTION)
+                {
+                    let total_remaining = MAX_TOTAL_SKILL_CONTEXT_CHARS.saturating_sub(total_chars);
+                    let allowance = per_skill_remaining.min(total_remaining);
+                    if allowance == 0 {
+                        break;
+                    }
+                    match self.read_chunk(&slug, &ranked.entry.name) {
+                        Ok(chunk_body) => {
+                            if chunk_body.chars().count() > allowance {
+                                // Over-budget chunk: skipped, not truncated.
+                                report.rejected.push((
+                                    format!(
+                                        "{}::{}",
+                                        selected_skill.candidate.metadata.slug, ranked.entry.name
+                                    ),
+                                    "chunk exceeds context budget".into(),
+                                ));
+                                continue;
+                            }
+                            total_chars = total_chars.saturating_add(chunk_body.chars().count());
+                            per_skill_remaining =
+                                per_skill_remaining.saturating_sub(chunk_body.chars().count());
+                            selected_skill.chunks.push(LoadedChunk {
+                                skill: selected_skill.candidate.metadata.slug.clone(),
+                                name: ranked.entry.name.clone(),
+                                body: chunk_body,
+                            });
+                        }
+                        Err(_) => {
+                            // Unreadable or over the read-time byte cap: skipped.
+                            report.rejected.push((
+                                format!(
+                                    "{}::{}",
+                                    selected_skill.candidate.metadata.slug, ranked.entry.name
+                                ),
+                                "chunk unreadable or over byte cap".into(),
+                            ));
+                        }
+                    }
+                }
+            }
+            report.selected.push(selected_skill);
         }
+        // PR-3: chunk payloads live on each LoadedSkill; the report-level
+        // view stays available for hosts/tests that want the flat list.
+        report.chunks = report
+            .selected
+            .iter()
+            .flat_map(|skill| skill.chunks.iter().cloned())
+            .collect();
         report
     }
 
@@ -433,7 +716,12 @@ fn ineligible_reason(
     prompt: &str,
 ) -> Option<String> {
     if metadata.archived {
+        // Audit F4: `archived` is a deliberate user state; it must not be
+        // masked by an incidental authoring defect in the manifest.
         return Some("archived".into());
+    }
+    if let Some(reason) = &metadata.chunk_manifest_error {
+        return Some(format!("invalid chunk manifest: {reason}"));
     }
     if metadata.invocation == SkillInvocationPolicy::UserOnly && !explicit {
         return Some("user-only".into());
@@ -553,11 +841,64 @@ fn conflicts(left: &SkillMetadata, right: &SkillMetadata) -> bool {
         || right.conflicts.iter().any(|slug| slug == &left.slug)
 }
 
+/// Chunk manifest entry with its routing score (PR-2 second pass).
+struct RankedChunk<'a> {
+    entry: &'a SkillChunkManifestEntry,
+    score: i32,
+}
+
+/// Ranks one selected skill's chunk manifest entries against the prompt
+/// using the existing skill-level arithmetic (semantic-token overlap and
+/// hashed cosine over the routing text). Reuses `semantic_tokens` and
+/// `hashed_cosine` unchanged; introduces no new scoring machinery.
+///
+/// The `condition` selects which manifest fields feed the routing text
+/// (D3 ablation axis). Production routing passes
+/// [`ChunkRoutingCondition::production`].
+fn rank_chunks<'a>(
+    condition: ChunkRoutingCondition,
+    prompt_tokens: &BTreeSet<String>,
+    prompt: &str,
+    entries: &'a [SkillChunkManifestEntry],
+) -> Vec<RankedChunk<'a>> {
+    let mut ranked: Vec<RankedChunk<'a>> = entries
+        .iter()
+        .map(|entry| {
+            let routing_text = condition.routing_text_for(entry);
+            let entry_tokens = semantic_tokens(&routing_text);
+            let overlap = prompt_tokens.intersection(&entry_tokens).count();
+            let similarity = hashed_cosine(prompt_tokens, &entry_tokens);
+            let mut score = 0_i32;
+            if overlap > 0 {
+                score += i32::try_from(overlap.min(8)).unwrap_or(0) * 520;
+            }
+            if similarity > 0.0 {
+                score += (similarity * 2_200.0) as i32;
+            }
+            // Name-match bonus mirrors the skill-level name-match term so a
+            // prompt naming the chunk routes to it deterministically.
+            if phrase_matches(prompt, &entry.name) {
+                score += 3_500;
+            }
+            RankedChunk { entry, score }
+        })
+        .filter(|ranked| ranked.score > 0)
+        .collect();
+    ranked.sort_by(|left, right| {
+        right
+            .score
+            .cmp(&left.score)
+            .then_with(|| left.entry.name.cmp(&right.entry.name))
+    });
+    ranked
+}
+
 /// Parses the supported Agent Skills frontmatter subset without accepting
 /// YAML aliases, tags, or executable extensions.
 #[must_use]
 pub fn parse_metadata(summary: &SkillSummary, body: &str) -> SkillMetadata {
-    let fields = frontmatter_fields(body);
+    let (frontmatter, chunks, chunk_error) = split_chunk_manifest(body);
+    let fields = frontmatter_fields(&frontmatter);
     let name = scalar(&fields, "name").unwrap_or_else(|| summary.slug.clone());
     let description = scalar(&fields, "description").unwrap_or_else(|| summary.headline.clone());
     let invocation = if boolean(&fields, "disable-model-invocation") == Some(true) {
@@ -604,7 +945,177 @@ pub fn parse_metadata(summary: &SkillSummary, body: &str) -> SkillMetadata {
         archived: body
             .lines()
             .any(|line| line.trim() == "<!-- vesper:archive -->"),
+        chunks,
+        chunk_manifest_error: chunk_error,
     }
+}
+
+/// Splits a `chunks:` nested frontmatter block out of the body before flat
+/// parsing. The flat parser cannot express nesting: an indented
+/// `description:` inside `chunks:` would otherwise be promoted to a
+/// top-level key and corrupt the skill's own `description`. Returns the
+/// body with the block removed, the parsed manifest entries, and a
+/// fail-closed rejection reason when a manifest was declared but invalid.
+/// A `chunks:` line outside the frontmatter (markdown body text) is inert.
+fn split_chunk_manifest(body: &str) -> (String, Vec<SkillChunkManifestEntry>, Option<String>) {
+    let mut lines = body.lines();
+    if lines.next().map(str::trim) != Some("---") {
+        return (body.to_owned(), Vec::new(), None);
+    }
+    let mut collected: Vec<String> = vec!["---".to_owned()];
+    let mut block_lines: Vec<String> = Vec::new();
+    let mut in_frontmatter = true;
+    let mut in_block = false;
+    for raw in lines {
+        let line = raw.trim_end();
+        let trimmed = line.trim();
+        if in_frontmatter && trimmed == "---" {
+            in_frontmatter = false;
+            in_block = false;
+            collected.push(line.to_owned());
+            continue;
+        }
+        if in_frontmatter && !in_block && trimmed == "chunks:" {
+            in_block = true;
+            continue;
+        }
+        if in_frontmatter && in_block && (line.starts_with(' ') || line.starts_with('\t')) {
+            block_lines.push(trimmed.to_owned());
+            continue;
+        }
+        if in_block {
+            // A non-indented frontmatter line closes the block.
+            in_block = false;
+        }
+        collected.push(line.to_owned());
+    }
+    if block_lines.is_empty() {
+        // No `chunks:` block (or an empty one) behaves as no chunk tier.
+        return (collected.join("\n"), Vec::new(), None);
+    }
+    let (entries, error) = parse_chunk_entries(&block_lines);
+    (collected.join("\n"), entries, error)
+}
+
+/// Accumulates one manifest entry while parsing the block.
+#[derive(Default)]
+struct ChunkEntryBuilder {
+    name: Option<String>,
+    description: Option<String>,
+    summary: Option<String>,
+    key_elements: Option<Vec<String>>,
+}
+
+impl ChunkEntryBuilder {
+    fn is_empty(&self) -> bool {
+        self.name.is_none()
+            && self.description.is_none()
+            && self.summary.is_none()
+            && self.key_elements.is_none()
+    }
+
+    fn finish(self, entries: &mut Vec<SkillChunkManifestEntry>, error: &mut Option<String>) {
+        let entry = SkillChunkManifestEntry {
+            name: self.name.unwrap_or_default(),
+            description: self.description.unwrap_or_default(),
+            summary: self.summary,
+            key_elements: self.key_elements,
+        };
+        match entry.validate() {
+            Ok(()) => entries.push(entry),
+            Err(reason) => {
+                if error.is_none() {
+                    *error = Some(format!("chunk `{}`: {reason}", truncate(&entry.name, 64)));
+                }
+                // Retain the invalid entry for diagnostics only; the
+                // non-empty error makes the skill ineligible.
+                entries.push(entry);
+            }
+        }
+    }
+}
+
+/// Parses collected (trimmed) chunk-block lines into manifest entries with
+/// fail-closed validation. Violations — malformed entries, missing
+/// required fields, oversize fields, duplicate names, and a declared count
+/// above [`MAX_CHUNKS_PER_SKILL`] — become the rejection reason; nothing
+/// is silently dropped or truncated.
+fn parse_chunk_entries(lines: &[String]) -> (Vec<SkillChunkManifestEntry>, Option<String>) {
+    let mut entries: Vec<SkillChunkManifestEntry> = Vec::new();
+    let mut error: Option<String> = None;
+    let mut current = ChunkEntryBuilder::default();
+    let mut names: BTreeSet<String> = BTreeSet::new();
+    for line in lines {
+        if line.is_empty() {
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("- ") {
+            if !current.is_empty() {
+                current.finish(&mut entries, &mut error);
+            }
+            current = ChunkEntryBuilder::default();
+            apply_chunk_field(&mut current, rest);
+            continue;
+        }
+        apply_chunk_field(&mut current, line);
+    }
+    if !current.is_empty() {
+        current.finish(&mut entries, &mut error);
+    }
+    for entry in &entries {
+        if !names.insert(entry.name.clone()) {
+            if error.is_none() {
+                error = Some(format!(
+                    "duplicate chunk name `{}`",
+                    truncate(&entry.name, 64)
+                ));
+            }
+            break;
+        }
+    }
+    if entries.len() > MAX_CHUNKS_PER_SKILL && error.is_none() {
+        error = Some(format!(
+            "chunk count {} exceeds the cap of {MAX_CHUNKS_PER_SKILL}",
+            entries.len()
+        ));
+    }
+    (entries, error)
+}
+
+/// Applies one `key: value` line to the entry builder. Accepts both
+/// `key-elements` and `key_elements` spellings (same normalization as the
+/// flat parser); unknown keys are ignored so future schema additions do
+/// not brick existing skills.
+fn apply_chunk_field(builder: &mut ChunkEntryBuilder, line: &str) {
+    let Some((raw_key, value)) = line.split_once(':') else {
+        return;
+    };
+    let key = raw_key.trim().to_ascii_lowercase().replace('_', "-");
+    let value = unquote(value.trim());
+    if value.is_empty() {
+        return;
+    }
+    match key.as_str() {
+        "name" => builder.name = Some(value),
+        "description" => builder.description = Some(value),
+        "summary" => builder.summary = Some(value),
+        "key-elements" => {
+            builder.key_elements = Some(
+                value
+                    .trim_matches(['[', ']'])
+                    .split(',')
+                    .map(|item| unquote(item.trim()))
+                    .filter(|item| !item.is_empty())
+                    .take(MAX_CHUNK_KEY_ELEMENTS)
+                    .collect(),
+            )
+        }
+        _ => {}
+    }
+}
+
+fn truncate(value: &str, limit: usize) -> String {
+    value.chars().take(limit).collect()
 }
 
 fn frontmatter_fields(body: &str) -> BTreeMap<String, String> {

@@ -1,7 +1,7 @@
 ---
 name: vesper-skill-authoring
 description: "Author high-quality skills for Agent Vesper: format, tools, bounds."
-version: 1.0.0
+version: 1.1.0
 author: Agent Vesper library
 license: MIT
 platforms: [linux, macos, windows]
@@ -31,7 +31,7 @@ whole classes of mistakes; a bloated one wastes context and misleads.
 ---
 name: <slug>
 description: "<one-line trigger: what this does + when to use it>"
-version: 1.0.0
+version: 1.1.0
 author: <attribution>
 license: MIT
 platforms: [linux, macos, windows]
@@ -76,6 +76,45 @@ condition ("Use when the user asks for X"), not a table of contents.
 - Slugs: lowercase `[a-z0-9-]`, ≤ 64 chars. Bodies ≤ 200 KB — a skill that
   needs the ceiling is usually several skills.
 - Prefer one focused skill over a mega-skill; bundles group them.
+
+## On-demand chunks
+
+Declare a chunk tier when knowledge density requires bounding the context:
+reference material users ask about selectively (per-topic lookups, long
+procedures, multi-part references) that would otherwise force a bloated
+body or an artificial split into several skills. Keep a single body when
+the whole skill is needed on every activation — chunks are for
+selectively-read knowledge, not for hiding procedure steps.
+
+Manifest goes in the skill's frontmatter; files live beside the skill at
+`<root>/skills/<slug>/chunks/<name>.md`:
+
+```markdown
+chunks:
+  - name: <chunk-slug>
+    description: "<one-line routing description — required, ≤ 240 chars>"
+    summary: "<optional denser phrasing, ≤ 480 chars>"
+    key_elements: [<optional routing terms, ≤ 8>]
+```
+
+Rules that bite:
+
+- Caps: ≤ 32 chunks per skill, ≤ 24,000 bytes per chunk file. Violations
+  (oversize, missing file, malformed entry, duplicate name) make the whole
+  skill routing-ineligible with an explicit reason — never a silent
+  truncation. Validate before shipping.
+- Routing is active metadata: automatic routing matches the prompt against
+  `description` + `summary` + `key_elements` (PR-4 eval, 2026-09-12), and
+  at most 3 chunks load per selected skill. Zero-overlap chunks never load.
+- Chunk vocabulary competes: routing tokens include the skill slug and
+  every chunk's words. Two chunks sharing a routing term will both score
+  on a query containing it — give each chunk distinctive vocabulary, and
+  avoid chunk words that echo the skill slug (they boost every chunk
+  equally and add noise).
+- Chunks are knowledge, not secrets or procedure: the same content rules
+  as bodies apply; chunk bodies must not carry credentials or transient
+  state. A selected isolated (`context: fork`) skill loads no chunks in
+  the main context.
 
 ## Verification
 

@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::MemoryError;
 use crate::io::write_atomic;
-use crate::types::SkillSlug;
+use crate::types::{MAX_CHUNK_BYTES, SkillChunkManifestEntry, SkillSlug};
 
 /// Maximum allowed markdown body size for a single skill (in bytes).
 /// Sized to admit curated reference skills (the largest migrated library
@@ -134,6 +134,92 @@ impl SkillStore {
 
     fn skill_path(&self, slug: &SkillSlug) -> PathBuf {
         self.skills_dir().join(format!("{}.md", slug.as_str()))
+    }
+
+    /// Path of one skill's on-demand chunk directory
+    /// (`<root>/skills/<slug>/chunks`). PRD D1 storage layout; global-layer
+    /// chunk reads fall back like skill reads.
+    fn chunks_dir(&self, slug: &SkillSlug) -> PathBuf {
+        self.skills_dir().join(slug.as_str()).join("chunks")
+    }
+
+    fn global_chunks_dir(&self, slug: &SkillSlug) -> Option<PathBuf> {
+        self.global_skills_dir()
+            .map(|dir| dir.join(slug.as_str()).join("chunks"))
+    }
+
+    /// Validates a declared chunk manifest against the store: every
+    /// declared chunk file must exist and each must be at most
+    /// [`MAX_CHUNK_BYTES`] bytes. Returns the first violation as a stable
+    /// rejection reason. Only called when a manifest was declared, so
+    /// chunk-less skills take zero additional filesystem work (G5).
+    pub(crate) fn validate_chunk_manifest(
+        &self,
+        slug: &SkillSlug,
+        manifest: &[SkillChunkManifestEntry],
+    ) -> Option<String> {
+        if manifest.is_empty() {
+            return None;
+        }
+        let dir = self.chunks_dir(slug);
+        let global_dir = self.global_chunks_dir(slug);
+        for entry in manifest {
+            if SkillSlug::new(&entry.name).is_err() {
+                return Some(format!("chunk `{}`: invalid name", entry.name));
+            }
+            let local = dir.join(format!("{}.md", entry.name));
+            let path = if local.exists() {
+                local
+            } else if let Some(global) = global_dir
+                .as_ref()
+                .map(|dir| dir.join(format!("{}.md", entry.name)))
+                && global.exists()
+            {
+                global.clone()
+            } else {
+                return Some(format!(
+                    "chunk `{}`: file not found under chunks/",
+                    entry.name
+                ));
+            };
+            let Ok(size) = std::fs::metadata(&path).map(|meta| meta.len()) else {
+                return Some(format!(
+                    "chunk `{}`: unreadable (permission or metadata failure)",
+                    entry.name
+                ));
+            };
+            if size > MAX_CHUNK_BYTES as u64 {
+                return Some(format!(
+                    "chunk `{}`: {size} bytes exceeds MAX_CHUNK_BYTES {MAX_CHUNK_BYTES}",
+                    entry.name
+                ));
+            }
+        }
+        None
+    }
+
+    /// Reads one declared chunk's file from the skill's chunk directory,
+    /// falling back to the global layer. Enforces [`MAX_CHUNK_BYTES`] at
+    /// read time so an oversized file that grew after validation still
+    /// cannot enter context. Returns [`MemoryError::NotFound`] when the
+    /// chunk is absent from both layers.
+    pub fn read_chunk(&self, slug: &SkillSlug, name: &str) -> Result<String, MemoryError> {
+        if SkillSlug::new(name).is_err() {
+            return Err(MemoryError::InvalidIdentifier("chunk name".into()));
+        }
+        let local = self.chunks_dir(slug).join(format!("{name}.md"));
+        if let Some(body) = read_bounded(&local, MAX_CHUNK_BYTES) {
+            return Ok(body);
+        }
+        if let Some(global) = self.global_chunks_dir(slug)
+            && let Some(body) = read_bounded(&global.join(format!("{name}.md")), MAX_CHUNK_BYTES)
+        {
+            return Ok(body);
+        }
+        Err(MemoryError::NotFound(format!(
+            "skill chunk: {}/{name}",
+            slug.as_str()
+        )))
     }
 
     /// Lists every readable `.md` skill: project-local files first, then
@@ -457,6 +543,18 @@ fn read_prefix(path: &Path) -> Option<String> {
     file.take(MAX_SKILL_CATALOG_PREFIX_BYTES as u64)
         .read_to_end(&mut bytes)
         .ok()?;
+    Some(String::from_utf8_lossy(&bytes).into_owned())
+}
+
+/// Reads at most `limit` bytes from `path`. A file larger than the limit
+/// is rejected (None), never truncated — the fail-closed chunk byte cap.
+fn read_bounded(path: &Path, limit: usize) -> Option<String> {
+    let file = std::fs::File::open(path).ok()?;
+    let mut bytes = Vec::with_capacity(limit.min(64 * 1024));
+    file.take((limit + 1) as u64).read_to_end(&mut bytes).ok()?;
+    if bytes.len() > limit {
+        return None;
+    }
     Some(String::from_utf8_lossy(&bytes).into_owned())
 }
 

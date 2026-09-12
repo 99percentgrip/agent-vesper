@@ -86,6 +86,16 @@ When the user requests a durable behavior change, record it here or in the relev
 - When a complete repair or implementation is requested, continue across
   ordinary milestones until its required code and acceptance work are done.
   Do not substitute a partial checkpoint or a release for completion.
+- Every completed work unit (PR, repair, recon mission, or directive)
+  ends with BOTH a formal execution report in `docs/foundation/` following
+  the house convention (objective, methods/commands, files, exact
+  evidence, deviations, unresolved items, readiness effect), linked from
+  `evidence-index.md` and the owning PRD, AND a full summary presented in
+  the conversation at delivery. Neither alone closes a work unit.
+  (Productized: both hosts inject the shared
+  `vesper-harness::COMPLETION_REPORTING_INSTRUCTION` mandate and the
+  `work-unit-reporting` seed skill ships in the library — installed
+  agents follow this rule by default, not just in this workspace.)
 - PRD completion claims must trace every required behavior to current,
   scope-appropriate evidence. Model-written plan checkmarks, passing unrelated
   tests, and another agent's assurance are not completion evidence. Preserve

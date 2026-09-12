@@ -20,6 +20,22 @@ pub const MAX_EVIDENCE: usize = 16;
 pub const MAX_ENTRIES: usize = 10_000;
 /// Maximum number of characters in a record id.
 pub const MAX_ID_CHARS: usize = 64;
+/// Maximum number of chunks declared by one skill manifest (context-paging
+/// tier; ADR 0024 orchestrator + advanced-context-paging PRD D1). 32 is
+/// 3.5x the largest section count observed across the 326-file seed
+/// library, with headroom for reference skills that split per topic.
+pub const MAX_CHUNKS_PER_SKILL: usize = 32;
+/// Maximum allowed size of one chunk file in bytes. Matches
+/// `MAX_SKILL_CONTEXT_CHARS`: a chunk larger than one skill's full
+/// inline-injection budget could never be consumed whole, so it is
+/// rejected at validation time instead of being silently truncated.
+pub const MAX_CHUNK_BYTES: usize = 24_000;
+/// Maximum characters in one chunk-manifest `description` (required field).
+pub const MAX_CHUNK_DESCRIPTION_CHARS: usize = 240;
+/// Maximum characters in one chunk-manifest `summary` (optional field).
+pub const MAX_CHUNK_SUMMARY_CHARS: usize = 480;
+/// Maximum `key_elements` entries per chunk manifest entry (optional field).
+pub const MAX_CHUNK_KEY_ELEMENTS: usize = 8;
 
 /// Kind tag for a memory entry. The full surface mirrors the 13 Tier C
 /// Phase 8 commands (`/memory`, `/goal`, `/subgoal`, `/skills`,
@@ -214,6 +230,58 @@ impl EpistemicRecord {
         }
         if self.supports.len() > MAX_SCOPES {
             return Err(MemoryError::BoundsViolated("supports count"));
+        }
+        Ok(())
+    }
+}
+
+/// One declared on-demand chunk in a skill's `chunks:` frontmatter
+/// manifest. The manifest is the always-loaded routing tier; chunk files
+/// under `<skill resources>/chunks/<name>.md` are loaded only when routed
+/// to (advanced-context-paging PRD D1/D2; schema shape from the context
+/// upstream recon, MIT — no upstream code or text).
+///
+/// `summary` and `key_elements` are parsed from day one but do not
+/// influence automatic routing until the PRD D3 eval gate records an
+/// `ADOPT` verdict; they are carried for inspection and explicit routes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SkillChunkManifestEntry {
+    /// Chunk name; names the file `chunks/<name>.md`.
+    pub name: String,
+    /// Required one-line routing description.
+    pub description: String,
+    /// Optional denser summary for precision routing (D2; gated by D3).
+    pub summary: Option<String>,
+    /// Optional routing key terms (D2; gated by D3).
+    pub key_elements: Option<Vec<String>>,
+}
+
+impl SkillChunkManifestEntry {
+    /// Validates the entry against the bounded manifest contract.
+    /// Returns [`MemoryError::BoundsViolated`] with a stable field name on
+    /// any violation; nothing is silently truncated.
+    pub fn validate(&self) -> Result<(), MemoryError> {
+        if SkillSlug::new(&self.name).is_err() {
+            return Err(MemoryError::InvalidIdentifier("chunk name".into()));
+        }
+        if self.description.chars().count() > MAX_CHUNK_DESCRIPTION_CHARS {
+            return Err(MemoryError::BoundsViolated("chunk description length"));
+        }
+        if let Some(summary) = &self.summary
+            && summary.chars().count() > MAX_CHUNK_SUMMARY_CHARS
+        {
+            return Err(MemoryError::BoundsViolated("chunk summary length"));
+        }
+        if let Some(elements) = &self.key_elements {
+            if elements.len() > MAX_CHUNK_KEY_ELEMENTS {
+                return Err(MemoryError::BoundsViolated("chunk key-elements count"));
+            }
+            if elements
+                .iter()
+                .any(|element| element.chars().count() > MAX_CHUNK_DESCRIPTION_CHARS)
+            {
+                return Err(MemoryError::BoundsViolated("chunk key-element length"));
+            }
         }
         Ok(())
     }
