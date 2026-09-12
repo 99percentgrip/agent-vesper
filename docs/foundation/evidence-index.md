@@ -508,6 +508,29 @@ v0.21.6 release notes own the final run links, image IDs and local-install recei
   exact acceptance cases passed; both deliberate evaluator mutations were caught.
   Local implementation evidence does not imply a release or installed update.
 
+## VRO-16 release v0.21.9 — 2026-09-12
+
+- Tag `v0.21.9` at `0b4cd0d`. The first version commit `b790e4f` was
+  rejected by the web-driver exact-commit gate: the native loopback
+  providers scripted only pre-governance turn shapes, so the composed
+  review-panel and decision turns failed inside the native
+  shared-service/ACP/TUI gates. This is the exact-commit contract
+  working as designed — the gap was invisible to local canonical gates
+  because the native container/service fixtures run only in the
+  web-driver workflow's environment.
+- Repair: `TaskKind::Review` maps to an empty tool registry in the
+  provider adapter (D3 — judges evaluate, never author/re-execute),
+  native fixtures answer review and decision turns, count expectations
+  updated, cancellation invariant made baseline-relative. All gates
+  reproduced locally with the real CI-built driver image (podman) and
+  the release supervisor before pushing the fix.
+- Green on the exact commit before tagging: canonical, MSRV,
+  five-target foundation, dual-architecture web-driver (run ids
+  34674795540/34674795595/34674795554/34674795541). Release run
+  34676270024 verified exact-commit CI and published 16 assets;
+  checksums verified locally; installer upgrade preserves user state;
+  registry PR #539 updated in place.
+
 ## VRO-16 advanced hive governance — 2026-09-12
 
 - Requirements: `docs/advanced-hive-governance-prd.md` (PR-1 §2, PR-2 §3,
