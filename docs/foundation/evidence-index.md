@@ -2,6 +2,127 @@
 
 Status: evidence index; acceptance status is scoped to each section.
 
+## Ranker hardening PRD (alias cross-talk) — 2026-09-12
+
+`ranker-hardening-prd-execution.md` records drafting
+`docs/ranker-hardening-prd.md` from the alias cross-talk recon: scope fenced
+to Option A (raw stemmed chunk pools; `rank_chunks` bypasses the alias loop,
+skill tier untouched) + Option D (failing cross-talk fixture anchors the
+defect before the fix), incident quantified at 1,560 manufactured overlap
+points (`skill_orchestrator.rs:869/:873`), bounded 520-pt prompt-side
+residual disclosed as accepted, three PRs (anchor → decoupling → re-eval
+with a D3-verdict stop rule). migration-status row PLANNING; naming-guard
+clean. No code changed.
+
+## Alias cross-talk swarm recon (ranker hardening) — 2026-09-12
+
+`recon-alias-crosstalk-execution.md` records the read-only recon mission
+behind `architecture/recon_alias_crosstalk.md`: exact bleed mechanism
+(slug tokens enter only via the prompt pool at skill_orchestrator.rs:421-422
+and join chunk pools at :869; the PR-4 incident scored 1,560 manufactured
+points, not 520), blast radius proven zero over the shipped floor under
+either one-sided alias ablation, four decoupling options ranked with
+recommendation A+D, and two latent defect classes empirically pinned
+(stem-form alias asymmetry `releases→releas`; dead hyphenated alias rows).
+No production code changed. naming-guard clean, 18 frozen hits.
+
+## Completion-reporting workflow productized — 2026-09-12
+
+`completion-reporting-workflow-execution.md` records shipping the session's
+reporting/audit conventions as default installed behavior: shared
+`COMPLETION_REPORTING_INSTRUCTION` in `vesper-harness` injected by both
+hosts at every loop build (ACP interactive+worker, TUI direct+tool-loop)
+with byte-for-byte parity tests in both apps; the `work-unit-reporting`
+seed skill (library 94→95, bundle registered, mirrored) teaches report
+structure, final-audit regression-first discipline, and release gates,
+composing with `verify-with-xtask-verify`. Workspace 2,218/0, acceptance
+20/20, architecture + naming-guard clean, seed count 95==95. Honest
+limitation: report-compliance effectiveness of installed agents is not
+yet measured by any eval.
+
+## Advanced context paging — full implementation audit (PR-1..PR-5) — 2026-09-12
+
+`context-paging-full-audit.md` records the end-to-end audit: five findings,
+all repaired with fail-then-pass regression proofs — F1 per-skill chunk
+budget never decremented (reproduced 36,261 > 24,000), F2 SUMMARY_ONLY
+overhead measured against the full text (published 16/16 parity was a
+metric artifact; true 13–14 vs 16), F3 explicit requests with invalid
+manifests failed silently, F4 manifest defects masking `archived`,
+F5 the eval control case silently failing activation while the report
+narrative claimed controls always succeed. **ADOPT verdict re-derived and
+stands on corrected data.** Workspace 2,217/0 (+4 audit regressions),
+acceptance 20/20, architecture + naming-guard clean. PR-4 report carries
+an explicit audit-correction note.
+
+## Advanced context paging — PR-5 (docs & authoring; initiative COMPLETE) — 2026-09-12
+
+`context-paging-pr5-execution.md` closes the five-PR initiative: chunk
+authoring guidance in `skills/AGENTS.md` + `vesper-skill-authoring` v1.1.0
+(seed mirrored to the global home, byte-identical), matching shipped
+behavior exactly (32/24,000 caps, ≤3 loaded, summary/key_elements actively
+routing post-ADOPT, fail-closed semantics, vocabulary-competition
+pitfall). Explicit no-user-surface finding (zero `apps/` changes).
+migration-status row → COMPLETE. Floors intact: workspace 2,213/0,
+acceptance 20/20, naming-guard clean, seed count 94. Initiative-level
+open items (CI matrix, chunked seed exemplar, alias cross-talk remedy)
+recorded in §7 of the report.
+
+## Advanced context paging — PR-4 (D3 eval gate; verdict ADOPT) — 2026-09-12
+
+`context-paging-pr4-eval.md` records the D3 decision: strict
+three-condition ablation (FLAT_DESCRIPTION / SUMMARY_ONLY /
+SUMMARY_KEY_ELEMENTS) over a 2-family × 2-probe corpus in
+`crates/vesper-memory/tests/chunk_routing_eval.rs`, entirely offline.
+Improvement repeated across BOTH families with distinct marginal-value
+carriers; measured overhead 13–14 (SUMMARY_ONLY) / 16 (SUMMARY_KEY_ELEMENTS)
+semantic tokens/skill (audit-corrected); zero regression on
+controls. Verdict ADOPT; `CHUNK_METADATA_ROUTING_ENABLED = true` flipped
+in the same change. Material finding: production `SEMANTIC_ALIASES`
+cross-talk (`deploy → release`) can outvote honest key-elements matches —
+corpus hardened, production remedy deferred with its own evidence bar.
+Workspace 2,213/0, acceptance 20/20, architecture + naming-guard clean.
+
+## Advanced context paging — PR-3 (composition & injection) — 2026-09-12
+
+`context-paging-pr3-execution.md` owns the PR-3 execution record: chunk
+payloads moved onto `LoadedSkill`, named
+`<agent-vesper-skill-chunk>` emission in `context()` after the primary
+slice, transient host-append/restore (AC-3), and direct/VRO/ReAct
+seam-parity proofs in `crates/vesper-harness/tests/context_paging_composition.rs`
+(6 tests, real AgentLoop + FakeProviderSession capture). Material
+architecture finding: `vesper-agent` is deliberately skill-unaware and the
+architecture gate caught a `vesper-agent → vesper-memory` dev-dep edge —
+tests correctly relocated to the harness composition boundary. Workspace
+2,208/0, acceptance 20/20, architecture 27 packages, naming-guard clean.
+
+## Advanced context paging — PR-2 (two-level routing) — 2026-09-12
+
+`context-paging-pr2-execution.md` owns the PR-2 execution record:
+bounded second-pass chunk routing (`MAX_CHUNKS_PER_SELECTION = 3`,
+description-only feed while `CHUNK_METADATA_ROUTING_ENABLED = false`),
+chunks counted against per-skill/total budgets with fail-closed skip
+(never truncated), isolated skills excluded, and all four AC-2 proof
+categories in `tests/skill_routing.rs` — including the distinguishing
+budget-boundary case (chunk under the byte cap but over the per-skill
+allowance → rejected *by budget*) and the flag-off neutrality proof
+(summary-only overlap loads nothing). Workspace 2,202/0, acceptance
+20/20, architecture + naming-guard clean. Deviations (compile-time flag,
+envelope emission deferred to PR-3) and open items recorded.
+
+## Advanced context paging — PR-1 (storage & manifest) — 2026-09-12
+
+`context-paging-pr1-execution.md` owns the PR-1 execution record: chunk
+storage enumeration, manifest parse, fail-closed caps (32 chunks / 24,000
+bytes, field caps), G5 zero-regression proofs, and the exact gate receipts
+(workspace 2,197/0 vs the 2,185+ floor, `cargo xtask acceptance` 20/20,
+architecture 27 packages, naming-guard clean). Includes a live sabotage-run
+note: a fixture path mistake made three tests fail with the exact
+fail-closed rejection, proving the manifest-vs-disk gate bites. Deviations
+(chunk-dir layout matching `references/` convention, added field caps) and
+open items (`MAX_CHUNKS_PER_SELECTION` for PR-2, D2 routing-neutrality,
+CI pending) are recorded. Scope: PRD PR-1/AC-1 only; routing, composition,
+and eval remain future PRs.
+
 ## Completion assurance research — 2026-09-11
 
 `completion-assurance-proposal.md` records source inspection at `8083f9f`,

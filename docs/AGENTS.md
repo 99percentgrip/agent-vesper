@@ -50,6 +50,24 @@ Own durable project documentation and evidence-backed engineering records.
   appear in docs or source, enforced by `cargo xtask naming-guard`);
   implementation evidence for their
   phases lands in the owning stage/foundation/adapter directories.
+- `advanced-context-paging-prd.md` owns the planning-stage requirements for
+  bounded skill chunks and rich per-chunk routing metadata. Its upstream is
+  referenced exclusively as `context upstream` (same naming-embargo rule as
+  the swarm oracle; recon evidence in `architecture/recon_context_paging.md`).
+  Binding constraints: no document-ingestion/conversion surface (explicitly
+  rejected), chunks land in `vesper-memory`/`vesper-agent` shared paths for
+  both hosts, and `summary`/`key_elements` routing metadata stays default-off
+  in automatic routing until the PRD's D3 repeated-benefit eval gate records
+  an `ADOPT` verdict in `docs/foundation/` (recorded: ADOPT,
+  `foundation/context-paging-pr4-eval.md`).
+- `ranker-hardening-prd.md` owns the planning-stage requirements for
+  eliminating the chunk-tier alias cross-talk (recon:
+  `architecture/recon_alias_crosstalk.md`). Binding constraints: scope is
+  Option A (raw stemmed chunk pools, alias loop bypassed for the chunk tier
+  only) + Option D (failing cross-talk fixture as anchor) — global skill-tier
+  routing arithmetic is explicitly out of scope; the bounded prompt-side
+  residual (520-pt literal match) is a recorded, accepted limitation, not a
+  hidden one.
 
 ## Local Contracts
 
