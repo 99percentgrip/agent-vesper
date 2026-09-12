@@ -11,13 +11,13 @@ fn service() -> &'static Arc<NativeSwarmService> {
     SERVICE.get_or_init(|| Arc::new(NativeSwarmService::default()))
 }
 
-pub async fn settings(terminal: &mut Terminal<Backend>) -> Result<String, String> {
+pub async fn settings(terminal: &mut Terminal<Backend>, theme: &str) -> Result<String, String> {
     use agent_vesper_tui::swarm_hub::{SwarmHub, render};
     let root = std::env::current_dir().map_err(|error| error.to_string())?;
     let mut hub = SwarmHub::new(SwarmSettingsDraft::open(&root)?);
     loop {
         terminal
-            .draw(|frame| render(frame, &hub))
+            .draw(|frame| render(frame, &hub, theme))
             .map_err(|error| error.to_string())?;
         let Event::Key(key) = event::read().map_err(|error| error.to_string())? else {
             continue;
@@ -113,10 +113,11 @@ pub fn command(
     }
     let saved = vesper_harness::swarm_settings::load(&root)?;
     let config = turn_configuration(agent, &session.state, surface)?;
-    vesper_harness::acceptance::activate_saved(
+    vesper_harness::acceptance::activate_for_prompt(
         &mut session.acceptance,
         &root,
         vesper_harness::WorkerFactory::new(registry.clone(), config.clone()),
+        &goal,
     )?;
     let parent = session.acceptance.as_ref().map(|acceptance| {
         acceptance.attach(

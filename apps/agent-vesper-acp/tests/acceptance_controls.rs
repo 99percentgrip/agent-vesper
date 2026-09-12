@@ -62,6 +62,18 @@ fn native_acceptance_controls_persist_only_explicit_activation() {
         !text.contains("Implementation acceptance: VERIFIED"),
         "{text}"
     );
+    // Native opt-in no longer requires a manually entered PRD path.
+    std::fs::remove_file(root.join(".agent-vesper/acceptance-settings.json")).unwrap();
+    process.prompt(8, &session, "/settings acceptance on", "automatic-on");
+    assert!(process.response(8).get("error").is_none());
+    let automatic = vesper_harness::acceptance_settings::AcceptanceSettings::load(&root).unwrap();
+    assert!(automatic.enabled);
+    assert!(automatic.prd.is_empty());
+    process.prompt(9, &session, "/acceptance status", "automatic-status");
+    assert!(process.response(9).get("error").is_none());
+    let text = support::update_texts(process.transcript(), "agent_message_chunk").join("\n");
+    assert!(text.contains("automatically"), "{text}");
+    assert!(text.contains("INCOMPLETE"), "{text}");
     assert!(
         listener.accept().is_err(),
         "controls must not dispatch provider requests"

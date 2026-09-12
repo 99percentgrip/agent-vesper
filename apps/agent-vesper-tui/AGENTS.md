@@ -29,19 +29,25 @@ business logic.
   malformed values fall back to the default.
   A failed save stays visible and never claims persistence.
   Web tools uses the same centered menu renderer and mouse geometry, with draft
-  toggles, driver setup, Save and Cancel; navigation/cancellation never persists.
-  `src/settings_menu.rs` presents registry-derived Settings and value choices as
-  compact single-line rows with a selected-item description, matching the welcome
-  menu. Applying a value or closing a native settings editor returns to Settings,
-  with the action result visible. Esc returns from values to Settings; at the
-  root it returns to the welcome screen when opened there, or to the existing
-  conversation when opened during coding. Only Start coding leaves the welcome
-  flow for chat. Mouse
-  clicks/releases and wheel events stay inside this menu, never select transcript
-  text. Native configuration handlers and their Save/Cancel behavior are retained.
-  Check for updates explicitly fetches bounded public GitHub release metadata
-  with a timeout, no credentials, and no installation side effects. Animation
-  indicates an actual in-flight check, never fabricated startup progress.
+  toggles and driver setup; the standalone editor retains Save and Cancel.
+  `src/settings_menu.rs` owns shared geometry and palette for Settings, Providers,
+  Swarm, acceptance and confirmations. `src/settings_host.rs` owns one cloned
+  draft across ordinary submenus. Esc at the root offers Save changes, Discard
+  changes and Keep editing. Only Save applies execution state; failed grouped
+  saves restore prior bytes and retain the draft, reporting any rollback failure.
+  Ordinary preferences are user-wide `ui/settings.json`, provider-partitioned and
+  revalidated on restore; web/swarm/acceptance remain workspace-scoped. Model
+  choices retain adapter metadata and an actionable catalog retry. Provider
+  authentication/switch saves and driver import are separate explicit side effects.
+  Mouse hit-testing uses the renderer's geometry. Start coding alone enters chat
+  from the welcome screen; `/settings` returns to its existing conversation.
+  `src/update_host.rs` installs only after a separate release/version confirmation,
+  using the installer embedded from `scripts/install.sh` or `install.ps1`. Checks
+  use bounded public GitHub metadata without credentials. POSIX installation shows
+  actual log progress; Windows opens an installer console that waits for the host
+  to exit before replacing locked binaries. Success asks the user to reopen Vesper.
+  Version arguments are validated; the current bundle is preserved as destination.
+  Check/decline never installs. No live update is part of foundation verification.
   Cognition startup runs on a blocking thread before terminal entry because its
   client construction and local-store migration are synchronous.
   Provider/model labels come from the active registry surface and version from
@@ -71,7 +77,7 @@ business logic.
   preference is written; cancelling either screen leaves that preference
   unchanged. This terminal-only presentation maps to ACP's existing native
   provider control, not an ACP terminal modal.
-- `src/web_hub.rs` owns Settings → Web tools (`/web`, `/settings web`):
+- `src/web_hub.rs` owns the standalone Web tools editor (`/web`, `/settings web`):
   draft on/off controls, explicit Save/Cancel, automatic installed-driver
   detection when opened, and bundled-driver setup/repair with visible progress
   and cancellation. Persistence and setup use shared `vesper-harness::web_settings`.
@@ -610,12 +616,16 @@ business logic.
   The adapter snapshot also guards workers; no account lookup runs inside rendering.
   Spark selection must use its adapter-owned 128K context budget.
 
-- ADR 0028 `acceptance_host` owns Settings → Implementation acceptance with PRD
-  selection, ON/OFF and Save/Cancel. `/acceptance` uses shared harness controls. Direct,
+- ADR 0028/0029 `acceptance_host` retains explicit controls; the central Settings
+  draft exposes ON/OFF with automatic PRD enrollment and no required path field. `/acceptance` uses shared harness controls. Direct,
   VRO, ReAct and Swarm composition retains the parent gate; candidate/Finish prose
   cannot replace its report. Cancellation displays incomplete scope. Native settings and
   event tests enforce presentation parity with ACP.
   Objective enrollment uses the current validated model and reasoning configuration.
+  `activate_for_prompt` captures the original request for independent scope review.
+  LM Studio transport uses the selected request model in both hosts. TUI execution
+  takes changed local-model context windows from its adapter snapshot, never the
+  launch model's window.
 
 - The opt-in web surface uses the shared harness web service and its contained
   fetch/render/browser runtime, off the render thread. No TUI-specific driver
@@ -904,6 +914,10 @@ work (ACP mid-turn-slash-grace parity; see `apps/agent-vesper-acp/AGENTS.md`).
 
 ## Verification
 
+- Run `python3 apps/agent-vesper-tui/tests/settings_pty.py target/debug/agent-vesper-tui`
+  after an all-features build on Linux/macOS. It uses isolated HOME/workspace and
+  blocked outbound proxies, submits no provider prompt, and checks draft/discard,
+  save/keep-editing, native toggles, execution permission and restart preferences.
 - Landing tests cover navigation, shared mouse geometry, compact/tiny rendering,
   and numeric release comparisons; binary tests reject malformed or non-stable
   release metadata. Exercise startup, Settings, coding, resize, update failure,
@@ -950,4 +964,4 @@ five-target CI matrix.
 
 ## Child DOX Index
 
-No children.
+- `tests/AGENTS.md` — isolated native terminal process verification.

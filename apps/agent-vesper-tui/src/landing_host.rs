@@ -1,4 +1,4 @@
-//! Startup landing event loop. Network access is explicit and never installs updates.
+//! Startup landing event loop with explicit update check and installation consent.
 use super::*;
 use agent_vesper_tui::landing::{self, LandingAction, LandingState};
 
@@ -9,7 +9,7 @@ pub(super) async fn open(
     theme: &str,
 ) -> Result<LandingAction, String> {
     let mut state = LandingState::default();
-    let mut task: Option<tokio::task::JoinHandle<Result<String, String>>> = None;
+    let mut task: Option<tokio::task::JoinHandle<Result<ReleaseCheck, String>>> = None;
     let started = std::time::Instant::now();
     let result = async {
         loop {
@@ -17,7 +17,16 @@ pub(super) async fn open(
                 let result = task.take().expect("finished task exists").await;
                 state.checking = false;
                 state.notice = match result {
-                    Ok(Ok(notice)) => notice,
+                    Ok(Ok(check)) => {
+                        if let Some(tag) = check.update {
+                            match update_host::install(terminal, &tag, theme).await {
+                                Ok(true) => return Ok(LandingAction::Quit),
+                                Ok(false) => {},
+                                Err(error) => { state.notice = error; continue; }
+                            }
+                        }
+                        check.notice
+                    },
                     Ok(Err(error)) => error,
                     Err(_) => "Update check interrupted; press U to retry.".into(),
                 };
@@ -73,7 +82,12 @@ pub(super) async fn open(
     result
 }
 
-async fn check_latest_release() -> Result<String, String> {
+struct ReleaseCheck {
+    notice: String,
+    update: Option<String>,
+}
+
+async fn check_latest_release() -> Result<ReleaseCheck, String> {
     // Public, credential-free GitHub API; no provider calls or project data.
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(12))
@@ -112,7 +126,7 @@ async fn check_latest_release() -> Result<String, String> {
     release_response(&bytes)
 }
 
-fn release_response(bytes: &[u8]) -> Result<String, String> {
+fn release_response(bytes: &[u8]) -> Result<ReleaseCheck, String> {
     let value: serde_json::Value = serde_json::from_slice(bytes)
         .map_err(|_| "Invalid release response. Press R for releases.".to_owned())?;
     if value.get("draft").and_then(serde_json::Value::as_bool) != Some(false)
@@ -124,7 +138,14 @@ fn release_response(bytes: &[u8]) -> Result<String, String> {
         .get("tag_name")
         .and_then(serde_json::Value::as_str)
         .ok_or("Release version missing. Press R for releases.")?;
-    landing::release_notice(env!("CARGO_PKG_VERSION"), tag).map_err(str::to_owned)
+    if !update_host::valid_version(tag) {
+        return Err("Invalid release version".into());
+    }
+    let notice = landing::release_notice(env!("CARGO_PKG_VERSION"), tag).map_err(str::to_owned)?;
+    let update = notice
+        .starts_with(&format!("{tag} available"))
+        .then(|| tag.to_owned());
+    Ok(ReleaseCheck { notice, update })
 }
 
 #[cfg(test)]
@@ -137,6 +158,7 @@ mod tests {
         assert!(
             release_response(&serde_json::to_vec(&good).unwrap())
                 .unwrap()
+                .notice
                 .contains("Up to date")
         );
         for bad in [
@@ -148,5 +170,19 @@ mod tests {
             assert!(release_response(&serde_json::to_vec(&bad).unwrap()).is_err());
         }
         assert!(release_response(b"not JSON").is_err());
+        let newer = serde_json::json!({"draft":false, "prerelease":false, "tag_name":"v99.0.0"});
+        assert_eq!(
+            release_response(&serde_json::to_vec(&newer).unwrap())
+                .unwrap()
+                .update
+                .as_deref(),
+            Some("v99.0.0")
+        );
+        assert!(
+            release_response(&serde_json::to_vec(&good).unwrap())
+                .unwrap()
+                .update
+                .is_none()
+        );
     }
 }

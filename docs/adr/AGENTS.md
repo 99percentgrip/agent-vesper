@@ -6,6 +6,9 @@ Own accepted, durable architecture and compatibility decisions for Agent Vesper.
 
 ## Local Contracts
 
+- ADR 0029 refines ADR 0028 enrollment: native opt-in permits automatic PRD
+  recognition with independent scope review and remembered paths; pending scope
+  grants no completion and evidence requirements remain unchanged.
 - ADR 0028 defines scoped native implementation acceptance, original-requirement
   coverage, collector-owned evidence, independent review, bounded repair, both-host
   publication and opt-in audit lineage. The live gate is separate from model plan status

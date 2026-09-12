@@ -67,10 +67,10 @@ impl AcceptanceSettings {
         if self.prd.len() > 2048 {
             return Err("PRD path exceeds 2048 bytes".into());
         }
-        if self.enabled {
+        if self.enabled && !self.prd.is_empty() {
             let path = vesper_agent::confinement::confine(root, &self.prd)
                 .map_err(|_| "PRD must be inside workspace")?;
-            if self.prd.is_empty() || !path.is_file() {
+            if !path.is_file() {
                 return Err("select an existing PRD before enabling acceptance".into());
             }
         }
@@ -118,8 +118,8 @@ mod tests {
         let mut settings = AcceptanceSettings::load(root.path()).unwrap();
         assert!(!settings.enabled);
         settings.enabled = true;
-        assert!(settings.save(root.path()).is_err());
-        assert!(!root.path().join(".agent-vesper").exists());
+        settings.save(root.path()).unwrap();
+        assert_eq!(settings, AcceptanceSettings::load(root.path()).unwrap());
         std::fs::write(root.path().join("PRD.md"), "Required behavior").unwrap();
         settings.prd = "PRD.md".into();
         settings.save(root.path()).unwrap();

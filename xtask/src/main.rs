@@ -1936,6 +1936,21 @@ fn acceptance_verify() -> Result<(), String> {
         (
             "vesper-harness",
             &["--lib"],
+            "acceptance::tests::automatic_enrollment_remembers_prd_and_requires_real_evidence_in_the_same_turn",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "acceptance::tests::automatic_enrollment_rejects_missing_external_and_forged_scope_without_saving",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "acceptance::tests::automatic_scope_review_refusal_and_cancellation_do_not_remember_a_path",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
             "acceptance::tests::delegated_finish_and_empty_deleted_or_replaced_plans_cannot_certify_parent",
         ),
         (

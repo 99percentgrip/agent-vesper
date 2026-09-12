@@ -6,16 +6,19 @@ pub async fn settings(
     terminal: &mut Terminal<Backend>,
     root: &std::path::Path,
     initial: Option<AcceptanceSettings>,
+    theme: &str,
 ) -> Result<Option<AcceptanceSettings>, String> {
     let mut draft = match initial {
         Some(settings) => settings,
         None => AcceptanceSettings::load(root)?,
     };
     let mut selected = 0usize;
-    let mut notice = "Select the PRD that defines this implementation's full scope.".to_string();
+    let mut notice =
+        "Vesper recognizes and remembers the PRD automatically. An explicit path is optional."
+            .to_string();
     loop {
         terminal
-            .draw(|frame| render(frame, &draft, selected, &notice))
+            .draw(|frame| render(frame, &draft, selected, &notice, theme))
             .map_err(|e| e.to_string())?;
         let Event::Key(key) = event::read().map_err(|e| e.to_string())? else {
             continue;
@@ -47,53 +50,79 @@ fn render(
     draft: &AcceptanceSettings,
     selected: usize,
     notice: &str,
+    theme: &str,
 ) {
-    use ratatui::{
-        layout::Rect,
-        widgets::{Block, Borders, Clear, Paragraph, Wrap},
-    };
-    let area = frame.area();
-    let width = area.width.min(90);
-    let height = area.height.min(15);
-    let panel = Rect::new(
-        (area.width - width) / 2,
-        (area.height - height) / 2,
-        width,
-        height,
-    );
     let rows = [
         format!(
             "Enforced completion: {}",
             if draft.enabled { "ON" } else { "OFF" }
         ),
-        format!("PRD path: {}", draft.prd),
+        format!(
+            "PRD: {}",
+            if draft.prd.is_empty() {
+                "automatic"
+            } else {
+                &draft.prd
+            }
+        ),
         "Save".into(),
         "Cancel".into(),
     ];
-    let mut text = "↑/↓ select · Enter toggle/save · type PRD path · Esc cancel\n\n".to_string();
-    for (i, row) in rows.iter().enumerate() {
-        text.push_str(&format!(
-            "{} {row}\n",
-            if i == selected { "›" } else { " " }
-        ));
-    }
-    text.push_str(&format!(
-        "\n{notice}\nTests and independent review are required. Restart requires fresh evidence."
-    ));
-    frame.render_widget(Clear, panel);
-    frame.render_widget(
-        Paragraph::new(text).wrap(Wrap { trim: false }).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" Settings › Implementation acceptance "),
+    agent_vesper_tui::settings_menu::render_menu(
+        frame,
+        &rows,
+        selected,
+        "Implementation acceptance",
+        &format!(
+            "{notice}\nTests and independent review are required. Restart requires fresh evidence."
         ),
-        panel,
+        "↑↓ select · Enter toggle/save · type PRD path · Esc cancel",
+        theme,
     );
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn acceptance_uses_every_active_theme() {
+        for theme in [
+            "chatgpt-black",
+            "chatgpt-white",
+            "dracula",
+            "nord",
+            "light",
+            "ansi",
+        ] {
+            let mut terminal =
+                ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).unwrap();
+            let menu =
+                agent_vesper_tui::settings_menu::area(ratatui::layout::Rect::new(0, 0, 80, 24), 4);
+            terminal
+                .draw(|f| {
+                    agent_vesper_tui::settings_menu::render_menu(
+                        f,
+                        &["one".into(), "two".into(), "three".into(), "four".into()],
+                        0,
+                        "Settings",
+                        "",
+                        "",
+                        theme,
+                    )
+                })
+                .unwrap();
+            let background = terminal.backend().buffer()[(0, 0)].bg;
+            let selection = terminal.backend().buffer()[(menu.x + 1, menu.y + 1)].bg;
+            terminal
+                .draw(|f| render(f, &AcceptanceSettings::default(), 0, "", theme))
+                .unwrap();
+            assert_eq!(terminal.backend().buffer()[(0, 0)].bg, background);
+            assert_eq!(
+                terminal.backend().buffer()[(menu.x + 1, menu.y + 1)].bg,
+                selection
+            );
+        }
+    }
     #[test]
     fn acceptance_native_settings_show_scope_and_save_cancel() {
         let mut terminal =
@@ -108,6 +137,7 @@ mod tests {
                     },
                     2,
                     "",
+                    "chatgpt-black",
                 )
             })
             .unwrap();

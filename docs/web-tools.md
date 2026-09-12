@@ -11,8 +11,11 @@ Enter/Space to switch web access, fetching, JavaScript rendering, browser
 interaction, and robots.txt handling on or off. `/web` and `/settings web`
 also open this screen. The screen detects the installed driver automatically.
 If setup is needed, choose **Set up / repair driver** to import the image
-included in your installation, then **Save settings** (or S). Esc cancels
-without writing. Restart the host to apply saved choices.
+included in your installation. When entering through the main Settings menu,
+go Back, leave Settings, and choose **Save changes** to save the whole draft.
+**Discard changes** drops ordinary edits; it does not undo a driver import.
+The standalone `/web` and `/settings web` editor retains **Save settings**
+(or S) and Esc cancellation. Restart the host to apply saved web choices.
 
 ACP exposes the equivalent `/web status`, `/web detect`, `/web setup`, and
 `/web <enabled|fetch|render|interact|robots> <on|off>` commands. For example,

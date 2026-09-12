@@ -1,9 +1,5 @@
 //! Registry-driven Settings → Providers draft editor.
-use ratatui::{
-    Frame,
-    layout::Rect,
-    widgets::{Block, Borders, Clear, Paragraph, Wrap},
-};
+use ratatui::Frame;
 
 pub struct ProviderHub {
     pub providers: Vec<String>,
@@ -37,67 +33,35 @@ impl ProviderHub {
     }
 }
 
-pub fn render(frame: &mut Frame<'_>, hub: &ProviderHub) {
-    let area = frame.area();
-    frame.render_widget(Clear, area);
-    if area.width < 60 || area.height < 18 {
-        frame.render_widget(
-            Paragraph::new("Provider settings: resize to at least 60×18. Esc cancels; S saves."),
-            area,
-        );
-        return;
-    }
-    let width = area.width.min(88);
-    let height = area.height.min(20);
-    let panel = Rect::new(
-        area.x + (area.width - width) / 2,
-        area.y + (area.height - height) / 2,
-        width,
-        height,
-    );
-    let mut lines = vec![
-        "↑/↓ select · Enter/Space choose · S save · Esc cancel".into(),
-        String::new(),
-    ];
-    // Keep a bounded viewport even if more real adapters are registered later.
-    let capacity = usize::from(height.saturating_sub(11)).max(1);
-    let start = hub
-        .selected
-        .saturating_sub(capacity - 1)
-        .min(hub.providers.len());
-    for (index, id) in hub.providers.iter().enumerate().skip(start).take(capacity) {
-        lines.push(format!(
-            "{} [{}] {}{}",
-            if index == hub.selected { "›" } else { " " },
-            if index == hub.chosen { "x" } else { " " },
-            id,
-            if id == &hub.current { " (active)" } else { "" }
-        ));
-    }
-    lines.push(format!(
-        "{} Save settings",
-        if hub.selected == hub.providers.len() {
-            "›"
-        } else {
-            " "
-        }
-    ));
-    lines.push(String::new());
-    lines.push(format!("Active provider: {}", hub.current));
-    lines.push(format!(
-        "Selected for next launch: {}",
-        hub.choice().unwrap_or("none registered")
-    ));
-    lines.push(hub.notice.clone());
-    frame.render_widget(
-        Paragraph::new(lines.join("\n"))
-            .wrap(Wrap { trim: false })
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title(" Settings › Providers (saved configuration) "),
-            ),
-        panel,
+pub fn render(frame: &mut Frame<'_>, hub: &ProviderHub, theme: &str) {
+    let mut labels: Vec<String> = hub
+        .providers
+        .iter()
+        .enumerate()
+        .map(|(index, id)| {
+            format!(
+                "[{}] {}{}",
+                if index == hub.chosen { "x" } else { " " },
+                id,
+                if id == &hub.current { " (active)" } else { "" }
+            )
+        })
+        .collect();
+    labels.push("Save settings".into());
+    labels.push("Cancel".into());
+    crate::settings_menu::render_menu(
+        frame,
+        &labels,
+        hub.selected,
+        "Settings › Providers",
+        &format!(
+            "Active: {} · Next launch: {}\n{}",
+            hub.current,
+            hub.choice().unwrap_or("none registered"),
+            hub.notice
+        ),
+        "↑↓ select · Enter/Space choose · S save · Esc cancel",
+        theme,
     );
 }
 
@@ -122,7 +86,9 @@ mod tests {
             let mut terminal =
                 ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height)).unwrap();
             let hub = ProviderHub::new(vec!["real-adapter".into()], "real-adapter".into());
-            terminal.draw(|frame| render(frame, &hub)).unwrap();
+            terminal
+                .draw(|frame| render(frame, &hub, "chatgpt-black"))
+                .unwrap();
             let text: String = terminal
                 .backend()
                 .buffer()
@@ -140,7 +106,7 @@ mod tests {
                     assert!(text.contains(label), "missing {label}");
                 }
             } else {
-                assert!(text.contains("resize"));
+                assert!(text.contains("Resize"));
             }
         }
     }

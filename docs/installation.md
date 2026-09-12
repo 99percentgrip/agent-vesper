@@ -118,16 +118,18 @@ If recording is unavailable, confirm the recording command is on PATH and the te
 
 ## Update or choose a version
 
-Rerun the same installer to update to the latest release, then restart Vesper and any editor agent process. Upgrades replace application payloads while preserving co-located user state and existing seed-skill edits.
+From the welcome screen, choose **Check for updates**. If a newer release is available, choose **Install update** to run the checksum-verifying installer. Linux/macOS show progress in Vesper; Windows opens an installer console after Vesper closes so its executables can be replaced. Reopen Vesper and restart any editor agent process afterward. Declining the offer changes nothing.
+
+You can also rerun the same installer to update to the latest release, then restart Vesper and any editor agent process. Upgrades replace application payloads while preserving co-located user state and existing seed-skill edits.
 
 To select a specific release, download the installer as shown above, then use an actual version from [Releases](https://github.com/99percentgrip/agent-vesper/releases):
 
 ```sh
-AGENT_VESPER_VERSION=0.22.1 sh vesper-install.sh
+AGENT_VESPER_VERSION=0.22.2 sh vesper-install.sh
 ```
 
 ```powershell
-./vesper-install.ps1 -Version 0.22.1
+./vesper-install.ps1 -Version 0.22.2
 ```
 
 The version above is an example, not an instruction to downgrade a newer installation.

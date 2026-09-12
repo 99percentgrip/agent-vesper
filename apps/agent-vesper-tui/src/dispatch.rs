@@ -44,6 +44,8 @@ pub struct SessionState {
     /// `/model`. Surfaced to the renderer and applied to every next provider
     /// request by the binary composition boundary.
     pub overrides: SuperpowerOverrides,
+    /// Adapter-reported model windows captured at startup; never persisted as capability truth.
+    pub catalog_context_windows: std::collections::BTreeMap<String, u64>,
     /// Visible transcript lines, oldest first.
     pub transcript: Vec<String>,
     /// One-line status / error / notice. `None` clears the status line.
@@ -436,6 +438,7 @@ fn apply_outcome(
     let SessionState {
         plan,
         overrides,
+        catalog_context_windows: _,
         transcript,
         status,
         pending_reasoning,

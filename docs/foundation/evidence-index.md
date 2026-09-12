@@ -2,6 +2,22 @@
 
 Status: evidence index; acceptance status is scoped to each section.
 
+## v0.22.2 Settings repair release — 2026-09-12
+
+[Release execution](v0.22.2-release-execution.md) tracks the authorized version
+bump, exact-commit gates, publication and existing registry PR update. Local
+TUI/plugin installation is reserved for the user's own update test.
+
+## Native Settings and confirmed updates — 2026-09-12
+
+[Execution report](settings-and-update-execution.md) traces
+[the repair PRD](../settings-and-update-prd.md): shared themed menus, grouped
+save/discard, persisted execution choices, protected automatic PRD enrollment,
+and a confirmed installer workflow. Final all-feature workspace: 2,234 passed,
+0 failed, 34 ignored; changed-crate MSRV: 548 passed, 0 failed, 4 ignored.
+Native terminal and checksum/install fixtures passed. Windows native updater
+execution remains unverified; no release or user installation was performed.
+
 ## Session push: context paging + productization + hardening planning — 2026-09-12
 
 `push-context-paging-execution.md` records pushing the session's three

@@ -875,10 +875,11 @@ impl AcpHarnessEngine {
         let config = self.turn_configuration(&request).await;
         let root = workspace_root_path(&request.workspace_roots);
         let mut acceptance = self.acceptance_session(&request.session_id);
-        vesper_harness::acceptance::activate_saved(
+        vesper_harness::acceptance::activate_for_prompt(
             &mut acceptance,
             &root,
             WorkerFactory::new(self.registry.clone(), config),
+            &text,
         )?;
         if let Some(acceptance) = acceptance {
             self.acceptance

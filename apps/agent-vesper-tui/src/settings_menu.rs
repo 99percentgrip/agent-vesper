@@ -218,6 +218,47 @@ mod tests {
     use super::*;
     use ratatui::{Terminal, backend::TestBackend};
     #[test]
+    fn providers_and_swarm_use_the_selected_theme_for_canvas_and_selection() {
+        for theme in [
+            "chatgpt-black",
+            "chatgpt-white",
+            "dracula",
+            "nord",
+            "light",
+            "ansi",
+        ] {
+            let palette = crate::ui::theme_palette(theme);
+            let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+            let hub =
+                crate::provider_hub::ProviderHub::new(vec!["fixture".into()], "fixture".into());
+            terminal
+                .draw(|f| crate::provider_hub::render(f, &hub, theme))
+                .unwrap();
+            let menu = area(Rect::new(0, 0, 80, 24), 3);
+            assert_eq!(terminal.backend().buffer()[(0, 0)].bg, palette.background);
+            assert_eq!(
+                terminal.backend().buffer()[(menu.x + 1, menu.y + 1)].bg,
+                palette.selection
+            );
+            #[cfg(feature = "swarm")]
+            {
+                let root = tempfile::tempdir().unwrap();
+                let hub = crate::swarm_hub::SwarmHub::new(
+                    vesper_harness::swarm_settings::SwarmSettingsDraft::open(root.path()).unwrap(),
+                );
+                terminal
+                    .draw(|f| crate::swarm_hub::render(f, &hub, theme))
+                    .unwrap();
+                let menu = area(Rect::new(0, 0, 80, 24), 8);
+                assert_eq!(terminal.backend().buffer()[(0, 0)].bg, palette.background);
+                assert_eq!(
+                    terminal.backend().buffer()[(menu.x + 1, menu.y + 1)].bg,
+                    palette.selection
+                );
+            }
+        }
+    }
+    #[test]
     fn unavailable_models_show_reason_and_operable_retry_instead_of_empty_input() {
         use crossterm::event::{
             Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,

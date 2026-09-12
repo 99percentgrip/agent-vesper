@@ -6,6 +6,10 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `settings-and-update-execution.md` owns native Settings, automatic enrollment,
+  updater repair evidence and unexecuted platform acceptance.
+- `v0.22.2-release-execution.md` owns the Settings repair release receipts and
+  the user-reserved local installation test.
 - `evidence-index.md` is the durable execution ledger and command record.
 - `completion-assurance-proposal.md` owns the researched proposal for native
   requirement coverage, execution receipts, and enforced completion decisions.

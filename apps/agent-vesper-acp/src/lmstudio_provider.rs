@@ -169,7 +169,6 @@ impl ProviderFactory for LmStudioFactory {
         Box::pin(async move {
             Ok(LmStudioSession {
                 config: self.config.clone(),
-                model: self.model.clone(),
                 client: self.client.clone(),
             })
         })
@@ -196,7 +195,6 @@ impl ProviderFactory for LmStudioFactory {
 
 pub(crate) struct LmStudioSession {
     config: LmStudioConfig,
-    model: String,
     client: reqwest::Client,
 }
 
@@ -208,7 +206,7 @@ impl ProviderSession for LmStudioSession {
     ) -> ProviderFuture<'a, Result<ProviderEventStream, ProviderError>> {
         let client = self.client.clone();
         let config = self.config.clone();
-        let model = self.model.clone();
+        let model = request.model.model_id.as_str().to_owned();
         Box::pin(async move {
             let messages = provider_request_to_chat_messages(&request);
             let chat_req = build_chat_request(&config, &model, &messages);
@@ -903,5 +901,112 @@ mod tests {
         assert!(matches!(bare.capabilities.tools, SupportLevel::Unknown));
         assert!(matches!(bare.capabilities.reasoning, SupportLevel::Unknown));
         assert!(matches!(bare.capabilities.limits, SupportLevel::Unknown));
+    }
+}
+
+#[cfg(test)]
+mod selected_model_wire_tests {
+    use super::*;
+    #[tokio::test]
+    async fn selected_model_reaches_the_real_http_body_instead_of_launch_model() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let server = std::thread::spawn(move || {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            let (mut stream, _) = loop {
+                match listener.accept() {
+                    Ok(pair) => break pair,
+                    Err(error)
+                        if error.kind() == std::io::ErrorKind::WouldBlock
+                            && std::time::Instant::now() < deadline =>
+                    {
+                        std::thread::sleep(std::time::Duration::from_millis(10))
+                    }
+                    Err(error) => panic!("fixture accept failed: {error}"),
+                }
+            };
+            stream
+                .set_read_timeout(Some(std::time::Duration::from_secs(10)))
+                .unwrap();
+            let mut bytes = Vec::new();
+            let body = loop {
+                let mut chunk = [0; 4096];
+                let count = stream.read(&mut chunk).unwrap();
+                assert!(count > 0 && bytes.len() + count <= 131072);
+                bytes.extend_from_slice(&chunk[..count]);
+                if let Some(end) = bytes.windows(4).position(|w| w == b"\r\n\r\n") {
+                    let header = String::from_utf8_lossy(&bytes[..end]);
+                    let length: usize = header
+                        .lines()
+                        .find_map(|line| {
+                            let (name, value) = line.split_once(':')?;
+                            name.eq_ignore_ascii_case("content-length")
+                                .then(|| value.trim().parse().unwrap())
+                        })
+                        .unwrap();
+                    if bytes.len() >= end + 4 + length {
+                        break serde_json::from_slice::<serde_json::Value>(
+                            &bytes[end + 4..end + 4 + length],
+                        )
+                        .unwrap();
+                    }
+                }
+            };
+            let sse = "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n";
+            write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{sse}", sse.len()).unwrap();
+            body
+        });
+        let factory = LmStudioFactory::new(
+            LmStudioConfig::new(format!("http://{address}/v1")).unwrap(),
+            "launch-model",
+        );
+        let registry = Arc::new(vesper_runtime::ProviderRegistry::new());
+        registry.register(factory).await.unwrap();
+        let config = vesper_agent::AgentLoopConfig {
+            provider_id: pid(),
+            provider_configuration: ProviderConfiguration {
+                provider_id: pid(),
+                values: vesper_domain::VersionedExtensionEnvelope {
+                    namespace: vesper_domain::ExtensionNamespace::new("provider.lmstudio").unwrap(),
+                    version: vesper_domain::SchemaVersion::new(1).unwrap(),
+                    values: Default::default(),
+                },
+            },
+            model: QualifiedModelId {
+                provider_id: pid(),
+                model_id: ModelId::new("picked-model").unwrap(),
+            },
+            context_window_tokens: 8192,
+            system_instructions: vec![],
+            workspace_roots: vec![],
+            max_tool_iterations: 2,
+            firewall: None,
+            sandbox: None,
+        };
+        let agent = vesper_agent::AgentLoop::new(
+            registry,
+            vesper_agent::ToolRegistry::parity_default(),
+            config,
+        );
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(15),
+            agent.run_prompt_with_history(
+                vec![vesper_domain::ConversationMessage {
+                    id: vesper_domain::MessageId::new("fixture-user").unwrap(),
+                    role: MessageRole::User,
+                    content: vec![ContentPart::Text(ContentText::new("Say ok").unwrap())],
+                    extensions: Default::default(),
+                }],
+                vesper_domain::SessionOperatingMode::Code,
+                vesper_domain::SessionPermissionMode::ReadOnly,
+            ),
+        )
+        .await
+        .unwrap();
+        let body = server.join().unwrap();
+        assert!(result.is_ok(), "{result:?}");
+        assert_eq!(body["model"], "picked-model");
     }
 }

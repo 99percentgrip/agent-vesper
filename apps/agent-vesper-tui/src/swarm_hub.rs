@@ -1,9 +1,5 @@
 //! Native Swarm Save/Cancel editor over the shared workspace draft.
-use ratatui::{
-    Frame,
-    layout::Rect,
-    widgets::{Block, Borders, Clear, Paragraph},
-};
+use ratatui::Frame;
 use vesper_harness::swarm_settings::{GovernanceSetting, SwarmSettingsDraft};
 
 pub struct SwarmHub {
@@ -53,16 +49,7 @@ impl SwarmHub {
         }
     }
 }
-pub fn render(frame: &mut Frame<'_>, hub: &SwarmHub) {
-    let area = frame.area();
-    let width = area.width.min(86);
-    let height = area.height.min(16);
-    let panel = Rect::new(
-        (area.width - width) / 2,
-        (area.height - height) / 2,
-        width,
-        height,
-    );
+pub fn render(frame: &mut Frame<'_>, hub: &SwarmHub, theme: &str) {
     let settings = &hub.draft.settings;
     let rows = [
         format!("Swarm: {}", if settings.enabled { "ON" } else { "OFF" }),
@@ -87,24 +74,14 @@ pub fn render(frame: &mut Frame<'_>, hub: &SwarmHub) {
         "Save settings".into(),
         "Cancel".into(),
     ];
-    let mut text = "↑/↓ select · Enter/Space change · S save · Esc cancel\n\n".to_string();
-    for (index, row) in rows.iter().enumerate() {
-        text.push_str(&format!(
-            "{} {row}\n",
-            if index == hub.selected { "›" } else { " " }
-        ));
-    }
-    text.push_str(&format!("\n{}", hub.notice));
-    frame.render_widget(Clear, panel);
-    frame.render_widget(
-        Paragraph::new(text)
-            .wrap(ratatui::widgets::Wrap { trim: false })
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title(" Settings › Swarm "),
-            ),
-        panel,
+    crate::settings_menu::render_menu(
+        frame,
+        &rows,
+        hub.selected,
+        "Settings › Swarm",
+        &hub.notice,
+        "↑↓ select · Enter/Space change · S save · Esc cancel",
+        theme,
     );
 }
 
@@ -120,7 +97,9 @@ mod tests {
         assert!(!root.path().join(".agent-vesper").exists());
         let mut terminal =
             ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 24)).unwrap();
-        terminal.draw(|frame| render(frame, &hub)).unwrap();
+        terminal
+            .draw(|frame| render(frame, &hub, "chatgpt-black"))
+            .unwrap();
         let text: String = terminal
             .backend()
             .buffer()

@@ -9,8 +9,11 @@ welcome screen shows your selected provider, model, and installed version. Use
 ↑/↓ and Enter, or click a row, to **Start coding**, open **Settings**, or **Check
 for updates**. Settings uses a centered menu; select a category and then a value
 with Enter. Applying a value keeps you in Settings. Esc goes back from values to
-Settings, then to the welcome screen (or your conversation if opened while coding). The update check contacts GitHub only when selected; it does not
-install anything. Press R for the release page or Esc to quit. Resuming with
+Settings, then to the welcome screen (or your conversation if opened while coding).
+If you changed anything, choose **Save changes**, **Discard changes**, or **Keep editing**.
+Check for updates contacts GitHub and offers **Install update** when a newer release
+exists. Installation requires that confirmation; reopen Vesper afterward. Press R
+for the release page or Esc to quit. Resuming with
 `--resume <SESSION_ID>` goes directly to your conversation.
 
 Ask Vesper to inspect the repository before making a change:
@@ -31,10 +34,13 @@ The conversation shows tool activity and results. Review the plan for multi-step
 
 ## Settings and providers
 
-The selected visual theme also colors the welcome screen, Settings, and Web tools.
-Changing it in Settings → Visual theme applies immediately and is retained for the
-next launch, including when you open another project. Web tools uses the same centered menu, with
-draft toggles and explicit Save settings / Cancel actions.
+The selected theme colors every native Settings panel, including Providers,
+Swarm and Implementation acceptance. Theme changes preview while editing. Leaving
+Settings with changes opens one save/discard prompt for model, reasoning,
+auxiliary, generation, mixture, permissions, session mode, theme and feature
+choices. Saved ordinary choices are restored on the next launch; model choices
+are checked against the active provider. Provider setup keeps its explicit save.
+Web tools still need a host restart, and importing a driver is a separate action.
 
 Use `/settings` for provider selection and optional feature setup. Provider controls come from the selected adapter: model, reasoning, and account options can differ. Save changes explicitly and restart when the screen asks you to.
 
@@ -83,7 +89,10 @@ Recall can use semantic embeddings and keyword search. With no suitable embeddin
 
 ## Verify work against requirements
 
-For a feature with a written requirements document, enable **Settings → Implementation acceptance**, choose the document, and Save. Or start one objective:
+For a feature with a written requirements document, turn on **Settings → Implementation acceptance**, then save when leaving Settings.
+Vesper recognizes the task's PRD, checks its scope independently against your
+request, and remembers its path automatically. You do not need to type a path
+in Settings. In ACP, `/settings acceptance on` enables the same behavior. Or start one objective:
 
 ```text
 /acceptance start docs/my-feature-prd.md

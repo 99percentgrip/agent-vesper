@@ -21,9 +21,11 @@ transport, stderr-only tracing, and orderly shutdown.
 
 ## Local Contracts
 
-- ADR 0028 `/acceptance` and `/settings acceptance on <PRD>|off` compose the shared
+- ADR 0028/0029 `/acceptance` and `/settings acceptance on [PRD]|off` compose the shared
   native completion gate. Saved activation is loaded before dispatch; live authority
-  remains per-session and outside compaction. VRO/Swarm drafts return through the parent
+  remains per-session and outside compaction. Empty-path opt-in admits pending
+  automatic enrollment; direct and Swarm dispatch capture the original user request
+  for independent candidate-scope review before remembering a PRD path. VRO/Swarm drafts return through the parent
   gate; direct cancellation retains the incomplete report/history. Default controls
   create no evidence state; `tests/acceptance_controls.rs` checks the real isolated ACP
   process.
@@ -85,6 +87,9 @@ transport, stderr-only tracing, and orderly shutdown.
   native device sign-in needs no Codex installation. The terminal Settings
   modal is host-specific: ACP users sign in through TUI or explicit
   `--provider openai --login`; ACP stdout never displays a device code.
+- LM Studio transport sends the active request model, so native model changes do
+  not silently keep using the launch model. Its loopback wire test verifies the
+  request body through the real AgentLoop and adapter.
 - Memory extraction follows the launch provider. An OpenAI launch uses the
   native Responses auxiliary path without Z.ai/LM Studio credentials. The
   independent embedding configuration and local fallback stay unchanged.

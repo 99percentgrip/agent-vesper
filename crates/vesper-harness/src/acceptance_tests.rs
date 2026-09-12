@@ -18,6 +18,13 @@ impl AcceptanceReviewer for Reviewer {
     ) -> ToolFuture<'a, Result<String, String>> {
         self.calls.fetch_add(1, Ordering::Relaxed);
         Box::pin(async move {
+            if request.starts_with("Review automatic PRD enrollment") {
+                assert!(request.contains("Implement PRD.md fully"));
+                return json(&EnrollmentReview {
+                    matches_scope: !*self.finding.lock().unwrap(),
+                    reason: "Scope comparison against the captured user request".into(),
+                });
+            }
             if request.starts_with("Create the complete") {
                 return json(&contract());
             }
@@ -872,5 +879,170 @@ async fn saved_activation_restores_unverified_scope_and_cannot_disable_an_active
     assert!(
         Arc::ptr_eq(&identity, active.as_ref().unwrap()),
         "workspace edits cannot switch off live authority"
+    );
+}
+
+#[tokio::test]
+async fn automatic_enrollment_remembers_prd_and_requires_real_evidence_in_the_same_turn() {
+    let root = project();
+    let acceptance = AcceptanceSession::open(root.path(), "", reviewer()).unwrap();
+    acceptance
+        .capture_request("Implement PRD.md fully")
+        .unwrap();
+    assert!(acceptance.instructions().contains("acceptance_enroll"));
+    assert!(!acceptance.status().is_verified());
+    let scripts = vec![
+        tool("acceptance_enroll", serde_json::json!({"prd":"PRD.md"})),
+        stop("Done already"),
+        tool(
+            "write_file",
+            serde_json::json!({"path":"src/lib.rs", "content":"pub fn answer() -> u32 { 42 }\n#[test]\nfn answer_is_42() { assert_eq!(answer(), 42); }\n"}),
+        ),
+        tool(
+            "acceptance_configure",
+            serde_json::json!({"checks":[check()]}),
+        ),
+        tool("acceptance_verify", serde_json::json!({})),
+        stop("Done"),
+    ];
+    let (factory, observed) = fixture_factory(root.path(), scripts).await;
+    let agent = acceptance.attach(vesper_agent::AgentLoop::new(
+        factory.registry,
+        vesper_agent::ToolRegistry::parity_default(),
+        factory.config,
+    ));
+    let (outcome, _) = agent
+        .run_prompt_with_history(
+            vec![crate::build_user_message("Implement PRD.md fully")],
+            SessionOperatingMode::Code,
+            SessionPermissionMode::Bypass,
+        )
+        .await
+        .unwrap();
+    let vesper_agent::AgentTurnOutcome::Acceptance { report, .. } = outcome else {
+        panic!("native gate missing")
+    };
+    assert!(report.is_verified(), "{}", report.render());
+    assert_eq!(observed.requests().len(), 6);
+    let saved = crate::acceptance_settings::AcceptanceSettings::load(root.path()).unwrap();
+    assert!(saved.enabled);
+    assert_eq!(saved.prd, "PRD.md");
+    assert_eq!(acceptance.settings_preferences(), saved);
+    let restarted = AcceptanceSession::open(root.path(), &saved.prd, reviewer()).unwrap();
+    assert!(!restarted.status().is_verified());
+    let call = ToolCall {
+        id: ToolCallId::new("replace").unwrap(),
+        tool_id: ToolId::new("acceptance_enroll").unwrap(),
+        arguments: serde_json::json!({"prd":"PRD.md"}),
+        extensions: Default::default(),
+    };
+    assert!(
+        acceptance
+            .execute(&call, &context(root.path()))
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test]
+async fn automatic_enrollment_rejects_missing_external_and_forged_scope_without_saving() {
+    let root = project();
+    let acceptance = AcceptanceSession::open(root.path(), "", reviewer()).unwrap();
+    for args in [
+        serde_json::json!({"prd":""}),
+        serde_json::json!({"prd":"../PRD.md"}),
+        serde_json::json!({"prd":"missing.md"}),
+        serde_json::json!({"prd":"PRD.md", "verified":true}),
+    ] {
+        let call = ToolCall {
+            id: ToolCallId::new("enroll").unwrap(),
+            tool_id: ToolId::new("acceptance_enroll").unwrap(),
+            arguments: args,
+            extensions: Default::default(),
+        };
+        assert!(
+            acceptance
+                .execute(&call, &context(root.path()))
+                .await
+                .is_err()
+        );
+        assert!(
+            !acceptance
+                .evaluate(&context(root.path()))
+                .await
+                .is_verified()
+        );
+        assert!(
+            !root
+                .path()
+                .join(".agent-vesper/acceptance-settings.json")
+                .exists()
+        );
+    }
+}
+
+#[tokio::test]
+async fn automatic_scope_review_refusal_and_cancellation_do_not_remember_a_path() {
+    struct CancelsAfterCoverage {
+        inner: Arc<Reviewer>,
+        cancel: Arc<vesper_runtime::RuntimeCancellation>,
+    }
+    impl AcceptanceReviewer for CancelsAfterCoverage {
+        fn inspect<'a>(
+            &'a self,
+            root: &'a Path,
+            request: String,
+            cancellation: Arc<dyn vesper_agent::CancellationSignal>,
+        ) -> ToolFuture<'a, Result<String, String>> {
+            Box::pin(async move {
+                let coverage = request.starts_with("Coverage review");
+                let result = self.inner.inspect(root, request, cancellation).await;
+                if coverage {
+                    self.cancel.cancel();
+                }
+                result
+            })
+        }
+    }
+    let root = project();
+    let denied = reviewer();
+    *denied.finding.lock().unwrap() = true;
+    let session = AcceptanceSession::open(root.path(), "", denied).unwrap();
+    session.capture_request("Implement PRD.md fully").unwrap();
+    let call = ToolCall {
+        id: ToolCallId::new("enroll").unwrap(),
+        tool_id: ToolId::new("acceptance_enroll").unwrap(),
+        arguments: serde_json::json!({"prd":"PRD.md"}),
+        extensions: Default::default(),
+    };
+    assert!(session.execute(&call, &context(root.path())).await.is_err());
+    assert!(session.enrolled().is_none());
+    assert!(
+        !root
+            .path()
+            .join(".agent-vesper/acceptance-settings.json")
+            .exists()
+    );
+    let cancel = Arc::new(vesper_runtime::RuntimeCancellation::new());
+    let session = AcceptanceSession::open(
+        root.path(),
+        "",
+        Arc::new(CancelsAfterCoverage {
+            inner: reviewer(),
+            cancel: cancel.clone(),
+        }),
+    )
+    .unwrap();
+    session.capture_request("Implement PRD.md fully").unwrap();
+    let mut context = context(root.path());
+    context.cancellation = cancel;
+    assert!(session.execute(&call, &context).await.is_err());
+    assert!(session.enrolled().is_none());
+    assert!(!session.status().is_verified());
+    assert!(
+        !root
+            .path()
+            .join(".agent-vesper/acceptance-settings.json")
+            .exists()
     );
 }

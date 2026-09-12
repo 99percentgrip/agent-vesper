@@ -128,6 +128,16 @@ When the user requests a durable behavior change, record it here or in the relev
   credential; only explicit sign-out, credential failure, or `/auth` may
   request authentication again.
 
+- Ordinary native Settings use one draft and a Save changes / Discard changes /
+  Keep editing prompt on exit. Provider setup may retain explicit immediate saves.
+  Every Settings panel follows the selected theme. Saved execution choices must
+  reach the next coding turn and be restored with adapter validation on restart.
+- Enforced completion recognizes the task's PRD and remembers its path after
+  native opt-in; manual Settings path entry is optional. Automatic selection cannot
+  weaken requirement coverage, independent review, or evidence enforcement.
+- Check for updates offers a confirmed installer workflow with actual progress,
+  failures and restart guidance, rather than only linking to release downloads.
+
 ## Project Contracts
 
 - The frozen Python source at `/home/alex/Projects/Native GLM-5.2 Provider`

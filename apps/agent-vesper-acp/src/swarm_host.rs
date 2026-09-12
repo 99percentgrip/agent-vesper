@@ -190,10 +190,11 @@ impl AcpHarnessEngine {
                     plans: self.plans_shared(),
                 });
             let mut active_acceptance = self.acceptance_session(&request.session_id);
-            vesper_harness::acceptance::activate_saved(
+            vesper_harness::acceptance::activate_for_prompt(
                 &mut active_acceptance,
                 &root,
                 WorkerFactory::new(self.registry.clone(), config.clone()),
+                &goal,
             )?;
             if let Some(active) = &active_acceptance {
                 self.acceptance

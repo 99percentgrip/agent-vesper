@@ -8,7 +8,8 @@ architecture, MSRV, and source-oracle checks.
 ## Local Contracts
 
 - ADR 0028 `acceptance` runs fixed named policy/runtime/native-host cases and rejects
-  missing, ignored or zero-match selections. `verify` includes it.
+  missing, ignored or zero-match selections. Automatic enrollment with real evidence
+  and invalid enrollment without state writes are named gate cases. `verify` includes it.
   `acceptance-mutations` copies source to a temporary workspace and requires two
   deliberate evaluator defects to fail their named assertion tests; a compile failure is
   not a mutation kill. Build artifacts stay under `target/acceptance-mutations`.

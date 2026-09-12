@@ -146,6 +146,11 @@ Z.ai and Playwright MCP server descriptors.
 
 ## Local Contracts
 
+- ADR 0029 adds empty-path opt-in as pending automatic PRD enrollment. Both hosts
+  capture the original user request with `activate_for_prompt`; `acceptance_enroll`
+  independently reviews the candidate scope, freezes it once and remembers its
+  workspace path under normal mutation permissions. Pending enrollment cannot
+  complete. No model tool can disable or replace an enrolled objective.
 - ADR 0028: `acceptance`, `acceptance_snapshot`, `acceptance_runner` and
   `acceptance_settings` own original PRD/project-rule capture, independent read-only
   review, exact Rust test execution, private in-memory receipts and native controls.

@@ -102,6 +102,8 @@ impl InterviewQuestionPolicy {
 }
 
 mod landing_host;
+mod settings_host;
+mod update_host;
 
 type Backend = CrosstermBackend<io::Stdout>;
 
@@ -533,6 +535,19 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
         selected_text: String::new(),
         reasoning_diagnostics: None,
     };
+
+    session.state.catalog_context_windows = session
+        .capabilities
+        .descriptors()
+        .iter()
+        .filter_map(|descriptor| {
+            let id = descriptor.model.model_id.as_str();
+            session
+                .capabilities
+                .context_window(id)
+                .map(|window| (id.to_owned(), window))
+        })
+        .collect();
 
     // `--resume <id>`: load a previously persisted session before entering the
     // event loop so the user continues exactly where they left off. A failed
@@ -1428,6 +1443,7 @@ async fn drive_loop(
     let mut was_in_settings = false;
     let mut landing_pending = show_landing;
     let mut settings_from_landing = false;
+    let mut restored_settings = false;
     loop {
         if provider_id.as_str() == "openai"
             && (refresh_openai_models || (session.settings_menu_open && !was_in_settings))
@@ -1435,9 +1451,14 @@ async fn drive_loop(
             refresh_openai_models = false;
             terminal
                 .draw(|frame| {
-                    frame.render_widget(
-                        ratatui::widgets::Paragraph::new("Loading OpenAI account models…"),
-                        frame.area(),
+                    agent_vesper_tui::settings_menu::render_menu(
+                        frame,
+                        &["Loading account models…".into()],
+                        0,
+                        "Settings · model",
+                        "",
+                        "",
+                        &session.state.preferences.theme,
                     )
                 })
                 .map_err(|_| "Could not redraw model loading status")?;
@@ -1486,6 +1507,18 @@ async fn drive_loop(
             .as_ref()
             .map(|(_, policy)| policy as &dyn vesper_provider::SuperpowerPolicy)
             .unwrap_or(policy);
+        if !restored_settings {
+            restored_settings = true;
+            if let Err(error) = settings_host::restore(
+                &mut session.state,
+                registry_commands,
+                surface,
+                policy,
+                provider_id,
+            ) {
+                session.state.status = Some(error);
+            }
+        }
         if landing_pending {
             landing_pending = false;
             match landing_host::open(
@@ -1506,6 +1539,31 @@ async fn drive_loop(
                     settings_from_landing = false;
                 }
             }
+        }
+        if session.settings_menu_open {
+            if session.agent_running {
+                session.state.status = Some("Open Settings after the active turn finishes.".into());
+            } else {
+                let result = settings_host::open(
+                    &mut terminal,
+                    session,
+                    registry_commands,
+                    surface,
+                    policy,
+                    provider_id,
+                    registry,
+                    (provider_id.as_str() == "openai").then_some(openai_factory),
+                )
+                .await;
+                refresh_openai_models = provider_id.as_str() == "openai";
+                session.state.status = Some(result.unwrap_or_else(|error| error));
+            }
+            session.settings_menu_open = false;
+            session.input.clear();
+            session.command_matches.clear();
+            landing_pending = settings_from_landing;
+            settings_from_landing = false;
+            continue;
         }
         restore_settings_menu(session, registry_commands, surface);
         // Phase 6: drain any completed agent turn BEFORE redrawing so the
@@ -2296,7 +2354,14 @@ async fn drive_loop(
                                 .acceptance
                                 .as_ref()
                                 .map(|active| active.settings_preferences());
-                            match acceptance_host::settings(&mut terminal, &root, initial).await {
+                            match acceptance_host::settings(
+                                &mut terminal,
+                                &root,
+                                initial,
+                                &session.state.preferences.theme,
+                            )
+                            .await
+                            {
                                 Ok(Some(settings)) if settings.enabled => {
                                     format!("settings on {}", settings.prd)
                                 }
@@ -2339,7 +2404,7 @@ async fn drive_loop(
                         if session.agent_running {
                             "Open Swarm settings after the active turn finishes.".into()
                         } else {
-                            swarm_host::settings(&mut terminal)
+                            swarm_host::settings(&mut terminal, &session.state.preferences.theme)
                                 .await
                                 .unwrap_or_else(|error| error)
                         }
@@ -2408,7 +2473,14 @@ async fn drive_loop(
                             Some("Open Providers settings after the active turn finishes.".into());
                         continue;
                     }
-                    match open_provider_switcher(&mut terminal, registry, provider_id).await {
+                    match open_provider_switcher(
+                        &mut terminal,
+                        registry,
+                        provider_id,
+                        &session.state.preferences.theme,
+                    )
+                    .await
+                    {
                         Ok(Some(target)) => {
                             // If switching TO LM Studio and the endpoint is the
                             // default (localhost:1234), prompt for the server URL
@@ -2780,6 +2852,7 @@ async fn open_provider_switcher(
     terminal: &mut Terminal<Backend>,
     registry: &vesper_runtime::ProviderRegistry,
     current: &ProviderId,
+    theme: &str,
 ) -> Result<Option<String>, String> {
     use agent_vesper_tui::provider_hub::{ProviderHub, render};
     let providers = registry.provider_ids().await;
@@ -2800,29 +2873,30 @@ async fn open_provider_switcher(
     }
     loop {
         terminal
-            .draw(|frame| render(frame, &hub))
+            .draw(|frame| render(frame, &hub, theme))
             .map_err(|error| format!("provider settings redraw: {error}"))?;
-        if let Event::Key(KeyEvent {
-            code,
-            modifiers,
-            kind: KeyEventKind::Press,
-            ..
-        }) = event::read().map_err(|error| format!("provider settings input: {error}"))?
-        {
-            match code {
-                KeyCode::Esc => return Ok(None),
-                KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => return Ok(None),
-                KeyCode::Up => hub.selected = hub.selected.saturating_sub(1),
-                KeyCode::Down => hub.selected = (hub.selected + 1).min(hub.providers.len()),
-                KeyCode::Char('s' | 'S') => return Ok(hub.choice().map(str::to_owned)),
-                KeyCode::Enter | KeyCode::Char(' ') => {
-                    if hub.selected == hub.providers.len() {
-                        return Ok(hub.choice().map(str::to_owned));
-                    }
-                    hub.choose();
-                }
-                _ => {}
+        let (code, clicked) =
+            settings_host::input(terminal, hub.providers.len() + 2, hub.selected)?;
+        if let Some(index) = clicked {
+            hub.selected = index;
+        }
+        match code {
+            KeyCode::Esc => return Ok(None),
+            KeyCode::Up => hub.selected = hub.selected.saturating_sub(1),
+            KeyCode::Down | KeyCode::Tab => {
+                hub.selected = (hub.selected + 1).min(hub.providers.len() + 1)
             }
+            KeyCode::Char('s' | 'S') => return Ok(hub.choice().map(str::to_owned)),
+            KeyCode::Enter | KeyCode::Char(' ') => {
+                if hub.selected == hub.providers.len() + 1 {
+                    return Ok(None);
+                }
+                if hub.selected == hub.providers.len() {
+                    return Ok(hub.choice().map(str::to_owned));
+                }
+                hub.choose();
+            }
+            _ => {}
         }
     }
 }
@@ -6100,10 +6174,11 @@ fn spawn_submitted_prompt(
             return;
         }
     };
-    if let Err(error) = vesper_harness::acceptance::activate_saved(
+    if let Err(error) = vesper_harness::acceptance::activate_for_prompt(
         &mut session.acceptance,
         &root,
         vesper_harness::WorkerFactory::new(agent.provider_registry(), config),
+        &text,
     ) {
         session.state.status = Some(format!("Acceptance incomplete: {error}"));
         return;
@@ -7960,6 +8035,9 @@ fn turn_configuration(
         return Ok(config);
     }
     if config.provider_id.as_str() != "zai" {
+        if let Some(model) = active_superpower_choice(state, surface, "model") {
+            config.model.model_id = ModelId::new(model).map_err(|_| "Invalid selected model")?;
+        }
         return Ok(config);
     }
     let model =
@@ -7994,12 +8072,18 @@ fn session_context_window(
     state: &SessionState,
     surface: &ProviderSuperpowerSurface,
 ) -> Result<u64, String> {
-    let model = if matches!(config.provider_id.as_str(), "zai" | "openai") {
-        active_superpower_choice(state, surface, "model")
-            .unwrap_or_else(|| config.model.model_id.as_str().to_owned())
-    } else {
-        config.model.model_id.as_str().to_owned()
-    };
+    let model = active_superpower_choice(state, surface, "model")
+        .unwrap_or_else(|| config.model.model_id.as_str().to_owned());
+    if !matches!(config.provider_id.as_str(), "zai" | "openai") {
+        if let Some(window) = state.catalog_context_windows.get(&model) {
+            return Ok(*window);
+        }
+        if model != config.model.model_id.as_str() {
+            return Err(
+                "Selected model has no advertised context window; refresh its catalog".into(),
+            );
+        }
+    }
     // The capability index is populated solely from the active provider's
     // catalog; an absent limit fails closed rather than borrowing another
     // provider's window.
@@ -14929,7 +15013,7 @@ mod tests {
         assert_eq!(conversation_text_tail(&history, 0), "");
     }
 
-    fn palette_surface() -> ProviderSuperpowerSurface {
+    pub(super) fn palette_surface() -> ProviderSuperpowerSurface {
         use vesper_provider::{SuperpowerDescriptor, SuperpowerKind, SuperpowerScope};
 
         let provider_id = ProviderId::new("zai").unwrap();
@@ -15594,6 +15678,29 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["/thinking disabled", "/thinking enabled"]
         );
+    }
+
+    #[test]
+    fn selected_local_model_uses_its_catalog_context_window() {
+        let provider = ProviderId::new("lmstudio").unwrap();
+        let mut config = build_agent_config(&provider).unwrap();
+        config.model.model_id = ModelId::new("launch-model").unwrap();
+        config.context_window_tokens = 32768;
+        let agent = AgentLoop::new(
+            Arc::new(vesper_runtime::ProviderRegistry::new()),
+            ToolRegistry::parity_default(),
+            config,
+        );
+        let surface = lmstudio_shaped_surface();
+        let mut state = SessionState::new();
+        state
+            .catalog_context_windows
+            .insert("qwen3-8b".into(), 8192);
+        let selected = turn_configuration(&agent, &state, &surface).unwrap();
+        assert_eq!(selected.model.model_id.as_str(), "qwen3-8b");
+        assert_eq!(selected.context_window_tokens, 8192);
+        state.catalog_context_windows.clear();
+        assert!(turn_configuration(&agent, &state, &surface).is_err());
     }
 
     #[test]
