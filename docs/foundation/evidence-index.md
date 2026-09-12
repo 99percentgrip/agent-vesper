@@ -5,8 +5,10 @@ Status: evidence index; acceptance status is scoped to each section.
 ## v0.22.3 visual upgrade release — 2026-09-13
 
 [Release execution](v0.22.3-release-execution.md) tracks version synchronization,
-exact-commit gates, publication and the existing registry PR. Publication is in
-progress; installed 0.22.2 is intentionally preserved for Alex's updater test.
+exact-commit gates and completed publication on `e9364de`: all four prerequisites
+and release run 34709443693 passed; 16 public assets and unauthenticated latest
+discovery verified; registry PR #539 updated in place. Installed 0.22.2 hashes
+remain unchanged for Alex's updater test.
 
 ## Native output visual upgrade — 2026-09-13
 
@@ -16,7 +18,8 @@ truthful animated status, numbered syntax-colored diffs and responsive aligned
 reports. Repository verification passed (2,247 workspace tests; 23 acceptance
 cases), final renderer 240/0, changed-crate MSRV 924/0, and native Settings PTY
 regression passed. Actual renderer images are linked in the report. Native
-Windows/macOS visual acceptance remains open; no release or installation.
+Windows/macOS visual acceptance remains open. Subsequent publication is recorded
+in the v0.22.3 release report above; the installed 0.22.2 remains unchanged.
 
 ## v0.22.2 Settings repair release — 2026-09-12
 

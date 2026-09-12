@@ -1,7 +1,8 @@
 # Native output visual upgrade execution
 
 Date: 2026-09-13. Status: implemented and Linux-verified; native macOS/Windows
-visual acceptance remains unexecuted. No release or installation.
+visual acceptance remains unexecuted. No release or installation during implementation verification. Subsequent
+publication is recorded in [v0.22.3 release execution](v0.22.3-release-execution.md).
 Owning scope: [output visual upgrade PRD](../output-visual-upgrade-prd.md).
 
 ## Objective
@@ -45,7 +46,8 @@ numbered diffs, and aligned responsive reports.
 
 ## Evidence
 
-Base commit: `283b7c195493d9a798100a313fcdcbf81ec7317f`; changes are uncommitted.
+Base commit: `283b7c195493d9a798100a313fcdcbf81ec7317f`; implementation was verified before commit.
+Release commits and publication receipts are recorded in the linked release report.
 SHA-256 of the 12 changed/new Rust files, sorted by repository path and encoded
 as `path + NUL + bytes + NUL`:
 `caf44deaf40de3d7bc8b4baad7ebbfeb94391f268643c33ff169247689e0e2a1`.
