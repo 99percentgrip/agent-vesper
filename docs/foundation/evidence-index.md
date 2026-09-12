@@ -710,6 +710,7 @@ v0.21.6 release notes own the final run links, image IDs and local-install recei
   frozen hits, zero growth), `cargo xtask acceptance` 20/20. Counts in
   `docs/migration-status.md` VRO-16 row.
 
+- `ranker-hardening-final-audit.md` — cross-PR audit: scope fence verified (2-line diff), pin sabotage-verified bidirectionally, A1 latent metric defect found+fixed (overhead tokenizer vs ranker pool; shipped numbers unaffected), M2 re-derived, release evidence reconciled.
 - `ranker-hardening-pr3-execution.md` — stop rule clean (canonical table + overheads identical under the hardened ranker; verdict re-derived ADOPT); v0.22.0 released per the exact-commit contract (4 workflows green on 9b56a9e; tag; 16 assets; binary 0.22.0; registry PR #539 updated in place).
 - `ranker-hardening-pr2-execution.md` — Option A decoupling: chunk pools raw-stemmed (`raw_semantic_tokens`), prompt pool keeps expansion; pin green, control green, D3 ladder green, skill tier frozen, floor 2,220.
 - `ranker-hardening-pr1-execution.md` — Option D anchor: cross-talk pin fails for the audited reason (rollback displaces migrate via 1,560-pt manufactured overlap); no-alias control green; floor 2,219; `#[ignore]` until PR-2.

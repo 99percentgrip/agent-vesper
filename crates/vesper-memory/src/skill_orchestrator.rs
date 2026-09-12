@@ -93,8 +93,12 @@ impl ChunkRoutingCondition {
         manifest
             .iter()
             .map(|entry| {
-                let own = semantic_tokens(&self.routing_text_for(entry));
-                let flat = semantic_tokens(&Self::FlatDescription.routing_text_for(entry));
+                // Ranker-hardening audit: the routing tier consumes RAW
+                // pools (`raw_semantic_tokens`, no alias expansion) since
+                // Option A — the overhead metric must count exactly the
+                // tokens the ranker actually holds, not expanded ones.
+                let own = raw_semantic_tokens(&self.routing_text_for(entry));
+                let flat = raw_semantic_tokens(&Self::FlatDescription.routing_text_for(entry));
                 match self {
                     Self::FlatDescription => 0,
                     Self::SummaryOnly | Self::SummaryKeyElements => own.difference(&flat).count(),
