@@ -16,6 +16,8 @@ Own durable project documentation and evidence-backed engineering records.
   than repeating implementation diaries or unverified capability claims.
 - `recon/` owns the frozen Python-harness reconnaissance and Rust migration design.
 - `foundation/` owns blocker-resolution evidence, compatibility decisions, fixture contracts, and disposable-spike verdicts.
+- `architecture/` owns read-only external-repository pattern reconnaissance mapped to Vesper primitives for future features.
+- Root PRD `advanced-hive-governance-prd.md` (VRO-16) owns the ratified requirements for task-level HITL gates (`YieldToHost`/`HostCommand`/`Suspended`), PIVOT/REFINE decision loops with judge separation, and deterministic verification gates; its upstreams are referenced exclusively as `governance alpha`/`governance beta` (naming-guard tokens land with its PR-1).
 - `adr/` owns accepted production architecture decisions.
 - `stage1/` owns production-workspace foundation evidence and readiness reports.
 - `stage2/` owns shared-contract completion, compatibility, fixture coverage,
@@ -69,6 +71,7 @@ Own durable project documentation and evidence-backed engineering records.
 ## Child DOX Index
 
 - `foundation/AGENTS.md` — Stage 0 decisions, fixture/oracle evidence, and technical-spike reports.
+- `architecture/AGENTS.md` — read-only external-repo pattern reconnaissance feeding feature PRDs.
 - `recon/AGENTS.md` — Agent Vesper migration reconnaissance records and quality gates.
 - `adr/AGENTS.md` — accepted production decisions and verification obligations.
 - `stage1/AGENTS.md` — Stage 1 execution ledger, coverage, CI status, and final report.

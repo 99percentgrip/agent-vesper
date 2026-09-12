@@ -4,7 +4,7 @@ use ratatui::{
     layout::Rect,
     widgets::{Block, Borders, Clear, Paragraph},
 };
-use vesper_harness::swarm_settings::SwarmSettingsDraft;
+use vesper_harness::swarm_settings::{GovernanceSetting, SwarmSettingsDraft};
 
 pub struct SwarmHub {
     pub draft: SwarmSettingsDraft,
@@ -43,6 +43,12 @@ impl SwarmHub {
             }
             3 => settings.failover = !settings.failover,
             4 => settings.shared_scope = !settings.shared_scope,
+            5 => {
+                settings.governance = match settings.governance {
+                    GovernanceSetting::Auto => GovernanceSetting::Gated,
+                    GovernanceSetting::Gated => GovernanceSetting::Auto,
+                };
+            }
             _ => {}
         }
     }
@@ -69,6 +75,13 @@ pub fn render(frame: &mut Frame<'_>, hub: &SwarmHub) {
                 "shared"
             } else {
                 "isolated"
+            }
+        ),
+        format!(
+            "Governance: {}",
+            match settings.governance {
+                GovernanceSetting::Auto => "auto",
+                GovernanceSetting::Gated => "gated",
             }
         ),
         "Save settings".into(),

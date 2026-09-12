@@ -75,6 +75,14 @@ impl AcpHarnessEngine {
                 if self.swarm.service.is_running() {
                     text.push_str("\nA swarm goal is running.");
                 }
+                if !self.swarm.service.gate_snapshot().is_empty() {
+                    for gate in self.swarm.service.gate_snapshot() {
+                        text.push_str(&format!(
+                            "\n{}",
+                            vesper_harness::swarm_gate_surface::render_gate(&gate)
+                        ));
+                    }
+                }
                 let owned_report = self
                     .swarm
                     .report
@@ -86,14 +94,36 @@ impl AcpHarnessEngine {
                     })
                 {
                     text.push_str(&format!(
-                        "\nLast run: success={}, cleanup={:?}. Artifacts: {}",
+                        "\nLast run: success={}, cleanup={:?}{}. Artifacts: {}",
                         report.success,
                         report.cleanup,
+                        if report.budget_exhausted {
+                            " — budget ceiling hard-stop"
+                        } else {
+                            ""
+                        },
                         report.artifacts.display()
                     ));
+                    if !report.gate_events.is_empty() {
+                        text.push_str("\nGovernance audit:\n");
+                        text.push_str(&vesper_harness::swarm_gate_surface::render_audit(
+                            &report.gate_events,
+                        ));
+                    }
                 }
                 return Ok(AcpPromptResult {
                     text,
+                    cancelled: false,
+                    persist_turn: false,
+                    history_replacement: None,
+                });
+            }
+            SwarmCommandOutcome::Gate(task_id, command) => {
+                self.swarm.service.resolve_gate(&task_id, command)?;
+                return Ok(AcpPromptResult {
+                    text: String::from(
+                        "Gate command queued; the running swarm applies it on its next tick.",
+                    ),
                     cancelled: false,
                     persist_turn: false,
                     history_replacement: None,

@@ -123,11 +123,11 @@ Rerun the same installer to update to the latest release, then restart Vesper an
 To select a specific release, download the installer as shown above, then use an actual version from [Releases](https://github.com/99percentgrip/agent-vesper/releases):
 
 ```sh
-AGENT_VESPER_VERSION=0.21.8 sh vesper-install.sh
+AGENT_VESPER_VERSION=0.21.9 sh vesper-install.sh
 ```
 
 ```powershell
-./vesper-install.ps1 -Version 0.21.8
+./vesper-install.ps1 -Version 0.21.9
 ```
 
 The version above is an example, not an instruction to downgrade a newer installation.

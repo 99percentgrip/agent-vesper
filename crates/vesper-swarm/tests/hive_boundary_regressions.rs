@@ -107,6 +107,8 @@ async fn every_hanging_phase_cancels_actual_signal_and_retains_goal() {
 }
 #[tokio::test]
 async fn unsuccessful_receipts_never_advance_the_pipeline() {
+    // Bare hives (no governance/decisions) keep exact VRO-15 turn counts;
+    // the review panel composes only on governance-enabled hives.
     for (phase, calls) in [("decompose", 1), ("task-0", 2), ("synthesize", 3)] {
         let (mut hive, script) = hive(phase, false);
         assert!(hive.run_tick().await.is_err());

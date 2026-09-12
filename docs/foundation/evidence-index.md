@@ -507,3 +507,52 @@ v0.21.6 release notes own the final run links, image IDs and local-install recei
 - Final canonical verification and both native binary builds passed. All 20
   exact acceptance cases passed; both deliberate evaluator mutations were caught.
   Local implementation evidence does not imply a release or installed update.
+
+## VRO-16 advanced hive governance — 2026-09-12
+
+- Requirements: `docs/advanced-hive-governance-prd.md` (PR-1 §2, PR-2 §3,
+  PR-3 §4). Upstreams referenced exclusively as governance alpha/beta
+  (recon `docs/architecture/recon_vro16_governance.md`, pinned commits).
+- Final audit found nine integration gaps (G1–G9) between the tested
+  engines and the composed production path — the VRO-15 decorative-layer
+  failure mode. All were repaired in the same audit pass and each now has
+  an executing proof in
+  `crates/vesper-swarm/tests/hive_governance_audit_fixes.rs`.
+- G2 gate bus publication is real: the `governor` inbox subscribes at
+  topology admission (`MessageKind::Governance`, Urgent tier); gate sends
+  fail loudly on publication failure; `drain_governance_bus` is the host
+  observation seam.
+- G3 ledger audit trail is complete: every gate resolution persists
+  before its state effects (Cancel no longer drops its own audit record);
+  `record_gate_event` derives the goal from the event, and the audit
+  entry round-trips as an `AuditEvent` through `EntryKind::Audit`.
+- G4 `governance: gated` enforces decomposition and synthesis boundary
+  gates (once per task id per run — `resolved_gate_ids`).
+- G5 Redirect directives reach re-dispatched worker prompts.
+- G9 SmartPause consumes the real watchdog percentage
+  (`BudgetWatchdog::percent_consumed`), not a constant.
+- G1 the review panel composes pre-synthesis on governance-enabled hives
+  (async round driver over driver ports; bare VRO-15 hives keep exact
+  turn-count contracts; zero-panel fails closed).
+- G6 budget exhaustion renders in both hosts; G7 the directive rides
+  `GateResolved.command` (PRD D4 amended instead of a redundant variant);
+  G8 this entry.
+- **G4 re-audit (same day, prompted by direct owner challenge):** the
+  boundary-gate fix above was itself incomplete — gates opened but did
+  not pause the gated work (the decomposition gate fell through to task
+  dispatch in the same tick; the synthesis gate ran panel+synthesis
+  anyway), the G4 proof asserted only gate *views*, not held-back work,
+  and `run_to_completion` could hot-loop on an unresolvable open gate.
+  All three repaired: both boundaries now park the run (`Ok(false)`,
+  `active_goal` cleared, assignments/evidence retained) and resume after
+  host resolution or expiry; `run_to_completion` returns instead of
+  spinning when a gate is open; the proof is behavior-based — zero task
+  prompts reach drivers while the decomposition gate is open, synthesis
+  is held until its gate resolves, the goal completes after both
+  resolutions, and the spin-safety case asserts the run stays parked.
+  Lesson recorded: a gate that does not stop anything is not a gate, and
+  proving "the gate exists" is not proving "the gate gates."
+- Final verification: workspace all-features and default suites, strict
+  Clippy, fmt, architecture (27 packages), naming-guard (11 tokens, 18
+  frozen hits, zero growth), `cargo xtask acceptance` 20/20. Counts in
+  `docs/migration-status.md` VRO-16 row.

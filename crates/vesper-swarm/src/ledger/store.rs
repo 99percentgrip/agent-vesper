@@ -78,6 +78,9 @@ pub enum EntryKind {
     Instruction,
     /// A metric or measurement.
     Metric,
+    /// An immutable governance audit event (VRO-16 D4). Exact-match
+    /// filterable by `kind`; `key` carries the gate id.
+    Audit,
 }
 
 /// Where an entry came from. Preserved verbatim across transfers.
@@ -315,6 +318,13 @@ impl LedgerSnapshot {
     #[must_use]
     pub fn exact(&self, scope: &MemoryScope, key: &str) -> Vec<LedgerHit> {
         Ledger::exact_in(&self.inner, scope, key)
+    }
+
+    /// Whether an entry id exists in this retained generation (VRO-16
+    /// PR-2: fail-closed rationale resolution against a frozen snapshot).
+    #[must_use]
+    pub fn has_entry(&self, entry_id: u64) -> bool {
+        self.inner.entries.contains_key(&entry_id)
     }
 }
 

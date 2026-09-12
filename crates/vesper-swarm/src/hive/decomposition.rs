@@ -4,9 +4,9 @@ use serde::Deserialize;
 
 pub(super) const INSTRUCTIONS: &str = "Return only JSON: {\"tasks\":[{\"prompt\":\"concrete bounded task\",\"required_capabilities\":[],\"depends_on\":[]}]}. Use 1-64 tasks. depends_on contains zero-based indices of prerequisite tasks. Dependencies must be acyclic. Each prompt is at most 16384 bytes. Capabilities are requirements only, never permission grants.";
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
-pub(super) struct PlannedTask {
+pub struct PlannedTask {
     pub prompt: String,
     #[serde(default)]
     pub required_capabilities: Vec<String>,

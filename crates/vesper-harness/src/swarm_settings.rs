@@ -15,6 +15,21 @@ pub struct SwarmSettings {
     pub failover: bool,
     #[serde(default)]
     pub shared_scope: bool,
+    /// Governance profile (VRO-16 PR-1): `auto` or `gated`.
+    #[serde(default)]
+    pub governance: GovernanceSetting,
+}
+
+/// Native-settings representation of the governance profile. Maps onto
+/// `vesper_swarm::hive::governance::GovernanceProfile`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum GovernanceSetting {
+    /// SmartPause-only gates from observable degradation signals.
+    #[default]
+    Auto,
+    /// SmartPause plus decomposition/synthesis boundary gates.
+    Gated,
 }
 
 impl Default for SwarmSettings {
@@ -25,6 +40,7 @@ impl Default for SwarmSettings {
             drivers: 3,
             failover: false,
             shared_scope: false,
+            governance: GovernanceSetting::Auto,
         }
     }
 }
@@ -112,9 +128,13 @@ pub struct SwarmControls {
     root: Option<std::path::PathBuf>,
 }
 
+#[derive(Debug)]
 pub enum SwarmCommandOutcome {
     Text(String),
     Run(String),
+    /// Resolve a governance gate (VRO-16): the host forwards this to the
+    /// running service; identical semantics in both hosts.
+    Gate(String, vesper_swarm::hive::governance::HostCommand),
 }
 
 impl SwarmControls {
@@ -160,7 +180,7 @@ impl SwarmControls {
                 draft.apply(edit)?;
             }
             return Ok(SwarmCommandOutcome::Text(format!(
-                "Swarm draft: enabled={}, drivers={}, topology={:?}, failover={}, scope={}.\n/swarm settings enabled on|off; drivers 3–8; topology mesh|hierarchical|centralized|hybrid; failover on|off; scope isolated|shared.\n/swarm settings save or /swarm settings cancel.",
+                "Swarm draft: enabled={}, drivers={}, topology={:?}, failover={}, scope={}, governance={}.\n/swarm settings enabled on|off; drivers 3–8; topology mesh|hierarchical|centralized|hybrid; failover on|off; scope isolated|shared; governance auto|gated.\n/swarm settings save or /swarm settings cancel.",
                 draft.settings.enabled,
                 draft.settings.drivers,
                 draft.settings.topology,
@@ -169,13 +189,17 @@ impl SwarmControls {
                     "shared"
                 } else {
                     "isolated"
-                }
+                },
+                match draft.settings.governance {
+                    GovernanceSetting::Auto => "auto",
+                    GovernanceSetting::Gated => "gated",
+                },
             )));
         }
         if argument.is_empty() || argument == "status" {
             let saved = load(root)?;
             return Ok(SwarmCommandOutcome::Text(format!(
-                "Swarm saved preference: enabled={}, drivers={}, topology={:?}, failover={}, scope={}. Availability is checked before each run.\n/swarm settings · /swarm run <goal>",
+                "Swarm saved preference: enabled={}, drivers={}, topology={:?}, failover={}, scope={}, governance={}. Availability is checked before each run.\n/swarm settings · /swarm run <goal>",
                 saved.enabled,
                 saved.drivers,
                 saved.topology,
@@ -184,10 +208,33 @@ impl SwarmControls {
                     "shared"
                 } else {
                     "isolated"
+                },
+                match saved.governance {
+                    GovernanceSetting::Auto => "auto",
+                    GovernanceSetting::Gated => "gated",
                 }
             )));
         }
-        Err("Usage: /swarm status|settings|run <goal>".into())
+        // VRO-16 gate verbs: shared parsing, shared verb set. `gates` and
+        // `audit` are answered by the host against the live service; the
+        // parser itself is shared in swarm_gate_surface.
+        if argument == "gates" || argument == "audit" || argument.starts_with("gate ") {
+            let (task_id, command) = if argument == "gates" || argument == "audit" {
+                (String::new(), None)
+            } else {
+                let parsed = crate::swarm_gate_surface::parse_gate_command(
+                    argument.strip_prefix("gate ").unwrap_or_default(),
+                )?;
+                (parsed.0, Some(parsed.1))
+            };
+            if let Some(command) = command {
+                return Ok(SwarmCommandOutcome::Gate(task_id, command));
+            }
+            return Ok(SwarmCommandOutcome::Text(String::from(
+                "Use /swarm gates while a goal is running to list open gates with countdowns, or /swarm audit after a run for the governance trail.",
+            )));
+        }
+        Err("Usage: /swarm status|settings|run <goal>|gates|gate <task> resume|redirect <directive>|fail <reason>|cancel".into())
     }
 }
 impl SwarmSettingsDraft {
@@ -202,6 +249,7 @@ impl SwarmSettingsDraft {
             ["enabled", value @ ("on" | "off")] => self.settings.enabled = *value == "on",
             ["failover", value @ ("on" | "off")] => self.settings.failover = *value == "on",
             ["scope", value @ ("isolated" | "shared")] => self.settings.shared_scope = *value == "shared",
+            ["governance", value @ ("auto" | "gated")] => self.settings.governance = if *value == "auto" { GovernanceSetting::Auto } else { GovernanceSetting::Gated },
             ["drivers", value] => {
                 let drivers = value.parse::<u32>().map_err(|_| "Drivers must be 3–8.")?;
                 if !(3..=8).contains(&drivers) { return Err("Drivers must be 3–8.".into()); }
@@ -214,7 +262,7 @@ impl SwarmSettingsDraft {
                 "hybrid" => TopologyKind::Hybrid,
                 _ => return Err("Unknown swarm topology.".into()),
             },
-            _ => return Err("Use enabled on|off, failover on|off, drivers 3–8, scope isolated|shared, or topology mesh|hierarchical|centralized|hybrid.".into()),
+            _ => return Err("Use enabled on|off, failover on|off, drivers 3–8, scope isolated|shared, governance auto|gated, or topology mesh|hierarchical|centralized|hybrid.".into()),
         }
         Ok(())
     }

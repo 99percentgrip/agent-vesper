@@ -36,6 +36,7 @@ These describe requirements, design decisions, and past implementation work. A s
 - [Provider capabilities](provider-capability-gating-prd.md)
 - [Web tools](web-oracle-extraction-prd.md)
 - [Multi-worker orchestration](swarm-oracle-extraction-prd.md)
+- [Advanced hive governance](advanced-hive-governance-prd.md)
 - [Completion assurance decision](adr/0028-native-implementation-acceptance.md) and [implementation evidence](foundation/completion-assurance-execution.md)
 - [Foundation evidence index](foundation/evidence-index.md)
 

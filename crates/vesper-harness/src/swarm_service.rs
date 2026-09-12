@@ -127,6 +127,12 @@ pub struct SwarmRunReport {
     pub cleanup_error: Option<String>,
     pub events: Vec<HiveEvent>,
     pub workers: Vec<crate::swarm_journal::NativeWorkerRecord>,
+    /// Governance audit events (VRO-16): gates, decisions, verification
+    /// verdicts and budget thresholds in order. Shared verbatim by both
+    /// hosts.
+    pub gate_events: Vec<vesper_swarm::hive::governance::AuditEvent>,
+    /// Whether the budget watchdog hard-stopped this run (VRO-16 PR-3).
+    pub budget_exhausted: bool,
 }
 
 #[derive(Default)]
@@ -136,6 +142,48 @@ pub struct NativeSwarmService {
     last: Mutex<Option<SwarmRunReport>>,
     stopping: CancelFlag,
     idle: tokio::sync::Notify,
+    /// Shared channel to the running hive's governance gates (VRO-16):
+    /// queued host commands in, derived gate snapshots out.
+    gates: GateChannel,
+}
+
+/// Shared gate channel between hosts and the running hive (VRO-16):
+/// queued host commands in, derived gate snapshots out.
+#[derive(Debug, Clone, Default)]
+pub struct GateChannel {
+    pub commands: Arc<std::sync::Mutex<Vec<(String, vesper_swarm::hive::governance::HostCommand)>>>,
+    pub views: Arc<std::sync::Mutex<Vec<vesper_swarm::hive::governance::GateView>>>,
+}
+
+impl NativeSwarmService {
+    /// Queue a host command for the running hive's open gate (VRO-16).
+    /// Returns an error when no run is active. Both hosts call this
+    /// through the same shared command parser.
+    pub fn resolve_gate(
+        &self,
+        task_id: &str,
+        command: vesper_swarm::hive::governance::HostCommand,
+    ) -> Result<(), String> {
+        if !self.is_running() {
+            return Err("No swarm goal is running; there is no gate to resolve.".into());
+        }
+        self.gates
+            .commands
+            .lock()
+            .map_err(|_| "Gate channel unavailable")?
+            .push((task_id.to_owned(), command));
+        Ok(())
+    }
+
+    /// Current open-gate snapshot with derived countdowns (VRO-16).
+    #[must_use]
+    pub fn gate_snapshot(&self) -> Vec<vesper_swarm::hive::governance::GateView> {
+        self.gates
+            .views
+            .lock()
+            .map(|views| views.clone())
+            .unwrap_or_default()
+    }
 }
 struct RunOwner(Arc<NativeSwarmService>);
 impl Drop for RunOwner {
@@ -233,9 +281,19 @@ impl NativeSwarmService {
         let drop_cancel = CancelOnDrop(CancelFlag::new());
         let dropped = drop_cancel.0.signal();
         let stopping = self.stopping.signal();
+        let gates = self.gates.clone();
         tokio::spawn(async move {
             owner.0.quarantined.store(true, Ordering::Release);
-            let report = run_owned(settings, context, goal, cancellation, dropped, stopping).await;
+            let report = run_owned(
+                settings,
+                context,
+                goal,
+                cancellation,
+                dropped,
+                stopping,
+                gates,
+            )
+            .await;
             owner.0.quarantined.store(
                 report.as_ref().is_ok_and(|report| {
                     !report.cleanup.is_clean()
@@ -264,7 +322,10 @@ async fn run_owned(
     cancellation: CancellationSignal,
     dropped: CancellationSignal,
     stopping: CancellationSignal,
+    gates: GateChannel,
 ) -> Result<SwarmRunReport, String> {
+    let gate_commands = gates.commands.clone();
+    let gate_views = gates.views.clone();
     let backend = context.backend.clone();
     let capabilities = tokio::task::spawn_blocking(move || backend.capabilities())
         .await
@@ -382,21 +443,90 @@ async fn run_owned(
             result = Hive::with_factories(config, factories, embedding) => result.map_err(|error| error.to_string())?,
         };
         retirements_settled.store(false, Ordering::Release);
-        let mut hive = hive.with_timestamp_source(Arc::new(|| {
+        let hive = hive.with_timestamp_source(Arc::new(|| {
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .ok()
                 .and_then(|time| u64::try_from(time.as_millis()).ok())
         }));
+        // VRO-16 PR-1: enable task-level governance per the saved native
+        // settings profile. Failed receipts may suspend a task at a bounded
+        // gate; the host polls and resolves through the shared command set.
+        let governance = vesper_swarm::hive::governance::GovernanceConfig {
+            profile: match settings.governance {
+                crate::swarm_settings::GovernanceSetting::Auto => {
+                    vesper_swarm::hive::governance::GovernanceProfile::Auto
+                }
+                crate::swarm_settings::GovernanceSetting::Gated => {
+                    vesper_swarm::hive::governance::GovernanceProfile::Gated
+                }
+            },
+            ..Default::default()
+        };
+        let mut hive = hive
+            .with_governance(
+                governance,
+                Arc::new(vesper_swarm::hive::orchestrator::WallClockGovernanceClock),
+            )
+            .map_err(|error| error.to_string())?;
+        // VRO-16 PR-2: bounded PIVOT/REFINE decisions with default caps.
+        // Assembly enforces D3 separation across the role templates.
+        hive = hive
+            .with_decision(vesper_swarm::hive::DecisionConfig::default())
+            .map_err(|error| error.to_string())?;
+        // VRO-16 PR-3: deterministic verification gates with a bounded
+        // budget ceiling. Tokens proxy evidence bytes; elapsed ms come
+        // from the injected governance clock's wall time.
+        let budget_ceiling = vesper_swarm::hive::BudgetCeiling {
+            tokens: 8_000_000,
+            elapsed_ms: 45 * 60 * 1000,
+        };
+        let mut hive = hive
+            .with_verification(Some(budget_ceiling))
+            .map_err(|error| error.to_string())?;
         hive.admit_topology().map_err(|error| error.to_string())?;
         hive.submit(goal.clone())
             .map_err(|error| error.to_string())?;
+        // VRO-16: drive ticks; a suspended gate makes run_tick return
+        // Ok(false) without progress, so poll with a short bounded interval
+        // instead of spinning. Governance events surface through the report.
         let (result, cancelled) = tokio::select! {
             biased;
             _ = cancellation.cancelled() => (Err("Swarm cancelled; completed worker evidence is retained.".into()), true),
             _ = dropped.cancelled() => (Err("Swarm caller closed; completed worker evidence is retained.".into()), true),
             _ = stopping.cancelled() => (Err("Swarm service closed; completed worker evidence is retained.".into()), true),
-            result = hive.run_to_completion() => (result.map(|_| ()).map_err(|error| error.to_string()), false),
+            result = async {
+                loop {
+                    // VRO-16: drain queued host commands between ticks, then
+                    // refresh the shared gate snapshot for host rendering.
+                    {
+                        let pending: Vec<_> = gate_commands
+                            .lock()
+                            .map(|mut queue| queue.drain(..).collect())
+                            .unwrap_or_default();
+                        for (task_id, command) in pending {
+                            let _ = hive.resolve_host_command(&task_id, command).await;
+                        }
+                    }
+                    let tick = hive.run_tick().await;
+                    {
+                        let now_ms = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|time| time.as_millis() as u64)
+                            .unwrap_or_default();
+                        let views = hive.gate_views(now_ms);
+                        let _ = gate_views.lock().map(|mut slot| *slot = views);
+                    }
+                    match tick {
+                        Ok(true) => break Ok(()),
+                        Ok(false) => {
+                            // A gate may be open; poll bounded, never spin.
+                            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                        }
+                        Err(error) => break Err(error.to_string()),
+                    }
+                }
+            } => (result, false),
         };
         let mut output = hive
             .ledger()
@@ -422,14 +552,30 @@ async fn run_owned(
             }
         }
         let events = hive.events();
+        let gate_events = hive.gate_events();
+        let hive_budget_exhausted = hive.budget_exhausted();
         hive.close();
         if !hive.settle_workers(Duration::from_secs(10)).await {
             output.push_str("\nWorker retirement remains unresolved.");
-            return Ok((false, cancelled, output, events));
+            return Ok((
+                false,
+                cancelled,
+                output,
+                events,
+                gate_events,
+                hive_budget_exhausted,
+            ));
         }
         retirements_settled.store(true, Ordering::Release);
         drop(hive);
-        Ok::<_, String>((result.is_ok(), cancelled, output, events))
+        Ok::<_, String>((
+            result.is_ok(),
+            cancelled,
+            output,
+            events,
+            gate_events,
+            hive_budget_exhausted,
+        ))
     };
     let result = execution.await;
     let settled = journal.settle(Duration::from_secs(10)).await
@@ -438,14 +584,17 @@ async fn run_owned(
         Ok(report) => (report, None),
         Err(error) => (leases.cleanup_report(), Some(error.to_string())),
     };
-    let (success, cancelled, mut output, events) = result.unwrap_or_else(|error| {
-        (
-            false,
-            cancellation.is_cancelled() || dropped.is_cancelled() || stopping.is_cancelled(),
-            error,
-            Vec::new(),
-        )
-    });
+    let (success, cancelled, mut output, events, gate_events, budget_exhausted) = result
+        .unwrap_or_else(|error| {
+            (
+                false,
+                cancellation.is_cancelled() || dropped.is_cancelled() || stopping.is_cancelled(),
+                error,
+                Vec::new(),
+                Vec::new(),
+                false,
+            )
+        });
     let workers = journal.records();
     if cancelled || !success {
         let completed = events
@@ -509,6 +658,8 @@ async fn run_owned(
         cleanup_error,
         events,
         workers,
+        gate_events,
+        budget_exhausted,
     })
 }
 

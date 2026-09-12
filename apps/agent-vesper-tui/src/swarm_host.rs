@@ -30,8 +30,8 @@ pub async fn settings(terminal: &mut Terminal<Backend>) -> Result<String, String
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 return Ok("Swarm settings cancelled; nothing saved.".into());
             }
-            KeyCode::Up => hub.selected = (hub.selected + 6) % 7,
-            KeyCode::Down | KeyCode::Tab => hub.selected = (hub.selected + 1) % 7,
+            KeyCode::Up => hub.selected = (hub.selected + 8) % 8,
+            KeyCode::Down | KeyCode::Tab => hub.selected = (hub.selected + 1) % 8,
             KeyCode::Char('s' | 'S') => {
                 hub.draft.save(&root)?;
                 return Ok(
@@ -40,11 +40,11 @@ pub async fn settings(terminal: &mut Terminal<Backend>) -> Result<String, String
                 );
             }
             KeyCode::Enter | KeyCode::Char(' ') => match hub.selected {
-                5 => {
+                6 => {
                     hub.draft.save(&root)?;
                     return Ok("Swarm preferences saved; capability and permission checks apply to every run.".into());
                 }
-                6 => return Ok("Swarm settings cancelled; nothing saved.".into()),
+                7 => return Ok("Swarm settings cancelled; nothing saved.".into()),
                 _ => hub.change(),
             },
             _ => {}
@@ -73,16 +73,36 @@ pub fn command(
         .command(&root, argument)?;
     let SwarmCommandOutcome::Run(goal) = outcome else {
         let SwarmCommandOutcome::Text(mut text) = outcome else {
-            unreachable!()
+            // VRO-16 gate resolution: forward to the running service.
+            let SwarmCommandOutcome::Gate(task_id, command) = outcome else {
+                unreachable!()
+            };
+            service().resolve_gate(&task_id, command)?;
+            return Ok(
+                "Gate command queued; the running swarm applies it on its next tick.".into(),
+            );
         };
         if service().is_running() {
             text.push_str("\nA swarm goal is running.");
         }
+        if !service().gate_snapshot().is_empty() {
+            for gate in service().gate_snapshot() {
+                text.push_str(&format!(
+                    "\n{}",
+                    vesper_harness::swarm_gate_surface::render_gate(&gate)
+                ));
+            }
+        }
         if let Some(report) = service().last_report() {
             text.push_str(&format!(
-                "\nLast run: success={}, cleanup={:?}. Artifacts: {}",
+                "\nLast run: success={}, cleanup={:?}{}. Artifacts: {}",
                 report.success,
                 report.cleanup,
+                if report.budget_exhausted {
+                    " — budget ceiling hard-stop"
+                } else {
+                    ""
+                },
                 report.artifacts.display()
             ));
         }

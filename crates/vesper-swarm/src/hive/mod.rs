@@ -11,7 +11,25 @@
 pub mod assignment;
 pub mod timeout;
 
+pub mod decision;
+pub mod governance;
+pub mod panel;
+pub mod verify;
+
 pub mod orchestrator;
 
-mod decomposition;
+pub mod decomposition;
 mod routing;
+
+pub use decision::{
+    DEFAULT_PIVOT_CAP, DEFAULT_REFINE_CAP, DecisionConfig, DecisionEngine, DecisionVerdict,
+};
+pub use governance::{
+    AmendedTask, AuditEvent, AuditLog, DecisionVerdictPayload, FallbackAction, GateRecord,
+    GateView, GovernanceConfig, GovernanceProfile, Governor, HostCommand, Resolution,
+    VerificationCheck,
+};
+pub use verify::{
+    BUDGET_LEVELS, BudgetCeiling, BudgetReading, BudgetState, BudgetWatchdog, EvidenceArtifact,
+    EvidenceBook, VerificationFailure, artifact_digest, extract_citations, fnv64, verify_traces,
+};

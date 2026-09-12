@@ -2408,6 +2408,8 @@ pub mod swarm_adapter;
 #[cfg(feature = "swarm")]
 pub mod swarm_embedding;
 #[cfg(feature = "swarm")]
+pub mod swarm_gate_surface;
+#[cfg(feature = "swarm")]
 pub mod swarm_inputs;
 #[cfg(feature = "swarm")]
 pub mod swarm_journal;

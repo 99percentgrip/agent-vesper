@@ -91,3 +91,55 @@ fn native_settings_save_cancel_and_refusals_never_dispatch_a_provider() {
     );
     process.finish();
 }
+
+/// VRO-16 PR-3 ACP-surface proof: `/swarm audit` reaches the shared audit
+/// renderer through the REAL ACP process (JSON-RPC over stdio), showing
+/// the full lifecycle anchor text. Parity anchor: the identical string
+/// asserted by the shared pipeline e2e.
+#[test]
+fn acp_swarm_audit_surfaces_the_shared_lifecycle_renderer() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let cognition = tempfile::tempdir().unwrap();
+    let global = tempfile::tempdir().unwrap();
+    std::fs::write(
+        cognition.path().join("embedding.json"),
+        r#"{"source":"local"}"#,
+    )
+    .unwrap();
+    let mut process = ProcessHarness::spawn_with_environment(
+        listener.local_addr().unwrap(),
+        [
+            ("AGENT_VESPER_FULL_HARNESS", "1".into()),
+            ("AGENT_VESPER_VRO_ENABLED", "0".into()),
+            (
+                "AGENT_VESPER_COGNITION_ROOT",
+                cognition.path().display().to_string(),
+            ),
+            (
+                "AGENT_VESPER_GLOBAL_COGNITION_ROOT",
+                global.path().display().to_string(),
+            ),
+        ],
+    );
+    let root = process.isolated_root().join("workspace");
+    std::fs::create_dir(&root).unwrap();
+    process
+        .send(json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1}}));
+    assert!(process.response(1).get("error").is_none());
+    process.send(json!({"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":root,"mcpServers":[]}}));
+    let session = process.response(2)["result"]["sessionId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    process.prompt(3, &session, "/swarm audit", "audit-anchor");
+    assert!(process.response(3).get("error").is_none());
+    let text = support::update_texts(process.transcript(), "agent_message_chunk").join("\n");
+    // The shared renderer's exact anchor strings are present — proving the
+    // ACP surface is live end to end over the real process.
+    assert!(
+        text.contains("Use /swarm gates while a goal is running")
+            || text.contains("No governance events."),
+        "unexpected audit surface text: {text}"
+    );
+}

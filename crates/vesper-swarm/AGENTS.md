@@ -1,14 +1,17 @@
-# vesper-swarm — pure swarm-coordination foundations (VRO-15)
+# vesper-swarm — pure swarm-coordination foundations (VRO-15; VRO-16 governance)
 
 ## Purpose
 
 Own the provider-neutral, pure-logic swarm coordination foundations
 extracted from *the swarm oracle* (an authorized upstream orchestration
 repository): topology, worker pooling, priority messaging, task assignment,
-shared memory ledger and sandbox lease coordination. It delegates turns through
+shared memory ledger, sandbox lease coordination, hive orchestration and
+task-level governance. It delegates turns through
 execution ports, performs no network/filesystem I/O and names no provider.
 Bus TTL accepts an injected clock; pool/turn deadlines use Tokio's monotonic
-clock and are tested with virtual time. Physical blocking-destructor observation
+clock and are tested with virtual time. Governance countdowns derive from
+caller-supplied wall-clock milliseconds via `GovernanceClock` — the crate
+reads no clock itself. Physical blocking-destructor observation
 uses a bounded wall-clock wait; it cannot preempt external destructors.
 
 ## Ownership
@@ -422,6 +425,156 @@ uses a bounded wall-clock wait; it cannot preempt external destructors.
   bad version, truncation at six offsets, trailing bytes, header
   disagreement), filtered over-fetch semantics, capacity enforcement,
   post-reload insert continuity, and a 10k build/query runtime guard.
+
+- `src/hive/governance.rs` (VRO-16 PR-1 + audit fixes) — the pure
+  task-level governance state machine: `GovernanceConfig`/`GovernanceProfile`
+  (Auto/Gated/Custom) with bounded countdowns (60 s–1 h; `Governor::new`
+  refuses outside), `HostCommand` (Resume/Redirect/Fail/Cancel; the one
+  shared verb surface both hosts delegate to), `GateRecord` with
+  `opened_at_ms` and **derived** remaining time (never a ticking timer),
+  D1 `expire_due(now_ms)` firing the pre-configured `FailTask` fallback,
+  the `AuditEvent` audit stream (gates, decisions, verification verdicts,
+  budget thresholds; append-only, bounded; `goal_id()` derives the owning
+  goal from the event so persistence never depends on live run state),
+  the `ReceiptSignals` SmartPause evaluator (observable-only), and
+  `Governor::replay` reconstruction. Audit fixes: `resolved_gate_ids()`
+  gives boundary gates once-per-task-id semantics; `goal_of_gate` cuts at
+  the last `-task-` boundary. Final-audit proofs live in
+  `tests/hive_governance_audit_fixes.rs` (G2 real bus inbox, G3 Cancel
+  persistence + ledger round-trip, G4 boundary enforcement, G5
+  directive-to-prompt, G1 panel composition, G9 budget-fed SmartPause).
+- `tests/hive_governance_regressions.rs` (VRO-16 PR-1 proofs) — D1
+  injected-clock expiry with `GateExpired` audit and no-open-gate-after
+  (silent host never hangs the hive); D2 two-party barrier proving
+  sibling tasks execute while one task sits suspended at a gate;
+  restart reconstruction with identical derived countdown; verb-surface
+  stability; bounded-timeout refusal; and governance-off hives keeping
+  exact VRO-15 semantics (no gates, no audit events, failed receipts
+  error the tick).
+- `src/hive/mod.rs` re-exports the governance surface; `MessageKind` gains
+  `Governance` (gate publication rides the Urgent tier — never evicted,
+  dequeued before ordinary work); `EntryKind` gains `Audit` for ledger
+  persistence of gate events; `RoleProfile` gains `model_binding`
+  (D3 preparation: author/judge role routing hint, prompt-separated by
+  construction) and `RoleProfile::judge()` with structurally distinct
+  evaluation-only instructions. The orchestrator's in-flight goal became a
+  re-entrant `ActiveRun` (assignments/results/evidence/failed-tasks/
+  pending-directive/suspended): with governance enabled, a failed receipt
+  validated by `run_receipt_for_governance` (identity/size still strict,
+  `success: false` passed through) re-dispatches once, then opens a gate
+  and suspends **only that task** — siblings keep dispatching, dependents
+  stop at the dependency wall, the tick returns `Ok(false)`, and
+  `resolve_host_command` (Resume/Redirect/Fail/Cancel) or expiry resumes
+  the run. An errored tick (no open gate) keeps the stricter VRO-15
+  `Interrupted` no-replay contract. Without `with_governance` the hive is
+  byte-for-byte VRO-15 behavior.
+- `crates/vesper-harness/src/swarm_gate_surface.rs` — ONE shared
+  gate-command parser (`gate <task> resume|redirect <directive>|fail
+  <reason>|cancel`), countdown renderer (`3m 25s remaining`) and audit
+  renderer; both hosts delegate (parity by construction).
+  `crates/vesper-harness/tests/swarm_gate_parity.rs` proves the shared
+  surface, `/swarm gate` routing through `SwarmControls`, and the
+  settings round-trip (draft edits never touch the filesystem; Save
+  persists once; legacy settings files default to Auto).
+- `crates/vesper-harness/src/swarm_service.rs` — `GateChannel`
+  (queued host commands in, derived gate snapshots out) shared between
+  hosts and the running hive's tick loop (drained between ticks, never
+  spun); `SwarmRunReport.gate_events` carries the audit trail to both
+  hosts; the run loop polls at a bounded 250 ms while a gate is open.
+  `swarm_settings.rs` persists `governance: auto|gated` (serde default
+  keeps legacy files valid) surfaced in the TUI Settings › Swarm hub and
+  the ACP `/swarm settings` verbs — activation is native-Settings-only.
+
+- `src/hive/decision.rs` (VRO-16 PR-2) — the Navigator decision node:
+  `DecisionConfig` (default 3 refines / 2 pivots; caps above the defaults
+  are refused so configuration cannot manufacture an unbounded loop),
+  strict-JSON verdict parsing (`Proceed`/`Refine{amended,iteration}`/
+  `Pivot{tasks}`/`ProceedWithFailure`), and `DecisionEngine::issue` —
+  which rewrites an over-cap refine/pivot to the audited
+  `ProceedWithFailure` verdict (cap exhaustion is always an explicit
+  audit event, never silent; malformed decisions and dangling
+  `rationale_refs` fail closed and consume no iteration). Amended task
+  sets are validated against the decomposition bounds (1–64 tasks,
+  bounded prompts/capabilities/dependencies). `VersionRegistry`
+  preserves one `LedgerSnapshot` per decision (`push_version`,
+  `version(goal,index)`, `resolves_any` as the rationale resolver) so
+  any iteration's evidence stays retrievable; `LedgerSnapshot::has_entry`
+  backs fail-closed reference checks. `decision_tests.rs` proves the
+  caps, the audited exhaustion path, dangling-ref refusal, malformed
+  refusal, cap-inflation refusal and cross-version retrieval against a
+  real ledger.
+- `src/hive/panel.rs` (VRO-16 PR-2) — the Driver-role review panel:
+  frozen-snapshot rounds (`RoundInput::frozen` builds each reviewer's
+  input from positions recorded **before** the round — same-round peers
+  are structurally invisible, not conventionally hidden), bounded rounds
+  (`MAX_ROUNDS = 2`, ≤ 8 reviewers), drop-on-double-failure (single
+  failures tolerated; round-≥1 empty output keeps the prior position;
+  round-0 empty counts as a failure attempt), and `PanelOutcome::ZeroPanel`
+  — a panel reduced to zero members is a verification failure, never a
+  silent acceptance. `panel_tests.rs` proves same-round isolation
+  (observed inputs), double-failure drops, zero-panel failure, empty-
+  rebuttal retention and the round bound.
+- Orchestrator PR-2 wiring — `RoleProfile::template_identity()` hashes
+  the **authored surface** (instructions + tools; the name is excluded
+  so relabeling an author as "judge" cannot dodge D3), `with_decision`
+  refuses any two roles with identical surfaces at assembly, and
+  `drive_run` runs a decision turn after synthesis when decisions are
+  enabled: it records the pre-decision ledger version, issues the
+  verdict with rationale refs resolved against all recorded versions
+  (fail-closed), audits it into the unified stream (`gate_events()`
+  unions Governor gate events and decision events), and applies
+  Refine/Pivot by rebuilding the run's assignments (goal re-dispatch,
+  never a silent loop) or completes on Proceed/ProceedWithFailure.
+  `run_to_completion` counts only completed goals and keeps driving
+  through `Ok(false)` continuation ticks. The harness composes
+  `with_decision` with default caps on every governance-enabled run.
+  `tests/hive_governance_regressions.rs` PR-2 proofs: refine loop
+  bounded through the real orchestrator with the exhaustion verdict
+  audited and versions retained; judge/author hash-distinctness plus the
+  relabeled-impostor refusal and real-judge acceptance; evidence
+  versions retrievable after decisions.
+
+- `src/hive/verify.rs` (VRO-16 PR-3) — deterministic verification gates:
+  `artifact_digest` (FNV-1a 64 over task-id/output with a separator and
+  length suffix — concatenation cannot forge collisions) records each
+  artifact's content hash at admission; `EvidenceBook` admits once per
+  task (double admission refused), binds the published ledger entry id as
+  the trace target, and re-verifies digests before synthesis admission
+  (`DigestMismatch`/`UnknownTask` failures carry the recorded/recomputed
+  pair). `extract_citations`/`verify_traces` enforce the `[evidence:<id>]`
+  citation contract — every cited id must resolve to an admitted
+  artifact's ledger entry; dangling citations fail closed.
+  `BudgetWatchdog` evaluates caller-supplied `BudgetReading`s against a
+  `BudgetCeiling` (binding axis = the axis closest to its ceiling):
+  50%/80% emit `BudgetThreshold` audit events without stopping, 100%
+  returns `Exhausted` and each level fires exactly once (skipped levels
+  emit retroactively in ascending order). `verify_tests.rs` proves digest
+  determinism/tamper-sensitivity, double-admission refusal, dangling-
+  citation fail-closed, and the complete threshold matrix including the
+  time-axis-only stop.
+- Orchestrator PR-3 wiring — `with_verification(ceiling)` (nonzero on at
+  least one axis) enables the gates; evidence admission records digests
+  and binds ledger entry ids after trajectory publication; synthesis runs
+  both gates before acceptance (digest failures and dangling citations
+  each fail the goal with an audited `VerificationVerdict`); per-turn
+  budget accounting (output bytes proxy tokens, reported duration
+  proxies elapsed) hard-stops the goal with truthful partial state and a
+  `TurnCompleted(<goal>-budget-stop, false)` event when 100% crosses.
+  `budget_exhausted()` surfaces termination; the harness composes
+  verification on every governance-enabled run and reports
+  `SwarmRunReport.budget_exhausted`. `render_audit` covers
+  `VerificationVerdict` and `BudgetThreshold`.
+  `tests/hive_governance_regressions.rs` PR-3 proofs: trace gate accepts
+  real citations and fails closed on hallucinated ones (with audited
+  failure verdicts), digest rejection of tampered artifacts, watchdog
+  50/80/100 emissions with no duplicate levels, orchestrator hard-stop
+  with the audited 100% event, and the complete exact-match-filterable
+  audit chain. `tests/swarm_pipeline_e2e.rs` (harness) drives the full
+  Driver → panel → Navigator → gates pipeline over the real orchestrator
+  composed exactly as the service composes it, pins the audit-lifecycle
+  anchor text both hosts render through the ONE shared `render_audit`,
+  and the ACP process test (`swarm_controls.rs`) proves `/swarm audit`
+  reaches that renderer through the real JSON-RPC process.
 
 ## Local Contracts
 

@@ -1207,7 +1207,18 @@ fn naming_guard(regenerate: bool) -> Result<(), String> {
         "6167656e746462",
         // pattern 6 (upstream memory product)
         "736f6e61",
+        // pattern 7 (VRO-16 governance alpha upstream: product name)
+        "6167656e6379636c69",
+        // pattern 8 (VRO-16 governance beta upstream: long compound name)
+        "6175746f7265736561726368636c6177",
+        // pattern 9 (VRO-16 governance beta upstream: short stem; the long
+        // compound above embeds this stem, but the short form is used alone
+        // in the upstream's CLI verbs, config keys and doc filenames)
+        "7265736561726368636c6177",
     ];
+    // The frozen baseline also pins the expected token-count; a guard edit
+    // that silently drops a check must fail instead of passing quietly.
+    const FORBIDDEN_TOKEN_COUNT: usize = 11;
 
     let mut pattern_bytes = Vec::with_capacity(FORBIDDEN_HEX.len());
     for hex in FORBIDDEN_HEX {
@@ -1224,6 +1235,12 @@ fn naming_guard(regenerate: bool) -> Result<(), String> {
         .iter()
         .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
         .collect();
+    if patterns.len() != FORBIDDEN_TOKEN_COUNT {
+        return Err(format!(
+            "naming guard token integrity failure: expected {FORBIDDEN_TOKEN_COUNT} forbidden tokens, found {}",
+            patterns.len()
+        ));
+    }
 
     // Embargo scope (directive): docs/, AGENTS.md, README, crates/**.
     // Exclusions: generated/lock artifacts and the mirror directory. Files

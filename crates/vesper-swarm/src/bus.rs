@@ -88,6 +88,10 @@ pub enum MessageKind {
     Heartbeat,
     /// Topology or lifecycle control traffic.
     Control,
+    /// A governance gate: a task suspended for host resolution (VRO-16).
+    /// Rides the Urgent tier so it is never evicted and always dequeued
+    /// before ordinary work; the suspended task itself is *not* dispatched.
+    Governance,
     /// Everything else.
     Data,
 }
