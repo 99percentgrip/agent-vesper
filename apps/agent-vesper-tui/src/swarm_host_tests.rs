@@ -95,6 +95,12 @@ fn native_tui_swarm_settings_task_and_history_round_trip() {
         let messages = body["messages"].to_string();
         let delta = if messages.contains("Return only JSON") {
             json!({"content":r#"{"tasks":[{"prompt":"driver-A","required_capabilities":["read_file"]},{"prompt":"driver-B","required_capabilities":["read_file"]},{"prompt":"driver-C","required_capabilities":["read_file"]}]}"#})
+        } else if messages.contains("Evaluate the evidence below for rigor") {
+            // VRO-16 review-panel turns (tool-free evaluation).
+            json!({"content": "review-grounded: evidence verified"})
+        } else if messages.contains("return only JSON deciding") {
+            // VRO-16 PR-2 decision turns: accept.
+            json!({"content": r#"{"kind":"proceed"}"#})
         } else if body["tools"].as_array().is_none_or(Vec::is_empty) {
             for label in ["A", "B", "C"] {
                 assert!(messages.contains(&format!("native-tui-file-{label}")));
@@ -244,7 +250,9 @@ fn native_tui_swarm_settings_task_and_history_round_trip() {
         String::from_utf8_lossy(&result.stderr)
     );
     assert!(!String::from_utf8_lossy(&result.stderr).contains("synthetic-tui-canary"));
-    assert_eq!(requests.load(Ordering::SeqCst), 16);
+    // VRO-16 composed governance adds the review-panel turns and the
+    // Navigator decision turn to the request stream.
+    assert_eq!(requests.load(Ordering::SeqCst), 30);
     assert!(embeddings.load(Ordering::SeqCst) >= 10);
 }
 

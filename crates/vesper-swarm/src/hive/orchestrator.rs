@@ -845,7 +845,7 @@ impl Hive {
                 }
                 let task = WorkerTask {
                     id: format!("{goal_id}-review-r{round}-{}", reviewer),
-                    kind: TaskKind::Analysis,
+                    kind: TaskKind::Review,
                     priority: crate::worker::TaskPriority::Normal,
                     prompt,
                     required_capabilities: Vec::new(),

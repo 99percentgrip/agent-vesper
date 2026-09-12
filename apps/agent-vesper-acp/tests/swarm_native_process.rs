@@ -79,6 +79,12 @@ fn native_acp_settings_run_executes_three_workers_and_captures_tool_continuation
         captured.lock().unwrap().push(body.clone());
         let delta = if messages.contains("Return only JSON") {
             json!({"content": r#"{"tasks":[{"prompt":"driver-A","required_capabilities":["read_file"]},{"prompt":"driver-B","required_capabilities":["read_file"]},{"prompt":"driver-C","required_capabilities":["read_file"]}]}"#})
+        } else if messages.contains("Evaluate the evidence below for rigor") {
+            // VRO-16 review-panel turns (tool-free evaluation).
+            json!({"content": "review-grounded: evidence verified"})
+        } else if messages.contains("return only JSON deciding") {
+            // VRO-16 PR-2 decision turns: accept.
+            json!({"content": r#"{"kind":"proceed"}"#})
         } else if body["tools"].as_array().is_none_or(Vec::is_empty) {
             for label in ["A", "B", "C"] {
                 assert!(
@@ -232,7 +238,9 @@ fn native_acp_settings_run_executes_three_workers_and_captures_tool_continuation
     let output = support::update_texts(process.transcript(), "agent_message_chunk").join("\n");
     assert!(output.contains("grounded-native-acp-synthesis"), "{output}");
     assert!(output.contains("Worker artifacts:"));
-    assert_eq!(requests.lock().unwrap().len(), 16);
+    // VRO-16 composed governance adds the review-panel turns and the
+    // Navigator decision turn to the request stream.
+    assert_eq!(requests.lock().unwrap().len(), 30);
     assert!(embedding_count.load(Ordering::Acquire) >= 10);
     assert!(vesper_harness::swarm_settings::load(&root).unwrap().enabled);
     process.finish();

@@ -204,7 +204,13 @@ impl WorkerPort for ProviderWorkerPort {
                     extensions: Default::default(),
                 };
                 *worker.history.lock().expect("worker history lock") = vec![message.clone()];
-                let tools = if task.required_capabilities.is_empty() {
+                let tools = if task.kind == vesper_swarm::worker::TaskKind::Review {
+                    // VRO-16 D3: review-panel turns are evaluation-only.
+                    // A judge evaluates artifacts against evidence; it does
+                    // not author, mutate, or re-execute work — so it gets
+                    // no tools, structurally.
+                    ToolRegistry::empty()
+                } else if task.required_capabilities.is_empty() {
                     worker.tools.clone()
                 } else {
                     worker.tools.restricted_to(&task.required_capabilities)
