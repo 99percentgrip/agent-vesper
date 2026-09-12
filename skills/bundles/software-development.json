@@ -23,7 +23,8 @@
     "test-driven-development",
     "verify-parity-end-to-end",
     "verify-with-xtask-verify",
-    "vesper-skill-authoring"
+    "vesper-skill-authoring",
+    "work-unit-reporting"
   ],
   "instruction": "Read a skill with read_skill (optionally section=...) before following it. Skill resources live under ~/.agent-vesper/memory/skills/<slug>/."
 }

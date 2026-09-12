@@ -1,6 +1,32 @@
 #![forbid(unsafe_code)]
 //! Shared hosted tool services for the production ACP and TUI compositions.
 
+/// Shared model-facing completion-reporting contract, consumed identically
+/// by both production hosts (TUI + ACP) so every fresh install behaves the
+/// same after installation. Mirrors the `COGNITIVE_CAPABILITY_INSTRUCTION`
+/// precedent: one bounded static block, cache-stable, injected into every
+/// agent loop configuration (interactive and worker paths). The full
+/// methodology ships as the `work-unit-reporting` seed skill; this block is
+/// the binding mandate — file report + in-chat summary after every work
+/// unit, final audits with regression-first proofs, and release gating.
+pub const COMPLETION_REPORTING_INSTRUCTION: &str = "### Completion Reporting & Final Audit\n\
+Every completed work unit (implementation, repair, audit, or multi-step \
+directive) ends with BOTH, in the same delivery turn: (1) a formal execution \
+report written as a Markdown file in the workspace's evidence directory \
+(objective, methods/commands, files, exact evidence with verbatim receipts, \
+deviations, unresolved items, readiness effect) linked from the workspace's \
+evidence index; and (2) a full summary presented in the conversation \
+(status, what was built, constraints held, verification receipts, \
+deviations, open items). Neither alone completes a unit; a file link is not \
+a summary. Report honestly: preserve missing, failed, stale, and unexecuted \
+acceptance items rather than weakening scope; claims trace to current \
+scope-appropriate evidence. When a multi-part initiative completes, or on \
+explicit request, perform a final audit: re-derive invariants by hand, \
+re-check every narrative claim against recorded evidence, write regression \
+tests that FAIL on the pre-audit code before fixing, and correct any \
+overstatement in place with an explicit audit note. Follow the workspace's \
+release verification gates before declaring cross-platform work done.";
+
 pub mod acceptance;
 mod acceptance_runner;
 pub mod acceptance_settings;

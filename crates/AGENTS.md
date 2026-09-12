@@ -144,7 +144,9 @@ test-only conformance support.
   that compose `vesper-runtime`. Owns no provider-wire, ACP mapping, or
   persistence internals.
 - `vesper-harness/AGENTS.md` — shared hosted Python-oracle tool services for
-  ACP and TUI compositions.
+  ACP and TUI compositions; the crate also owns the shared
+  `COMPLETION_REPORTING_INSTRUCTION` mandate constant injected by both
+  hosts (cross-host parity enforced by host prompt-composition tests).
 - `vesper-observability/AGENTS.md` — opt-in secret-safe trajectory recording
   and bounded reliability aggregation for composed hosts.
 - `vesper-web/AGENTS.md` — VRO-14 PR-1 perception engine: pure parse/strip/

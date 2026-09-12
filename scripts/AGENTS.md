@@ -82,6 +82,9 @@ with each release.
   `.seed-manifest` are never resurrected, and new seed skills from later
   releases are added on upgrade. `AGENT_VESPER_MEMORY_ROOT` overrides the
   destination. Uninstallers never touch `~/.agent-vesper/` (user data).
+  The library includes `work-unit-reporting` (95 skills), which implements
+  the completion-reporting behavior both hosts also inject via the shared
+  `COMPLETION_REPORTING_INSTRUCTION` system-prompt mandate.
 
 ## Verification
 

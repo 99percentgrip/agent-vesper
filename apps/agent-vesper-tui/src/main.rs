@@ -5589,6 +5589,11 @@ fn build_agent_loop(
     config
         .system_instructions
         .push(tool_enforcement_instruction());
+    // Shared completion-reporting mandate (both hosts; ACP parity — see
+    // `COMPLETION_REPORTING_INSTRUCTION` in `vesper-harness`).
+    config
+        .system_instructions
+        .push(completion_reporting_instruction());
     Ok(AgentLoop::new(
         registry,
         ToolRegistry::parity_default().with_service(tool_service),
@@ -5634,6 +5639,20 @@ plan in prose when update_plan is available.";
         )],
         cache_stable: true,
         extensions: vesper_domain::ExtensionMap::default(),
+    }
+}
+
+/// Static system-prompt instruction carrying the shared
+/// completion-reporting mandate (both hosts inject the identical
+/// `vesper_harness::COMPLETION_REPORTING_INSTRUCTION`).
+fn completion_reporting_instruction() -> SystemInstruction {
+    let body = vesper_harness::COMPLETION_REPORTING_INSTRUCTION;
+    SystemInstruction {
+        content: vec![ContentPart::Text(
+            ContentText::new(body).expect("bounded system instruction"),
+        )],
+        cache_stable: true,
+        extensions: ExtensionMap::default(),
     }
 }
 
@@ -15823,6 +15842,16 @@ mod tests {
             assert!(
                 text.contains("Tool Execution Enforcement"),
                 "enforcement header must be present (cognition={cognition})"
+            );
+            assert!(
+                text.contains("Completion Reporting & Final Audit"),
+                "completion-reporting mandate header must be present in the \
+                 TUI host (cognition={cognition})"
+            );
+            assert!(
+                text.contains("Neither alone completes a unit"),
+                "the both-artifacts mandate must be verbatim in the TUI host; \
+                 got: {text}"
             );
             assert!(
                 text.contains("MUST execute the write_file tool"),

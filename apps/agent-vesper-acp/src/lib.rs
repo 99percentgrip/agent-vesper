@@ -460,6 +460,7 @@ impl AcpHarnessEngine {
             // VRO-11.5 tool-enforcement mandate + cognitive capability
             // primer (TUI parity — see the doc comments on each helper).
             instructions.push(tool_enforcement_instruction());
+            instructions.push(completion_reporting_instruction());
             if self.cognition.is_enabled() {
                 instructions.push(cognitive_capability_instruction());
             }
@@ -2040,6 +2041,20 @@ plan in prose when update_plan is available.";
     }
 }
 
+/// Static system-prompt instruction carrying the shared
+/// completion-reporting mandate (both hosts inject the identical
+/// `vesper_harness::COMPLETION_REPORTING_INSTRUCTION`).
+fn completion_reporting_instruction() -> vesper_domain::SystemInstruction {
+    let body = vesper_harness::COMPLETION_REPORTING_INSTRUCTION;
+    vesper_domain::SystemInstruction {
+        content: vec![ContentPart::Text(
+            vesper_domain::ContentText::new(body).expect("bounded system instruction"),
+        )],
+        cache_stable: true,
+        extensions: ExtensionMap::default(),
+    }
+}
+
 /// Static cognitive-memory capability instruction (TUI parity — the exact
 /// same text, so both hosts prime the model identically).
 fn cognitive_capability_instruction() -> vesper_domain::SystemInstruction {
@@ -2947,6 +2962,43 @@ fn host_parity_commands() -> Vec<vesper_domain::SlashCommandDescriptor> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn completion_reporting_mandate_is_injected_and_matches_shared_contract() {
+        // Cross-host parity: the ACP host must inject the shared
+        // `vesper-harness` completion-reporting instruction verbatim, the
+        // same contract the TUI asserts in its prompt-composition test.
+        let instruction = completion_reporting_instruction();
+        let text = instruction
+            .content
+            .iter()
+            .filter_map(|part| match part {
+                ContentPart::Text(text) => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("");
+        assert!(
+            text.contains("Completion Reporting & Final Audit"),
+            "shared mandate header must be present"
+        );
+        assert!(
+            text.contains("Neither alone completes a unit"),
+            "the both-artifacts mandate must be verbatim; got: {text}"
+        );
+        assert!(
+            text.contains("a file link is not a summary"),
+            "in-chat summary requirement must be verbatim; got: {text}"
+        );
+        assert!(
+            text == vesper_harness::COMPLETION_REPORTING_INSTRUCTION,
+            "the injected block must be the shared constant byte-for-byte"
+        );
+        assert!(
+            instruction.cache_stable,
+            "the mandate is a bounded static instruction (cache-stable)"
+        );
+    }
 
     #[test]
     fn agent_loop_failures_keep_safe_actionable_classification() {
