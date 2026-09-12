@@ -29,6 +29,7 @@
 //! See `apps/agent-vesper-tui/AGENTS.md` for purpose, ownership, contracts,
 //! and verification.
 
+mod activity;
 pub mod auth_hub;
 pub mod capabilities;
 pub mod commands;
@@ -38,6 +39,7 @@ pub mod lmstudio_hub;
 pub mod lmstudio_provider;
 pub mod markdown;
 pub mod plan_mode;
+mod presentation;
 pub mod provider_hub;
 pub mod settings_menu;
 pub mod superpowers;

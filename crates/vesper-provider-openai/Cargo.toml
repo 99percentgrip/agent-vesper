@@ -19,10 +19,10 @@ thiserror.workspace = true
 tokio.workspace = true
 url.workspace = true
 zeroize.workspace = true
-vesper-auth = { path = "../vesper-auth", version = "=0.22.2" }
-vesper-domain = { path = "../vesper-domain", version = "=0.22.2" }
-vesper-provider = { path = "../vesper-provider", version = "=0.22.2" }
-vesper-security = { path = "../vesper-security", version = "=0.22.2" }
+vesper-auth = { path = "../vesper-auth", version = "=0.22.3" }
+vesper-domain = { path = "../vesper-domain", version = "=0.22.3" }
+vesper-provider = { path = "../vesper-provider", version = "=0.22.3" }
+vesper-security = { path = "../vesper-security", version = "=0.22.3" }
 
 [dev-dependencies]
 tempfile.workspace = true

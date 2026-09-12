@@ -2,12 +2,30 @@
 
 Status: evidence index; acceptance status is scoped to each section.
 
+## v0.22.3 visual upgrade release — 2026-09-13
+
+[Release execution](v0.22.3-release-execution.md) tracks version synchronization,
+exact-commit gates, publication and the existing registry PR. Publication is in
+progress; installed 0.22.2 is intentionally preserved for Alex's updater test.
+
+## Native output visual upgrade — 2026-09-13
+
+[Execution report](output-visual-upgrade-execution.md) traces the
+[visual PRD](../output-visual-upgrade-prd.md): chronological colored activity,
+truthful animated status, numbered syntax-colored diffs and responsive aligned
+reports. Repository verification passed (2,247 workspace tests; 23 acceptance
+cases), final renderer 240/0, changed-crate MSRV 924/0, and native Settings PTY
+regression passed. Actual renderer images are linked in the report. Native
+Windows/macOS visual acceptance remains open; no release or installation.
+
 ## v0.22.2 Settings repair release — 2026-09-12
 
 [Release execution](v0.22.2-release-execution.md) tracks the authorized version
 bump and completed publication: all four exact-commit gates passed on `c9c85fe`,
 release run 34703586198 published 16 assets, and registry PR #539 was updated
-in place. Local TUI/plugin installation remains reserved for the user's test.
+in place. The user subsequently authorized initial installation on 2026-09-13:
+archive checksum passed, both installed binaries report 0.22.2 and bundled
+driver setup succeeded. A future-version in-app update test remains pending.
 
 ## Native Settings and confirmed updates — 2026-09-12
 

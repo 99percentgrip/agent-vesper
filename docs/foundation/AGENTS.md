@@ -9,7 +9,13 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 - `settings-and-update-execution.md` owns native Settings, automatic enrollment,
   updater repair evidence and unexecuted platform acceptance.
 - `v0.22.2-release-execution.md` owns the Settings repair release receipts and
-  the user-reserved local installation test.
+  initial installation evidence and pending user update test.
+- `v0.22.3-release-execution.md` owns visual-upgrade release receipts and proof
+  that the installed 0.22.2 payload was preserved for user updater testing.
+- `output-visual-upgrade-execution.md` and `output-reference-*.png` own native
+  output upgrade verification and actual renderer reference captures.
+  `output-reference-render.py` rasterizes captured cells with Linux Noto fonts; it
+  is an optional Pillow-based evidence helper, never production rendering.
 - `evidence-index.md` is the durable execution ledger and command record.
 - `completion-assurance-proposal.md` owns the researched proposal for native
   requirement coverage, execution receipts, and enforced completion decisions.

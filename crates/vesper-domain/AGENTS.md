@@ -50,7 +50,8 @@ Orchestrator (VRO) Phase VRO-1 domain contracts.
 - `FileChangePreview` and its operation/line-kind DTOs are bounded,
   provider-neutral descriptions of a successful filesystem mutation. They
   carry display/absolute paths, complete addition/deletion totals, a bounded
-  line preview, and an explicit truncation bit; they never perform I/O or
+  line preview, optional one-based `start_line` (absent for legacy/unknown),
+  and an explicit truncation bit; they never perform I/O or
   imply that a transport rendered a native diff.
 - `src/vro.rs` owns the VRO domain contracts per
   `docs/agent-vesper-reasoning-orchestrator-prd.md`: `ReasoningMode` (§8.1),

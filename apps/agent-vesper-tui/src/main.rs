@@ -6986,13 +6986,12 @@ pub(crate) fn risk_label_lowercase(risk: vesper_domain::RiskLevel) -> &'static s
 /// [`TrajectoryCapturingReactAgent`] (live stream).
 #[must_use]
 pub(crate) fn format_react_action_entry(name: &str, arguments: &serde_json::Value) -> String {
-    // Empty-object arguments are omitted to reduce noise.
-    let args_str = if arguments.as_object().is_some_and(|map| !map.is_empty()) {
-        format!(" {arguments}")
+    let hint = vesper_agent::agent_loop::tool_arg_hint(arguments);
+    if hint.is_empty() {
+        format!("⏺ {name}")
     } else {
-        String::new()
-    };
-    format!("⏺ {name}{args_str}")
+        format!("⏺ {name} · {hint}")
+    }
 }
 
 /// Renders one ReAct **Observation** as an indented `⎿` result line —
@@ -7199,8 +7198,18 @@ where
             let result = inner.invoke(name, arguments).await;
             // Stream the observation (success or failure) to the panel.
             let entry = match &result {
-                Ok(text) => format_react_observation_entry(text, true),
-                Err(err) => format_react_observation_entry(&err.to_string(), false),
+                Ok(text) => format_react_observation_entry(
+                    &vesper_agent::agent_loop::tool_output_preview(name, text)
+                        .unwrap_or_else(|| vesper_agent::agent_loop::tool_result_note(text, true)),
+                    true,
+                ),
+                Err(err) => format_react_observation_entry(
+                    &vesper_agent::agent_loop::tool_output_preview(name, &err.to_string())
+                        .unwrap_or_else(|| {
+                            vesper_agent::agent_loop::tool_result_note(&err.to_string(), false)
+                        }),
+                    false,
+                ),
             };
             let _ = tx.send(entry);
             if result.is_ok()
@@ -8648,12 +8657,14 @@ fn apply_agent_progress(progress: AgentProgressEvent, session: &mut TuiSession) 
             name,
             success,
             note,
+            output_preview,
             change,
         } => {
             // VRO-11.6/11.8: completion mirrors Claude Code's indented `⎿`
             // result glyph — ✓ for success, ✗ for failure — nested under
             // the action line, with a bounded size/error digest.
             let mark = if success { "✓" } else { "✗" };
+            let note = output_preview.unwrap_or(note);
             if note.is_empty() {
                 session.live_trajectory.push(format!("  ⎿ {mark} {name}"));
             } else {
@@ -17469,7 +17480,7 @@ mod tests {
             "action must render with the ⏺ action glyph: {rendered}"
         );
         assert!(
-            rendered.contains("\"path\":\"src/main.rs\""),
+            rendered.contains("· src/main.rs"),
             "action arguments must render inline (serde_json omits key/value space): {rendered}"
         );
         assert!(
@@ -17648,7 +17659,7 @@ mod tests {
             "action must be formatted with the ⏺ glyph: {streamed}"
         );
         assert!(
-            streamed.contains("\"path\":\"a.rs\""),
+            streamed.contains("· a.rs"),
             "action arguments must appear: {streamed}"
         );
         // No further entries were emitted (exactly one decision = one entry).
@@ -17714,7 +17725,7 @@ mod tests {
             .try_recv()
             .expect("wrapper must emit observation entry second");
         assert!(
-            streamed.contains("  ⎿ file contents"),
+            streamed.contains("  ⎿ 13 chars"),
             "success observation must render as an indented ⎿ result: {streamed}"
         );
     }
@@ -18845,7 +18856,9 @@ mod tests {
                 name: "edit_file".into(),
                 success: true,
                 note: "43 lines".into(),
+                output_preview: None,
                 change: Some(vesper_domain::FileChangePreview {
+                    start_line: Some(1),
                     path: "src/main.rs".into(),
                     absolute_path: "/workspace/src/main.rs".into(),
                     operation: vesper_domain::FileChangeOperation::Modify,
@@ -18877,6 +18890,7 @@ mod tests {
                 name: "bash".into(),
                 success: false,
                 note: "tool error: command exited 1".into(),
+                output_preview: Some("failed-check\nexit 7".into()),
                 change: None,
             },
             &mut session,
@@ -18888,6 +18902,12 @@ mod tests {
                 .any(|l| l.contains("✗") && l.contains("bash")),
             "ToolFinished failure must show ✗: {:?}",
             session.live_trajectory
+        );
+        assert!(
+            session
+                .live_trajectory
+                .iter()
+                .any(|s| s.contains("failed-check\nexit 7"))
         );
     }
 

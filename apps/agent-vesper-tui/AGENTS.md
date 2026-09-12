@@ -210,9 +210,9 @@ business logic.
   emits a `thinking:`-prefixed block (compact
   `ReasoningDiagnostics::render_inline_header()` label + the newest
   `INLINE_THINKING_TAIL_LINES` reasoning lines) while a turn runs;
-  `render_transcript_lines` renders `thinking:` entries dim + italic. Raw
-  `⏺`/`⎿` telemetry is collapsed by default into one categorized run summary;
-  Ctrl+T toggles the complete activity transcript during or after the turn
+  `render_transcript_lines` renders `thinking:` entries dim + italic. `src/activity.rs` projects internal `⏺`/`⎿` records into chronological
+  Read/Explored/Search/Edited/Ran rows with two-line result excerpts by default;
+  Ctrl+T expands bounded result excerpts and diffs during or after the turn
   without replacing the final answer. Successful write/edit/apply operations
   add an inline `Edited N files (+A -D)` summary; Ctrl+T expands bounded
   per-file context with full-row green additions and red deletions. Signed
@@ -227,17 +227,18 @@ business logic.
   compaction is a render-time projection for resumed transcripts created by
   older binaries:
   within each user turn, preceding assistant entries remain hidden in both
-  views; Ctrl+T shows structured typed tool activity grouped as Explored,
-  Edited, Ran commands, and Other activity, never raw provider narration.
+  views; tool activity retains execution order instead of regrouping by type.
   Resumed multiline/256+-character user prompts receive the same compact
   `[Pasted Content N chars]` presentation as newly submitted prompts. Review
   URLs remain visible in compact chat. `PanelVisibility`
   now means: `reasoning` = inline-thinking visibility (F2), `sidebar` =
   right-rail visibility, and `tasks` = dedicated TODO visibility. `ViewModel` no longer carries
   `reasoning_manual_scroll` / `reasoning_panel_focused` — every scroll
-  input targets the conversation. Tool telemetry uses the `⏺` action /
-  `⎿` result glyphs (Claude Code parity; the strings are formatted in
-  `main.rs::apply_agent_progress`).
+  input targets the conversation. `main.rs::apply_agent_progress` owns the internal action/result records.
+  Visible dots are green after success, red after failure, and orange with a
+  clock-driven bright/dim blink while running. Interrupted calls remain explicitly
+  incomplete. ReAct decision/execution duplicates project to one activity row.
+  Screen-reader output uses plain action/result/state labels.
   User turns (`user:` prefix) render as a distinct raised prompt row with a
   compact `›` marker and turn separator. Assistant turns remain unboxed and
   use one quiet accent bullet on their first rendered line so role boundaries
@@ -251,8 +252,10 @@ business logic.
   projection with mouse hit-testing. When the rail cannot fit, the activity line
   retains a compact `TODO completed/total` summary. The conversation
   scrollbar renders only when wrapped content exceeds the viewport. Markdown
-  bold inherits the active theme's body color instead of painting whole
-  reports yellow; headings and inline code retain semantic accents. Legacy
+  bold/heading labels use semantic blue, inline code uses teal, and prose uses
+  theme body text. Role padding is applied after cell-aware wrapping so every
+  continuation keeps the same left edge; lists retain hanging indents. Render,
+  scrolling and URL hit-testing share the same physical-line projection. Legacy
   full-width and asymmetric chat-bubble backgrounds are prohibited. Consecutive thinking
   and expanded tool action/result entries form one compact activity group
   without blank rows between every event; human turns retain breathing room. Submitted
@@ -312,7 +315,13 @@ business logic.
   closer) render literally and unclosed fenced code blocks render the
   remainder as a styled code block. Supports bold, italics, inline code,
   fenced code blocks, ordered/unordered lists with nesting, and ATX
-  headings. Underscore emphasis is intentionally unsupported so `snake_case`
+  headings, readable links and pipe tables. Tables wrap inside aligned columns
+  when wide and stack labeled values when narrow; malformed rows remain literal.
+  `src/presentation.rs` owns theme-aware lexical syntax colors and grapheme/cell
+  wrapping for reports, command rows and diffs. Known source languages receive
+  lexical colors; unknown languages remain literal. Diffs preserve full-row
+  addition/deletion backgrounds and actual old/new line numbers when supplied;
+  legacy previews never invent line numbers. Underscore emphasis is intentionally unsupported so `snake_case`
   identifiers stay intact. Pure, `#![forbid(unsafe_code)]`, no new
   dependency (kept the crate free of an external markdown crate's
   unsafe/MSRV risk).
@@ -510,7 +519,7 @@ business logic.
   died with the Reasoning panel); PageUp/PageDown/Home/End and the mouse
   wheel always scroll the conversation; F2 / `toggle_thinking` toggles the
   inline-thinking visibility carried by `panels.reasoning`.
-  **VRO-11.6 (review UX parity)**: (1) telemetry uses the exact Claude
+  **VRO-11.6 (review UX parity)**: (1) internal telemetry records use the Claude
   Code shapes — `⏺ <tool>` action (flush-left) / `  ⎿ ✓/✗ <tool>` result
   (indented); the `> ` quote prefix is gone and `drain_trajectory` pushes
   entries AS-IS; the ReAct formatters (`format_react_*`) emit the same
@@ -521,8 +530,8 @@ business logic.
   sets a "Ctrl+O opens it" status hint. **Ctrl+O** (`open_last_lens_review`
   + pure `lens_opener_command`: `xdg-open` / macOS `open` / Windows
   `cmd /C start`) is the guaranteed browser opener; failures surface the
-  copyable URL in the status line. (3) `ui.rs` renders `⏺`/indented-`⎿`
-  lines dim and bare-URL lines cyan + underlined (link affordance).
+  copyable URL in the status line. Bare-URL lines remain cyan + underlined.
+  Chronological semantic activity rendering supersedes the legacy dim rows.
   **VRO-11.7 (clickability + TODO restore)**: (1) `enter_raw_mode(enable_mouse)`
   honors the `native_mouse` preference at every call site. (2) **single URL** — the `on_url`
   announcement no longer embeds the URL inside the message line (v0.20.36
@@ -548,11 +557,15 @@ business logic.
   **VRO-11.8**: (1) `AgentProgressEvent::ToolStarted` carries a `hint`
   and `ToolFinished` a `note` — derived by the pure
   `vesper_agent::tool_arg_hint` (whitelisted arg keys only:
-  path/pattern/command/…, 48-char cap; NEVER content/body/credential
-  keys) and `tool_result_note` (success = size digest "N lines"/"N chars",
+  path/pattern/command/…, 48-char cap or 512 for commands; NEVER
+  content/body/credential keys; known credential patterns scrubbed) and `tool_result_note` (success = size digest "N lines"/"N chars",
   failure = first line of the harness error, 72-char cap) — so telemetry
   renders rich (`⏺ write_file · dashboard.html` /
-  `  ⎿ ✓ write_file · 43 lines`) without leaking payloads. (2) The
+  `  ⎿ ✓ write_file · 43 lines`) with bounded summaries. Shell results additionally expose the shared bounded,
+  ANSI-stripped, known-credential-scrubbed excerpt in direct and ReAct paths;
+  read-file results retain size summaries. Both ACP and TUI receive the shared
+  excerpt and true exit/timeout outcome; terminal colors, blinking, wrapping and
+  diff painting are host-specific because ACP editors own their rendering. (2) The
   enforcement instruction now mandates `update_plan` TODO tracking for
   multi-step tasks in EVERY mode (the Plan-mode-exception wording
   discouraged Code-mode plans — the live-test root cause of the missing
@@ -913,6 +926,11 @@ moment the turn completes — never silently dropped, never interrupting the
 work (ACP mid-turn-slash-grace parity; see `apps/agent-vesper-acp/AGENTS.md`).
 
 ## Verification
+
+- `ui::output_upgrade_reference` checks report alignment and actual frame cells
+  across six themes and 40/80/120 columns, including clock-driven dots and source
+  line numbers. `VESPER_OUTPUT_CAPTURE_DIR` optionally writes JSON frame captures
+  to an explicitly supplied temporary directory. Rendering tests stay beside source.
 
 - Run `python3 apps/agent-vesper-tui/tests/settings_pty.py target/debug/agent-vesper-tui`
   after an all-features build on Linux/macOS. It uses isolated HOME/workspace and

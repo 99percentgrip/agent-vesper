@@ -45,7 +45,8 @@ use crate::vro::loop_detector::{LoopDetector, LoopGuardAction};
 /// Live, bounded progress emitted while an agent turn is running.
 ///
 /// Frontends may render these events in memory. They are not persisted by the
-/// loop and deliberately omit tool arguments, tool output, paths, and secrets.
+/// loop. Only bounded argument hints, result summaries, mutation previews and
+/// shell excerpts with known credential patterns scrubbed reach presentation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentProgressEvent {
     /// A new user turn entered the loop.
@@ -72,6 +73,8 @@ pub enum AgentProgressEvent {
         name: String,
         success: bool,
         note: String,
+        /// Bounded, scrubbed shell output for native host presentation.
+        output_preview: Option<String>,
         /// Bounded before/after projection for a successful text-file edit.
         change: Option<vesper_domain::FileChangePreview>,
     },
@@ -133,10 +136,16 @@ pub fn tool_arg_hint(args: &serde_json::Value) -> String {
             if collapsed.is_empty() {
                 continue;
             }
-            if collapsed.chars().count() <= TOOL_HINT_MAX_CHARS {
+            let limit = if matches!(*key, "command" | "cmd") {
+                512
+            } else {
+                TOOL_HINT_MAX_CHARS
+            };
+            let collapsed = tool_output_preview("run_command", &collapsed).unwrap_or_default();
+            if collapsed.chars().count() <= limit {
                 return collapsed;
             }
-            let truncated: String = collapsed.chars().take(TOOL_HINT_MAX_CHARS - 1).collect();
+            let truncated: String = collapsed.chars().take(limit - 1).collect();
             return format!("{truncated}…");
         }
     }
@@ -177,6 +186,70 @@ pub fn tool_result_note(output: &str, success: bool) -> String {
         let truncated: String = first.chars().take(TOOL_NOTE_MAX_CHARS - 1).collect();
         format!("{truncated}…")
     }
+}
+
+/// Shell-only presentation excerpt; file reads and arbitrary hosted-tool results
+/// stay out of telemetry. Known credential patterns are scrubbed before clipping.
+#[must_use]
+pub fn tool_output_preview(name: &str, output: &str) -> Option<String> {
+    if !matches!(name, "run_command" | "shell") {
+        return None;
+    }
+    static SCRUBBER: std::sync::OnceLock<crate::vro::learning::SecretScrubber> =
+        std::sync::OnceLock::new();
+    let mut bounded = String::new();
+    let mut escape = 0_u8;
+    for c in output.chars().take(16_384) {
+        match escape {
+            1 => {
+                escape = match c {
+                    '[' => 2,
+                    ']' => 3,
+                    _ => 0,
+                }
+            }
+            2 => {
+                if ('@'..='~').contains(&c) {
+                    escape = 0;
+                }
+            }
+            3 => {
+                if c == '\u{7}' {
+                    escape = 0;
+                } else if c == '\u{1b}' {
+                    escape = 4;
+                }
+            }
+            4 => escape = if c == '\\' { 0 } else { 3 },
+            _ => {
+                if c == '\u{1b}' {
+                    escape = 1;
+                } else {
+                    bounded.push(c);
+                }
+            }
+        }
+    }
+    let scrubbed = SCRUBBER
+        .get_or_init(crate::vro::learning::SecretScrubber::new)
+        .scrub(&bounded);
+    let mut lines: Vec<String> = scrubbed
+        .lines()
+        .take(60)
+        .map(|line| {
+            line.chars()
+                .filter(|c| !c.is_control() || *c == '\t')
+                .take(512)
+                .collect()
+        })
+        .collect();
+    if output.chars().count() > 16_384
+        || scrubbed.lines().count() > 60
+        || scrubbed.lines().any(|l| l.chars().count() > 512)
+    {
+        lines.push("… output preview truncated".into());
+    }
+    Some(lines.join("\n"))
 }
 
 /// Host-owned sink for live agent progress.
@@ -1157,6 +1230,7 @@ impl AgentLoop {
                 let success = execution_succeeded && !blocked_by_loop_guard;
                 let note = tool_result_note(&output, success);
                 self.progress_port.emit(AgentProgressEvent::ToolFinished {
+                    output_preview: tool_output_preview(&tool_name, &output),
                     name: tool_name,
                     success,
                     note,
@@ -1880,5 +1954,24 @@ mod tests {
         let note = tool_result_note(&long_error, false);
         assert!(note.chars().count() <= 72, "failure note bounded: {note}");
         assert!(note.ends_with('…'));
+    }
+}
+
+#[cfg(test)]
+mod output_preview_tests {
+    use super::*;
+    #[test]
+    fn shell_excerpts_scrub_credentials_strip_ansi_and_bound_output() {
+        let output = "\u{1b}[31mtest failed\u{1b}[0m\npassword=private-secret-value\n\u{1b}]0;untrusted title\u{7}done";
+        let preview = tool_output_preview("run_command", output).unwrap();
+        assert!(preview.contains("test failed"));
+        assert!(!preview.contains("private-secret-value"));
+        assert!(!preview.contains("untrusted title"));
+        assert!(!preview.contains('\u{1b}'));
+        assert!(tool_output_preview("read_file", output).is_none());
+        let long = "line\n".repeat(100);
+        let preview = tool_output_preview("run_command", &long).unwrap();
+        assert_eq!(preview.lines().count(), 61);
+        assert!(preview.ends_with("output preview truncated"));
     }
 }

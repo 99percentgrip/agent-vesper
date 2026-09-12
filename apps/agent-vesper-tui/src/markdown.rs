@@ -22,10 +22,6 @@ use ratatui::{
     text::{Line, Span},
 };
 
-/// Background color for fenced code blocks.
-const CODE_BG: Color = Color::Rgb(30, 32, 40);
-/// Foreground color for fenced code blocks.
-const CODE_FG: Color = Color::Rgb(214, 220, 232);
 /// Foreground color for inline `code`.
 const INLINE_CODE_FG: Color = Color::Rgb(255, 176, 81);
 /// Foreground color for list bullets / numbers and structural markers.
@@ -43,6 +39,14 @@ const MAX_LIST_DEPTH: usize = 8;
 /// every frame with partially-streamed text.
 #[must_use]
 pub fn render_markdown(input: &str) -> Vec<Line<'static>> {
+    render_document(input, 80, crate::ui::theme_palette("chatgpt-black"))
+}
+
+pub(crate) fn render_document(
+    input: &str,
+    width: usize,
+    palette: crate::ui::ThemePalette,
+) -> Vec<Line<'static>> {
     if input.is_empty() {
         return Vec::new();
     }
@@ -65,8 +69,26 @@ pub fn render_markdown(input: &str) -> Vec<Line<'static>> {
             }
             // If the loop exited because `i == lines.len()`, the fence ran to
             // EOF (streaming) — render what we collected as a code block.
-            push_code_block(&mut out, lang.as_deref(), &code);
+            push_code_block(&mut out, lang.as_deref(), &code, palette);
             continue;
+        }
+        // A completed delimiter row distinguishes a table from ordinary pipes.
+        if i + 1 < lines.len() && table_delimiter(lines[i + 1]) {
+            let headers = table_cells(line);
+            if headers.len() > 1 {
+                i += 2;
+                let mut rows = Vec::new();
+                while i < lines.len() && lines[i].contains('|') && !lines[i].trim().is_empty() {
+                    let cells = table_cells(lines[i]);
+                    if cells.len() != headers.len() {
+                        break;
+                    }
+                    rows.push(cells);
+                    i += 1;
+                }
+                push_table(&mut out, &headers, &rows, width, palette);
+                continue;
+            }
         }
         // Unordered list item.
         if let Some((depth, marker, text)) = parse_unordered_item(line) {
@@ -93,16 +115,46 @@ pub fn render_markdown(input: &str) -> Vec<Line<'static>> {
             continue;
         }
         // Paragraph line — apply inline formatting.
-        out.push(Line::from(parse_inline(line)));
+        out.push(Line::from(parse_inline(line.trim_start())));
         i += 1;
     }
-    out
+    let ink = crate::presentation::Ink::for_palette(palette);
+    out.into_iter()
+        .flat_map(|mut line| {
+            for span in &mut line.spans {
+                span.style.fg = match span.style.fg {
+                    Some(INLINE_CODE_FG) => Some(ink.operator),
+                    Some(HEADING_FG) => Some(ink.label),
+                    Some(CODE_LABEL_FG) => Some(palette.muted),
+                    None if span.style.add_modifier.contains(Modifier::BOLD) => Some(ink.label),
+                    color => color,
+                };
+            }
+            let plain: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+            let leading = plain.len() - plain.trim_start_matches(' ').len();
+            let rest = &plain[leading..];
+            let marker =
+                if rest.starts_with("- ") || rest.starts_with("* ") || rest.starts_with("+ ") {
+                    2
+                } else {
+                    rest.find(". ")
+                        .filter(|&at| rest[..at].bytes().all(|b| b.is_ascii_digit()))
+                        .map_or(0, |at| at + 2)
+                };
+            crate::presentation::wrap(line, width, leading + marker)
+        })
+        .collect()
 }
 
 /// Renders a fenced code block: an optional language label, then one styled
 /// line per source line.
-fn push_code_block(out: &mut Vec<Line<'static>>, lang: Option<&str>, code: &[&str]) {
-    let code_style = Style::default().bg(CODE_BG).fg(CODE_FG);
+fn push_code_block(
+    out: &mut Vec<Line<'static>>,
+    lang: Option<&str>,
+    code: &[&str],
+    palette: crate::ui::ThemePalette,
+) {
+    let code_style = Style::default().bg(palette.surface).fg(palette.text);
     if let Some(lang) = lang {
         let lang = lang.trim();
         if !lang.is_empty() {
@@ -117,7 +169,9 @@ fn push_code_block(out: &mut Vec<Line<'static>>, lang: Option<&str>, code: &[&st
         out.push(Line::from(Span::styled(String::new(), code_style)));
     } else {
         for raw in code {
-            out.push(Line::from(Span::styled((*raw).to_string(), code_style)));
+            out.push(
+                crate::presentation::syntax(raw, lang.unwrap_or(""), palette).style(code_style),
+            );
         }
     }
 }
@@ -139,13 +193,10 @@ fn push_list_item(out: &mut Vec<Line<'static>>, depth: usize, marker: &str, text
 }
 
 /// Renders an ATX heading: a bold, colored `#` prefix and bolded text.
-fn push_heading(out: &mut Vec<Line<'static>>, level: u8, text: &str) {
+fn push_heading(out: &mut Vec<Line<'static>>, _level: u8, text: &str) {
     let heading_style = Style::default().add_modifier(Modifier::BOLD).fg(HEADING_FG);
     let mut spans: Vec<Span<'static>> = Vec::new();
-    spans.push(Span::styled(
-        format!("{} ", "#".repeat(level as usize)),
-        heading_style,
-    ));
+    spans.push(Span::styled(String::new(), heading_style));
     for mut span in parse_inline(text) {
         span.style = heading_style.patch(span.style);
         spans.push(span);
@@ -166,6 +217,27 @@ fn parse_inline(text: &str) -> Vec<Span<'static>> {
     let mut i = 0;
     while i < n {
         let c = chars[i];
+        if c == '['
+            && let Some(close) = find_single(&chars, i + 1, ']', n)
+            && chars.get(close + 1) == Some(&'(')
+            && let Some(end) = find_single(&chars, close + 2, ')', n)
+        {
+            flush_plain(&mut plain, &mut spans);
+            let label: String = chars[i + 1..close].iter().collect();
+            let target: String = chars[close + 2..end].iter().collect();
+            spans.push(Span::styled(
+                label,
+                Style::default()
+                    .fg(HEADING_FG)
+                    .add_modifier(Modifier::UNDERLINED),
+            ));
+            spans.push(Span::styled(
+                format!(" ({target})"),
+                Style::default().fg(INLINE_CODE_FG),
+            ));
+            i = end + 1;
+            continue;
+        }
         // Bold: **text** (also __text__).
         if (c == '*' || c == '_') && i + 1 < n && chars[i + 1] == c {
             let marker = c;
@@ -355,6 +427,117 @@ fn parse_heading(line: &str) -> Option<(u8, &str)> {
     Some((level as u8, rest.trim_end()))
 }
 
+// Split escaped pipes and inline-code pipes without inventing columns.
+fn table_cells(line: &str) -> Vec<String> {
+    let mut cells = Vec::new();
+    let mut current = String::new();
+    let mut escaped = false;
+    let mut code = false;
+    for c in line.trim().trim_matches('|').chars() {
+        if escaped {
+            current.push(c);
+            escaped = false;
+            continue;
+        }
+        if c == '\\' {
+            escaped = true;
+            continue;
+        }
+        if c == '`' {
+            code = !code;
+        }
+        if c == '|' && !code {
+            cells.push(current.trim().to_owned());
+            current.clear();
+        } else {
+            current.push(c);
+        }
+    }
+    if escaped {
+        current.push('\\');
+    }
+    cells.push(current.trim().to_owned());
+    cells
+}
+fn table_delimiter(line: &str) -> bool {
+    let cells = table_cells(line);
+    cells.len() > 1
+        && cells.iter().all(|c| {
+            let c = c.trim_matches(':');
+            c.len() >= 3 && c.bytes().all(|b| b == b'-')
+        })
+}
+fn push_table(
+    out: &mut Vec<Line<'static>>,
+    headers: &[String],
+    rows: &[Vec<String>],
+    width: usize,
+    palette: crate::ui::ThemePalette,
+) {
+    let count = headers.len();
+    let separators = (count - 1) * 3;
+    let cell_width = width.saturating_sub(separators) / count;
+    if cell_width < 18 {
+        // Responsive report rows: each value keeps its header at narrow widths.
+        for (index, row) in rows.iter().enumerate() {
+            if index > 0 {
+                out.push(Line::raw(""));
+            }
+            for (column, value) in row.iter().enumerate() {
+                let label = headers.get(column).map(String::as_str).unwrap_or("Value");
+                let mut spans = vec![Span::styled(
+                    format!("{label}: "),
+                    Style::default()
+                        .fg(crate::presentation::Ink::for_palette(palette).label)
+                        .add_modifier(Modifier::BOLD),
+                )];
+                spans.extend(parse_inline(value));
+                out.push(Line::from(spans));
+            }
+        }
+        return;
+    }
+    for (index, row) in std::iter::once(headers)
+        .chain(rows.iter().map(Vec::as_slice))
+        .enumerate()
+    {
+        let columns: Vec<Vec<Line<'static>>> = (0..count)
+            .map(|c| {
+                let mut line =
+                    Line::from(parse_inline(row.get(c).map(String::as_str).unwrap_or("")));
+                if index == 0 {
+                    line.style = Style::default()
+                        .add_modifier(Modifier::BOLD)
+                        .fg(crate::presentation::Ink::for_palette(palette).label);
+                }
+                crate::presentation::wrap(line, cell_width, 0)
+            })
+            .collect();
+        for height in 0..columns.iter().map(Vec::len).max().unwrap_or(1) {
+            let mut spans = Vec::new();
+            for (column, lines) in columns.iter().enumerate() {
+                if column > 0 {
+                    spans.push(Span::styled(" │ ", Style::default().fg(palette.border)));
+                }
+                let line = lines.get(height).cloned().unwrap_or_else(|| Line::raw(""));
+                let pad = cell_width.saturating_sub(line.width());
+                spans.extend(line.spans.into_iter().map(|mut s| {
+                    s.style = line.style.patch(s.style);
+                    s
+                }));
+                spans.push(Span::raw(" ".repeat(pad)));
+            }
+            out.push(Line::from(spans));
+        }
+        if index == 0 {
+            out.push(Line::from(Span::styled(
+                "─".repeat(cell_width * count + separators),
+                Style::default().fg(palette.border),
+            )));
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -413,7 +596,13 @@ mod tests {
             .iter()
             .find(|s| s.content == "cargo")
             .expect("code span present");
-        assert_eq!(code.style.fg, Some(INLINE_CODE_FG));
+        assert_eq!(
+            code.style.fg,
+            Some(
+                crate::presentation::Ink::for_palette(crate::ui::theme_palette("chatgpt-black"))
+                    .operator
+            )
+        );
     }
 
     #[test]
@@ -425,7 +614,13 @@ mod tests {
             .iter()
             .find(|s| s.content.contains('-'))
             .expect("bullet marker");
-        assert_eq!(marker.style.fg, Some(MARKER_FG));
+        assert_eq!(
+            marker.style.fg,
+            Some(
+                crate::presentation::Ink::for_palette(crate::ui::theme_palette("chatgpt-black"))
+                    .operator
+            )
+        );
     }
 
     #[test]
@@ -454,20 +649,26 @@ mod tests {
             .flat_map(|l| &l.spans)
             .find(|s| s.content.contains("rust"))
             .expect("language label");
-        assert_eq!(label.style.fg, Some(CODE_LABEL_FG));
+        assert_eq!(
+            label.style.fg,
+            Some(crate::ui::theme_palette("chatgpt-black").muted)
+        );
         let code_line = lines
             .iter()
-            .find(|l| l.spans.iter().any(|s| s.content.contains("fn main")))
+            .find(|l| styled_text(&l.spans).contains("fn main"))
             .expect("code line");
         let span = &code_line.spans[0];
-        assert_eq!(span.style.bg, Some(CODE_BG));
-        assert_eq!(span.style.fg, Some(CODE_FG));
+        assert_eq!(
+            span.style.bg,
+            Some(crate::ui::theme_palette("chatgpt-black").surface)
+        );
+        assert!(code_line.spans.iter().any(|s| s.style.fg != span.style.fg));
     }
 
     #[test]
-    fn heading_renders_bold_with_hash_prefix() {
+    fn heading_renders_bold_without_raw_markdown_prefix() {
         let spans = flatten_spans(&render_markdown("## Title"));
-        assert!(spans.iter().any(|s| s.content.contains("##")));
+        assert_eq!(styled_text(&spans), "Title");
         assert!(has_modifier(&spans, Modifier::BOLD));
     }
 
@@ -494,9 +695,12 @@ mod tests {
         let lines = render_markdown("```\nfn main() {}");
         let code = lines
             .iter()
-            .find(|l| l.spans.iter().any(|s| s.content.contains("fn main")))
+            .find(|l| styled_text(&l.spans).contains("fn main"))
             .expect("code line present");
-        assert_eq!(code.spans[0].style.bg, Some(CODE_BG));
+        assert_eq!(
+            code.spans[0].style.bg,
+            Some(crate::ui::theme_palette("chatgpt-black").surface)
+        );
     }
 
     #[test]
@@ -560,13 +764,90 @@ mod tests {
         assert!(
             lines
                 .iter()
-                .any(|l| l.spans.iter().any(|s| s.content.contains('#')))
+                .any(|l| l.spans.iter().any(|s| s.content.contains("Heading")))
         );
         assert!(has_modifier(&flatten_spans(&lines), Modifier::BOLD));
         assert!(
             flatten_spans(&lines)
                 .iter()
-                .any(|s| s.style.bg == Some(CODE_BG))
+                .any(|s| s.style.bg == Some(crate::ui::theme_palette("chatgpt-black").surface))
         );
+    }
+}
+
+#[cfg(test)]
+mod report_tests {
+    use super::*;
+    fn text(line: &Line<'_>) -> String {
+        line.spans.iter().map(|s| s.content.as_ref()).collect()
+    }
+    #[test]
+    fn reports_wrap_bullets_and_tables_without_raw_delimiters() {
+        let report = "## Results\n\n- **Settings:** All saved choices survive a restart and reach the next coding turn.\n\n| Check | Method | Result |\n| --- | --- | --- |\n| Scope | Source inspection with an independently checked contract | ✅ Passed |\n| Tests | cargo test --workspace | ✅ Passed |";
+        for theme in [
+            "chatgpt-black",
+            "chatgpt-white",
+            "nord",
+            "dracula",
+            "light",
+            "ansi",
+        ] {
+            for width in [20, 40, 80, 120] {
+                let lines = render_document(report, width, crate::ui::theme_palette(theme));
+                assert!(lines.iter().all(|l| l.width() <= width));
+                assert!(
+                    !lines
+                        .iter()
+                        .any(|l| text(l).contains("| ---") || text(l).contains("##"))
+                );
+                let bullet = lines
+                    .iter()
+                    .position(|l| text(l).starts_with("- Settings:"))
+                    .unwrap();
+                if width < 60 {
+                    assert!(text(&lines[bullet + 1]).starts_with("  "));
+                }
+                if width < 60 {
+                    assert!(lines.iter().any(|l| text(l).starts_with("Check: Scope")));
+                } else {
+                    assert!(lines.iter().any(|l| text(l).contains(" │ ")));
+                }
+            }
+        }
+    }
+    #[test]
+    fn table_pipes_inside_code_and_escapes_do_not_split_cells() {
+        assert_eq!(
+            table_cells("| `a|b` | yes \\| no |"),
+            vec!["`a|b`", "yes | no"]
+        );
+        assert!(!table_delimiter("echo a | cat"));
+        let lines = render_document(
+            "[Report](docs/report.md)\n```rust\nlet x = 42;",
+            40,
+            crate::ui::theme_palette("chatgpt-black"),
+        );
+        assert!(
+            lines
+                .iter()
+                .any(|l| text(l).contains("Report (docs/report.md)"))
+        );
+        assert!(lines.iter().any(|l| text(l).contains("let x = 42;")));
+    }
+}
+
+#[cfg(test)]
+mod malformed_table_tests {
+    #[test]
+    fn extra_cells_are_preserved_instead_of_dropped() {
+        let text = super::render_document(
+            "| A | B |\n| --- | --- |\n| x | y | z |",
+            120,
+            crate::ui::theme_palette("nord"),
+        )
+        .into_iter()
+        .flat_map(|l| l.spans.into_iter().map(|s| s.content.into_owned()))
+        .collect::<String>();
+        assert!(text.contains("| x | y | z |"));
     }
 }

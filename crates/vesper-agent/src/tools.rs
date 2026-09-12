@@ -378,6 +378,7 @@ pub fn file_change_preview(
         },
         additions: added.len() as u64,
         deletions: removed.len() as u64,
+        start_line: Some(prefix.saturating_sub(2) as u64 + 1),
         lines: candidates,
         truncated,
     }
@@ -828,7 +829,7 @@ fn run_bounded(
                     // lingering grandchild cannot block us.
                     let _ = child.kill();
                     let _ = child.wait();
-                    return Ok(String::from("[command timed out and was killed]"));
+                    return Err(ToolError::Failed("command timed out and was killed".into()));
                 }
                 std::thread::sleep(Duration::from_millis(25));
             }
@@ -846,6 +847,13 @@ fn run_bounded(
     if !output.stderr.is_empty() {
         combined.push_str("\n[stderr]\n");
         combined.push_str(&String::from_utf8_lossy(&output.stderr));
+    }
+    if !output.status.success() {
+        return Err(ToolError::Failed(format!(
+            "command exited {}\n{}",
+            output.status,
+            bounded(&combined)
+        )));
     }
     Ok(bounded(&combined))
 }
@@ -888,9 +896,12 @@ async fn run_sandboxed(
                     ToolError::Failed("command cancelled".into())
                 }
             })?;
-    let mut combined = outcome.output;
+    let combined = outcome.output;
     if outcome.timed_out {
-        combined.push_str("\n[command timed out and was killed]");
+        return Err(ToolError::Failed(format!(
+            "command timed out and was killed\n{}",
+            bounded(&combined)
+        )));
     }
     ToolResult::new(bounded(&combined))
 }
@@ -898,6 +909,29 @@ async fn run_sandboxed(
 #[cfg(test)]
 mod change_preview_tests {
     use super::*;
+
+    #[test]
+    fn preview_source_numbers_start_at_real_context_and_legacy_remains_unknown() {
+        let before = (1..=100).map(|n| format!("line {n}\n")).collect::<String>();
+        let after = before.replace("line 90\n", "replacement\nextra\n");
+        let preview = file_change_preview(
+            "src/main.rs".into(),
+            Path::new("/workspace/src/main.rs"),
+            true,
+            &before,
+            &after,
+        );
+        assert_eq!(preview.start_line, Some(88));
+        assert_eq!(preview.lines[0].text, "line 88");
+        let mut legacy = serde_json::to_value(&preview).unwrap();
+        legacy.as_object_mut().unwrap().remove("start_line");
+        assert_eq!(
+            serde_json::from_value::<FileChangePreview>(legacy)
+                .unwrap()
+                .start_line,
+            None
+        );
+    }
 
     #[test]
     fn change_preview_reports_exact_middle_edit_with_bounded_context() {

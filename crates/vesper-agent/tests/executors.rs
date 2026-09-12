@@ -199,11 +199,11 @@ async fn run_command_enforces_its_timeout() {
             &context,
         )
         .await
-        .unwrap();
+        .unwrap_err();
     assert!(
-        result.text.as_str().contains("timed out"),
+        result.to_string().contains("timed out"),
         "a 1s timeout must kill the long-running command: {}",
-        result.text.as_str()
+        result
     );
 }
 
@@ -289,4 +289,21 @@ async fn apply_patch_updates_the_target_file() {
         fs::read_to_string(root.path().join("p.txt")).unwrap(),
         "header\nbeta\nfooter\n"
     );
+}
+
+#[tokio::test]
+async fn nonzero_shell_exit_is_a_failed_tool_with_output() {
+    let root = tempfile::tempdir().unwrap();
+    let result = RunCommand
+        .execute(
+            &call(
+                "run_command",
+                json!({"command": "echo failed-check && exit 7"}),
+            ),
+            &root_context(root.path()),
+        )
+        .await
+        .unwrap_err();
+    assert!(result.to_string().contains("7"));
+    assert!(result.to_string().contains("failed-check"));
 }

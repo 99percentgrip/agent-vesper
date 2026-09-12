@@ -192,10 +192,12 @@ transport, stderr-only tracing, and orderly shutdown.
   dispatch, and outcome feedback is bounded and content-free. The engine's
   progress port pairs tool started/finished events by the most recently issued
   id per tool name, forwards bounded filesystem-change
-  metadata to the ACP adapter, and records the latest per-session plan
+  metadata and shared bounded shell excerpts to the ACP adapter, and records the latest per-session plan
   markdown. Rich terminal red/green diff painting is a TUI-only presentation
   detail; ACP clients receive truthful path/operation/addition/deletion
-  metadata and may choose their native presentation. The adapter injects a live ACP `session/request_permission`
+  metadata and may choose their native presentation. Syntax colors, blinking dots
+  and report/table layout are terminal-only; ACP clients own rendering. Actual
+  shell exit/timeout failures and bounded excerpts are shared with TUI. The adapter injects a live ACP `session/request_permission`
   port for mutating tools; rejection, cancellation, unavailable clients,
   and malformed outcomes remain fail-closed. The engine injects the shared
   hosted Python-oracle tool surface and bounded project instruction

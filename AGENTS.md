@@ -138,6 +138,15 @@ When the user requests a durable behavior change, record it here or in the relev
 - Check for updates offers a confirmed installer workflow with actual progress,
   failures and restart guidance, rather than only linking to release downloads.
 
+- Native output uses distinct semantic colors for activity labels, commands and
+  source tokens. Tool dots reflect actual outcomes: green success, blinking orange
+  while running, red failure; missing completion never implies success. Reports
+  share a consistent left edge with hanging list indents and responsive tables.
+- For the next release, leave the installed TUI at 0.22.2 so Alex can test the
+  native Check for updates → confirmed installation workflow. Commit/push/version
+  and release work does not authorize replacing that local installation; wait for
+  Alex's explicit installation instruction.
+
 ## Project Contracts
 
 - The frozen Python source at `/home/alex/Projects/Native GLM-5.2 Provider`

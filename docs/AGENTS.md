@@ -35,6 +35,8 @@ Own durable project documentation and evidence-backed engineering records.
 - `web-tools.md` owns web-driver installation, immutable image identity,
   native Settings → Web tools and ACP `/web` activation, advanced opt-in
   configuration, operation bounds, and deployment troubleshooting.
+- `output-visual-upgrade-prd.md` owns semantic activity colors, truthful status
+  dots, syntax-colored numbered diffs, and aligned responsive reports.
 - `settings-and-update-prd.md` owns theme consistency, grouped Settings saves,
   automatic PRD enrollment and confirmed native update installation.
 - Root PRD files (`*-prd.md`) own accepted phased requirement documents

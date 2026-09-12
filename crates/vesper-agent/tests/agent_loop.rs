@@ -1808,3 +1808,68 @@ impl ToolService for DiscoveringWrapper {
         self.0.execute(call, context)
     }
 }
+
+#[tokio::test]
+async fn real_shell_exit_status_and_excerpt_reach_progress_events() {
+    let provider_id = provider();
+    let calls = ["echo passed-check", "echo failed-check && exit 7"]
+        .into_iter()
+        .enumerate()
+        .map(|(i, command)| {
+            ProviderStreamEvent::ToolCallCompleted(ToolCall {
+                id: ToolCallId::new(format!("shell-{i}")).unwrap(),
+                tool_id: ToolId::new("run_command").unwrap(),
+                arguments: json!({"command":command}),
+                extensions: ExtensionMap::default(),
+            })
+        })
+        .map(Ok)
+        .chain(std::iter::once(Ok(completed(FinishOutcome::ToolCalls))))
+        .collect();
+    let fake = FakeProviderSession::with_scripts([
+        Ok(calls),
+        Ok(vec![Ok(completed(FinishOutcome::Stop))]),
+    ]);
+    let registry = Arc::new(ProviderRegistry::new());
+    registry
+        .register(FakeFactory {
+            id: provider_id.clone(),
+            session: fake,
+        })
+        .await
+        .unwrap();
+    let root = tempfile::tempdir().unwrap();
+    let mut config = config(&provider_id, 10);
+    config.workspace_roots = vec![vesper_domain::WorkspaceRoot {
+        name: BoundedString::new("fixture").unwrap(),
+        path: BoundedString::new(root.path().to_string_lossy().to_string()).unwrap(),
+        primary: true,
+    }];
+    let progress = Arc::new(RecordingProgressPort::default());
+    AgentLoop::new(registry, ToolRegistry::parity_default(), config)
+        .with_progress_port(progress.clone())
+        .run_prompt(
+            user_message("run the fixture commands"),
+            SessionOperatingMode::Code,
+            SessionPermissionMode::Bypass,
+        )
+        .await
+        .unwrap();
+    let events = progress.events.lock().unwrap();
+    let finished: Vec<_> = events
+        .iter()
+        .filter_map(|e| match e {
+            AgentProgressEvent::ToolFinished {
+                success,
+                output_preview,
+                ..
+            } => Some((*success, output_preview.as_deref().unwrap())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(finished.len(), 2);
+    assert!(finished[0].0 && finished[0].1.contains("passed-check"));
+    assert!(
+        !finished[1].0 && finished[1].1.contains("failed-check") && finished[1].1.contains('7')
+    );
+}

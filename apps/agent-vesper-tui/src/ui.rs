@@ -607,11 +607,16 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
         // Render each top-level entry separately so markdown cannot bleed
         // across role/tool boundaries and user prompts can receive the quiet
         // terminal-native `›` marker.
-        let rendered = render_transcript_lines_themed(&transcript_lines, inner_width, palette);
+        let rendered = render_transcript_frame(
+            &transcript_lines,
+            inner_width,
+            palette,
+            model.animation_frame,
+        );
         let estimate = estimated_wrapped_lines(&rendered, inner_width);
         (ratatui::text::Text::from(rendered), estimate)
     };
-    let paragraph = Paragraph::new(transcript).wrap(Wrap { trim: false });
+    let paragraph = Paragraph::new(transcript);
     let visible_lines = usize::from(transcript_content.height);
     let max_scroll = wrapped_lines
         .saturating_sub(visible_lines)
@@ -1220,6 +1225,7 @@ pub(crate) fn theme_palette(theme: &str) -> ThemePalette {
 /// a cyan `›` marker, assistant markdown is unboxed, and thinking/tool output
 /// stays visually secondary. This follows Codex/Claude terminal hierarchy
 /// without chat bubbles or full-width role banners.
+#[cfg(test)]
 fn render_transcript_lines(transcript_lines: &[String], _inner_width: usize) -> Vec<Line<'static>> {
     render_transcript_lines_themed(
         transcript_lines,
@@ -1228,14 +1234,50 @@ fn render_transcript_lines(transcript_lines: &[String], _inner_width: usize) -> 
     )
 }
 
+#[cfg(test)]
 fn render_transcript_lines_themed(
     transcript_lines: &[String],
     inner_width: usize,
     palette: ThemePalette,
 ) -> Vec<Line<'static>> {
+    render_transcript_frame(transcript_lines, inner_width, palette, 0)
+}
+
+fn render_transcript_frame(
+    transcript_lines: &[String],
+    inner_width: usize,
+    palette: ThemePalette,
+    animation_frame: u64,
+) -> Vec<Line<'static>> {
+    render_transcript_projection(transcript_lines, inner_width, palette, animation_frame).0
+}
+
+fn render_transcript_projection(
+    transcript_lines: &[String],
+    inner_width: usize,
+    palette: ThemePalette,
+    animation_frame: u64,
+) -> (Vec<Line<'static>>, Vec<(usize, usize)>) {
     let mut rendered: Vec<Line<'static>> = Vec::new();
+    let mut ranges = Vec::with_capacity(transcript_lines.len());
     let mut previous_was_secondary = false;
+    let mut diff_language = String::new();
     for (idx, raw) in transcript_lines.iter().enumerate() {
+        let entry_start = rendered.len();
+        if raw.starts_with("tool:") || raw.starts_with("tool-output:") {
+            if raw.starts_with("tool:") && !rendered.is_empty() {
+                rendered.push(Line::raw(""));
+            }
+            rendered.extend(crate::activity::render(
+                raw,
+                inner_width,
+                animation_frame,
+                palette,
+            ));
+            previous_was_secondary = true;
+            ranges.push((entry_start, rendered.len()));
+            continue;
+        }
         let is_user_turn = raw.starts_with("user:");
         let is_assistant_turn = raw.starts_with("assistant");
         // VRO-11.5/11.6 live-region markers: `⏺` / indented `⎿` entries are
@@ -1321,7 +1363,12 @@ fn render_transcript_lines_themed(
             raw.as_str()
         };
 
-        let lines = crate::markdown::render_markdown(content);
+        let content_width = if is_user_turn || is_assistant_turn {
+            inner_width.saturating_sub(2)
+        } else {
+            inner_width
+        };
+        let lines = crate::markdown::render_document(content, content_width.max(1), palette);
 
         if is_user_turn {
             for (line_index, mut line) in lines.into_iter().enumerate() {
@@ -1402,48 +1449,66 @@ fn render_transcript_lines_themed(
                 .add_modifier(Modifier::BOLD);
             rendered.push(diff_header_line(content, "● ", style, palette));
         } else if is_diff_file {
+            diff_language = content
+                .split(" (+")
+                .next()
+                .unwrap_or(content)
+                .rsplit('.')
+                .next()
+                .unwrap_or("")
+                .to_owned();
             let style = Style::default()
                 .fg(palette.text)
                 .add_modifier(Modifier::BOLD);
             rendered.push(diff_header_line(content, "  └ ", style, palette));
         } else if is_diff_add || is_diff_del || is_diff_context || is_diff_ellipsis {
-            let (marker, style) = if is_diff_add {
-                (
-                    "+ ",
-                    Style::default().fg(palette.added).bg(palette.added_bg),
-                )
+            let (number, source) = content.split_once('\t').unwrap_or(("", content));
+            let marker = if is_diff_add {
+                "+"
             } else if is_diff_del {
-                (
-                    "- ",
-                    Style::default().fg(palette.removed).bg(palette.removed_bg),
-                )
-            } else if is_diff_context {
-                ("  ", Style::default().fg(palette.muted))
+                "-"
             } else {
-                (
-                    "  ",
-                    Style::default()
-                        .fg(palette.muted)
-                        .add_modifier(Modifier::ITALIC),
-                )
+                " "
             };
-            for mut line in lines {
-                line.spans
-                    .insert(0, Span::styled(format!("    {marker}"), style));
-                let occupied = line.width();
-                if (is_diff_add || is_diff_del) && occupied < inner_width {
-                    line.spans
-                        .push(Span::styled(" ".repeat(inner_width - occupied), style));
-                }
-                rendered.push(restyle_line(line, style));
+            let fg = if is_diff_add {
+                palette.added
+            } else if is_diff_del {
+                palette.removed
+            } else {
+                palette.muted
+            };
+            let bg = if is_diff_add {
+                palette.added_bg
+            } else if is_diff_del {
+                palette.removed_bg
+            } else {
+                palette.background
+            };
+            let mut line = crate::presentation::syntax(source, &diff_language, palette);
+            line.spans.insert(
+                0,
+                Span::styled(format!("  {number:>4} {marker} "), Style::default().fg(fg)),
+            );
+            line.style = Style::default().bg(bg).fg(palette.text);
+            for mut row in crate::presentation::wrap(line, inner_width, 9) {
+                let padding = inner_width.saturating_sub(row.width());
+                row.spans.push(Span::raw(" ".repeat(padding)));
+                rendered.push(row);
             }
         } else {
             // System / plan context / errors: default styling.
             rendered.extend(lines);
         }
+        let entry_rows = rendered.split_off(entry_start);
+        rendered.extend(
+            entry_rows
+                .into_iter()
+                .flat_map(|line| crate::presentation::wrap(line, inner_width, 2)),
+        );
+        ranges.push((entry_start, rendered.len()));
         previous_was_secondary = is_secondary;
     }
-    rendered
+    (rendered, ranges)
 }
 
 /// VRO-11.9 — best-effort inverse mapping of a clicked row inside the
@@ -1472,15 +1537,13 @@ pub fn bare_url_entry_at_row(model: &ViewModel, area: Rect, row: u16) -> Option<
     if lines.is_empty() {
         return None;
     }
-    let mut total = 0_usize;
-    let mut spans: Vec<(usize, usize)> = Vec::with_capacity(lines.len());
-    for (idx, entry) in lines.iter().enumerate() {
-        let rendered = render_transcript_lines(std::slice::from_ref(entry), inner_width);
-        let wrapped = estimated_wrapped_lines(&rendered, inner_width);
-        let rows = if idx > 0 { wrapped + 1 } else { wrapped };
-        spans.push((total, total + rows));
-        total += rows;
-    }
+    let (rendered, spans) = render_transcript_projection(
+        &lines,
+        inner_width,
+        theme_palette(&model.preferences.theme),
+        model.animation_frame,
+    );
+    let total = rendered.len();
     let max_scroll = total.saturating_sub(visible).min(u16::MAX as usize) as u16;
     let manual = model
         .conversation_manual_scroll
@@ -1604,7 +1667,21 @@ fn render_screen_reader(frame: &mut Frame<'_>, model: &ViewModel) {
         )),
         chunks[0],
     );
-    let mut transcript = transcript_lines_for(model);
+    let mut transcript: Vec<String> = transcript_lines_for(model)
+        .into_iter()
+        .map(|entry| {
+            if let Some(fields) = entry.strip_prefix("tool:") {
+                let parts: Vec<_> = fields.splitn(4, '\t').collect();
+                if parts.len() == 4 {
+                    return format!("{}: {}. {}", parts[1], parts[3], parts[0]);
+                }
+            }
+            entry
+                .strip_prefix("tool-output:")
+                .unwrap_or(&entry)
+                .to_owned()
+        })
+        .collect();
     if !model.activity.is_empty() {
         transcript.push(format!("Activity: {}", model.activity.join("; ")));
     }
@@ -1855,23 +1932,25 @@ pub fn transcript_lines_for(model: &ViewModel) -> Vec<String> {
     let mut activity = if model.show_tool_details {
         (!model.live_trajectory.is_empty()).then(|| {
             let mut detail = vec!["activity: Activity transcript · Ctrl+T returns to chat".into()];
-            detail.extend(structured_activity_lines(&model.live_trajectory));
+            detail.extend(crate::activity::project(
+                &model.live_trajectory,
+                model.agent_running,
+                true,
+            ));
             detail.extend(file_change_preview_lines(&model.file_changes));
             detail
         })
     } else {
         (!model.live_trajectory.is_empty()).then(|| {
             let mut summary = vec![tool_activity_summary(&model.live_trajectory)];
+            summary.extend(crate::activity::project(
+                &model.live_trajectory,
+                model.agent_running,
+                false,
+            ));
             if let Some(change_summary) = file_change_summary_line(&model.file_changes) {
                 summary.push(change_summary);
             }
-            summary.extend(
-                model
-                    .live_trajectory
-                    .iter()
-                    .filter(|line| line.contains("VesperLens") || line.starts_with("http"))
-                    .cloned(),
-            );
             summary
         })
     };
@@ -1954,13 +2033,30 @@ fn file_change_preview_lines(changes: &[vesper_domain::FileChangePreview]) -> Ve
             "diff-file:{} (+{} -{})",
             change.path, change.additions, change.deletions
         ));
+        let mut old_line = change.start_line;
+        let mut new_line = change.start_line;
         for line in &change.lines {
             let prefix = match line.kind {
                 vesper_domain::DiffLineKind::Context => "diff-context:",
                 vesper_domain::DiffLineKind::Addition => "diff-add:",
                 vesper_domain::DiffLineKind::Deletion => "diff-del:",
             };
-            lines.push(format!("{prefix}{}", line.text));
+            let number = if line.kind == vesper_domain::DiffLineKind::Deletion {
+                old_line
+            } else {
+                new_line
+            };
+            if line.kind != vesper_domain::DiffLineKind::Addition {
+                old_line = old_line.map(|n| n.saturating_add(1));
+            }
+            if line.kind != vesper_domain::DiffLineKind::Deletion {
+                new_line = new_line.map(|n| n.saturating_add(1));
+            }
+            lines.push(format!(
+                "{prefix}{}\t{}",
+                number.map(|n| n.to_string()).unwrap_or_default(),
+                line.text
+            ));
         }
         if change.truncated {
             lines.push("diff-ellipsis:… preview truncated; totals include all lines".into());
@@ -2036,49 +2132,6 @@ fn compact_visible_prompt(line: String) -> String {
         .take(120)
         .collect::<String>();
     format!("user: {lead} [Pasted Content {count} chars]")
-}
-
-fn structured_activity_lines(entries: &[String]) -> Vec<String> {
-    let mut groups: [Vec<String>; 4] = std::array::from_fn(|_| Vec::new());
-    let mut current_group = 3_usize;
-    for entry in entries {
-        let trimmed = entry.trim();
-        if trimmed.starts_with("commentary:") {
-            continue;
-        }
-        if let Some(action) = trimmed.strip_prefix('⏺') {
-            let name = action.trim().split([' ', '·']).next().unwrap_or_default();
-            current_group = if name.contains("read")
-                || name.contains("list")
-                || name.contains("grep")
-                || name.contains("search")
-            {
-                0
-            } else if name.contains("write") || name.contains("edit") || name.contains("patch") {
-                1
-            } else if name.contains("command") || name.contains("shell") {
-                2
-            } else {
-                3
-            };
-            groups[current_group].push(entry.clone());
-        } else if trimmed.starts_with('⎿') {
-            groups[current_group].push(entry.clone());
-        } else if entry.contains("VesperLens") || entry.starts_with("http") {
-            groups[3].push(entry.clone());
-        }
-    }
-    let mut lines = Vec::new();
-    for (label, group) in ["Explored", "Edited", "Ran commands", "Other activity"]
-        .into_iter()
-        .zip(groups)
-    {
-        if !group.is_empty() {
-            lines.push(format!("activity: {label}"));
-            lines.extend(group);
-        }
-    }
-    lines
 }
 
 /// Compact projection of a verbose provider/tool event stream.
@@ -2457,7 +2510,7 @@ mod tests {
             .iter()
             .map(|cell| cell.symbol())
             .collect();
-        assert!(content.contains("write_file"), "tool name visible");
+        assert!(content.contains("Edited"), "tool action visible");
         assert!(
             content.contains("127.0.0.1:41277"),
             "the review URL must be visible inline: {content}"
@@ -3329,8 +3382,8 @@ fn ctrl_t_keeps_persisted_progress_compact_and_shows_structured_tools() {
             .any(|line| line.contains("First progress update"))
     );
     assert!(lines.iter().any(|line| line.contains("Final answer")));
-    assert!(lines.iter().any(|line| line.contains("Explored")));
-    assert!(lines.iter().any(|line| line.contains("Ran commands")));
+    assert!(lines.iter().any(|line| line.contains("Read")));
+    assert!(lines.iter().any(|line| line.contains("Ran")));
 }
 
 #[test]
@@ -3386,6 +3439,7 @@ fn visual_reference_frame_has_agent_cli_information_hierarchy() {
             "  ⎿ ✓ run_command · 199 passed".into(),
         ],
         file_changes: vec![vesper_domain::FileChangePreview {
+            start_line: Some(1),
             path: "src/main.rs".into(),
             absolute_path: "/workspace/src/main.rs".into(),
             operation: vesper_domain::FileChangeOperation::Modify,
@@ -3466,9 +3520,9 @@ fn visual_reference_frame_has_agent_cli_information_hierarchy() {
         detail_text.push_str(row.trim_end());
         detail_text.push('\n');
     }
-    assert!(detail_text.contains("Explored"));
+    assert!(detail_text.contains("Read"));
     assert!(detail_text.contains("Edited"));
-    assert!(detail_text.contains("Ran commands"));
+    assert!(detail_text.contains("Ran"));
     assert!(detail_text.contains("src/main.rs (+1 -1)"));
     assert!(detail_text.contains("-     println!(\"old\");"));
     assert!(detail_text.contains("+     println!(\"new\");"));
@@ -3588,6 +3642,170 @@ fn responsive_reference_frames_keep_controls_and_hide_raw_reasoning() {
         }
         if std::env::var_os("VESPER_DUMP_UI").is_some() {
             eprintln!("RESPONSIVE {width}x{height}\n{frame_text}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod output_upgrade_reference {
+    use super::*;
+    use ratatui::{Terminal, backend::TestBackend};
+
+    const REPORT: &str = "assistant: Implemented and verified in the isolated fixture:\n\n- **Theme:** Activity labels, commands and source tokens use distinct colors from the selected palette.\n- **Settings:** Saved choices remain visible. Long descriptions wrap under their own text with a consistent left edge.\n\n| Check | Method | Result |\n| --- | --- | --- |\n| Alignment | Resize the terminal | ✅ Wrapped content stays inside its column |\n| Status | Observe tool completion | ✅ Green success, red failure, orange working |\n\nVerification: **3 checks passed**, `cargo test --offline`.\n\nFull execution report: [output upgrade](docs/foundation/output-visual-upgrade-execution.md).";
+
+    fn model() -> ViewModel {
+        ViewModel {
+            transcript: vec![
+                "user: Upgrade the output and report layout.".into(),
+                REPORT.into(),
+            ],
+            live_trajectory: vec![
+                "⏺ read_file · src/main.rs".into(),
+                "  ⎿ ✓ read_file · 120 lines".into(),
+                "⏺ run_command · cargo test --offline > /tmp/tests.log 2>&1".into(),
+                "  ⎿ ✗ run_command · error: assertion failed\nexpected 2, received 1".into(),
+                "⏺ run_command · python3 -c 'print(42)'".into(),
+                "  ⎿ ✓ run_command · 42".into(),
+                "⏺ run_command · cargo check --all-features".into(),
+            ],
+            file_changes: vec![vesper_domain::FileChangePreview {
+                start_line: Some(217),
+                path: "src/main.rs".into(),
+                absolute_path: "/fixture/src/main.rs".into(),
+                operation: vesper_domain::FileChangeOperation::Modify,
+                additions: 3,
+                deletions: 1,
+                truncated: false,
+                lines: vec![
+                    vesper_domain::DiffLine {
+                        kind: vesper_domain::DiffLineKind::Context,
+                        text: "fn main() {".into(),
+                    },
+                    vesper_domain::DiffLine {
+                        kind: vesper_domain::DiffLineKind::Deletion,
+                        text: "    let count = 1;".into(),
+                    },
+                    vesper_domain::DiffLine {
+                        kind: vesper_domain::DiffLineKind::Addition,
+                        text: "    let count = 2;".into(),
+                    },
+                    vesper_domain::DiffLine {
+                        kind: vesper_domain::DiffLineKind::Addition,
+                        text: "    println!(\"checked {} items\", count);".into(),
+                    },
+                    vesper_domain::DiffLine {
+                        kind: vesper_domain::DiffLineKind::Addition,
+                        text: "    assert_eq!(count, 2);".into(),
+                    },
+                    vesper_domain::DiffLine {
+                        kind: vesper_domain::DiffLineKind::Context,
+                        text: "}".into(),
+                    },
+                ],
+            }],
+            panels: PanelVisibility {
+                chat_only: true,
+                ..PanelVisibility::default()
+            },
+            show_tool_details: true,
+            agent_running: true,
+            conversation_manual_scroll: Some(u16::MAX),
+            ..ViewModel::default()
+        }
+    }
+
+    #[test]
+    fn report_activity_and_diff_reference_frames() {
+        for theme in [
+            "chatgpt-black",
+            "chatgpt-white",
+            "ansi",
+            "light",
+            "dracula",
+            "nord",
+        ] {
+            for width in [40, 80, 120] {
+                let mut model = model();
+                model.preferences.theme = theme.into();
+                let mut terminal = Terminal::new(TestBackend::new(width, 80)).unwrap();
+                terminal.draw(|f| render_to_frame(f, &model)).unwrap();
+                let buffer = terminal.backend().buffer();
+                let rows: Vec<String> = (0..80)
+                    .map(|y| (0..width).map(|x| buffer[(x, y)].symbol()).collect())
+                    .collect();
+                let text = rows.join("\n");
+                assert!(!text.contains("tool:"));
+                assert!(!text.contains("| ---"));
+                assert!(text.contains("Implemented and verified"));
+                assert!(
+                    text.contains("217") && text.contains("221"),
+                    "source lines missing: {text}"
+                );
+                let ink = crate::presentation::Ink::for_palette(theme_palette(theme));
+                for color in [ink.success, ink.failure, ink.running] {
+                    assert!(
+                        buffer
+                            .content
+                            .iter()
+                            .any(|c| c.symbol() == "●" && c.fg == color),
+                        "status absent: {theme}/{width}"
+                    );
+                }
+                let dot = buffer
+                    .content
+                    .iter()
+                    .position(|c| c.symbol() == "●" && c.fg == ink.running)
+                    .unwrap();
+                let completed = buffer
+                    .content
+                    .iter()
+                    .position(|c| c.symbol() == "●" && c.fg == ink.success)
+                    .unwrap();
+                let before = buffer.content[completed].clone();
+                let running_before = buffer.content[dot].clone();
+                if let Some(dir) = std::env::var_os("VESPER_OUTPUT_CAPTURE_DIR") {
+                    let cells: Vec<_> = buffer.content.iter().map(|c| serde_json::json!({"text": c.symbol(), "fg": format!("{:?}",c.fg), "bg":format!("{:?}",c.bg), "bold":c.modifier.contains(Modifier::BOLD)})).collect();
+                    std::fs::write(
+                        std::path::Path::new(&dir).join(format!("{theme}-{width}.json")),
+                        serde_json::to_vec(
+                            &serde_json::json!({"width":width,"height":80,"cells":cells}),
+                        )
+                        .unwrap(),
+                    )
+                    .unwrap();
+                }
+                model.animation_frame = 5;
+                terminal.draw(|f| render_to_frame(f, &model)).unwrap();
+                assert_ne!(
+                    running_before.modifier,
+                    terminal.backend().buffer().content[dot].modifier
+                );
+                assert_eq!(before, terminal.backend().buffer().content[completed]);
+            }
+        }
+    }
+
+    #[test]
+    fn report_continuations_keep_role_and_list_indents() {
+        for width in [20, 40, 80, 120] {
+            let lines = render_transcript_lines(&[REPORT.into()], width);
+            for line in &lines {
+                assert!(line.width() <= width);
+            }
+            let text: Vec<String> = lines
+                .iter()
+                .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect())
+                .collect();
+            assert!(
+                text.iter()
+                    .skip(1)
+                    .filter(|s| !s.trim().is_empty())
+                    .all(|s| s.starts_with("  "))
+            );
+            let bullet = text.iter().position(|s| s.contains("Theme:")).unwrap();
+            if width <= 40 {
+                assert!(text[bullet + 1].starts_with("    "));
+            }
         }
     }
 }

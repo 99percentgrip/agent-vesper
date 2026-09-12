@@ -273,6 +273,10 @@ pub struct FileChangePreview {
     pub additions: u64,
     /// Total removed lines in the complete change, not merely the preview.
     pub deletions: u64,
+    /// One-based source line at the beginning of the preview in both versions.
+    /// Missing on legacy previews; consumers must not invent absolute numbers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_line: Option<u64>,
     /// Bounded context/change lines for terminal presentation.
     pub lines: Vec<DiffLine>,
     /// Whether one or more complete change lines were omitted from `lines`.

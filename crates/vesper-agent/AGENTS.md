@@ -25,7 +25,9 @@ the multi-turn, tool-executing layer above it.
   `write_file`, `edit_file`, `apply_patch`, `list_directory`, `search_files`,
   `grep`, `run_command`, `update_plan`) with confined filesystem/shell I/O.
   Successful write/edit/patch calls compute exact before/after line totals
-  and a bounded preview only after the mutation succeeds.
+  and a bounded preview with its real starting source line only after the mutation
+  succeeds. Shell nonzero exits and timeouts are failed tool results, including
+  the sandbox timeout route; bounded diagnostics stay available to both hosts.
 - `src/registry.rs` — `ToolRegistry`: name → executor routing + mode-filtered
   `definitions_for`. As of the deferred-loading Phase 1, `definitions_for`
   also excludes any `ToolDefinition` whose `defer_loading` is `true` — those
@@ -60,7 +62,12 @@ the multi-turn, tool-executing layer above it.
   `max_tool_iterations`. Captures `update_plan` output into
   `AgentTurnOutcome::plan` so callers drive the Phase 5 PLANNING → REVIEW
   transition. `AgentProgressPort` emits bounded in-memory provider/tool/plan
-  activity without raw tool arguments, outputs, or secrets. Successful
+  activity with whitelisted argument hints (48 chars; commands 512) and result
+  summaries. `tool_output_preview` supplies shell excerpts only: at most 16,384
+  input characters, 60 lines, 512 chars per line, plus a truncation notice. It strips
+  ANSI/control sequences and scrubs known credential patterns; this is not a
+  guarantee against arbitrary sensitive command output. File reads remain summary-only.
+  Both hosts and TUI ReAct use this shared presentation helper. Successful
   filesystem mutations may attach the executor-produced bounded
   `FileChangePreview`; hosts must not infer diffs from prose.
   `AgentHistoryPort` checkpoints complete in-memory transaction boundaries for

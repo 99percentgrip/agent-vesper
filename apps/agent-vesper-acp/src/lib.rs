@@ -1870,6 +1870,7 @@ impl vesper_agent::AgentProgressPort for AcpEngineProgressPort {
                 name,
                 success,
                 note,
+                output_preview,
                 change,
             } => {
                 let paired = self
@@ -1882,7 +1883,7 @@ impl vesper_agent::AgentProgressPort for AcpEngineProgressPort {
                     tool_call_id: paired,
                     name,
                     success,
-                    note,
+                    note: output_preview.unwrap_or(note),
                     change,
                 });
             }
@@ -3129,8 +3130,9 @@ mod tests {
                 AcpEngineEvent::ToolFinished {
                     tool_call_id,
                     success,
+                    note,
                     ..
-                } => format!("finished:{tool_call_id}:{}", success),
+                } => format!("finished:{tool_call_id}:{success}:{note}"),
                 AcpEngineEvent::ReasoningDelta { .. }
                 | AcpEngineEvent::ContentDelta { .. }
                 | AcpEngineEvent::Usage { .. }
@@ -3170,6 +3172,7 @@ mod tests {
                 name: "read_file".to_owned(),
                 success: true,
                 note: "43 lines".to_owned(),
+                output_preview: None,
                 change: None,
             },
         );
@@ -3179,8 +3182,27 @@ mod tests {
             vec![
                 "started:acp-tool-0".to_owned(),
                 "started:acp-tool-1".to_owned(),
-                "finished:acp-tool-1:true".to_owned(),
+                "finished:acp-tool-1:true:43 lines".to_owned(),
             ]
+        );
+        vesper_agent::AgentProgressPort::emit(
+            &port,
+            vesper_agent::AgentProgressEvent::ToolFinished {
+                name: "run_command".into(),
+                success: false,
+                note: "size summary".into(),
+                output_preview: Some("failed-check\nexit 7".into()),
+                change: None,
+            },
+        );
+        assert!(
+            recording
+                .0
+                .lock()
+                .unwrap()
+                .last()
+                .unwrap()
+                .ends_with(":false:failed-check\nexit 7")
         );
     }
 
