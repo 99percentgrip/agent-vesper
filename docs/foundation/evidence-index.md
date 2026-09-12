@@ -2,6 +2,15 @@
 
 Status: evidence index; acceptance status is scoped to each section.
 
+## Session push: context paging + productization + hardening planning — 2026-09-12
+
+`push-context-paging-execution.md` records pushing the session's three
+completed work units to `origin/main` (`637eb7e..a378bd8`, four commits)
+after fresh gates on the exact tree: workspace 2,218/0, acceptance 20/20,
+naming-guard clean. Two initially misplaced files were corrected pre-push
+(one amend, one follow-up docs commit). Ranker-hardening PR-1..3 remain
+PLANNING and are the resumption point.
+
 ## Ranker hardening PRD (alias cross-talk) — 2026-09-12
 
 `ranker-hardening-prd-execution.md` records drafting
