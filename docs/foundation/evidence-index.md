@@ -75,6 +75,7 @@ Standard remains default; combined score-floor integration is pending GLM PR-2/P
 `5cf5835`, overlapping files, isolated routing checkout, library preservation and
 required combined acceptance. Implementation is approved; final acceptance pending.
 
+
 ## Skill routing quality proposal — 2026-09-13
 
 [Research execution](skill-routing-quality-research.md) links the
@@ -86,6 +87,7 @@ implementation claimed; full video/caption access limitations are explicit.
 
 [Repair execution](dollar-skill-routing-repair.md) reproduces pasted LaTeX being
 misread as a missing skill and records shared TUI/ACP routing repair and limits.
+
 
 ## GitHub front-page refresh — 2026-09-13
 
