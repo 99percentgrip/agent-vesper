@@ -72,7 +72,7 @@ impl QueryEnv {
             prompt,
             explicit_skill: None,
             available_tools: &self.tools,
-            platform: "linux",
+            platform: std::env::consts::OS,
             outcome_adjustments: &self.outcomes,
         }
     }

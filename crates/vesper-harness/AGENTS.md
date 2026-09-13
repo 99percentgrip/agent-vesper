@@ -297,6 +297,9 @@ Z.ai and Playwright MCP server descriptors.
 
 ## Verification
 
+- Shared selector composition fixtures use the actual host OS for preparation
+  and resolution; a mismatched platform must still invalidate a pending selection.
+
 - `tests/watcher_latency_gate.rs` serializes sibling tests around process-wide
   descriptor measurements; sweep/input concurrency remains inside the measured test.
 
