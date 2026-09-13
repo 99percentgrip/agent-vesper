@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | COMPLETE — 2026-09-13 (PR-1 anchor, PR-2 conjunction gate, Q1 delimiter-bounded names, PR-3 literal G5 restoration) |
+| **Status** | COMPLETE — 2026-09-13 (PR-1 anchor, PR-2 conjunction gate, Q1 delimiter-bounded names, PR-3 literal G5 restoration) + master audit (all ACs re-traced, pins sabotage-verified; `foundation/chunk-score-floor-master-audit.md`) |
 | **Target crates** | `vesper-memory` |
 | **Owner** | Alex (product); implementation via fast-track directives |
 | **Related** | `advanced-context-paging-prd.md` (chunk tier), `ranker-hardening-prd.md` (raw pools), `docs/foundation/exemplar-migration-execution.md` §5.1 (the finding), `docs/architecture/recon_alias_crosstalk.md` §5.3 (noise floor documented as latent), `docs/architecture/recon_exemplar_candidate.md` |
@@ -183,7 +183,10 @@ stop rule in PR-3 governs.
   replaces `score > 0` in `rank_chunks`; anchor unignored and green;
   genuine-overlap control green; exemplar 16/16 green; stop-rule probe
   proved the two changed canonical rows were themselves zero-overlap
-  cosine admissions (AC-3 letter corrected in §6). Floor 2,256 (2,253 +
+  cosine admissions (AC-3 letter corrected in §6). *(Master-audit correction 2026-09-13: the
+  factual-retrieval SummaryOnly probe was NOT among the changed rows —
+  its second chunk routes on a genuine `pipeline` overlap; the count is
+  two rows, not three.)* Floor 2,256 (2,253 +
   2 prior-unit dollar tests + 1 unignored anchor). Acceptance 23/23,
   clippy clean, naming-guard clean. Skill tier byte-identical. Evidence:
   `docs/foundation/chunk-score-floor-pr2-execution.md`.

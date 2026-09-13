@@ -78,6 +78,21 @@ touches the verdict inputs: the metadata probes' across-family improvement
 was and remains real, and the corrected overhead only strengthens the
 cost side of the record. Verdict **ADOPT** stands on corrected data.
 
+**Score-floor supersession note (2026-09-13, master audit F2):** rows 29–30
+above were measured under the pre-score-floor admission filter
+(`score > 0`). The score-floor PRD PR-2 conjunction gate
+(`(overlap >= 1 || name_match) && score >= MIN_CHUNK_ROUTING_SCORE`)
+removes zero-signal admissions, so the live table now reads
+`SummaryOnly: false | 0 | 0` and `SummaryKeyElements: true | 0 | 1` for
+the procedure probe. The removed chunk (`certificates`) was proven
+zero-overlap noise by runtime probe at PR-2 (receipt:
+`chunk-score-floor-pr2-execution.md` §Stop rule) — the recorded
+`irrelevant_before=1` was itself a noise-floor instance, not honest
+ranking noise. No success flag changed; the ADOPT verdict inputs are
+unaffected. The recorded table above stands as the 2026-09-12
+measurement of the pre-gate ranker; the live canonical table is emitted
+by `full_metrics_run_emits_canonical_table` on the current tree.
+
 Reading the table:
 
 - **Controls:** description-sufficient queries succeed under every

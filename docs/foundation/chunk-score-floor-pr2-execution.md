@@ -76,8 +76,15 @@ cargo fmt --check
   `exemplar_routing` 4, `skill_routing` 14 including the dollar-repair
   tests, `chunk_store`-unit 43).
 - **D3 canonical table (AC-3):** all 12 success flags and probe ladders
-  identical to the recorded table. Three rows differ exactly by the
-  chunks the gate removes — see §Stop rule.
+  identical to the recorded table. Two rows differ exactly by the
+  zero-signal chunks the gate removes — see §Stop rule. *(Master-audit
+  correction 2026-09-13: this report originally said "three rows" and
+  listed the factual-retrieval SummaryOnly metadata probe as affected;
+  the definitive recorded-vs-live byte-diff shows that row unchanged
+  (`true | 0 | 2 | 13` before and after — its second chunk routes on the
+  genuine `pipeline` overlap, which the gate correctly preserves). The
+  miscount was a table-reading error during PR-2, propagated to the chat
+  summary. Corrected here in place; no conclusion changes.)*
 - **Exemplar 16/16:** `routing_proofs_target_chunk_ranks_first_for_its_phase ... ok`,
   `budget_proof_worst_case_activation_inside_per_skill_cap ... ok`,
   `manifest_proof_sixteen_valid_entries_all_files_present_under_cap ... ok`,
@@ -99,9 +106,17 @@ re-derive") was applied immediately:
 
 - Baseline (worktree `5cf5835`, unhardened filter):
   `procedure-application | SummaryOnly | false | irrelevant_before=1 | routed=1`
-  and `SummaryKeyElements | true | 0 | routed=2`; factual-retrieval
-  SummaryOnly metadata probe `routed=2`.
-- After gate: `routed=1` on both, `irrelevant_before=1 → 0`.
+  and `SummaryKeyElements | true | 0 | routed=2`.
+- After gate: procedure SummaryOnly `irrelevant_before 1→0`, `routed 1→0`
+  (the noise chunk no longer admits); procedure SKE `routed 2→1`
+  (success preserved, noise chunk dropped). The factual-retrieval rows
+  are **unchanged** — its metadata probe's second chunk routes on a
+  genuine `pipeline` token overlap (logs' summary "Log pipelines…"),
+  which the conjunction gate correctly admits. *(Master-audit correction
+  2026-09-13: the original text here and the delivery summary wrongly
+  counted the factual row among the changes — "three rows"/"routed 2→1
+  twice". Actual: two rows, one `2→1`. Proven by the definitive
+  recorded-vs-live table byte-diff in the master-audit report.)*
 - **No success flag changed anywhere; no probe ladder changed.**
 - Re-derivation (runtime probe in the disposable worktree, unhardened
   filter, prompt `"use skill cutover-runbook: canary rehearsal"`):

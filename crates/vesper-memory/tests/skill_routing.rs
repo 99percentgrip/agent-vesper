@@ -420,12 +420,23 @@ fn metadata_fields_ranking_follows_the_shipped_flag_state() {
     // Distinguishing neutrality proof: `telemetry diagnostics` overlaps
     // ONLY skill A's summary/key_elements. Flag-off ⇒ that overlap
     // contributes nothing ⇒ `logging` (zero description/name overlap)
-    // loads at all? No: it must not load AT ALL. (Flag-on would load it:
-    // score > 0 qualifies it under take(MAX_CHUNKS_PER_SELECTION).)
+    // must not load AT ALL. (Flag-on: `logging` IS eligible — the
+    // summary/key_elements tokens are a literal overlap for it, so the
+    // PR-2 conjunction gate admits it on honest signal.)
     if !CHUNK_METADATA_ROUTING_ENABLED {
         assert!(
             !chunk_names.contains(&"logging".to_owned()),
             "summary-only overlap must not load a chunk while the flag is off; got {chunk_names:?}"
+        );
+    } else {
+        // Flag-on positive assertion (score-floor master audit): the
+        // summary/key_elements tokens ARE a literal overlap for `logging`,
+        // so the PR-2 conjunction gate must admit it on honest signal —
+        // the flag-on path of this conditional proof must assert
+        // something, not pass silently.
+        assert!(
+            chunk_names.contains(&"logging".to_owned()),
+            "flag-on: `telemetry diagnostics` is literal overlap for logging;              the conjunction gate must admit it; got {chunk_names:?}"
         );
     }
     assert_eq!(

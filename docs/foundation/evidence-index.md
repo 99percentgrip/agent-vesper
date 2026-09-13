@@ -74,6 +74,18 @@ Standard remains default; combined score-floor integration is pending GLM PR-2/P
 [Reconnaissance](skill-routing-coexistence-recon.md) records GLM PR-1 commit
 `5cf5835`, overlapping files, isolated routing checkout, library preservation and
 required combined acceptance. Implementation is approved; final acceptance pending.
+## Score-floor MASTER AUDIT — 2026-09-13
+
+[Master audit](chunk-score-floor-master-audit.md) re-traces all six ACs to
+current code, sabotage-verifies all five pins (gate-revert and
+matcher-revert both flip their pins red), and re-derives invariants by
+hand. Findings: PR-2's row miscount corrected in place ("three" → two;
+the factual-retrieval row was unchanged — its second chunk routes on a
+genuine `pipeline` overlap), stale-table supersession noted in the PR-4
+eval report, silent flag-on branch closed in `metadata_fields`. No code
+defects; initiative verdict COMPLETE upheld. Floor 2,258/0, acceptance
+23/23, naming-guard 18 frozen.
+
 ## Chunk score-floor PR-3 / initiative COMPLETE — 2026-09-13
 
 [PR-3 execution](chunk-score-floor-pr3-execution.md) restores the exemplar
