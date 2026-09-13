@@ -23,6 +23,8 @@ distribution.
 - The published binary `cmd` is `agent-vesper-acp` (or `.exe` on Windows)
   inside the archive's `agent-vesper-acp/` bundle directory, matching the
   installer's expectations in `scripts/install.sh` / `scripts/install.ps1`.
+- `license_url` links to the repository license text, as required by the upstream
+  registry schema; retain the SPDX `license` identifier as well.
 - The manifest is data only; no executable ships here.
 
 ## Verification
