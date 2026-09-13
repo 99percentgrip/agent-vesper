@@ -75,6 +75,9 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Local Contracts
 
+- Routing JSON/JSONL evidence is LF-pinned by repository attributes so frozen
+  corpus and receipt digests remain stable on Windows checkouts.
+
 - The Python source repository is immutable and pinned to `bf4d4287e2e3320aa3f09015f678e6169d520045`.
 - Distinguish reproduced or locally validated results from CI-pending and product-pending claims.
 - Every report records objective, methods, commands, inspected/created files, exact evidence, tests, unresolved issues, platform scope, readiness effect, and status.

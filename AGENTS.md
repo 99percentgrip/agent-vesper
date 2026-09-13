@@ -148,6 +148,9 @@ When the user requests a durable behavior change, record it here or in the relev
 
 ## Project Contracts
 
+- Hash-pinned fixtures and routing evidence retain LF bytes through `.gitattributes`
+  on every platform. Do not weaken frozen digests to accommodate checkout conversion.
+
 - The frozen Python source at `/home/alex/Projects/Native GLM-5.2 Provider`
   remains a read-only behavioral oracle pinned to
   `bf4d4287e2e3320aa3f09015f678e6169d520045`.

@@ -1,2 +1,4 @@
 fixtures/**/*.json text eol=lf
 fixtures/web-oracle/** text eol=lf
+docs/foundation/skill-routing-*.json text eol=lf
+docs/foundation/skill-routing-*.jsonl text eol=lf
