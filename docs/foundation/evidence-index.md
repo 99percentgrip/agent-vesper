@@ -1,5 +1,7 @@
 # Foundation Evidence Index
 
+[v0.22.5 release](v0.22.5-release-execution.md) tracks guided setup publication; release gates are pending.
+
 [Guided dependency setup](dependency-setup-execution.md) records 2,315 passing
 workspace tests, 23 acceptance cases, Rust 1.88 compatibility and real isolated
 Linux setup through CLI and Settings. Clean-platform installation and restart

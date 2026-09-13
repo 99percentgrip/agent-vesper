@@ -83,8 +83,8 @@ Install [LM Studio](https://lmstudio.ai/docs/app), download and load a model sui
 
 ### Web tools and container workers
 
-In source builds with guided setup, open **Settings → Web tools → Set up features / repair**.
-These builds need the complete browser bundle; compiling the executable alone does
+Starting with v0.22.5, open **Settings → Web tools → Set up features / repair**.
+Setup needs the complete browser bundle; compiling the executable alone does
 not include the browser archive. Release packaging supplies it automatically.
 Confirm setup and approve any operating-system authorization prompt. Vesper reuses
 an available local Docker/Podman engine, or offers Podman installation. It then
@@ -98,10 +98,10 @@ up to 20 GiB disk. Downloads can exceed 1 GiB. Windows may require OS virtualiza
 approval and a restart; reopen Vesper and repeat setup afterward. Existing machines
 are never reset. A previously verified Vesper machine can start again when needed.
 
-The guided flow is **not released yet**. Its real Linux contained-browser check has
+The guided flow is a **preview**. Its real Linux contained-browser check has
 passed; clean-machine package installation and macOS/Windows acceptance remain
 pending. See the [acceptance record](foundation/dependency-setup-execution.md).
-Released builds use **Set up / repair driver** after installing and starting
+Older builds use **Set up / repair driver** after installing and starting
 [Docker](https://docs.docker.com/get-started/get-docker/) or
 [Podman](https://podman.io/docs/installation) through the official OS instructions.
 
@@ -129,11 +129,11 @@ You can also rerun the same installer to update to the latest release, then rest
 To select a specific release, download the installer as shown above, then use an actual version from [Releases](https://github.com/99percentgrip/agent-vesper/releases):
 
 ```sh
-AGENT_VESPER_VERSION=0.22.4 sh vesper-install.sh
+AGENT_VESPER_VERSION=0.22.5 sh vesper-install.sh
 ```
 
 ```powershell
-./vesper-install.ps1 -Version 0.22.4
+./vesper-install.ps1 -Version 0.22.5
 ```
 
 The version above is an example, not an instruction to downgrade a newer installation.

@@ -47,3 +47,5 @@ those gates. All missing or failed items remain visible in the execution report.
 
 - [Reconnaissance](foundation/dependency-setup-recon.md)
 - [Implementation and acceptance](foundation/dependency-setup-execution.md)
+
+- [Release status](foundation/v0.22.5-release-execution.md)

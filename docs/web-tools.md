@@ -10,9 +10,9 @@ In the TUI, open `/settings`, select **Web tools**, then use Up/Down and
 Enter/Space to switch web access, fetching, JavaScript rendering, browser
 interaction, and robots.txt handling on or off. `/web` and `/settings web`
 also open this screen. The screen detects the installed driver automatically.
-In source builds, choose **Set up features / repair** for confirmed runtime
+Starting with v0.22.5, choose **Set up features / repair** for confirmed runtime
 preparation and contained browser checks; see [setup and platform status](installation.md#web-tools-and-container-workers).
-Released builds retain **Set up / repair driver** for importing the bundled image. When entering through the main Settings menu,
+Older builds retain **Set up / repair driver** for importing the bundled image. When entering through the main Settings menu,
 go Back, leave Settings, and choose **Save changes** to save the whole draft.
 **Discard changes** drops ordinary edits; it does not undo an explicitly confirmed
 runtime installation or driver import.

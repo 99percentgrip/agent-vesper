@@ -6,6 +6,8 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `v0.22.5-release-execution.md` owns guided setup publication and exact-commit release evidence.
+
 - `dependency-setup-execution.md` and `dependency-setup-verification.json` own guided
   dependency setup implementation,
   isolated readiness evidence and explicit missing clean-platform acceptance.
