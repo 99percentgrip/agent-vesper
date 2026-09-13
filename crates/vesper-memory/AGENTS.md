@@ -142,6 +142,15 @@ subsystem that backs the Tier C Phase 8 un-stubbed commands
     cross-talk pin (`tests/chunk_routing_eval.rs::cross_talk_pin_…`)
     guards this permanently: two-sided chunk-tier alias expansion
     fails it.
+  - Chunk-tier score floor (chunk-score-floor PRD, PR-2): admission is a
+    **conjunction gate** `(overlap >= 1 || name_match) && score >=
+    MIN_CHUNK_ROUTING_SCORE (520)` in `rank_chunks` — cosine only ranks
+    already-eligible candidates and can never admit one (hashed-cosine
+    noise between disjoint pools measured up to +0.6547 → 1,440 pts).
+    The noise-floor pin (`noise_floor_pin_zero_overlap_prompt_routes_nothing`)
+    asserts zero-overlap prompts route zero chunks; the
+    genuine-overlap control stays green. Skill-tier arithmetic
+    (`AUTO_ACTIVATION_SCORE`) untouched.
 
 ## Work Guidance
 

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Implementing — PR-1 landed (anchor pinned, `#[ignore]`d) |
+| **Status** | Implementing — PR-2 landed (conjunction gate live, anchor unignored); PR-3 (G5 literal restoration) pending |
 | **Target crates** | `vesper-memory` |
 | **Owner** | Alex (product); implementation via fast-track directives |
 | **Related** | `advanced-context-paging-prd.md` (chunk tier), `ranker-hardening-prd.md` (raw pools), `docs/foundation/exemplar-migration-execution.md` §5.1 (the finding), `docs/architecture/recon_alias_crosstalk.md` §5.3 (noise floor documented as latent), `docs/architecture/recon_exemplar_candidate.md` |
@@ -128,6 +128,12 @@ arithmetic makes impossible since overlap≥1 ⇒ score ≥ 520).
 - **AC-2** Restored exemplar G5 passes literally (zero chunks).
 - **AC-3** D3 eval ladder: canonical table unchanged (controls true,
   probe ladders unchanged, `irrelevant_before` rows preserved).
+  *(Corrected 2026-09-13 at PR-2: one `irrelevant_before` row and two
+  secondary-route rows legitimately changed — the removed chunks were
+  themselves zero-overlap cosine admissions (stop-rule probe receipt in
+  `chunk-score-floor-pr2-execution.md` §4). Every success flag and every
+  probe ladder is unchanged; see the execution report for the
+  row-by-row diff.)*
 - **AC-4** Exemplar 16/16 routing-first unchanged.
 - **AC-5** Workspace floor ≥ 2,252 intact; acceptance 23/23; naming-guard
   clean (zero baseline erosion).
@@ -165,3 +171,12 @@ stop rule in PR-3 governs.
   name-match); the pin test fails on the unhardened tree with receipt and
   is `#[ignore]`d until PR-2. Genuine-overlap control green. Floor 2,253.
   Evidence: `docs/foundation/chunk-score-floor-pr1-execution.md`.
+- 2026-09-13: PR-2 landed. Conjunction gate
+  `(overlap >= 1 || name_match) && score >= MIN_CHUNK_ROUTING_SCORE`
+  replaces `score > 0` in `rank_chunks`; anchor unignored and green;
+  genuine-overlap control green; exemplar 16/16 green; stop-rule probe
+  proved the two changed canonical rows were themselves zero-overlap
+  cosine admissions (AC-3 letter corrected in §6). Floor 2,256 (2,253 +
+  2 prior-unit dollar tests + 1 unignored anchor). Acceptance 23/23,
+  clippy clean, naming-guard clean. Skill tier byte-identical. Evidence:
+  `docs/foundation/chunk-score-floor-pr2-execution.md`.

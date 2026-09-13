@@ -21,6 +21,14 @@ pub const AUTO_ACTIVATION_SCORE: u16 = 2_200;
 /// Maximum chunk bodies loaded per selected skill (PRD D1/PR-2). Chunk
 /// loads additionally share the per-skill and total character budgets.
 pub const MAX_CHUNKS_PER_SELECTION: usize = 3;
+/// Score-floor PRD D1 (chunk-tier conjunction gate): a chunk is routable
+/// only when it carries literal signal — at least one overlap token or an
+/// explicit name match — AND its score clears this floor. Cosine only
+/// ranks already-eligible candidates; it can never admit one, because
+/// hashed-cosine noise between disjoint pools (measured up to +0.6547 →
+/// 1,440 points, PR-1 anchor) has zero overlap and so fails the first
+/// conjunct. 520 equals one literal token — the minimum honest signal.
+pub const MIN_CHUNK_ROUTING_SCORE: i32 = 520;
 /// D3 verdict (2026-09-12, `docs/foundation/context-paging-pr4-eval.md`):
 /// **ADOPT** — improvement repeated across both eval task families with
 /// measured overhead (16 semantic tokens/skill), so automatic
@@ -1303,6 +1311,10 @@ fn conflicts(left: &SkillMetadata, right: &SkillMetadata) -> bool {
 struct RankedChunk<'a> {
     entry: &'a SkillChunkManifestEntry,
     score: i32,
+    /// Literal-signal eligibility (score-floor PRD D1): at least one
+    /// overlap token or an explicit chunk name match. Zero-signal scores
+    /// are hashed-cosine noise from disjoint pools and must never admit.
+    literal_signal: bool,
 }
 
 /// Ranks one selected skill's chunk manifest entries against the prompt
@@ -1342,12 +1354,24 @@ fn rank_chunks<'a>(
             }
             // Name-match bonus mirrors the skill-level name-match term so a
             // prompt naming the chunk routes to it deterministically.
-            if phrase_matches(prompt, &entry.name) {
+            let name_match = phrase_matches(prompt, &entry.name);
+            if name_match {
                 score += 3_500;
             }
-            RankedChunk { entry, score }
+            RankedChunk {
+                entry,
+                score,
+                literal_signal: overlap >= 1 || name_match,
+            }
         })
-        .filter(|ranked| ranked.score > 0)
+        // Score-floor PRD D1 — the conjunction gate. Overlap (or a name
+        // match) is the admission term; the score floor (520 = one literal
+        // token) keeps the invariant legible and suppresses degenerate
+        // matches. Cosine only orders already-eligible candidates — pure
+        // hash noise can never satisfy the first conjunct. Name-match
+        // remains an independent admission path so the lean body's routing
+        // map stays deterministically addressable.
+        .filter(|ranked| ranked.literal_signal && ranked.score >= MIN_CHUNK_ROUTING_SCORE)
         .collect();
     ranked.sort_by(|left, right| {
         right

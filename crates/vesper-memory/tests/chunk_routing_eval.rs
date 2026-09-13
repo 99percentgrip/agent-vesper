@@ -442,13 +442,13 @@ fn _path_helper(_: &Path) {}
 // positive. Offline measurement for the pin fixture:
 //   overlap = 0 tokens, cosine = +0.6547 -> 1,440 points (>> 0)
 //   name-match: none (probe contains no chunk name)
-// The ranker's admission filter is `score > 0`, so this chunk ROUTES on
-// pure hash noise despite zero literal overlap. The assertion below states
-// the CORRECT behavior (zero chunks routed). On the unhardened tree it
-// FAILS - that failure is the anchor receipt (`docs/foundation/
-// chunk-score-floor-pr1-execution.md`). PR-2 of the score-floor PRD adds
-// the conjunction gate `(overlap >= 1 || name_match) && score >= 520` and
-// removes this `#[ignore]`.
+// On the unhardened tree the admission filter was `score > 0`, so this chunk
+// ROUTED on pure hash noise despite zero literal overlap — the PR-1 anchor
+// failure receipt (`docs/foundation/chunk-score-floor-pr1-execution.md`).
+// PR-2 of the score-floor PRD adds the conjunction gate
+// `(overlap >= 1 || name_match) && score >= MIN_CHUNK_ROUTING_SCORE`
+// (`skill_orchestrator.rs`): the zero-signal chunk is now structurally
+// ineligible regardless of how positive its hash collision is.
 // ---------------------------------------------------------------------------
 
 const NOISE_MANIFEST: &str = "---\nname: deepsea-echo-chart\ndescription: Deepsea echo chart of trench fauna and current layers\nchunks:\n  - name: bytecode-lexicon\n    description: Tensor lattice assembler socket linker opcode topology\n    summary: Register compiler daemon proxy heap stack queue grammar\n    key_elements: [vector, manifold, buffer]\n";
@@ -496,10 +496,11 @@ fn noise_store() -> (tempfile::TempDir, SkillStore) {
 }
 
 /// NOISE-FLOOR PIN: a zero-overlap, no-name-match prompt must route ZERO
-/// chunks. Fails on the unhardened tree (1,440 pure-cosine points admit
-/// `bytecode-lexicon`); PR-2 flips it green and unignores it.
+/// chunks. Was the PR-1 anchor (failed on the unhardened tree: 1,440
+/// pure-cosine points admitted `bytecode-lexicon`); PR-2's conjunction
+/// gate flips it green — the zero-signal chunk is structurally
+/// ineligible, so the assertion now holds literally.
 #[test]
-#[ignore = "score-floor PR-2 pending: anchor pins the noise-floor defect; see docs/chunk-score-floor-prd.md"]
 fn noise_floor_pin_zero_overlap_prompt_routes_nothing() {
     let (_dir, store) = noise_store();
     // Zero literal overlap (verified offline: geography tokens vs compiler

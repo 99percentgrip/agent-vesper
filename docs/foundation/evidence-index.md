@@ -75,6 +75,14 @@ Standard remains default; combined score-floor integration is pending GLM PR-2/P
 `5cf5835`, overlapping files, isolated routing checkout, library preservation and
 required combined acceptance. Implementation is approved; final acceptance pending.
 
+## Chunk score-floor PR-2 — 2026-09-13
+
+[PR-2 execution](chunk-score-floor-pr2-execution.md) lands the conjunction gate
+`(overlap >= 1 || name_match) && score >= MIN_CHUNK_ROUTING_SCORE (520)` in
+`rank_chunks`: cosine can only rank, never admit. Anchor unignored and green;
+stop-rule probe proved the two changed D3 rows were themselves zero-overlap
+cosine admissions (AC-3 letter corrected in the PRD). Floor 2,256, acceptance
+23/23, clippy clean, naming-guard clean. Skill tier byte-identical.
 
 ## Skill routing quality proposal — 2026-09-13
 
@@ -87,6 +95,7 @@ implementation claimed; full video/caption access limitations are explicit.
 
 [Repair execution](dollar-skill-routing-repair.md) reproduces pasted LaTeX being
 misread as a missing skill and records shared TUI/ACP routing repair and limits.
+
 
 
 ## GitHub front-page refresh — 2026-09-13
