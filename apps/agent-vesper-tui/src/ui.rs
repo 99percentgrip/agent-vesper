@@ -175,9 +175,22 @@ impl ReasoningDiagnostics {
     }
 }
 
+/// Microphone state projected from the terminal worker, never inferred from status text.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum VoicePhase {
+    #[default]
+    Idle,
+    Preparing,
+    Recording,
+    Transcribing,
+    Error,
+}
+
 /// Pure view model the renderer consumes every frame.
 #[derive(Debug, Clone, Default)]
 pub struct ViewModel {
+    pub voice_phase: VoicePhase,
+    pub voice_elapsed: u64,
     /// Plan Mode state for the status panel.
     pub plan: PlanState,
     /// Active provider superpower surface.
@@ -391,6 +404,31 @@ fn footer_candidates(model: &ViewModel) -> Vec<FooterChip> {
 pub fn footer_action_rows(model: &ViewModel, width: u16) -> Vec<Vec<FooterChip>> {
     let width = usize::from(width.max(1));
     let mut candidates = footer_candidates(model);
+    let (key, label) = match model.voice_phase {
+        VoicePhase::Idle => ("●", "Push to talk"),
+        VoicePhase::Recording => ("■", "Stop"),
+        VoicePhase::Preparing => ("■", "Preparing…"),
+        VoicePhase::Transcribing => ("■", "Transcribing…"),
+        VoicePhase::Error => ("●", "Retry voice"),
+    };
+    let voice = FooterChip {
+        key,
+        label,
+        action: "toggle_voice",
+        warning: false,
+    };
+    candidates.insert(0, voice);
+    if model.voice_phase == VoicePhase::Error {
+        candidates.insert(
+            1,
+            FooterChip {
+                key: "Del",
+                label: "Discard",
+                action: "discard_voice",
+                warning: false,
+            },
+        );
+    }
     let help = candidates
         .iter()
         .position(|chip| chip.action == "show_help")
@@ -405,7 +443,13 @@ pub fn footer_action_rows(model: &ViewModel, width: u16) -> Vec<Vec<FooterChip>>
             Some(candidates.remove(index))
         })
         .flatten();
-    let reserved = restore.into_iter().chain(help).collect::<Vec<_>>();
+    let voice = candidates.remove(0);
+    let discard = (model.voice_phase == VoicePhase::Error).then(|| candidates.remove(0));
+    let reserved = std::iter::once(voice)
+        .chain(discard)
+        .chain(restore)
+        .chain(help)
+        .collect::<Vec<_>>();
     let reserved_width = reserved
         .iter()
         .map(|chip| chip.width())
@@ -809,7 +853,9 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
                     .flat_map(|(index, chip)| {
                         let spacer = (index > 0).then(|| Span::raw(" "));
                         let key_style = Style::default()
-                            .fg(if chip.warning {
+                            .fg(if chip.action == "toggle_voice" {
+                                microphone_color(model)
+                            } else if chip.warning {
                                 palette.warning
                             } else {
                                 palette.accent
@@ -820,7 +866,13 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
                             Span::styled(format!(" {} ", chip.key), key_style),
                             Span::styled(
                                 format!(" {} ", chip.label),
-                                Style::default().fg(palette.muted).bg(palette.surface),
+                                Style::default()
+                                    .fg(if chip.action == "toggle_voice" {
+                                        microphone_color(model)
+                                    } else {
+                                        palette.muted
+                                    })
+                                    .bg(palette.surface),
                             ),
                         ])
                     })
@@ -839,7 +891,30 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
     render_permission_modal(frame, model, palette);
 }
 
+fn microphone_color(model: &ViewModel) -> Color {
+    match model.preferences.theme.as_str() {
+        "light" | "chatgpt-white" => Color::Rgb(180, 20, 35),
+        _ => Color::LightRed,
+    }
+}
+
 fn run_status_line(model: &ViewModel, show_sidebar: bool, palette: ThemePalette) -> Line<'static> {
+    if model.voice_phase != VoicePhase::Idle {
+        return Line::from(vec![
+            Span::styled(
+                format!(
+                    "{:02}:{:02} ",
+                    model.voice_elapsed / 60,
+                    model.voice_elapsed % 60
+                ),
+                Style::default().fg(microphone_color(model)),
+            ),
+            Span::styled(
+                model.status.clone().unwrap_or_default(),
+                Style::default().fg(palette.text),
+            ),
+        ]);
+    }
     if !model.agent_running {
         return Line::from(vec![
             Span::styled("○ ", Style::default().fg(palette.muted)),
@@ -3806,6 +3881,97 @@ mod output_upgrade_reference {
             if width <= 40 {
                 assert!(text[bullet + 1].starts_with("    "));
             }
+        }
+    }
+}
+
+#[test]
+fn microphone_footer_states_are_visible_red_and_clickable() {
+    use ratatui::{Terminal, backend::TestBackend};
+    for width in [40, 80, 120] {
+        for theme in [
+            "chatgpt-black",
+            "chatgpt-white",
+            "ansi",
+            "light",
+            "dracula",
+            "nord",
+        ] {
+            for phase in [
+                VoicePhase::Idle,
+                VoicePhase::Recording,
+                VoicePhase::Preparing,
+                VoicePhase::Transcribing,
+                VoicePhase::Error,
+            ] {
+                for running in [false, true] {
+                    let mut model = ViewModel {
+                        voice_phase: phase,
+                        voice_elapsed: 601,
+                        agent_running: running,
+                        ..ViewModel::default()
+                    };
+                    model.preferences.theme = theme.into();
+                    model.panels.chat_only = true;
+                    let rows = footer_action_rows(&model, width);
+                    assert!(
+                        rows[0].iter().any(|c| c.action == "toggle_voice"),
+                        "{width} {phase:?}"
+                    );
+                    let mut x = 0;
+                    for chip in &rows[0] {
+                        assert_eq!(
+                            footer_action_at(&model, width, 24, x, 23),
+                            Some(chip.action)
+                        );
+                        x += chip.width() as u16 + 1;
+                    }
+                    let mut terminal = Terminal::new(TestBackend::new(width, 24)).unwrap();
+                    terminal
+                        .draw(|frame| render_to_frame(frame, &model))
+                        .unwrap();
+                    let cells = terminal.backend().buffer();
+                    let expected = if matches!(phase, VoicePhase::Idle | VoicePhase::Error) {
+                        "●"
+                    } else {
+                        "■"
+                    };
+                    assert!((0..width).any(|x| cells[(x, 23)].symbol() == expected
+                        && cells[(x, 23)].fg == microphone_color(&model)));
+                    if phase != VoicePhase::Idle {
+                        let frame_text =
+                            cells.content.iter().map(|c| c.symbol()).collect::<String>();
+                        assert!(frame_text.contains("10:01"));
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn voice_stop_survives_permission_and_command_overlays() {
+    for width in [40, 80, 120] {
+        for permission in [false, true] {
+            let mut model = ViewModel {
+                voice_phase: VoicePhase::Recording,
+                ..ViewModel::default()
+            };
+            if permission {
+                model.pending_permission = Some(PermissionModal {
+                    tool: "fixture".into(),
+                    arguments: "{}".into(),
+                    reason: "approval".into(),
+                    focus: PermissionChoice::Allow,
+                });
+            } else {
+                model.command_menu = vec![("help".into(), "help".into())];
+            }
+            assert!(
+                footer_action_rows(&model, width)[0]
+                    .iter()
+                    .any(|chip| chip.action == "toggle_voice" && chip.label == "Stop")
+            );
         }
     }
 }

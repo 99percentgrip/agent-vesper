@@ -83,7 +83,7 @@ Install [LM Studio](https://lmstudio.ai/docs/app), download and load a model sui
 
 ### Web tools and container workers
 
-Starting with v0.22.5, open **Settings → Web tools → Set up features / repair**.
+Starting with v0.22.6, open **Settings → Web tools → Set up features / repair**.
 Setup needs the complete browser bundle; compiling the executable alone does
 not include the browser archive. Release packaging supplies it automatically.
 Confirm setup and approve any operating-system authorization prompt. Vesper reuses
@@ -116,7 +116,16 @@ Web access and browser interaction are opt-in. See [web tools](web-tools.md) for
 
 Voice input is optional and supported in the Linux/macOS terminal app. It needs a microphone and a recording command: `arecord` on Linux or `afrecord` on macOS. On Debian/Ubuntu install `alsa-utils`; on Fedora install `alsa-utils` with `dnf`.
 
-Press **F5** to start recording and **F5** again to transcribe. If no suitable transcription environment exists, first use attempts to install `faster-whisper` into Vesper's voice environment and download the chosen model. This needs network access and can take time. The POSIX installer bundles `uv` when its download succeeds; a system `uv` or Python virtual-environment setup is the fallback.
+Starting with v0.22.6, click the red **● Push to talk** control (or press **F5**)
+to start recording. Click **■ Stop** or press F5 again to transcribe. Recording
+continues until Stop, with elapsed time shown; available disk and recorder limits
+still apply. Transcription shows progress and keeps the composer editable.
+Press F5 while preparing/transcribing to cancel. Failed or cancelled transcription
+retains private audio for **Retry voice** or **Discard** (Delete); it is removed
+on success, discard or normal app exit. Completed dictation is appended to the
+composer for review and is never sent automatically.
+
+If no suitable transcription environment exists, first use attempts to install `faster-whisper` into Vesper's voice environment and download the chosen model. This needs network access and can take time. The POSIX installer bundles `uv` when its download succeeds; a system `uv` or Python virtual-environment setup is the fallback.
 
 If recording is unavailable, confirm the recording command is on PATH and the terminal has microphone access. Voice setup is separate from ordinary text-based coding.
 
@@ -129,11 +138,11 @@ You can also rerun the same installer to update to the latest release, then rest
 To select a specific release, download the installer as shown above, then use an actual version from [Releases](https://github.com/99percentgrip/agent-vesper/releases):
 
 ```sh
-AGENT_VESPER_VERSION=0.22.5 sh vesper-install.sh
+AGENT_VESPER_VERSION=0.22.6 sh vesper-install.sh
 ```
 
 ```powershell
-./vesper-install.ps1 -Version 0.22.5
+./vesper-install.ps1 -Version 0.22.6
 ```
 
 The version above is an example, not an instruction to downgrade a newer installation.

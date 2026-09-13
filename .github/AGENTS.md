@@ -79,6 +79,12 @@ platform assumptions on hosts unavailable locally.
   when a tag is already pushed but no run fired: `gh workflow run
   release.yml --ref <tag> -f tag=<tag>`.
 
+- Canonical CI also runs native voice lifecycle acceptance using private temporary
+  state, fake recorder/inference helpers and pinned test-only numpy 2.5.3. Production
+  PCM slicing and TUI input/rendering remain real; no microphone/provider is used.
+  The timed case exceeds 90 seconds; a six-minute step bound and forty-minute
+  quality-job bound include this additional acceptance work.
+
 ## Verification
 
 - Validate YAML syntax locally where tooling exists.

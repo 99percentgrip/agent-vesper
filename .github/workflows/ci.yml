@@ -11,7 +11,7 @@ permissions:
 jobs:
   quality:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v6
       - name: Install pinned Rust toolchain
@@ -22,6 +22,14 @@ jobs:
         run: cargo xtask acceptance-mutations
       - name: Verify installer user-state preservation
         run: sh scripts/test_install_upgrade.sh
+      - name: Verify native voice lifecycle without a microphone
+        timeout-minutes: 6
+        run: |
+          cargo build -p agent-vesper-tui --all-features
+          python3 -m venv "$RUNNER_TEMP/voice-test-python"
+          "$RUNNER_TEMP/voice-test-python/bin/pip" install --only-binary=:all: numpy==2.5.3
+          "$RUNNER_TEMP/voice-test-python/bin/python" apps/agent-vesper-tui/tests/voice_chunks.py
+          python3 apps/agent-vesper-tui/tests/voice_pty.py target/debug/agent-vesper-tui "$RUNNER_TEMP/voice-test-python/bin/python"
       - name: Verify documentation structure
         run: |
           sh -n scripts/install.sh scripts/uninstall.sh

@@ -6,6 +6,14 @@ Verify terminal interaction through the production TUI binary with isolated stat
 
 ## Ownership
 
+- `voice_chunks.py` verifies ten-minute production PCM slicing and resume order
+  with real numpy and controlled inference.
+- `voice_pty.py` exercises the real voice footer/worker with microphone-free
+  `voice_recorder_fixture.py` and `voice_model_fixture.py`. An isolated Python
+  with numpy is passed explicitly; no microphone/provider/package setup is used.
+  It verifies ten-minute PCM, >90-second progressing inference, warm reuse,
+  retry/discard, recorder/disk failures, editable input and normal-exit cleanup.
+
 - `dependency_setup_pty.py` checks real setup consent/decline/failure/retry with
   an explicit missing engine override, structurally preventing package installation.
 

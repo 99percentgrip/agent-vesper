@@ -1,6 +1,6 @@
 # Persistent push-to-talk control
 
-Status: requested design; implementation pending. Scope: native terminal voice input.
+Status: implemented with automated Linux evidence; real-device/macOS acceptance remains open. Scope: native terminal voice input.
 
 ## Objective
 
@@ -56,3 +56,7 @@ red square with “Stop” during capture. Keep F5 as the equivalent shortcut.
 ## Evidence
 
 [Recon and regression cause](foundation/voice-control-recon.md).
+
+[Implementation and acceptance](foundation/voice-control-execution.md).
+
+[Release pipeline](foundation/v0.22.6-release-execution.md).

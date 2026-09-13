@@ -6,6 +6,11 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `v0.22.6-release-execution.md` owns the microphone release gate and publication receipts.
+
+- `voice-control-execution.md` owns dynamic microphone implementation, long-audio
+  lifecycle evidence and explicit real-device/platform acceptance limits.
+
 - `voice-control-recon.md` owns the missing-footer regression diagnosis and
   requested dynamic microphone control implementation boundaries.
 

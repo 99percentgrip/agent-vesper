@@ -1,5 +1,8 @@
 # Foundation Evidence Index
 
+[Voice-control implementation](voice-control-execution.md) tracks the requested
+dynamic footer and long-dictation repair; verification is in progress.
+
 [Voice-control recon](voice-control-recon.md) identifies the footer omission in
 `e924596` and the fixed 90-second transcription timeout/audio-loss path; dynamic
 control and long-dictation recovery are specified, not yet implemented.
@@ -848,3 +851,5 @@ v0.21.6 release notes own the final run links, image IDs and local-install recei
 - `ranker-hardening-pr1-execution.md` — Option D anchor: cross-talk pin fails for the audited reason (rollback displaces migrate via 1,560-pt manufactured overlap); no-alias control green; floor 2,219; `#[ignore]` until PR-2.
 
 - [Routing request recognition](skill-routing-request-recognition-execution.md): ongoing sourced-verb and topic-evidence experiments; retains negative-activation regressions and pending independent evaluation.
+
+- [v0.22.6 release execution](v0.22.6-release-execution.md) — voice controls, long dictation and exact-commit publication.

@@ -262,7 +262,7 @@ business logic.
   artificial prose cutoff. The composer, one measured animated run-status
   line, and a single-row state-aware footer remain visible. The footer shows
   only controls valid for the current idle/running/menu/permission state,
-  renders keys as raised keycaps, reserves Help (and Restore in focus mode),
+  renders keys as raised keycaps, prioritizes microphone controls then Help/Restore,
   drops lower-priority chips rather than wrapping, and shares its exact
   projection with mouse hit-testing. When the rail cannot fit, the activity line
   retains a compact `TODO completed/total` summary. The conversation
@@ -869,37 +869,34 @@ business logic.
   session model-update path, then dispatches the untouched text and images;
   cancellation never silently switches or drops the composition.
 - Footer and palette rows are mouse-operable while TUI mouse capture is active.
-  F4 cycles bounded real Changes/Git/Diff/Files/GitHub views. F5 uses the same
-  optional `arecord`/`afrecord` plus local `faster-whisper` contract as the
-  frozen oracle and must report unavailable dependencies without fabricating
-  input. The voice sidecar's Python interpreter is **auto-discovered** with no
-  user configuration: the binary probes, in order, an explicit env override
-  (`VESPER_PYTHON_PATH` → absolute Python path; `GLM_VENV_PATH` → virtualenv
-  root with `bin/python` appended), then the harness-owned voice venv at
-  `$AGENT_VESPER_VOICE_VENV`/`$XDG_DATA_HOME/agent-vesper/voice-venv`/
-  `~/.local/share/agent-vesper/voice-venv`, then sibling project venvs under
-  `$HOME/Projects/*/{.venv,venv,.virtualenv}/bin/python` (alphabetical), then
-  bare `python3`. Each candidate is probed with `import faster_whisper`; the
-  first success is cached for the process lifetime. When **no** candidate
-  works on first F5, the binary **auto-bootstraps** the harness-owned voice
-  venv (`uv venv` + `uv pip install faster-whisper`, falling back to
-  `python3 -m venv` + `pip install`) and asks the user to press F5 again; this
-  makes voice work for any installer user with no separate setup. The `uv`
-  used is the **installer-bundled** binary at the bundle dir
-  (`$AGENT_VESPER_BUNDLE_DIR` / `$XDG_DATA_HOME/agent-vesper` /
-  `~/.local/share/agent-vesper/uv`) preferred over system `uv`; with the
-  bundled `uv` present, venv creation needs no external toolchain (the
-  `python3 -m venv` fallback still requires `python3`+`python3-venv` and is
-  only reached if `uv` is absent). Transcription uses a **long-lived Python
-  sidecar** (`VoiceSidecar`): one process loads the `faster-whisper` model
-  once on first F5 START (hidden behind recording time) and stays warm for the
-  session, transcribing subsequent clips without reloading the model — this is
-  what makes push-to-talk feel instant after the first press (the old per-call
-  subprocess reloaded the model every time). The sidecar is killed on session
-  exit. The
-  bootstrap result is cached so subsequent presses are instant. When all
-  strategies fail, the status line names the fix. Ctrl-Shift-C copies only
-  app-managed mouse-selected transcript text.
+  F4 cycles bounded real Changes/Git/Diff/Files/GitHub views. `src/voice.rs`
+  owns the microphone worker, recorder/sidecar processes and private temporary
+  audio. `src/voice_transcribe.py` is the embedded local PCM chunk protocol.
+  F5 and the footer toggle start/stop capture; red circle “Push to talk” becomes
+  red square “Stop”. Preparing/transcribing remain cancellable and do not block
+  rendering or composer input. Voice Stop is distinct from agent cancellation.
+  The footer reserves microphone controls before lower-priority actions, including
+  Retry/Discard on error; elapsed time appears in the status row. F5 remains
+  reachable through permission and command-menu interceptors. Finish/discard voice
+  work before entering nested Settings loops. Screen readers receive textual state.
+  Linux uses `arecord`, macOS `afrecord`, with mono 16 kHz signed 16-bit WAV;
+  unavailable devices/backends fail honestly. Windows capture remains unsupported.
+  Interpreter discovery preserves explicit overrides, the harness venv, sibling
+  venvs and system Python precedence. Fixed uv/python venv preparation runs only
+  after voice activation, on the worker, with cancellation and bounded processes.
+  Existing environments are import-probed; an incomplete venv never implies ready.
+  The local faster-whisper sidecar loads once and stays warm across successful
+  clips. Transcription reads 30-second PCM chunks and emits ordered progress;
+  completed chunks survive retry without re-appending to the composer. There is no
+  short capture timer or 90-second whole-recording deadline. Five minutes without
+  real transcription progress fails with private audio retained for Retry/Discard.
+  The UI appends completed dictation to existing input and never auto-sends it.
+  Audio is deleted on success/discard/normal session exit. Cancellation and ordinary
+  errors retain private session-local audio until explicit discard or exit. Helper
+  shutdown kills/waits processes and joins the reader; POSIX process groups bound
+  cancellation of preparation descendants. Abrupt process/OS death is not normal
+  exit cleanup evidence. No audio/transcript is written to telemetry.
+  Ctrl-Shift-C copies only app-managed mouse-selected transcript text.
 - Provider catalogs and provider-specific settings belong to adapters. The
   production composition registers the real Z.ai, LM Studio, and OpenAI adapters;
   no additional provider may be advertised without its adapter and evidence.
