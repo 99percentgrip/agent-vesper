@@ -2,6 +2,12 @@
 
 Status: evidence index; acceptance status is scoped to each section.
 
+## Security policy refresh — COMPLETE — 2026-09-13
+
+[Execution record](security-policy-refresh.md) records removal of stale Stage 1
+claims from the public Security page, current permission/data guidance, and
+text-only review without program tests or a release.
+
 ## v0.22.4 routing preview release — COMPLETE — 2026-09-13
 
 [Release execution](v0.22.4-release-execution.md) records published tag `v0.22.4`

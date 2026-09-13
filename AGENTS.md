@@ -76,6 +76,10 @@ Default section order:
 
 ## User Preferences
 
+- For prose-only corrections, review content, links and whitespace; do not run
+  program test suites or a version/release pipeline. A documentation-only push
+  may skip CI when the user requests a text-only update without tests.
+
 When the user requests a durable behavior change, record it here or in the relevant child AGENTS.md
 
 - Keep the GitHub README a concise user-facing front page: capabilities, install,
