@@ -92,3 +92,13 @@ contracts were updated for the new implementation and verification ownership.
 Final local PTY rerun passed (`/tmp/voice-pty-release.log`), including the explicit
 composer-only preservation assertion. Library (488 files), protected GLM files and
 original checkout HEAD/dirty files match their recorded baselines.
+
+## Release-commit verification
+
+[Canonical CI](https://github.com/99percentgrip/agent-vesper/actions/runs/34752624278)
+repeated the workspace, microphone renderer/worker and timed real-terminal checks
+on `81884c68728e392e26415a11623aabd12597412b`. The microphone step passed ten-minute
+PCM ordering/resume and >90-second progressing transcription through mouse/F5,
+composer preservation/editing, retry/discard, early exit, disk failure and shutdown.
+All five platform gates and MSRV passed; see the release ledger. The manual
+real-device/macOS acceptance boundary above is unchanged.
