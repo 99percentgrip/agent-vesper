@@ -2,10 +2,12 @@
 
 Status: evidence index; acceptance status is scoped to each section.
 
-## v0.22.4 routing preview release — in progress — 2026-09-13
+## v0.22.4 routing preview release — COMPLETE — 2026-09-13
 
-[Release execution](v0.22.4-release-execution.md) tracks the authorized version bump,
-exact-commit pipeline, README/user-guide refresh and preserved local installation.
+[Release execution](v0.22.4-release-execution.md) records published tag `v0.22.4`
+on `fdac018`, all four exact-commit gates, five successful builds, 16 verified
+assets, existing registry PR #539 updated in place, README/user-guide refresh,
+and preserved local installation.
 Routing quality remains a documented preview; release does not mark the PRD complete.
 
 ## Intelligent skill routing — model-assisted implementation and live regression; quality HOLD — 2026-09-13

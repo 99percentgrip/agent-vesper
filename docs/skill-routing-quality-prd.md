@@ -332,3 +332,8 @@ after reviewing the measured gains and remaining quality gaps.
 opt-in preview publication. Standard remains the default. This authorization
 permits preview distribution, not an ADOPT verdict, completion of score-floor
 PR-2/PR-3, additional live evaluation, or replacement of the local installation.
+
+Published as [v0.22.4](https://github.com/99percentgrip/agent-vesper/releases/tag/v0.22.4)
+on `fdac018d31ef790d528132f649b99a31a9fa5fed`, after all four exact-commit gates.
+The release report records 16 verified assets and registry PR #539 updated in
+place. Alex's local installation and skill library remain unchanged.
