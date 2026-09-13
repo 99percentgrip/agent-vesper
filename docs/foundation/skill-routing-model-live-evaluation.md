@@ -215,7 +215,7 @@ unrequested sibling:
 | `independent-007` | `vesper-skill-authoring` | `harness-skill-gate-mechanics` |
 | `independent-012` | `teams-meeting-pipeline` | `meeting-action-items` |
 | `independent-019` | `simplify-code` | `merge-reconciler` |
-| `independent-031` | `popular-web-designs` | `claude-design` |
+| `independent-031` | `popular-web-designs` | design-reference sibling (see raw case receipt) |
 | `independent-068` | `email-inbox-triage` | `himalaya` |
 
 These remain label failures; no post-result widening of acceptable IDs was
@@ -232,7 +232,7 @@ forbidden `llama-cpp`; `-178` fell back to forbidden `obsidian` after a provider
 failure. The live and Standard exposure comparison above uses forbidden IDs on
 both sides, not the broader extra-activation metric.
 
-The unsupported resource cases `independent-191` and `-193` selected `claude-code`
+The unsupported resource cases `independent-191` and `-193` selected the coding-workflow skill (see raw case receipt)
 and `airtable` despite their explicit unavailable/denied execution context. The
 other ten abstained. Since native mappings for these contexts were not supported
 by this evaluation, neither the failures nor the empty results are represented

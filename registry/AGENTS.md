@@ -12,7 +12,9 @@ distribution.
 - `agent.json` — the canonical ACP registry manifest (`id`, `name`, `version`,
   per-platform binary archives under `distribution.binary`). Mirrors the
   Python oracle's `registry/agent.json` schema.
-- `icon.svg` — optional agent icon (may be added later).
+- `icon.svg` — required 16×16 monochrome Vesper icon, mirrored alongside the
+  manifest in the existing upstream registry PR. Use `currentColor`/`none`
+  and omit XML comments for registry documentation compatibility.
 
 ## Local Contracts
 
@@ -32,6 +34,8 @@ distribution.
 - `jq . registry/agent.json` parses (valid JSON).
 - `agent.json.version` matches `Cargo.toml` workspace version.
 - The `id` is stable across releases (`agent-vesper`).
+- Validate the manifest and icon with the current upstream registry schema and
+  entry validator; published archive URLs must resolve after release.
 
 ## Child DOX Index
 
