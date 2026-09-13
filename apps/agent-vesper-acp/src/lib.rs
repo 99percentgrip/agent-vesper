@@ -929,15 +929,29 @@ impl AcpHarnessEngine {
             .into_iter()
             .map(|definition| definition.harness_name.as_str().to_owned())
             .collect::<std::collections::BTreeSet<_>>();
-        let skill_report = self
-            .hosted
-            .orchestrate_skills(&text, None, &available_tools);
+        let skill_report = self.hosted.orchestrate_skills(
+            &workspace_root_path(&request.workspace_roots),
+            &text,
+            None,
+            &available_tools,
+            vesper_harness::skill_routing_settings::task_for_controls(
+                request.operating_mode,
+                request.permission_mode,
+            ),
+        );
         if let Some(error) = skill_report.explicit_error.as_ref() {
             return Ok(AcpPromptResult {
                 text: format!("skill routing failed: {error}"),
                 cancelled: false,
                 persist_turn: false,
                 history_replacement: None,
+            });
+        }
+        if !skill_report.routing_trace.reason.is_empty()
+            && let Some(event_sink) = request.event_sink.as_ref()
+        {
+            event_sink.event(vesper_acp::AcpEngineEvent::ReasoningDelta {
+                text: skill_report.routing_trace.reason.clone(),
             });
         }
         let selected_skills = skill_report.selected_names();
@@ -1204,6 +1218,20 @@ impl AcpHarnessEngine {
                 None => (rest, ""),
             };
             let lowered = raw_name.to_ascii_lowercase();
+            if lowered == "skills"
+                && (raw_argument == "settings" || raw_argument.starts_with("settings "))
+            {
+                return slash_result(
+                    vesper_harness::skill_routing_settings::command(
+                        &workspace_root_path(&request.workspace_roots),
+                        raw_argument
+                            .strip_prefix("settings")
+                            .unwrap_or_default()
+                            .trim(),
+                    )
+                    .unwrap_or_else(|error| error),
+                );
+            }
             if lowered == "acceptance"
                 || (lowered == "settings"
                     && (raw_argument == "acceptance" || raw_argument.starts_with("acceptance ")))

@@ -7,6 +7,8 @@ Verify terminal interaction through the production TUI binary with isolated stat
 ## Ownership
 
 - `settings_pty.py` owns the stdlib-only Linux/macOS Settings lifecycle smoke test.
+- `skill_routing_pty.py` reuses its isolated terminal driver for Skills draft,
+  discard, keep-editing, save, restart and unchanged-library checks.
 - `update_*_fixture.sh` are immutable offline download/version fixtures for the
   Rust updater test, which runs the shipped installer only in temporary roots.
 - Rust rendering and configuration unit tests remain beside their source modules.

@@ -63,6 +63,12 @@ pub struct SkillStore {
     global_root: Option<PathBuf>,
     /// Lazily populated slug cache (slug → file mtime seen at last scan).
     cache: Mutex<Vec<String>>,
+    routing_cache: Mutex<
+        Option<(
+            Vec<crate::routing_quality::RoutingCatalogEntry>,
+            crate::routing_quality::RoutingIndex,
+        )>,
+    >,
 }
 
 impl std::fmt::Debug for SkillStore {
@@ -89,6 +95,7 @@ impl SkillStore {
             root: root.to_path_buf(),
             global_root: None,
             cache: Mutex::new(Vec::new()),
+            routing_cache: Mutex::new(None),
         })
     }
 
@@ -276,6 +283,95 @@ impl SkillStore {
             return Ok(body);
         }
         Err(MemoryError::NotFound(format!("skill:{}", slug.as_str())))
+    }
+
+    pub(crate) fn search_routing_index(
+        &self,
+        entries: &[crate::routing_quality::RoutingCatalogEntry],
+        prompt: &str,
+        task: &crate::routing_quality::RoutingTask,
+        contracts: bool,
+    ) -> Result<crate::routing_quality::RoutingSearch, &'static str> {
+        let mut cache = self
+            .routing_cache
+            .lock()
+            .map_err(|_| "routing cache unavailable")?;
+        if !cache
+            .as_ref()
+            .is_some_and(|(previous, _)| previous == entries)
+        {
+            *cache = Some((
+                entries.to_vec(),
+                crate::routing_quality::RoutingIndex::build(entries)?,
+            ));
+        }
+        Ok(cache
+            .as_ref()
+            .ok_or("routing cache unavailable")?
+            .1
+            .search_condition(prompt, task, contracts))
+    }
+
+    /// Revision of the bounded catalog view plus the source file's size and
+    /// modification timestamp. No isolated body is read to construct an index.
+    /// This is a freshness stamp, not a cryptographic content attestation.
+    pub fn routing_revision(&self, slug: &SkillSlug) -> Result<String, MemoryError> {
+        let path = self.routing_source_path(slug)?;
+        let metadata = std::fs::metadata(&path).map_err(|_| MemoryError::io("metadata"))?;
+        let stamp = metadata
+            .modified()
+            .map_err(|_| MemoryError::io("metadata"))?
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| MemoryError::io("metadata"))?
+            .as_nanos();
+        let prefix = read_prefix(&path).ok_or_else(|| MemoryError::io("read"))?;
+        // Stable FNV-1a for cache invalidation, not authentication.
+        let hash = prefix.bytes().fold(0xcbf29ce484222325u64, |h, b| {
+            (h ^ u64::from(b)).wrapping_mul(0x100000001b3)
+        });
+        Ok(format!("catalog-v1-{}-{stamp}-{hash:016x}", metadata.len()))
+    }
+
+    fn routing_source_path(&self, slug: &SkillSlug) -> Result<PathBuf, MemoryError> {
+        let local = self.skill_path(slug);
+        if local
+            .try_exists()
+            .map_err(|_| MemoryError::io("metadata"))?
+        {
+            return Ok(local);
+        }
+        self.global_skill_path(slug)
+            .filter(|p| p.is_file())
+            .ok_or_else(|| MemoryError::NotFound(format!("skill:{}", slug.as_str())))
+    }
+
+    /// Optional authored sidecar follows the selected source's local/global
+    /// precedence. Absence is legacy metadata; malformed presence fails closed.
+    pub(crate) fn routing_descriptor(
+        &self,
+        slug: &SkillSlug,
+        revision: &str,
+    ) -> Result<Option<crate::routing_quality::RoutingDescriptor>, &'static str> {
+        let source = self
+            .routing_source_path(slug)
+            .map_err(|_| "catalog identity unavailable")?;
+        let path = source.with_extension("routing.json");
+        if path
+            .symlink_metadata()
+            .is_ok_and(|m| !m.is_file() || m.file_type().is_symlink())
+        {
+            return Err("descriptor must be a regular file");
+        }
+        let file = match std::fs::File::open(path) {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(_) => return Err("descriptor unreadable"),
+        };
+        let mut text = String::new();
+        file.take((crate::routing_quality::MAX_ROUTING_DESCRIPTOR_BYTES + 1) as u64)
+            .read_to_string(&mut text)
+            .map_err(|_| "descriptor unreadable")?;
+        crate::routing_quality::RoutingDescriptor::parse(&text, revision).map(Some)
     }
 
     /// Reads one `##`-style section of a skill (the heading line through the

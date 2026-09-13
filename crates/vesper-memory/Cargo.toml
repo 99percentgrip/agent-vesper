@@ -16,6 +16,7 @@ vesper-domain = { path = "../vesper-domain", version = "=0.22.3" }
 vesper-security = { path = "../vesper-security", version = "=0.22.3" }
 
 [dev-dependencies]
+sha2 = { workspace = true }
 tempfile = { workspace = true }
 
 [lints]

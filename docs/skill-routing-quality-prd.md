@@ -1,6 +1,6 @@
 # PRD: Skill routing quality as the library grows
 
-Status: **Implementation approved; isolated development in progress; not yet accepted.**
+Status: **Isolated preview implemented; quality promotion HOLD; integrated acceptance incomplete.**
 Date: 2026-09-13. Owner: Alex (product); shared memory/harness composition.
 Baseline inspected: `5cf5835f78d8e779443188c3490172d7736a589a` plus the uncommitted
 [dollar-token repair](foundation/dollar-skill-routing-repair.md).
@@ -58,12 +58,11 @@ skills remain an honest no-match; a plausible name is not proof of suitability.
 | [SkillRouter, v5](https://arxiv.org/abs/2603.22455v5) | Bodies carry useful discriminating information; body-distilled descriptions recover some, but not all, of the gap in its benchmarks. | Improve authored routing descriptors first; compare embeddings experimentally. Do not promise descriptor equivalence to full-body routing. |
 | [Right Family, Wrong Skill, v2](https://arxiv.org/abs/2606.10388v2) | Similar capabilities can differ in required resources, procedures or artifacts. Helpful retrieval and risky sibling exposure are separate metrics. | Test sibling pairs with different contracts, including role reversals. |
 | [GitHub tool selection](https://github.blog/ai-and-ml/github-copilot/how-were-making-github-copilot-smarter-with-fewer-tools/) | GitHub describes embedding-guided routing, clustering and reducing its default tools from 40 to 13. | Shortlist candidates and reduce duplication; do not copy its tool count or infer equivalent skill results. |
-| [Anthropic tool search](https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool) | Deferred tool definitions can be discovered on demand. | Borrow the discovery pattern, not provider-specific request fields or a new provider dependency. |
 
 The video's percentage and attention claims are not acceptance targets. No claim
 that a given share of model attention equals a universal share of routing signal.
 
-## 3. Current implementation and actual gaps
+## 3. Inspected baseline and original gaps (5cf5835)
 
 - `crates/vesper-memory/src/skill_orchestrator.rs` already owns shared deterministic
   eligibility, metadata scoring, conflicts, loading and outcome adjustments.
@@ -103,7 +102,7 @@ flowchart LR
 ### D1. Improve the information used for selection
 
 Introduce optional, versioned routing descriptors alongside existing frontmatter:
-`family`, `purpose`, `use_when`, `avoid_when`, `inputs`, `outputs`, `preconditions`,
+`family`, `purpose`, `actions`, `use_when`, `avoid_when`, `inputs`, `outputs`, `preconditions`,
 `effects`, and a small set of positive/negative task examples. Examples distinguish
 nearby procedures; they must not be exact copies of evaluation prompts.
 
@@ -297,3 +296,17 @@ the inspected GLM PR-1 baseline and file-level collision map. Routing implementa
 uses `/tmp/vesper-routing-quality` on `feat/skill-routing-quality`. Preserve GLM's
 `rank_chunks`, exports, pin/control, G5 and D3 changes at integration. Standard
 routing retains the skill-tier baseline; Enhanced is a separate opt-in mode.
+
+## Implementation interpretation and current adoption boundary
+
+The approved implementation adds optional bounded `actions` to distinguish a
+requested operation from another procedure in the same family. Authored sidecars
+are sibling `<slug>.routing.json` files; none are installed or generated into
+Alex's library by this work. Source freshness uses the bounded catalog prefix,
+file length and modification timestamp. It detects ordinary edits without reading
+isolated bodies, and is explicitly not cryptographic full-body attestation.
+
+The initial quality matrix failed promotion. Standard remains default; Enhanced
+is a labeled preview. The [implementation report](foundation/skill-routing-quality-implementation.md)
+retains measurements, deviations and unexecuted integration items. Passing software
+checks does not replace the quality gates above or GLM's pending score-floor gate.

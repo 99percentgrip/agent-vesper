@@ -326,3 +326,35 @@ mod tests {
         assert!(skill_workflow_prompt("bundle:").is_err());
     }
 }
+
+/// Native Skills settings actions, shared by terminal and protocol hosts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SkillRoutingControl {
+    Status,
+    SaveMode { enhanced: bool },
+    SaveEnabled { slug: String, enabled: bool },
+}
+
+pub fn parse_skill_routing_control(argument: &str) -> Result<SkillRoutingControl, &'static str> {
+    let words: Vec<_> = argument.split_whitespace().collect();
+    match words.as_slice() {
+        [] | ["status"] => Ok(SkillRoutingControl::Status),
+        ["save", "mode", "standard"] => Ok(SkillRoutingControl::SaveMode { enhanced: false }),
+        ["save", "mode", "enhanced"] => Ok(SkillRoutingControl::SaveMode { enhanced: true }),
+        ["save", action @ ("enable" | "disable"), slug]
+            if !slug.is_empty()
+                && slug.len() <= 128
+                && slug
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_') =>
+        {
+            Ok(SkillRoutingControl::SaveEnabled {
+                slug: (*slug).into(),
+                enabled: *action == "enable",
+            })
+        }
+        _ => Err(
+            "Use /skills settings status, save mode standard|enhanced, or save enable|disable <skill>",
+        ),
+    }
+}

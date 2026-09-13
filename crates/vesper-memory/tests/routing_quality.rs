@@ -23,6 +23,7 @@ fn entry(slug: &str, description: &str, effect: RoutingEffect) -> RoutingCatalog
             family: "database".into(),
             purpose: description.into(),
             use_when: vec![],
+            actions: vec![],
             avoid_when: vec![],
             inputs: vec![],
             outputs: vec![],
@@ -147,5 +148,41 @@ fn known_artifact_and_resource_constraints_are_respected() {
         unknown.candidates.len(),
         1,
         "unknown is not verified absence"
+    );
+}
+
+#[test]
+fn missing_resource_does_not_activate_a_different_operation() {
+    let mut prepare = entry(
+        "prepare",
+        "Prepare report document",
+        RoutingEffect::Workspace,
+    );
+    let mut inspect = entry(
+        "inspect",
+        "Inspect report document",
+        RoutingEffect::ReadOnly,
+    );
+    prepare.descriptor.as_mut().unwrap().actions = vec!["prepare".into()];
+    prepare.descriptor.as_mut().unwrap().preconditions = vec!["template".into()];
+    inspect.descriptor.as_mut().unwrap().actions = vec!["inspect".into()];
+    let result = RoutingIndex::build(&[prepare, inspect]).unwrap().search(
+        "Prepare report document",
+        &RoutingTask {
+            action: Some("prepare".into()),
+            available_resources: Some(Default::default()),
+            ..Default::default()
+        },
+    );
+    assert!(result.candidates.is_empty());
+    assert!(
+        result
+            .rejected
+            .contains(&("prepare".into(), RoutingRejection::MissingResource))
+    );
+    assert!(
+        result
+            .rejected
+            .contains(&("inspect".into(), RoutingRejection::ActionMismatch))
     );
 }

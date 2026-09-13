@@ -16,6 +16,10 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
   output upgrade verification and actual renderer reference captures.
   `output-reference-render.py` rasterizes captured cells with Linux Noto fonts; it
   is an optional Pillow-based evidence helper, never production rendering.
+- `skill-routing-quality-implementation.md` owns the isolated preview routing
+  implementation, quality HOLD/ADOPT evidence and score-floor integration dependency.
+  `skill-routing-quality-results.json` retains frozen offline predictions;
+  `skill-routing-quality-summary.py` derives metrics without changing labels.
 - `evidence-index.md` is the durable execution ledger and command record.
 - `completion-assurance-proposal.md` owns the researched proposal for native
   requirement coverage, execution receipts, and enforced completion decisions.

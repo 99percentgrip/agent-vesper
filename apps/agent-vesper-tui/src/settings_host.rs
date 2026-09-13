@@ -246,6 +246,8 @@ pub(super) async fn open(
     let mut choices = load(&preferences_root)?;
     let original_choices = choices.clone();
     let mut draft = session.state.clone();
+    let mut skills = vesper_harness::skill_routing_settings::load(&root)?;
+    let initial_skills = skills.clone();
     let mut acceptance = AcceptanceSettings::load(&root)?;
     let initial_acceptance = acceptance.clone();
     let mut web = vesper_harness::web_settings::load(&root)?;
@@ -406,7 +408,8 @@ pub(super) async fn open(
                 #[allow(unused_mut)]
                 let mut dirty = choices != original_choices
                     || acceptance != initial_acceptance
-                    || web != initial_web;
+                    || web != initial_web
+                    || skills != initial_skills;
                 #[cfg(feature = "swarm")]
                 {
                     dirty |= swarm.settings != initial_swarm;
@@ -461,6 +464,9 @@ pub(super) async fn open(
                         }
                         let mut paths =
                             vec![preferences_root.join("theme"), path(&preferences_root)];
+                        if skills != initial_skills {
+                            paths.push(vesper_harness::skill_routing_settings::path(&root));
+                        }
                         if acceptance != initial_acceptance {
                             paths.push(root.join(".agent-vesper/acceptance-settings.json"));
                         }
@@ -472,6 +478,9 @@ pub(super) async fn open(
                             paths.push(root.join(".agent-vesper/swarm-settings.json"));
                         }
                         let result = save_group(&paths, || {
+                            if skills != initial_skills {
+                                vesper_harness::skill_routing_settings::save(&root, &skills)?;
+                            }
                             if acceptance != initial_acceptance {
                                 acceptance.save(&root)?;
                             }
@@ -513,6 +522,9 @@ pub(super) async fn open(
                 };
                 if menu == "/settings" {
                     match command.as_str() {
+                        "/settings skills" => {
+                            edit_skills(terminal, &mut skills, &draft.preferences.theme).await?
+                        }
                         "/settings acceptance" => {
                             edit_acceptance(terminal, &mut acceptance, &draft.preferences.theme)
                                 .await?
@@ -597,6 +609,51 @@ async fn provider_settings(
     }
     save_provider_preference(&target)?;
     Ok(format!("Provider saved: {target}. Restart to apply."))
+}
+
+async fn edit_skills(
+    terminal: &mut Terminal<Backend>,
+    preferences: &mut vesper_harness::skill_routing_settings::RoutingPreferences,
+    theme: &str,
+) -> Result<(), String> {
+    use vesper_harness::skill_routing_settings::RoutingMode;
+    let stores = MemoryStores::open_default();
+    let catalog = stores.skills.as_ref().map(|s| s.list()).unwrap_or_default();
+    loop {
+        let mut labels = vec![format!(
+            "Routing: {}",
+            if preferences.mode == RoutingMode::Standard {
+                "Standard"
+            } else {
+                "Enhanced (preview)"
+            }
+        )];
+        labels.extend(catalog.iter().map(|skill| {
+            format!(
+                "[{}] {}",
+                if preferences.disabled.contains(&skill.slug) {
+                    " "
+                } else {
+                    "x"
+                },
+                skill.slug
+            )
+        }));
+        labels.push("Back".into());
+        let Some(index) = choice(terminal, "Settings · Skills", "Enhanced uses local metadata retrieval; quality evaluation has not approved promotion. Toggles affect this project. All skill files stay in your library. Changes remain a draft.", &labels, theme).await? else { return Ok(()); };
+        if index == 0 {
+            preferences.mode = match preferences.mode {
+                RoutingMode::Standard => RoutingMode::Enhanced,
+                RoutingMode::Enhanced => RoutingMode::Standard,
+            };
+        } else if let Some(skill) = catalog.get(index - 1) {
+            if !preferences.disabled.remove(&skill.slug) {
+                preferences.disabled.insert(skill.slug.clone());
+            }
+        } else {
+            return Ok(());
+        }
+    }
 }
 
 async fn edit_acceptance(

@@ -13,6 +13,10 @@ Orchestrator (VRO) Phase VRO-1 domain contracts.
   finding, receipt and report values. DTO deserialization is not verification authority.
   `/acceptance` is in the shared host-parity command catalog.
 
+- `slash_commands::SkillRoutingControl` is the shared pure parser for
+  `/skills settings status|save mode standard|enhanced|save enable|disable <skill>`.
+  It does not change the frozen oracle command descriptors or authorize tools.
+
 - This crate depends on no workspace crate and performs no I/O.
 - No ACP SDK, provider SDK, frontend, transport, or concrete-provider type may
   enter these DTOs.

@@ -380,14 +380,21 @@ pub enum PlanGesture {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MemoryOp {
     /// `/memory [needle]` — list every memory entry, or query by substring.
-    MemoryList { needle: Option<String> },
+    MemoryList {
+        needle: Option<String>,
+    },
     /// `/goal <text>` — append a durable [`vesper_memory::MemoryKind::Goal`].
-    GoalAdd { summary: String },
+    GoalAdd {
+        summary: String,
+    },
     /// `/subgoal <text>` — append a durable
     /// [`vesper_memory::MemoryKind::Subgoal`].
-    SubgoalAdd { summary: String },
+    SubgoalAdd {
+        summary: String,
+    },
     /// `/skills` — list every learned-skill markdown file.
     SkillsList,
+    SkillRouting(String),
     /// `/profile` — show the cross-project user profile.
     ProfileShow,
     /// `/awareness [kind]` — list epistemic records, optionally filtered.
@@ -419,7 +426,7 @@ impl MemoryOp {
             Self::MemoryList { .. } => "memory",
             Self::GoalAdd { .. } => "goal",
             Self::SubgoalAdd { .. } => "subgoal",
-            Self::SkillsList => "skills",
+            Self::SkillsList | Self::SkillRouting(_) => "skills",
             Self::ProfileShow => "profile",
             Self::AwarenessList { .. } => "awareness",
             Self::MetacognitionList => "metacognition",
@@ -1276,6 +1283,18 @@ impl CommandRegistry {
                         summary: argument.trim().to_string(),
                     })
                 }
+            }
+            "skills"
+                if argument.trim() == "settings" || argument.trim().starts_with("settings ") =>
+            {
+                CommandOutcome::Memory(MemoryOp::SkillRouting(
+                    argument
+                        .trim()
+                        .strip_prefix("settings")
+                        .unwrap_or_default()
+                        .trim()
+                        .into(),
+                ))
             }
             "skills" => CommandOutcome::Memory(MemoryOp::SkillsList),
             "skill" => resolve_skill_workflow(argument),

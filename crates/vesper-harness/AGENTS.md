@@ -139,6 +139,13 @@ Z.ai and Playwright MCP server descriptors.
   An enabled runtime without an explicit image override uses the bundled
   immutable image ID; activation never requires copying a digest by hand.
 
+- `src/skill_routing_settings.rs` owns workspace Skills preview preferences,
+  explicit atomic saves, no-write reads and the shared host routing bridge.
+  Per-skill disables apply in both modes; corrupt preferences withhold activation
+  rather than resurrect disabled skills. `/skills settings` uses the domain parser;
+  only `save` mutates preferences. The bounded transition helper permits one
+  refinement with new task information and never executes tools.
+
 - `src/lib.rs` owns the shared service, bounded durable-store wiring, and
   provider-worker delegation boundary.
 - Frontends own provider selection, approval UI, ACP/TUI protocol mapping, and

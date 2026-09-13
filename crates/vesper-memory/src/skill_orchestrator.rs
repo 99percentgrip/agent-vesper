@@ -242,6 +242,7 @@ pub struct SkillRoutingReport {
     /// User-facing failure for an explicit skill/bundle request. Automatic
     /// routing rejections remain diagnostic-only.
     pub explicit_error: Option<String>,
+    pub routing_trace: crate::routing_quality::RoutingTrace,
 }
 
 /// Bounded in-process feedback used to break close ranking ties. Only
@@ -399,6 +400,17 @@ impl SkillStore {
             .collect()
     }
 
+    /// Shares the real parser with host failure handling. Quoted/literal text
+    /// never becomes an explicit request just because preferences are unreadable.
+    pub fn has_explicit_request(&self, prompt: &str, explicit: Option<&str>) -> bool {
+        let view = invocation_text(prompt);
+        let normalized = normalized(&view);
+        explicit.is_some()
+            || explicit_skill_from_prompt(&normalized).is_some()
+            || explicit_bundle_name_from_prompt(&normalized).is_some()
+            || dollar_skill_from_prompt(&view, &self.list()).is_some()
+    }
+
     /// Selects and loads the smallest useful skill set for one prompt.
     #[must_use]
     pub fn orchestrate(&self, query: &SkillRoutingQuery<'_>) -> SkillRoutingReport {
@@ -416,6 +428,53 @@ impl SkillStore {
         query: &SkillRoutingQuery<'_>,
         condition: ChunkRoutingCondition,
     ) -> SkillRoutingReport {
+        self.orchestrate_configured(
+            query,
+            condition,
+            &crate::routing_quality::RoutingOptions::default(),
+            crate::routing_quality::RoutingAblation::Full,
+        )
+    }
+
+    /// Shared opt-in route. Standard retains its scorer and loading semantics.
+    pub fn orchestrate_with_options(
+        &self,
+        query: &SkillRoutingQuery<'_>,
+        options: &crate::routing_quality::RoutingOptions,
+    ) -> SkillRoutingReport {
+        self.orchestrate_configured(
+            query,
+            ChunkRoutingCondition::production(),
+            options,
+            crate::routing_quality::RoutingAblation::Full,
+        )
+    }
+
+    /// Offline ablation seam. Native callers use orchestrate_with_options.
+    pub fn orchestrate_with_ablation(
+        &self,
+        query: &SkillRoutingQuery<'_>,
+        options: &crate::routing_quality::RoutingOptions,
+        ablation: crate::routing_quality::RoutingAblation,
+    ) -> SkillRoutingReport {
+        self.orchestrate_configured(
+            query,
+            ChunkRoutingCondition::production(),
+            options,
+            ablation,
+        )
+    }
+
+    fn orchestrate_configured(
+        &self,
+        query: &SkillRoutingQuery<'_>,
+        condition: ChunkRoutingCondition,
+        options: &crate::routing_quality::RoutingOptions,
+        ablation: crate::routing_quality::RoutingAblation,
+    ) -> SkillRoutingReport {
+        use crate::routing_quality::{
+            RoutingCatalogEntry, RoutingIndex, RoutingMode, RoutingOutcome,
+        };
         let summaries = self.list();
         let bundles = self.list_bundles();
         let mut report = SkillRoutingReport {
@@ -424,12 +483,14 @@ impl SkillStore {
         };
         let prompt = normalized(query.prompt);
         let prompt_tokens = semantic_tokens(&prompt);
+        let invocation_text = invocation_text(query.prompt);
+        let invocation_prompt = normalized(&invocation_text);
         let explicit = query
             .explicit_skill
             .map(normalized)
-            .or_else(|| explicit_skill_from_prompt(&prompt))
-            .or_else(|| dollar_skill_from_prompt(query.prompt, &summaries));
-        let explicit_bundle = explicit_bundle_from_prompt(&prompt, &bundles);
+            .or_else(|| explicit_skill_from_prompt(&invocation_prompt))
+            .or_else(|| dollar_skill_from_prompt(&invocation_text, &summaries));
+        let explicit_bundle = explicit_bundle_from_prompt(&invocation_prompt, &bundles);
         let bundle_members: BTreeSet<String> = explicit_bundle
             .as_ref()
             .map(|bundle| {
@@ -446,7 +507,7 @@ impl SkillStore {
                 .selected_bundles
                 .push((normalized(&bundle.name), instruction));
         }
-        if let Some(requested) = explicit_bundle_name_from_prompt(&prompt)
+        if let Some(requested) = explicit_bundle_name_from_prompt(&invocation_prompt)
             && explicit_bundle.is_none()
         {
             report.explicit_error = Some(format!("skill bundle `{requested}` was not found"));
@@ -479,6 +540,20 @@ impl SkillStore {
                 .push((normalized(missing), "bundle member not found".into()));
         }
         let mut candidates = Vec::new();
+        let enhanced = options.preferences.mode == RoutingMode::Enhanced;
+        let automatic_enhanced = enhanced
+            && explicit.is_none()
+            && explicit_bundle.is_none()
+            && ablation != crate::routing_quality::RoutingAblation::DescriptorsWithStandardScorer;
+        let mut retrieval_entries = Vec::new();
+        let mut identities = BTreeMap::new();
+        report.routing_trace.mode = options.preferences.mode;
+        if options.preferences.validate().is_err() || options.task.validate().is_err() {
+            report.routing_trace.outcome = RoutingOutcome::Fallback;
+            report.routing_trace.reason =
+                "Invalid routing preferences; automatic activation disabled".into();
+            return report;
+        }
 
         for summary in summaries {
             let slug = match crate::SkillSlug::new(&summary.slug) {
@@ -498,12 +573,15 @@ impl SkillStore {
                     continue;
                 }
             };
-            let metadata = parse_metadata(&summary, &catalog_prefix);
+            let mut metadata = parse_metadata(&summary, &catalog_prefix);
             let directly_explicit = explicit.as_deref() == Some(metadata.slug.as_str());
             let bundle_explicit = bundle_members.contains(&metadata.slug);
             // Audit F4: `archived` is a deliberate user state and must be
             // reported even when a manifest defect also exists.
             if metadata.archived {
+                if directly_explicit || bundle_explicit {
+                    report.explicit_error = Some(format!("skill `{}` is archived", metadata.slug));
+                }
                 report
                     .rejected
                     .push((metadata.slug.clone(), "archived".into()));
@@ -533,6 +611,49 @@ impl SkillStore {
                 continue;
             }
             let user_explicit = directly_explicit || bundle_explicit;
+            if options.preferences.disabled.contains(&metadata.slug) {
+                if user_explicit {
+                    report.explicit_error = Some(format!("skill `{}` is disabled", metadata.slug));
+                }
+                report
+                    .rejected
+                    .push((metadata.slug.clone(), "disabled in project settings".into()));
+                continue;
+            }
+            if enhanced {
+                let unavailable = metadata
+                    .required_tools
+                    .iter()
+                    .any(|tool| !query.available_tools.contains(tool))
+                    || (metadata.execution == SkillExecutionMode::Isolated
+                        && !query.available_tools.contains("delegate_task"));
+                let effect = match metadata.risk {
+                    SkillRisk::ReadOnly => crate::routing_quality::RoutingEffect::ReadOnly,
+                    SkillRisk::Mutating => crate::routing_quality::RoutingEffect::Workspace,
+                    SkillRisk::External => crate::routing_quality::RoutingEffect::External,
+                };
+                let mismatch = options
+                    .task
+                    .clone()
+                    .narrow_from_prompt(query.prompt)
+                    .maximum_effect
+                    .is_some_and(|maximum| effect > maximum);
+                if unavailable || (user_explicit && mismatch) {
+                    let reason = if unavailable {
+                        "required tool unavailable"
+                    } else {
+                        "task effect restriction"
+                    };
+                    if user_explicit {
+                        report.explicit_error = Some(format!(
+                            "skill `{}` is unavailable: {reason}",
+                            metadata.slug
+                        ));
+                    }
+                    report.rejected.push((metadata.slug.clone(), reason.into()));
+                    continue;
+                }
+            }
             if let Some(reason) = ineligible_reason(&metadata, query, user_explicit, &prompt) {
                 if directly_explicit {
                     report.explicit_error = Some(format!(
@@ -548,6 +669,46 @@ impl SkillStore {
                 report.rejected.push((metadata.slug.clone(), reason));
                 continue;
             }
+            if enhanced
+                && user_explicit
+                && let Ok(revision) = self.routing_revision(&slug)
+                && let Ok(Some(descriptor)) = self.routing_descriptor(&slug, &revision)
+                && let Ok(index) = RoutingIndex::build(&[RoutingCatalogEntry {
+                    metadata: metadata.clone(),
+                    revision,
+                    descriptor: Some(descriptor),
+                }])
+                && let Some((_, reason)) = index
+                    .search(
+                        query.prompt,
+                        &options.task.clone().narrow_from_prompt(query.prompt),
+                    )
+                    .rejected
+                    .first()
+            {
+                report.explicit_error = Some(format!(
+                    "skill `{}` is unavailable: {reason:?}",
+                    metadata.slug
+                ));
+                report
+                    .rejected
+                    .push((metadata.slug.clone(), format!("{reason:?}")));
+                continue;
+            }
+            if ablation == crate::routing_quality::RoutingAblation::DescriptorsWithStandardScorer
+                && let Ok(revision) = self.routing_revision(&slug)
+                && let Ok(Some(descriptor)) = self.routing_descriptor(&slug, &revision)
+            {
+                metadata.description.push_str(&format!(
+                    " {} {} {} {} {} {}",
+                    descriptor.purpose,
+                    descriptor.use_when.join(" "),
+                    descriptor.inputs.join(" "),
+                    descriptor.outputs.join(" "),
+                    descriptor.preconditions.join(" "),
+                    descriptor.positive_examples.join(" ")
+                ));
+            }
             let (score, reasons) = score_candidate(
                 &metadata,
                 &prompt,
@@ -556,7 +717,36 @@ impl SkillStore {
                 bundle_explicit,
                 query.outcome_adjustments,
             );
-            if !user_explicit && score < AUTO_ACTIVATION_SCORE {
+            if automatic_enhanced && !user_explicit {
+                let revision = match self.routing_revision(&slug) {
+                    Ok(revision) => revision,
+                    Err(_) => {
+                        report
+                            .rejected
+                            .push((metadata.slug.clone(), "catalog identity unavailable".into()));
+                        continue;
+                    }
+                };
+                let descriptor = match self.routing_descriptor(&slug, &revision) {
+                    Ok(descriptor) => descriptor,
+                    Err(reason) => {
+                        report.rejected.push((metadata.slug.clone(), reason.into()));
+                        continue;
+                    }
+                };
+                let entry = RoutingCatalogEntry {
+                    metadata: metadata.clone(),
+                    revision: revision.clone(),
+                    descriptor,
+                };
+                if let Err(reason) = RoutingIndex::build(std::slice::from_ref(&entry)) {
+                    report.rejected.push((metadata.slug.clone(), reason.into()));
+                    continue;
+                }
+                identities.insert(metadata.slug.clone(), revision);
+                retrieval_entries.push(entry);
+            }
+            if !automatic_enhanced && !user_explicit && score < AUTO_ACTIVATION_SCORE {
                 continue;
             }
             candidates.push(SkillCandidate {
@@ -566,6 +756,109 @@ impl SkillStore {
             });
         }
 
+        if automatic_enhanced {
+            match self.search_routing_index(
+                &retrieval_entries,
+                query.prompt,
+                &options.task.clone().narrow_from_prompt(query.prompt),
+                ablation != crate::routing_quality::RoutingAblation::LexicalWithoutContracts,
+            ) {
+                Ok(found) => {
+                    let missing = found.rejected.iter().any(|(_, reason)| {
+                        *reason == crate::routing_quality::RoutingRejection::MissingResource
+                    });
+                    report.rejected.extend(
+                        found
+                            .rejected
+                            .iter()
+                            .map(|(slug, reason)| (slug.clone(), format!("{reason:?}"))),
+                    );
+                    // A lexical hit retrieves; a meaningful margin and multiple
+                    // matched terms are needed to activate. Scores are not probabilities.
+                    let best = found.candidates.first().map_or(0.0, |m| m.score);
+                    let ambiguous = found.candidates.get(1).is_some_and(|second| {
+                        let first = &found.candidates[0];
+                        let first_descriptor = retrieval_entries
+                            .iter()
+                            .find(|e| e.metadata.slug == first.slug)
+                            .and_then(|e| e.descriptor.as_ref());
+                        let second_descriptor = retrieval_entries
+                            .iter()
+                            .find(|e| e.metadata.slug == second.slug)
+                            .and_then(|e| e.descriptor.as_ref());
+                        options
+                            .task
+                            .clone()
+                            .narrow_from_prompt(query.prompt)
+                            .action
+                            .is_none()
+                            && second.score >= first.score * 0.95
+                            && first_descriptor
+                                .zip(second_descriptor)
+                                .is_some_and(|(a, b)| {
+                                    a.family == b.family
+                                        && !a.actions.is_empty()
+                                        && !b.actions.is_empty()
+                                        && a.actions != b.actions
+                                })
+                    });
+                    let scores: BTreeMap<_, _> = found
+                        .candidates
+                        .iter()
+                        .filter(|m| {
+                            m.matched_terms >= 2
+                                && m.matched_terms * 5 >= m.query_terms
+                                && m.score >= best * 0.55
+                        })
+                        .map(|m| (m.slug.as_str(), m.score))
+                        .collect();
+                    candidates.retain_mut(|candidate| {
+                        if ambiguous {
+                            return false;
+                        }
+                        let Some(score) = scores.get(candidate.metadata.slug.as_str()) else {
+                            return false;
+                        };
+                        candidate.score_basis_points = (*score * 100.0).min(u16::MAX as f64) as u16;
+                        candidate.reasons = vec![
+                            "metadata lexical retrieval".into(),
+                            "current policy and task contracts checked".into(),
+                        ];
+                        candidate.reasons.push(
+                            if retrieval_entries.iter().any(|e| {
+                                e.metadata.slug == candidate.metadata.slug && e.descriptor.is_some()
+                            }) {
+                                "descriptor v1 validated"
+                            } else {
+                                "legacy metadata: no routing descriptor"
+                            }
+                            .into(),
+                        );
+                        true
+                    });
+                    if ambiguous {
+                        report.routing_trace.outcome = RoutingOutcome::Ambiguous;
+                    }
+                    if candidates.is_empty() && missing && !ambiguous {
+                        report.routing_trace.outcome = RoutingOutcome::MissingPrecondition;
+                    }
+                }
+                Err(_) => {
+                    let mut fallback_options = options.clone();
+                    fallback_options.preferences.mode = RoutingMode::Standard;
+                    let mut fallback = self.orchestrate_configured(
+                        query,
+                        condition,
+                        &fallback_options,
+                        crate::routing_quality::RoutingAblation::Full,
+                    );
+                    fallback.routing_trace.outcome = RoutingOutcome::Fallback;
+                    fallback.routing_trace.reason =
+                        "Metadata index unavailable; Standard routing used".into();
+                    return fallback;
+                }
+            }
+        }
         candidates.sort_by(|left, right| {
             right
                 .score_basis_points
@@ -574,6 +867,16 @@ impl SkillStore {
         });
         let mut total_chars = 0_usize;
         for candidate in candidates {
+            if let Some(revision) = identities.get(&candidate.metadata.slug) {
+                let slug = crate::SkillSlug::new(&candidate.metadata.slug).expect("validated slug");
+                if self.routing_revision(&slug).as_ref().ok() != Some(revision) {
+                    report.rejected.push((
+                        candidate.metadata.slug.clone(),
+                        "catalog changed during routing".into(),
+                    ));
+                    continue;
+                }
+            }
             if report.selected.len() == MAX_SELECTED_SKILLS {
                 if bundle_members.contains(&candidate.metadata.slug) {
                     report.rejected.push((
@@ -625,6 +928,16 @@ impl SkillStore {
                 total_chars = total_chars.saturating_add(body.chars().count());
                 (body, truncated)
             };
+            if let Some(revision) = identities.get(&candidate.metadata.slug) {
+                let slug = crate::SkillSlug::new(&candidate.metadata.slug).expect("validated slug");
+                if self.routing_revision(&slug).as_ref().ok() != Some(revision) {
+                    report.rejected.push((
+                        candidate.metadata.slug.clone(),
+                        "catalog changed while loading".into(),
+                    ));
+                    continue;
+                }
+            }
             let mut selected_skill = LoadedSkill {
                 candidate,
                 body,
@@ -705,6 +1018,51 @@ impl SkillStore {
             .iter()
             .flat_map(|skill| skill.chunks.iter().cloned())
             .collect();
+        if enhanced {
+            if report.explicit_error.is_some() {
+                report.routing_trace.outcome = RoutingOutcome::ExplicitInvalid;
+            } else if !report.selected.is_empty() {
+                report.routing_trace.outcome = RoutingOutcome::Selected;
+            }
+            report.routing_trace.reason = match report.routing_trace.outcome {
+                RoutingOutcome::Selected => {
+                    "Selected from bounded metadata; execution still requires normal permissions"
+                }
+                RoutingOutcome::MissingPrecondition => {
+                    "No compatible skill with the known available resources"
+                }
+                RoutingOutcome::Ambiguous => {
+                    "Several procedures match; continue without forced activation"
+                }
+                RoutingOutcome::ExplicitInvalid => "Explicit skill request could not be satisfied",
+                _ => "No sufficiently relevant compatible skill; continue the ordinary task",
+            }
+            .into();
+            if !report.selected.is_empty() {
+                let details = report
+                    .selected
+                    .iter()
+                    .map(|skill| {
+                        format!(
+                            "{}: {}",
+                            skill.candidate.metadata.slug,
+                            skill.candidate.reasons.join("; ")
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" | ");
+                report.routing_trace.reason = details.chars().take(512).collect();
+            }
+            if report.considered == crate::MAX_SKILL_FILES {
+                report.routing_trace.reason = format!(
+                    "Catalog limit reached (500); additional files may not be indexed. {}",
+                    report.routing_trace.reason
+                )
+                .chars()
+                .take(512)
+                .collect();
+            }
+        }
         report
     }
 
@@ -1238,16 +1596,88 @@ fn infer_risk(slug: &str, description: &str) -> SkillRisk {
     }
 }
 
+// Build a parsing view only: the original submitted prompt is never rewritten.
+// Quoted/code examples and block quotations are data, not activation authority.
+fn invocation_text(prompt: &str) -> String {
+    let mut output = String::new();
+    let mut fence: Option<char> = None;
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    for line in prompt.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+            let marker = trimmed.chars().next().unwrap_or('`');
+            if fence == Some(marker) {
+                fence = None;
+            } else if fence.is_none() {
+                fence = Some(marker);
+            }
+            output.push('\n');
+            continue;
+        }
+        if fence.is_some() || trimmed.starts_with('>') {
+            output.push('\n');
+            continue;
+        }
+        let chars: Vec<char> = line.chars().collect();
+        for (index, &ch) in chars.iter().enumerate() {
+            if escaped {
+                escaped = false;
+                output.push(' ');
+                continue;
+            }
+            if ch == '\\' {
+                escaped = true;
+                output.push(' ');
+                continue;
+            }
+            if let Some(end) = quote {
+                if ch == end {
+                    quote = None;
+                }
+                output.push(' ');
+                continue;
+            }
+            let apostrophe = ch == '\'' && index > 0 && chars[index - 1].is_alphanumeric();
+            quote = match ch {
+                '`' | '"' => Some(ch),
+                '\'' if !apostrophe => Some(ch),
+                '“' => Some('”'),
+                '‘' => Some('’'),
+                _ => None,
+            };
+            output.push(if quote.is_some() { ' ' } else { ch });
+        }
+        output.push('\n');
+    }
+    output
+}
+
+fn affirmative_marker<'a>(prompt: &'a str, marker: &str) -> Option<&'a str> {
+    prompt.match_indices(marker).find_map(|(index, _)| {
+        let prefix = prompt[..index].trim_end();
+        let boundary = index == 0
+            || !prompt[..index]
+                .chars()
+                .next_back()
+                .is_some_and(char::is_alphanumeric);
+        let negated = ["not", "don't", "never", "without"]
+            .iter()
+            .any(|word| prefix.split_whitespace().next_back() == Some(*word));
+        (boundary && !negated).then_some(&prompt[index + marker.len()..])
+    })
+}
+
 fn explicit_skill_from_prompt(prompt: &str) -> Option<String> {
     for marker in ["use skill ", "with skill "] {
-        if let Some(rest) = prompt.split_once(marker).map(|(_, rest)| rest) {
+        if let Some(rest) = affirmative_marker(prompt, marker) {
             let slug = first_slug(rest);
             if !slug.is_empty() {
                 return Some(slug);
             }
         }
     }
-    if let Some(rest) = prompt.split_once("use the ").map(|(_, rest)| rest)
+    if let Some(rest) = affirmative_marker(prompt, "use the ")
         && let Some((name, _)) = rest.split_once(" skill")
     {
         let slug = normalized(name);
@@ -1295,7 +1725,7 @@ fn first_slug(value: &str) -> String {
 fn explicit_bundle_name_from_prompt(prompt: &str) -> Option<String> {
     let rest = ["use bundle ", "with bundle "]
         .iter()
-        .find_map(|marker| prompt.split_once(marker).map(|(_, rest)| rest))?;
+        .find_map(|marker| affirmative_marker(prompt, marker))?;
     let name = first_slug(rest);
     (!name.is_empty()).then_some(name)
 }

@@ -35,6 +35,11 @@ business logic.
   draft across ordinary submenus. Esc at the root offers Save changes, Discard
   changes and Keep editing. Only Save applies execution state; failed grouped
   saves restore prior bytes and retain the draft, reporting any rollback failure.
+  Settings → Skills edits Standard/Enhanced (preview) and project skill toggles
+  in that same draft and grouped rollback. Shared workspace preferences apply to
+  the next turn; source skills remain unchanged. `/skills settings` also exposes
+  the shared explicit-save text controls. Routing notices survive direct, VRO
+  and ReAct startup; read-only controls narrow Enhanced selection.
   Ordinary preferences are user-wide `ui/settings.json`, provider-partitioned and
   revalidated on restore; web/swarm/acceptance remain workspace-scoped. Model
   choices retain adapter metadata and an actionable catalog retry. Provider

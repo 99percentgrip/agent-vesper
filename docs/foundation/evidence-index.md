@@ -2,11 +2,13 @@
 
 Status: evidence index; acceptance status is scoped to each section.
 
-## Skill routing implementation — in progress — 2026-09-13
+## Skill routing preview — promotion HOLD — 2026-09-13
 
-[Implementation ledger](skill-routing-quality-implementation.md) records the
-isolated descriptor/retrieval foundation, frozen 240-query corpus, actual baseline
-failures and outstanding host/quality/coexistence acceptance. No completion claim.
+[Implementation report](skill-routing-quality-implementation.md) records shared
+selection, native controls, preserved library hashes, runtime checks and unmet
+quality gates. [Frozen predictions](skill-routing-quality-results.json) and
+[summary helper](skill-routing-quality-summary.py) retain all four ablations.
+Standard remains default; combined score-floor integration is pending GLM PR-2/PR-3.
 
 ## Routing / score-floor coexistence — 2026-09-13
 

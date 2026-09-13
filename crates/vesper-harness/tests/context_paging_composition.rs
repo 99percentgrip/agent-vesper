@@ -474,3 +474,194 @@ async fn all_execution_paths_consume_the_same_envelope_seam() {
 
 // Silence unused-import warnings for helpers kept for documentation
 // completeness of the AC-3 story.
+
+#[tokio::test]
+async fn enhanced_selection_reaches_real_agent_request_with_bounded_transient_context() {
+    use vesper_harness::skill_routing_settings::{self as routing, RoutingMode, RoutingTask};
+    let (base, store) = fixture_store();
+    let env = QueryEnv::default();
+    write_chunked_skill(&store, base.path(), "deploy-runbook");
+    let preferences = routing::RoutingPreferences {
+        mode: RoutingMode::Enhanced,
+        ..Default::default()
+    };
+    routing::save(base.path(), &preferences).unwrap();
+    let report = routing::route(
+        base.path(),
+        &store,
+        &env.query("rollback the failed staging deploy"),
+        RoutingTask::default(),
+    );
+    assert_eq!(report.selected_names(), vec!["deploy-runbook"]);
+    let envelope = report.context().unwrap();
+    let turn = transient_turn("rollback the failed staging deploy", &envelope);
+    let plain = transient_turn("rollback the failed staging deploy", "");
+    let tokens =
+        vesper_agent::compaction::estimate_context_tokens(&[], std::slice::from_ref(&turn.message));
+    let original_tokens = vesper_agent::compaction::estimate_context_tokens(
+        &[],
+        std::slice::from_ref(&plain.message),
+    );
+    println!(
+        "ENHANCED_CONTEXT added_estimated_tokens={} selected=1",
+        tokens - original_tokens
+    );
+    assert!(tokens - original_tokens < 1000);
+    let (agent, fake) = loop_with_fake(vec![scripted_text("done")]).await;
+    let _ = agent
+        .run_prompt_with_history(
+            vec![turn.message.clone()],
+            SessionOperatingMode::Code,
+            SessionPermissionMode::Bypass,
+        )
+        .await
+        .unwrap();
+    assert!(
+        provider_request_texts(&fake)
+            .iter()
+            .flatten()
+            .any(|text| text.contains("Primary runbook body."))
+    );
+    let mut persisted = turn.message;
+    persisted.content = turn.original_content;
+    assert!(!format!("{:?}", persisted.content).contains("Primary runbook body."));
+}
+
+#[derive(Clone)]
+struct RoutedHistoryGenerator {
+    agent: Arc<AgentLoop>,
+    history: Vec<ConversationMessage>,
+}
+impl vesper_agent::vro::CandidateGenerator for RoutedHistoryGenerator {
+    fn generate<'a>(
+        &'a self,
+        _prompt: &'a str,
+        _corrections: &'a [vesper_domain::VerificationFinding],
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = vesper_agent::vro::GeneratedCandidate> + Send + 'a>,
+    > {
+        Box::pin(async move {
+            self.agent
+                .run_prompt_with_history(
+                    self.history.clone(),
+                    SessionOperatingMode::Code,
+                    SessionPermissionMode::Bypass,
+                )
+                .await
+                .unwrap();
+            vesper_agent::vro::GeneratedCandidate {
+                output: serde_json::json!({"content":"done"}),
+                cost: vesper_domain::InferenceCost {
+                    model_calls: 1,
+                    ..Default::default()
+                },
+            }
+        })
+    }
+    fn boxed_clone(&self) -> Box<dyn vesper_agent::vro::CandidateGenerator> {
+        Box::new(self.clone())
+    }
+}
+struct RoutedReactProbe(std::sync::Mutex<Vec<String>>);
+impl vesper_agent::vro::ReactAgent for RoutedReactProbe {
+    fn next_action<'a>(
+        &'a self,
+        prompt: &'a str,
+        _trajectory: &'a [vesper_agent::vro::TrajectoryEntry],
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = vesper_agent::vro::ReactDecision> + Send + 'a>,
+    > {
+        Box::pin(async move {
+            self.0.lock().unwrap().push(prompt.into());
+            vesper_agent::vro::ReactDecision::Finish {
+                output: serde_json::json!({"content":"done"}),
+            }
+        })
+    }
+}
+struct NoRoutingToolReplay;
+impl vesper_agent::vro::ToolInvoker for NoRoutingToolReplay {
+    fn class_of(&self, _: &str) -> Option<vesper_domain::ToolExecutionClass> {
+        None
+    }
+    fn invoke<'a>(
+        &'a self,
+        _: &'a str,
+        _: &'a serde_json::Value,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Result<String, vesper_agent::vro::ToolInvocationError>>
+                + Send
+                + 'a,
+        >,
+    > {
+        panic!("routing must not execute tools")
+    }
+}
+
+#[tokio::test]
+async fn enhanced_envelope_survives_actual_vro_and_react_orchestration() {
+    use vesper_domain::{
+        PrivacyMode, ReasoningBudget, ReasoningConfig, ReasoningMode, ReasoningRequest, RequestId,
+        SessionId,
+    };
+    use vesper_harness::skill_routing_settings::{self as routing, RoutingMode, RoutingTask};
+    let (base, store) = fixture_store();
+    write_chunked_skill(&store, base.path(), "deploy-runbook");
+    routing::save(
+        base.path(),
+        &routing::RoutingPreferences {
+            mode: RoutingMode::Enhanced,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let env = QueryEnv::default();
+    let envelope = routing::route(
+        base.path(),
+        &store,
+        &env.query("rollback the failed staging deploy"),
+        RoutingTask::default(),
+    )
+    .context()
+    .unwrap();
+    let vro = vesper_agent::VroOrchestrator::new(ReasoningConfig {
+        enabled: true,
+        ..Default::default()
+    });
+    let mut request = ReasoningRequest {
+        request_id: RequestId::new("routing-vro").unwrap(),
+        session_id: SessionId::new("routing-session").unwrap(),
+        user_message: "Hello".into(),
+        context_refs: vec![],
+        mode: ReasoningMode::Fast,
+        risk_hint: None,
+        budget_override: Some(ReasoningBudget {
+            max_model_calls: 1,
+            max_repairs: 0,
+            ..ReasoningBudget::balanced()
+        }),
+        privacy_mode: PrivacyMode::Private,
+    };
+    let (agent, fake) = loop_with_fake(vec![scripted_text("done")]).await;
+    let generator = RoutedHistoryGenerator {
+        agent,
+        history: vec![transient_turn("rollback staging", &envelope).message],
+    };
+    let outcome = vro.execute(&request, &generator, base.path()).await;
+    assert_eq!(outcome.status, vesper_domain::OutcomeStatus::Succeeded);
+    assert!(
+        provider_request_texts(&fake)
+            .iter()
+            .flatten()
+            .any(|text| text.contains("Primary runbook body."))
+    );
+    let probe = RoutedReactProbe(Default::default());
+    request.user_message = format!("What does main.rs do?\n{envelope}");
+    let outcome = vro
+        .execute_react(&request, &probe, &NoRoutingToolReplay, base.path())
+        .await;
+    assert_eq!(outcome.status, vesper_domain::OutcomeStatus::Succeeded);
+    assert_eq!(probe.0.lock().unwrap().len(), 1);
+    assert!(probe.0.lock().unwrap()[0].contains("Primary runbook body."));
+}

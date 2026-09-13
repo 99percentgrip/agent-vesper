@@ -3824,6 +3824,10 @@ fn session_setting_candidates(
         "/settings" => {
             let mut settings: Vec<(String, String)> = vec![
                 (
+                    "/settings skills".into(),
+                    "Skills · routing preview and project choices".into(),
+                ),
+                (
                     "/settings acceptance".into(),
                     "Implementation acceptance · PRD, evidence and gaps".into(),
                 ),
@@ -5899,6 +5903,7 @@ fn primary_workspace_root() -> WorkspaceRoot {
 
 #[derive(Clone)]
 struct RoutedSkillTurn {
+    notice: String,
     context: Option<String>,
     selected: Vec<String>,
     outcomes: Arc<vesper_memory::SkillOutcomeTracker>,
@@ -5918,6 +5923,7 @@ fn spawn_agent_turn(
     routed_skills: RoutedSkillTurn,
 ) -> Result<(), String> {
     let selected_for_display = routed_skills.selected.clone();
+    let routing_notice = routed_skills.notice.clone();
     let config = turn_configuration(agent, &session.state, surface)?;
     // PRD FR-5: image input is gated by the ACTIVE model's advertised
     // vision capability (fail-closed) — provider- and model-routed, with
@@ -6109,6 +6115,9 @@ fn spawn_agent_turn(
     session.steering_tx = Some(steering_tx);
     session.agent_running = true;
     session.activity.clear();
+    if !routing_notice.is_empty() {
+        session.activity.push(routing_notice);
+    }
     if !selected_for_display.is_empty() {
         session.activity.push(format!(
             "Skills selected: {}",
@@ -6235,7 +6244,14 @@ fn spawn_submitted_prompt(
                 .into_iter()
                 .map(|definition| definition.harness_name.as_str().to_owned())
                 .collect::<std::collections::BTreeSet<_>>();
-            let skill_report = memory_stores.orchestrate_skills(&expanded, &available_tools);
+            let skill_report = memory_stores.orchestrate_skills(
+                &expanded,
+                &available_tools,
+                vesper_harness::skill_routing_settings::task_for_controls(
+                    session.state.controls.operating_mode,
+                    session.state.controls.permission_mode,
+                ),
+            );
             if let Some(error) = skill_report.explicit_error.as_ref() {
                 session.state.status = Some(format!("skill routing failed: {error}"));
                 return;
@@ -6249,6 +6265,7 @@ fn spawn_submitted_prompt(
                 );
             }
             let routed_skills = RoutedSkillTurn {
+                notice: skill_report.routing_trace.reason.clone(),
                 context: skill_context,
                 selected: selected_skills,
                 outcomes: Arc::clone(&memory_stores.skill_outcomes),
@@ -6523,6 +6540,7 @@ fn spawn_vro_turn(
     session: &mut TuiSession,
 ) -> Result<(), String> {
     let selected_for_display = routed_skills.selected.clone();
+    let routing_notice = routed_skills.notice.clone();
     let (tx, rx) = mpsc::unbounded_channel::<AgentEvent>();
     let (steering_tx, steering_rx) = mpsc::unbounded_channel::<String>();
     let steering = Arc::new(ChannelSteeringPort {
@@ -6713,6 +6731,9 @@ fn spawn_vro_turn(
     session.trajectory_rx = Some(traj_rx);
     session.agent_running = true;
     session.activity.clear();
+    if !routing_notice.is_empty() {
+        session.activity.push(routing_notice);
+    }
     if !selected_for_display.is_empty() {
         session.activity.push(format!(
             "Skills selected: {}",
@@ -7361,6 +7382,7 @@ fn spawn_vro_react_turn(
     session: &mut TuiSession,
 ) -> Result<(), String> {
     let selected_for_display = routed_skills.selected.clone();
+    let routing_notice = routed_skills.notice.clone();
     let cancellation = Arc::new(vesper_runtime::RuntimeCancellation::new());
     session.turn_cancellation = Some(cancellation.clone());
     let bundle = build_vro_react_bundle(agent, agent_tools, approval_port).ok_or_else(|| {
@@ -7597,6 +7619,9 @@ fn spawn_vro_react_turn(
     // Clear the trajectory buffer at turn start so the live trajectory starts
     // fresh — the existing direct/GVR paths also clear this on turn start.
     session.live_trajectory.clear();
+    if !routing_notice.is_empty() {
+        session.activity.push(routing_notice);
+    }
     if !selected_for_display.is_empty() {
         session.live_trajectory.push(format!(
             "Skills selected: {}",
@@ -9244,18 +9269,24 @@ impl MemoryStores {
         &self,
         prompt: &str,
         available_tools: &std::collections::BTreeSet<String>,
+        task: vesper_harness::skill_routing_settings::RoutingTask,
     ) -> vesper_memory::SkillRoutingReport {
         let Some(store) = self.skills.as_ref() else {
             return vesper_memory::SkillRoutingReport::default();
         };
         let outcomes = self.skill_outcomes.adjustments();
-        store.orchestrate(&vesper_memory::SkillRoutingQuery {
-            prompt,
-            explicit_skill: None,
-            available_tools,
-            platform: std::env::consts::OS,
-            outcome_adjustments: &outcomes,
-        })
+        vesper_harness::skill_routing_settings::route(
+            &std::env::current_dir().unwrap_or_default(),
+            store,
+            &vesper_memory::SkillRoutingQuery {
+                prompt,
+                explicit_skill: None,
+                available_tools,
+                platform: std::env::consts::OS,
+                outcome_adjustments: &outcomes,
+            },
+            task,
+        )
     }
 }
 
@@ -12893,6 +12924,15 @@ fn drain_memory_op(
                     state.status = Some(format!("subgoal failed: {error}"));
                 }
             }
+        }
+        MemoryOp::SkillRouting(argument) => {
+            let result = vesper_harness::skill_routing_settings::command(
+                &std::env::current_dir().unwrap_or_default(),
+                &argument,
+            )
+            .unwrap_or_else(|error| error);
+            state.transcript.push(result);
+            state.status = None;
         }
         MemoryOp::SkillsList => {
             let Some(store) = stores.skills.as_ref() else {

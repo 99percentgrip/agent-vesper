@@ -40,6 +40,8 @@ pub struct RoutingDescriptor {
     #[serde(default)]
     pub use_when: Vec<String>,
     #[serde(default)]
+    pub actions: Vec<String>,
+    #[serde(default)]
     pub avoid_when: Vec<String>,
     #[serde(default)]
     pub inputs: Vec<String>,
@@ -78,6 +80,7 @@ impl RoutingDescriptor {
         }
         for list in [
             &self.use_when,
+            &self.actions,
             &self.avoid_when,
             &self.inputs,
             &self.outputs,
@@ -110,6 +113,7 @@ impl RoutingDescriptor {
 /// These hints narrow relevance. They never authorize an operation.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RoutingTask {
+    pub action: Option<String>,
     pub artifact: Option<String>,
     pub maximum_effect: Option<RoutingEffect>,
     /// None means resource availability is unknown, not that all resources exist.
@@ -119,6 +123,7 @@ pub struct RoutingTask {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RoutingRejection {
     ArtifactMismatch,
+    ActionMismatch,
     EffectMismatch,
     MissingResource,
     NegativeExample,
@@ -130,10 +135,11 @@ struct Document {
     frequencies: BTreeMap<String, usize>,
     length: usize,
     descriptor: Option<RoutingDescriptor>,
+    effect: RoutingEffect,
 }
 
 /// Snapshot identity is provided by the store, never by the descriptor itself.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RoutingCatalogEntry {
     pub metadata: SkillMetadata,
     pub revision: String,
@@ -153,6 +159,8 @@ pub struct RoutingMatch {
     pub slug: String,
     /// Relevance score, never a calibrated confidence probability.
     pub score: f64,
+    pub matched_terms: usize,
+    pub query_terms: usize,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -170,19 +178,21 @@ impl RoutingIndex {
         }
         let mut index = Self::default();
         let mut ids = BTreeSet::new();
+        let mut text_bytes = 0usize;
+        let mut term_count = 0usize;
         for entry in entries {
             let metadata = &entry.metadata;
             let descriptor = &entry.descriptor;
             if !ids.insert(metadata.slug.clone()) {
                 return Err("duplicate routing identity");
             }
+            let required_effect = match metadata.risk {
+                crate::SkillRisk::ReadOnly => RoutingEffect::ReadOnly,
+                crate::SkillRisk::Mutating => RoutingEffect::Workspace,
+                crate::SkillRisk::External => RoutingEffect::External,
+            };
             if let Some(descriptor) = descriptor {
                 descriptor.validate(&entry.revision)?;
-                let required_effect = match metadata.risk {
-                    crate::SkillRisk::ReadOnly => RoutingEffect::ReadOnly,
-                    crate::SkillRisk::Mutating => RoutingEffect::Workspace,
-                    crate::SkillRisk::External => RoutingEffect::External,
-                };
                 if descriptor.effects < required_effect {
                     return Err("descriptor contradicts authoritative effects");
                 }
@@ -206,9 +216,17 @@ impl RoutingIndex {
                     descriptor.positive_examples.join(" ")
                 ));
             }
+            text_bytes = text_bytes.saturating_add(text.len());
+            if text_bytes > 1_048_576 {
+                return Err("routing metadata exceeds index byte budget");
+            }
             let mut frequencies = BTreeMap::new();
             for token in tokens(&text) {
                 *frequencies.entry(token).or_insert(0) += 1;
+            }
+            term_count += frequencies.len();
+            if term_count > 64_000 {
+                return Err("routing metadata exceeds index term budget");
             }
             for token in frequencies.keys() {
                 *index.document_frequency.entry(token.clone()).or_insert(0) += 1;
@@ -218,6 +236,7 @@ impl RoutingIndex {
                 length: frequencies.values().sum(),
                 frequencies,
                 descriptor: descriptor.clone(),
+                effect: descriptor.as_ref().map_or(required_effect, |d| d.effects),
             });
         }
         index.documents.sort_by(|a, b| a.slug.cmp(&b.slug));
@@ -232,10 +251,30 @@ impl RoutingIndex {
     }
 
     pub fn search(&self, prompt: &str, task: &RoutingTask) -> RoutingSearch {
+        self.search_condition(prompt, task, true)
+    }
+
+    pub(crate) fn search_condition(
+        &self,
+        prompt: &str,
+        task: &RoutingTask,
+        contracts: bool,
+    ) -> RoutingSearch {
         let query: BTreeSet<_> = tokens(prompt).into_iter().collect();
         let mut result = RoutingSearch::default();
         for document in &self.documents {
-            if let Some(descriptor) = &document.descriptor
+            if contracts
+                && task
+                    .maximum_effect
+                    .is_some_and(|maximum| document.effect > maximum)
+            {
+                result
+                    .rejected
+                    .push((document.slug.clone(), RoutingRejection::EffectMismatch));
+                continue;
+            }
+            if contracts
+                && let Some(descriptor) = &document.descriptor
                 && let Some(reason) = contract_rejection(descriptor, task, &query)
             {
                 result.rejected.push((document.slug.clone(), reason));
@@ -256,6 +295,11 @@ impl RoutingIndex {
                 result.candidates.push(RoutingMatch {
                     slug: document.slug.clone(),
                     score,
+                    matched_terms: query
+                        .iter()
+                        .filter(|term| document.frequencies.contains_key(*term))
+                        .count(),
+                    query_terms: query.len(),
                 });
             }
         }
@@ -274,6 +318,15 @@ fn contract_rejection(
     task: &RoutingTask,
     query: &BTreeSet<String>,
 ) -> Option<RoutingRejection> {
+    if let Some(action) = &task.action
+        && !descriptor.actions.is_empty()
+        && !descriptor
+            .actions
+            .iter()
+            .any(|a| a.eq_ignore_ascii_case(action))
+    {
+        return Some(RoutingRejection::ActionMismatch);
+    }
     if task
         .maximum_effect
         .is_some_and(|maximum| descriptor.effects > maximum)
@@ -328,4 +381,133 @@ fn tokens(text: &str) -> Vec<String> {
             }
         })
         .collect()
+}
+
+/// A project choice, separate from the skill library. Default is the baseline.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RoutingPreferences {
+    #[serde(default)]
+    pub mode: RoutingMode,
+    #[serde(default)]
+    pub disabled: BTreeSet<String>,
+}
+impl RoutingPreferences {
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if self.disabled.len() > crate::MAX_SKILL_FILES {
+            return Err("too many disabled skills");
+        }
+        for slug in &self.disabled {
+            crate::SkillSlug::new(slug).map_err(|_| "invalid disabled skill identity")?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum RoutingOutcome {
+    Selected,
+    #[default]
+    NoSkillNeeded,
+    Ambiguous,
+    MissingPrecondition,
+    ExplicitInvalid,
+    Fallback,
+}
+
+/// No prompts or bodies. The host can render this without exposing task data.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RoutingTrace {
+    pub outcome: RoutingOutcome,
+    pub mode: RoutingMode,
+    pub reason: String,
+}
+
+/// Caller-owned context; resource assertions must come from validated host state.
+#[derive(Debug, Clone, Default)]
+pub struct RoutingOptions {
+    pub preferences: RoutingPreferences,
+    pub task: RoutingTask,
+}
+
+impl RoutingTask {
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if self
+            .action
+            .as_ref()
+            .is_some_and(|s| s.is_empty() || s.chars().count() > 240)
+            || self
+                .artifact
+                .as_ref()
+                .is_some_and(|s| s.is_empty() || s.chars().count() > 240)
+            || self.available_resources.as_ref().is_some_and(|r| {
+                r.len() > 8 || r.iter().any(|s| s.is_empty() || s.chars().count() > 240)
+            })
+        {
+            return Err("task hints exceed routing bounds");
+        }
+        Ok(())
+    }
+
+    /// Only adds restrictions from explicit task wording. It never asserts
+    /// resource availability or grants permission to write or publish.
+    pub fn narrow_from_prompt(mut self, prompt: &str) -> Self {
+        let lower = prompt.to_lowercase();
+        if self.action.is_none() {
+            let words: Vec<_> = lower.split_whitespace().take(4).collect();
+            let verb = match words.as_slice() {
+                ["please", verb, ..] | ["can" | "could" | "would", "you", verb, ..] => Some(*verb),
+                [verb, ..] => Some(*verb),
+                _ => None,
+            };
+            if let Some(verb) = verb
+                && [
+                    "read",
+                    "inspect",
+                    "review",
+                    "draft",
+                    "write",
+                    "create",
+                    "edit",
+                    "prepare",
+                    "execute",
+                    "publish",
+                    "send",
+                    "rewrite",
+                    "overwrite",
+                    "delete",
+                    "analyze",
+                    "summarize",
+                    "convert",
+                ]
+                .contains(&verb)
+            {
+                self.action = Some(verb.into());
+            }
+        }
+        if [
+            "read-only",
+            "read only",
+            "without changing",
+            "without modifying",
+            "do not change",
+            "don't change",
+        ]
+        .iter()
+        .any(|phrase| lower.contains(phrase))
+        {
+            self.maximum_effect = Some(RoutingEffect::ReadOnly);
+        }
+        self
+    }
+}
+
+/// Evaluation seam; native controls always use Full. Policy and loading gates
+/// remain in force for every condition.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum RoutingAblation {
+    DescriptorsWithStandardScorer,
+    LexicalWithoutContracts,
+    #[default]
+    Full,
 }

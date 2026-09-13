@@ -30,6 +30,12 @@ transport, stderr-only tracing, and orderly shutdown.
   create no evidence state; `tests/acceptance_controls.rs` checks the real isolated ACP
   process.
 
+- `/skills settings status|save mode standard|enhanced|save enable|disable <skill>`
+  uses the shared domain parser and harness preferences. Reads create no workspace
+  state; explicit saves affect later turns. Routing uses the same memory selector
+  and workspace preferences as TUI, with native permission/mode restrictions.
+  TUI owns the interactive grouped draft; ACP exposes explicit text saves.
+
 - Contain no session, provider-wire, or ACP-mapping business logic.
 - Stdout is exclusively newline-delimited ACP JSON-RPC.
 - Tests use loopback endpoints and synthetic credentials only. The shared process

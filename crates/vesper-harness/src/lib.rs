@@ -34,6 +34,7 @@ mod acceptance_snapshot;
 pub mod lens_tools;
 pub mod sandbox_backend;
 pub mod scope_holder;
+pub mod skill_routing_settings;
 mod web_runtime;
 pub mod web_service;
 pub mod web_settings;
@@ -2073,9 +2074,11 @@ mod tests {
         let tools =
             std::collections::BTreeSet::from(["read_skill".to_owned(), "delegate_task".to_owned()]);
         let report = service.orchestrate_skills(
+            local.path(),
             "Use skill isolated-review to inspect this pull request",
             None,
             &tools,
+            skill_routing_settings::RoutingTask::default(),
         );
         assert_eq!(report.selected_names(), vec!["isolated-review"]);
         assert!(report.selected[0].body.is_empty());
@@ -2591,21 +2594,28 @@ impl HarnessToolService {
     #[must_use]
     pub fn orchestrate_skills(
         &self,
+        root: &Path,
         prompt: &str,
         explicit_skill: Option<&str>,
         available_tools: &std::collections::BTreeSet<String>,
+        task: skill_routing_settings::RoutingTask,
     ) -> vesper_memory::SkillRoutingReport {
         let Some(store) = self.stores.skills() else {
             return vesper_memory::SkillRoutingReport::default();
         };
         let outcomes = self.skill_outcomes.adjustments();
-        store.orchestrate(&vesper_memory::SkillRoutingQuery {
-            prompt,
-            explicit_skill,
-            available_tools,
-            platform: std::env::consts::OS,
-            outcome_adjustments: &outcomes,
-        })
+        skill_routing_settings::route(
+            root,
+            store,
+            &vesper_memory::SkillRoutingQuery {
+                prompt,
+                explicit_skill,
+                available_tools,
+                platform: std::env::consts::OS,
+                outcome_adjustments: &outcomes,
+            },
+            task,
+        )
     }
 
     /// Feeds a verified terminal result back into the bounded in-process

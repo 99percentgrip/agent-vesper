@@ -4089,6 +4089,7 @@ version = "0.22.3"
 dependencies = [
  "serde",
  "serde_json",
+ "sha2 0.11.0",
  "tempfile",
  "thiserror",
  "vesper-domain",
