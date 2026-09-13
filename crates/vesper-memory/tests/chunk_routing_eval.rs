@@ -432,3 +432,99 @@ fn cross_talk_control_no_alias_slug_routes_honestly() {
 // keep Path import used for future corpus-directory variants
 #[allow(dead_code)]
 fn _path_helper(_: &Path) {}
+
+// ---------------------------------------------------------------------------
+// chunk-score-floor PRD PR-1: the noise-floor anchor (Option D discipline).
+//
+// PROVENANCE: these texts were found by an exact offline replication of the
+// shipped ranker (stem, stop-words, FNV-1a 64-dim signed hashing) searching
+// for disjoint natural-language token sets whose hashed cosine is maximally
+// positive. Offline measurement for the pin fixture:
+//   overlap = 0 tokens, cosine = +0.6547 -> 1,440 points (>> 0)
+//   name-match: none (probe contains no chunk name)
+// The ranker's admission filter is `score > 0`, so this chunk ROUTES on
+// pure hash noise despite zero literal overlap. The assertion below states
+// the CORRECT behavior (zero chunks routed). On the unhardened tree it
+// FAILS - that failure is the anchor receipt (`docs/foundation/
+// chunk-score-floor-pr1-execution.md`). PR-2 of the score-floor PRD adds
+// the conjunction gate `(overlap >= 1 || name_match) && score >= 520` and
+// removes this `#[ignore]`.
+// ---------------------------------------------------------------------------
+
+const NOISE_MANIFEST: &str = "---\nname: deepsea-echo-chart\ndescription: Deepsea echo chart of trench fauna and current layers\nchunks:\n  - name: bytecode-lexicon\n    description: Tensor lattice assembler socket linker opcode topology\n    summary: Register compiler daemon proxy heap stack queue grammar\n    key_elements: [vector, manifold, buffer]\n";
+
+fn noise_positions(store: &SkillStore, prompt: &str) -> Vec<String> {
+    let env = QueryEnv::default();
+    let query = SkillRoutingQuery {
+        prompt,
+        explicit_skill: Some("deepsea-echo-chart"),
+        available_tools: &env.tools,
+        platform: "linux",
+        outcome_adjustments: &env.outcomes,
+    };
+    let report =
+        store.orchestrate_with_condition(&query, ChunkRoutingCondition::SummaryKeyElements);
+    report
+        .selected
+        .iter()
+        .flat_map(|skill| skill.chunks.iter().map(|chunk| chunk.name.clone()))
+        .collect()
+}
+
+fn noise_store() -> (tempfile::TempDir, SkillStore) {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path().join("memory-root");
+    std::fs::create_dir_all(&root).unwrap();
+    let store = SkillStore::open(&root).unwrap();
+    store
+        .write(
+            &SkillSlug::new("deepsea-echo-chart").unwrap(),
+            &format!("{NOISE_MANIFEST}---\n# Deepsea Echo Chart\nPrimary body."),
+        )
+        .unwrap();
+    let dir = root
+        .join("skills")
+        .join("deepsea-echo-chart")
+        .join("chunks");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("bytecode-lexicon.md"),
+        "Tensor lattice assembler socket linker opcode content.",
+    )
+    .unwrap();
+    (directory, store)
+}
+
+/// NOISE-FLOOR PIN: a zero-overlap, no-name-match prompt must route ZERO
+/// chunks. Fails on the unhardened tree (1,440 pure-cosine points admit
+/// `bytecode-lexicon`); PR-2 flips it green and unignores it.
+#[test]
+#[ignore = "score-floor PR-2 pending: anchor pins the noise-floor defect; see docs/chunk-score-floor-prd.md"]
+fn noise_floor_pin_zero_overlap_prompt_routes_nothing() {
+    let (_dir, store) = noise_store();
+    // Zero literal overlap (verified offline: geography tokens vs compiler
+    // tokens, no alias pairs, no stop-word residue), no name-match. The
+    // only possible score source is signed-hash cosine noise.
+    let positions = noise_positions(&store, "mesa geyser lagoon cove glacier");
+    assert!(
+        positions.is_empty(),
+        "\nNOISE-FLOOR PIN: zero-overlap prompt routed chunks on pure cosine \
+         hash noise.\nprompt tokens: {{mesa, geyser, lagoon, cove, glacier}}\n\
+         routed: {positions:?}\nExpected: no chunks (no literal signal). \
+         Fix: score-floor PRD PR-2 conjunction gate."
+    );
+}
+
+/// CONTROL: a prompt WITH genuine overlap still routes the chunk - the pin
+/// must not be satisfiable by over-tightening in PR-2. Same fixture,
+/// prompt shares tensor/lattice/opcode with the chunk description.
+#[test]
+fn noise_floor_control_genuine_overlap_still_routes() {
+    let (_dir, store) = noise_store();
+    let positions = noise_positions(&store, "explain the tensor lattice of opcodes");
+    assert_eq!(
+        positions.first().map(String::as_str),
+        Some("bytecode-lexicon"),
+        "control: genuine overlap must still route, got {positions:?}"
+    );
+}
