@@ -54,6 +54,26 @@ No microphone access, dependency installation, provider calls or program tests.
 - Existing `VoiceRecording::drop` kills/waits and removes the WAV. Preserve that
   cleanup ownership while introducing background work and cancellation.
 
+## Recording duration follow-up
+
+Alex reported a remembered short-recording limitation. Current `main.rs:4845–4859`
+passes no duration argument to arecord/afrecord, and the host has no short capture
+timer in `toggle_voice_recording`. This does not establish unlimited backend or
+filesystem capacity, nor reproduce the historical symptom.
+
+There is a fixed **90-second transcription response timeout** in
+`transcribe_via_sidecar` (`main.rs:4743–4766`), applied after Stop. The sidecar
+consumes every segment before returning a single result (`main.rs:1060–1064`).
+Long audio or a slow CPU can therefore time out without exposing partial progress.
+On error the sidecar is dropped; the caller then removes the WAV before examining
+the outcome (`main.rs:4794–4795`). This can lose retryable audio. It is a concrete
+current defect, but not proof that it caused Alex's remembered recording cutoff.
+
+The PRD now requires user-controlled long capture, elapsed time, progress-aware
+chunked transcription, genuine stall bounds, and private session-local Retry/Discard
+recovery. These are requirements, not implemented behavior. Follow-up verification
+was source inspection and Markdown/whitespace checks only.
+
 ## Proposed repair
 
 Restore a high-priority persistent voice control; project Idle/Preparing/Recording/

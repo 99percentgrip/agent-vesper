@@ -1,7 +1,8 @@
 # Foundation Evidence Index
 
 [Voice-control recon](voice-control-recon.md) identifies the footer omission in
-`e924596`; dynamic microphone control is specified, not yet implemented.
+`e924596` and the fixed 90-second transcription timeout/audio-loss path; dynamic
+control and long-dictation recovery are specified, not yet implemented.
 
 [v0.22.5 release](v0.22.5-release-execution.md) records successful exact-commit gates, five-platform publication, download verification and registry PR #539 update. Local installation was preserved.
 

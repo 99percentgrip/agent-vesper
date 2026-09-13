@@ -29,6 +29,15 @@ red square with “Stop” during capture. Keep F5 as the equivalent shortcut.
 8. Preserve current supported recorder backends and report unsupported platforms
    honestly. ACP has no microphone terminal UI; no protocol control is invented.
 
+9. Support long dictation until the user presses Stop; no arbitrary short capture
+   cutoff. Display elapsed recording time. If disk/backend limits prevent further
+   capture, stop truthfully and preserve recoverable work with an explicit message.
+10. Transcribe longer audio incrementally or in bounded chunks with progress and
+    cancellation. Do not apply the existing fixed 90-second whole-recording timeout.
+    Bound stalled work without discarding completed chunks. Preserve session-local
+    audio for explicit Retry/Discard after failures; disclose retention, keep it
+    private, and clean up on discard/session exit. Never silently delete failed audio.
+
 ## Acceptance
 
 - Real renderer frames at 40/80/120 columns and all themes: idle/recording/
@@ -37,6 +46,9 @@ red square with “Stop” during capture. Keep F5 as the equivalent shortcut.
   tests of only already-visible chips cannot detect another omission.
 - Controlled recorder/sidecar process tests: start, stop, early exit, duplicate
   input, delayed transcription, cancellation, shutdown and temporary WAV cleanup.
+- Long dictation regression (at least 10 minutes of synthetic audio), slow but
+  progressing transcription beyond 90 seconds, genuine stalled transcription,
+  ordered chunk assembly without duplicated/lost text, retry/discard and disk failure.
 - Actual terminal flow: click and F5, resize/focus/overlay behavior, composer
   preservation and no auto-send. Real microphone/OS permission acceptance must
   be separately recorded; no recording of Alex is part of recon.

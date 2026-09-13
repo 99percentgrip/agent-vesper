@@ -78,7 +78,9 @@ Default section order:
 
 - Requested microphone UI: keep a visible bottom-panel red circle “Push to talk”
   toggle that becomes a red square “Stop” while recording. One click starts, one
-  click stops; preserve F5, truthful recorder state and responsive input.
+  click stops; preserve F5, truthful recorder state and responsive input. Support
+  long dictation until Stop, with elapsed time, responsive transcription progress
+  and explicit retry/discard after errors rather than silently losing the audio.
 
 - Optional dependency setup belongs in native Settings: detect healthy local
   runtimes, offer confirmed setup/repair, show real progress and verify readiness.
