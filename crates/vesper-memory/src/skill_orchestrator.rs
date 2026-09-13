@@ -1354,7 +1354,12 @@ fn rank_chunks<'a>(
             }
             // Name-match bonus mirrors the skill-level name-match term so a
             // prompt naming the chunk routes to it deterministically.
-            let name_match = phrase_matches(prompt, &entry.name);
+            // Score-floor PRD Q1: the chunk tier matches the name as a
+            // DELIMITER-BOUNDED token (see `chunk_name_matches`), so a
+            // name embedded inside a longer word or hyphen-chain cannot
+            // admit a zero-overlap chunk. Skill-tier `phrase_matches`
+            // (plain contains, 4 call sites) is deliberately untouched.
+            let name_match = chunk_name_matches(prompt, &entry.name);
             if name_match {
                 score += 3_500;
             }
@@ -1955,6 +1960,48 @@ fn hashed_cosine(left: &BTreeSet<String>, right: &BTreeSet<String>) -> f32 {
 fn phrase_matches(haystack: &str, needle: &str) -> bool {
     let needle = normalized(needle);
     !needle.is_empty() && haystack.contains(&needle)
+}
+
+/// Chunk-tier name matching (score-floor PRD Q1): the chunk name must
+/// stand as its own delimiter-bounded token in the prompt, not a
+/// substring of a longer word or hyphen-chain. `phrase_matches` is plain
+/// `contains`, which admitted chunks whose name merely occurs inside
+/// unrelated words (measured: `comet` inside `pcometq` and
+/// `auto-comet-review`) even with zero routing-text overlap.
+///
+/// Boundary rule: the character before and after the occurrence must not
+/// be a continuation of the name's own alphabet (`[a-z0-9-_]` — the same
+/// charset chunk names are validated against at `parse` time), else the
+/// name is part of a longer identifier/word and not an address.
+/// Hyphens/underscores inside the name are allowed; adjacency beyond
+/// them is not. This preserves the routing-map contract (`comet`,
+/// `"comet"`, `read comet,` route) while closing the substring accident.
+/// Skill-tier matching (`phrase_matches`) is unchanged — this rule is
+/// chunk-tier-local.
+fn chunk_name_matches(haystack: &str, name: &str) -> bool {
+    let needle = normalized(name);
+    if needle.is_empty() {
+        return false;
+    }
+    let is_boundary = |character: Option<char>| match character {
+        None => true,
+        Some(character) => {
+            !character.is_ascii_alphanumeric() && character != '-' && character != '_'
+        }
+    };
+    let haystack_lower = haystack.to_ascii_lowercase();
+    let mut search_from = 0;
+    while let Some(found) = haystack_lower[search_from..].find(&needle) {
+        let start = search_from + found;
+        let end = start + needle.len();
+        if is_boundary(haystack_lower[..start].chars().next_back())
+            && is_boundary(haystack_lower[end..].chars().next())
+        {
+            return true;
+        }
+        search_from = end;
+    }
+    false
 }
 
 fn normalized(value: &str) -> String {

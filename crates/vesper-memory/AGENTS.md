@@ -151,6 +151,14 @@ subsystem that backs the Tier C Phase 8 un-stubbed commands
     asserts zero-overlap prompts route zero chunks; the
     genuine-overlap control stays green. Skill-tier arithmetic
     (`AUTO_ACTIVATION_SCORE`) untouched.
+  - Chunk-name admission is **delimiter-bounded** (PRD Q1, resolved
+    2026-09-13): `chunk_name_matches` requires the validated name
+    alphabet `[a-z0-9-_]` to not continue past either edge of the
+    occurrence, so `comet` does not admit from `pcometq` or
+    `auto-comet-review`, while `comet`, `"comet"`, `read comet,` still
+    route. Skill-tier `phrase_matches` (plain `contains`, 4 call sites:
+    slug/name scoring, triggers, exclusions, risk terms) is deliberately
+    unchanged — the boundary rule is chunk-tier-local.
 
 ## Work Guidance
 

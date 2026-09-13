@@ -529,3 +529,98 @@ fn noise_floor_control_genuine_overlap_still_routes() {
         "control: genuine overlap must still route, got {positions:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// score-floor PRD Q1: the chunk-name address must be DELIMITER-BOUNDED.
+//
+// The PR-2 gate left name-match as an independent admission path
+// (+3,500, `literal_signal = true`). Q1 parked the question of
+// name-substring accidents "until evidence appears". The evidence class:
+// `phrase_matches` is plain `contains`, so a chunk named `comet` matches
+// inside `pcometq` or `auto-comet-review` — a zero-overlap prompt
+// embedding the name as a substring of a longer word/hyphen-chain
+// admits the chunk on pure accident. The routing-map contract is "name a
+// chunk, get that chunk": the name must stand as its own token.
+// Skill-tier matching (`phrase_matches`, 4 call sites) is NOT touched —
+// this is a chunk-tier-local rule.
+// ---------------------------------------------------------------------------
+
+const NAME_EMBED_MANIFEST: &str = "---\nname: atlas-observatory\ndescription: Atlas observatory schedule of comets and meteor showers\nchunks:\n  - name: comet\n    description: Quasar nebula pulsar asteroid belt survey cadence\n";
+
+fn name_embed_store() -> (tempfile::TempDir, SkillStore) {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path().join("memory-root");
+    std::fs::create_dir_all(&root).unwrap();
+    let store = SkillStore::open(&root).unwrap();
+    store
+        .write(
+            &SkillSlug::new("atlas-observatory").unwrap(),
+            &format!("{NAME_EMBED_MANIFEST}---\n# Atlas Observatory\nPrimary body."),
+        )
+        .unwrap();
+    let dir = root.join("skills").join("atlas-observatory").join("chunks");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("comet.md"), "Quasar cadence survey body.").unwrap();
+    (directory, store)
+}
+
+fn name_embed_positions(store: &SkillStore, prompt: &str) -> Vec<String> {
+    let env = QueryEnv::default();
+    let query = SkillRoutingQuery {
+        prompt,
+        explicit_skill: Some("atlas-observatory"),
+        available_tools: &env.tools,
+        platform: "linux",
+        outcome_adjustments: &env.outcomes,
+    };
+    let report =
+        store.orchestrate_with_condition(&query, ChunkRoutingCondition::SummaryKeyElements);
+    report
+        .selected
+        .iter()
+        .flat_map(|skill| skill.chunks.iter().map(|chunk| chunk.name.clone()))
+        .collect()
+}
+
+/// Q1 PIN: a chunk name embedded as a substring of a longer word or
+/// hyphen-chain must NOT admit the chunk. The prompts below share zero
+/// routing-text tokens with the chunk (`comet`'s description is quasar
+/// vocabulary); the only possible admission source is the accidental
+/// `contains` name hit.
+#[test]
+fn chunk_name_embedded_substring_does_not_admit() {
+    let (_dir, store) = name_embed_store();
+    for prompt in [
+        "reorganize the pcometq chronicle into chapters",
+        "auto-comet-review pipeline status",
+    ] {
+        let positions = name_embed_positions(&store, prompt);
+        assert!(
+            positions.is_empty(),
+            "\nQ1 PIN: embedded chunk-name substring admitted a zero-overlap \
+             chunk.\nprompt: {prompt}\nrouted: {positions:?}\nExpected: no \
+             chunks (the name `comet` is not a standalone token). Fix: \
+             score-floor PRD Q1 delimiter-bounded chunk-name matching."
+        );
+    }
+}
+
+/// Q1 CONTROL: a delimiter-bounded chunk name still routes deterministically
+/// (word boundaries, string start, string end, and punctuation).
+#[test]
+fn chunk_name_delimited_still_routes() {
+    let (_dir, store) = name_embed_store();
+    for prompt in [
+        "open the comet chapter",
+        "comet",
+        "read comet, then the nebula notes",
+        "\"comet\" section please",
+    ] {
+        let positions = name_embed_positions(&store, prompt);
+        assert_eq!(
+            positions.first().map(String::as_str),
+            Some("comet"),
+            "control: delimited name must still route, got {positions:?} for {prompt:?}"
+        );
+    }
+}

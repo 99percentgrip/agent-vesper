@@ -153,9 +153,16 @@ stop rule in PR-3 governs.
 
 ## 8. Open questions
 
-- Q1: Should the name-match path also require ≥1 token beyond the name
-  itself? (Current: no — routing map is the documented fallback.) Default:
-  keep as-is; revisit only with evidence of name-substring accidents.
+- Q1: ~~Should the name-match path also require ≥1 token beyond the name
+  itself?~~ **Resolved 2026-09-13 (owner directive, post-PR-2):** the
+  chunk name must be **delimiter-bounded** (`chunk_name_matches`) — the
+  name's own alphabet `[a-z0-9-_]` cannot continue past either edge of
+  the occurrence — instead of `contains`. Embedded substrings
+  (`comet` in `pcometq`, `auto-comet-review`) no longer admit; delimited
+  addressing (`comet`, `"comet"`, `read comet,`) still routes. Red-receipt
+  pin + control in `tests/chunk_routing_eval.rs`. Skill-tier
+  `phrase_matches` deliberately unchanged (scope fence). Evidence:
+  `docs/foundation/chunk-score-floor-q1-execution.md`.
 - Q2: Expose `MIN_CHUNK_ROUTING_SCORE` in routing-rejection reasons when a
   chunk with overlap is suppressed? (Currently sub-floor chunks are simply
   ineligible — invisible in reports.) Default: no report noise until a real
@@ -180,3 +187,9 @@ stop rule in PR-3 governs.
   2 prior-unit dollar tests + 1 unignored anchor). Acceptance 23/23,
   clippy clean, naming-guard clean. Skill tier byte-identical. Evidence:
   `docs/foundation/chunk-score-floor-pr2-execution.md`.
+- 2026-09-13: Q1 resolved by owner directive. Chunk-name admission is now
+  delimiter-bounded (`chunk_name_matches`): embedded substrings cannot
+  admit, delimited names still route. Pin (red-first) + control added;
+  skill tier untouched. Floor 2,258; acceptance 23/23; clippy, fmt,
+  naming-guard clean. Evidence:
+  `docs/foundation/chunk-score-floor-q1-execution.md`.
