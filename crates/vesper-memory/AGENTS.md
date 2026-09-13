@@ -66,6 +66,9 @@ subsystem that backs the Tier C Phase 8 un-stubbed commands
   and 60,000 total; isolated bodies are never returned to the main context.
   Selection and bundle activation never grant tool or external-side-effect
   permission.
+- Dollar shorthand activates only a complete installed skill name, parsed before
+  path normalization. Math, currency and unknown shell variables stay prompt text;
+  explicit named requests still fail closed for missing or ineligible skills.
 - Catalog discovery reads at most 32,000 bytes from each skill file. Full
   bodies are read only for selected inline skills; the main process never
   reads a selected isolated skill's full body.

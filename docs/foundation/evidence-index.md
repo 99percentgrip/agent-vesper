@@ -2,6 +2,24 @@
 
 Status: evidence index; acceptance status is scoped to each section.
 
+## Routing / score-floor coexistence — 2026-09-13
+
+[Reconnaissance](skill-routing-coexistence-recon.md) records GLM PR-1 commit
+`5cf5835`, overlapping files, isolated routing checkout, library preservation and
+required combined acceptance. Implementation is approved; final acceptance pending.
+
+## Skill routing quality proposal — 2026-09-13
+
+[Research execution](skill-routing-quality-research.md) links the
+[proposed PRD](../skill-routing-quality-prd.md), creator video metadata, primary
+research and current code findings. Design only: no routing-quality benchmark or
+implementation claimed; full video/caption access limitations are explicit.
+
+## Dollar-token skill routing repair — 2026-09-13
+
+[Repair execution](dollar-skill-routing-repair.md) reproduces pasted LaTeX being
+misread as a missing skill and records shared TUI/ACP routing repair and limits.
+
 ## GitHub front-page refresh — 2026-09-13
 
 [Execution report](readme-refresh-execution.md) records the README update for

@@ -35,6 +35,13 @@ Own durable project documentation and evidence-backed engineering records.
 - `web-tools.md` owns web-driver installation, immutable image identity,
   native Settings → Web tools and ACP `/web` activation, advanced opt-in
   configuration, operation bounds, and deployment troubleshooting.
+- `skill-routing-quality-prd.md` owns the proposed descriptor/search/contract
+  routing improvements and measured adoption gates. The primary goal is automatic
+  selection of the correct skill from natural task descriptions, without requiring
+  users to name skills. Preserve Alex's complete
+  installed skill library: task shortlisting must not delete, automatically
+  archive/disable or rewrite skill sources or user edits. It does not authorize
+  full-body ranking or supersede ADR 0024 or the pending chunk-floor repair.
 - `output-visual-upgrade-prd.md` owns semantic activity colors, truthful status
   dots, syntax-colored numbered diffs, and aligned responsive reports.
 - `settings-and-update-prd.md` owns theme consistency, grouped Settings saves,

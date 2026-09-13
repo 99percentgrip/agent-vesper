@@ -396,3 +396,9 @@ time; passing unrelated tests or plan checkmarks is not evidence.
    `crates/vesper-memory/tests/chunk_routing_eval.rs` — deterministic,
    offline, self-testing, and emitting the canonical results table under
    `-- --nocapture`; no xtask command needed for the current corpus scale.
+
+## Subsequent prompt-routing repair
+
+[Dollar-token repair](foundation/dollar-skill-routing-repair.md) records the
+shared explicit-selection parser correction for math and shell text in pasted
+prompts. Chunk ranking, budgets and the D3 verdict are unchanged.

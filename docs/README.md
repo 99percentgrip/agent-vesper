@@ -32,6 +32,7 @@ For changes between versions, read the [release notes](https://github.com/99perc
 
 These describe requirements, design decisions, and past implementation work. A specification or historical completion report is not a promise that every described feature is available in your installed version. Use the current status and release notes above.
 
+- [Skill routing quality proposal](skill-routing-quality-prd.md)
 - [Reasoning orchestration](agent-vesper-reasoning-orchestrator-prd.md)
 - [Provider capabilities](provider-capability-gating-prd.md)
 - [Web tools](web-oracle-extraction-prd.md)

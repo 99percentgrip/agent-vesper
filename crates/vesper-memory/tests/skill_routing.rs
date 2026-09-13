@@ -472,3 +472,54 @@ fn chunk_less_skills_route_byte_identically_at_routing_phase() {
     assert!(context.contains("Use the workbook helpers."));
     assert!(!context.contains("agent-vesper-skill-chunk"));
 }
+
+#[test]
+fn dollar_literals_do_not_block_prompt_routing() {
+    let (_dir, store) = fixture_store();
+    let env = QueryEnv::default();
+    for prompt in [
+        r"Continue PR-2: overlap $\ge$ 1 and score $\ge$ 520.",
+        "Explain $HOME and $PATH, ${USER}, $(pwd), and $1.",
+        "Budget is $100. Explain $unknown and $x$.",
+    ] {
+        let report = store.orchestrate(&env.query(prompt));
+        assert!(
+            report.explicit_error.is_none(),
+            "{prompt}: {:?}",
+            report.explicit_error
+        );
+    }
+}
+
+#[test]
+fn dollar_shorthand_requires_a_complete_catalog_name() {
+    let store = curated_store();
+    let env = QueryEnv::default();
+    let report = store.orchestrate(&env.query(r"Explain $\ge$ then use $xlsx, please."));
+    assert!(report.explicit_error.is_none());
+    assert!(
+        report
+            .selected
+            .iter()
+            .any(|skill| skill.candidate.reasons == ["explicit user selection"])
+    );
+    for prompt in ["$xlsx$", "$xlsx/file", "$xlsx.csv", "$xlsx=1"] {
+        let report = store.orchestrate(&env.query(prompt));
+        // Literal text may still match automatic metadata; it is not explicit.
+        assert!(report.selected.iter().all(|skill| {
+            !skill
+                .candidate
+                .reasons
+                .iter()
+                .any(|reason| reason == "explicit user selection")
+        }));
+        assert!(report.explicit_error.is_none(), "{prompt}");
+    }
+    let report = store.orchestrate(&env.query("use skill nonexistent-skill"));
+    assert!(report.explicit_error.is_some());
+    let report = store.orchestrate(&SkillRoutingQuery {
+        explicit_skill: Some("nonexistent-skill"),
+        ..env.query("Continue the task")
+    });
+    assert!(report.explicit_error.is_some());
+}

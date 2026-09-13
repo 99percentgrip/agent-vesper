@@ -427,7 +427,8 @@ impl SkillStore {
         let explicit = query
             .explicit_skill
             .map(normalized)
-            .or_else(|| explicit_skill_from_prompt(&prompt));
+            .or_else(|| explicit_skill_from_prompt(&prompt))
+            .or_else(|| dollar_skill_from_prompt(query.prompt, &summaries));
         let explicit_bundle = explicit_bundle_from_prompt(&prompt, &bundles);
         let bundle_members: BTreeSet<String> = explicit_bundle
             .as_ref()
@@ -1254,10 +1255,30 @@ fn explicit_skill_from_prompt(prompt: &str) -> Option<String> {
             return Some(slug);
         }
     }
-    prompt
-        .split_whitespace()
-        .find_map(|token| token.strip_prefix('$').map(first_slug))
-        .filter(|slug| !slug.is_empty())
+    None
+}
+
+// Dollar signs also introduce math, currency and shell syntax. Only a complete
+// catalog name is shorthand; unknown names require an explicit skill command.
+// Inspect original text before normalization can turn paths into skill names.
+fn dollar_skill_from_prompt(prompt: &str, summaries: &[SkillSummary]) -> Option<String> {
+    prompt.split_whitespace().find_map(|token| {
+        let name = token
+            .strip_prefix('$')?
+            .trim_end_matches([',', '.', ';', ':', '!', '?']);
+        if name.is_empty()
+            || !name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        {
+            return None;
+        }
+        let slug = normalized(name);
+        summaries
+            .iter()
+            .any(|summary| normalized(&summary.slug) == slug)
+            .then_some(slug)
+    })
 }
 
 fn first_slug(value: &str) -> String {
