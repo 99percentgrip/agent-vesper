@@ -2,6 +2,12 @@
 
 Status: evidence index; acceptance status is scoped to each section.
 
+## Skill routing implementation — in progress — 2026-09-13
+
+[Implementation ledger](skill-routing-quality-implementation.md) records the
+isolated descriptor/retrieval foundation, frozen 240-query corpus, actual baseline
+failures and outstanding host/quality/coexistence acceptance. No completion claim.
+
 ## Routing / score-floor coexistence — 2026-09-13
 
 [Reconnaissance](skill-routing-coexistence-recon.md) records GLM PR-1 commit

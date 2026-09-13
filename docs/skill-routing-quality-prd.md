@@ -5,6 +5,7 @@ Date: 2026-09-13. Owner: Alex (product); shared memory/harness composition.
 Baseline inspected: `5cf5835f78d8e779443188c3490172d7736a589a` plus the uncommitted
 [dollar-token repair](foundation/dollar-skill-routing-repair.md).
 [Research and execution record](foundation/skill-routing-quality-research.md).
+[Implementation ledger](foundation/skill-routing-quality-implementation.md).
 
 ## 1. Objective
 

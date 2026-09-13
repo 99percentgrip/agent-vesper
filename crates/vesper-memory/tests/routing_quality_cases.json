@@ -1,0 +1,3107 @@
+{
+  "version": 1,
+  "status": "frozen-before-enhanced-integration",
+  "notes": "Real-catalog positive tasks plus explicitly synthetic sibling/resource contract fixtures. Labels authored from task requirements, never router outputs. Ambiguous cases retain failures for review.",
+  "cases": [
+    {
+      "id": "q001",
+      "category": "positive",
+      "family": "spreadsheet",
+      "group": "spreadsheet-0",
+      "split": "development",
+      "prompt": "Put these quarterly figures into an Excel workbook",
+      "acceptable": [
+        "xlsx"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q002",
+      "category": "positive",
+      "family": "spreadsheet",
+      "group": "spreadsheet-1",
+      "split": "held_out",
+      "prompt": "Create a table with formulas and a chart in an xlsx file",
+      "acceptable": [
+        "xlsx"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q003",
+      "category": "positive",
+      "family": "spreadsheet",
+      "group": "spreadsheet-2",
+      "split": "development",
+      "prompt": "Combine these CSV exports in a workbook",
+      "acceptable": [
+        "xlsx"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q004",
+      "category": "positive",
+      "family": "spreadsheet",
+      "group": "spreadsheet-3",
+      "split": "held_out",
+      "prompt": "Make an editable financial spreadsheet from this data",
+      "acceptable": [
+        "xlsx"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q005",
+      "category": "positive",
+      "family": "spreadsheet",
+      "group": "spreadsheet-4",
+      "split": "development",
+      "prompt": "Clean this Excel file and preserve its formulas",
+      "acceptable": [
+        "xlsx"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q006",
+      "category": "positive",
+      "family": "spreadsheet",
+      "group": "spreadsheet-5",
+      "split": "held_out",
+      "prompt": "Build a budget sheet with monthly totals",
+      "acceptable": [
+        "xlsx"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q007",
+      "category": "positive",
+      "family": "document",
+      "group": "document-6",
+      "split": "development",
+      "prompt": "Turn this outline into an editable Word document",
+      "acceptable": [
+        "docx"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q008",
+      "category": "positive",
+      "family": "document",
+      "group": "document-7",
+      "split": "held_out",
+      "prompt": "Make a docx proposal using this template",
+      "acceptable": [
+        "docx"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q009",
+      "category": "positive",
+      "family": "document",
+      "group": "document-8",
+      "split": "development",
+      "prompt": "Update the wording in this Word file",
+      "acceptable": [
+        "docx"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q010",
+      "category": "positive",
+      "family": "document",
+      "group": "document-9",
+      "split": "held_out",
+      "prompt": "Prepare a formatted letter in docx format",
+      "acceptable": [
+        "docx"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q011",
+      "category": "positive",
+      "family": "document",
+      "group": "document-10",
+      "split": "development",
+      "prompt": "Read the tables from this Word document",
+      "acceptable": [
+        "docx"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q012",
+      "category": "positive",
+      "family": "document",
+      "group": "document-11",
+      "split": "held_out",
+      "prompt": "Produce an editable Word report from these notes",
+      "acceptable": [
+        "docx"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q013",
+      "category": "positive",
+      "family": "presentation",
+      "group": "presentation-12",
+      "split": "development",
+      "prompt": "Make an investor pitch deck as a pptx",
+      "acceptable": [
+        "powerpoint"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q014",
+      "category": "positive",
+      "family": "presentation",
+      "group": "presentation-13",
+      "split": "held_out",
+      "prompt": "Turn this report into ten presentation slides",
+      "acceptable": [
+        "powerpoint"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q015",
+      "category": "positive",
+      "family": "presentation",
+      "group": "presentation-14",
+      "split": "development",
+      "prompt": "Edit the charts in this PowerPoint deck",
+      "acceptable": [
+        "powerpoint"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q016",
+      "category": "positive",
+      "family": "presentation",
+      "group": "presentation-15",
+      "split": "held_out",
+      "prompt": "Build an editable slide presentation",
+      "acceptable": [
+        "powerpoint"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q017",
+      "category": "positive",
+      "family": "presentation",
+      "group": "presentation-16",
+      "split": "development",
+      "prompt": "Read the text from this pptx file",
+      "acceptable": [
+        "powerpoint"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q018",
+      "category": "positive",
+      "family": "presentation",
+      "group": "presentation-17",
+      "split": "held_out",
+      "prompt": "Create a training deck with speaker notes",
+      "acceptable": [
+        "powerpoint"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q019",
+      "category": "positive",
+      "family": "pdf",
+      "group": "pdf-18",
+      "split": "development",
+      "prompt": "Merge these Portable Document Format files into one",
+      "acceptable": [
+        "pdf"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q020",
+      "category": "positive",
+      "family": "pdf",
+      "group": "pdf-19",
+      "split": "held_out",
+      "prompt": "Fill in this Portable Document Format form",
+      "acceptable": [
+        "pdf"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q021",
+      "category": "positive",
+      "family": "pdf",
+      "group": "pdf-20",
+      "split": "development",
+      "prompt": "Produce a Portable Document Format version of this report",
+      "acceptable": [
+        "pdf"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q022",
+      "category": "positive",
+      "family": "pdf",
+      "group": "pdf-21",
+      "split": "held_out",
+      "prompt": "Split this Portable Document Format file into separate documents",
+      "acceptable": [
+        "pdf"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q023",
+      "category": "positive",
+      "family": "pdf",
+      "group": "pdf-22",
+      "split": "development",
+      "prompt": "Password-protect this Portable Document Format file",
+      "acceptable": [
+        "pdf"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q024",
+      "category": "positive",
+      "family": "pdf",
+      "group": "pdf-23",
+      "split": "held_out",
+      "prompt": "Read this Portable Document Format document",
+      "acceptable": [
+        "pdf"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q025",
+      "category": "positive",
+      "family": "papers",
+      "group": "papers-24",
+      "split": "development",
+      "prompt": "Find recent papers on arXiv about transformers",
+      "acceptable": [
+        "arxiv"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q026",
+      "category": "positive",
+      "family": "papers",
+      "group": "papers-25",
+      "split": "held_out",
+      "prompt": "Look up an arXiv paper by its identifier",
+      "acceptable": [
+        "arxiv"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q027",
+      "category": "positive",
+      "family": "papers",
+      "group": "papers-26",
+      "split": "development",
+      "prompt": "Search arXiv for papers by this author",
+      "acceptable": [
+        "arxiv"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q028",
+      "category": "positive",
+      "family": "papers",
+      "group": "papers-27",
+      "split": "held_out",
+      "prompt": "Find preprints in the arXiv machine learning category",
+      "acceptable": [
+        "arxiv"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q029",
+      "category": "positive",
+      "family": "papers",
+      "group": "papers-28",
+      "split": "development",
+      "prompt": "Find arXiv research about graph neural networks",
+      "acceptable": [
+        "arxiv"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q030",
+      "category": "positive",
+      "family": "papers",
+      "group": "papers-29",
+      "split": "held_out",
+      "prompt": "Search academic preprints on arXiv for diffusion models",
+      "acceptable": [
+        "arxiv"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q031",
+      "category": "positive",
+      "family": "geography",
+      "group": "geography-30",
+      "split": "development",
+      "prompt": "Find driving directions between these two addresses",
+      "acceptable": [
+        "maps"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q032",
+      "category": "positive",
+      "family": "geography",
+      "group": "geography-31",
+      "split": "held_out",
+      "prompt": "Geocode this postal address",
+      "acceptable": [
+        "maps"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q033",
+      "category": "positive",
+      "family": "geography",
+      "group": "geography-32",
+      "split": "development",
+      "prompt": "Find points of interest near this location",
+      "acceptable": [
+        "maps"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q034",
+      "category": "positive",
+      "family": "geography",
+      "group": "geography-33",
+      "split": "held_out",
+      "prompt": "Calculate a route using OpenStreetMap",
+      "acceptable": [
+        "maps"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q035",
+      "category": "positive",
+      "family": "geography",
+      "group": "geography-34",
+      "split": "development",
+      "prompt": "Determine the timezone for these coordinates",
+      "acceptable": [
+        "maps"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q036",
+      "category": "positive",
+      "family": "geography",
+      "group": "geography-35",
+      "split": "held_out",
+      "prompt": "Locate nearby cafes on an OpenStreetMap map",
+      "acceptable": [
+        "maps"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q037",
+      "category": "positive",
+      "family": "review",
+      "group": "review-36",
+      "split": "development",
+      "prompt": "Review this pull request for correctness",
+      "acceptable": [
+        "github-code-review"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q038",
+      "category": "positive",
+      "family": "review",
+      "group": "review-37",
+      "split": "held_out",
+      "prompt": "Examine the diff of this GitHub PR",
+      "acceptable": [
+        "github-code-review"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q039",
+      "category": "positive",
+      "family": "review",
+      "group": "review-38",
+      "split": "development",
+      "prompt": "Check this PR and draft review comments",
+      "acceptable": [
+        "github-code-review"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q040",
+      "category": "positive",
+      "family": "review",
+      "group": "review-39",
+      "split": "held_out",
+      "prompt": "Inspect the changes in this GitHub pull request",
+      "acceptable": [
+        "github-code-review"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q041",
+      "category": "positive",
+      "family": "review",
+      "group": "review-40",
+      "split": "development",
+      "prompt": "Review this GitHub code diff for regressions",
+      "acceptable": [
+        "github-code-review"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q042",
+      "category": "positive",
+      "family": "review",
+      "group": "review-41",
+      "split": "held_out",
+      "prompt": "Read the pull request and identify bugs",
+      "acceptable": [
+        "github-code-review"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q043",
+      "category": "positive",
+      "family": "planning",
+      "group": "planning-42",
+      "split": "development",
+      "prompt": "Outline the refactor steps in markdown without executing them",
+      "acceptable": [
+        "plan"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q044",
+      "category": "positive",
+      "family": "planning",
+      "group": "planning-43",
+      "split": "held_out",
+      "prompt": "List implementation stages in a markdown file before coding",
+      "acceptable": [
+        "plan"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q045",
+      "category": "positive",
+      "family": "planning",
+      "group": "planning-44",
+      "split": "development",
+      "prompt": "Write a phased implementation outline; do not edit source files",
+      "acceptable": [
+        "plan"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q046",
+      "category": "positive",
+      "family": "planning",
+      "group": "planning-45",
+      "split": "held_out",
+      "prompt": "Describe the sequence of work and save it as markdown",
+      "acceptable": [
+        "plan"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q047",
+      "category": "positive",
+      "family": "planning",
+      "group": "planning-46",
+      "split": "development",
+      "prompt": "Prepare a written task breakdown without performing the tasks",
+      "acceptable": [
+        "plan"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q048",
+      "category": "positive",
+      "family": "planning",
+      "group": "planning-47",
+      "split": "held_out",
+      "prompt": "Lay out dependencies and milestones in a markdown document",
+      "acceptable": [
+        "plan"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q049",
+      "category": "positive",
+      "family": "qa",
+      "group": "qa-48",
+      "split": "development",
+      "prompt": "Explore this web app and report reproducible bugs",
+      "acceptable": [
+        "dogfood"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q050",
+      "category": "positive",
+      "family": "qa",
+      "group": "qa-49",
+      "split": "held_out",
+      "prompt": "Perform exploratory QA on this application",
+      "acceptable": [
+        "dogfood"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q051",
+      "category": "positive",
+      "family": "qa",
+      "group": "qa-50",
+      "split": "development",
+      "prompt": "Test the website manually and collect bug evidence",
+      "acceptable": [
+        "dogfood"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q052",
+      "category": "positive",
+      "family": "qa",
+      "group": "qa-51",
+      "split": "held_out",
+      "prompt": "Find usability problems in this web app",
+      "acceptable": [
+        "dogfood"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q053",
+      "category": "positive",
+      "family": "qa",
+      "group": "qa-52",
+      "split": "development",
+      "prompt": "Exercise the web application and write a QA report",
+      "acceptable": [
+        "dogfood"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q054",
+      "category": "positive",
+      "family": "qa",
+      "group": "qa-53",
+      "split": "held_out",
+      "prompt": "Review the app through exploratory testing",
+      "acceptable": [
+        "dogfood"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q055",
+      "category": "positive",
+      "family": "diagram",
+      "group": "diagram-54",
+      "split": "development",
+      "prompt": "Draw a hand-drawn architecture diagram as Excalidraw JSON",
+      "acceptable": [
+        "excalidraw"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q056",
+      "category": "positive",
+      "family": "diagram",
+      "group": "diagram-55",
+      "split": "held_out",
+      "prompt": "Create an Excalidraw flow diagram for this process",
+      "acceptable": [
+        "excalidraw"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q057",
+      "category": "positive",
+      "family": "diagram",
+      "group": "diagram-56",
+      "split": "development",
+      "prompt": "Make an editable Excalidraw sequence diagram",
+      "acceptable": [
+        "excalidraw"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q058",
+      "category": "positive",
+      "family": "diagram",
+      "group": "diagram-57",
+      "split": "held_out",
+      "prompt": "Sketch this architecture in Excalidraw format",
+      "acceptable": [
+        "excalidraw"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q059",
+      "category": "positive",
+      "family": "diagram",
+      "group": "diagram-58",
+      "split": "development",
+      "prompt": "Convert this flow into Excalidraw JSON",
+      "acceptable": [
+        "excalidraw"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q060",
+      "category": "positive",
+      "family": "diagram",
+      "group": "diagram-59",
+      "split": "held_out",
+      "prompt": "Build a hand-drawn diagram using Excalidraw",
+      "acceptable": [
+        "excalidraw"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q061",
+      "category": "positive",
+      "family": "debugging",
+      "group": "debugging-60",
+      "split": "development",
+      "prompt": "Debug this Python program using debugpy",
+      "acceptable": [
+        "python-debugpy"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q062",
+      "category": "positive",
+      "family": "debugging",
+      "group": "debugging-61",
+      "split": "held_out",
+      "prompt": "Attach a DAP debugger to this Python process",
+      "acceptable": [
+        "python-debugpy"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q063",
+      "category": "positive",
+      "family": "debugging",
+      "group": "debugging-62",
+      "split": "development",
+      "prompt": "Inspect this Python program with pdb",
+      "acceptable": [
+        "python-debugpy"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q064",
+      "category": "positive",
+      "family": "debugging",
+      "group": "debugging-63",
+      "split": "held_out",
+      "prompt": "Set a breakpoint using debugpy",
+      "acceptable": [
+        "python-debugpy"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q065",
+      "category": "positive",
+      "family": "debugging",
+      "group": "debugging-64",
+      "split": "development",
+      "prompt": "Use a Python debugger to inspect variables",
+      "acceptable": [
+        "python-debugpy"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q066",
+      "category": "positive",
+      "family": "debugging",
+      "group": "debugging-65",
+      "split": "held_out",
+      "prompt": "Diagnose this Python failure in a pdb REPL",
+      "acceptable": [
+        "python-debugpy"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q067",
+      "category": "positive",
+      "family": "editing",
+      "group": "editing-66",
+      "split": "development",
+      "prompt": "Make this text sound natural and less like AI writing",
+      "acceptable": [
+        "humanizer"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q068",
+      "category": "positive",
+      "family": "editing",
+      "group": "editing-67",
+      "split": "held_out",
+      "prompt": "Remove formulaic AI phrases from this prose",
+      "acceptable": [
+        "humanizer"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q069",
+      "category": "positive",
+      "family": "editing",
+      "group": "editing-68",
+      "split": "development",
+      "prompt": "Rewrite this paragraph in a more human voice",
+      "acceptable": [
+        "humanizer"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q070",
+      "category": "positive",
+      "family": "editing",
+      "group": "editing-69",
+      "split": "held_out",
+      "prompt": "Edit this text to sound less robotic",
+      "acceptable": [
+        "humanizer"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q071",
+      "category": "positive",
+      "family": "editing",
+      "group": "editing-70",
+      "split": "development",
+      "prompt": "Make the wording natural while preserving the facts",
+      "acceptable": [
+        "humanizer"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q072",
+      "category": "positive",
+      "family": "editing",
+      "group": "editing-71",
+      "split": "held_out",
+      "prompt": "Remove generic artificial phrasing from this draft",
+      "acceptable": [
+        "humanizer"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q073",
+      "category": "positive",
+      "family": "meetings",
+      "group": "meetings-72",
+      "split": "development",
+      "prompt": "Extract owners and tasks from these meeting notes",
+      "acceptable": [
+        "meeting-action-items"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q074",
+      "category": "positive",
+      "family": "meetings",
+      "group": "meetings-73",
+      "split": "held_out",
+      "prompt": "Turn this meeting transcript into decisions and follow-up tasks",
+      "acceptable": [
+        "meeting-action-items"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q075",
+      "category": "positive",
+      "family": "meetings",
+      "group": "meetings-74",
+      "split": "development",
+      "prompt": "List action items and owners from this meeting",
+      "acceptable": [
+        "meeting-action-items"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q076",
+      "category": "positive",
+      "family": "meetings",
+      "group": "meetings-75",
+      "split": "held_out",
+      "prompt": "Identify deadlines mentioned in these meeting notes",
+      "acceptable": [
+        "meeting-action-items"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q077",
+      "category": "positive",
+      "family": "meetings",
+      "group": "meetings-76",
+      "split": "development",
+      "prompt": "Summarize meeting decisions and assigned tasks",
+      "acceptable": [
+        "meeting-action-items"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q078",
+      "category": "positive",
+      "family": "meetings",
+      "group": "meetings-77",
+      "split": "held_out",
+      "prompt": "Turn these notes into a meeting action list",
+      "acceptable": [
+        "meeting-action-items"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q079",
+      "category": "positive",
+      "family": "spreadsheet",
+      "group": "spreadsheet-78",
+      "split": "development",
+      "prompt": "Build a workbook for these expense records",
+      "acceptable": [
+        "xlsx"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q080",
+      "category": "positive",
+      "family": "document",
+      "group": "document-79",
+      "split": "held_out",
+      "prompt": "Prepare an editable Word contract document",
+      "acceptable": [
+        "docx"
+      ],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q081",
+      "category": "no_skill",
+      "family": "conversation",
+      "group": "conversation-80",
+      "split": "development",
+      "prompt": "Thanks, that makes sense",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q082",
+      "category": "no_skill",
+      "family": "conversation",
+      "group": "conversation-81",
+      "split": "held_out",
+      "prompt": "Hello, how are you?",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q083",
+      "category": "no_skill",
+      "family": "conversation",
+      "group": "conversation-82",
+      "split": "development",
+      "prompt": "What is two plus two?",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q084",
+      "category": "no_skill",
+      "family": "conversation",
+      "group": "conversation-83",
+      "split": "held_out",
+      "prompt": "Tell me a short joke",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q085",
+      "category": "no_skill",
+      "family": "conversation",
+      "group": "conversation-84",
+      "split": "development",
+      "prompt": "What does this sentence mean?",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q086",
+      "category": "no_skill",
+      "family": "conversation",
+      "group": "conversation-85",
+      "split": "held_out",
+      "prompt": "I agree with your explanation",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q087",
+      "category": "no_skill",
+      "family": "conversation",
+      "group": "conversation-86",
+      "split": "development",
+      "prompt": "Let us pause here",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q088",
+      "category": "no_skill",
+      "family": "conversation",
+      "group": "conversation-87",
+      "split": "held_out",
+      "prompt": "Please wait for my next message",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q089",
+      "category": "no_skill",
+      "family": "conversation",
+      "group": "conversation-88",
+      "split": "development",
+      "prompt": "Good morning",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q090",
+      "category": "no_skill",
+      "family": "conversation",
+      "group": "conversation-89",
+      "split": "held_out",
+      "prompt": "Can you clarify your last sentence?",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q091",
+      "category": "no_skill",
+      "family": "conversation",
+      "group": "conversation-90",
+      "split": "development",
+      "prompt": "What is the capital of France?",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q092",
+      "category": "no_skill",
+      "family": "conversation",
+      "group": "conversation-91",
+      "split": "held_out",
+      "prompt": "Explain the difference between a list and a tuple",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q093",
+      "category": "no_skill",
+      "family": "conversation",
+      "group": "conversation-92",
+      "split": "development",
+      "prompt": "What is a prime number?",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q094",
+      "category": "no_skill",
+      "family": "conversation",
+      "group": "conversation-93",
+      "split": "held_out",
+      "prompt": "Define recursion in one sentence",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q095",
+      "category": "no_skill",
+      "family": "conversation",
+      "group": "conversation-94",
+      "split": "development",
+      "prompt": "How many days are in a week?",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q096",
+      "category": "no_skill",
+      "family": "conversation",
+      "group": "conversation-95",
+      "split": "held_out",
+      "prompt": "I will return later",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q097",
+      "category": "no_skill",
+      "family": "conversation",
+      "group": "conversation-96",
+      "split": "development",
+      "prompt": "That answer is enough",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q098",
+      "category": "no_skill",
+      "family": "conversation",
+      "group": "conversation-97",
+      "split": "held_out",
+      "prompt": "Do not do anything yet",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q099",
+      "category": "no_skill",
+      "family": "conversation",
+      "group": "conversation-98",
+      "split": "development",
+      "prompt": "I am still thinking",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q100",
+      "category": "no_skill",
+      "family": "conversation",
+      "group": "conversation-99",
+      "split": "held_out",
+      "prompt": "Okay, understood",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q101",
+      "category": "no_skill",
+      "family": "conversation",
+      "group": "conversation-100",
+      "split": "development",
+      "prompt": "Explain what a compiler does",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q102",
+      "category": "no_skill",
+      "family": "conversation",
+      "group": "conversation-101",
+      "split": "held_out",
+      "prompt": "What is a boolean?",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q103",
+      "category": "no_skill",
+      "family": "conversation",
+      "group": "conversation-102",
+      "split": "development",
+      "prompt": "Why is the sky blue?",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q104",
+      "category": "no_skill",
+      "family": "conversation",
+      "group": "conversation-103",
+      "split": "held_out",
+      "prompt": "What does immutable mean?",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q105",
+      "category": "no_skill",
+      "family": "conversation",
+      "group": "conversation-104",
+      "split": "development",
+      "prompt": "What is the opposite of increase?",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q106",
+      "category": "no_skill",
+      "family": "conversation",
+      "group": "conversation-105",
+      "split": "held_out",
+      "prompt": "Could you repeat your explanation?",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q107",
+      "category": "no_skill",
+      "family": "conversation",
+      "group": "conversation-106",
+      "split": "development",
+      "prompt": "Tell me what latency means",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q108",
+      "category": "no_skill",
+      "family": "conversation",
+      "group": "conversation-107",
+      "split": "held_out",
+      "prompt": "Explain a variable to a beginner",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q109",
+      "category": "no_skill",
+      "family": "conversation",
+      "group": "conversation-108",
+      "split": "development",
+      "prompt": "What is an integer?",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q110",
+      "category": "no_skill",
+      "family": "conversation",
+      "group": "conversation-109",
+      "split": "held_out",
+      "prompt": "What is an algorithm?",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q111",
+      "category": "no_skill",
+      "family": "conversation",
+      "group": "conversation-110",
+      "split": "development",
+      "prompt": "That is all for now",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q112",
+      "category": "no_skill",
+      "family": "conversation",
+      "group": "conversation-111",
+      "split": "held_out",
+      "prompt": "No action is required",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q113",
+      "category": "no_skill",
+      "family": "conversation",
+      "group": "conversation-112",
+      "split": "development",
+      "prompt": "Please acknowledge this message",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q114",
+      "category": "no_skill",
+      "family": "conversation",
+      "group": "conversation-113",
+      "split": "held_out",
+      "prompt": "The earlier explanation helped",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q115",
+      "category": "no_skill",
+      "family": "conversation",
+      "group": "conversation-114",
+      "split": "development",
+      "prompt": "We can discuss it tomorrow",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q116",
+      "category": "no_skill",
+      "family": "conversation",
+      "group": "conversation-115",
+      "split": "held_out",
+      "prompt": "I have no task right now",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q117",
+      "category": "no_skill",
+      "family": "conversation",
+      "group": "conversation-116",
+      "split": "development",
+      "prompt": "What does deterministic mean?",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q118",
+      "category": "no_skill",
+      "family": "conversation",
+      "group": "conversation-117",
+      "split": "held_out",
+      "prompt": "Explain a loop briefly",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q119",
+      "category": "no_skill",
+      "family": "conversation",
+      "group": "conversation-118",
+      "split": "development",
+      "prompt": "What is a decimal number?",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q120",
+      "category": "no_skill",
+      "family": "conversation",
+      "group": "conversation-119",
+      "split": "held_out",
+      "prompt": "Say hello in Spanish",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q121",
+      "category": "sibling",
+      "family": "database",
+      "group": "sibling-0",
+      "split": "development",
+      "prompt": "Inspect the migration for project 1; the requested action is inspect.",
+      "acceptable": [
+        "fixture-database-inspect"
+      ],
+      "forbidden": [
+        "fixture-database-execute"
+      ],
+      "explicit": null
+    },
+    {
+      "id": "q122",
+      "category": "sibling",
+      "family": "database",
+      "group": "sibling-0",
+      "split": "development",
+      "prompt": "Execute the migration for project 1; the requested action is execute.",
+      "acceptable": [
+        "fixture-database-execute"
+      ],
+      "forbidden": [
+        "fixture-database-inspect"
+      ],
+      "explicit": null
+    },
+    {
+      "id": "q123",
+      "category": "sibling",
+      "family": "release",
+      "group": "sibling-1",
+      "split": "held_out",
+      "prompt": "Draft the release note for project 2; the requested action is draft.",
+      "acceptable": [
+        "fixture-release-draft"
+      ],
+      "forbidden": [
+        "fixture-release-publish"
+      ],
+      "explicit": null
+    },
+    {
+      "id": "q124",
+      "category": "sibling",
+      "family": "release",
+      "group": "sibling-1",
+      "split": "held_out",
+      "prompt": "Publish the release note for project 2; the requested action is publish.",
+      "acceptable": [
+        "fixture-release-publish"
+      ],
+      "forbidden": [
+        "fixture-release-draft"
+      ],
+      "explicit": null
+    },
+    {
+      "id": "q125",
+      "category": "sibling",
+      "family": "document",
+      "group": "sibling-2",
+      "split": "development",
+      "prompt": "Read the report for project 3; the requested action is read.",
+      "acceptable": [
+        "fixture-document-read"
+      ],
+      "forbidden": [
+        "fixture-document-overwrite"
+      ],
+      "explicit": null
+    },
+    {
+      "id": "q126",
+      "category": "sibling",
+      "family": "document",
+      "group": "sibling-2",
+      "split": "development",
+      "prompt": "Overwrite the report for project 3; the requested action is overwrite.",
+      "acceptable": [
+        "fixture-document-overwrite"
+      ],
+      "forbidden": [
+        "fixture-document-read"
+      ],
+      "explicit": null
+    },
+    {
+      "id": "q127",
+      "category": "sibling",
+      "family": "messaging",
+      "group": "sibling-3",
+      "split": "held_out",
+      "prompt": "Draft the message for project 4; the requested action is draft.",
+      "acceptable": [
+        "fixture-messaging-draft"
+      ],
+      "forbidden": [
+        "fixture-messaging-send"
+      ],
+      "explicit": null
+    },
+    {
+      "id": "q128",
+      "category": "sibling",
+      "family": "messaging",
+      "group": "sibling-3",
+      "split": "held_out",
+      "prompt": "Send the message for project 4; the requested action is send.",
+      "acceptable": [
+        "fixture-messaging-send"
+      ],
+      "forbidden": [
+        "fixture-messaging-draft"
+      ],
+      "explicit": null
+    },
+    {
+      "id": "q129",
+      "category": "sibling",
+      "family": "spreadsheet",
+      "group": "sibling-4",
+      "split": "development",
+      "prompt": "Read the workbook for project 5; the requested action is read.",
+      "acceptable": [
+        "fixture-spreadsheet-read"
+      ],
+      "forbidden": [
+        "fixture-spreadsheet-rewrite"
+      ],
+      "explicit": null
+    },
+    {
+      "id": "q130",
+      "category": "sibling",
+      "family": "spreadsheet",
+      "group": "sibling-4",
+      "split": "development",
+      "prompt": "Rewrite the workbook for project 5; the requested action is rewrite.",
+      "acceptable": [
+        "fixture-spreadsheet-rewrite"
+      ],
+      "forbidden": [
+        "fixture-spreadsheet-read"
+      ],
+      "explicit": null
+    },
+    {
+      "id": "q131",
+      "category": "sibling",
+      "family": "database",
+      "group": "sibling-5",
+      "split": "held_out",
+      "prompt": "Inspect the migration for project 6; the requested action is inspect.",
+      "acceptable": [
+        "fixture-database-inspect"
+      ],
+      "forbidden": [
+        "fixture-database-execute"
+      ],
+      "explicit": null
+    },
+    {
+      "id": "q132",
+      "category": "sibling",
+      "family": "database",
+      "group": "sibling-5",
+      "split": "held_out",
+      "prompt": "Execute the migration for project 6; the requested action is execute.",
+      "acceptable": [
+        "fixture-database-execute"
+      ],
+      "forbidden": [
+        "fixture-database-inspect"
+      ],
+      "explicit": null
+    },
+    {
+      "id": "q133",
+      "category": "sibling",
+      "family": "release",
+      "group": "sibling-6",
+      "split": "development",
+      "prompt": "Draft the release note for project 7; the requested action is draft.",
+      "acceptable": [
+        "fixture-release-draft"
+      ],
+      "forbidden": [
+        "fixture-release-publish"
+      ],
+      "explicit": null
+    },
+    {
+      "id": "q134",
+      "category": "sibling",
+      "family": "release",
+      "group": "sibling-6",
+      "split": "development",
+      "prompt": "Publish the release note for project 7; the requested action is publish.",
+      "acceptable": [
+        "fixture-release-publish"
+      ],
+      "forbidden": [
+        "fixture-release-draft"
+      ],
+      "explicit": null
+    },
+    {
+      "id": "q135",
+      "category": "sibling",
+      "family": "document",
+      "group": "sibling-7",
+      "split": "held_out",
+      "prompt": "Read the report for project 8; the requested action is read.",
+      "acceptable": [
+        "fixture-document-read"
+      ],
+      "forbidden": [
+        "fixture-document-overwrite"
+      ],
+      "explicit": null
+    },
+    {
+      "id": "q136",
+      "category": "sibling",
+      "family": "document",
+      "group": "sibling-7",
+      "split": "held_out",
+      "prompt": "Overwrite the report for project 8; the requested action is overwrite.",
+      "acceptable": [
+        "fixture-document-overwrite"
+      ],
+      "forbidden": [
+        "fixture-document-read"
+      ],
+      "explicit": null
+    },
+    {
+      "id": "q137",
+      "category": "sibling",
+      "family": "messaging",
+      "group": "sibling-8",
+      "split": "development",
+      "prompt": "Draft the message for project 9; the requested action is draft.",
+      "acceptable": [
+        "fixture-messaging-draft"
+      ],
+      "forbidden": [
+        "fixture-messaging-send"
+      ],
+      "explicit": null
+    },
+    {
+      "id": "q138",
+      "category": "sibling",
+      "family": "messaging",
+      "group": "sibling-8",
+      "split": "development",
+      "prompt": "Send the message for project 9; the requested action is send.",
+      "acceptable": [
+        "fixture-messaging-send"
+      ],
+      "forbidden": [
+        "fixture-messaging-draft"
+      ],
+      "explicit": null
+    },
+    {
+      "id": "q139",
+      "category": "sibling",
+      "family": "spreadsheet",
+      "group": "sibling-9",
+      "split": "held_out",
+      "prompt": "Read the workbook for project 10; the requested action is read.",
+      "acceptable": [
+        "fixture-spreadsheet-read"
+      ],
+      "forbidden": [
+        "fixture-spreadsheet-rewrite"
+      ],
+      "explicit": null
+    },
+    {
+      "id": "q140",
+      "category": "sibling",
+      "family": "spreadsheet",
+      "group": "sibling-9",
+      "split": "held_out",
+      "prompt": "Rewrite the workbook for project 10; the requested action is rewrite.",
+      "acceptable": [
+        "fixture-spreadsheet-rewrite"
+      ],
+      "forbidden": [
+        "fixture-spreadsheet-read"
+      ],
+      "explicit": null
+    },
+    {
+      "id": "q141",
+      "category": "sibling",
+      "family": "database",
+      "group": "sibling-10",
+      "split": "development",
+      "prompt": "Inspect the migration for project 11; the requested action is inspect.",
+      "acceptable": [
+        "fixture-database-inspect"
+      ],
+      "forbidden": [
+        "fixture-database-execute"
+      ],
+      "explicit": null
+    },
+    {
+      "id": "q142",
+      "category": "sibling",
+      "family": "database",
+      "group": "sibling-10",
+      "split": "development",
+      "prompt": "Execute the migration for project 11; the requested action is execute.",
+      "acceptable": [
+        "fixture-database-execute"
+      ],
+      "forbidden": [
+        "fixture-database-inspect"
+      ],
+      "explicit": null
+    },
+    {
+      "id": "q143",
+      "category": "sibling",
+      "family": "release",
+      "group": "sibling-11",
+      "split": "held_out",
+      "prompt": "Draft the release note for project 12; the requested action is draft.",
+      "acceptable": [
+        "fixture-release-draft"
+      ],
+      "forbidden": [
+        "fixture-release-publish"
+      ],
+      "explicit": null
+    },
+    {
+      "id": "q144",
+      "category": "sibling",
+      "family": "release",
+      "group": "sibling-11",
+      "split": "held_out",
+      "prompt": "Publish the release note for project 12; the requested action is publish.",
+      "acceptable": [
+        "fixture-release-publish"
+      ],
+      "forbidden": [
+        "fixture-release-draft"
+      ],
+      "explicit": null
+    },
+    {
+      "id": "q145",
+      "category": "sibling",
+      "family": "document",
+      "group": "sibling-12",
+      "split": "development",
+      "prompt": "Read the report for project 13; the requested action is read.",
+      "acceptable": [
+        "fixture-document-read"
+      ],
+      "forbidden": [
+        "fixture-document-overwrite"
+      ],
+      "explicit": null
+    },
+    {
+      "id": "q146",
+      "category": "sibling",
+      "family": "document",
+      "group": "sibling-12",
+      "split": "development",
+      "prompt": "Overwrite the report for project 13; the requested action is overwrite.",
+      "acceptable": [
+        "fixture-document-overwrite"
+      ],
+      "forbidden": [
+        "fixture-document-read"
+      ],
+      "explicit": null
+    },
+    {
+      "id": "q147",
+      "category": "sibling",
+      "family": "messaging",
+      "group": "sibling-13",
+      "split": "held_out",
+      "prompt": "Draft the message for project 14; the requested action is draft.",
+      "acceptable": [
+        "fixture-messaging-draft"
+      ],
+      "forbidden": [
+        "fixture-messaging-send"
+      ],
+      "explicit": null
+    },
+    {
+      "id": "q148",
+      "category": "sibling",
+      "family": "messaging",
+      "group": "sibling-13",
+      "split": "held_out",
+      "prompt": "Send the message for project 14; the requested action is send.",
+      "acceptable": [
+        "fixture-messaging-send"
+      ],
+      "forbidden": [
+        "fixture-messaging-draft"
+      ],
+      "explicit": null
+    },
+    {
+      "id": "q149",
+      "category": "sibling",
+      "family": "spreadsheet",
+      "group": "sibling-14",
+      "split": "development",
+      "prompt": "Read the workbook for project 15; the requested action is read.",
+      "acceptable": [
+        "fixture-spreadsheet-read"
+      ],
+      "forbidden": [
+        "fixture-spreadsheet-rewrite"
+      ],
+      "explicit": null
+    },
+    {
+      "id": "q150",
+      "category": "sibling",
+      "family": "spreadsheet",
+      "group": "sibling-14",
+      "split": "development",
+      "prompt": "Rewrite the workbook for project 15; the requested action is rewrite.",
+      "acceptable": [
+        "fixture-spreadsheet-rewrite"
+      ],
+      "forbidden": [
+        "fixture-spreadsheet-read"
+      ],
+      "explicit": null
+    },
+    {
+      "id": "q151",
+      "category": "sibling",
+      "family": "database",
+      "group": "sibling-15",
+      "split": "held_out",
+      "prompt": "Inspect the migration for project 16; the requested action is inspect.",
+      "acceptable": [
+        "fixture-database-inspect"
+      ],
+      "forbidden": [
+        "fixture-database-execute"
+      ],
+      "explicit": null
+    },
+    {
+      "id": "q152",
+      "category": "sibling",
+      "family": "database",
+      "group": "sibling-15",
+      "split": "held_out",
+      "prompt": "Execute the migration for project 16; the requested action is execute.",
+      "acceptable": [
+        "fixture-database-execute"
+      ],
+      "forbidden": [
+        "fixture-database-inspect"
+      ],
+      "explicit": null
+    },
+    {
+      "id": "q153",
+      "category": "sibling",
+      "family": "release",
+      "group": "sibling-16",
+      "split": "development",
+      "prompt": "Draft the release note for project 17; the requested action is draft.",
+      "acceptable": [
+        "fixture-release-draft"
+      ],
+      "forbidden": [
+        "fixture-release-publish"
+      ],
+      "explicit": null
+    },
+    {
+      "id": "q154",
+      "category": "sibling",
+      "family": "release",
+      "group": "sibling-16",
+      "split": "development",
+      "prompt": "Publish the release note for project 17; the requested action is publish.",
+      "acceptable": [
+        "fixture-release-publish"
+      ],
+      "forbidden": [
+        "fixture-release-draft"
+      ],
+      "explicit": null
+    },
+    {
+      "id": "q155",
+      "category": "sibling",
+      "family": "document",
+      "group": "sibling-17",
+      "split": "held_out",
+      "prompt": "Read the report for project 18; the requested action is read.",
+      "acceptable": [
+        "fixture-document-read"
+      ],
+      "forbidden": [
+        "fixture-document-overwrite"
+      ],
+      "explicit": null
+    },
+    {
+      "id": "q156",
+      "category": "sibling",
+      "family": "document",
+      "group": "sibling-17",
+      "split": "held_out",
+      "prompt": "Overwrite the report for project 18; the requested action is overwrite.",
+      "acceptable": [
+        "fixture-document-overwrite"
+      ],
+      "forbidden": [
+        "fixture-document-read"
+      ],
+      "explicit": null
+    },
+    {
+      "id": "q157",
+      "category": "sibling",
+      "family": "messaging",
+      "group": "sibling-18",
+      "split": "development",
+      "prompt": "Draft the message for project 19; the requested action is draft.",
+      "acceptable": [
+        "fixture-messaging-draft"
+      ],
+      "forbidden": [
+        "fixture-messaging-send"
+      ],
+      "explicit": null
+    },
+    {
+      "id": "q158",
+      "category": "sibling",
+      "family": "messaging",
+      "group": "sibling-18",
+      "split": "development",
+      "prompt": "Send the message for project 19; the requested action is send.",
+      "acceptable": [
+        "fixture-messaging-send"
+      ],
+      "forbidden": [
+        "fixture-messaging-draft"
+      ],
+      "explicit": null
+    },
+    {
+      "id": "q159",
+      "category": "sibling",
+      "family": "spreadsheet",
+      "group": "sibling-19",
+      "split": "held_out",
+      "prompt": "Read the workbook for project 20; the requested action is read.",
+      "acceptable": [
+        "fixture-spreadsheet-read"
+      ],
+      "forbidden": [
+        "fixture-spreadsheet-rewrite"
+      ],
+      "explicit": null
+    },
+    {
+      "id": "q160",
+      "category": "sibling",
+      "family": "spreadsheet",
+      "group": "sibling-19",
+      "split": "held_out",
+      "prompt": "Rewrite the workbook for project 20; the requested action is rewrite.",
+      "acceptable": [
+        "fixture-spreadsheet-rewrite"
+      ],
+      "forbidden": [
+        "fixture-spreadsheet-read"
+      ],
+      "explicit": null
+    },
+    {
+      "id": "q161",
+      "category": "syntax",
+      "family": "literal",
+      "group": "literal-160",
+      "split": "development",
+      "prompt": "Explain $\\ge$ in this expression",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q162",
+      "category": "syntax",
+      "family": "literal",
+      "group": "literal-161",
+      "split": "held_out",
+      "prompt": "Explain $\\le$ in this formula",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q163",
+      "category": "syntax",
+      "family": "literal",
+      "group": "literal-162",
+      "split": "development",
+      "prompt": "Explain $HOME in a shell",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q164",
+      "category": "syntax",
+      "family": "literal",
+      "group": "literal-163",
+      "split": "held_out",
+      "prompt": "What does ${USER} mean?",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q165",
+      "category": "syntax",
+      "family": "literal",
+      "group": "literal-164",
+      "split": "development",
+      "prompt": "What does $(pwd) do?",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q166",
+      "category": "syntax",
+      "family": "literal",
+      "group": "literal-165",
+      "split": "held_out",
+      "prompt": "Explain $1 in a script",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q167",
+      "category": "syntax",
+      "family": "literal",
+      "group": "literal-166",
+      "split": "development",
+      "prompt": "What is $$ in the shell?",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q168",
+      "category": "syntax",
+      "family": "literal",
+      "group": "literal-167",
+      "split": "held_out",
+      "prompt": "A ticket costs $100. Explain the price.",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q169",
+      "category": "syntax",
+      "family": "literal",
+      "group": "literal-168",
+      "split": "development",
+      "prompt": "Explain $x$ in a formula",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q170",
+      "category": "syntax",
+      "family": "literal",
+      "group": "literal-169",
+      "split": "held_out",
+      "prompt": "What does $PATH contain?",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q171",
+      "category": "syntax",
+      "family": "literal",
+      "group": "literal-170",
+      "split": "development",
+      "prompt": "Do not execute `$xlsx` in this quotation",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q172",
+      "category": "syntax",
+      "family": "literal",
+      "group": "literal-171",
+      "split": "held_out",
+      "prompt": "The example says \"use skill nonexistent\"; explain the syntax",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q173",
+      "category": "syntax",
+      "family": "literal",
+      "group": "literal-172",
+      "split": "development",
+      "prompt": "```sh\necho $HOME\n```\nExplain this snippet",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q174",
+      "category": "syntax",
+      "family": "literal",
+      "group": "literal-173",
+      "split": "held_out",
+      "prompt": "Explain the literal token $unknown",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q175",
+      "category": "syntax",
+      "family": "literal",
+      "group": "literal-174",
+      "split": "development",
+      "prompt": "What does $xlsx/file mean?",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q176",
+      "category": "syntax",
+      "family": "literal",
+      "group": "literal-175",
+      "split": "held_out",
+      "prompt": "Describe the string $xlsx.csv",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q177",
+      "category": "syntax",
+      "family": "literal",
+      "group": "literal-176",
+      "split": "development",
+      "prompt": "Do not activate a skill from this code: `use skill pdf`",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q178",
+      "category": "syntax",
+      "family": "literal",
+      "group": "literal-177",
+      "split": "held_out",
+      "prompt": "Explain the quoted command `/skill missing`",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q179",
+      "category": "syntax",
+      "family": "literal",
+      "group": "literal-178",
+      "split": "development",
+      "prompt": "What does $a+b$ mean?",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q180",
+      "category": "syntax",
+      "family": "literal",
+      "group": "literal-179",
+      "split": "held_out",
+      "prompt": "Explain the backslash in $\\ge$",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null
+    },
+    {
+      "id": "q181",
+      "category": "syntax",
+      "family": "explicit",
+      "group": "explicit-180",
+      "split": "development",
+      "prompt": "Perform the requested spreadsheet task",
+      "acceptable": [
+        "xlsx"
+      ],
+      "forbidden": [],
+      "explicit": "xlsx"
+    },
+    {
+      "id": "q182",
+      "category": "syntax",
+      "family": "explicit",
+      "group": "explicit-181",
+      "split": "held_out",
+      "prompt": "Use skill missing-skill-0 for this task",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": "missing-skill-0"
+    },
+    {
+      "id": "q183",
+      "category": "syntax",
+      "family": "explicit",
+      "group": "explicit-182",
+      "split": "development",
+      "prompt": "Perform the requested document task",
+      "acceptable": [
+        "docx"
+      ],
+      "forbidden": [],
+      "explicit": "docx"
+    },
+    {
+      "id": "q184",
+      "category": "syntax",
+      "family": "explicit",
+      "group": "explicit-183",
+      "split": "held_out",
+      "prompt": "Use skill missing-skill-1 for this task",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": "missing-skill-1"
+    },
+    {
+      "id": "q185",
+      "category": "syntax",
+      "family": "explicit",
+      "group": "explicit-184",
+      "split": "development",
+      "prompt": "Perform the requested presentation task",
+      "acceptable": [
+        "powerpoint"
+      ],
+      "forbidden": [],
+      "explicit": "powerpoint"
+    },
+    {
+      "id": "q186",
+      "category": "syntax",
+      "family": "explicit",
+      "group": "explicit-185",
+      "split": "held_out",
+      "prompt": "Use skill missing-skill-2 for this task",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": "missing-skill-2"
+    },
+    {
+      "id": "q187",
+      "category": "syntax",
+      "family": "explicit",
+      "group": "explicit-186",
+      "split": "development",
+      "prompt": "Perform the requested pdf task",
+      "acceptable": [
+        "pdf"
+      ],
+      "forbidden": [],
+      "explicit": "pdf"
+    },
+    {
+      "id": "q188",
+      "category": "syntax",
+      "family": "explicit",
+      "group": "explicit-187",
+      "split": "held_out",
+      "prompt": "Use skill missing-skill-3 for this task",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": "missing-skill-3"
+    },
+    {
+      "id": "q189",
+      "category": "syntax",
+      "family": "explicit",
+      "group": "explicit-188",
+      "split": "development",
+      "prompt": "Perform the requested papers task",
+      "acceptable": [
+        "arxiv"
+      ],
+      "forbidden": [],
+      "explicit": "arxiv"
+    },
+    {
+      "id": "q190",
+      "category": "syntax",
+      "family": "explicit",
+      "group": "explicit-189",
+      "split": "held_out",
+      "prompt": "Use skill missing-skill-4 for this task",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": "missing-skill-4"
+    },
+    {
+      "id": "q191",
+      "category": "syntax",
+      "family": "explicit",
+      "group": "explicit-190",
+      "split": "development",
+      "prompt": "Perform the requested geography task",
+      "acceptable": [
+        "maps"
+      ],
+      "forbidden": [],
+      "explicit": "maps"
+    },
+    {
+      "id": "q192",
+      "category": "syntax",
+      "family": "explicit",
+      "group": "explicit-191",
+      "split": "held_out",
+      "prompt": "Use skill missing-skill-5 for this task",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": "missing-skill-5"
+    },
+    {
+      "id": "q193",
+      "category": "syntax",
+      "family": "explicit",
+      "group": "explicit-192",
+      "split": "development",
+      "prompt": "Perform the requested review task",
+      "acceptable": [
+        "github-code-review"
+      ],
+      "forbidden": [],
+      "explicit": "github-code-review"
+    },
+    {
+      "id": "q194",
+      "category": "syntax",
+      "family": "explicit",
+      "group": "explicit-193",
+      "split": "held_out",
+      "prompt": "Use skill missing-skill-6 for this task",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": "missing-skill-6"
+    },
+    {
+      "id": "q195",
+      "category": "syntax",
+      "family": "explicit",
+      "group": "explicit-194",
+      "split": "development",
+      "prompt": "Perform the requested planning task",
+      "acceptable": [
+        "plan"
+      ],
+      "forbidden": [],
+      "explicit": "plan"
+    },
+    {
+      "id": "q196",
+      "category": "syntax",
+      "family": "explicit",
+      "group": "explicit-195",
+      "split": "held_out",
+      "prompt": "Use skill missing-skill-7 for this task",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": "missing-skill-7"
+    },
+    {
+      "id": "q197",
+      "category": "syntax",
+      "family": "explicit",
+      "group": "explicit-196",
+      "split": "development",
+      "prompt": "Perform the requested qa task",
+      "acceptable": [
+        "dogfood"
+      ],
+      "forbidden": [],
+      "explicit": "dogfood"
+    },
+    {
+      "id": "q198",
+      "category": "syntax",
+      "family": "explicit",
+      "group": "explicit-197",
+      "split": "held_out",
+      "prompt": "Use skill missing-skill-8 for this task",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": "missing-skill-8"
+    },
+    {
+      "id": "q199",
+      "category": "syntax",
+      "family": "explicit",
+      "group": "explicit-198",
+      "split": "development",
+      "prompt": "Perform the requested diagram task",
+      "acceptable": [
+        "excalidraw"
+      ],
+      "forbidden": [],
+      "explicit": "excalidraw"
+    },
+    {
+      "id": "q200",
+      "category": "syntax",
+      "family": "explicit",
+      "group": "explicit-199",
+      "split": "held_out",
+      "prompt": "Use skill missing-skill-9 for this task",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": "missing-skill-9"
+    },
+    {
+      "id": "q201",
+      "category": "resource",
+      "family": "document",
+      "group": "resource-0",
+      "split": "development",
+      "prompt": "Prepare the document artifact; the required template is available.",
+      "acceptable": [
+        "fixture-document-prepare"
+      ],
+      "forbidden": [],
+      "explicit": null,
+      "resources": [
+        "template"
+      ]
+    },
+    {
+      "id": "q202",
+      "category": "resource",
+      "family": "document",
+      "group": "resource-0",
+      "split": "development",
+      "prompt": "Prepare the document artifact; the required template is missing.",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null,
+      "resources": []
+    },
+    {
+      "id": "q203",
+      "category": "resource",
+      "family": "database",
+      "group": "resource-1",
+      "split": "held_out",
+      "prompt": "Prepare the database artifact; the required template is available.",
+      "acceptable": [
+        "fixture-database-prepare"
+      ],
+      "forbidden": [],
+      "explicit": null,
+      "resources": [
+        "template"
+      ]
+    },
+    {
+      "id": "q204",
+      "category": "resource",
+      "family": "database",
+      "group": "resource-1",
+      "split": "held_out",
+      "prompt": "Prepare the database artifact; the required template is missing.",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null,
+      "resources": []
+    },
+    {
+      "id": "q205",
+      "category": "resource",
+      "family": "release",
+      "group": "resource-2",
+      "split": "development",
+      "prompt": "Prepare the release artifact; the required template is available.",
+      "acceptable": [
+        "fixture-release-prepare"
+      ],
+      "forbidden": [],
+      "explicit": null,
+      "resources": [
+        "template"
+      ]
+    },
+    {
+      "id": "q206",
+      "category": "resource",
+      "family": "release",
+      "group": "resource-2",
+      "split": "development",
+      "prompt": "Prepare the release artifact; the required template is missing.",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null,
+      "resources": []
+    },
+    {
+      "id": "q207",
+      "category": "resource",
+      "family": "messaging",
+      "group": "resource-3",
+      "split": "held_out",
+      "prompt": "Prepare the messaging artifact; the required template is available.",
+      "acceptable": [
+        "fixture-messaging-prepare"
+      ],
+      "forbidden": [],
+      "explicit": null,
+      "resources": [
+        "template"
+      ]
+    },
+    {
+      "id": "q208",
+      "category": "resource",
+      "family": "messaging",
+      "group": "resource-3",
+      "split": "held_out",
+      "prompt": "Prepare the messaging artifact; the required template is missing.",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null,
+      "resources": []
+    },
+    {
+      "id": "q209",
+      "category": "resource",
+      "family": "spreadsheet",
+      "group": "resource-4",
+      "split": "development",
+      "prompt": "Prepare the spreadsheet artifact; the required template is available.",
+      "acceptable": [
+        "fixture-spreadsheet-prepare"
+      ],
+      "forbidden": [],
+      "explicit": null,
+      "resources": [
+        "template"
+      ]
+    },
+    {
+      "id": "q210",
+      "category": "resource",
+      "family": "spreadsheet",
+      "group": "resource-4",
+      "split": "development",
+      "prompt": "Prepare the spreadsheet artifact; the required template is missing.",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null,
+      "resources": []
+    },
+    {
+      "id": "q211",
+      "category": "resource",
+      "family": "document",
+      "group": "resource-5",
+      "split": "held_out",
+      "prompt": "Prepare the document artifact; the required template is available.",
+      "acceptable": [
+        "fixture-document-prepare"
+      ],
+      "forbidden": [],
+      "explicit": null,
+      "resources": [
+        "template"
+      ]
+    },
+    {
+      "id": "q212",
+      "category": "resource",
+      "family": "document",
+      "group": "resource-5",
+      "split": "held_out",
+      "prompt": "Prepare the document artifact; the required template is missing.",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null,
+      "resources": []
+    },
+    {
+      "id": "q213",
+      "category": "resource",
+      "family": "database",
+      "group": "resource-6",
+      "split": "development",
+      "prompt": "Prepare the database artifact; the required template is available.",
+      "acceptable": [
+        "fixture-database-prepare"
+      ],
+      "forbidden": [],
+      "explicit": null,
+      "resources": [
+        "template"
+      ]
+    },
+    {
+      "id": "q214",
+      "category": "resource",
+      "family": "database",
+      "group": "resource-6",
+      "split": "development",
+      "prompt": "Prepare the database artifact; the required template is missing.",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null,
+      "resources": []
+    },
+    {
+      "id": "q215",
+      "category": "resource",
+      "family": "release",
+      "group": "resource-7",
+      "split": "held_out",
+      "prompt": "Prepare the release artifact; the required template is available.",
+      "acceptable": [
+        "fixture-release-prepare"
+      ],
+      "forbidden": [],
+      "explicit": null,
+      "resources": [
+        "template"
+      ]
+    },
+    {
+      "id": "q216",
+      "category": "resource",
+      "family": "release",
+      "group": "resource-7",
+      "split": "held_out",
+      "prompt": "Prepare the release artifact; the required template is missing.",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null,
+      "resources": []
+    },
+    {
+      "id": "q217",
+      "category": "resource",
+      "family": "messaging",
+      "group": "resource-8",
+      "split": "development",
+      "prompt": "Prepare the messaging artifact; the required template is available.",
+      "acceptable": [
+        "fixture-messaging-prepare"
+      ],
+      "forbidden": [],
+      "explicit": null,
+      "resources": [
+        "template"
+      ]
+    },
+    {
+      "id": "q218",
+      "category": "resource",
+      "family": "messaging",
+      "group": "resource-8",
+      "split": "development",
+      "prompt": "Prepare the messaging artifact; the required template is missing.",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null,
+      "resources": []
+    },
+    {
+      "id": "q219",
+      "category": "resource",
+      "family": "spreadsheet",
+      "group": "resource-9",
+      "split": "held_out",
+      "prompt": "Prepare the spreadsheet artifact; the required template is available.",
+      "acceptable": [
+        "fixture-spreadsheet-prepare"
+      ],
+      "forbidden": [],
+      "explicit": null,
+      "resources": [
+        "template"
+      ]
+    },
+    {
+      "id": "q220",
+      "category": "resource",
+      "family": "spreadsheet",
+      "group": "resource-9",
+      "split": "held_out",
+      "prompt": "Prepare the spreadsheet artifact; the required template is missing.",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null,
+      "resources": []
+    },
+    {
+      "id": "q221",
+      "category": "resource",
+      "family": "document",
+      "group": "resource-10",
+      "split": "development",
+      "prompt": "Prepare the document artifact; the required template is available.",
+      "acceptable": [
+        "fixture-document-prepare"
+      ],
+      "forbidden": [],
+      "explicit": null,
+      "resources": [
+        "template"
+      ]
+    },
+    {
+      "id": "q222",
+      "category": "resource",
+      "family": "document",
+      "group": "resource-10",
+      "split": "development",
+      "prompt": "Prepare the document artifact; the required template is missing.",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null,
+      "resources": []
+    },
+    {
+      "id": "q223",
+      "category": "resource",
+      "family": "database",
+      "group": "resource-11",
+      "split": "held_out",
+      "prompt": "Prepare the database artifact; the required template is available.",
+      "acceptable": [
+        "fixture-database-prepare"
+      ],
+      "forbidden": [],
+      "explicit": null,
+      "resources": [
+        "template"
+      ]
+    },
+    {
+      "id": "q224",
+      "category": "resource",
+      "family": "database",
+      "group": "resource-11",
+      "split": "held_out",
+      "prompt": "Prepare the database artifact; the required template is missing.",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null,
+      "resources": []
+    },
+    {
+      "id": "q225",
+      "category": "resource",
+      "family": "release",
+      "group": "resource-12",
+      "split": "development",
+      "prompt": "Prepare the release artifact; the required template is available.",
+      "acceptable": [
+        "fixture-release-prepare"
+      ],
+      "forbidden": [],
+      "explicit": null,
+      "resources": [
+        "template"
+      ]
+    },
+    {
+      "id": "q226",
+      "category": "resource",
+      "family": "release",
+      "group": "resource-12",
+      "split": "development",
+      "prompt": "Prepare the release artifact; the required template is missing.",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null,
+      "resources": []
+    },
+    {
+      "id": "q227",
+      "category": "resource",
+      "family": "messaging",
+      "group": "resource-13",
+      "split": "held_out",
+      "prompt": "Prepare the messaging artifact; the required template is available.",
+      "acceptable": [
+        "fixture-messaging-prepare"
+      ],
+      "forbidden": [],
+      "explicit": null,
+      "resources": [
+        "template"
+      ]
+    },
+    {
+      "id": "q228",
+      "category": "resource",
+      "family": "messaging",
+      "group": "resource-13",
+      "split": "held_out",
+      "prompt": "Prepare the messaging artifact; the required template is missing.",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null,
+      "resources": []
+    },
+    {
+      "id": "q229",
+      "category": "resource",
+      "family": "spreadsheet",
+      "group": "resource-14",
+      "split": "development",
+      "prompt": "Prepare the spreadsheet artifact; the required template is available.",
+      "acceptable": [
+        "fixture-spreadsheet-prepare"
+      ],
+      "forbidden": [],
+      "explicit": null,
+      "resources": [
+        "template"
+      ]
+    },
+    {
+      "id": "q230",
+      "category": "resource",
+      "family": "spreadsheet",
+      "group": "resource-14",
+      "split": "development",
+      "prompt": "Prepare the spreadsheet artifact; the required template is missing.",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null,
+      "resources": []
+    },
+    {
+      "id": "q231",
+      "category": "resource",
+      "family": "document",
+      "group": "resource-15",
+      "split": "held_out",
+      "prompt": "Prepare the document artifact; the required template is available.",
+      "acceptable": [
+        "fixture-document-prepare"
+      ],
+      "forbidden": [],
+      "explicit": null,
+      "resources": [
+        "template"
+      ]
+    },
+    {
+      "id": "q232",
+      "category": "resource",
+      "family": "document",
+      "group": "resource-15",
+      "split": "held_out",
+      "prompt": "Prepare the document artifact; the required template is missing.",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null,
+      "resources": []
+    },
+    {
+      "id": "q233",
+      "category": "resource",
+      "family": "database",
+      "group": "resource-16",
+      "split": "development",
+      "prompt": "Prepare the database artifact; the required template is available.",
+      "acceptable": [
+        "fixture-database-prepare"
+      ],
+      "forbidden": [],
+      "explicit": null,
+      "resources": [
+        "template"
+      ]
+    },
+    {
+      "id": "q234",
+      "category": "resource",
+      "family": "database",
+      "group": "resource-16",
+      "split": "development",
+      "prompt": "Prepare the database artifact; the required template is missing.",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null,
+      "resources": []
+    },
+    {
+      "id": "q235",
+      "category": "resource",
+      "family": "release",
+      "group": "resource-17",
+      "split": "held_out",
+      "prompt": "Prepare the release artifact; the required template is available.",
+      "acceptable": [
+        "fixture-release-prepare"
+      ],
+      "forbidden": [],
+      "explicit": null,
+      "resources": [
+        "template"
+      ]
+    },
+    {
+      "id": "q236",
+      "category": "resource",
+      "family": "release",
+      "group": "resource-17",
+      "split": "held_out",
+      "prompt": "Prepare the release artifact; the required template is missing.",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null,
+      "resources": []
+    },
+    {
+      "id": "q237",
+      "category": "resource",
+      "family": "messaging",
+      "group": "resource-18",
+      "split": "development",
+      "prompt": "Prepare the messaging artifact; the required template is available.",
+      "acceptable": [
+        "fixture-messaging-prepare"
+      ],
+      "forbidden": [],
+      "explicit": null,
+      "resources": [
+        "template"
+      ]
+    },
+    {
+      "id": "q238",
+      "category": "resource",
+      "family": "messaging",
+      "group": "resource-18",
+      "split": "development",
+      "prompt": "Prepare the messaging artifact; the required template is missing.",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null,
+      "resources": []
+    },
+    {
+      "id": "q239",
+      "category": "resource",
+      "family": "spreadsheet",
+      "group": "resource-19",
+      "split": "held_out",
+      "prompt": "Prepare the spreadsheet artifact; the required template is available.",
+      "acceptable": [
+        "fixture-spreadsheet-prepare"
+      ],
+      "forbidden": [],
+      "explicit": null,
+      "resources": [
+        "template"
+      ]
+    },
+    {
+      "id": "q240",
+      "category": "resource",
+      "family": "spreadsheet",
+      "group": "resource-19",
+      "split": "held_out",
+      "prompt": "Prepare the spreadsheet artifact; the required template is missing.",
+      "acceptable": [],
+      "forbidden": [],
+      "explicit": null,
+      "resources": []
+    }
+  ]
+}

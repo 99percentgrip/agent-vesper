@@ -21,6 +21,8 @@ subsystem that backs the Tier C Phase 8 un-stubbed commands
 - `src/skill_orchestrator.rs` — ADR 0024 deterministic skill metadata parser,
   eligibility gate, semantic/file/trigger ranker, bounded composer, transient
   loader, and secret-free in-process outcome tracker.
+- `src/routing_quality.rs` — opt-in routing descriptor validation, pure metadata
+  search and task-contract comparison; no library I/O or authorization.
 - `src/profile.rs` — `UserProfile` (single markdown file with bounded
   size, append/forget with category sections).
 - `src/awareness.rs` — `AwarenessLedger` and the `EpistemicRecord` /
