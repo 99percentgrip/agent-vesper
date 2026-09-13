@@ -71,7 +71,14 @@ impl Controller {
             VoicePhase::Idle => Control::Start,
             VoicePhase::Recording => Control::Stop,
             VoicePhase::Error => Control::Retry,
-            VoicePhase::Preparing | VoicePhase::Transcribing => {
+            // F5 is the voice toggle itself: pressing it during first-use
+            // preparation (which can run a multi-minute package/model
+            // install) previously CANCELLED that preparation — the natural
+            // "press again" reflex killed the install and surfaced
+            // "Voice preparation cancelled". Preparation is no longer
+            // cancellable via F5; Del is the explicit cancel key.
+            VoicePhase::Preparing => return,
+            VoicePhase::Transcribing => {
                 self.cancel.store(true, Ordering::Release);
                 state.detail =
                     "Stopping voice work… audio stays private for Retry / Discard.".into();
@@ -88,9 +95,21 @@ impl Controller {
             state.detail = if matches!(command, Control::Stop) {
                 "Stopping microphone…"
             } else {
-                "Preparing voice… F5 cancels."
+                "Preparing voice… this can take several minutes on first use; Del cancels."
             }
             .into();
+        }
+    }
+    /// Explicit cancel for the long-running phases (Preparing/Transcribing).
+    /// Retains any saved audio for Retry; does not clear the error state.
+    pub fn cancel_work(&self) {
+        let mut state = self.state.lock().unwrap();
+        if matches!(
+            state.phase,
+            VoicePhase::Preparing | VoicePhase::Transcribing
+        ) {
+            self.cancel.store(true, Ordering::Release);
+            state.detail = "Stopping voice work… audio stays private for Retry / Discard.".into();
         }
     }
     pub fn discard(&self) {
@@ -280,7 +299,7 @@ impl Worker {
         if let Some(python) = &self.python {
             return Ok(python.clone());
         }
-        self.publish(VoicePhase::Preparing, "Preparing local voice model · F5 Cancel (first use may download Python packages/model)");
+        self.publish(VoicePhase::Preparing, "Preparing local voice model · first use may download Python packages/model · Del cancels");
         for python in super::candidate_whisper_pythons().into_iter().take(64) {
             if self.cancelled() {
                 return Err("Voice preparation cancelled.".into());
@@ -395,7 +414,7 @@ impl Worker {
         }
         self.publish(
             VoicePhase::Transcribing,
-            "Loading local speech model · F5 Cancel",
+            "Loading local speech model · Del cancels",
         );
         let mut sidecar = match self.sidecar.take() {
             Some(sidecar) => sidecar,
@@ -445,7 +464,7 @@ impl Worker {
                         self.publish(
                             VoicePhase::Transcribing,
                             format!(
-                                "Transcribed {} seconds · F5 Cancel",
+                                "Transcribed {} seconds · Del cancels",
                                 message["seconds"].as_u64().unwrap_or(0)
                             ),
                         );
@@ -558,6 +577,89 @@ const SCRIPT: &str = include_str!("voice_transcribe.py");
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn controller() -> (Controller, std::sync::mpsc::Receiver<Control>) {
+        // Mirrors Controller::new but returns the control receiver so the
+        // key-mapping contract is testable without spawning the worker.
+        let (tx, rx) = mpsc::sync_channel(4);
+        let (_out, text) = mpsc::sync_channel(1);
+        let state = Arc::new(Mutex::new(Snapshot::default()));
+        let cancel = Arc::new(AtomicBool::new(false));
+        let quit = Arc::new(AtomicBool::new(false));
+        std::mem::forget((cancel.clone(), quit.clone(), state.clone()));
+        let controller = Controller {
+            tx,
+            text,
+            state,
+            cancel,
+            quit,
+            worker: None,
+        };
+        (controller, rx)
+    }
+    #[test]
+    fn f5_during_preparing_is_ignored_not_a_cancel() {
+        // Regression: F5 is the voice toggle itself. During first-use
+        // preparation (multi-minute package install) pressing F5 used to
+        // set the cancel flag, surfacing "Voice preparation cancelled."
+        // and leaving the feature unusable. It must be a no-op now.
+        let (controller, rx) = controller();
+        {
+            let mut state = controller.state.lock().unwrap();
+            state.phase = VoicePhase::Preparing;
+        }
+        controller.toggle();
+        assert!(
+            !controller.cancel.load(Ordering::Acquire),
+            "F5 during Preparing must not set the cancel flag"
+        );
+        assert!(
+            rx.try_recv().is_err(),
+            "F5 during Preparing must send no control command"
+        );
+        {
+            let state = controller.state.lock().unwrap();
+            assert_eq!(
+                state.phase,
+                VoicePhase::Preparing,
+                "phase must stay Preparing"
+            );
+        }
+    }
+    #[test]
+    fn del_during_preparing_and_transcribing_cancels() {
+        let (controller, _rx) = controller();
+        {
+            let mut state = controller.state.lock().unwrap();
+            state.phase = VoicePhase::Preparing;
+        }
+        controller.cancel_work();
+        assert!(
+            controller.cancel.load(Ordering::Acquire),
+            "Del during Preparing must set the cancel flag"
+        );
+        controller.cancel.store(false, Ordering::Release);
+        {
+            let mut state = controller.state.lock().unwrap();
+            state.phase = VoicePhase::Transcribing;
+        }
+        controller.cancel_work();
+        assert!(
+            controller.cancel.load(Ordering::Acquire),
+            "Del during Transcribing must set the cancel flag"
+        );
+        // Idle/Recording/Error phases: cancel_work must be inert.
+        controller.cancel.store(false, Ordering::Release);
+        for phase in [VoicePhase::Idle, VoicePhase::Recording, VoicePhase::Error] {
+            let mut state = controller.state.lock().unwrap();
+            state.phase = phase;
+            drop(state);
+            controller.cancel_work();
+            assert!(
+                !controller.cancel.load(Ordering::Acquire),
+                "cancel_work must be inert in {phase:?}"
+            );
+        }
+    }
     fn worker() -> (Worker, mpsc::Receiver<String>) {
         let (tx, rx) = mpsc::sync_channel(1);
         (

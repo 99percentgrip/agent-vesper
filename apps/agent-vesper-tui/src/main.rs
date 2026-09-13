@@ -1738,10 +1738,15 @@ async fn drive_loop(
             session.voice.toggle();
             continue;
         }
-        if code == KeyCode::Delete
-            && session.voice.snapshot().phase == agent_vesper_tui::ui::VoicePhase::Error
-        {
-            session.voice.discard();
+        if code == KeyCode::Delete {
+            // Del cancels long-running voice work (Preparing/Transcribing)
+            // and discards a failed attempt — one explicit key, documented
+            // in every phase hint.
+            if session.voice.snapshot().phase == agent_vesper_tui::ui::VoicePhase::Error {
+                session.voice.discard();
+            } else {
+                session.voice.cancel_work();
+            }
             continue;
         }
         let ctrl = modifiers.contains(KeyModifiers::CONTROL);

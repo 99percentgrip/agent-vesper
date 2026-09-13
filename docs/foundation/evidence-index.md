@@ -1,5 +1,11 @@
 # Foundation Evidence Index
 
+[Voice F5-cancel trap repair](voice-f5-cancel-trap-repair.md) fixes the
+field-reported "Voice preparation cancelled" dead end: F5 during first-use
+preparation used to cancel the multi-minute install (the feature's own
+toggle key); it is now a no-op with Del as the explicit cancel. Red-first
+regression test, PTY suite green, workspace 2,326/0.
+
 [v0.22.7 release](v0.22.7-release-execution.md) records the score-floor
 initiative publication after reconciling with the concurrent v0.22.4–v0.22.6
 releases via rebase: all four exact-commit gates on `574c224`, 16 verified
