@@ -6,6 +6,7 @@ Baseline inspected: `5cf5835f78d8e779443188c3490172d7736a589a` plus the uncommit
 [dollar-token repair](foundation/dollar-skill-routing-repair.md).
 [Research and execution record](foundation/skill-routing-quality-research.md).
 [Implementation ledger](foundation/skill-routing-quality-implementation.md).
+[Language follow-up](foundation/skill-routing-language-execution.md).
 
 ## 1. Objective
 

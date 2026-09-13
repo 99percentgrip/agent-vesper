@@ -134,6 +134,7 @@ struct Document {
     slug: String,
     frequencies: BTreeMap<String, usize>,
     length: usize,
+    anchors: BTreeSet<String>,
     descriptor: Option<RoutingDescriptor>,
     effect: RoutingEffect,
 }
@@ -144,6 +145,26 @@ pub struct RoutingCatalogEntry {
     pub metadata: SkillMetadata,
     pub revision: String,
     pub descriptor: Option<RoutingDescriptor>,
+}
+
+impl RoutingCatalogEntry {
+    pub(crate) fn validate(&self) -> Result<(), &'static str> {
+        if let Some(descriptor) = &self.descriptor {
+            descriptor.validate(&self.revision)?;
+            if descriptor.effects < self.required_effect() {
+                return Err("descriptor contradicts authoritative effects");
+            }
+        }
+        Ok(())
+    }
+
+    fn required_effect(&self) -> RoutingEffect {
+        match self.metadata.risk {
+            crate::SkillRisk::ReadOnly => RoutingEffect::ReadOnly,
+            crate::SkillRisk::Mutating => RoutingEffect::Workspace,
+            crate::SkillRisk::External => RoutingEffect::External,
+        }
+    }
 }
 
 /// Index of already validated metadata. No filesystem or network authority.
@@ -161,6 +182,9 @@ pub struct RoutingMatch {
     pub score: f64,
     pub matched_terms: usize,
     pub query_terms: usize,
+    /// Matches in identity/tags/declared artifacts, excluding generic actions.
+    pub anchor_terms: usize,
+    pub task_request: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -186,17 +210,8 @@ impl RoutingIndex {
             if !ids.insert(metadata.slug.clone()) {
                 return Err("duplicate routing identity");
             }
-            let required_effect = match metadata.risk {
-                crate::SkillRisk::ReadOnly => RoutingEffect::ReadOnly,
-                crate::SkillRisk::Mutating => RoutingEffect::Workspace,
-                crate::SkillRisk::External => RoutingEffect::External,
-            };
-            if let Some(descriptor) = descriptor {
-                descriptor.validate(&entry.revision)?;
-                if descriptor.effects < required_effect {
-                    return Err("descriptor contradicts authoritative effects");
-                }
-            }
+            entry.validate()?;
+            let required_effect = entry.required_effect();
             let mut text = format!(
                 "{} {} {} {} {}",
                 metadata.name,
@@ -231,9 +246,20 @@ impl RoutingIndex {
             for token in frequencies.keys() {
                 *index.document_frequency.entry(token.clone()).or_insert(0) += 1;
             }
+            let anchors = tokens(&format!(
+                "{} {} {} {}",
+                metadata.name,
+                metadata.description,
+                metadata.tags.join(" "),
+                metadata.file_extensions.join(" ")
+            ))
+            .into_iter()
+            .filter(|t| !generic_term(t))
+            .collect();
             index.documents.push(Document {
                 slug: metadata.slug.clone(),
                 length: frequencies.values().sum(),
+                anchors,
                 frequencies,
                 descriptor: descriptor.clone(),
                 effect: descriptor.as_ref().map_or(required_effect, |d| d.effects),
@@ -262,6 +288,7 @@ impl RoutingIndex {
     ) -> RoutingSearch {
         let query: BTreeSet<_> = tokens(prompt).into_iter().collect();
         let mut result = RoutingSearch::default();
+        let task_request = task_request(prompt);
         for document in &self.documents {
             if contracts
                 && task
@@ -288,7 +315,12 @@ impl RoutingIndex {
                 }
                 let df = *self.document_frequency.get(term).unwrap_or(&0) as f64;
                 let idf = (1.0 + (self.documents.len() as f64 - df + 0.5) / (df + 0.5)).ln();
-                score += idf * (tf * 2.2)
+                let field_weight = if document.anchors.contains(term) {
+                    2.0
+                } else {
+                    1.0
+                };
+                score += field_weight * idf * (tf * 2.2)
                     / (tf + 1.2 * (0.25 + 0.75 * document.length as f64 / self.average_length));
             }
             if score > 0.0 {
@@ -300,6 +332,8 @@ impl RoutingIndex {
                         .filter(|term| document.frequencies.contains_key(*term))
                         .count(),
                     query_terms: query.len(),
+                    anchor_terms: query.intersection(&document.anchors).count(),
+                    task_request,
                 });
             }
         }
@@ -364,20 +398,121 @@ fn contract_rejection(
     None
 }
 
+fn generic_term(term: &str) -> bool {
+    [
+        "creat", "read", "edit", "write", "make", "use", "work", "file", "data", "tool", "task",
+        "help", "do", "not", "anyth", "yet", "build", "find", "produc", "prepar", "updat",
+        "provid", "perform", "execut", "without",
+    ]
+    .contains(&term)
+}
+
+// Language features only: no skill IDs, permissions, resource claims or body text.
+fn task_request(text: &str) -> bool {
+    let words: Vec<_> = text
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .take(8)
+        .map(str::to_lowercase)
+        .collect();
+    let first = match words.as_slice() {
+        [a, b, c, ..] if ["can", "could", "would", "will"].contains(&a.as_str()) && b == "you" => {
+            c.as_str()
+        }
+        [a, b, ..] if a == "please" => b.as_str(),
+        [a, ..] => a.as_str(),
+        _ => "",
+    };
+    [
+        "create",
+        "read",
+        "write",
+        "edit",
+        "make",
+        "build",
+        "put",
+        "turn",
+        "combine",
+        "merge",
+        "clean",
+        "update",
+        "produce",
+        "convert",
+        "fill",
+        "secure",
+        "password",
+        "find",
+        "search",
+        "determine",
+        "review",
+        "check",
+        "outline",
+        "prepare",
+        "explore",
+        "test",
+        "exercise",
+        "draw",
+        "debug",
+        "inspect",
+        "use",
+        "rewrite",
+        "extract",
+        "list",
+        "summarize",
+        "analyze",
+        "execute",
+        "publish",
+        "send",
+        "overwrite",
+    ]
+    .contains(&first)
+        || words.starts_with(&["i".into(), "need".into()])
+        || words.starts_with(&["help".into(), "me".into()])
+}
+
 fn tokens(text: &str) -> Vec<String> {
-    text.split(|c: char| !c.is_alphanumeric())
+    let mut normalized = text.to_lowercase();
+    for (phrase, canonical) in [
+        ("portable document format", "pdf"),
+        ("points of interest", "poi"),
+        ("point of interest", "poi"),
+        ("time zones", "timezones"),
+        ("time zone", "timezone"),
+    ] {
+        normalized = normalized.replace(phrase, canonical);
+    }
+    let words: BTreeSet<_> = normalized.split(|c: char| !c.is_alphanumeric()).collect();
+    if words.iter().any(|w| ["natural", "human"].contains(w))
+        && words
+            .iter()
+            .any(|w| ["wording", "text", "voice", "prose", "paragraph", "writing"].contains(w))
+    {
+        normalized.push_str(" humanize");
+    }
+    let stemmer = rust_stemmers::Stemmer::create(rust_stemmers::Algorithm::English);
+    normalized
+        .split(|c: char| !c.is_alphanumeric())
         .filter_map(|word| {
             let lower = word.to_lowercase();
             if lower.len() < 2
                 || [
                     "the", "and", "for", "with", "this", "that", "from", "into", "please", "can",
-                    "you", "to", "of", "in", "it", "is", "an", "a",
+                    "you", "to", "of", "in", "it", "is", "an", "a", "do", "does", "did", "not",
+                    "anything", "yet", "what", "how", "why", "these", "those", "them", "its",
+                    "our", "your", "my", "me", "we", "us", "let", "am", "are", "be", "been",
+                    "still", "here", "there", "now",
                 ]
                 .contains(&lower.as_str())
             {
                 None
             } else {
-                Some(lower)
+                Some(match stemmer.stem(&lower).as_ref() {
+                    "workbook" => "spreadsheet".into(),
+                    "debugg" => "debug".into(),
+                    "written" => "write".into(),
+                    "outline" | "breakdown" => "plan".into(),
+                    term => term.to_owned(),
+                })
             }
         })
         .collect()

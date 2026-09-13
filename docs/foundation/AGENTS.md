@@ -20,6 +20,9 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
   implementation, quality HOLD/ADOPT evidence and score-floor integration dependency.
   `skill-routing-quality-results.json` retains frozen offline predictions;
   `skill-routing-quality-summary.py` derives metrics without changing labels.
+- `skill-routing-language-execution.md` owns the follow-up language normalization,
+  development measurements, unchanged-corpus evaluation and remaining gates.
+  `skill-routing-language-results.json` preserves its complete prediction receipt.
 - `evidence-index.md` is the durable execution ledger and command record.
 - `completion-assurance-proposal.md` owns the researched proposal for native
   requirement coverage, execution receipts, and enforced completion decisions.

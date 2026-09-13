@@ -186,3 +186,48 @@ fn missing_resource_does_not_activate_a_different_operation() {
             .contains(&("inspect".into(), RoutingRejection::ActionMismatch))
     );
 }
+
+#[test]
+fn language_normalization_uses_metadata_not_catalog_names() {
+    let entries = vec![
+        entry(
+            "alpha",
+            "Edit spreadsheets and workbooks",
+            RoutingEffect::Workspace,
+        ),
+        entry("beta", "Read PDF forms", RoutingEffect::ReadOnly),
+        entry("gamma", "Debug Python programs", RoutingEffect::ReadOnly),
+    ];
+    let index = RoutingIndex::build(&entries).unwrap();
+    for (prompt, expected) in [
+        ("Build a workbook containing annual expenditure", "alpha"),
+        ("Read these Portable Document Format forms", "beta"),
+        ("Inspect a Python debugger session", "gamma"),
+    ] {
+        let found = index.search(prompt, &RoutingTask::default());
+        assert_eq!(found.candidates[0].slug, expected);
+        assert!(found.candidates[0].anchor_terms > 0);
+        assert!(found.candidates[0].task_request);
+    }
+}
+
+#[test]
+fn a_single_topic_in_a_general_question_is_not_a_task_request() {
+    let index = RoutingIndex::build(&[entry(
+        "calendar-review",
+        "Review weekly plans",
+        RoutingEffect::ReadOnly,
+    )])
+    .unwrap();
+    let question = index.search("How many days are in a week?", &RoutingTask::default());
+    assert!(!question.candidates[0].task_request);
+    assert_eq!(question.candidates[0].matched_terms, 1);
+    let request = index.search("Review my week", &RoutingTask::default());
+    assert!(request.candidates[0].task_request);
+    assert!(
+        index
+            .search("Do not do anything yet", &RoutingTask::default())
+            .candidates
+            .is_empty()
+    );
+}

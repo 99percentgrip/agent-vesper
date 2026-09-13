@@ -23,6 +23,11 @@ subsystem that backs the Tier C Phase 8 un-stubbed commands
   loader, and secret-free in-process outcome tracker.
 - `src/routing_quality.rs` — bounded descriptor validation, metadata BM25 retrieval,
   typed action/artifact/effect/resource comparison, preview choices and traces.
+  Enhanced lookup normalizes English word forms with the shared pinned
+  `rust-stemmers` dependency and a bounded general task-vocabulary map; these
+  transforms never run in Standard or the chunk tier. Single-term activation
+  requires a meaningful metadata anchor and a task-request form. Descriptor
+  validation does not rebuild per-entry indexes on the warm path.
   `skills.rs` owns optional sibling `.routing.json` reads and an in-memory index
   cache keyed by the current eligible catalog, source freshness stamps and descriptors.
   No routing operation writes skill sources or creates durable index state.

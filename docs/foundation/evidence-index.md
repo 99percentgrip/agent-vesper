@@ -2,6 +2,12 @@
 
 Status: evidence index; acceptance status is scoped to each section.
 
+## Skill routing language follow-up — lexical verification passed, quality HOLD — 2026-09-13
+
+[Execution report](skill-routing-language-execution.md) records the follow-up to the
+initial quality HOLD. Original labels and prediction receipts are preserved;
+new development results do not substitute for held-out acceptance.
+
 ## Skill routing preview — promotion HOLD — 2026-09-13
 
 [Implementation report](skill-routing-quality-implementation.md) records shared

@@ -4087,6 +4087,7 @@ dependencies = [
 name = "vesper-memory"
 version = "0.22.3"
 dependencies = [
+ "rust-stemmers",
  "serde",
  "serde_json",
  "sha2 0.11.0",

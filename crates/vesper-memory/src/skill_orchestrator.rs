@@ -739,7 +739,7 @@ impl SkillStore {
                     revision: revision.clone(),
                     descriptor,
                 };
-                if let Err(reason) = RoutingIndex::build(std::slice::from_ref(&entry)) {
+                if let Err(reason) = entry.validate() {
                     report.rejected.push((metadata.slug.clone(), reason.into()));
                     continue;
                 }
@@ -773,8 +773,8 @@ impl SkillStore {
                             .iter()
                             .map(|(slug, reason)| (slug.clone(), format!("{reason:?}"))),
                     );
-                    // A lexical hit retrieves; a meaningful margin and multiple
-                    // matched terms are needed to activate. Scores are not probabilities.
+                    // Activation needs contextual overlap or a salient metadata term
+                    // in a task request. Scores are not probabilities.
                     let best = found.candidates.first().map_or(0.0, |m| m.score);
                     let ambiguous = found.candidates.get(1).is_some_and(|second| {
                         let first = &found.candidates[0];
@@ -806,8 +806,8 @@ impl SkillStore {
                         .candidates
                         .iter()
                         .filter(|m| {
-                            m.matched_terms >= 2
-                                && m.matched_terms * 5 >= m.query_terms
+                            ((m.matched_terms >= 2 && m.matched_terms * 5 >= m.query_terms)
+                                || (m.task_request && m.anchor_terms > 0))
                                 && m.score >= best * 0.55
                         })
                         .map(|m| (m.slug.as_str(), m.score))
