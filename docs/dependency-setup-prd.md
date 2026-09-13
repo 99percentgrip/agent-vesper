@@ -1,6 +1,6 @@
 # Guided dependency setup
 
-Status: implementation locally verified; clean-platform acceptance incomplete.
+Status: implemented and released in v0.22.5 as preview; clean-platform installation acceptance incomplete.
 Baseline: `89bdc07`.
 
 ## Objective

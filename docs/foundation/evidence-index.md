@@ -1,11 +1,11 @@
 # Foundation Evidence Index
 
-[v0.22.5 release](v0.22.5-release-execution.md) tracks guided setup publication; release gates are pending.
+[v0.22.5 release](v0.22.5-release-execution.md) records successful exact-commit gates, five-platform publication, download verification and registry PR #539 update. Local installation was preserved.
 
 [Guided dependency setup](dependency-setup-execution.md) records 2,315 passing
 workspace tests, 23 acceptance cases, Rust 1.88 compatibility and real isolated
 Linux setup through CLI and Settings. Clean-platform installation and restart
-acceptance remain pending; no release or local update was performed.
+acceptance remain pending; publication is recorded separately above, with no local update.
 
 
 Status: evidence index; acceptance status is scoped to each section.
