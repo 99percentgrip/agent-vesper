@@ -1,5 +1,11 @@
 # Foundation Evidence Index
 
+[v0.22.7 release](v0.22.7-release-execution.md) records the score-floor
+initiative publication after reconciling with the concurrent v0.22.4–v0.22.6
+releases via rebase: all four exact-commit gates on `574c224`, 16 verified
+assets, registry PR #539 updated in place, local installation preserved at
+0.22.6.
+
 [Voice-control implementation](voice-control-execution.md) tracks the requested
 dynamic footer and long-dictation repair; verification is in progress.
 
