@@ -10,6 +10,8 @@ Own durable project documentation and evidence-backed engineering records.
   contributor references, specifications, and historical evidence.
 - `installation.md` owns user prerequisites, dependency setup, installation,
   updates, paths, troubleshooting, and the actual uninstall/data-removal behavior.
+- `skills.md` owns user-facing skill routing activation, per-project controls,
+  explicit invocation, data-flow/usage explanations and preview limitations.
 - `using-vesper.md` owns everyday workflows and a curated command reference;
   `zed.md` owns custom ACP registration, provider selection and chat persistence.
 - Keep user guides task-oriented and link to detailed engineering records rather

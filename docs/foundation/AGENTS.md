@@ -6,6 +6,9 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `v0.22.4-release-execution.md` owns the routing-preview release, exact-commit
+  gate and registry receipts, documentation refresh and preserved local installation.
+
 - `settings-and-update-execution.md` owns native Settings, automatic enrollment,
   updater repair evidence and unexecuted platform acceptance.
 - `v0.22.2-release-execution.md` owns the Settings repair release receipts and

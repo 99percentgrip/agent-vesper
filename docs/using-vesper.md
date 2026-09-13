@@ -126,6 +126,12 @@ For local HTML work, VesperLens can open a browser review with annotations and f
 
 The installer seeds a shared skill library. Project skills can override shared skills with the same name. Upgrades add new seeds while preserving existing edits and recorded deletions.
 
+For automatic selection from natural task descriptions, try **Settings → Skills →
+Model-assisted selection** and save when leaving Settings. This optional preview
+uses your configured provider and adds latency and usage. Standard remains the
+default. See [Skills and routing](skills.md) for activation, explicit requests,
+per-project controls, and fallback behavior.
+
 Native MCP tools and signed declarative plugins extend workflows subject to permission checks. Configure MCP integrations in Vesper; do not assume editor-provided MCP servers are automatically executed by the harness. See `/mcp`, `/plugins`, and the installed command reference.
 
 ## Sessions and checkpoints

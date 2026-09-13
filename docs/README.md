@@ -9,10 +9,14 @@ Choose a guide by what you want to do. Installation and everyday use come first;
 | Guide | Covers |
 |---|---|
 | [Installation](installation.md) | Supported systems, prerequisites, dependency setup, upgrades, paths, troubleshooting, and uninstalling. |
-| [Using Vesper](using-vesper.md) | First tasks, settings, memory, skills, reasoning, requirement verification, and useful commands. |
+| [Using Vesper](using-vesper.md) | First tasks, settings, memory, reasoning, requirement verification, and useful commands. |
+| [Skills and routing](skills.md) | Enable model-assisted selection, preserve your library, choose skills explicitly, and return to Standard routing. |
 | [Zed integration](zed.md) | Connect the ACP server, select a provider, and keep editor chat history. |
 | [OpenAI](openai-provider.md) | API-key and ChatGPT subscription authentication, model controls, usage, and account limits. |
 | [Web tools](web-tools.md) | Enable fetching and browser interaction, repair the bundled driver, and understand supported operations. |
+
+To try automatic skill selection, start with [Skills and routing](skills.md).
+For installing the new version, follow [Update or choose a version](installation.md#update-or-choose-a-version).
 
 For changes between versions, read the [release notes](https://github.com/99percentgrip/agent-vesper/releases). For a problem, [open an issue](https://github.com/99percentgrip/agent-vesper/issues) with your operating system, Vesper version, and steps to reproduce it. Remove credentials and private content from logs.
 

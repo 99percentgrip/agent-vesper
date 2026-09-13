@@ -2,6 +2,12 @@
 
 Status: evidence index; acceptance status is scoped to each section.
 
+## v0.22.4 routing preview release — in progress — 2026-09-13
+
+[Release execution](v0.22.4-release-execution.md) tracks the authorized version bump,
+exact-commit pipeline, README/user-guide refresh and preserved local installation.
+Routing quality remains a documented preview; release does not mark the PRD complete.
+
 ## Intelligent skill routing — model-assisted implementation and live regression; quality HOLD — 2026-09-13
 
 [Model-assisted execution](skill-routing-model-assistance-execution.md) records the

@@ -27,7 +27,8 @@ Choose **Z.ai, OpenAI, or local models through LM Studio**. Vesper runs on your 
 | **Check completion against requirements** | Enable enforced completion in Settings. The agent recognizes and remembers the task’s requirements document; current verification evidence is required before completion. Missing or failing checks stay visible. |
 | **Review visual work** | Use VesperLens to review local HTML artifacts in a browser and return annotations or answers to planning questions. |
 | **Use the web when needed** | Enable contained fetching, scraping, crawling, and browser interaction from Settings. Requires Docker or Podman. |
-| **Extend your workflow** | Use bundled skills, connect MCP tools, and enable reasoning or multi-worker workflows when a task needs them. |
+| **Find skills for your task** | Describe the work naturally. Optional model-assisted routing chooses from eligible skill summaries while preserving your full library. Available as a preview in Settings → Skills. [Setup and controls](docs/skills.md). |
+| **Extend your workflow** | Connect MCP tools and enable reasoning or multi-worker workflows when a task needs them. |
 
 <details>
 <summary><strong>Preview the terminal output</strong></summary>
@@ -39,6 +40,11 @@ orange; completed tools show green for success or red for failure. Use **Ctrl+T*
 to expand activity output and diffs. Six themes are available in Settings.
 
 </details>
+
+**Try the skill-routing preview:** open **Settings → Skills**, enable
+**Model-assisted selection**, then choose **Save changes** when leaving Settings.
+It uses your configured provider and adds latency and usage. Standard routing stays
+the default, and your skill files remain intact. [Learn more](docs/skills.md).
 
 [Explore the user guide →](docs/using-vesper.md)
 
@@ -142,7 +148,8 @@ irm https://raw.githubusercontent.com/99percentgrip/agent-vesper/main/scripts/un
 |---|---|
 | [Install, update, dependencies, uninstall](docs/installation.md) | [Web tools and browser setup](docs/web-tools.md) |
 | [Using Vesper: memory, commands, verification](docs/using-vesper.md) | [OpenAI authentication and usage](docs/openai-provider.md) |
-| [Connect to Zed](docs/zed.md) | [Architecture and engineering documentation](docs/README.md#for-contributors) |
+| [Skills and automatic routing](docs/skills.md) | [Connect to Zed](docs/zed.md) |
+| [Browse documentation](docs/README.md) | [Architecture and engineering documentation](docs/README.md#for-contributors) |
 
 [Browse all documentation →](docs/README.md)
 

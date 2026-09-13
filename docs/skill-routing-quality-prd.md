@@ -323,3 +323,12 @@ The [independently scored live regression](foundation/skill-routing-model-live-e
 separates metadata shortlisting, actual model decisions, final native activation,
 provider failures and unsupported execution contexts. It does not replace the
 required fresh holdout or all-size adoption gates.
+
+## Authorized preview release
+
+Alex explicitly requested the version bump and release pipeline on 2026-09-13
+after reviewing the measured gains and remaining quality gaps.
+[v0.22.4 release execution](foundation/v0.22.4-release-execution.md) records this
+opt-in preview publication. Standard remains the default. This authorization
+permits preview distribution, not an ADOPT verdict, completion of score-floor
+PR-2/PR-3, additional live evaluation, or replacement of the local installation.
