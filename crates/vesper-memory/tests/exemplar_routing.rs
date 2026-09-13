@@ -195,7 +195,18 @@ fn g5_proof_no_chunk_vocabulary_routes_lean_body_only() {
     // any chunk manifest field. Chunk-tier activation therefore requires
     // phase/topic vocabulary — generic "I want a paper" requests load the
     // lean body alone.
-    let prompt = "produce a research publication from finished trials on gating mixtures";
+    //
+    // FIXTURE CORRECTION (score-floor PRD PR-3): the original prompt
+    // ("...from finished trials...") was NOT vocabulary-free — `finished`
+    // stems to `finish`, overlapping phase4-analysis' description "Load
+    // after experiments finish:" (verified by exact offline replication;
+    // 520-pt genuine token). The bounded `<= 3` era never exposed this
+    // because phase4's honest admission hid inside the noise mass. The
+    // corrected prompt is verified zero-overlap across all 16 chunk pools
+    // while still carrying unhardened-ranker noise: phase8-post-acceptance
+    // cosine +0.1826 (→ 401 pts), paper-types +0.0945, phase4 +0.0722 —
+    // all sub-floor, none admittable without literal signal.
+    let prompt = "turn these outcomes into a research publication on gating mixtures";
     let query = SkillRoutingQuery {
         prompt,
         explicit_skill: Some("research-paper-writing"),
@@ -209,29 +220,27 @@ fn g5_proof_no_chunk_vocabulary_routes_lean_body_only() {
         .iter()
         .find(|s| s.candidate.metadata.slug.as_str() == "research-paper-writing")
         .expect("skill selected");
+    // G5 LITERAL (score-floor PRD PR-3, restored 2026-09-13): a prompt
+    // with no chunk vocabulary routes the lean body only — ZERO chunks.
+    // History: the original exemplar migration weakened this to a bounded
+    // `<= 3` assertion because the pre-gate ranker admitted chunks on
+    // positive signed-hash cosine alone (measured on this exact prompt:
+    // phase3/phase4/phase8 routed with zero overlap, phase8 +0.309 →
+    // 678 pts). PR-2's conjunction gate `(overlap >= 1 || name_match) &&
+    // score >= MIN_CHUNK_ROUTING_SCORE` makes zero-signal admissions
+    // structurally impossible, so the literal form holds. Non-vacuity
+    // proven: the literal assertion FAILS on the pre-PR-2 tree (receipt
+    // in docs/foundation/chunk-score-floor-pr3-execution.md). The lean
+    // body's routing map remains the reachability fallback.
     assert!(
-        selected.chunks.len() <= 3,
-        "noise routing exceeded the selection cap: {:?}",
+        selected.chunks.is_empty(),
+        "G5 LITERAL: vocabulary-free prompt must route ZERO chunks, routed: {:?}",
         selected
             .chunks
             .iter()
             .map(|c| c.name.as_str())
             .collect::<Vec<_>>()
     );
-    // FINDING (recorded, not masked): the directive's literal G5 expectation
-    // — "a prompt with no chunk vocabulary routes the lean body only" —
-    // CANNOT be satisfied by the shipped ranker. `rank_chunks` admits any
-    // positive score, and 64-dim signed-hash cosine gives disjoint token
-    // pools a small positive value (~0.07–0.31 here). Replicated exactly
-    // (FNV-1a 64, stem, stop-words): phase8-post-acceptance +0.309 (678 pts),
-    // paper-types +0.095, phase5/6 +0.075 — so a vocabulary-free prompt can
-    // still route up to 3 chunks on hash noise alone, with zero overlap
-    // points. The alias-cross-talk recon documented this noise floor as
-    // latent; this exemplar makes it observable. Bounded impact: ≤3 chunks,
-    // observed ≤5.5 KB, budget still enforced below. Proposed remediation —
-    // a chunk-tier score floor (≥520, one literal token) — is ranker policy
-    // and needs its own PRD; NOT changed here. The lean body's routing map
-    // is the deliberate fallback for knowledge reachability regardless.
     assert!(selected.body.contains("When To Use This Skill"));
     assert!(selected.body.contains("Phase Routing Map"));
     assert!(!selected.body.contains("### Step 0.1"));

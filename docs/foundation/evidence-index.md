@@ -17,7 +17,6 @@ acceptance remain pending; publication is recorded separately above, with no loc
 
 Status: evidence index; acceptance status is scoped to each section.
 
-<<<<<<< HEAD
 ## Dependency setup reconnaissance — COMPLETE; implementation proposed — 2026-09-13
 
 [Dependency setup recon](dependency-setup-recon.md) identifies the missing engine
@@ -75,7 +74,18 @@ Standard remains default; combined score-floor integration is pending GLM PR-2/P
 [Reconnaissance](skill-routing-coexistence-recon.md) records GLM PR-1 commit
 `5cf5835`, overlapping files, isolated routing checkout, library preservation and
 required combined acceptance. Implementation is approved; final acceptance pending.
-=======
+## Chunk score-floor PR-3 / initiative COMPLETE — 2026-09-13
+
+[PR-3 execution](chunk-score-floor-pr3-execution.md) restores the exemplar
+G5 proof to its literal zero-chunks form. Stop rule fired and resolved
+test-side: the original prompt was never vocabulary-free (`finished` →
+`finish` overlaps phase4's description); corrected fixture verified
+zero-overlap across all 16 chunk pools while still carrying sub-floor
+hash noise (phase8 +0.1826 → 401 pts). Non-vacuity receipts on the
+pre-PR-2 tree (3 noise chunks routed). All 6 PRD ACs re-traced; floor
+2,258/0, acceptance 23/23, clippy/fmt/naming-guard clean. Initiative
+closed.
+
 ## Chunk score-floor Q1 — 2026-09-13
 
 [Q1 execution](chunk-score-floor-q1-execution.md) closes the embedded-name
@@ -84,7 +94,6 @@ admission bypass: chunk names now match delimiter-bounded
 `auto-comet-review`, while delimited addressing still routes. Red-first
 pin + control; skill-tier `phrase_matches` untouched. Floor 2,258,
 acceptance 23/23, clippy/fmt/naming-guard clean.
->>>>>>> 3dcf079 (feat: delimiter-bounded chunk-name admission (score-floor Q1))
 
 ## Chunk score-floor PR-2 — 2026-09-13
 

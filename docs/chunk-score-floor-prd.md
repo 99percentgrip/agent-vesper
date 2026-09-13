@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Implementing — PR-2 landed (conjunction gate live, anchor unignored); PR-3 (G5 literal restoration) pending |
+| **Status** | COMPLETE — 2026-09-13 (PR-1 anchor, PR-2 conjunction gate, Q1 delimiter-bounded names, PR-3 literal G5 restoration) |
 | **Target crates** | `vesper-memory` |
 | **Owner** | Alex (product); implementation via fast-track directives |
 | **Related** | `advanced-context-paging-prd.md` (chunk tier), `ranker-hardening-prd.md` (raw pools), `docs/foundation/exemplar-migration-execution.md` §5.1 (the finding), `docs/architecture/recon_alias_crosstalk.md` §5.3 (noise floor documented as latent), `docs/architecture/recon_exemplar_candidate.md` |
@@ -193,3 +193,16 @@ stop rule in PR-3 governs.
   skill tier untouched. Floor 2,258; acceptance 23/23; clippy, fmt,
   naming-guard clean. Evidence:
   `docs/foundation/chunk-score-floor-q1-execution.md`.
+- 2026-09-13: **PR-3 landed — initiative COMPLETE.** G5 restored to the
+  literal zero-chunks assertion. Stop rule fired en route and resolved
+  test-side: the original prompt was never vocabulary-free (`finished` →
+  stem `finish` overlaps phase4-analysis' description "experiments
+  finish:"; exact offline replication). Corrected prompt verified
+  zero-overlap against all 16 chunk pools while still carrying unhardened
+  noise (phase8 +0.1826 → 401 pts, paper-types +0.0945, phase4 +0.0722).
+  Non-vacuity receipts: literal G5 fails on the pre-PR-2 tree routing
+  exactly those three chunks (original prompt: phase3/4/8; corrected
+  prompt: phase8/paper-types/phase4). AC-2 satisfied literally. Final
+  gates: floor 2,258 / 0 failed, acceptance 23/23, clippy, fmt,
+  naming-guard clean. Evidence:
+  `docs/foundation/chunk-score-floor-pr3-execution.md`.

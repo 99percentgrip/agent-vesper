@@ -89,14 +89,16 @@ Own durable project documentation and evidence-backed engineering records.
   routing arithmetic is explicitly out of scope; the bounded prompt-side
   residual (520-pt literal match) is a recorded, accepted limitation, not a
   hidden one.
-- `chunk-score-floor-prd.md` owns the planning-stage requirements for
-  eliminating the chunk-tier cosine noise floor (finding:
-  `foundation/exemplar-migration-execution.md` §5.1). Binding constraints:
+- `chunk-score-floor-prd.md` owns the completed (2026-09-13) requirements
+  for eliminating the chunk-tier cosine noise floor (finding:
+  `foundation/exemplar-migration-execution.md` §5.1). Landed contract:
   the eligibility gate is the conjunction `(overlap >= 1 || name_match) &&
-  score >= 520` in `rank_chunks` only — a bare score floor is explicitly
-  rejected (the observed 678-pt noise outlier passes 520; see PRD §1.1);
-  skill-tier thresholds (`AUTO_ACTIVATION_SCORE`) are out of scope; the
-  exemplar G5 test is restored to its literal zero-chunks form in PR-3.
+  score >= MIN_CHUNK_ROUTING_SCORE (520)` in `rank_chunks` only — a bare
+  score floor was explicitly rejected (the observed 678-pt noise outlier
+  passes 520; PRD §1.1); chunk-name admission is delimiter-bounded
+  (`chunk_name_matches`); skill-tier thresholds (`AUTO_ACTIVATION_SCORE`)
+  were never touched; the exemplar G5 test asserts the literal zero-chunks
+  form on a verified vocabulary-free fixture.
 
 ## Local Contracts
 
