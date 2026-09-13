@@ -231,3 +231,215 @@ fn a_single_topic_in_a_general_question_is_not_a_task_request() {
             .is_empty()
     );
 }
+
+#[test]
+fn sourced_verbs_are_sorted_and_recognize_new_task_wording() {
+    let source = include_str!("../assets/routing-verbs.txt");
+    assert!(source.contains("Copyright 2006 by Princeton University"));
+    let words: Vec<_> = source
+        .lines()
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .collect();
+    assert_eq!(words.len(), 8429);
+    assert!(words.windows(2).all(|w| w[0] < w[1]));
+    assert!(
+        words
+            .iter()
+            .all(|w| w.is_ascii() && w.chars().all(|c| c.is_ascii_lowercase()))
+    );
+    let index = RoutingIndex::build(&[entry(
+        "instrument",
+        "Calibration of optical instruments",
+        RoutingEffect::ReadOnly,
+    )])
+    .unwrap();
+    for prompt in [
+        "Calibrate the optical instrument",
+        "Diagnose the instrument",
+        "Locate the instrument",
+    ] {
+        let found = index.search(prompt, &RoutingTask::default());
+        assert!(found.candidates[0].task_request, "{prompt}");
+    }
+    assert!(
+        index
+            .search(
+                "Explain what an optical instrument is",
+                &RoutingTask::default()
+            )
+            .candidates
+            .is_empty()
+    );
+}
+
+#[test]
+fn conversation_controls_do_not_request_a_single_topic_skill() {
+    let index = RoutingIndex::build(&[entry(
+        "control-reference",
+        "Stop pause wait hold instrument",
+        RoutingEffect::ReadOnly,
+    )])
+    .unwrap();
+    for prompt in ["Stop now", "Pause here", "Wait please", "Hold on"] {
+        assert!(
+            !index.search(prompt, &RoutingTask::default()).candidates[0].task_request,
+            "{prompt}"
+        );
+    }
+}
+
+#[test]
+fn generic_request_verbs_cannot_supply_a_missing_topic() {
+    let index = RoutingIndex::build(&[
+        entry("weather", "See weather forecasts", RoutingEffect::ReadOnly),
+        entry("dataset", "Count dataset rows", RoutingEffect::ReadOnly),
+    ])
+    .unwrap();
+    for prompt in ["See you later", "Count to ten"] {
+        assert!(
+            index
+                .search(prompt, &RoutingTask::default())
+                .candidates
+                .is_empty(),
+            "{prompt}"
+        );
+    }
+    assert_eq!(
+        index
+            .search("Count the dataset rows", &RoutingTask::default())
+            .candidates[0]
+            .slug,
+        "dataset"
+    );
+}
+
+#[test]
+fn an_unrelated_identity_cannot_make_a_generic_verb_a_topic() {
+    let index = RoutingIndex::build(&[
+        entry("weather", "See weather forecasts", RoutingEffect::ReadOnly),
+        entry("see", "Visual inspection", RoutingEffect::ReadOnly),
+    ])
+    .unwrap();
+    let found = index.search("See you later", &RoutingTask::default());
+    assert!(
+        found
+            .candidates
+            .iter()
+            .all(|candidate| candidate.slug != "weather")
+    );
+}
+
+#[test]
+fn excluded_alternatives_are_not_positive_retrieval_evidence() {
+    let index = RoutingIndex::build(&[
+        entry("alpha", "Optical calibration", RoutingEffect::ReadOnly),
+        entry("beta", "Acoustic calibration", RoutingEffect::ReadOnly),
+    ])
+    .unwrap();
+    for prompt in [
+        "Calibrate optical instruments, not acoustic instruments",
+        "Calibrate optical instruments rather than acoustic instruments",
+        "Do not calibrate acoustic instruments; calibrate optical instruments",
+        "Do not calibrate acoustic instruments but calibrate optical instruments",
+    ] {
+        let result = index.search(prompt, &RoutingTask::default());
+        assert_eq!(result.candidates[0].slug, "alpha", "{prompt}");
+        assert_eq!(
+            result,
+            index.search("Calibrate optical instruments", &RoutingTask::default()),
+            "{prompt}"
+        );
+    }
+    assert!(
+        index
+            .search(
+                "Do not calibrate optical instruments",
+                &RoutingTask::default()
+            )
+            .candidates
+            .is_empty()
+    );
+}
+
+#[test]
+fn negative_lists_and_dotted_names_do_not_restart_positive_scope() {
+    let index = RoutingIndex::build(&[
+        entry(
+            "alpha",
+            "Thermal instrument quartz",
+            RoutingEffect::ReadOnly,
+        ),
+        entry(
+            "beta",
+            "Magnetic instrument cobalt",
+            RoutingEffect::ReadOnly,
+        ),
+        entry("gamma", "Document txt", RoutingEffect::ReadOnly),
+    ])
+    .unwrap();
+    for prompt in [
+        "Do not calibrate acoustic, thermal, or magnetic instruments",
+        "Do not grind quartz, polish cobalt, or weave velvet",
+        "Do not open acoustic.wav, notes.txt",
+        "Use anything but thermal instruments",
+    ] {
+        assert!(
+            index
+                .search(prompt, &RoutingTask::default())
+                .candidates
+                .is_empty(),
+            "{prompt}"
+        );
+    }
+}
+
+#[test]
+fn task_synonyms_use_the_stemmers_actual_word_form() {
+    let index =
+        RoutingIndex::build(&[entry("alpha", "Planning", RoutingEffect::ReadOnly)]).unwrap();
+    for prompt in [
+        "Outline the work",
+        "I need an outline",
+        "Breakdown of the work",
+    ] {
+        assert_eq!(
+            index.search(prompt, &RoutingTask::default()).candidates[0].slug,
+            "alpha",
+            "{prompt}"
+        );
+    }
+}
+
+#[test]
+fn definitions_acknowledgments_and_quoted_repetition_do_not_request_procedures() {
+    let index = RoutingIndex::build(&[entry(
+        "alpha",
+        "Optical instrument calibration",
+        RoutingEffect::ReadOnly,
+    )])
+    .unwrap();
+    for prompt in [
+        "Define optical instrument calibration",
+        "What is an optical instrument?",
+        "Thanks for the optical instrument calibration",
+        "Repeat \"optical instrument calibration\"",
+    ] {
+        assert!(
+            index
+                .search(prompt, &RoutingTask::default())
+                .candidates
+                .is_empty(),
+            "{prompt}"
+        );
+    }
+    assert_eq!(
+        index
+            .search(
+                "Thanks. Calibrate the optical instrument",
+                &RoutingTask::default()
+            )
+            .candidates[0]
+            .slug,
+        "alpha"
+    );
+}

@@ -76,7 +76,11 @@ fn store_routing_including_live_identity_checks_cost_receipt() {
         let start = Instant::now();
         let result = store.orchestrate_with_options(&query, &options);
         times.push(start.elapsed().as_micros());
-        assert_eq!(result.selected.len(), 3);
+        assert_eq!(
+            result.selected.len(),
+            1,
+            "duplicate-topic skills are not complementary"
+        );
     }
     times.sort_unstable();
     println!(

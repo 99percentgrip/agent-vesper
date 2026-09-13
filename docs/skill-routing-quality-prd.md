@@ -7,6 +7,7 @@ Baseline inspected: `5cf5835f78d8e779443188c3490172d7736a589a` plus the uncommit
 [Research and execution record](foundation/skill-routing-quality-research.md).
 [Implementation ledger](foundation/skill-routing-quality-implementation.md).
 [Language follow-up](foundation/skill-routing-language-execution.md).
+[Optional semantic experiment](foundation/skill-routing-embedding-experiment.md).
 
 ## 1. Objective
 
@@ -189,7 +190,7 @@ rule and the root contract. It requires a separate accepted contract/ADR change,
 provenance review and isolated-skill privacy design before implementation. A paper
 is not authorization to introduce body ranking, model downloads or external calls.
 Enhanced lexical routing must remain fully usable without embeddings, a GPU or
-another account. No automatic model installation or remote upload of skill content.
+another account. No automatic model installation or remote upload of skill content, except the separately approved, explicitly enabled bounded task/metadata call described in the [model-assisted amendment](skill-routing-model-assistance-proposal.md). Full skill bodies never enter that selection call.
 
 ## 5. Requirements and acceptance matrix
 
@@ -311,3 +312,14 @@ The initial quality matrix failed promotion. Standard remains default; Enhanced
 is a labeled preview. The [implementation report](foundation/skill-routing-quality-implementation.md)
 retains measurements, deviations and unexecuted integration items. Passing software
 checks does not replace the quality gates above or GLM's pending score-floor gate.
+
+Ongoing request recognition and fresh evaluation: [execution record](foundation/skill-routing-request-recognition-execution.md). Adoption remains HOLD.
+
+[Model-assisted selection proposal](skill-routing-model-assistance-proposal.md) was approved by Alex on 2026-09-13. Its explicit opt-in permits the additional configured-provider metadata selection call and separately bounded latency; live evaluation remains separately gated.
+
+Current implementation evidence: [model-assisted selector](foundation/skill-routing-model-assistance-execution.md). Alex separately approved the bounded 205-case live evaluation on 2026-09-13; the pass completed with 89/95 positive recall, 0/60 no-skill activations and 2/30 forbidden-sibling activations. Quality promotion remains HOLD.
+
+The [independently scored live regression](foundation/skill-routing-model-live-evaluation.md)
+separates metadata shortlisting, actual model decisions, final native activation,
+provider failures and unsupported execution contexts. It does not replace the
+required fresh holdout or all-size adoption gates.

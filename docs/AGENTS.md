@@ -42,6 +42,8 @@ Own durable project documentation and evidence-backed engineering records.
   installed skill library: task shortlisting must not delete, automatically
   archive/disable or rewrite skill sources or user edits. It does not authorize
   full-body ranking or supersede ADR 0024 or the pending chunk-floor repair.
+- `skill-routing-model-assistance-proposal.md` owns the approved bounded
+  active-provider selection addition and its opt-in data-flow/latency boundary.
 - `output-visual-upgrade-prd.md` owns semantic activity colors, truthful status
   dots, syntax-colored numbered diffs, and aligned responsive reports.
 - `settings-and-update-prd.md` owns theme consistency, grouped Settings saves,

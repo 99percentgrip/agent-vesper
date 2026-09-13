@@ -332,6 +332,7 @@ mod tests {
 pub enum SkillRoutingControl {
     Status,
     SaveMode { enhanced: bool },
+    SaveModelAssistance { enabled: bool },
     SaveEnabled { slug: String, enabled: bool },
 }
 
@@ -339,6 +340,11 @@ pub fn parse_skill_routing_control(argument: &str) -> Result<SkillRoutingControl
     let words: Vec<_> = argument.split_whitespace().collect();
     match words.as_slice() {
         [] | ["status"] => Ok(SkillRoutingControl::Status),
+        ["save", "model-assistance", value @ ("on" | "off")] => {
+            Ok(SkillRoutingControl::SaveModelAssistance {
+                enabled: *value == "on",
+            })
+        }
         ["save", "mode", "standard"] => Ok(SkillRoutingControl::SaveMode { enhanced: false }),
         ["save", "mode", "enhanced"] => Ok(SkillRoutingControl::SaveMode { enhanced: true }),
         ["save", action @ ("enable" | "disable"), slug]
@@ -354,7 +360,7 @@ pub fn parse_skill_routing_control(argument: &str) -> Result<SkillRoutingControl
             })
         }
         _ => Err(
-            "Use /skills settings status, save mode standard|enhanced, or save enable|disable <skill>",
+            "Use /skills settings status, save mode standard|enhanced, save model-assistance on|off, or save enable|disable <skill>",
         ),
     }
 }

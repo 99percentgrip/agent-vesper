@@ -40,6 +40,21 @@ fn development_predictions_explain_selection_losses() {
     let index = RoutingIndex::build(&entries).unwrap();
     let corpus: serde_json::Value =
         serde_json::from_str(include_str!("routing_quality_cases.json")).unwrap();
+    if let Ok(path) = std::env::var("VESPER_ROUTING_TASK_OUTPUT") {
+        let flags: BTreeMap<_, _> = corpus["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| {
+                let search = index.search(c["prompt"].as_str().unwrap(), &Default::default());
+                (
+                    c["id"].as_str().unwrap(),
+                    search.candidates.first().is_some_and(|m| m.task_request),
+                )
+            })
+            .collect();
+        std::fs::write(path, serde_json::to_vec_pretty(&flags).unwrap()).unwrap();
+    }
     let tools: BTreeSet<_> = [
         "read_file",
         "write_file",
@@ -57,6 +72,38 @@ fn development_predictions_explain_selection_losses() {
     let outcomes = BTreeMap::new();
     let mut options = RoutingOptions::default();
     options.preferences.mode = RoutingMode::Enhanced;
+    if let Ok(path) = std::env::var("VESPER_ROUTING_POLICY_OUTPUT") {
+        let policies: BTreeMap<_, _> = corpus["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|c| c["category"] == "positive" || c["category"] == "no_skill")
+            .map(|c| {
+                let report = store.orchestrate_with_options(
+                    &SkillRoutingQuery {
+                        prompt: c["prompt"].as_str().unwrap(),
+                        explicit_skill: None,
+                        available_tools: &tools,
+                        platform: "linux",
+                        outcome_adjustments: &outcomes,
+                    },
+                    &options,
+                );
+                let excluded: BTreeSet<_> = report
+                    .rejected
+                    .iter()
+                    .map(|(slug, _)| slug.as_str())
+                    .collect();
+                let eligible: Vec<_> = entries
+                    .iter()
+                    .filter(|e| !excluded.contains(e.metadata.slug.as_str()))
+                    .map(|e| e.metadata.slug.clone())
+                    .collect();
+                (c["id"].as_str().unwrap(), eligible)
+            })
+            .collect();
+        std::fs::write(path, serde_json::to_vec_pretty(&policies).unwrap()).unwrap();
+    }
     let (mut positives, mut hits, mut abstentions, mut negative_activations) = (0, 0, 0, 0);
     for case in corpus["cases"].as_array().unwrap().iter().filter(|c| {
         c["split"] == "development" && (c["category"] == "positive" || c["category"] == "no_skill")

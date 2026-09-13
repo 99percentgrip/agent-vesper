@@ -36,7 +36,15 @@ business logic.
   changes and Keep editing. Only Save applies execution state; failed grouped
   saves restore prior bytes and retain the draft, reporting any rollback failure.
   Settings → Skills edits Standard/Enhanced (preview) and project skill toggles
-  in that same draft and grouped rollback. Shared workspace preferences apply to
+  in that same draft and grouped rollback. A separate model-assistance toggle
+  explains the configured-provider metadata call and added usage/latency. Enabling
+  it selects Enhanced; switching to Standard makes assistance inactive. Direct, VRO
+  and ReAct resolve prepared choices in the existing background turn, with routing
+  notices on the same FIFO and original prompt content restored before persistence.
+  Selection receives original task text, including on capability-switch retry;
+  expanded file/diff references remain in the coding request only. Cancellation
+  after selection returns before MoA, compaction or coding dispatch.
+  Shared workspace preferences apply to
   the next turn; source skills remain unchanged. `/skills settings` also exposes
   the shared explicit-save text controls. Routing notices survive direct, VRO
   and ReAct startup; read-only controls narrow Enhanced selection.
@@ -990,5 +998,7 @@ feature, without re-running `cargo deny check`, `cargo audit`, and the
 five-target CI matrix.
 
 ## Child DOX Index
+
+- `examples/AGENTS.md` — explicit non-shipped evaluation launchers; live execution is separately authorized.
 
 - `tests/AGENTS.md` — isolated native terminal process verification.

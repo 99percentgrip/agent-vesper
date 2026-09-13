@@ -135,6 +135,7 @@ struct Document {
     frequencies: BTreeMap<String, usize>,
     length: usize,
     anchors: BTreeSet<String>,
+    identity: BTreeSet<String>,
     descriptor: Option<RoutingDescriptor>,
     effect: RoutingEffect,
 }
@@ -184,6 +185,7 @@ pub struct RoutingMatch {
     pub query_terms: usize,
     /// Matches in identity/tags/declared artifacts, excluding generic actions.
     pub anchor_terms: usize,
+    anchor_matches: BTreeSet<String>,
     pub task_request: bool,
 }
 
@@ -191,6 +193,36 @@ pub struct RoutingMatch {
 pub struct RoutingSearch {
     pub candidates: Vec<RoutingMatch>,
     pub rejected: Vec<(String, RoutingRejection)>,
+}
+
+impl RoutingSearch {
+    pub(crate) fn activation_scores(&self, prompt: &str) -> BTreeMap<&str, f64> {
+        let best = self.candidates.first().map_or(0.0, |m| m.score);
+        let text = relevance_text(prompt);
+        let multiple = text
+            .split_whitespace()
+            .any(|word| ["and", "also", "then", "plus"].contains(&word));
+        let mut covered = BTreeSet::new();
+        let mut scores = BTreeMap::new();
+        for candidate in &self.candidates {
+            if !((candidate.matched_terms >= 2
+                && candidate.matched_terms * 5 >= candidate.query_terms)
+                || (candidate.task_request && candidate.anchor_terms > 0))
+                || candidate.score < best * 0.55
+            {
+                continue;
+            }
+            if !scores.is_empty() && (!multiple || candidate.anchor_matches.is_subset(&covered)) {
+                continue;
+            }
+            scores.insert(candidate.slug.as_str(), candidate.score);
+            covered.extend(candidate.anchor_matches.iter().cloned());
+            if scores.len() == 3 {
+                break;
+            }
+        }
+        scores
+    }
 }
 
 impl RoutingIndex {
@@ -260,6 +292,7 @@ impl RoutingIndex {
                 slug: metadata.slug.clone(),
                 length: frequencies.values().sum(),
                 anchors,
+                identity: tokens(&metadata.name).into_iter().collect(),
                 frequencies,
                 descriptor: descriptor.clone(),
                 effect: descriptor.as_ref().map_or(required_effect, |d| d.effects),
@@ -286,9 +319,25 @@ impl RoutingIndex {
         task: &RoutingTask,
         contracts: bool,
     ) -> RoutingSearch {
-        let query: BTreeSet<_> = tokens(prompt).into_iter().collect();
+        let relevance = relevance_text(prompt);
+        let mut query: BTreeSet<_> = tokens(&relevance).into_iter().collect();
+        let contract_query: BTreeSet<_> = tokens(prompt).into_iter().collect();
+        let lexical_query = query.clone();
         let mut result = RoutingSearch::default();
-        let task_request = task_request(prompt);
+        let task_request = task_request(&relevance);
+        let action = task_request
+            .then(|| {
+                let words = request_words(&relevance);
+                let stemmer = rust_stemmers::Stemmer::create(rust_stemmers::Algorithm::English);
+                stemmer.stem(request_head(&words)).into_owned()
+            })
+            .filter(|action| {
+                generic_term(action)
+                    || ["see", "count", "say", "tell", "list"].contains(&action.as_str())
+            });
+        if let Some(action) = &action {
+            query.remove(action);
+        }
         for document in &self.documents {
             if contracts
                 && task
@@ -302,20 +351,32 @@ impl RoutingIndex {
             }
             if contracts
                 && let Some(descriptor) = &document.descriptor
-                && let Some(reason) = contract_rejection(descriptor, task, &query)
+                && let Some(reason) = contract_rejection(descriptor, task, &contract_query)
             {
                 result.rejected.push((document.slug.clone(), reason));
                 continue;
             }
+            // Only this document's own identity can make the request verb a topic.
+            // Adding an unrelated skill must not restore generic verbs for all skills.
+            let query = if action
+                .as_ref()
+                .is_some_and(|a| document.identity.contains(a))
+            {
+                &lexical_query
+            } else {
+                &query
+            };
             let mut score = 0.0;
-            for term in &query {
+            for term in query {
                 let tf = *document.frequencies.get(term).unwrap_or(&0) as f64;
                 if tf == 0.0 {
                     continue;
                 }
                 let df = *self.document_frequency.get(term).unwrap_or(&0) as f64;
                 let idf = (1.0 + (self.documents.len() as f64 - df + 0.5) / (df + 0.5)).ln();
-                let field_weight = if document.anchors.contains(term) {
+                let field_weight = if document.identity.contains(term) && !generic_term(term) {
+                    4.0
+                } else if document.anchors.contains(term) {
                     2.0
                 } else {
                     1.0
@@ -333,6 +394,7 @@ impl RoutingIndex {
                         .count(),
                     query_terms: query.len(),
                     anchor_terms: query.intersection(&document.anchors).count(),
+                    anchor_matches: query.intersection(&document.anchors).cloned().collect(),
                     task_request,
                 });
             }
@@ -398,76 +460,204 @@ fn contract_rejection(
     None
 }
 
+// A relevance-only view: excluded alternatives cannot contribute positive matches.
+// The original request still reaches contract checks and the provider unchanged.
+fn relevance_text(prompt: &str) -> String {
+    let lower = format!(" {} ", prompt.to_lowercase())
+        .replace(" anything but ", " without ")
+        .replace(" everything but ", " without ")
+        .replace(" but ", "\u{1e}")
+        .replace(['—', '–'], " ");
+    let mut output = String::new();
+    let mut start = 0;
+    let mut excluded = false;
+    let mut boundaries: Vec<_> = lower
+        .char_indices()
+        .filter(|(i, c)| {
+            [',', ';', '\n', '!', '?', '\u{1e}'].contains(c)
+                || (*c == '.'
+                    && lower[i + 1..]
+                        .chars()
+                        .next()
+                        .is_none_or(char::is_whitespace))
+        })
+        .collect();
+    boundaries.push((lower.len(), '\0'));
+    for (end, delimiter) in boundaries {
+        let padded = format!(" {} ", lower[start..end].trim());
+        if !excluded && !informational_clause(&padded) {
+            let end = [
+                " do not ",
+                " don't ",
+                " don’t ",
+                " not ",
+                " never ",
+                " without ",
+                " rather than ",
+                " instead of ",
+            ]
+            .into_iter()
+            .filter_map(|marker| {
+                padded.find(marker).filter(|at| {
+                    marker != " not "
+                        || !(padded[*at..].starts_with(" not only ")
+                            || padded[*at..].starts_with(" not just "))
+                })
+            })
+            .min();
+            if !output.is_empty() {
+                output.push(' ');
+            }
+            output.push_str(padded[..end.unwrap_or(padded.len())].trim());
+            excluded = end.is_some();
+        }
+        // Commas and line breaks may continue a prohibited list. A sentence,
+        // semicolon or explicit contrast begins a new clause; dots in paths do not.
+        if ![',', '\n'].contains(&delimiter) {
+            excluded = false;
+        }
+        start = end + delimiter.len_utf8();
+    }
+    output
+}
+
+fn informational_clause(text: &str) -> bool {
+    let words = request_words(text);
+    let words: Vec<_> = words.iter().map(String::as_str).collect();
+    if words
+        .first()
+        .is_some_and(|word| ["the", "it", "that", "this"].contains(word))
+        && (text.contains(" was successful") || text.contains(" has finished"))
+    {
+        return true;
+    }
+    match words.as_slice() {
+        ["thanks" | "hello" | "hi" | "understood", ..]
+        | ["thank", "you", ..]
+        | ["i", "remember", ..]
+        | ["define", ..]
+        | ["what", "is" | "are", "a" | "an", ..]
+        | ["explain", "what", ..]
+        | [
+            "explain",
+            "the",
+            "meaning" | "definition" | "difference",
+            ..,
+        ] => true,
+        ["say" | "repeat" | "echo", ..] => text.contains(['\"', '`', '“']),
+        _ => false,
+    }
+}
+
 fn generic_term(term: &str) -> bool {
     [
         "creat", "read", "edit", "write", "make", "use", "work", "file", "data", "tool", "task",
         "help", "do", "not", "anyth", "yet", "build", "find", "produc", "prepar", "updat",
-        "provid", "perform", "execut", "without",
+        "provid", "perform", "execut", "without", "inspect", "review", "analyz",
     ]
     .contains(&term)
 }
 
 // Language features only: no skill IDs, permissions, resource claims or body text.
-fn task_request(text: &str) -> bool {
-    let words: Vec<_> = text
-        .split(|c: char| !c.is_alphanumeric())
+fn request_words(text: &str) -> Vec<String> {
+    text.split(|c: char| !c.is_alphanumeric())
         .filter(|w| !w.is_empty())
         .take(8)
         .map(str::to_lowercase)
-        .collect();
-    let first = match words.as_slice() {
-        [a, b, c, ..] if ["can", "could", "would", "will"].contains(&a.as_str()) && b == "you" => {
-            c.as_str()
+        .collect()
+}
+
+fn request_head(words: &[String]) -> &str {
+    match words {
+        [a, b, c, d, ..]
+            if ["can", "could", "would", "will"].contains(&a.as_str())
+                && b == "you"
+                && c == "please" =>
+        {
+            d
         }
-        [a, b, ..] if a == "please" => b.as_str(),
-        [a, ..] => a.as_str(),
+        [a, b, c, ..] if ["can", "could", "would", "will"].contains(&a.as_str()) && b == "you" => c,
+        [a, b, ..] if a == "please" => b,
+        [a, ..] => a,
         _ => "",
-    };
-    [
-        "create",
-        "read",
-        "write",
-        "edit",
-        "make",
-        "build",
-        "put",
-        "turn",
-        "combine",
-        "merge",
-        "clean",
-        "update",
-        "produce",
-        "convert",
-        "fill",
-        "secure",
-        "password",
-        "find",
-        "search",
-        "determine",
-        "review",
-        "check",
-        "outline",
-        "prepare",
-        "explore",
-        "test",
-        "exercise",
-        "draw",
-        "debug",
-        "inspect",
-        "use",
-        "rewrite",
-        "extract",
-        "list",
-        "summarize",
-        "analyze",
-        "execute",
-        "publish",
-        "send",
-        "overwrite",
+    }
+}
+
+fn task_request(text: &str) -> bool {
+    let words = request_words(text);
+    let first = request_head(&words);
+    if [
+        "acknowledge",
+        "explain",
+        "say",
+        "tell",
+        "thank",
+        "stop",
+        "pause",
+        "wait",
+        "hold",
     ]
     .contains(&first)
+    {
+        return false;
+    }
+    let known_verb = routing_verbs().binary_search(&first).is_ok();
+    known_verb
+        || [
+            "create",
+            "read",
+            "write",
+            "edit",
+            "make",
+            "build",
+            "put",
+            "turn",
+            "combine",
+            "merge",
+            "clean",
+            "update",
+            "produce",
+            "convert",
+            "fill",
+            "secure",
+            "password",
+            "find",
+            "search",
+            "determine",
+            "review",
+            "check",
+            "outline",
+            "prepare",
+            "explore",
+            "test",
+            "exercise",
+            "draw",
+            "debug",
+            "inspect",
+            "use",
+            "rewrite",
+            "extract",
+            "list",
+            "summarize",
+            "analyze",
+            "execute",
+            "publish",
+            "send",
+            "overwrite",
+        ]
+        .contains(&first)
         || words.starts_with(&["i".into(), "need".into()])
         || words.starts_with(&["help".into(), "me".into()])
+}
+
+fn routing_verbs() -> &'static Vec<&'static str> {
+    static VERBS: std::sync::OnceLock<Vec<&'static str>> = std::sync::OnceLock::new();
+    VERBS.get_or_init(|| {
+        include_str!("../assets/routing-verbs.txt")
+            .lines()
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .collect()
+    })
 }
 
 fn tokens(text: &str) -> Vec<String> {
@@ -510,7 +700,7 @@ fn tokens(text: &str) -> Vec<String> {
                     "workbook" => "spreadsheet".into(),
                     "debugg" => "debug".into(),
                     "written" => "write".into(),
-                    "outline" | "breakdown" => "plan".into(),
+                    "outlin" | "breakdown" => "plan".into(),
                     term => term.to_owned(),
                 })
             }
@@ -524,6 +714,9 @@ fn tokens(text: &str) -> Vec<String> {
 pub struct RoutingPreferences {
     #[serde(default)]
     pub mode: RoutingMode,
+    /// Explicit opt-in to one bounded configured-provider selection request.
+    #[serde(default)]
+    pub model_assistance: bool,
     #[serde(default)]
     pub disabled: BTreeSet<String>,
 }
@@ -559,7 +752,7 @@ pub struct RoutingTrace {
 }
 
 /// Caller-owned context; resource assertions must come from validated host state.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RoutingOptions {
     pub preferences: RoutingPreferences,
     pub task: RoutingTask,

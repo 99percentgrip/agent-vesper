@@ -1175,6 +1175,9 @@ fn parse_sidecar_response(line: &str) -> Result<String, String> {
 /// The task sends exactly one of these through the per-turn mpsc channel.
 #[derive(Debug)]
 enum AgentEvent {
+    RoutingNotice {
+        text: String,
+    },
     #[cfg(feature = "swarm")]
     Swarm {
         text: String,
@@ -1192,9 +1195,13 @@ enum AgentEvent {
     /// The provider boundary classified an error.
     Failed(AgentLoopError),
     /// Auxiliary answer that must not enter the main provider history.
-    SideQuestion { answer: String },
+    SideQuestion {
+        answer: String,
+    },
     /// Real provider quota response.
-    Usage { summary: String },
+    Usage {
+        summary: String,
+    },
 }
 
 #[derive(Clone)]
@@ -5903,10 +5910,62 @@ fn primary_workspace_root() -> WorkspaceRoot {
 
 #[derive(Clone)]
 struct RoutedSkillTurn {
+    pending: Option<vesper_harness::skill_model_selector::PendingSkillRoute>,
     notice: String,
     context: Option<String>,
     selected: Vec<String>,
     outcomes: Arc<vesper_memory::SkillOutcomeTracker>,
+}
+
+impl RoutedSkillTurn {
+    async fn resolve(
+        &mut self,
+        agent: &AgentLoop,
+        cancellation: Arc<dyn vesper_agent::CancellationSignal>,
+        tx: &mpsc::UnboundedSender<AgentEvent>,
+    ) {
+        let Some(pending) = self.pending.take() else {
+            return;
+        };
+        let factory = vesper_harness::WorkerFactory::new(
+            agent.provider_registry(),
+            agent.configuration().clone(),
+        );
+        let report = pending.resolve(&factory, cancellation).await;
+        self.notice = report.routing_trace.reason.clone();
+        self.context = report.context();
+        self.selected = report.selected_names();
+        let text = format!(
+            "{} Skills selected: {}",
+            self.notice,
+            if self.selected.is_empty() {
+                "none".into()
+            } else {
+                self.selected.join(", ")
+            }
+        );
+        let _ = tx.send(AgentEvent::RoutingNotice { text });
+    }
+    fn inject(&self, history: &mut [ConversationMessage], include_context: bool) {
+        if let Some(user) = history
+            .iter_mut()
+            .rev()
+            .find(|message| message.role == MessageRole::User)
+        {
+            if !self.selected.is_empty() {
+                let _ = user.extensions.insert(
+                    "vesper:skills",
+                    serde_json::json!({"selected": self.selected}),
+                );
+            }
+            if include_context
+                && let Some(context) = &self.context
+                && let Ok(text) = ContentText::new(context.clone())
+            {
+                user.content.push(ContentPart::Text(text));
+            }
+        }
+    }
 }
 
 /// Spawns one agent turn in a background tokio task and stores the receiver
@@ -5954,7 +6013,7 @@ fn spawn_agent_turn(
     {
         user.content.push(vesper_domain::ContentPart::Text(extra));
     }
-    if let Some(context) = routed_skills.context
+    if let Some(context) = routed_skills.context.clone()
         && let Ok(extra) = vesper_domain::ContentText::new(context)
     {
         user.content.push(vesper_domain::ContentPart::Text(extra));
@@ -6001,7 +6060,22 @@ fn spawn_agent_turn(
     let cancellation = Arc::new(vesper_runtime::RuntimeCancellation::new());
     session.turn_cancellation = Some(cancellation.clone());
     let task = tokio::spawn(async move {
+        let mut routed_skills = routed_skills;
+        let pending = routed_skills.pending.is_some();
+        routed_skills
+            .resolve(&agent, cancellation.clone(), &tx)
+            .await;
+        if cancellation.is_cancelled() {
+            let _ = tx.send(AgentEvent::Failed(AgentLoopError::Incomplete(
+                vesper_domain::FinishOutcome::Cancelled,
+            )));
+            return;
+        }
         let mut history = history;
+        if pending {
+            routed_skills.inject(&mut history, true);
+        }
+
         if !reference_models.is_empty() {
             let mut advisers = tokio::task::JoinSet::new();
             for model in reference_models {
@@ -6232,7 +6306,7 @@ fn spawn_submitted_prompt(
                         )
                     });
                     session.pending_capability_switch = Some(PendingCapabilitySwitch {
-                        prompt: expanded,
+                        prompt: text.clone(),
                         suggestion,
                         selected: 0,
                     });
@@ -6246,6 +6320,7 @@ fn spawn_submitted_prompt(
                 .collect::<std::collections::BTreeSet<_>>();
             let skill_report = memory_stores.orchestrate_skills(
                 &expanded,
+                &text,
                 &available_tools,
                 vesper_harness::skill_routing_settings::task_for_controls(
                     session.state.controls.operating_mode,
@@ -6264,7 +6339,25 @@ fn spawn_submitted_prompt(
                     format!("Skills selected: {}", selected_skills.join(", ")),
                 );
             }
+            let pending = skill_report
+                .prepared_selection
+                .clone()
+                .and_then(|prepared| {
+                    Some(vesper_harness::skill_model_selector::PendingSkillRoute {
+                        root: std::env::current_dir().ok()?,
+                        store: memory_stores.skills.as_ref()?.clone(),
+                        prompt: text.clone(),
+                        tools: available_tools.clone(),
+                        task: vesper_harness::skill_routing_settings::task_for_controls(
+                            session.state.controls.operating_mode,
+                            session.state.controls.permission_mode,
+                        ),
+                        outcomes: memory_stores.skill_outcomes.adjustments(),
+                        prepared,
+                    })
+                });
             let routed_skills = RoutedSkillTurn {
+                pending,
                 notice: skill_report.routing_trace.reason.clone(),
                 context: skill_context,
                 selected: selected_skills,
@@ -6564,7 +6657,7 @@ fn spawn_vro_turn(
             serde_json::json!({"selected": routed_skills.selected.clone()}),
         );
     }
-    if let Some(context) = routed_skills.context
+    if let Some(context) = routed_skills.context.clone()
         && let Ok(extra) = ContentText::new(context)
     {
         user_message.content.push(ContentPart::Text(extra));
@@ -6581,6 +6674,21 @@ fn spawn_vro_turn(
     let cancellation = Arc::new(vesper_runtime::RuntimeCancellation::new());
     session.turn_cancellation = Some(cancellation.clone());
     let task = tokio::spawn(async move {
+        let mut routed_skills = routed_skills;
+        let pending = routed_skills.pending.is_some();
+        routed_skills
+            .resolve(&compaction_agent, cancellation.clone(), &tx)
+            .await;
+        if cancellation.is_cancelled() {
+            let _ = tx.send(AgentEvent::Failed(AgentLoopError::Incomplete(
+                vesper_domain::FinishOutcome::Cancelled,
+            )));
+            return;
+        }
+        if pending {
+            routed_skills.inject(&mut history, true);
+        }
+
         if let Err(error) = compaction_agent
             .prepare_acceptance(mode, permission, cancellation.clone())
             .await
@@ -7432,6 +7540,21 @@ fn spawn_vro_react_turn(
     let mode = session.state.controls.operating_mode;
     let permission = session.state.controls.permission_mode;
     let task = tokio::spawn(async move {
+        let mut routed_skills = routed_skills;
+        let pending = routed_skills.pending.is_some();
+        routed_skills
+            .resolve(&compaction_agent, cancellation.clone(), &tx)
+            .await;
+        if cancellation.is_cancelled() {
+            let _ = tx.send(AgentEvent::Failed(AgentLoopError::Incomplete(
+                vesper_domain::FinishOutcome::Cancelled,
+            )));
+            return;
+        }
+        if pending {
+            routed_skills.inject(&mut history, false);
+        }
+
         let acceptance_instructions = match compaction_agent
             .prepare_acceptance(mode, permission, cancellation.clone())
             .await
@@ -8271,6 +8394,10 @@ fn drain_agent_event(session: &mut TuiSession) {
         };
         match received {
             Ok(AgentEvent::Progress(progress)) => apply_agent_progress(progress, session),
+            Ok(AgentEvent::RoutingNotice { text }) => {
+                session.activity.push(text.clone());
+                session.live_trajectory.push(text);
+            }
             Ok(mut event) => {
                 session.agent_running = false;
                 session.turn_cancellation = None;
@@ -8648,7 +8775,7 @@ fn build_completion_report(session: &mut TuiSession, event: &AgentEvent) {
             "✓ Quota query complete".into(),
             format!("Elapsed         {elapsed:.1}s"),
         ],
-        AgentEvent::Progress(_) => Vec::new(),
+        AgentEvent::Progress(_) | AgentEvent::RoutingNotice { .. } => Vec::new(),
     };
 }
 
@@ -8794,7 +8921,7 @@ fn append_bounded(target: &mut String, text: &str, maximum: usize) {
 
 fn record_agent_event(session: &TuiSession, event: &AgentEvent) {
     let result = match event {
-        AgentEvent::Progress(_) => return,
+        AgentEvent::Progress(_) | AgentEvent::RoutingNotice { .. } => return,
         AgentEvent::Completed { outcome, .. } => match outcome {
             AgentTurnOutcome::Acceptance {
                 report, iterations, ..
@@ -9044,7 +9171,7 @@ fn load_tui_session(selected: &str, session: &mut TuiSession) -> Result<(), Stri
 /// transcript and the status is set to a brief completion notice.
 fn apply_agent_event(event: AgentEvent, state: &mut SessionState) {
     match event {
-        AgentEvent::Progress(_) => {}
+        AgentEvent::Progress(_) | AgentEvent::RoutingNotice { .. } => {}
         AgentEvent::Completed { outcome, .. } => match outcome {
             AgentTurnOutcome::Acceptance { report, plan, .. } => {
                 state
@@ -9268,6 +9395,7 @@ impl MemoryStores {
     fn orchestrate_skills(
         &self,
         prompt: &str,
+        original_task: &str,
         available_tools: &std::collections::BTreeSet<String>,
         task: vesper_harness::skill_routing_settings::RoutingTask,
     ) -> vesper_memory::SkillRoutingReport {
@@ -9275,7 +9403,7 @@ impl MemoryStores {
             return vesper_memory::SkillRoutingReport::default();
         };
         let outcomes = self.skill_outcomes.adjustments();
-        vesper_harness::skill_routing_settings::route(
+        vesper_harness::skill_routing_settings::route_with_model_task(
             &std::env::current_dir().unwrap_or_default(),
             store,
             &vesper_memory::SkillRoutingQuery {
@@ -9285,6 +9413,7 @@ impl MemoryStores {
                 platform: std::env::consts::OS,
                 outcome_adjustments: &outcomes,
             },
+            original_task,
             task,
         )
     }

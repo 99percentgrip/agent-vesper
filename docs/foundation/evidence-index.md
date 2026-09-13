@@ -2,6 +2,23 @@
 
 Status: evidence index; acceptance status is scoped to each section.
 
+## Intelligent skill routing — model-assisted implementation and live regression; quality HOLD — 2026-09-13
+
+[Model-assisted execution](skill-routing-model-assistance-execution.md) records the
+approved opt-in, native integration and scoped offline verification (2,305 workspace
+tests and 23 acceptance cases). [Independent live scoring](skill-routing-model-live-evaluation.md)
+records the completed 205-case provider pass: 89/95 positive recall, 0/60 no-skill
+activations, 2/30 forbidden-sibling activations; all 488 library files preserved.
+[Independent evaluation](skill-routing-independent-execution.md) records the frozen
+205-case corpus and retained failures. [Request recognition](skill-routing-request-recognition-execution.md)
+records lexical changes; none of these passing plumbing tests establishes live routing accuracy.
+
+## Optional semantic routing experiment — ongoing, not native acceptance
+
+[Experiment report](skill-routing-embedding-experiment.md) records pinned local
+models, metadata-only probes, development calibration and all measured regressions.
+No embedding route or model has been installed into Vesper.
+
 ## Skill routing language follow-up — lexical verification passed, quality HOLD — 2026-09-13
 
 [Execution report](skill-routing-language-execution.md) records the follow-up to the
@@ -796,3 +813,5 @@ v0.21.6 release notes own the final run links, image IDs and local-install recei
 - `exemplar-migration-execution.md` — first native chunked skill: `research-paper-writing` 74,109 → 10,228 B lean body + 16 chunks (67,426 B, max 11,125); Stage D proofs as real tests (16/16 routing-first, budget ≤24 K, G5 with recorded hash-noise finding: zero-overlap prompts can still route ≤3 chunks on positive signed-hash cosine — floor-remediation flagged for a future PRD); floor 2,252, acceptance 23/23, clippy 0, naming-guard clean; global mirror synced.
 - `recon-exemplar-candidate-execution.md` — exemplar hunt (read-only): `research-paper-writing` selected (74,109 B / 27 sections / body 3.1× the 24 K injection cap — 20 of 27 sections never injected; ~1.3 MB shadow reference layer); 16-chunk blueprint, lean ~6.1 KB body, worst-case activation ~19 KB.
 - `ranker-hardening-pr1-execution.md` — Option D anchor: cross-talk pin fails for the audited reason (rollback displaces migrate via 1,560-pt manufactured overlap); no-alias control green; floor 2,219; `#[ignore]` until PR-2.
+
+- [Routing request recognition](skill-routing-request-recognition-execution.md): ongoing sourced-verb and topic-evidence experiments; retains negative-activation regressions and pending independent evaluation.

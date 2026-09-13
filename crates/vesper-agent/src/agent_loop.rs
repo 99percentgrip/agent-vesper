@@ -437,6 +437,8 @@ pub trait AgentHistoryPort: Send + Sync {
 
 #[derive(Clone)]
 pub struct AgentLoop {
+    text_only_response_bound: Option<usize>,
+    maximum_output_tokens: Option<u64>,
     registry: Arc<ProviderRegistry>,
     tools: ToolRegistry,
     config: AgentLoopConfig,
@@ -460,6 +462,8 @@ impl AgentLoop {
         config: AgentLoopConfig,
     ) -> Self {
         Self {
+            text_only_response_bound: None,
+            maximum_output_tokens: None,
             registry,
             tools,
             config,
@@ -473,6 +477,21 @@ impl AgentLoop {
             history_port: None,
             completion_port: None,
         }
+    }
+
+    /// Reject non-text/tool output and bound all streamed text, including hidden reasoning.
+    /// This opt-in advisory guard does not affect ordinary coding turns.
+    #[must_use]
+    pub fn with_text_only_response_bound(mut self, bytes: usize) -> Self {
+        self.text_only_response_bound = Some(bytes.max(1));
+        self
+    }
+
+    /// Caps provider output for bounded advisory requests; ordinary turns keep defaults.
+    #[must_use]
+    pub fn with_maximum_output_tokens(mut self, tokens: u64) -> Self {
+        self.maximum_output_tokens = Some(tokens.max(1));
+        self
     }
 
     #[must_use]
@@ -994,6 +1013,7 @@ impl AgentLoop {
                     self.progress_port.as_ref()
                 },
                 cancellation.as_ref(),
+                self.text_only_response_bound,
             )
             .await?;
             // Append the assistant turn (text + any tool invocations).
@@ -1370,7 +1390,7 @@ impl AgentLoop {
             .await
             .ok()?;
         let (parts, calls, finish) =
-            consume_stream(&mut stream, &NoopProgressPort, cancellation.as_ref())
+            consume_stream(&mut stream, &NoopProgressPort, cancellation.as_ref(), None)
                 .await
                 .ok()?;
         if !calls.is_empty() || finish != FinishOutcome::Stop {
@@ -1479,7 +1499,7 @@ impl AgentLoop {
             reasoning: None,
             structured_output: StructuredOutputIntent::None,
             sampling: None,
-            maximum_output_tokens: None,
+            maximum_output_tokens: self.maximum_output_tokens,
             continuation: None,
             fallback_policy: FallbackPolicy::Strict,
             provider_extensions: None,
@@ -1753,13 +1773,40 @@ async fn consume_stream(
     stream: &mut vesper_provider::ProviderEventStream,
     progress: &dyn AgentProgressPort,
     cancellation: &dyn CancellationSignal,
+    text_only_bound: Option<usize>,
 ) -> Result<(Vec<ContentPart>, Vec<ToolCall>, FinishOutcome), AgentLoopError> {
     let mut parts = Vec::new();
     let mut calls = Vec::new();
     let mut finish = None;
     let mut tool_started = false;
     let mut text_buffer = String::new();
+    let mut bounded_bytes = 0_usize;
+    let mut bounded_events = 0_usize;
     while let Some(event) = stream.next().await {
+        if let Some(limit) = text_only_bound {
+            bounded_events = bounded_events.saturating_add(1);
+            match &event {
+                Ok(ProviderStreamEvent::ContentDelta {
+                    part: ContentPart::Text(text),
+                    ..
+                })
+                | Ok(ProviderStreamEvent::ReasoningDelta { text, .. }) => {
+                    bounded_bytes = bounded_bytes.saturating_add(text.as_str().len());
+                }
+                Ok(
+                    ProviderStreamEvent::ContentDelta { .. }
+                    | ProviderStreamEvent::ToolCallStarted { .. }
+                    | ProviderStreamEvent::ToolCallDelta { .. }
+                    | ProviderStreamEvent::ToolCallCompleted(_),
+                ) => {
+                    return Err(AgentLoopError::Incomplete(FinishOutcome::ProtocolError));
+                }
+                _ => {}
+            }
+            if bounded_bytes > limit || bounded_events > limit.saturating_mul(2) {
+                return Err(AgentLoopError::Incomplete(FinishOutcome::OutputLimit));
+            }
+        }
         match event {
             Ok(ProviderStreamEvent::ReasoningDelta { text, kind, .. }) => {
                 if matches!(

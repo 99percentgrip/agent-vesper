@@ -139,6 +139,13 @@ Z.ai and Playwright MCP server descriptors.
   An enabled runtime without an explicit image override uses the bundled
   immutable image ID; activation never requires copying a digest by hand.
 
+- `src/skill_model_selector.rs` owns the explicitly enabled configured-provider
+  selection call: empty tool registry, one iteration, 20-second deadline, cancellation,
+  1024 output-token request and 4096-byte streamed text/reasoning cap. It sends only
+  bounded task/metadata, rechecks settings/catalog before and after dispatch, and
+  reports elapsed time and provider-reported usage. Provider/parse/budget failure
+  may use observable lexical fallback; cancellation or stale decisions withhold.
+  No selector prompt, body or reasoning is persisted.
 - `src/skill_routing_settings.rs` owns workspace Skills preview preferences,
   explicit atomic saves, no-write reads and the shared host routing bridge.
   Per-skill disables apply in both modes; corrupt preferences withhold activation

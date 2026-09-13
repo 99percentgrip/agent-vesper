@@ -14,7 +14,7 @@ Orchestrator (VRO) Phase VRO-1 domain contracts.
   `/acceptance` is in the shared host-parity command catalog.
 
 - `slash_commands::SkillRoutingControl` is the shared pure parser for
-  `/skills settings status|save mode standard|enhanced|save enable|disable <skill>`.
+  `/skills settings status|save mode standard|enhanced|save model-assistance on|off|save enable|disable <skill>`.
   It does not change the frozen oracle command descriptors or authorize tools.
 
 - This crate depends on no workspace crate and performs no I/O.

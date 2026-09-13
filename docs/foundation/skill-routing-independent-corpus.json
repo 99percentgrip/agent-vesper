@@ -1,0 +1,3521 @@
+{
+  "schema_version": 1,
+  "status": "frozen_before_predictions",
+  "provenance": {
+    "catalog_sha256": "96b28ecb189cbef73ef66b70a65571c3baf46d92b7320d1b2e8ccc8774991482",
+    "catalog_entries": 95,
+    "author_role": "independent_evaluator",
+    "previous_corpus_read": false,
+    "predictions_read": false,
+    "router_implementation_read": false,
+    "skill_bodies_read": false
+  },
+  "scoring_contract": {
+    "expected_skill_ids": "Set of acceptable task-relevant skill IDs; not an instruction to select every listed alternative.",
+    "positive": "Require a nonempty selection drawn only from expected_skill_ids; max 3 selections.",
+    "no_skill": "Require empty selection.",
+    "sibling": "Require a nonempty selection drawn only from expected_skill_ids; explicitly forbidden siblings must not activate.",
+    "resource": "Require empty selection under the supplied unavailable_tools/denied_permissions; score separately from unrestricted semantic routing.",
+    "ambiguous": "Empty selection is acceptable; otherwise require all selections to be in expected_skill_ids. Report separately from clear-task accuracy.",
+    "forbidden": "A selected forbidden_skill_id is always a failure.",
+    "scope": "Only task-directed routing is scored. Always-on system instructions are not inferred as additional selectable skills."
+  },
+  "counts": {
+    "positive": 95,
+    "no_skill": 60,
+    "sibling": 30,
+    "resource": 12,
+    "ambiguous": 8
+  },
+  "cases": [
+    {
+      "id": "independent-001",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "The attached transcript is from our channel interview. Turn it into a useful episode recap and a short social thread.",
+      "expected_skill_ids": [
+        "youtube-content"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Transforms a video transcript into publication formats."
+    },
+    {
+      "id": "independent-002",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Use my connected X account to look up the original posts mentioning our launch yesterday.",
+      "expected_skill_ids": [
+        "xurl"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Direct post retrieval on X."
+    },
+    {
+      "id": "independent-003",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "In budget.xlsx, preserve the formulas but add a worksheet comparing actual spending with the plan.",
+      "expected_skill_ids": [
+        "xlsx"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Editing a real Excel workbook."
+    },
+    {
+      "id": "independent-004",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Package the finished repair evidence into our formal execution record and give me the complete delivery summary in chat.",
+      "expected_skill_ids": [
+        "work-unit-reporting"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Explicit dual-artifact completion reporting."
+    },
+    {
+      "id": "independent-005",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Our training runs are scattered. Put their metrics into W&B and compare the learning-rate sweep in a dashboard.",
+      "expected_skill_ids": [
+        "weights-and-biases"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Experiment tracking in the named platform."
+    },
+    {
+      "id": "independent-006",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Friday reset: review my commitments, find what stalled, and make a realistic schedule for next week.",
+      "expected_skill_ids": [
+        "weekly-review-planning"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Weekly commitment review, not software implementation planning."
+    },
+    {
+      "id": "independent-007",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Create a reusable Agent Vesper skill for our release checklist with a valid header and explicit tool bounds.",
+      "expected_skill_ids": [
+        "vesper-skill-authoring"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Skill artifact authoring for Vesper."
+    },
+    {
+      "id": "independent-008",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Verify this Agent Vesper Rust patch using the canonical local gate, then check evidence for all five platform targets.",
+      "expected_skill_ids": [
+        "verify-with-xtask-verify"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Repository-specific canonical verification."
+    },
+    {
+      "id": "independent-009",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Before declaring /skills fixed, exercise the shipped ACP and terminal clients and compare what users actually see.",
+      "expected_skill_ids": [
+        "verify-parity-end-to-end"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Shipped cross-host command parity."
+    },
+    {
+      "id": "independent-010",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "In the open TouchDesigner project, use the twozero connection to change the noise operator and check the result.",
+      "expected_skill_ids": [
+        "touchdesigner-mcp"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Control of a named application through its catalog integration."
+    },
+    {
+      "id": "independent-011",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Implement the password validator test-first: demonstrate the missing behavior fails, add the minimum code, then clean it up.",
+      "expected_skill_ids": [
+        "test-driven-development"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Explicit red-green-refactor request."
+    },
+    {
+      "id": "independent-012",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Retrieve yesterday’s Teams meeting transcript through our Microsoft account and extract the follow-ups.",
+      "expected_skill_ids": [
+        "teams-meeting-pipeline"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Teams source acquisition and transcript pipeline."
+    },
+    {
+      "id": "independent-013",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "The service drops every third request after reconnecting. Reproduce it and establish the cause before changing code.",
+      "expected_skill_ids": [
+        "systematic-debugging"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Root-cause investigation before repair."
+    },
+    {
+      "id": "independent-014",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "The Vesper tool executor kills a shell but hangs reading output because its grandchildren keep the pipe open. Fix cancellation without unsafe Rust.",
+      "expected_skill_ids": [
+        "subprocess-kill-in-agent-tools"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Specific descendant-process pipe lifetime defect."
+    },
+    {
+      "id": "independent-015",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Before we commit to this parser design, build a disposable experiment to see whether it handles a million events per second.",
+      "expected_skill_ids": [
+        "spike"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Throwaway feasibility experiment."
+    },
+    {
+      "id": "independent-016",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Write a hopeful chorus about moving away from home, then give me a Suno prompt for a gentle indie arrangement.",
+      "expected_skill_ids": [
+        "songwriting-and-ai-music"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Lyrics and AI music prompt craft."
+    },
+    {
+      "id": "independent-017",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Generate mel and chroma plots from rehearsal.wav so I can compare the two takes visually.",
+      "expected_skill_ids": [
+        "songsee"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Audio feature visualization."
+    },
+    {
+      "id": "independent-018",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "I need three quick disposable HTML directions for this signup screen so the team can choose a layout.",
+      "expected_skill_ids": [
+        "sketch"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Multiple throwaway UI variants."
+    },
+    {
+      "id": "independent-019",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Have four parallel reviewers simplify our recent code changes and reconcile their cleanup recommendations.",
+      "expected_skill_ids": [
+        "simplify-code"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Explicit four-agent recent-change cleanup."
+    },
+    {
+      "id": "independent-020",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Find the old coding conversation where we investigated reconnects, rename it clearly, and back it up.",
+      "expected_skill_ids": [
+        "session-librarian"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Session discovery and organization."
+    },
+    {
+      "id": "independent-021",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Deploy this model with vLLM behind an OpenAI-compatible endpoint and tune batching for concurrent requests.",
+      "expected_skill_ids": [
+        "serving-llms-vllm"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Specific high-throughput serving stack."
+    },
+    {
+      "id": "independent-022",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Review the Kanban handoff from implementation to QA, check its proof, and route the card to the appropriate stage.",
+      "expected_skill_ids": [
+        "sdlc-review"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Verified workflow handoff review."
+    },
+    {
+      "id": "independent-023",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "rustc crashed and the linker reports signal 7 in our Rust workspace. Check whether storage exhaustion is the cause first.",
+      "expected_skill_ids": [
+        "rust-workspace-disk-hygiene"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Specific disk-exhaustion diagnostic signature."
+    },
+    {
+      "id": "independent-024",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Help turn these ML experiments into an ICLR submission with a coherent methods section and ablation narrative.",
+      "expected_skill_ids": [
+        "research-paper-writing"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "ML conference paper development."
+    },
+    {
+      "id": "independent-025",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Run the security and quality review of my local changes before I commit them, and fix straightforward findings.",
+      "expected_skill_ids": [
+        "requesting-code-review"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Local pre-commit quality gate."
+    },
+    {
+      "id": "independent-026",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Attach debugpy to the Python worker in the container and inspect the stack at the breakpoint.",
+      "expected_skill_ids": [
+        "python-debugpy"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Python debugger attachment."
+    },
+    {
+      "id": "independent-027",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "The reasoning menu imports the GLM adapter directly. Move this behavior behind provider metadata so new adapters work automatically.",
+      "expected_skill_ids": [
+        "provider-routed-surface-decoupling"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Provider-neutral routing of a harness surface."
+    },
+    {
+      "id": "independent-028",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Track this camera listing and notify me when its price drops below 600 dollars.",
+      "expected_skill_ids": [
+        "product-price-monitor"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Ongoing product-price alert."
+    },
+    {
+      "id": "independent-029",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Build a browser typography demo using DOM-free text layout so thousands of text fragments can move smoothly.",
+      "expected_skill_ids": [
+        "pretext"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Specific DOM-free creative layout capability."
+    },
+    {
+      "id": "independent-030",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Update the attached .pptx with a financial results slide and preserve the existing slide master.",
+      "expected_skill_ids": [
+        "powerpoint"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "PowerPoint artifact editing."
+    },
+    {
+      "id": "independent-031",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Build a small HTML pricing page inspired by Linear’s visual system, with its restrained spacing and typography.",
+      "expected_skill_ids": [
+        "popular-web-designs"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Named existing design-system styling."
+    },
+    {
+      "id": "independent-032",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Write the migration implementation plan as a markdown file under .agent-vesper/plans; stop before executing any steps.",
+      "expected_skill_ids": [
+        "plan"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Explicit persisted plan-only artifact."
+    },
+    {
+      "id": "independent-033",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Combine these three PDF invoices into one file and protect the result with the supplied password.",
+      "expected_skill_ids": [
+        "pdf"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "PDF merge and security operations."
+    },
+    {
+      "id": "independent-034",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Make an interactive p5.js sketch where particles swirl toward the pointer on a canvas.",
+      "expected_skill_ids": [
+        "p5js"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Named generative-art framework."
+    },
+    {
+      "id": "independent-035",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Set the Philips Hue lamps in the study to a warm evening scene using the local controller.",
+      "expected_skill_ids": [
+        "openhue"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Hue device control."
+    },
+    {
+      "id": "independent-036",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Delegate this feature branch implementation to OpenCode CLI and collect its patch for review.",
+      "expected_skill_ids": [
+        "opencode"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Explicit named coding delegate."
+    },
+    {
+      "id": "independent-037",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "This scanned PDF has no selectable text. Extract the page text and preserve page references.",
+      "expected_skill_ids": [
+        "ocr-and-documents"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "OCR and scan extraction, not document editing."
+    },
+    {
+      "id": "independent-038",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Search my Obsidian vault for notes about backup rotation and add a linked summary note.",
+      "expected_skill_ids": [
+        "obsidian"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Named local note-vault operations."
+    },
+    {
+      "id": "independent-039",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Add these project milestones to the Notion database and update the associated project page.",
+      "expected_skill_ids": [
+        "notion"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Named remote page/database operations."
+    },
+    {
+      "id": "independent-040",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Attach to the Node process on its inspect port and evaluate the request object while execution is paused.",
+      "expected_skill_ids": [
+        "node-inspect-debugger"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Node inspector debugging."
+    },
+    {
+      "id": "independent-041",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "In the existing PDF, replace the outdated contact line with this new phone number using natural-language edits.",
+      "expected_skill_ids": [
+        "nano-pdf"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Targeted text replacement in an existing PDF."
+    },
+    {
+      "id": "independent-042",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Two agents changed the same interface incompatibly. Act as a neutral reviewer and reconcile the conflicting patches.",
+      "expected_skill_ids": [
+        "merge-reconciler"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Third-party reconciliation of agent changes."
+    },
+    {
+      "id": "independent-043",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "From these pasted meeting notes, extract the decisions and assign each action to its stated owner with a supporting quote.",
+      "expected_skill_ids": [
+        "meeting-action-items"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Action extraction from already supplied meeting material."
+    },
+    {
+      "id": "independent-044",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Geocode these three addresses and estimate the driving route between them with OpenStreetMap data.",
+      "expected_skill_ids": [
+        "maps"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Geocoding and route computation."
+    },
+    {
+      "id": "independent-045",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Animate why the derivative of sine is cosine as a narrated Manim scene for a math lesson.",
+      "expected_skill_ids": [
+        "manim-video"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Programmatic mathematical animation."
+    },
+    {
+      "id": "independent-046",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Build an interlinked markdown knowledge base from this reading folder, including topic pages and source backlinks.",
+      "expected_skill_ids": [
+        "llm-wiki"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Interlinked source-grounded markdown knowledge base."
+    },
+    {
+      "id": "independent-047",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Run this GGUF model locally with llama.cpp and choose CPU settings that fit my machine.",
+      "expected_skill_ids": [
+        "llama-cpp"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Local GGUF inference stack."
+    },
+    {
+      "id": "independent-048",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Use VesperLens to interview me about the dashboard, build a draft, and keep revising until I explicitly approve the review.",
+      "expected_skill_ids": [
+        "interactive-developer"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Explicit human review state machine."
+    },
+    {
+      "id": "independent-049",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Connect to our running Electron window over CDP and inspect the computed styles of the clipped sidebar.",
+      "expected_skill_ids": [
+        "inspect-live-dom"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Read live DOM and rendered CSS."
+    },
+    {
+      "id": "independent-050",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Send this approved text to Sam from Messages on my Mac using the imsg command.",
+      "expected_skill_ids": [
+        "imessage"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Named macOS message transport."
+    },
+    {
+      "id": "independent-051",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Rewrite this stiff draft so it sounds like a real colleague wrote it; remove the generic AI phrasing.",
+      "expected_skill_ids": [
+        "humanizer"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Voice and AI-ism revision."
+    },
+    {
+      "id": "independent-052",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Use the hf command to download the dataset snapshot from this Hugging Face repository.",
+      "expected_skill_ids": [
+        "huggingface-hub"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Hub artifact discovery and transfer."
+    },
+    {
+      "id": "independent-053",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Use Himalaya to fetch the latest email in my IMAP account and show its headers.",
+      "expected_skill_ids": [
+        "himalaya"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Named email CLI retrieval."
+    },
+    {
+      "id": "independent-054",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "learn_skill refuses with “verify the outcome first” even though I ran tests in a pipeline. Diagnose what the harness needs.",
+      "expected_skill_ids": [
+        "harness-skill-gate-mechanics"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Specific skill-learning verification gate."
+    },
+    {
+      "id": "independent-055",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Audit this report’s factual claims against verifiable sources and attach citations that actually support each claim.",
+      "expected_skill_ids": [
+        "grounded-citations"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Source verification and citation grounding."
+    },
+    {
+      "id": "independent-056",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Help configure the downloaded Google Cloud OAuth client credentials for our Workspace connection.",
+      "expected_skill_ids": [
+        "google-workspace"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Exact credential setup descriptor, not inferred Gmail automation."
+    },
+    {
+      "id": "independent-057",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Fork this GitHub repository into my organization and configure the local origin and upstream remotes.",
+      "expected_skill_ids": [
+        "github-repo-management"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Repository creation/fork and remote management."
+    },
+    {
+      "id": "independent-058",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Take my completed branch through opening a GitHub pull request, tracking its CI, and merging after the checks pass.",
+      "expected_skill_ids": [
+        "github-pr-workflow"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Existing implementation through PR lifecycle."
+    },
+    {
+      "id": "independent-059",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Triage the new GitHub issues, label duplicates, and assign the confirmed bugs to their owners.",
+      "expected_skill_ids": [
+        "github-issues"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Issue metadata management."
+    },
+    {
+      "id": "independent-060",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Implement GitHub issue 412 end to end and open a verified pull request that resolves it, reporting the real CI state.",
+      "expected_skill_ids": [
+        "github-issue-to-pr"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Issue-to-implementation-to-PR workflow."
+    },
+    {
+      "id": "independent-061",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Review pull request 91 on GitHub and leave inline comments on the risky diff lines.",
+      "expected_skill_ids": [
+        "github-code-review"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Review of an existing remote PR."
+    },
+    {
+      "id": "independent-062",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Set up SSH authentication for GitHub and verify that gh is logged into the intended account.",
+      "expected_skill_ids": [
+        "github-auth"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "GitHub identity setup."
+    },
+    {
+      "id": "independent-063",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Find a small celebratory GIF on Tenor and download it for the release announcement.",
+      "expected_skill_ids": [
+        "gif-search"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "GIF search and retrieval."
+    },
+    {
+      "id": "independent-064",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Use FindMy on my Mac to locate the AirTag attached to my keys.",
+      "expected_skill_ids": [
+        "findmy"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Apple tracking integration."
+    },
+    {
+      "id": "independent-065",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Create an editable Excalidraw scene showing the request flow from browser to gateway to database.",
+      "expected_skill_ids": [
+        "excalidraw"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Explicit editable diagram format."
+    },
+    {
+      "id": "independent-066",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Benchmark this local language model on GSM8K using lm-eval-harness and record the exact configuration.",
+      "expected_skill_ids": [
+        "evaluating-llms-harness"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Named model benchmark harness."
+    },
+    {
+      "id": "independent-067",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Before claiming the new interactive feature is finished, prove that a user can complete the whole workflow in the installed release.",
+      "expected_skill_ids": [
+        "end-to-end-workflow-acceptance"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "User-facing installed-artifact acceptance."
+    },
+    {
+      "id": "independent-068",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Sort my unread email by urgency and draft replies for the messages that need a response; leave drafts unsent.",
+      "expected_skill_ids": [
+        "email-inbox-triage"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Inbox prioritization and safe response drafting."
+    },
+    {
+      "id": "independent-069",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Explore the staging checkout flow as a user, look for failures, and capture reproducible evidence for each bug.",
+      "expected_skill_ids": [
+        "dogfood"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Exploratory application QA."
+    },
+    {
+      "id": "independent-070",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Revise this Word contract’s .docx headings and tables without losing the template styles.",
+      "expected_skill_ids": [
+        "docx"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Word document artifact editing."
+    },
+    {
+      "id": "independent-071",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Read the attached lease and list every tenant obligation and deadline with the clause that supports it.",
+      "expected_skill_ids": [
+        "document-to-action-items"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Document-derived obligations with evidence."
+    },
+    {
+      "id": "independent-072",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Validate the color and spacing tokens in our DESIGN.md against Google’s design specification and export the corrected file.",
+      "expected_skill_ids": [
+        "design-md"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Named token specification validation."
+    },
+    {
+      "id": "independent-073",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "This test passes on Linux but fails on Windows in Vesper’s five-target CI. Use the actual job log to identify the portability mistake.",
+      "expected_skill_ids": [
+        "cross-platform-test-pitfalls"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Repository cross-platform test diagnosis."
+    },
+    {
+      "id": "independent-074",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Use the background desktop controller to move through this native app’s settings without taking focus from my editor.",
+      "expected_skill_ids": [
+        "computer-use"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Background desktop interaction."
+    },
+    {
+      "id": "independent-075",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Watch these three competing vendors and send a cited digest when a material announcement appears.",
+      "expected_skill_ids": [
+        "competitor-news-monitor"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Named-company news monitoring."
+    },
+    {
+      "id": "independent-076",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Create a ComfyUI diffusion workflow that generates product images from these prompts.",
+      "expected_skill_ids": [
+        "comfyui"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Named diffusion workflow environment."
+    },
+    {
+      "id": "independent-077",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "The legacy Python glm_acp --version path became slow after a new module-level import. Move heavy imports out of the cold path.",
+      "expected_skill_ids": [
+        "cold-start-import-deferral"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Specific legacy CLI import-latency repair."
+    },
+    {
+      "id": "independent-078",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Hand this coding task to the OpenAI Codex command-line agent and collect the resulting changes.",
+      "expected_skill_ids": [
+        "codex"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Explicit named coding delegate."
+    },
+    {
+      "id": "independent-079",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Use pygount to inventory the repository’s languages and report source line counts and ratios.",
+      "expected_skill_ids": [
+        "codebase-inspection"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Quantitative repository inventory."
+    },
+    {
+      "id": "independent-080",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Create a polished one-off HTML presentation for our launch narrative that we can open directly in a browser.",
+      "expected_skill_ids": [
+        "claude-design"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Standalone designed HTML artifact."
+    },
+    {
+      "id": "independent-081",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Run Claude Code CLI on this isolated worktree to implement the requested endpoint.",
+      "expected_skill_ids": [
+        "claude-code"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Explicit named coding delegate."
+    },
+    {
+      "id": "independent-082",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Search our Box folder for the signed contract and update its metadata with the renewal date.",
+      "expected_skill_ids": [
+        "box"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Named cloud document service."
+    },
+    {
+      "id": "independent-083",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Subscribe to these RSS feeds with blogwatcher and report newly published posts.",
+      "expected_skill_ids": [
+        "blogwatcher"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Feed monitoring with named tool."
+    },
+    {
+      "id": "independent-084",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "The article URL returns a WAF challenge. Try supported fallback retrieval methods to obtain the page content.",
+      "expected_skill_ids": [
+        "blocked-page-recovery"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Recovery from blocked retrieval."
+    },
+    {
+      "id": "independent-085",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Turn this set of survey statistics into a styled infographic that shows the main comparisons clearly.",
+      "expected_skill_ids": [
+        "baoyu-infographic"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Statistical infographic deliverable."
+    },
+    {
+      "id": "independent-086",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Convert this short clip into a colored ASCII animation and export an MP4.",
+      "expected_skill_ids": [
+        "ascii-video"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Moving ASCII media artifact."
+    },
+    {
+      "id": "independent-087",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Make a static monospace cat illustration I can paste into a terminal welcome banner.",
+      "expected_skill_ids": [
+        "ascii-art"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Static ASCII art."
+    },
+    {
+      "id": "independent-088",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Search arXiv for recent papers by this author about graph diffusion and collect their identifiers.",
+      "expected_skill_ids": [
+        "arxiv"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Named research repository search."
+    },
+    {
+      "id": "independent-089",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Deliver a dark-themed SVG infrastructure diagram embedded in HTML, showing our VPC, load balancer, and services.",
+      "expected_skill_ids": [
+        "architecture-diagram"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Specific SVG infrastructure rendering format."
+    },
+    {
+      "id": "independent-090",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Add a reminder to my Apple Reminders list for renewing the passport on Monday.",
+      "expected_skill_ids": [
+        "apple-reminders"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Apple task-list operation."
+    },
+    {
+      "id": "independent-091",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Find the packing list in Apple Notes and append the camping equipment using memo.",
+      "expected_skill_ids": [
+        "apple-notes"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Apple note service operation."
+    },
+    {
+      "id": "independent-092",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Upsert these customer rows into Airtable using their external IDs so existing records are updated.",
+      "expected_skill_ids": [
+        "airtable"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Named structured cloud data CRUD."
+    },
+    {
+      "id": "independent-093",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Help me configure Agent Vesper’s native memory and reasoning controls for this project.",
+      "expected_skill_ids": [
+        "agent-vesper"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Use and configuration of Vesper."
+    },
+    {
+      "id": "independent-094",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "The legacy Python glm-acp needs the newly shipped GLM model in its registry-driven picker and the full release workflow.",
+      "expected_skill_ids": [
+        "add-glm-model-release"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Explicit legacy model addition and release."
+    },
+    {
+      "id": "independent-095",
+      "split": "independent_holdout",
+      "kind": "positive",
+      "clarity": "clear",
+      "prompt": "Smoke-test the legacy Python glm-acp launch over stdio with real input and output pipes after the CLI change.",
+      "expected_skill_ids": [
+        "acp-stdio-smoke-test"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Specific legacy stdio launch validation."
+    },
+    {
+      "id": "independent-096",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "Thanks, that answers my question.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-097",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "Good morning! How are you?",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-098",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "Pause here until I get back.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-099",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "Please keep the next answer under two sentences.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-100",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "What is 17 multiplied by 6?",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-101",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "Convert 90 minutes into hours.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-102",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "Spell the word accommodation.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-103",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "What is the plural of mouse?",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-104",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "Translate “good evening” into Spanish.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-105",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "Explain the difference between a noun and a verb in one sentence.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-106",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "What does the acronym CPU stand for?",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-107",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "Why does ice float on water? A short general explanation is enough.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-108",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "Tell me a harmless joke about a penguin.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-109",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "Give me a rhyming word for moon.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-110",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "Name three colors that appear in a rainbow.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-111",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "What comes after Thursday?",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-112",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "How many sides does a hexagon have?",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-113",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "Which is larger, three quarters or two thirds?",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-114",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "Change “the cats is asleep” to correct grammar.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-115",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "Alphabetize these words: pear, apple, banana.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-116",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "Summarize this sentence in five words: The team postponed its picnic because heavy rain was forecast.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-117",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "Repeat the exact phrase: quiet purple mountain.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-118",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "I prefer tea to coffee.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-119",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "I am taking a break now.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-120",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "Your previous answer was too long.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-121",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "Use British spelling from now on in this conversation.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-122",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "Do not make any changes yet.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-123",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "I changed my mind; cancel that request.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-124",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "What does “measure twice, cut once” mean?",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-125",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "Give me a friendly birthday greeting for my cousin.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-126",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "Is 29 a prime number?",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-127",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "List the first four positive even numbers.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-128",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "Convert 2.5 kilometres to metres.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-129",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "What is the opposite of transparent?",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-130",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "Explain recursion with a simple everyday analogy, without writing code.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-131",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "What is a spreadsheet? Just define the term.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-132",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "What does PDF stand for? Only expand the abbreviation.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-133",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "What is the difference between a meeting agenda and meeting minutes?",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-134",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "What does a pull request mean in software development? No repository actions.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-135",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "What is a debugger? Give a general definition.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-136",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "Tell me whether the word “running” has seven letters.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-137",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "Choose between the names Cedar and Birch for a fictional cat.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-138",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "How many centimetres are in a metre?",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-139",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "Please answer only yes: did you receive this message?",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-140",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "What is the past tense of write?",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-141",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "Explain why a shadow changes length during the day.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-142",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "What does the musical term chorus mean? I am asking for a definition.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-143",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "What is a hashtag? Explain the punctuation convention only.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-144",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "I saw a funny GIF today.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-145",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "My colleague likes drawing diagrams on paper.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-146",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "I own a Philips Hue bulb. That is just background information; there is no task.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-147",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "The word “notion” in this sentence means an idea. Is that correct?",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-148",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "Can you say “welcome back” in French?",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-149",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "What is the remainder when 20 is divided by 6?",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-150",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "Describe the taste difference between sweet and sour in simple terms.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-151",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "What is the next letter after Q in the English alphabet?",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-152",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "Give me two antonyms for the word loud.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-153",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "The transcript is already handled. Please just acknowledge receipt.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-154",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "No need to research anything; just say good night.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-155",
+      "split": "independent_holdout",
+      "kind": "no_skill",
+      "clarity": "clear",
+      "prompt": "I am ready for lunch, and this is not a request to schedule anything.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Conversation, control, or self-contained general answer; no specialized catalog workflow is requested."
+    },
+    {
+      "id": "independent-156",
+      "split": "independent_holdout",
+      "kind": "sibling",
+      "clarity": "clear",
+      "prompt": "I pasted the meeting notes below. Extract owners and follow-ups; do not connect to Teams or retrieve any recordings.",
+      "expected_skill_ids": [
+        "meeting-action-items"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [
+        "teams-meeting-pipeline"
+      ],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Source material is supplied; source-specific acquisition is unnecessary."
+    },
+    {
+      "id": "independent-157",
+      "split": "independent_holdout",
+      "kind": "sibling",
+      "clarity": "clear",
+      "prompt": "Retrieve the Teams transcript from the meeting identifier first; there are no notes pasted here.",
+      "expected_skill_ids": [
+        "teams-meeting-pipeline"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [
+        "meeting-action-items"
+      ],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "The requested deliverable is source retrieval, not extraction from supplied notes."
+    },
+    {
+      "id": "independent-158",
+      "split": "independent_holdout",
+      "kind": "sibling",
+      "clarity": "clear",
+      "prompt": "Make a list of duties and due dates from this insurance policy, citing its clauses. This is not meeting material.",
+      "expected_skill_ids": [
+        "document-to-action-items"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [
+        "meeting-action-items"
+      ],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Obligations in a document differ from meeting decisions."
+    },
+    {
+      "id": "independent-159",
+      "split": "independent_holdout",
+      "kind": "sibling",
+      "clarity": "clear",
+      "prompt": "Draw the topology as an editable .excalidraw JSON file; the team needs to move the shapes later.",
+      "expected_skill_ids": [
+        "excalidraw"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [
+        "architecture-diagram"
+      ],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Requested editable format distinguishes diagram siblings."
+    },
+    {
+      "id": "independent-160",
+      "split": "independent_holdout",
+      "kind": "sibling",
+      "clarity": "clear",
+      "prompt": "Export the infrastructure picture as a dark SVG in a standalone HTML page; do not produce an Excalidraw scene.",
+      "expected_skill_ids": [
+        "architecture-diagram"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [
+        "excalidraw"
+      ],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Requested rendering format is explicit."
+    },
+    {
+      "id": "independent-161",
+      "split": "independent_holdout",
+      "kind": "sibling",
+      "clarity": "clear",
+      "prompt": "Create the pitch as a real .pptx file with editable slides, not a browser presentation.",
+      "expected_skill_ids": [
+        "powerpoint"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [
+        "claude-design"
+      ],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Artifact format disambiguates presentation tools."
+    },
+    {
+      "id": "independent-162",
+      "split": "independent_holdout",
+      "kind": "sibling",
+      "clarity": "clear",
+      "prompt": "Create a single HTML launch presentation for the browser; no PowerPoint file is wanted.",
+      "expected_skill_ids": [
+        "claude-design"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [
+        "powerpoint"
+      ],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Artifact format disambiguates presentation tools."
+    },
+    {
+      "id": "independent-163",
+      "split": "independent_holdout",
+      "kind": "sibling",
+      "clarity": "clear",
+      "prompt": "Extract text from photographed pages in the PDF. Do not change any words or edit the original file.",
+      "expected_skill_ids": [
+        "ocr-and-documents"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [
+        "nano-pdf"
+      ],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "OCR extraction is not PDF text replacement."
+    },
+    {
+      "id": "independent-164",
+      "split": "independent_holdout",
+      "kind": "sibling",
+      "clarity": "clear",
+      "prompt": "Merge the existing PDFs and add a password; all their text is already readable.",
+      "expected_skill_ids": [
+        "pdf"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [
+        "ocr-and-documents",
+        "nano-pdf"
+      ],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Structural PDF operation, not OCR or text editing."
+    },
+    {
+      "id": "independent-165",
+      "split": "independent_holdout",
+      "kind": "sibling",
+      "clarity": "clear",
+      "prompt": "Edit the misspelled heading directly in this existing PDF using a natural-language replacement instruction.",
+      "expected_skill_ids": [
+        "nano-pdf"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [
+        "ocr-and-documents"
+      ],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "PDF editing, not extraction."
+    },
+    {
+      "id": "independent-166",
+      "split": "independent_holdout",
+      "kind": "sibling",
+      "clarity": "clear",
+      "prompt": "Inspect this already-open GitHub pull request and post inline review comments. Do not implement the issue.",
+      "expected_skill_ids": [
+        "github-code-review"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [
+        "github-issue-to-pr"
+      ],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Existing PR review is different from issue implementation."
+    },
+    {
+      "id": "independent-167",
+      "split": "independent_holdout",
+      "kind": "sibling",
+      "clarity": "clear",
+      "prompt": "Label and assign GitHub issue 22; do not start a branch or implement it.",
+      "expected_skill_ids": [
+        "github-issues"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [
+        "github-issue-to-pr",
+        "github-pr-workflow"
+      ],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Issue triage only."
+    },
+    {
+      "id": "independent-168",
+      "split": "independent_holdout",
+      "kind": "sibling",
+      "clarity": "clear",
+      "prompt": "Create a GitHub repository and set its remotes. There is no pull request to open.",
+      "expected_skill_ids": [
+        "github-repo-management"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [
+        "github-pr-workflow"
+      ],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Repository setup only."
+    },
+    {
+      "id": "independent-169",
+      "split": "independent_holdout",
+      "kind": "sibling",
+      "clarity": "clear",
+      "prompt": "Fix my GitHub SSH login. Do not create repositories or open pull requests.",
+      "expected_skill_ids": [
+        "github-auth"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [
+        "github-repo-management",
+        "github-pr-workflow"
+      ],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Authentication prerequisite rather than content operations."
+    },
+    {
+      "id": "independent-170",
+      "split": "independent_holdout",
+      "kind": "sibling",
+      "clarity": "clear",
+      "prompt": "Attach to the Python process with debugpy; the JavaScript frontend is not involved.",
+      "expected_skill_ids": [
+        "python-debugpy"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [
+        "node-inspect-debugger"
+      ],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Language and debugger are explicit."
+    },
+    {
+      "id": "independent-171",
+      "split": "independent_holdout",
+      "kind": "sibling",
+      "clarity": "clear",
+      "prompt": "Pause the Node.js worker through its --inspect port; there is no Python process.",
+      "expected_skill_ids": [
+        "node-inspect-debugger"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [
+        "python-debugpy"
+      ],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Language and debugger are explicit."
+    },
+    {
+      "id": "independent-172",
+      "split": "independent_holdout",
+      "kind": "sibling",
+      "clarity": "clear",
+      "prompt": "Run the downloaded GGUF locally with llama.cpp; I do not need a multi-user serving endpoint.",
+      "expected_skill_ids": [
+        "llama-cpp"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [
+        "serving-llms-vllm"
+      ],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Local runtime choice is explicit."
+    },
+    {
+      "id": "independent-173",
+      "split": "independent_holdout",
+      "kind": "sibling",
+      "clarity": "clear",
+      "prompt": "Set up vLLM batching for our shared inference endpoint; do not switch us to llama.cpp.",
+      "expected_skill_ids": [
+        "serving-llms-vllm"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [
+        "llama-cpp"
+      ],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Serving runtime choice is explicit."
+    },
+    {
+      "id": "independent-174",
+      "split": "independent_holdout",
+      "kind": "sibling",
+      "clarity": "clear",
+      "prompt": "Download the model snapshot with hf; do not launch it or run benchmarks.",
+      "expected_skill_ids": [
+        "huggingface-hub"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [
+        "llama-cpp",
+        "evaluating-llms-harness"
+      ],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Artifact acquisition only."
+    },
+    {
+      "id": "independent-175",
+      "split": "independent_holdout",
+      "kind": "sibling",
+      "clarity": "clear",
+      "prompt": "Benchmark the model with lm-eval-harness on MMLU; do not publish an ML paper or configure experiment tracking.",
+      "expected_skill_ids": [
+        "evaluating-llms-harness"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [
+        "research-paper-writing",
+        "weights-and-biases"
+      ],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Benchmark execution rather than adjacent ML workflows."
+    },
+    {
+      "id": "independent-176",
+      "split": "independent_holdout",
+      "kind": "sibling",
+      "clarity": "clear",
+      "prompt": "Record the experiment sweep in W&B. The benchmark scores already exist; do not rerun evaluation.",
+      "expected_skill_ids": [
+        "weights-and-biases"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [
+        "evaluating-llms-harness"
+      ],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Tracking existing results rather than generating scores."
+    },
+    {
+      "id": "independent-177",
+      "split": "independent_holdout",
+      "kind": "sibling",
+      "clarity": "clear",
+      "prompt": "Add this task to Apple Reminders, not to my notes app.",
+      "expected_skill_ids": [
+        "apple-reminders"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [
+        "apple-notes",
+        "obsidian"
+      ],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Task store is explicit."
+    },
+    {
+      "id": "independent-178",
+      "split": "independent_holdout",
+      "kind": "sibling",
+      "clarity": "clear",
+      "prompt": "Append this paragraph to the note in Apple Notes using memo, not to Obsidian.",
+      "expected_skill_ids": [
+        "apple-notes"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [
+        "obsidian",
+        "apple-reminders"
+      ],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Note store is explicit."
+    },
+    {
+      "id": "independent-179",
+      "split": "independent_holdout",
+      "kind": "sibling",
+      "clarity": "clear",
+      "prompt": "Update a page inside my Obsidian vault, not our Notion workspace.",
+      "expected_skill_ids": [
+        "obsidian"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [
+        "notion",
+        "apple-notes"
+      ],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Knowledge-store identity is explicit."
+    },
+    {
+      "id": "independent-180",
+      "split": "independent_holdout",
+      "kind": "sibling",
+      "clarity": "clear",
+      "prompt": "Query records in Airtable, not a Notion database or an Excel workbook.",
+      "expected_skill_ids": [
+        "airtable"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [
+        "notion",
+        "xlsx"
+      ],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Structured-store identity is explicit."
+    },
+    {
+      "id": "independent-181",
+      "split": "independent_holdout",
+      "kind": "sibling",
+      "clarity": "clear",
+      "prompt": "Make a static ASCII owl to paste into a text file. No animation or video export.",
+      "expected_skill_ids": [
+        "ascii-art"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [
+        "ascii-video"
+      ],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Static text deliverable."
+    },
+    {
+      "id": "independent-182",
+      "split": "independent_holdout",
+      "kind": "sibling",
+      "clarity": "clear",
+      "prompt": "Render the video as moving ASCII and save an MP4; a single text image is insufficient.",
+      "expected_skill_ids": [
+        "ascii-video"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [
+        "ascii-art"
+      ],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Temporal media deliverable."
+    },
+    {
+      "id": "independent-183",
+      "split": "independent_holdout",
+      "kind": "sibling",
+      "clarity": "clear",
+      "prompt": "Produce a mel spectrogram from this audio file. Do not compose music or write lyrics.",
+      "expected_skill_ids": [
+        "songsee"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [
+        "songwriting-and-ai-music"
+      ],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Audio analysis rather than composition."
+    },
+    {
+      "id": "independent-184",
+      "split": "independent_holdout",
+      "kind": "sibling",
+      "clarity": "clear",
+      "prompt": "Write lyrics and a Suno style prompt; I do not have an audio recording to analyse.",
+      "expected_skill_ids": [
+        "songwriting-and-ai-music"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [
+        "songsee"
+      ],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Composition rather than audio analysis."
+    },
+    {
+      "id": "independent-185",
+      "split": "independent_holdout",
+      "kind": "sibling",
+      "clarity": "clear",
+      "prompt": "Inspect computed CSS in the live Electron app through CDP, without clicking around the desktop.",
+      "expected_skill_ids": [
+        "inspect-live-dom"
+      ],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [
+        "computer-use"
+      ],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Read-only browser inspection, not desktop control."
+    },
+    {
+      "id": "independent-186",
+      "split": "independent_holdout",
+      "kind": "resource",
+      "clarity": "clear",
+      "prompt": "Use the OpenHue controller to change my lights now. That controller is unavailable here; no network access or fallback tool is permitted. If execution is impossible, report it without loading an execution workflow.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [
+        "openhue"
+      ],
+      "context": {
+        "unavailable_tools": [
+          "openhue"
+        ],
+        "denied_permissions": [
+          "network"
+        ]
+      },
+      "rationale": "The execution-only request explicitly requires abstention when its mandatory capability or authorization is absent."
+    },
+    {
+      "id": "independent-187",
+      "split": "independent_holdout",
+      "kind": "resource",
+      "clarity": "clear",
+      "prompt": "Send the approved iMessage now, but this Linux session has no imsg tool or macOS host. No remote access or alternate messaging service is allowed. Report the missing capability instead of starting the workflow.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [
+        "imessage"
+      ],
+      "context": {
+        "unavailable_tools": [
+          "imsg",
+          "macos-host"
+        ],
+        "denied_permissions": [
+          "remote_access"
+        ]
+      },
+      "rationale": "The execution-only request explicitly requires abstention when its mandatory capability or authorization is absent."
+    },
+    {
+      "id": "independent-188",
+      "split": "independent_holdout",
+      "kind": "resource",
+      "clarity": "clear",
+      "prompt": "Locate my AirTag now. This environment has no FindMy.app or Mac access, and using any remote account is forbidden. Only report whether this can run here.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [
+        "findmy"
+      ],
+      "context": {
+        "unavailable_tools": [
+          "FindMy.app",
+          "macos-host"
+        ],
+        "denied_permissions": [
+          "remote_access"
+        ]
+      },
+      "rationale": "The execution-only request explicitly requires abstention when its mandatory capability or authorization is absent."
+    },
+    {
+      "id": "independent-189",
+      "split": "independent_holdout",
+      "kind": "resource",
+      "clarity": "clear",
+      "prompt": "Change the TouchDesigner project through twozero now. There is no twozero MCP connection, and installing or connecting one is not permitted. If unavailable, stop with that fact.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [
+        "touchdesigner-mcp"
+      ],
+      "context": {
+        "unavailable_tools": [
+          "twozero"
+        ],
+        "denied_permissions": [
+          "install_tools",
+          "connect_services"
+        ]
+      },
+      "rationale": "The execution-only request explicitly requires abstention when its mandatory capability or authorization is absent."
+    },
+    {
+      "id": "independent-190",
+      "split": "independent_holdout",
+      "kind": "resource",
+      "clarity": "clear",
+      "prompt": "Delegate this code change to OpenCode CLI now. OpenCode is missing, installation is forbidden, and no substitute delegate may run. Report that limitation without starting a delegate workflow.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [
+        "opencode"
+      ],
+      "context": {
+        "unavailable_tools": [
+          "opencode"
+        ],
+        "denied_permissions": [
+          "install_tools",
+          "substitute_delegate"
+        ]
+      },
+      "rationale": "The execution-only request explicitly requires abstention when its mandatory capability or authorization is absent."
+    },
+    {
+      "id": "independent-191",
+      "split": "independent_holdout",
+      "kind": "resource",
+      "clarity": "clear",
+      "prompt": "Run Claude Code CLI on the branch now. It is not installed, installation is denied, and other coding delegates are not allowed. Return an unavailable-capability result.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [
+        "claude-code"
+      ],
+      "context": {
+        "unavailable_tools": [
+          "claude"
+        ],
+        "denied_permissions": [
+          "install_tools",
+          "substitute_delegate"
+        ]
+      },
+      "rationale": "The execution-only request explicitly requires abstention when its mandatory capability or authorization is absent."
+    },
+    {
+      "id": "independent-192",
+      "split": "independent_holdout",
+      "kind": "resource",
+      "clarity": "clear",
+      "prompt": "Have Codex CLI execute the task now. The CLI is absent and neither installation nor another delegation service is permitted. Only report the execution blocker.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [
+        "codex"
+      ],
+      "context": {
+        "unavailable_tools": [
+          "codex"
+        ],
+        "denied_permissions": [
+          "install_tools",
+          "substitute_delegate"
+        ]
+      },
+      "rationale": "The execution-only request explicitly requires abstention when its mandatory capability or authorization is absent."
+    },
+    {
+      "id": "independent-193",
+      "split": "independent_holdout",
+      "kind": "resource",
+      "clarity": "clear",
+      "prompt": "Update the Airtable record now. All network access is denied for this task, no offline queue is allowed, and I only want a truthful blocked result if the write cannot execute.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [
+        "airtable"
+      ],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": [
+          "network",
+          "queue_external_writes"
+        ]
+      },
+      "rationale": "The execution-only request explicitly requires abstention when its mandatory capability or authorization is absent."
+    },
+    {
+      "id": "independent-194",
+      "split": "independent_holdout",
+      "kind": "resource",
+      "clarity": "clear",
+      "prompt": "Post this message to X now. External writes are forbidden in this session and I am not requesting a draft. If posting is prohibited, report that without activating posting tools.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [
+        "xurl"
+      ],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": [
+          "external_writes"
+        ]
+      },
+      "rationale": "The execution-only request explicitly requires abstention when its mandatory capability or authorization is absent."
+    },
+    {
+      "id": "independent-195",
+      "split": "independent_holdout",
+      "kind": "resource",
+      "clarity": "clear",
+      "prompt": "Edit the Notion page now. This session permits no remote page writes or later queued edits. If the action is denied, state the constraint rather than beginning a Notion workflow.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [
+        "notion"
+      ],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": [
+          "external_writes",
+          "queue_external_writes"
+        ]
+      },
+      "rationale": "The execution-only request explicitly requires abstention when its mandatory capability or authorization is absent."
+    },
+    {
+      "id": "independent-196",
+      "split": "independent_holdout",
+      "kind": "resource",
+      "clarity": "clear",
+      "prompt": "Create the Box share now. This task has no permission to create external shares and no approval may be inferred from skill selection. Return the blocked result.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [
+        "box"
+      ],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": [
+          "create_external_shares"
+        ]
+      },
+      "rationale": "The execution-only request explicitly requires abstention when its mandatory capability or authorization is absent."
+    },
+    {
+      "id": "independent-197",
+      "split": "independent_holdout",
+      "kind": "resource",
+      "clarity": "clear",
+      "prompt": "Control the desktop to change that setting now. Desktop-control permission is denied and neither simulated clicks nor alternative remote-control tools are allowed. Only report the denial.",
+      "expected_skill_ids": [],
+      "acceptable_abstention": false,
+      "forbidden_skill_ids": [
+        "computer-use"
+      ],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": [
+          "desktop_control"
+        ]
+      },
+      "rationale": "The execution-only request explicitly requires abstention when its mandatory capability or authorization is absent."
+    },
+    {
+      "id": "independent-198",
+      "split": "independent_holdout",
+      "kind": "ambiguous",
+      "clarity": "ambiguous",
+      "prompt": "Make this presentation look better.",
+      "expected_skill_ids": [
+        "powerpoint",
+        "claude-design"
+      ],
+      "acceptable_abstention": true,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "No file type or rendering medium is supplied."
+    },
+    {
+      "id": "independent-199",
+      "split": "independent_holdout",
+      "kind": "ambiguous",
+      "clarity": "ambiguous",
+      "prompt": "Put this in my notes.",
+      "expected_skill_ids": [
+        "obsidian",
+        "apple-notes",
+        "notion"
+      ],
+      "acceptable_abstention": true,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "The destination note store is unspecified."
+    },
+    {
+      "id": "independent-200",
+      "split": "independent_holdout",
+      "kind": "ambiguous",
+      "clarity": "ambiguous",
+      "prompt": "Help me with this PDF.",
+      "expected_skill_ids": [
+        "pdf",
+        "ocr-and-documents",
+        "nano-pdf"
+      ],
+      "acceptable_abstention": true,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "The operation is unspecified."
+    },
+    {
+      "id": "independent-201",
+      "split": "independent_holdout",
+      "kind": "ambiguous",
+      "clarity": "ambiguous",
+      "prompt": "I need a diagram of how these components connect.",
+      "expected_skill_ids": [
+        "architecture-diagram",
+        "excalidraw"
+      ],
+      "acceptable_abstention": true,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "The editable/rendered diagram medium is unspecified."
+    },
+    {
+      "id": "independent-202",
+      "split": "independent_holdout",
+      "kind": "ambiguous",
+      "clarity": "ambiguous",
+      "prompt": "Have another coding agent take care of this.",
+      "expected_skill_ids": [
+        "codex",
+        "claude-code",
+        "opencode"
+      ],
+      "acceptable_abstention": true,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "No delegate or installed executor is specified."
+    },
+    {
+      "id": "independent-203",
+      "split": "independent_holdout",
+      "kind": "ambiguous",
+      "clarity": "ambiguous",
+      "prompt": "Help me turn this song idea into something concrete.",
+      "expected_skill_ids": [
+        "songwriting-and-ai-music"
+      ],
+      "acceptable_abstention": true,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Composition help is plausible but the desired artifact is underspecified."
+    },
+    {
+      "id": "independent-204",
+      "split": "independent_holdout",
+      "kind": "ambiguous",
+      "clarity": "ambiguous",
+      "prompt": "Can we organise the work for the next stage?",
+      "expected_skill_ids": [
+        "plan",
+        "weekly-review-planning"
+      ],
+      "acceptable_abstention": true,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Could refer to a software plan or personal commitment planning."
+    },
+    {
+      "id": "independent-205",
+      "split": "independent_holdout",
+      "kind": "ambiguous",
+      "clarity": "ambiguous",
+      "prompt": "Check why the program is stuck.",
+      "expected_skill_ids": [
+        "systematic-debugging"
+      ],
+      "acceptable_abstention": true,
+      "forbidden_skill_ids": [],
+      "context": {
+        "unavailable_tools": [],
+        "denied_permissions": []
+      },
+      "rationale": "Root-cause workflow is plausible; no language or reproducible symptom is supplied."
+    }
+  ]
+}

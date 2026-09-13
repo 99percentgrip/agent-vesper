@@ -35,6 +35,10 @@ transport, stderr-only tracing, and orderly shutdown.
   state; explicit saves affect later turns. Routing uses the same memory selector
   and workspace preferences as TUI, with native permission/mode restrictions.
   TUI owns the interactive grouped draft; ACP exposes explicit text saves.
+  `save model-assistance on|off` controls the same default-off provider selector;
+  enabling selects Enhanced. The engine resolves it before direct/VRO dispatch,
+  registers cancellation during selection and emits bounded routing notices.
+  The selector has no tools and does not persist selection prompts.
 
 - Contain no session, provider-wire, or ACP-mapping business logic.
 - Stdout is exclusively newline-delimited ACP JSON-RPC.

@@ -230,6 +230,7 @@ pub struct LoadedChunk {
 /// include skill contents or filesystem paths.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SkillRoutingReport {
+    pub prepared_selection: Option<crate::model_routing::PreparedSkillSelection>,
     pub selected: Vec<LoadedSkill>,
     /// Explicitly activated bundles and their bounded composition guidance.
     pub selected_bundles: Vec<(String, String)>,
@@ -433,6 +434,7 @@ impl SkillStore {
             condition,
             &crate::routing_quality::RoutingOptions::default(),
             crate::routing_quality::RoutingAblation::Full,
+            None,
         )
     }
 
@@ -447,6 +449,7 @@ impl SkillStore {
             ChunkRoutingCondition::production(),
             options,
             crate::routing_quality::RoutingAblation::Full,
+            None,
         )
     }
 
@@ -462,6 +465,24 @@ impl SkillStore {
             ChunkRoutingCondition::production(),
             options,
             ablation,
+            None,
+        )
+    }
+
+    /// Rebuild eligibility before accepting a bounded, non-authoritative model decision.
+    pub fn complete_model_selection(
+        &self,
+        query: &SkillRoutingQuery<'_>,
+        options: &crate::routing_quality::RoutingOptions,
+        prepared: &crate::model_routing::PreparedSkillSelection,
+        decision: &crate::model_routing::ModelSkillDecision,
+    ) -> SkillRoutingReport {
+        self.orchestrate_configured(
+            query,
+            ChunkRoutingCondition::production(),
+            options,
+            crate::routing_quality::RoutingAblation::Full,
+            Some((prepared, decision)),
         )
     }
 
@@ -471,6 +492,10 @@ impl SkillStore {
         condition: ChunkRoutingCondition,
         options: &crate::routing_quality::RoutingOptions,
         ablation: crate::routing_quality::RoutingAblation,
+        model: Option<(
+            &crate::model_routing::PreparedSkillSelection,
+            &crate::model_routing::ModelSkillDecision,
+        )>,
     ) -> SkillRoutingReport {
         use crate::routing_quality::{
             RoutingCatalogEntry, RoutingIndex, RoutingMode, RoutingOutcome,
@@ -545,6 +570,12 @@ impl SkillStore {
             && explicit.is_none()
             && explicit_bundle.is_none()
             && ablation != crate::routing_quality::RoutingAblation::DescriptorsWithStandardScorer;
+        if model.is_some() && (!automatic_enhanced || !options.preferences.model_assistance) {
+            report.routing_trace.outcome = RoutingOutcome::Fallback;
+            report.routing_trace.reason =
+                "Model selection is no longer enabled for this task".into();
+            return report;
+        }
         let mut retrieval_entries = Vec::new();
         let mut identities = BTreeMap::new();
         report.routing_trace.mode = options.preferences.mode;
@@ -775,7 +806,6 @@ impl SkillStore {
                     );
                     // Activation needs contextual overlap or a salient metadata term
                     // in a task request. Scores are not probabilities.
-                    let best = found.candidates.first().map_or(0.0, |m| m.score);
                     let ambiguous = found.candidates.get(1).is_some_and(|second| {
                         let first = &found.candidates[0];
                         let first_descriptor = retrieval_entries
@@ -802,16 +832,69 @@ impl SkillStore {
                                         && a.actions != b.actions
                                 })
                     });
-                    let scores: BTreeMap<_, _> = found
-                        .candidates
-                        .iter()
-                        .filter(|m| {
-                            ((m.matched_terms >= 2 && m.matched_terms * 5 >= m.query_terms)
-                                || (m.task_request && m.anchor_terms > 0))
-                                && m.score >= best * 0.55
-                        })
-                        .map(|m| (m.slug.as_str(), m.score))
-                        .collect();
+                    let mut scores = found.activation_scores(query.prompt);
+                    let mut ambiguous = ambiguous;
+                    if options.preferences.model_assistance {
+                        if let Some((prepared, decision)) = model {
+                            if !prepared.matches(
+                                &self.routing_store_identity(),
+                                &retrieval_entries,
+                                query,
+                                options,
+                            ) || prepared.validate(decision).is_err()
+                            {
+                                report.routing_trace.outcome = RoutingOutcome::Fallback;
+                                report.routing_trace.reason =
+                                    "Stale or invalid model selection withheld".into();
+                                return report;
+                            }
+                            scores.clear();
+                            for (index, id) in decision.skills.iter().enumerate() {
+                                // Only still-eligible retrieved identities can reach the loader.
+                                if found
+                                    .candidates
+                                    .iter()
+                                    .any(|candidate| candidate.slug == *id)
+                                {
+                                    scores
+                                        .insert(id.as_str(), (MAX_SELECTED_SKILLS - index) as f64);
+                                }
+                            }
+                            ambiguous = decision.outcome
+                                == crate::model_routing::ModelSelectionOutcome::Ambiguous;
+                        } else {
+                            match crate::model_routing::PreparedSkillSelection::new(
+                                self.routing_store_identity(),
+                                &retrieval_entries,
+                                &found,
+                                query,
+                                options,
+                            ) {
+                                Ok(prepared) => {
+                                    report.prepared_selection = Some(prepared);
+                                    report.routing_trace.reason =
+                                        "Awaiting bounded model selection".into();
+                                    return report;
+                                }
+                                Err(reason) => {
+                                    let mut lexical_options = options.clone();
+                                    lexical_options.preferences.model_assistance = false;
+                                    let mut lexical = self.orchestrate_configured(
+                                        query,
+                                        condition,
+                                        &lexical_options,
+                                        ablation,
+                                        None,
+                                    );
+                                    lexical.routing_trace.outcome = RoutingOutcome::Fallback;
+                                    lexical.routing_trace.reason =
+                                        format!("{reason}; lexical routing used");
+                                    return lexical;
+                                }
+                            }
+                        }
+                    }
+
                     candidates.retain_mut(|candidate| {
                         if ambiguous {
                             return false;
@@ -821,7 +904,12 @@ impl SkillStore {
                         };
                         candidate.score_basis_points = (*score * 100.0).min(u16::MAX as f64) as u16;
                         candidate.reasons = vec![
-                            "metadata lexical retrieval".into(),
+                            if model.is_some() {
+                                "model-selected eligible metadata"
+                            } else {
+                                "metadata lexical retrieval"
+                            }
+                            .into(),
                             "current policy and task contracts checked".into(),
                         ];
                         candidate.reasons.push(
@@ -844,6 +932,12 @@ impl SkillStore {
                     }
                 }
                 Err(_) => {
+                    if options.preferences.model_assistance || model.is_some() {
+                        report.routing_trace.outcome = RoutingOutcome::Fallback;
+                        report.routing_trace.reason =
+                            "Metadata index unavailable; model selection withheld".into();
+                        return report;
+                    }
                     let mut fallback_options = options.clone();
                     fallback_options.preferences.mode = RoutingMode::Standard;
                     let mut fallback = self.orchestrate_configured(
@@ -851,6 +945,7 @@ impl SkillStore {
                         condition,
                         &fallback_options,
                         crate::routing_quality::RoutingAblation::Full,
+                        None,
                     );
                     fallback.routing_trace.outcome = RoutingOutcome::Fallback;
                     fallback.routing_trace.reason =

@@ -1,0 +1,4324 @@
+{
+  "status": "retrieval-only experiment; native contracts and promotion not established",
+  "model": "sentence-transformers/all-MiniLM-L6-v2",
+  "revision": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+  "representation": "full",
+  "corpus_sha256": "79ef89a4934a0e2c61aa08d4e2de6a3efd0272c18f1ee3e9507271d5c6111275",
+  "policy_sha256": null,
+  "request_flags_sha256": null,
+  "model_sha256": "6fd5d72fe4589f189f8ebc006442dbb529bb7ce38f8082112682524616046452",
+  "tokenizer_sha256": "be50c3628f2bf5bb5e3a7f17b1f74611b2561a3a27eeab05e5aa30f411572037",
+  "metadata_sha256": "96b28ecb189cbef73ef66b70a65571c3baf46d92b7320d1b2e8ccc8774991482",
+  "dimensions": 384,
+  "model_load_ms": 88.60447100596502,
+  "catalog_encode_ms": 1004.7998149966588,
+  "query_warm_p95_ms": 4.7252899967134,
+  "vector_index_bytes": 291840,
+  "development_threshold": 0.38,
+  "threshold_source": "fixed caller-supplied",
+  "summary": {
+    "independent_holdout:positive": {
+      "n": 95,
+      "hits": 82,
+      "abstentions": 12,
+      "activations": 83
+    },
+    "independent_holdout:no_skill": {
+      "n": 60,
+      "hits": 0,
+      "abstentions": 51,
+      "activations": 9
+    },
+    "independent_holdout:sibling": {
+      "n": 30,
+      "hits": 28,
+      "abstentions": 1,
+      "activations": 29
+    },
+    "independent_holdout:resource": {
+      "n": 12,
+      "hits": 0,
+      "abstentions": 4,
+      "activations": 8
+    },
+    "independent_holdout:ambiguous": {
+      "n": 8,
+      "hits": 4,
+      "abstentions": 4,
+      "activations": 4
+    }
+  },
+  "predictions": [
+    {
+      "id": "independent-001",
+      "split": "independent_holdout",
+      "selected": [
+        "youtube-content"
+      ],
+      "top3": [
+        {
+          "slug": "youtube-content",
+          "cosine": 0.5735807027688586
+        },
+        {
+          "slug": "teams-meeting-pipeline",
+          "cosine": 0.32959047148671916
+        },
+        {
+          "slug": "github-issue-to-pr",
+          "cosine": 0.2214487551701888
+        }
+      ]
+    },
+    {
+      "id": "independent-002",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "xurl",
+          "cosine": 0.2693795777056812
+        },
+        {
+          "slug": "weekly-review-planning",
+          "cosine": 0.26569511203845525
+        },
+        {
+          "slug": "findmy",
+          "cosine": 0.2542113160006264
+        }
+      ]
+    },
+    {
+      "id": "independent-003",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "xlsx",
+          "cosine": 0.3777988491456285
+        },
+        {
+          "slug": "weekly-review-planning",
+          "cosine": 0.28561107743423414
+        },
+        {
+          "slug": "plan",
+          "cosine": 0.2849352432556128
+        }
+      ]
+    },
+    {
+      "id": "independent-004",
+      "split": "independent_holdout",
+      "selected": [
+        "work-unit-reporting",
+        "requesting-code-review"
+      ],
+      "top3": [
+        {
+          "slug": "work-unit-reporting",
+          "cosine": 0.4987083344447348
+        },
+        {
+          "slug": "requesting-code-review",
+          "cosine": 0.41705093621809053
+        },
+        {
+          "slug": "end-to-end-workflow-acceptance",
+          "cosine": 0.3691945205450994
+        }
+      ]
+    },
+    {
+      "id": "independent-005",
+      "split": "independent_holdout",
+      "selected": [
+        "weights-and-biases"
+      ],
+      "top3": [
+        {
+          "slug": "weights-and-biases",
+          "cosine": 0.43753895865071274
+        },
+        {
+          "slug": "evaluating-llms-harness",
+          "cosine": 0.34776563632969254
+        },
+        {
+          "slug": "teams-meeting-pipeline",
+          "cosine": 0.30043080809720285
+        }
+      ]
+    },
+    {
+      "id": "independent-006",
+      "split": "independent_holdout",
+      "selected": [
+        "weekly-review-planning"
+      ],
+      "top3": [
+        {
+          "slug": "weekly-review-planning",
+          "cosine": 0.7052894825380381
+        },
+        {
+          "slug": "requesting-code-review",
+          "cosine": 0.2568611323145392
+        },
+        {
+          "slug": "spike",
+          "cosine": 0.2276299112338191
+        }
+      ]
+    },
+    {
+      "id": "independent-007",
+      "split": "independent_holdout",
+      "selected": [
+        "agent-vesper",
+        "vesper-skill-authoring",
+        "interactive-developer"
+      ],
+      "top3": [
+        {
+          "slug": "agent-vesper",
+          "cosine": 0.5121122858960341
+        },
+        {
+          "slug": "vesper-skill-authoring",
+          "cosine": 0.49154030373821844
+        },
+        {
+          "slug": "interactive-developer",
+          "cosine": 0.4813594615651832
+        }
+      ]
+    },
+    {
+      "id": "independent-008",
+      "split": "independent_holdout",
+      "selected": [
+        "verify-with-xtask-verify",
+        "rust-workspace-disk-hygiene",
+        "cross-platform-test-pitfalls"
+      ],
+      "top3": [
+        {
+          "slug": "verify-with-xtask-verify",
+          "cosine": 0.595922890949656
+        },
+        {
+          "slug": "rust-workspace-disk-hygiene",
+          "cosine": 0.4786847744081502
+        },
+        {
+          "slug": "cross-platform-test-pitfalls",
+          "cosine": 0.43485211524423517
+        }
+      ]
+    },
+    {
+      "id": "independent-009",
+      "split": "independent_holdout",
+      "selected": [
+        "verify-parity-end-to-end",
+        "harness-skill-gate-mechanics",
+        "vesper-skill-authoring"
+      ],
+      "top3": [
+        {
+          "slug": "verify-parity-end-to-end",
+          "cosine": 0.46223303338003713
+        },
+        {
+          "slug": "harness-skill-gate-mechanics",
+          "cosine": 0.43326193880890285
+        },
+        {
+          "slug": "vesper-skill-authoring",
+          "cosine": 0.3919658502325453
+        }
+      ]
+    },
+    {
+      "id": "independent-010",
+      "split": "independent_holdout",
+      "selected": [
+        "touchdesigner-mcp"
+      ],
+      "top3": [
+        {
+          "slug": "touchdesigner-mcp",
+          "cosine": 0.5555155300209093
+        },
+        {
+          "slug": "songsee",
+          "cosine": 0.2017067902323234
+        },
+        {
+          "slug": "comfyui",
+          "cosine": 0.1931623109910116
+        }
+      ]
+    },
+    {
+      "id": "independent-011",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "requesting-code-review",
+          "cosine": 0.37298093916323244
+        },
+        {
+          "slug": "harness-skill-gate-mechanics",
+          "cosine": 0.2712280351083065
+        },
+        {
+          "slug": "simplify-code",
+          "cosine": 0.25119298656998185
+        }
+      ]
+    },
+    {
+      "id": "independent-012",
+      "split": "independent_holdout",
+      "selected": [
+        "teams-meeting-pipeline"
+      ],
+      "top3": [
+        {
+          "slug": "teams-meeting-pipeline",
+          "cosine": 0.7219881114909072
+        },
+        {
+          "slug": "youtube-content",
+          "cosine": 0.3494083077321936
+        },
+        {
+          "slug": "meeting-action-items",
+          "cosine": 0.32154712478202824
+        }
+      ]
+    },
+    {
+      "id": "independent-013",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "cold-start-import-deferral",
+          "cosine": 0.18726486033334494
+        },
+        {
+          "slug": "blocked-page-recovery",
+          "cosine": 0.1824285874268964
+        },
+        {
+          "slug": "github-issues",
+          "cosine": 0.1751320323958912
+        }
+      ]
+    },
+    {
+      "id": "independent-014",
+      "split": "independent_holdout",
+      "selected": [
+        "subprocess-kill-in-agent-tools",
+        "rust-workspace-disk-hygiene",
+        "end-to-end-workflow-acceptance"
+      ],
+      "top3": [
+        {
+          "slug": "subprocess-kill-in-agent-tools",
+          "cosine": 0.5422140923222104
+        },
+        {
+          "slug": "rust-workspace-disk-hygiene",
+          "cosine": 0.4370024546657009
+        },
+        {
+          "slug": "end-to-end-workflow-acceptance",
+          "cosine": 0.3840368026250679
+        }
+      ]
+    },
+    {
+      "id": "independent-015",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "serving-llms-vllm",
+          "cosine": 0.35293782313574823
+        },
+        {
+          "slug": "blogwatcher",
+          "cosine": 0.30567452736890777
+        },
+        {
+          "slug": "email-inbox-triage",
+          "cosine": 0.3035543304286861
+        }
+      ]
+    },
+    {
+      "id": "independent-016",
+      "split": "independent_holdout",
+      "selected": [
+        "songwriting-and-ai-music"
+      ],
+      "top3": [
+        {
+          "slug": "songwriting-and-ai-music",
+          "cosine": 0.5540103950718159
+        },
+        {
+          "slug": "songsee",
+          "cosine": 0.22948639264993306
+        },
+        {
+          "slug": "humanizer",
+          "cosine": 0.22775305319489741
+        }
+      ]
+    },
+    {
+      "id": "independent-017",
+      "split": "independent_holdout",
+      "selected": [
+        "songsee",
+        "comfyui"
+      ],
+      "top3": [
+        {
+          "slug": "songsee",
+          "cosine": 0.5577812492301524
+        },
+        {
+          "slug": "comfyui",
+          "cosine": 0.40028597595402554
+        },
+        {
+          "slug": "manim-video",
+          "cosine": 0.31300428048347756
+        }
+      ]
+    },
+    {
+      "id": "independent-018",
+      "split": "independent_holdout",
+      "selected": [
+        "sketch",
+        "pretext"
+      ],
+      "top3": [
+        {
+          "slug": "sketch",
+          "cosine": 0.4060933634657842
+        },
+        {
+          "slug": "pretext",
+          "cosine": 0.38428698656499255
+        },
+        {
+          "slug": "claude-design",
+          "cosine": 0.3707984157071009
+        }
+      ]
+    },
+    {
+      "id": "independent-019",
+      "split": "independent_holdout",
+      "selected": [
+        "simplify-code",
+        "requesting-code-review",
+        "github-code-review"
+      ],
+      "top3": [
+        {
+          "slug": "simplify-code",
+          "cosine": 0.6742825334814021
+        },
+        {
+          "slug": "requesting-code-review",
+          "cosine": 0.5518645685718209
+        },
+        {
+          "slug": "github-code-review",
+          "cosine": 0.49291454526891354
+        }
+      ]
+    },
+    {
+      "id": "independent-020",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "session-librarian",
+          "cosine": 0.3174781963602598
+        },
+        {
+          "slug": "simplify-code",
+          "cosine": 0.2762035261860333
+        },
+        {
+          "slug": "merge-reconciler",
+          "cosine": 0.27011860859129955
+        }
+      ]
+    },
+    {
+      "id": "independent-021",
+      "split": "independent_holdout",
+      "selected": [
+        "serving-llms-vllm"
+      ],
+      "top3": [
+        {
+          "slug": "serving-llms-vllm",
+          "cosine": 0.6891948702696212
+        },
+        {
+          "slug": "weights-and-biases",
+          "cosine": 0.32399382885076494
+        },
+        {
+          "slug": "huggingface-hub",
+          "cosine": 0.3131267146722644
+        }
+      ]
+    },
+    {
+      "id": "independent-022",
+      "split": "independent_holdout",
+      "selected": [
+        "sdlc-review"
+      ],
+      "top3": [
+        {
+          "slug": "sdlc-review",
+          "cosine": 0.6556587379683875
+        },
+        {
+          "slug": "codex",
+          "cosine": 0.2737482235771911
+        },
+        {
+          "slug": "merge-reconciler",
+          "cosine": 0.26909242064795447
+        }
+      ]
+    },
+    {
+      "id": "independent-023",
+      "split": "independent_holdout",
+      "selected": [
+        "rust-workspace-disk-hygiene",
+        "verify-with-xtask-verify"
+      ],
+      "top3": [
+        {
+          "slug": "rust-workspace-disk-hygiene",
+          "cosine": 0.7059298128422999
+        },
+        {
+          "slug": "verify-with-xtask-verify",
+          "cosine": 0.3975455665283359
+        },
+        {
+          "slug": "systematic-debugging",
+          "cosine": 0.2587259610800658
+        }
+      ]
+    },
+    {
+      "id": "independent-024",
+      "split": "independent_holdout",
+      "selected": [
+        "research-paper-writing"
+      ],
+      "top3": [
+        {
+          "slug": "research-paper-writing",
+          "cosine": 0.47593416283123835
+        },
+        {
+          "slug": "humanizer",
+          "cosine": 0.273112785405382
+        },
+        {
+          "slug": "email-inbox-triage",
+          "cosine": 0.23740884203441007
+        }
+      ]
+    },
+    {
+      "id": "independent-025",
+      "split": "independent_holdout",
+      "selected": [
+        "requesting-code-review",
+        "systematic-debugging"
+      ],
+      "top3": [
+        {
+          "slug": "requesting-code-review",
+          "cosine": 0.48934657582352103
+        },
+        {
+          "slug": "systematic-debugging",
+          "cosine": 0.39474132372135223
+        },
+        {
+          "slug": "github-issues",
+          "cosine": 0.3373883454157043
+        }
+      ]
+    },
+    {
+      "id": "independent-026",
+      "split": "independent_holdout",
+      "selected": [
+        "python-debugpy",
+        "codebase-inspection",
+        "node-inspect-debugger"
+      ],
+      "top3": [
+        {
+          "slug": "python-debugpy",
+          "cosine": 0.5659209230911261
+        },
+        {
+          "slug": "codebase-inspection",
+          "cosine": 0.3866383647097767
+        },
+        {
+          "slug": "node-inspect-debugger",
+          "cosine": 0.3859079854374037
+        }
+      ]
+    },
+    {
+      "id": "independent-027",
+      "split": "independent_holdout",
+      "selected": [
+        "add-glm-model-release",
+        "provider-routed-surface-decoupling",
+        "cold-start-import-deferral"
+      ],
+      "top3": [
+        {
+          "slug": "add-glm-model-release",
+          "cosine": 0.5338153051543272
+        },
+        {
+          "slug": "provider-routed-surface-decoupling",
+          "cosine": 0.4834410771809857
+        },
+        {
+          "slug": "cold-start-import-deferral",
+          "cosine": 0.42006496882379774
+        }
+      ]
+    },
+    {
+      "id": "independent-028",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "product-price-monitor",
+          "cosine": 0.3716156266969907
+        },
+        {
+          "slug": "weekly-review-planning",
+          "cosine": 0.2073022869650695
+        },
+        {
+          "slug": "findmy",
+          "cosine": 0.2009278129988286
+        }
+      ]
+    },
+    {
+      "id": "independent-029",
+      "split": "independent_holdout",
+      "selected": [
+        "pretext",
+        "claude-design",
+        "llm-wiki"
+      ],
+      "top3": [
+        {
+          "slug": "pretext",
+          "cosine": 0.6943778227591506
+        },
+        {
+          "slug": "claude-design",
+          "cosine": 0.41246553442165607
+        },
+        {
+          "slug": "llm-wiki",
+          "cosine": 0.3874182280326988
+        }
+      ]
+    },
+    {
+      "id": "independent-030",
+      "split": "independent_holdout",
+      "selected": [
+        "powerpoint"
+      ],
+      "top3": [
+        {
+          "slug": "powerpoint",
+          "cosine": 0.5200993991001539
+        },
+        {
+          "slug": "github-issue-to-pr",
+          "cosine": 0.21182411314926056
+        },
+        {
+          "slug": "github-pr-workflow",
+          "cosine": 0.20958234116908608
+        }
+      ]
+    },
+    {
+      "id": "independent-031",
+      "split": "independent_holdout",
+      "selected": [
+        "popular-web-designs",
+        "pretext"
+      ],
+      "top3": [
+        {
+          "slug": "popular-web-designs",
+          "cosine": 0.5206390720251146
+        },
+        {
+          "slug": "pretext",
+          "cosine": 0.46466197846398516
+        },
+        {
+          "slug": "architecture-diagram",
+          "cosine": 0.36341250447699514
+        }
+      ]
+    },
+    {
+      "id": "independent-032",
+      "split": "independent_holdout",
+      "selected": [
+        "plan",
+        "subprocess-kill-in-agent-tools",
+        "agent-vesper"
+      ],
+      "top3": [
+        {
+          "slug": "plan",
+          "cosine": 0.6750815863876444
+        },
+        {
+          "slug": "subprocess-kill-in-agent-tools",
+          "cosine": 0.4527546917331917
+        },
+        {
+          "slug": "agent-vesper",
+          "cosine": 0.3936312036716324
+        }
+      ]
+    },
+    {
+      "id": "independent-033",
+      "split": "independent_holdout",
+      "selected": [
+        "pdf"
+      ],
+      "top3": [
+        {
+          "slug": "pdf",
+          "cosine": 0.5860181129975381
+        },
+        {
+          "slug": "ocr-and-documents",
+          "cosine": 0.377091069186024
+        },
+        {
+          "slug": "document-to-action-items",
+          "cosine": 0.2749139075121698
+        }
+      ]
+    },
+    {
+      "id": "independent-034",
+      "split": "independent_holdout",
+      "selected": [
+        "p5js"
+      ],
+      "top3": [
+        {
+          "slug": "p5js",
+          "cosine": 0.5689552557386984
+        },
+        {
+          "slug": "sketch",
+          "cosine": 0.2787135907221386
+        },
+        {
+          "slug": "claude-design",
+          "cosine": 0.26197172282701975
+        }
+      ]
+    },
+    {
+      "id": "independent-035",
+      "split": "independent_holdout",
+      "selected": [
+        "openhue"
+      ],
+      "top3": [
+        {
+          "slug": "openhue",
+          "cosine": 0.4933036539239652
+        },
+        {
+          "slug": "comfyui",
+          "cosine": 0.22842770822154215
+        },
+        {
+          "slug": "computer-use",
+          "cosine": 0.20589649714607883
+        }
+      ]
+    },
+    {
+      "id": "independent-036",
+      "split": "independent_holdout",
+      "selected": [
+        "opencode",
+        "codex",
+        "requesting-code-review"
+      ],
+      "top3": [
+        {
+          "slug": "opencode",
+          "cosine": 0.7310663841615259
+        },
+        {
+          "slug": "codex",
+          "cosine": 0.601242614993565
+        },
+        {
+          "slug": "requesting-code-review",
+          "cosine": 0.48362741534476117
+        }
+      ]
+    },
+    {
+      "id": "independent-037",
+      "split": "independent_holdout",
+      "selected": [
+        "ocr-and-documents",
+        "pdf"
+      ],
+      "top3": [
+        {
+          "slug": "ocr-and-documents",
+          "cosine": 0.6313185491064838
+        },
+        {
+          "slug": "pdf",
+          "cosine": 0.4250065044614764
+        },
+        {
+          "slug": "nano-pdf",
+          "cosine": 0.3685903021922184
+        }
+      ]
+    },
+    {
+      "id": "independent-038",
+      "split": "independent_holdout",
+      "selected": [
+        "obsidian"
+      ],
+      "top3": [
+        {
+          "slug": "obsidian",
+          "cosine": 0.5451628839902142
+        },
+        {
+          "slug": "architecture-diagram",
+          "cosine": 0.24900892527649707
+        },
+        {
+          "slug": "blocked-page-recovery",
+          "cosine": 0.23594616074169528
+        }
+      ]
+    },
+    {
+      "id": "independent-039",
+      "split": "independent_holdout",
+      "selected": [
+        "notion"
+      ],
+      "top3": [
+        {
+          "slug": "notion",
+          "cosine": 0.41892025119063825
+        },
+        {
+          "slug": "github-issues",
+          "cosine": 0.26963117037086026
+        },
+        {
+          "slug": "meeting-action-items",
+          "cosine": 0.25747868461340434
+        }
+      ]
+    },
+    {
+      "id": "independent-040",
+      "split": "independent_holdout",
+      "selected": [
+        "node-inspect-debugger"
+      ],
+      "top3": [
+        {
+          "slug": "node-inspect-debugger",
+          "cosine": 0.4353997573946832
+        },
+        {
+          "slug": "inspect-live-dom",
+          "cosine": 0.2788326118349863
+        },
+        {
+          "slug": "subprocess-kill-in-agent-tools",
+          "cosine": 0.27041126201179966
+        }
+      ]
+    },
+    {
+      "id": "independent-041",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "nano-pdf",
+          "cosine": 0.33672255196767314
+        },
+        {
+          "slug": "humanizer",
+          "cosine": 0.2506108261072566
+        },
+        {
+          "slug": "pdf",
+          "cosine": 0.24434928443281415
+        }
+      ]
+    },
+    {
+      "id": "independent-042",
+      "split": "independent_holdout",
+      "selected": [
+        "simplify-code",
+        "merge-reconciler"
+      ],
+      "top3": [
+        {
+          "slug": "simplify-code",
+          "cosine": 0.4386807875486542
+        },
+        {
+          "slug": "merge-reconciler",
+          "cosine": 0.430633235643602
+        },
+        {
+          "slug": "cross-platform-test-pitfalls",
+          "cosine": 0.3476505274293267
+        }
+      ]
+    },
+    {
+      "id": "independent-043",
+      "split": "independent_holdout",
+      "selected": [
+        "meeting-action-items",
+        "document-to-action-items",
+        "teams-meeting-pipeline"
+      ],
+      "top3": [
+        {
+          "slug": "meeting-action-items",
+          "cosine": 0.5889727067621732
+        },
+        {
+          "slug": "document-to-action-items",
+          "cosine": 0.46376809409688513
+        },
+        {
+          "slug": "teams-meeting-pipeline",
+          "cosine": 0.4129069088684348
+        }
+      ]
+    },
+    {
+      "id": "independent-044",
+      "split": "independent_holdout",
+      "selected": [
+        "maps"
+      ],
+      "top3": [
+        {
+          "slug": "maps",
+          "cosine": 0.6174664887343616
+        },
+        {
+          "slug": "findmy",
+          "cosine": 0.34528424387281753
+        },
+        {
+          "slug": "provider-routed-surface-decoupling",
+          "cosine": 0.2333142505421457
+        }
+      ]
+    },
+    {
+      "id": "independent-045",
+      "split": "independent_holdout",
+      "selected": [
+        "manim-video"
+      ],
+      "top3": [
+        {
+          "slug": "manim-video",
+          "cosine": 0.48135448679410436
+        },
+        {
+          "slug": "p5js",
+          "cosine": 0.23442375713234526
+        },
+        {
+          "slug": "claude-design",
+          "cosine": 0.18524425935339495
+        }
+      ]
+    },
+    {
+      "id": "independent-046",
+      "split": "independent_holdout",
+      "selected": [
+        "llm-wiki",
+        "obsidian",
+        "notion"
+      ],
+      "top3": [
+        {
+          "slug": "llm-wiki",
+          "cosine": 0.6146807448941443
+        },
+        {
+          "slug": "obsidian",
+          "cosine": 0.40906976058982436
+        },
+        {
+          "slug": "notion",
+          "cosine": 0.3961925909143622
+        }
+      ]
+    },
+    {
+      "id": "independent-047",
+      "split": "independent_holdout",
+      "selected": [
+        "llama-cpp"
+      ],
+      "top3": [
+        {
+          "slug": "llama-cpp",
+          "cosine": 0.5807514955422536
+        },
+        {
+          "slug": "evaluating-llms-harness",
+          "cosine": 0.265596111705982
+        },
+        {
+          "slug": "serving-llms-vllm",
+          "cosine": 0.25380264299685906
+        }
+      ]
+    },
+    {
+      "id": "independent-048",
+      "split": "independent_holdout",
+      "selected": [
+        "interactive-developer",
+        "end-to-end-workflow-acceptance",
+        "weekly-review-planning"
+      ],
+      "top3": [
+        {
+          "slug": "interactive-developer",
+          "cosine": 0.46500352118549987
+        },
+        {
+          "slug": "end-to-end-workflow-acceptance",
+          "cosine": 0.4239641829955651
+        },
+        {
+          "slug": "weekly-review-planning",
+          "cosine": 0.39222441859797047
+        }
+      ]
+    },
+    {
+      "id": "independent-049",
+      "split": "independent_holdout",
+      "selected": [
+        "inspect-live-dom",
+        "node-inspect-debugger",
+        "claude-design"
+      ],
+      "top3": [
+        {
+          "slug": "inspect-live-dom",
+          "cosine": 0.555498087344951
+        },
+        {
+          "slug": "node-inspect-debugger",
+          "cosine": 0.3973218873864092
+        },
+        {
+          "slug": "claude-design",
+          "cosine": 0.38978971799968626
+        }
+      ]
+    },
+    {
+      "id": "independent-050",
+      "split": "independent_holdout",
+      "selected": [
+        "imessage",
+        "himalaya"
+      ],
+      "top3": [
+        {
+          "slug": "imessage",
+          "cosine": 0.5352503364679047
+        },
+        {
+          "slug": "himalaya",
+          "cosine": 0.4239612713708173
+        },
+        {
+          "slug": "humanizer",
+          "cosine": 0.28406554051363897
+        }
+      ]
+    },
+    {
+      "id": "independent-051",
+      "split": "independent_holdout",
+      "selected": [
+        "humanizer"
+      ],
+      "top3": [
+        {
+          "slug": "humanizer",
+          "cosine": 0.4546516810607713
+        },
+        {
+          "slug": "vesper-skill-authoring",
+          "cosine": 0.3742807943161622
+        },
+        {
+          "slug": "songwriting-and-ai-music",
+          "cosine": 0.3649618405605745
+        }
+      ]
+    },
+    {
+      "id": "independent-052",
+      "split": "independent_holdout",
+      "selected": [
+        "huggingface-hub",
+        "llama-cpp"
+      ],
+      "top3": [
+        {
+          "slug": "huggingface-hub",
+          "cosine": 0.6306267837089656
+        },
+        {
+          "slug": "llama-cpp",
+          "cosine": 0.4324643514525194
+        },
+        {
+          "slug": "xurl",
+          "cosine": 0.296117635072151
+        }
+      ]
+    },
+    {
+      "id": "independent-053",
+      "split": "independent_holdout",
+      "selected": [
+        "himalaya"
+      ],
+      "top3": [
+        {
+          "slug": "himalaya",
+          "cosine": 0.6511381397822473
+        },
+        {
+          "slug": "xurl",
+          "cosine": 0.27624466348474913
+        },
+        {
+          "slug": "imessage",
+          "cosine": 0.26429749574635986
+        }
+      ]
+    },
+    {
+      "id": "independent-054",
+      "split": "independent_holdout",
+      "selected": [
+        "harness-skill-gate-mechanics",
+        "verify-parity-end-to-end"
+      ],
+      "top3": [
+        {
+          "slug": "harness-skill-gate-mechanics",
+          "cosine": 0.7582389499289627
+        },
+        {
+          "slug": "verify-parity-end-to-end",
+          "cosine": 0.3854316119067997
+        },
+        {
+          "slug": "verify-with-xtask-verify",
+          "cosine": 0.32993153181803697
+        }
+      ]
+    },
+    {
+      "id": "independent-055",
+      "split": "independent_holdout",
+      "selected": [
+        "grounded-citations",
+        "work-unit-reporting"
+      ],
+      "top3": [
+        {
+          "slug": "grounded-citations",
+          "cosine": 0.5749134014975426
+        },
+        {
+          "slug": "work-unit-reporting",
+          "cosine": 0.4134251789786777
+        },
+        {
+          "slug": "document-to-action-items",
+          "cosine": 0.36906600749168506
+        }
+      ]
+    },
+    {
+      "id": "independent-056",
+      "split": "independent_holdout",
+      "selected": [
+        "google-workspace",
+        "github-auth"
+      ],
+      "top3": [
+        {
+          "slug": "google-workspace",
+          "cosine": 0.7597606891839023
+        },
+        {
+          "slug": "github-auth",
+          "cosine": 0.4720126234416979
+        },
+        {
+          "slug": "design-md",
+          "cosine": 0.3009903073738059
+        }
+      ]
+    },
+    {
+      "id": "independent-057",
+      "split": "independent_holdout",
+      "selected": [
+        "github-repo-management",
+        "github-issues",
+        "github-issue-to-pr"
+      ],
+      "top3": [
+        {
+          "slug": "github-repo-management",
+          "cosine": 0.523234870769708
+        },
+        {
+          "slug": "github-issues",
+          "cosine": 0.44513260655139214
+        },
+        {
+          "slug": "github-issue-to-pr",
+          "cosine": 0.42683541917013096
+        }
+      ]
+    },
+    {
+      "id": "independent-058",
+      "split": "independent_holdout",
+      "selected": [
+        "github-pr-workflow",
+        "github-issue-to-pr",
+        "merge-reconciler"
+      ],
+      "top3": [
+        {
+          "slug": "github-pr-workflow",
+          "cosine": 0.6549978173062866
+        },
+        {
+          "slug": "github-issue-to-pr",
+          "cosine": 0.5474128341911878
+        },
+        {
+          "slug": "merge-reconciler",
+          "cosine": 0.4656152301199568
+        }
+      ]
+    },
+    {
+      "id": "independent-059",
+      "split": "independent_holdout",
+      "selected": [
+        "github-issues",
+        "github-code-review",
+        "github-issue-to-pr"
+      ],
+      "top3": [
+        {
+          "slug": "github-issues",
+          "cosine": 0.7325351765479201
+        },
+        {
+          "slug": "github-code-review",
+          "cosine": 0.5562078295847854
+        },
+        {
+          "slug": "github-issue-to-pr",
+          "cosine": 0.5466957766427151
+        }
+      ]
+    },
+    {
+      "id": "independent-060",
+      "split": "independent_holdout",
+      "selected": [
+        "github-issue-to-pr",
+        "github-pr-workflow",
+        "github-issues"
+      ],
+      "top3": [
+        {
+          "slug": "github-issue-to-pr",
+          "cosine": 0.7530148578869809
+        },
+        {
+          "slug": "github-pr-workflow",
+          "cosine": 0.5020888446273598
+        },
+        {
+          "slug": "github-issues",
+          "cosine": 0.48986192983244015
+        }
+      ]
+    },
+    {
+      "id": "independent-061",
+      "split": "independent_holdout",
+      "selected": [
+        "github-code-review",
+        "github-issue-to-pr",
+        "requesting-code-review"
+      ],
+      "top3": [
+        {
+          "slug": "github-code-review",
+          "cosine": 0.7694880075066227
+        },
+        {
+          "slug": "github-issue-to-pr",
+          "cosine": 0.5284590307638518
+        },
+        {
+          "slug": "requesting-code-review",
+          "cosine": 0.49180860412189953
+        }
+      ]
+    },
+    {
+      "id": "independent-062",
+      "split": "independent_holdout",
+      "selected": [
+        "github-auth",
+        "github-issues",
+        "github-issue-to-pr"
+      ],
+      "top3": [
+        {
+          "slug": "github-auth",
+          "cosine": 0.7466550609128194
+        },
+        {
+          "slug": "github-issues",
+          "cosine": 0.5659771360135819
+        },
+        {
+          "slug": "github-issue-to-pr",
+          "cosine": 0.5264051842298352
+        }
+      ]
+    },
+    {
+      "id": "independent-063",
+      "split": "independent_holdout",
+      "selected": [
+        "gif-search"
+      ],
+      "top3": [
+        {
+          "slug": "gif-search",
+          "cosine": 0.5163448190105334
+        },
+        {
+          "slug": "baoyu-infographic",
+          "cosine": 0.3220695432244518
+        },
+        {
+          "slug": "manim-video",
+          "cosine": 0.2936755349187723
+        }
+      ]
+    },
+    {
+      "id": "independent-064",
+      "split": "independent_holdout",
+      "selected": [
+        "findmy"
+      ],
+      "top3": [
+        {
+          "slug": "findmy",
+          "cosine": 0.6922936809760984
+        },
+        {
+          "slug": "arxiv",
+          "cosine": 0.267590654047312
+        },
+        {
+          "slug": "ocr-and-documents",
+          "cosine": 0.23315605398380504
+        }
+      ]
+    },
+    {
+      "id": "independent-065",
+      "split": "independent_holdout",
+      "selected": [
+        "excalidraw"
+      ],
+      "top3": [
+        {
+          "slug": "excalidraw",
+          "cosine": 0.39670738519622334
+        },
+        {
+          "slug": "airtable",
+          "cosine": 0.21596750872395395
+        },
+        {
+          "slug": "dogfood",
+          "cosine": 0.20714403155676556
+        }
+      ]
+    },
+    {
+      "id": "independent-066",
+      "split": "independent_holdout",
+      "selected": [
+        "evaluating-llms-harness"
+      ],
+      "top3": [
+        {
+          "slug": "evaluating-llms-harness",
+          "cosine": 0.5611766164400905
+        },
+        {
+          "slug": "serving-llms-vllm",
+          "cosine": 0.3067021297220319
+        },
+        {
+          "slug": "songsee",
+          "cosine": 0.22827509362188686
+        }
+      ]
+    },
+    {
+      "id": "independent-067",
+      "split": "independent_holdout",
+      "selected": [
+        "end-to-end-workflow-acceptance"
+      ],
+      "top3": [
+        {
+          "slug": "end-to-end-workflow-acceptance",
+          "cosine": 0.5542235404118715
+        },
+        {
+          "slug": "interactive-developer",
+          "cosine": 0.3737568697395384
+        },
+        {
+          "slug": "plan",
+          "cosine": 0.305129630009787
+        }
+      ]
+    },
+    {
+      "id": "independent-068",
+      "split": "independent_holdout",
+      "selected": [
+        "email-inbox-triage"
+      ],
+      "top3": [
+        {
+          "slug": "email-inbox-triage",
+          "cosine": 0.5311391538173906
+        },
+        {
+          "slug": "document-to-action-items",
+          "cosine": 0.2959036946284035
+        },
+        {
+          "slug": "apple-reminders",
+          "cosine": 0.2912665040045455
+        }
+      ]
+    },
+    {
+      "id": "independent-069",
+      "split": "independent_holdout",
+      "selected": [
+        "requesting-code-review",
+        "systematic-debugging",
+        "github-issues"
+      ],
+      "top3": [
+        {
+          "slug": "requesting-code-review",
+          "cosine": 0.44445460867927195
+        },
+        {
+          "slug": "systematic-debugging",
+          "cosine": 0.42827751269343717
+        },
+        {
+          "slug": "github-issues",
+          "cosine": 0.42526400044079343
+        }
+      ]
+    },
+    {
+      "id": "independent-070",
+      "split": "independent_holdout",
+      "selected": [
+        "docx"
+      ],
+      "top3": [
+        {
+          "slug": "docx",
+          "cosine": 0.5622413776482682
+        },
+        {
+          "slug": "nano-pdf",
+          "cosine": 0.3079949860183407
+        },
+        {
+          "slug": "notion",
+          "cosine": 0.29354350443556715
+        }
+      ]
+    },
+    {
+      "id": "independent-071",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "document-to-action-items",
+          "cosine": 0.26622654384627686
+        },
+        {
+          "slug": "requesting-code-review",
+          "cosine": 0.17830465753026206
+        },
+        {
+          "slug": "codex",
+          "cosine": 0.17048374414080708
+        }
+      ]
+    },
+    {
+      "id": "independent-072",
+      "split": "independent_holdout",
+      "selected": [
+        "design-md"
+      ],
+      "top3": [
+        {
+          "slug": "design-md",
+          "cosine": 0.6173161316572223
+        },
+        {
+          "slug": "claude-design",
+          "cosine": 0.30733741304841306
+        },
+        {
+          "slug": "google-workspace",
+          "cosine": 0.2933101296326931
+        }
+      ]
+    },
+    {
+      "id": "independent-073",
+      "split": "independent_holdout",
+      "selected": [
+        "cross-platform-test-pitfalls",
+        "verify-with-xtask-verify",
+        "end-to-end-workflow-acceptance"
+      ],
+      "top3": [
+        {
+          "slug": "cross-platform-test-pitfalls",
+          "cosine": 0.6682766887855309
+        },
+        {
+          "slug": "verify-with-xtask-verify",
+          "cosine": 0.4644876162680264
+        },
+        {
+          "slug": "end-to-end-workflow-acceptance",
+          "cosine": 0.4433964130540014
+        }
+      ]
+    },
+    {
+      "id": "independent-074",
+      "split": "independent_holdout",
+      "selected": [
+        "computer-use"
+      ],
+      "top3": [
+        {
+          "slug": "computer-use",
+          "cosine": 0.5418229336629399
+        },
+        {
+          "slug": "touchdesigner-mcp",
+          "cosine": 0.20583305804725713
+        },
+        {
+          "slug": "comfyui",
+          "cosine": 0.15536756879978694
+        }
+      ]
+    },
+    {
+      "id": "independent-075",
+      "split": "independent_holdout",
+      "selected": [
+        "competitor-news-monitor"
+      ],
+      "top3": [
+        {
+          "slug": "competitor-news-monitor",
+          "cosine": 0.5143076467795755
+        },
+        {
+          "slug": "product-price-monitor",
+          "cosine": 0.36829658596093157
+        },
+        {
+          "slug": "grounded-citations",
+          "cosine": 0.3542006641735641
+        }
+      ]
+    },
+    {
+      "id": "independent-076",
+      "split": "independent_holdout",
+      "selected": [
+        "comfyui"
+      ],
+      "top3": [
+        {
+          "slug": "comfyui",
+          "cosine": 0.593171316153359
+        },
+        {
+          "slug": "baoyu-infographic",
+          "cosine": 0.3722881085015697
+        },
+        {
+          "slug": "interactive-developer",
+          "cosine": 0.3378306039369406
+        }
+      ]
+    },
+    {
+      "id": "independent-077",
+      "split": "independent_holdout",
+      "selected": [
+        "cold-start-import-deferral",
+        "acp-stdio-smoke-test",
+        "add-glm-model-release"
+      ],
+      "top3": [
+        {
+          "slug": "cold-start-import-deferral",
+          "cosine": 0.7880265734471189
+        },
+        {
+          "slug": "acp-stdio-smoke-test",
+          "cosine": 0.5921849203467768
+        },
+        {
+          "slug": "add-glm-model-release",
+          "cosine": 0.5627416576754561
+        }
+      ]
+    },
+    {
+      "id": "independent-078",
+      "split": "independent_holdout",
+      "selected": [
+        "codex",
+        "opencode",
+        "openhue"
+      ],
+      "top3": [
+        {
+          "slug": "codex",
+          "cosine": 0.6642829744360121
+        },
+        {
+          "slug": "opencode",
+          "cosine": 0.44983118531644806
+        },
+        {
+          "slug": "openhue",
+          "cosine": 0.4391413932178523
+        }
+      ]
+    },
+    {
+      "id": "independent-079",
+      "split": "independent_holdout",
+      "selected": [
+        "codebase-inspection"
+      ],
+      "top3": [
+        {
+          "slug": "codebase-inspection",
+          "cosine": 0.6129605374540534
+        },
+        {
+          "slug": "teams-meeting-pipeline",
+          "cosine": 0.35111243515187
+        },
+        {
+          "slug": "github-code-review",
+          "cosine": 0.34510828761715334
+        }
+      ]
+    },
+    {
+      "id": "independent-080",
+      "split": "independent_holdout",
+      "selected": [
+        "pretext",
+        "claude-design",
+        "sketch"
+      ],
+      "top3": [
+        {
+          "slug": "pretext",
+          "cosine": 0.5032658241642058
+        },
+        {
+          "slug": "claude-design",
+          "cosine": 0.4755708937813947
+        },
+        {
+          "slug": "sketch",
+          "cosine": 0.4326648564032354
+        }
+      ]
+    },
+    {
+      "id": "independent-081",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "rust-workspace-disk-hygiene",
+          "cosine": 0.30732306027751805
+        },
+        {
+          "slug": "excalidraw",
+          "cosine": 0.2733608983627563
+        },
+        {
+          "slug": "notion",
+          "cosine": 0.2716512644603812
+        }
+      ]
+    },
+    {
+      "id": "independent-082",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "add-glm-model-release",
+          "cosine": 0.22788834507796504
+        },
+        {
+          "slug": "design-md",
+          "cosine": 0.18577589806030495
+        },
+        {
+          "slug": "google-workspace",
+          "cosine": 0.16752740385551798
+        }
+      ]
+    },
+    {
+      "id": "independent-083",
+      "split": "independent_holdout",
+      "selected": [
+        "blogwatcher"
+      ],
+      "top3": [
+        {
+          "slug": "blogwatcher",
+          "cosine": 0.670964004182147
+        },
+        {
+          "slug": "competitor-news-monitor",
+          "cosine": 0.3673672024099051
+        },
+        {
+          "slug": "xurl",
+          "cosine": 0.34044987978697616
+        }
+      ]
+    },
+    {
+      "id": "independent-084",
+      "split": "independent_holdout",
+      "selected": [
+        "blocked-page-recovery",
+        "gif-search"
+      ],
+      "top3": [
+        {
+          "slug": "blocked-page-recovery",
+          "cosine": 0.5312110217277909
+        },
+        {
+          "slug": "gif-search",
+          "cosine": 0.3833066204184024
+        },
+        {
+          "slug": "arxiv",
+          "cosine": 0.3437021019094431
+        }
+      ]
+    },
+    {
+      "id": "independent-085",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "sketch",
+          "cosine": 0.27623053826365246
+        },
+        {
+          "slug": "baoyu-infographic",
+          "cosine": 0.23689847084009782
+        },
+        {
+          "slug": "popular-web-designs",
+          "cosine": 0.23491577824029813
+        }
+      ]
+    },
+    {
+      "id": "independent-086",
+      "split": "independent_holdout",
+      "selected": [
+        "ascii-video"
+      ],
+      "top3": [
+        {
+          "slug": "ascii-video",
+          "cosine": 0.6423687281573734
+        },
+        {
+          "slug": "comfyui",
+          "cosine": 0.35587706295634053
+        },
+        {
+          "slug": "youtube-content",
+          "cosine": 0.33765431745191377
+        }
+      ]
+    },
+    {
+      "id": "independent-087",
+      "split": "independent_holdout",
+      "selected": [
+        "pretext",
+        "ascii-art",
+        "claude-design"
+      ],
+      "top3": [
+        {
+          "slug": "pretext",
+          "cosine": 0.40995233078089977
+        },
+        {
+          "slug": "ascii-art",
+          "cosine": 0.3926872607519912
+        },
+        {
+          "slug": "claude-design",
+          "cosine": 0.3835761672477232
+        }
+      ]
+    },
+    {
+      "id": "independent-088",
+      "split": "independent_holdout",
+      "selected": [
+        "arxiv"
+      ],
+      "top3": [
+        {
+          "slug": "arxiv",
+          "cosine": 0.44694341054790104
+        },
+        {
+          "slug": "research-paper-writing",
+          "cosine": 0.2775942169872554
+        },
+        {
+          "slug": "comfyui",
+          "cosine": 0.26050389276369745
+        }
+      ]
+    },
+    {
+      "id": "independent-089",
+      "split": "independent_holdout",
+      "selected": [
+        "architecture-diagram",
+        "popular-web-designs",
+        "p5js"
+      ],
+      "top3": [
+        {
+          "slug": "architecture-diagram",
+          "cosine": 0.764141734316164
+        },
+        {
+          "slug": "popular-web-designs",
+          "cosine": 0.4157482404791795
+        },
+        {
+          "slug": "p5js",
+          "cosine": 0.409507641567147
+        }
+      ]
+    },
+    {
+      "id": "independent-090",
+      "split": "independent_holdout",
+      "selected": [
+        "apple-reminders"
+      ],
+      "top3": [
+        {
+          "slug": "apple-reminders",
+          "cosine": 0.4796292404918937
+        },
+        {
+          "slug": "weekly-review-planning",
+          "cosine": 0.2596409429044325
+        },
+        {
+          "slug": "google-workspace",
+          "cosine": 0.1869293869395109
+        }
+      ]
+    },
+    {
+      "id": "independent-091",
+      "split": "independent_holdout",
+      "selected": [
+        "apple-notes"
+      ],
+      "top3": [
+        {
+          "slug": "apple-notes",
+          "cosine": 0.3946881543565232
+        },
+        {
+          "slug": "meeting-action-items",
+          "cosine": 0.2754490328613026
+        },
+        {
+          "slug": "session-librarian",
+          "cosine": 0.27206974985737403
+        }
+      ]
+    },
+    {
+      "id": "independent-092",
+      "split": "independent_holdout",
+      "selected": [
+        "airtable"
+      ],
+      "top3": [
+        {
+          "slug": "airtable",
+          "cosine": 0.4913379807696112
+        },
+        {
+          "slug": "findmy",
+          "cosine": 0.19698565617450273
+        },
+        {
+          "slug": "huggingface-hub",
+          "cosine": 0.15641418467834167
+        }
+      ]
+    },
+    {
+      "id": "independent-093",
+      "split": "independent_holdout",
+      "selected": [
+        "agent-vesper",
+        "interactive-developer",
+        "vesper-skill-authoring"
+      ],
+      "top3": [
+        {
+          "slug": "agent-vesper",
+          "cosine": 0.7447182056038287
+        },
+        {
+          "slug": "interactive-developer",
+          "cosine": 0.478407699256835
+        },
+        {
+          "slug": "vesper-skill-authoring",
+          "cosine": 0.4431626739773338
+        }
+      ]
+    },
+    {
+      "id": "independent-094",
+      "split": "independent_holdout",
+      "selected": [
+        "add-glm-model-release",
+        "acp-stdio-smoke-test",
+        "cold-start-import-deferral"
+      ],
+      "top3": [
+        {
+          "slug": "add-glm-model-release",
+          "cosine": 0.8354820683234823
+        },
+        {
+          "slug": "acp-stdio-smoke-test",
+          "cosine": 0.5878130909483922
+        },
+        {
+          "slug": "cold-start-import-deferral",
+          "cosine": 0.5467417471563001
+        }
+      ]
+    },
+    {
+      "id": "independent-095",
+      "split": "independent_holdout",
+      "selected": [
+        "acp-stdio-smoke-test",
+        "cold-start-import-deferral",
+        "add-glm-model-release"
+      ],
+      "top3": [
+        {
+          "slug": "acp-stdio-smoke-test",
+          "cosine": 0.8376002935709868
+        },
+        {
+          "slug": "cold-start-import-deferral",
+          "cosine": 0.5076362445923664
+        },
+        {
+          "slug": "add-glm-model-release",
+          "cosine": 0.4844181179659199
+        }
+      ]
+    },
+    {
+      "id": "independent-096",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "obsidian",
+          "cosine": 0.20960541355918752
+        },
+        {
+          "slug": "end-to-end-workflow-acceptance",
+          "cosine": 0.1768877593045861
+        },
+        {
+          "slug": "vesper-skill-authoring",
+          "cosine": 0.17566901583892455
+        }
+      ]
+    },
+    {
+      "id": "independent-097",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "email-inbox-triage",
+          "cosine": 0.23648949309106748
+        },
+        {
+          "slug": "weekly-review-planning",
+          "cosine": 0.23176329925222983
+        },
+        {
+          "slug": "apple-reminders",
+          "cosine": 0.14652015385694622
+        }
+      ]
+    },
+    {
+      "id": "independent-098",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "weekly-review-planning",
+          "cosine": 0.151686947267039
+        },
+        {
+          "slug": "songwriting-and-ai-music",
+          "cosine": 0.14785220307363284
+        },
+        {
+          "slug": "blocked-page-recovery",
+          "cosine": 0.14203618685856498
+        }
+      ]
+    },
+    {
+      "id": "independent-099",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "email-inbox-triage",
+          "cosine": 0.1790177012655287
+        },
+        {
+          "slug": "songwriting-and-ai-music",
+          "cosine": 0.160738241272431
+        },
+        {
+          "slug": "simplify-code",
+          "cosine": 0.14493863297518322
+        }
+      ]
+    },
+    {
+      "id": "independent-100",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "product-price-monitor",
+          "cosine": 0.17080975063501358
+        },
+        {
+          "slug": "simplify-code",
+          "cosine": 0.14485727273763663
+        },
+        {
+          "slug": "manim-video",
+          "cosine": 0.12509194364538026
+        }
+      ]
+    },
+    {
+      "id": "independent-101",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "weekly-review-planning",
+          "cosine": 0.2324499361634139
+        },
+        {
+          "slug": "claude-code",
+          "cosine": 0.15785375142196564
+        },
+        {
+          "slug": "email-inbox-triage",
+          "cosine": 0.12266749928695198
+        }
+      ]
+    },
+    {
+      "id": "independent-102",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "humanizer",
+          "cosine": 0.1939410977704839
+        },
+        {
+          "slug": "weekly-review-planning",
+          "cosine": 0.17822807879127323
+        },
+        {
+          "slug": "agent-vesper",
+          "cosine": 0.175932277139431
+        }
+      ]
+    },
+    {
+      "id": "independent-103",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "ascii-art",
+          "cosine": 0.1698629645986312
+        },
+        {
+          "slug": "findmy",
+          "cosine": 0.16540884941519063
+        },
+        {
+          "slug": "product-price-monitor",
+          "cosine": 0.1649475809225742
+        }
+      ]
+    },
+    {
+      "id": "independent-104",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "apple-reminders",
+          "cosine": 0.1892461001874106
+        },
+        {
+          "slug": "openhue",
+          "cosine": 0.16743669336642356
+        },
+        {
+          "slug": "imessage",
+          "cosine": 0.152061554255501
+        }
+      ]
+    },
+    {
+      "id": "independent-105",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "meeting-action-items",
+          "cosine": 0.20095045321187982
+        },
+        {
+          "slug": "harness-skill-gate-mechanics",
+          "cosine": 0.18085927629815365
+        },
+        {
+          "slug": "product-price-monitor",
+          "cosine": 0.17766416467824622
+        }
+      ]
+    },
+    {
+      "id": "independent-106",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "llama-cpp",
+          "cosine": 0.24614952678695598
+        },
+        {
+          "slug": "product-price-monitor",
+          "cosine": 0.21086322179821376
+        },
+        {
+          "slug": "claude-code",
+          "cosine": 0.20861803445895427
+        }
+      ]
+    },
+    {
+      "id": "independent-107",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "research-paper-writing",
+          "cosine": 0.11327549025259741
+        },
+        {
+          "slug": "grounded-citations",
+          "cosine": 0.10074769903131554
+        },
+        {
+          "slug": "manim-video",
+          "cosine": 0.09848973572919996
+        }
+      ]
+    },
+    {
+      "id": "independent-108",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "dogfood",
+          "cosine": 0.14662071577743532
+        },
+        {
+          "slug": "subprocess-kill-in-agent-tools",
+          "cosine": 0.14184027985808711
+        },
+        {
+          "slug": "ascii-art",
+          "cosine": 0.13738126416508095
+        }
+      ]
+    },
+    {
+      "id": "independent-109",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "songwriting-and-ai-music",
+          "cosine": 0.29685561063954247
+        },
+        {
+          "slug": "ascii-art",
+          "cosine": 0.24604126594184822
+        },
+        {
+          "slug": "obsidian",
+          "cosine": 0.21981023157800786
+        }
+      ]
+    },
+    {
+      "id": "independent-110",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "p5js",
+          "cosine": 0.25398427396996986
+        },
+        {
+          "slug": "ascii-video",
+          "cosine": 0.2225741432518998
+        },
+        {
+          "slug": "manim-video",
+          "cosine": 0.20512051381451654
+        }
+      ]
+    },
+    {
+      "id": "independent-111",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "weekly-review-planning",
+          "cosine": 0.31848916123095056
+        },
+        {
+          "slug": "end-to-end-workflow-acceptance",
+          "cosine": 0.21755296843485256
+        },
+        {
+          "slug": "serving-llms-vllm",
+          "cosine": 0.1695580093639332
+        }
+      ]
+    },
+    {
+      "id": "independent-112",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "popular-web-designs",
+          "cosine": 0.1870792766170241
+        },
+        {
+          "slug": "himalaya",
+          "cosine": 0.18054664887413163
+        },
+        {
+          "slug": "manim-video",
+          "cosine": 0.14567582784954294
+        }
+      ]
+    },
+    {
+      "id": "independent-113",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "manim-video",
+          "cosine": 0.15557568929897075
+        },
+        {
+          "slug": "email-inbox-triage",
+          "cosine": 0.15513948411544254
+        },
+        {
+          "slug": "popular-web-designs",
+          "cosine": 0.13851660899532794
+        }
+      ]
+    },
+    {
+      "id": "independent-114",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "nano-pdf",
+          "cosine": 0.21041108828231422
+        },
+        {
+          "slug": "humanizer",
+          "cosine": 0.20972644972977775
+        },
+        {
+          "slug": "songwriting-and-ai-music",
+          "cosine": 0.19810455301856267
+        }
+      ]
+    },
+    {
+      "id": "independent-115",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "baoyu-infographic",
+          "cosine": 0.21181689312905172
+        },
+        {
+          "slug": "ascii-art",
+          "cosine": 0.20563839096821399
+        },
+        {
+          "slug": "songwriting-and-ai-music",
+          "cosine": 0.19530445341445835
+        }
+      ]
+    },
+    {
+      "id": "independent-116",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "teams-meeting-pipeline",
+          "cosine": 0.20218713004883307
+        },
+        {
+          "slug": "songwriting-and-ai-music",
+          "cosine": 0.20056504893756572
+        },
+        {
+          "slug": "meeting-action-items",
+          "cosine": 0.1814088101876671
+        }
+      ]
+    },
+    {
+      "id": "independent-117",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "p5js",
+          "cosine": 0.1374728487810569
+        },
+        {
+          "slug": "songwriting-and-ai-music",
+          "cosine": 0.12428753634453628
+        },
+        {
+          "slug": "github-code-review",
+          "cosine": 0.11177259168449848
+        }
+      ]
+    },
+    {
+      "id": "independent-118",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "session-librarian",
+          "cosine": 0.12181611293882211
+        },
+        {
+          "slug": "songwriting-and-ai-music",
+          "cosine": 0.11754003045313288
+        },
+        {
+          "slug": "computer-use",
+          "cosine": 0.1114546385884564
+        }
+      ]
+    },
+    {
+      "id": "independent-119",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "weekly-review-planning",
+          "cosine": 0.23591865652598698
+        },
+        {
+          "slug": "meeting-action-items",
+          "cosine": 0.17173626875986006
+        },
+        {
+          "slug": "apple-reminders",
+          "cosine": 0.1582782847094542
+        }
+      ]
+    },
+    {
+      "id": "independent-120",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "email-inbox-triage",
+          "cosine": 0.15734880994263956
+        },
+        {
+          "slug": "test-driven-development",
+          "cosine": 0.11945531318713418
+        },
+        {
+          "slug": "simplify-code",
+          "cosine": 0.11570763863343364
+        }
+      ]
+    },
+    {
+      "id": "independent-121",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "imessage",
+          "cosine": 0.13790892132443502
+        },
+        {
+          "slug": "email-inbox-triage",
+          "cosine": 0.1325903253135669
+        },
+        {
+          "slug": "humanizer",
+          "cosine": 0.12165907686171776
+        }
+      ]
+    },
+    {
+      "id": "independent-122",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "requesting-code-review",
+          "cosine": 0.30235325042749234
+        },
+        {
+          "slug": "design-md",
+          "cosine": 0.2752178671242534
+        },
+        {
+          "slug": "weekly-review-planning",
+          "cosine": 0.27248474250726956
+        }
+      ]
+    },
+    {
+      "id": "independent-123",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "github-issue-to-pr",
+          "cosine": 0.2023716767492578
+        },
+        {
+          "slug": "apple-reminders",
+          "cosine": 0.1725457594048524
+        },
+        {
+          "slug": "requesting-code-review",
+          "cosine": 0.1673662991415599
+        }
+      ]
+    },
+    {
+      "id": "independent-124",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "meeting-action-items",
+          "cosine": 0.1694871322051549
+        },
+        {
+          "slug": "weekly-review-planning",
+          "cosine": 0.16025565624964078
+        },
+        {
+          "slug": "work-unit-reporting",
+          "cosine": 0.1449919866949181
+        }
+      ]
+    },
+    {
+      "id": "independent-125",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "imessage",
+          "cosine": 0.1774654686142579
+        },
+        {
+          "slug": "email-inbox-triage",
+          "cosine": 0.1597353767219282
+        },
+        {
+          "slug": "ascii-art",
+          "cosine": 0.1532467379849521
+        }
+      ]
+    },
+    {
+      "id": "independent-126",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "product-price-monitor",
+          "cosine": 0.11093381177893655
+        },
+        {
+          "slug": "codebase-inspection",
+          "cosine": 0.08212106712208074
+        },
+        {
+          "slug": "ascii-art",
+          "cosine": 0.0782686594105455
+        }
+      ]
+    },
+    {
+      "id": "independent-127",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "ascii-art",
+          "cosine": 0.20114925410380965
+        },
+        {
+          "slug": "pdf",
+          "cosine": 0.16987961023261053
+        },
+        {
+          "slug": "popular-web-designs",
+          "cosine": 0.14962834253882273
+        }
+      ]
+    },
+    {
+      "id": "independent-128",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "ascii-video",
+          "cosine": 0.12831959178948274
+        },
+        {
+          "slug": "maps",
+          "cosine": 0.12525020558570038
+        },
+        {
+          "slug": "himalaya",
+          "cosine": 0.10223814547530108
+        }
+      ]
+    },
+    {
+      "id": "independent-129",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "comfyui",
+          "cosine": 0.18902717108783973
+        },
+        {
+          "slug": "architecture-diagram",
+          "cosine": 0.15844770181666032
+        },
+        {
+          "slug": "popular-web-designs",
+          "cosine": 0.15415702317617594
+        }
+      ]
+    },
+    {
+      "id": "independent-130",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "claude-code",
+          "cosine": 0.23635637847878113
+        },
+        {
+          "slug": "simplify-code",
+          "cosine": 0.22227779174757575
+        },
+        {
+          "slug": "agent-vesper",
+          "cosine": 0.18607421136816923
+        }
+      ]
+    },
+    {
+      "id": "independent-131",
+      "split": "independent_holdout",
+      "selected": [
+        "xlsx"
+      ],
+      "top3": [
+        {
+          "slug": "xlsx",
+          "cosine": 0.48950307754077554
+        },
+        {
+          "slug": "pdf",
+          "cosine": 0.25559780641732016
+        },
+        {
+          "slug": "docx",
+          "cosine": 0.25221427245422773
+        }
+      ]
+    },
+    {
+      "id": "independent-132",
+      "split": "independent_holdout",
+      "selected": [
+        "pdf",
+        "nano-pdf",
+        "ocr-and-documents"
+      ],
+      "top3": [
+        {
+          "slug": "pdf",
+          "cosine": 0.5042236153712933
+        },
+        {
+          "slug": "nano-pdf",
+          "cosine": 0.45732617904206313
+        },
+        {
+          "slug": "ocr-and-documents",
+          "cosine": 0.4497138454737736
+        }
+      ]
+    },
+    {
+      "id": "independent-133",
+      "split": "independent_holdout",
+      "selected": [
+        "meeting-action-items"
+      ],
+      "top3": [
+        {
+          "slug": "meeting-action-items",
+          "cosine": 0.500869240293083
+        },
+        {
+          "slug": "teams-meeting-pipeline",
+          "cosine": 0.3292789512151523
+        },
+        {
+          "slug": "work-unit-reporting",
+          "cosine": 0.2544690579485562
+        }
+      ]
+    },
+    {
+      "id": "independent-134",
+      "split": "independent_holdout",
+      "selected": [
+        "github-pr-workflow",
+        "github-issue-to-pr",
+        "github-code-review"
+      ],
+      "top3": [
+        {
+          "slug": "github-pr-workflow",
+          "cosine": 0.4574488340528656
+        },
+        {
+          "slug": "github-issue-to-pr",
+          "cosine": 0.443652287547211
+        },
+        {
+          "slug": "github-code-review",
+          "cosine": 0.40535237364874954
+        }
+      ]
+    },
+    {
+      "id": "independent-135",
+      "split": "independent_holdout",
+      "selected": [
+        "python-debugpy",
+        "systematic-debugging",
+        "node-inspect-debugger"
+      ],
+      "top3": [
+        {
+          "slug": "python-debugpy",
+          "cosine": 0.4389233517942823
+        },
+        {
+          "slug": "systematic-debugging",
+          "cosine": 0.41769398116058215
+        },
+        {
+          "slug": "node-inspect-debugger",
+          "cosine": 0.40634077544402375
+        }
+      ]
+    },
+    {
+      "id": "independent-136",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "harness-skill-gate-mechanics",
+          "cosine": 0.16525236188300793
+        },
+        {
+          "slug": "weekly-review-planning",
+          "cosine": 0.14840992148844
+        },
+        {
+          "slug": "ascii-art",
+          "cosine": 0.1430189672539862
+        }
+      ]
+    },
+    {
+      "id": "independent-137",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "sketch",
+          "cosine": 0.1621669448503772
+        },
+        {
+          "slug": "vesper-skill-authoring",
+          "cosine": 0.15417192969504603
+        },
+        {
+          "slug": "baoyu-infographic",
+          "cosine": 0.14951924170725855
+        }
+      ]
+    },
+    {
+      "id": "independent-138",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "songsee",
+          "cosine": 0.11397437880224338
+        },
+        {
+          "slug": "evaluating-llms-harness",
+          "cosine": 0.1073548911193008
+        },
+        {
+          "slug": "manim-video",
+          "cosine": 0.08944826519319468
+        }
+      ]
+    },
+    {
+      "id": "independent-139",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "requesting-code-review",
+          "cosine": 0.22470680769337004
+        },
+        {
+          "slug": "himalaya",
+          "cosine": 0.22449034521558142
+        },
+        {
+          "slug": "email-inbox-triage",
+          "cosine": 0.1963452387144545
+        }
+      ]
+    },
+    {
+      "id": "independent-140",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "vesper-skill-authoring",
+          "cosine": 0.24564564947661213
+        },
+        {
+          "slug": "nano-pdf",
+          "cosine": 0.22837494946143164
+        },
+        {
+          "slug": "songwriting-and-ai-music",
+          "cosine": 0.19974212677525363
+        }
+      ]
+    },
+    {
+      "id": "independent-141",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "google-workspace",
+          "cosine": 0.11496261854872981
+        },
+        {
+          "slug": "weekly-review-planning",
+          "cosine": 0.11472400775365368
+        },
+        {
+          "slug": "architecture-diagram",
+          "cosine": 0.11197362054417923
+        }
+      ]
+    },
+    {
+      "id": "independent-142",
+      "split": "independent_holdout",
+      "selected": [
+        "songwriting-and-ai-music"
+      ],
+      "top3": [
+        {
+          "slug": "songwriting-and-ai-music",
+          "cosine": 0.3950088700488446
+        },
+        {
+          "slug": "songsee",
+          "cosine": 0.2535172748280712
+        },
+        {
+          "slug": "meeting-action-items",
+          "cosine": 0.1827663932259231
+        }
+      ]
+    },
+    {
+      "id": "independent-143",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "llm-wiki",
+          "cosine": 0.23574046369444338
+        },
+        {
+          "slug": "findmy",
+          "cosine": 0.1797058465092128
+        },
+        {
+          "slug": "document-to-action-items",
+          "cosine": 0.16404311805638205
+        }
+      ]
+    },
+    {
+      "id": "independent-144",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "gif-search",
+          "cosine": 0.2904459646360987
+        },
+        {
+          "slug": "manim-video",
+          "cosine": 0.21803142675872586
+        },
+        {
+          "slug": "ascii-art",
+          "cosine": 0.2151223907091971
+        }
+      ]
+    },
+    {
+      "id": "independent-145",
+      "split": "independent_holdout",
+      "selected": [
+        "excalidraw"
+      ],
+      "top3": [
+        {
+          "slug": "excalidraw",
+          "cosine": 0.39382846459910736
+        },
+        {
+          "slug": "p5js",
+          "cosine": 0.37280967892539296
+        },
+        {
+          "slug": "sketch",
+          "cosine": 0.3716440061798381
+        }
+      ]
+    },
+    {
+      "id": "independent-146",
+      "split": "independent_holdout",
+      "selected": [
+        "openhue"
+      ],
+      "top3": [
+        {
+          "slug": "openhue",
+          "cosine": 0.5363571694190197
+        },
+        {
+          "slug": "computer-use",
+          "cosine": 0.2750166370383425
+        },
+        {
+          "slug": "product-price-monitor",
+          "cosine": 0.21999359345158837
+        }
+      ]
+    },
+    {
+      "id": "independent-147",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "notion",
+          "cosine": 0.3786642892329578
+        },
+        {
+          "slug": "meeting-action-items",
+          "cosine": 0.17729834433757477
+        },
+        {
+          "slug": "spike",
+          "cosine": 0.1768269333258923
+        }
+      ]
+    },
+    {
+      "id": "independent-148",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "ascii-art",
+          "cosine": 0.11306262926755373
+        },
+        {
+          "slug": "ascii-video",
+          "cosine": 0.0959669928168538
+        },
+        {
+          "slug": "session-librarian",
+          "cosine": 0.09580777236609272
+        }
+      ]
+    },
+    {
+      "id": "independent-149",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "simplify-code",
+          "cosine": 0.13952403576642292
+        },
+        {
+          "slug": "manim-video",
+          "cosine": 0.13193443449668202
+        },
+        {
+          "slug": "apple-reminders",
+          "cosine": 0.12502184399395377
+        }
+      ]
+    },
+    {
+      "id": "independent-150",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "apple-notes",
+          "cosine": 0.1791679155311965
+        },
+        {
+          "slug": "github-repo-management",
+          "cosine": 0.14137358362578625
+        },
+        {
+          "slug": "popular-web-designs",
+          "cosine": 0.13500175785274807
+        }
+      ]
+    },
+    {
+      "id": "independent-151",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "ascii-art",
+          "cosine": 0.3014361128904917
+        },
+        {
+          "slug": "llm-wiki",
+          "cosine": 0.13652153481376741
+        },
+        {
+          "slug": "email-inbox-triage",
+          "cosine": 0.12845512378682636
+        }
+      ]
+    },
+    {
+      "id": "independent-152",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "comfyui",
+          "cosine": 0.18113052563354287
+        },
+        {
+          "slug": "computer-use",
+          "cosine": 0.1424034903974237
+        },
+        {
+          "slug": "meeting-action-items",
+          "cosine": 0.13932914925000064
+        }
+      ]
+    },
+    {
+      "id": "independent-153",
+      "split": "independent_holdout",
+      "selected": [
+        "youtube-content"
+      ],
+      "top3": [
+        {
+          "slug": "youtube-content",
+          "cosine": 0.4574845522526669
+        },
+        {
+          "slug": "document-to-action-items",
+          "cosine": 0.326734523543386
+        },
+        {
+          "slug": "teams-meeting-pipeline",
+          "cosine": 0.323993876846169
+        }
+      ]
+    },
+    {
+      "id": "independent-154",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "grounded-citations",
+          "cosine": 0.2446653719628372
+        },
+        {
+          "slug": "arxiv",
+          "cosine": 0.2022958939730712
+        },
+        {
+          "slug": "youtube-content",
+          "cosine": 0.19607829337588314
+        }
+      ]
+    },
+    {
+      "id": "independent-155",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "weekly-review-planning",
+          "cosine": 0.3384080564487904
+        },
+        {
+          "slug": "apple-reminders",
+          "cosine": 0.27780305838010627
+        },
+        {
+          "slug": "plan",
+          "cosine": 0.2436932141444892
+        }
+      ]
+    },
+    {
+      "id": "independent-156",
+      "split": "independent_holdout",
+      "selected": [
+        "teams-meeting-pipeline",
+        "meeting-action-items"
+      ],
+      "top3": [
+        {
+          "slug": "teams-meeting-pipeline",
+          "cosine": 0.627018602368166
+        },
+        {
+          "slug": "meeting-action-items",
+          "cosine": 0.5168785793634808
+        },
+        {
+          "slug": "apple-notes",
+          "cosine": 0.3474396379144983
+        }
+      ]
+    },
+    {
+      "id": "independent-157",
+      "split": "independent_holdout",
+      "selected": [
+        "teams-meeting-pipeline",
+        "meeting-action-items"
+      ],
+      "top3": [
+        {
+          "slug": "teams-meeting-pipeline",
+          "cosine": 0.6994287695977144
+        },
+        {
+          "slug": "meeting-action-items",
+          "cosine": 0.3832932427915099
+        },
+        {
+          "slug": "youtube-content",
+          "cosine": 0.35057253097409824
+        }
+      ]
+    },
+    {
+      "id": "independent-158",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "plan",
+          "cosine": 0.32550148518304
+        },
+        {
+          "slug": "document-to-action-items",
+          "cosine": 0.308987959674986
+        },
+        {
+          "slug": "meeting-action-items",
+          "cosine": 0.3001998369612252
+        }
+      ]
+    },
+    {
+      "id": "independent-159",
+      "split": "independent_holdout",
+      "selected": [
+        "excalidraw"
+      ],
+      "top3": [
+        {
+          "slug": "excalidraw",
+          "cosine": 0.5924640993269239
+        },
+        {
+          "slug": "teams-meeting-pipeline",
+          "cosine": 0.3239584597406643
+        },
+        {
+          "slug": "huggingface-hub",
+          "cosine": 0.2815697931029776
+        }
+      ]
+    },
+    {
+      "id": "independent-160",
+      "split": "independent_holdout",
+      "selected": [
+        "architecture-diagram",
+        "excalidraw"
+      ],
+      "top3": [
+        {
+          "slug": "architecture-diagram",
+          "cosine": 0.48995915339783924
+        },
+        {
+          "slug": "excalidraw",
+          "cosine": 0.3828468453851686
+        },
+        {
+          "slug": "baoyu-infographic",
+          "cosine": 0.2742483331759311
+        }
+      ]
+    },
+    {
+      "id": "independent-161",
+      "split": "independent_holdout",
+      "selected": [
+        "powerpoint"
+      ],
+      "top3": [
+        {
+          "slug": "powerpoint",
+          "cosine": 0.519515609694664
+        },
+        {
+          "slug": "pretext",
+          "cosine": 0.3585289487167045
+        },
+        {
+          "slug": "claude-design",
+          "cosine": 0.3545474221096551
+        }
+      ]
+    },
+    {
+      "id": "independent-162",
+      "split": "independent_holdout",
+      "selected": [
+        "powerpoint"
+      ],
+      "top3": [
+        {
+          "slug": "powerpoint",
+          "cosine": 0.45260560910880476
+        },
+        {
+          "slug": "claude-design",
+          "cosine": 0.2757995491990179
+        },
+        {
+          "slug": "pretext",
+          "cosine": 0.2251875782056049
+        }
+      ]
+    },
+    {
+      "id": "independent-163",
+      "split": "independent_holdout",
+      "selected": [
+        "ocr-and-documents",
+        "nano-pdf",
+        "pdf"
+      ],
+      "top3": [
+        {
+          "slug": "ocr-and-documents",
+          "cosine": 0.644657304626293
+        },
+        {
+          "slug": "nano-pdf",
+          "cosine": 0.4272482085784437
+        },
+        {
+          "slug": "pdf",
+          "cosine": 0.3974755959676016
+        }
+      ]
+    },
+    {
+      "id": "independent-164",
+      "split": "independent_holdout",
+      "selected": [
+        "pdf",
+        "ocr-and-documents",
+        "nano-pdf"
+      ],
+      "top3": [
+        {
+          "slug": "pdf",
+          "cosine": 0.6208851396921782
+        },
+        {
+          "slug": "ocr-and-documents",
+          "cosine": 0.4564117095994611
+        },
+        {
+          "slug": "nano-pdf",
+          "cosine": 0.4042996394327486
+        }
+      ]
+    },
+    {
+      "id": "independent-165",
+      "split": "independent_holdout",
+      "selected": [
+        "nano-pdf"
+      ],
+      "top3": [
+        {
+          "slug": "nano-pdf",
+          "cosine": 0.47769942091328804
+        },
+        {
+          "slug": "humanizer",
+          "cosine": 0.29194574962767494
+        },
+        {
+          "slug": "pdf",
+          "cosine": 0.24588652637314456
+        }
+      ]
+    },
+    {
+      "id": "independent-166",
+      "split": "independent_holdout",
+      "selected": [
+        "github-code-review",
+        "github-issue-to-pr",
+        "github-issues"
+      ],
+      "top3": [
+        {
+          "slug": "github-code-review",
+          "cosine": 0.6988037401183385
+        },
+        {
+          "slug": "github-issue-to-pr",
+          "cosine": 0.5117907863546851
+        },
+        {
+          "slug": "github-issues",
+          "cosine": 0.45797185859176287
+        }
+      ]
+    },
+    {
+      "id": "independent-167",
+      "split": "independent_holdout",
+      "selected": [
+        "github-issues",
+        "github-issue-to-pr",
+        "github-repo-management"
+      ],
+      "top3": [
+        {
+          "slug": "github-issues",
+          "cosine": 0.615108783598836
+        },
+        {
+          "slug": "github-issue-to-pr",
+          "cosine": 0.472853280220935
+        },
+        {
+          "slug": "github-repo-management",
+          "cosine": 0.4606678739299297
+        }
+      ]
+    },
+    {
+      "id": "independent-168",
+      "split": "independent_holdout",
+      "selected": [
+        "github-issue-to-pr",
+        "github-repo-management",
+        "github-pr-workflow"
+      ],
+      "top3": [
+        {
+          "slug": "github-issue-to-pr",
+          "cosine": 0.45762044349618364
+        },
+        {
+          "slug": "github-repo-management",
+          "cosine": 0.4424905584919835
+        },
+        {
+          "slug": "github-pr-workflow",
+          "cosine": 0.3910653023874462
+        }
+      ]
+    },
+    {
+      "id": "independent-169",
+      "split": "independent_holdout",
+      "selected": [
+        "github-auth",
+        "github-issue-to-pr",
+        "github-issues"
+      ],
+      "top3": [
+        {
+          "slug": "github-auth",
+          "cosine": 0.6903066155653422
+        },
+        {
+          "slug": "github-issue-to-pr",
+          "cosine": 0.6138205515312322
+        },
+        {
+          "slug": "github-issues",
+          "cosine": 0.5818936912996293
+        }
+      ]
+    },
+    {
+      "id": "independent-170",
+      "split": "independent_holdout",
+      "selected": [
+        "python-debugpy"
+      ],
+      "top3": [
+        {
+          "slug": "python-debugpy",
+          "cosine": 0.44664451828361423
+        },
+        {
+          "slug": "node-inspect-debugger",
+          "cosine": 0.32892782886435695
+        },
+        {
+          "slug": "powerpoint",
+          "cosine": 0.2835287225002701
+        }
+      ]
+    },
+    {
+      "id": "independent-171",
+      "split": "independent_holdout",
+      "selected": [
+        "node-inspect-debugger"
+      ],
+      "top3": [
+        {
+          "slug": "node-inspect-debugger",
+          "cosine": 0.411137701523574
+        },
+        {
+          "slug": "subprocess-kill-in-agent-tools",
+          "cosine": 0.29578364333028906
+        },
+        {
+          "slug": "python-debugpy",
+          "cosine": 0.27557712392282746
+        }
+      ]
+    },
+    {
+      "id": "independent-172",
+      "split": "independent_holdout",
+      "selected": [
+        "llama-cpp"
+      ],
+      "top3": [
+        {
+          "slug": "llama-cpp",
+          "cosine": 0.45210809055710327
+        },
+        {
+          "slug": "gif-search",
+          "cosine": 0.26890629021003515
+        },
+        {
+          "slug": "himalaya",
+          "cosine": 0.2592709600647318
+        }
+      ]
+    },
+    {
+      "id": "independent-173",
+      "split": "independent_holdout",
+      "selected": [
+        "serving-llms-vllm",
+        "llama-cpp"
+      ],
+      "top3": [
+        {
+          "slug": "serving-llms-vllm",
+          "cosine": 0.5289432236987347
+        },
+        {
+          "slug": "llama-cpp",
+          "cosine": 0.44451685621395365
+        },
+        {
+          "slug": "plan",
+          "cosine": 0.34472932259903954
+        }
+      ]
+    },
+    {
+      "id": "independent-174",
+      "split": "independent_holdout",
+      "selected": [
+        "huggingface-hub"
+      ],
+      "top3": [
+        {
+          "slug": "huggingface-hub",
+          "cosine": 0.4276325389907798
+        },
+        {
+          "slug": "llama-cpp",
+          "cosine": 0.3561440706093838
+        },
+        {
+          "slug": "weights-and-biases",
+          "cosine": 0.3505541120881575
+        }
+      ]
+    },
+    {
+      "id": "independent-175",
+      "split": "independent_holdout",
+      "selected": [
+        "evaluating-llms-harness",
+        "weights-and-biases"
+      ],
+      "top3": [
+        {
+          "slug": "evaluating-llms-harness",
+          "cosine": 0.6887964874751121
+        },
+        {
+          "slug": "weights-and-biases",
+          "cosine": 0.4849757491448103
+        },
+        {
+          "slug": "serving-llms-vllm",
+          "cosine": 0.307169636002197
+        }
+      ]
+    },
+    {
+      "id": "independent-176",
+      "split": "independent_holdout",
+      "selected": [
+        "weights-and-biases"
+      ],
+      "top3": [
+        {
+          "slug": "weights-and-biases",
+          "cosine": 0.38883330157648255
+        },
+        {
+          "slug": "evaluating-llms-harness",
+          "cosine": 0.34312628655634336
+        },
+        {
+          "slug": "spike",
+          "cosine": 0.3258553315055152
+        }
+      ]
+    },
+    {
+      "id": "independent-177",
+      "split": "independent_holdout",
+      "selected": [
+        "apple-reminders",
+        "apple-notes"
+      ],
+      "top3": [
+        {
+          "slug": "apple-reminders",
+          "cosine": 0.6345871619877442
+        },
+        {
+          "slug": "apple-notes",
+          "cosine": 0.5453258975331615
+        },
+        {
+          "slug": "meeting-action-items",
+          "cosine": 0.32801053807121083
+        }
+      ]
+    },
+    {
+      "id": "independent-178",
+      "split": "independent_holdout",
+      "selected": [
+        "apple-notes",
+        "obsidian"
+      ],
+      "top3": [
+        {
+          "slug": "apple-notes",
+          "cosine": 0.5563945043229708
+        },
+        {
+          "slug": "obsidian",
+          "cosine": 0.5537760085438599
+        },
+        {
+          "slug": "nano-pdf",
+          "cosine": 0.3267305763599251
+        }
+      ]
+    },
+    {
+      "id": "independent-179",
+      "split": "independent_holdout",
+      "selected": [
+        "obsidian"
+      ],
+      "top3": [
+        {
+          "slug": "obsidian",
+          "cosine": 0.5286498039900083
+        },
+        {
+          "slug": "notion",
+          "cosine": 0.33357942707083926
+        },
+        {
+          "slug": "blocked-page-recovery",
+          "cosine": 0.2746830803376741
+        }
+      ]
+    },
+    {
+      "id": "independent-180",
+      "split": "independent_holdout",
+      "selected": [
+        "airtable"
+      ],
+      "top3": [
+        {
+          "slug": "airtable",
+          "cosine": 0.636389073065251
+        },
+        {
+          "slug": "findmy",
+          "cosine": 0.3299578114631385
+        },
+        {
+          "slug": "xlsx",
+          "cosine": 0.32023367650396456
+        }
+      ]
+    },
+    {
+      "id": "independent-181",
+      "split": "independent_holdout",
+      "selected": [
+        "ascii-art",
+        "ascii-video"
+      ],
+      "top3": [
+        {
+          "slug": "ascii-art",
+          "cosine": 0.4439453491048927
+        },
+        {
+          "slug": "ascii-video",
+          "cosine": 0.4350896363006415
+        },
+        {
+          "slug": "pretext",
+          "cosine": 0.37921257808571474
+        }
+      ]
+    },
+    {
+      "id": "independent-182",
+      "split": "independent_holdout",
+      "selected": [
+        "ascii-video"
+      ],
+      "top3": [
+        {
+          "slug": "ascii-video",
+          "cosine": 0.5907945310286691
+        },
+        {
+          "slug": "youtube-content",
+          "cosine": 0.31786162513735106
+        },
+        {
+          "slug": "ascii-art",
+          "cosine": 0.2987617369077474
+        }
+      ]
+    },
+    {
+      "id": "independent-183",
+      "split": "independent_holdout",
+      "selected": [
+        "songsee",
+        "songwriting-and-ai-music"
+      ],
+      "top3": [
+        {
+          "slug": "songsee",
+          "cosine": 0.6673223235718884
+        },
+        {
+          "slug": "songwriting-and-ai-music",
+          "cosine": 0.43410692179163174
+        },
+        {
+          "slug": "humanizer",
+          "cosine": 0.337475272514829
+        }
+      ]
+    },
+    {
+      "id": "independent-184",
+      "split": "independent_holdout",
+      "selected": [
+        "songwriting-and-ai-music",
+        "songsee",
+        "humanizer"
+      ],
+      "top3": [
+        {
+          "slug": "songwriting-and-ai-music",
+          "cosine": 0.606974436204536
+        },
+        {
+          "slug": "songsee",
+          "cosine": 0.5124253943801338
+        },
+        {
+          "slug": "humanizer",
+          "cosine": 0.3949457331314771
+        }
+      ]
+    },
+    {
+      "id": "independent-185",
+      "split": "independent_holdout",
+      "selected": [
+        "inspect-live-dom",
+        "node-inspect-debugger"
+      ],
+      "top3": [
+        {
+          "slug": "inspect-live-dom",
+          "cosine": 0.789515097863073
+        },
+        {
+          "slug": "node-inspect-debugger",
+          "cosine": 0.42327998977260245
+        },
+        {
+          "slug": "claude-design",
+          "cosine": 0.3415443207032389
+        }
+      ]
+    },
+    {
+      "id": "independent-186",
+      "split": "independent_holdout",
+      "selected": [
+        "openhue"
+      ],
+      "top3": [
+        {
+          "slug": "openhue",
+          "cosine": 0.5244783713012765
+        },
+        {
+          "slug": "harness-skill-gate-mechanics",
+          "cosine": 0.2087309374365329
+        },
+        {
+          "slug": "codex",
+          "cosine": 0.1739284956969471
+        }
+      ]
+    },
+    {
+      "id": "independent-187",
+      "split": "independent_holdout",
+      "selected": [
+        "imessage",
+        "himalaya"
+      ],
+      "top3": [
+        {
+          "slug": "imessage",
+          "cosine": 0.6592000290422367
+        },
+        {
+          "slug": "himalaya",
+          "cosine": 0.38702843634056117
+        },
+        {
+          "slug": "email-inbox-triage",
+          "cosine": 0.2671116681359387
+        }
+      ]
+    },
+    {
+      "id": "independent-188",
+      "split": "independent_holdout",
+      "selected": [
+        "findmy"
+      ],
+      "top3": [
+        {
+          "slug": "findmy",
+          "cosine": 0.6676120989431263
+        },
+        {
+          "slug": "airtable",
+          "cosine": 0.25081057780313026
+        },
+        {
+          "slug": "openhue",
+          "cosine": 0.20778262542401088
+        }
+      ]
+    },
+    {
+      "id": "independent-189",
+      "split": "independent_holdout",
+      "selected": [
+        "touchdesigner-mcp"
+      ],
+      "top3": [
+        {
+          "slug": "touchdesigner-mcp",
+          "cosine": 0.6817532314400351
+        },
+        {
+          "slug": "imessage",
+          "cosine": 0.209457902378644
+        },
+        {
+          "slug": "claude-design",
+          "cosine": 0.1554239214606811
+        }
+      ]
+    },
+    {
+      "id": "independent-190",
+      "split": "independent_holdout",
+      "selected": [
+        "opencode",
+        "codex",
+        "claude-code"
+      ],
+      "top3": [
+        {
+          "slug": "opencode",
+          "cosine": 0.6962523173778731
+        },
+        {
+          "slug": "codex",
+          "cosine": 0.5066777948160421
+        },
+        {
+          "slug": "claude-code",
+          "cosine": 0.3808051357035961
+        }
+      ]
+    },
+    {
+      "id": "independent-191",
+      "split": "independent_holdout",
+      "selected": [
+        "claude-code",
+        "github-issue-to-pr"
+      ],
+      "top3": [
+        {
+          "slug": "claude-code",
+          "cosine": 0.4969726867337497
+        },
+        {
+          "slug": "github-issue-to-pr",
+          "cosine": 0.403186060251228
+        },
+        {
+          "slug": "opencode",
+          "cosine": 0.3753459379941228
+        }
+      ]
+    },
+    {
+      "id": "independent-192",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "codex",
+          "cosine": 0.358170858923537
+        },
+        {
+          "slug": "subprocess-kill-in-agent-tools",
+          "cosine": 0.3313083883843345
+        },
+        {
+          "slug": "verify-with-xtask-verify",
+          "cosine": 0.3291142255558286
+        }
+      ]
+    },
+    {
+      "id": "independent-193",
+      "split": "independent_holdout",
+      "selected": [
+        "airtable"
+      ],
+      "top3": [
+        {
+          "slug": "airtable",
+          "cosine": 0.4548668940369906
+        },
+        {
+          "slug": "blocked-page-recovery",
+          "cosine": 0.29239902743852103
+        },
+        {
+          "slug": "findmy",
+          "cosine": 0.17332728786419488
+        }
+      ]
+    },
+    {
+      "id": "independent-194",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "interactive-developer",
+          "cosine": 0.3444935554187694
+        },
+        {
+          "slug": "email-inbox-triage",
+          "cosine": 0.31608957892608147
+        },
+        {
+          "slug": "docx",
+          "cosine": 0.30016666739546416
+        }
+      ]
+    },
+    {
+      "id": "independent-195",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "notion",
+          "cosine": 0.3441698653711373
+        },
+        {
+          "slug": "nano-pdf",
+          "cosine": 0.26220720196332403
+        },
+        {
+          "slug": "plan",
+          "cosine": 0.230841844753386
+        }
+      ]
+    },
+    {
+      "id": "independent-196",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "box",
+          "cosine": 0.33512175695140994
+        },
+        {
+          "slug": "harness-skill-gate-mechanics",
+          "cosine": 0.30820603468695673
+        },
+        {
+          "slug": "verify-with-xtask-verify",
+          "cosine": 0.25159131331052914
+        }
+      ]
+    },
+    {
+      "id": "independent-197",
+      "split": "independent_holdout",
+      "selected": [
+        "computer-use"
+      ],
+      "top3": [
+        {
+          "slug": "computer-use",
+          "cosine": 0.4186185640309856
+        },
+        {
+          "slug": "verify-with-xtask-verify",
+          "cosine": 0.2181664609579838
+        },
+        {
+          "slug": "harness-skill-gate-mechanics",
+          "cosine": 0.19384757859421756
+        }
+      ]
+    },
+    {
+      "id": "independent-198",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "claude-design",
+          "cosine": 0.3578352449594195
+        },
+        {
+          "slug": "baoyu-infographic",
+          "cosine": 0.3287816338212757
+        },
+        {
+          "slug": "pretext",
+          "cosine": 0.32008797782272097
+        }
+      ]
+    },
+    {
+      "id": "independent-199",
+      "split": "independent_holdout",
+      "selected": [
+        "apple-notes"
+      ],
+      "top3": [
+        {
+          "slug": "apple-notes",
+          "cosine": 0.45470881951282166
+        },
+        {
+          "slug": "obsidian",
+          "cosine": 0.35997446576437736
+        },
+        {
+          "slug": "meeting-action-items",
+          "cosine": 0.2854757424585957
+        }
+      ]
+    },
+    {
+      "id": "independent-200",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "pdf",
+          "cosine": 0.3706110323417276
+        },
+        {
+          "slug": "nano-pdf",
+          "cosine": 0.34543470044777297
+        },
+        {
+          "slug": "ocr-and-documents",
+          "cosine": 0.3245985086690561
+        }
+      ]
+    },
+    {
+      "id": "independent-201",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "architecture-diagram",
+          "cosine": 0.26929897457259044
+        },
+        {
+          "slug": "excalidraw",
+          "cosine": 0.230851140561385
+        },
+        {
+          "slug": "github-pr-workflow",
+          "cosine": 0.2116065852788575
+        }
+      ]
+    },
+    {
+      "id": "independent-202",
+      "split": "independent_holdout",
+      "selected": [
+        "simplify-code",
+        "claude-code",
+        "opencode"
+      ],
+      "top3": [
+        {
+          "slug": "simplify-code",
+          "cosine": 0.45035523863495347
+        },
+        {
+          "slug": "claude-code",
+          "cosine": 0.4435415615642267
+        },
+        {
+          "slug": "opencode",
+          "cosine": 0.39934357338909915
+        }
+      ]
+    },
+    {
+      "id": "independent-203",
+      "split": "independent_holdout",
+      "selected": [
+        "songwriting-and-ai-music"
+      ],
+      "top3": [
+        {
+          "slug": "songwriting-and-ai-music",
+          "cosine": 0.46939226438895054
+        },
+        {
+          "slug": "humanizer",
+          "cosine": 0.2566110476586364
+        },
+        {
+          "slug": "songsee",
+          "cosine": 0.2545457647820182
+        }
+      ]
+    },
+    {
+      "id": "independent-204",
+      "split": "independent_holdout",
+      "selected": [
+        "weekly-review-planning"
+      ],
+      "top3": [
+        {
+          "slug": "weekly-review-planning",
+          "cosine": 0.4281557061985967
+        },
+        {
+          "slug": "meeting-action-items",
+          "cosine": 0.3612806175750728
+        },
+        {
+          "slug": "work-unit-reporting",
+          "cosine": 0.3205245106623918
+        }
+      ]
+    },
+    {
+      "id": "independent-205",
+      "split": "independent_holdout",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "harness-skill-gate-mechanics",
+          "cosine": 0.3273192397103901
+        },
+        {
+          "slug": "verify-with-xtask-verify",
+          "cosine": 0.24709125508227464
+        },
+        {
+          "slug": "claude-code",
+          "cosine": 0.24403363175303808
+        }
+      ]
+    }
+  ]
+}

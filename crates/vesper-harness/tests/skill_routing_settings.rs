@@ -127,3 +127,22 @@ fn transition_refinement_is_bounded_and_cannot_execute_tools() {
     );
     assert!(!root.path().join(".agent-vesper").exists());
 }
+
+#[test]
+fn model_assistance_requires_explicit_save_and_standard_mode_deactivates_it() {
+    let root = tempfile::tempdir().unwrap();
+    assert!(!settings::load(root.path()).unwrap().model_assistance);
+    assert!(settings::command(root.path(), "model-assistance on").is_err());
+    assert!(!settings::path(root.path()).exists());
+    settings::command(root.path(), "save model-assistance on").unwrap();
+    let saved = settings::load(root.path()).unwrap();
+    assert!(saved.model_assistance);
+    assert_eq!(saved.mode, RoutingMode::Enhanced);
+    settings::command(root.path(), "save mode standard").unwrap();
+    assert_eq!(
+        settings::load(root.path()).unwrap().mode,
+        RoutingMode::Standard
+    );
+    settings::command(root.path(), "save model-assistance off").unwrap();
+    assert!(!settings::load(root.path()).unwrap().model_assistance);
+}

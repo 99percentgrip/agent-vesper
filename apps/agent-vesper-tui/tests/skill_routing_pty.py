@@ -20,7 +20,7 @@ def run(binary):
             host.wait('Start coding')
             host.key('s')
             host.click('Skills')
-            host.click('Routing: Standard')
+            host.click('Model-assisted selection: OFF')
             host.wait('Routing: Enhanced')
             host.click('[x] ledger-audit')
             host.wait('[ ] ledger-audit')
@@ -33,8 +33,9 @@ def run(binary):
             host.key('s')
             host.click('Skills')
             host.wait('Routing: Standard')
+            host.wait('Model-assisted selection: OFF')
             host.wait('[x] ledger-audit')
-            host.click('Routing: Standard')
+            host.click('Model-assisted selection: OFF')
             host.click('[x] ledger-audit')
             host.key('\x1b')
             host.key('\x1b')
@@ -43,7 +44,7 @@ def run(binary):
             host.key('\x1b')
             host.click('Save changes')
             host.wait('Start coding')
-            assert json.loads(path.read_text()) == {'mode':'enhanced','disabled':['ledger-audit']}
+            assert json.loads(path.read_text()) == {'mode':'enhanced','model_assistance':True,'disabled':['ledger-audit']}
             assert source.read_bytes() == before
         finally:
             host.close()
@@ -54,6 +55,7 @@ def run(binary):
             host.click('Skills')
             host.wait('Routing: Enhanced')
             host.wait('[ ] ledger-audit')
+            host.wait('Model-assisted selection: ON')
             assert source.read_bytes() == before
         finally:
             host.close()

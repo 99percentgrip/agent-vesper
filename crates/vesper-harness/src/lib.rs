@@ -34,6 +34,7 @@ mod acceptance_snapshot;
 pub mod lens_tools;
 pub mod sandbox_backend;
 pub mod scope_holder;
+pub mod skill_model_selector;
 pub mod skill_routing_settings;
 mod web_runtime;
 pub mod web_service;

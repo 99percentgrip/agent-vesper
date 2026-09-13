@@ -36,6 +36,7 @@
 pub mod awareness;
 pub mod error;
 pub mod io;
+pub mod model_routing;
 pub mod profile;
 pub mod routing_quality;
 pub mod skill_orchestrator;

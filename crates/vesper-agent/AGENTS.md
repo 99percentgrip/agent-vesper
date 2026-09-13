@@ -56,6 +56,10 @@ the multi-turn, tool-executing layer above it.
   and sandbox-demand resolution. Skill-relative paths reject Unix-rooted,
   Windows-rooted/drive-prefixed, parent-traversal, NUL, and empty forms on
   every host rather than relying on platform-specific `Path` semantics.
+- Bounded advisory callers may set `with_maximum_output_tokens`; ordinary turns
+  keep adapter defaults. `with_text_only_response_bound` rejects tool/non-text
+  events before aggregation and bounds all text/reasoning bytes and event count.
+  This does not add tools, permissions or a routing dependency.
 - `src/agent_loop.rs` — `AgentLoop::run_prompt` and
   `AgentLoop::run_prompt_with_history`: dispatch turn → collect tool calls →
   gate → execute → append `role: Tool` results → repeat, bounded by

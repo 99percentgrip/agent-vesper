@@ -312,6 +312,17 @@ impl SkillStore {
             .search_condition(prompt, task, contracts))
     }
 
+    pub(crate) fn routing_store_identity(&self) -> Vec<u8> {
+        use sha2::{Digest, Sha256};
+        let mut digest = Sha256::new();
+        digest.update(self.root.as_os_str().as_encoded_bytes());
+        digest.update([0]);
+        if let Some(root) = &self.global_root {
+            digest.update(root.as_os_str().as_encoded_bytes());
+        }
+        digest.finalize().to_vec()
+    }
+
     /// Revision of the bounded catalog view plus the source file's size and
     /// modification timestamp. No isolated body is read to construct an index.
     /// This is a freshness stamp, not a cryptographic content attestation.

@@ -1,0 +1,6649 @@
+{
+  "columns": [
+    "n",
+    "recall3",
+    "abstentions",
+    "extra_activations",
+    "forbidden_activations",
+    "strict_supported_success",
+    "unsupported_context"
+  ],
+  "corpus_sha256": "79ef89a4934a0e2c61aa08d4e2de6a3efd0272c18f1ee3e9507271d5c6111275",
+  "library_files": 488,
+  "library_manifest_sha256": "8dbca5a44e513aa5c5a7d3e3d324c34bd14550003b296cc6bf6c0a618642f2ed",
+  "platform": "linux",
+  "predictions": [
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-001",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-002",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-003",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "plan",
+        "xlsx"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-004",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "work-unit-reporting"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-005",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-006",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "weekly-review-planning"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-007",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "add-glm-model-release",
+        "end-to-end-workflow-acceptance",
+        "vesper-skill-authoring"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-008",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "verify-with-xtask-verify",
+        "cross-platform-test-pitfalls"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-009",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "verify-parity-end-to-end"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-010",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-011",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "test-driven-development",
+        "harness-skill-gate-mechanics",
+        "acp-stdio-smoke-test"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-012",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "teams-meeting-pipeline"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-013",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-014",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "subprocess-kill-in-agent-tools"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-015",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-016",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "songwriting-and-ai-music"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-017",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-018",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-019",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "simplify-code"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-020",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "session-librarian"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-021",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "llama-cpp",
+        "serving-llms-vllm",
+        "add-glm-model-release"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-022",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "sdlc-review"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-023",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "rust-workspace-disk-hygiene",
+        "verify-with-xtask-verify"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-024",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-025",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "requesting-code-review"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-026",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-027",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "provider-routed-surface-decoupling"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-028",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-029",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "pretext"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-030",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-031",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "popular-web-designs"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-032",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "plan",
+        "agent-vesper"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-033",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "pdf"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-034",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "sketch",
+        "p5js"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-035",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-036",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "opencode",
+        "claude-code",
+        "codex"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-037",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "pdf"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-038",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "obsidian"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-039",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "notion"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-040",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-041",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "pdf",
+        "nano-pdf"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-042",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-043",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "meeting-action-items"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-044",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-045",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-046",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "llm-wiki"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-047",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "llama-cpp"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-048",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "interactive-developer"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-049",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "inspect-live-dom"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [
+        [
+          "imessage",
+          "unsupported platform linux"
+        ]
+      ],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-050",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-051",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [
+        [
+          "huggingface-hub",
+          "external side effect not explicitly requested"
+        ]
+      ],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-052",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-053",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "himalaya"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-054",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "harness-skill-gate-mechanics",
+        "cross-platform-test-pitfalls",
+        "dogfood"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-055",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-056",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "google-workspace"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [
+        [
+          "github-repo-management",
+          "external side effect not explicitly requested"
+        ]
+      ],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-057",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-058",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "github-pr-workflow",
+        "github-issue-to-pr"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-059",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "github-issues"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-060",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "github-issue-to-pr",
+        "github-pr-workflow",
+        "github-code-review"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-061",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "github-code-review",
+        "github-issue-to-pr",
+        "github-pr-workflow"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-062",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "github-auth"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-063",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "add-glm-model-release",
+        "end-to-end-workflow-acceptance"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [
+        [
+          "findmy",
+          "unsupported platform linux"
+        ]
+      ],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-064",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-065",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "excalidraw"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-066",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "evaluating-llms-harness"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-067",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "end-to-end-workflow-acceptance",
+        "add-glm-model-release"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-068",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-069",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-070",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "docx"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-071",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-072",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "design-md"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-073",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "cross-platform-test-pitfalls",
+        "verify-with-xtask-verify",
+        "acp-stdio-smoke-test"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-074",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "computer-use"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-075",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "competitor-news-monitor"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-076",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "comfyui"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-077",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "cold-start-import-deferral",
+        "acp-stdio-smoke-test"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-078",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "codex",
+        "harness-skill-gate-mechanics"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-079",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "codebase-inspection"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-080",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-081",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-082",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "box"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-083",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "blogwatcher"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-084",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-085",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-086",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "ascii-video"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-087",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-088",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "arxiv"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-089",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "architecture-diagram",
+        "excalidraw"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [
+        [
+          "apple-reminders",
+          "unsupported platform linux"
+        ]
+      ],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-090",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [
+        [
+          "apple-notes",
+          "unsupported platform linux"
+        ]
+      ],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-091",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-092",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "airtable"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-093",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "agent-vesper"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-094",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "add-glm-model-release",
+        "end-to-end-workflow-acceptance",
+        "cold-start-import-deferral"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-095",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "acp-stdio-smoke-test",
+        "cold-start-import-deferral",
+        "test-driven-development"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-096",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-097",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-098",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-099",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-100",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-101",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-102",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-103",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-104",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-105",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-106",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-107",
+      "kind": "no_skill",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "plan"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-108",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-109",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-110",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-111",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-112",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-113",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-114",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-115",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-116",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-117",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-118",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-119",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-120",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-121",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-122",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-123",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-124",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-125",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-126",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-127",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-128",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-129",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-130",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-131",
+      "kind": "no_skill",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "xlsx"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-132",
+      "kind": "no_skill",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "pdf"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-133",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-134",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-135",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-136",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-137",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-138",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-139",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-140",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-141",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-142",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-143",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-144",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-145",
+      "kind": "no_skill",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "architecture-diagram",
+        "excalidraw"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-146",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-147",
+      "kind": "no_skill",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "notion"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-148",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-149",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-150",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-151",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-152",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-153",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-154",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-155",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-156",
+      "kind": "sibling",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "meeting-action-items"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-157",
+      "kind": "sibling",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "teams-meeting-pipeline"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-158",
+      "kind": "sibling",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-159",
+      "kind": "sibling",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "excalidraw"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": true,
+      "hit": true,
+      "id": "independent-160",
+      "kind": "sibling",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "excalidraw",
+        "architecture-diagram"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-161",
+      "kind": "sibling",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "powerpoint"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": true,
+      "hit": false,
+      "id": "independent-162",
+      "kind": "sibling",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "powerpoint"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-163",
+      "kind": "sibling",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "pdf"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-164",
+      "kind": "sibling",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "pdf"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-165",
+      "kind": "sibling",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "pdf",
+        "nano-pdf"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": true,
+      "hit": true,
+      "id": "independent-166",
+      "kind": "sibling",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "github-code-review",
+        "github-issue-to-pr",
+        "github-pr-workflow"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-167",
+      "kind": "sibling",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "github-issues"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [
+        [
+          "github-repo-management",
+          "external side effect not explicitly requested"
+        ]
+      ],
+      "extra_activation": true,
+      "forbidden_activation": true,
+      "hit": false,
+      "id": "independent-168",
+      "kind": "sibling",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "github-pr-workflow",
+        "github-issue-to-pr"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": true,
+      "hit": false,
+      "id": "independent-169",
+      "kind": "sibling",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "github-pr-workflow",
+        "github-code-review",
+        "github-issue-to-pr"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-170",
+      "kind": "sibling",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-171",
+      "kind": "sibling",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "node-inspect-debugger"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-172",
+      "kind": "sibling",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-173",
+      "kind": "sibling",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [
+        [
+          "huggingface-hub",
+          "external side effect not explicitly requested"
+        ]
+      ],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-174",
+      "kind": "sibling",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": true,
+      "hit": true,
+      "id": "independent-175",
+      "kind": "sibling",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "evaluating-llms-harness",
+        "weights-and-biases",
+        "research-paper-writing"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-176",
+      "kind": "sibling",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [
+        [
+          "apple-reminders",
+          "unsupported platform linux"
+        ]
+      ],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-177",
+      "kind": "sibling",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [
+        [
+          "apple-notes",
+          "unsupported platform linux"
+        ]
+      ],
+      "extra_activation": true,
+      "forbidden_activation": true,
+      "hit": false,
+      "id": "independent-178",
+      "kind": "sibling",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "obsidian"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": true,
+      "hit": true,
+      "id": "independent-179",
+      "kind": "sibling",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "obsidian",
+        "notion"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": true,
+      "hit": true,
+      "id": "independent-180",
+      "kind": "sibling",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "airtable",
+        "notion",
+        "xlsx"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-181",
+      "kind": "sibling",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": true,
+      "hit": false,
+      "id": "independent-182",
+      "kind": "sibling",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "ascii-art",
+        "comfyui",
+        "baoyu-infographic"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-183",
+      "kind": "sibling",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "songsee"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-184",
+      "kind": "sibling",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-185",
+      "kind": "sibling",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "inspect-live-dom"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": false,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": true,
+      "hit": false,
+      "id": "independent-186",
+      "kind": "resource",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "openhue"
+      ],
+      "unsupported_denied_permissions": [
+        "network"
+      ],
+      "unsupported_unavailable_tools": [
+        "openhue"
+      ]
+    },
+    {
+      "context_supported": false,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-187",
+      "kind": "resource",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [
+        "remote_access"
+      ],
+      "unsupported_unavailable_tools": [
+        "imsg",
+        "macos-host"
+      ]
+    },
+    {
+      "context_supported": false,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-188",
+      "kind": "resource",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [
+        "remote_access"
+      ],
+      "unsupported_unavailable_tools": [
+        "FindMy.app",
+        "macos-host"
+      ]
+    },
+    {
+      "context_supported": false,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": true,
+      "hit": false,
+      "id": "independent-189",
+      "kind": "resource",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "touchdesigner-mcp"
+      ],
+      "unsupported_denied_permissions": [
+        "install_tools",
+        "connect_services"
+      ],
+      "unsupported_unavailable_tools": [
+        "twozero"
+      ]
+    },
+    {
+      "context_supported": false,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": true,
+      "hit": false,
+      "id": "independent-190",
+      "kind": "resource",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "opencode"
+      ],
+      "unsupported_denied_permissions": [
+        "install_tools",
+        "substitute_delegate"
+      ],
+      "unsupported_unavailable_tools": [
+        "opencode"
+      ]
+    },
+    {
+      "context_supported": false,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": true,
+      "hit": false,
+      "id": "independent-191",
+      "kind": "resource",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "claude-code",
+        "opencode"
+      ],
+      "unsupported_denied_permissions": [
+        "install_tools",
+        "substitute_delegate"
+      ],
+      "unsupported_unavailable_tools": [
+        "claude"
+      ]
+    },
+    {
+      "context_supported": false,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": true,
+      "hit": false,
+      "id": "independent-192",
+      "kind": "resource",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "codex"
+      ],
+      "unsupported_denied_permissions": [
+        "install_tools",
+        "substitute_delegate"
+      ],
+      "unsupported_unavailable_tools": [
+        "codex"
+      ]
+    },
+    {
+      "context_supported": false,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": true,
+      "hit": false,
+      "id": "independent-193",
+      "kind": "resource",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "airtable"
+      ],
+      "unsupported_denied_permissions": [
+        "network",
+        "queue_external_writes"
+      ],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": false,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-194",
+      "kind": "resource",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [
+        "external_writes"
+      ],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": false,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": true,
+      "hit": false,
+      "id": "independent-195",
+      "kind": "resource",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "notion"
+      ],
+      "unsupported_denied_permissions": [
+        "external_writes",
+        "queue_external_writes"
+      ],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": false,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": true,
+      "hit": false,
+      "id": "independent-196",
+      "kind": "resource",
+      "label_satisfied": false,
+      "mode": "Standard",
+      "selected": [
+        "box"
+      ],
+      "unsupported_denied_permissions": [
+        "create_external_shares"
+      ],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": false,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-197",
+      "kind": "resource",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [
+        "desktop_control"
+      ],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-198",
+      "kind": "ambiguous",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [
+        [
+          "apple-notes",
+          "unsupported platform linux"
+        ]
+      ],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-199",
+      "kind": "ambiguous",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-200",
+      "kind": "ambiguous",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "pdf"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-201",
+      "kind": "ambiguous",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [
+        "architecture-diagram",
+        "excalidraw"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-202",
+      "kind": "ambiguous",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-203",
+      "kind": "ambiguous",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-204",
+      "kind": "ambiguous",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-205",
+      "kind": "ambiguous",
+      "label_satisfied": true,
+      "mode": "Standard",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-001",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-002",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "xurl"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-003",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-004",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "work-unit-reporting"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-005",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-006",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "weekly-review-planning"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-007",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "vesper-skill-authoring"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-008",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "verify-with-xtask-verify"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-009",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "verify-parity-end-to-end"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-010",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-011",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "test-driven-development",
+        "rust-workspace-disk-hygiene"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-012",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "teams-meeting-pipeline",
+        "meeting-action-items"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-013",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-014",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "subprocess-kill-in-agent-tools"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-015",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "spike"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-016",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "songwriting-and-ai-music"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-017",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "songsee"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-018",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "teams-meeting-pipeline"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-019",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "simplify-code"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-020",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "session-librarian"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-021",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "serving-llms-vllm"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-022",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "sdlc-review"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-023",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "rust-workspace-disk-hygiene"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-024",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "research-paper-writing"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-025",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "requesting-code-review"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-026",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "python-debugpy"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-027",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "provider-routed-surface-decoupling"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-028",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "product-price-monitor"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-029",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "pretext"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-030",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "powerpoint"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-031",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "product-price-monitor",
+        "popular-web-designs",
+        "blocked-page-recovery"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-032",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "plan"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-033",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "pdf"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-034",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "p5js"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-035",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "openhue"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-036",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "opencode"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-037",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "ocr-and-documents"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-038",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "obsidian"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-039",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "notion"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-040",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "node-inspect-debugger",
+        "evaluating-llms-harness"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-041",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "nano-pdf"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-042",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "merge-reconciler"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-043",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "meeting-action-items"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-044",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "maps"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-045",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "manim-video"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-046",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "llm-wiki",
+        "blocked-page-recovery"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-047",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "llama-cpp"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-048",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "interactive-developer"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-049",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "inspect-live-dom",
+        "computer-use"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [
+        [
+          "imessage",
+          "unsupported platform linux"
+        ]
+      ],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-050",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "ocr-and-documents"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-051",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "songwriting-and-ai-music"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [
+        [
+          "huggingface-hub",
+          "external side effect not explicitly requested"
+        ]
+      ],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-052",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "llama-cpp"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-053",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "himalaya"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-054",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "harness-skill-gate-mechanics"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-055",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "grounded-citations",
+        "work-unit-reporting"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-056",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "google-workspace"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [
+        [
+          "github-repo-management",
+          "external side effect not explicitly requested"
+        ]
+      ],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-057",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "github-issue-to-pr",
+        "session-librarian",
+        "agent-vesper"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-058",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "github-pr-workflow"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-059",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "github-issues"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-060",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "github-issue-to-pr",
+        "github-pr-workflow"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-061",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "github-code-review"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-062",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "github-auth"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-063",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "gif-search"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [
+        [
+          "findmy",
+          "unsupported platform linux"
+        ]
+      ],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-064",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "github-auth"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-065",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "excalidraw"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-066",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "evaluating-llms-harness"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-067",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "end-to-end-workflow-acceptance"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-068",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "email-inbox-triage"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-069",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "dogfood",
+        "excalidraw"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-070",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "docx"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-071",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "document-to-action-items"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-072",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "design-md"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-073",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "cross-platform-test-pitfalls"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-074",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "computer-use"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-075",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "competitor-news-monitor"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-076",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "comfyui"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-077",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "cold-start-import-deferral"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-078",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "codex"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-079",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "codebase-inspection"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-080",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "claude-design"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-081",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "claude-code"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-082",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "box"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-083",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "blogwatcher"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-084",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "blocked-page-recovery"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-085",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "baoyu-infographic"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-086",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "ascii-video"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-087",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "ascii-art"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-088",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "arxiv"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-089",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "architecture-diagram"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [
+        [
+          "apple-reminders",
+          "unsupported platform linux"
+        ]
+      ],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-090",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "product-price-monitor"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [
+        [
+          "apple-notes",
+          "unsupported platform linux"
+        ]
+      ],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-091",
+      "kind": "positive",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "obsidian",
+        "product-price-monitor",
+        "llama-cpp"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-092",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "airtable"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-093",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "agent-vesper"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-094",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "add-glm-model-release"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-095",
+      "kind": "positive",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "acp-stdio-smoke-test"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-096",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-097",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-098",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-099",
+      "kind": "no_skill",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "weekly-review-planning"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-100",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-101",
+      "kind": "no_skill",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "ascii-video"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-102",
+      "kind": "no_skill",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "docx"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-103",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-104",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-105",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-106",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-107",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-108",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-109",
+      "kind": "no_skill",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "docx"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-110",
+      "kind": "no_skill",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "competitor-news-monitor"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-111",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-112",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-113",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-114",
+      "kind": "no_skill",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "verify-with-xtask-verify"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-115",
+      "kind": "no_skill",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "docx"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-116",
+      "kind": "no_skill",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "teams-meeting-pipeline"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-117",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-118",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-119",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-120",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-121",
+      "kind": "no_skill",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "product-price-monitor"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-122",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-123",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-124",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-125",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-126",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-127",
+      "kind": "no_skill",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "llama-cpp"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-128",
+      "kind": "no_skill",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "ascii-video"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-129",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-130",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-131",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-132",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-133",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-134",
+      "kind": "no_skill",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "interactive-developer"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-135",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-136",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-137",
+      "kind": "no_skill",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "competitor-news-monitor"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-138",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-139",
+      "kind": "no_skill",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "grounded-citations"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-140",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-141",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-142",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-143",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-144",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-145",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-146",
+      "kind": "no_skill",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "openhue"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-147",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-148",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-149",
+      "kind": "no_skill",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "harness-skill-gate-mechanics"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-150",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-151",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-152",
+      "kind": "no_skill",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "docx"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-153",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-154",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-155",
+      "kind": "no_skill",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-156",
+      "kind": "sibling",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "meeting-action-items"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-157",
+      "kind": "sibling",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "teams-meeting-pipeline"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-158",
+      "kind": "sibling",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "product-price-monitor",
+        "grounded-citations"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-159",
+      "kind": "sibling",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "excalidraw"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-160",
+      "kind": "sibling",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "architecture-diagram"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-161",
+      "kind": "sibling",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "powerpoint"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": true,
+      "hit": false,
+      "id": "independent-162",
+      "kind": "sibling",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "powerpoint"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-163",
+      "kind": "sibling",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "ocr-and-documents"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": true,
+      "hit": false,
+      "id": "independent-164",
+      "kind": "sibling",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "nano-pdf",
+        "merge-reconciler",
+        "humanizer"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-165",
+      "kind": "sibling",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "nano-pdf"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-166",
+      "kind": "sibling",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "github-code-review",
+        "github-pr-workflow"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-167",
+      "kind": "sibling",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "github-issues"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [
+        [
+          "github-repo-management",
+          "external side effect not explicitly requested"
+        ]
+      ],
+      "extra_activation": true,
+      "forbidden_activation": true,
+      "hit": false,
+      "id": "independent-168",
+      "kind": "sibling",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "github-pr-workflow"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-169",
+      "kind": "sibling",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "github-auth"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-170",
+      "kind": "sibling",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "python-debugpy"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-171",
+      "kind": "sibling",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "node-inspect-debugger"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-172",
+      "kind": "sibling",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "llama-cpp"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-173",
+      "kind": "sibling",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "serving-llms-vllm"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [
+        [
+          "huggingface-hub",
+          "external side effect not explicitly requested"
+        ]
+      ],
+      "extra_activation": true,
+      "forbidden_activation": true,
+      "hit": false,
+      "id": "independent-174",
+      "kind": "sibling",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "llama-cpp"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-175",
+      "kind": "sibling",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "evaluating-llms-harness"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-176",
+      "kind": "sibling",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "weights-and-biases"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [
+        [
+          "apple-reminders",
+          "unsupported platform linux"
+        ]
+      ],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-177",
+      "kind": "sibling",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "humanizer"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [
+        [
+          "apple-notes",
+          "unsupported platform linux"
+        ]
+      ],
+      "extra_activation": true,
+      "forbidden_activation": true,
+      "hit": false,
+      "id": "independent-178",
+      "kind": "sibling",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "obsidian"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-179",
+      "kind": "sibling",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "obsidian"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-180",
+      "kind": "sibling",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "airtable"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": true,
+      "hit": false,
+      "id": "independent-181",
+      "kind": "sibling",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "ascii-video"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": true,
+      "hit": true,
+      "id": "independent-182",
+      "kind": "sibling",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "ascii-video",
+        "ascii-art"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-183",
+      "kind": "sibling",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "songsee"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-184",
+      "kind": "sibling",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "songwriting-and-ai-music"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-185",
+      "kind": "sibling",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "inspect-live-dom"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": false,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": true,
+      "hit": false,
+      "id": "independent-186",
+      "kind": "resource",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "openhue"
+      ],
+      "unsupported_denied_permissions": [
+        "network"
+      ],
+      "unsupported_unavailable_tools": [
+        "openhue"
+      ]
+    },
+    {
+      "context_supported": false,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-187",
+      "kind": "resource",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "session-librarian"
+      ],
+      "unsupported_denied_permissions": [
+        "remote_access"
+      ],
+      "unsupported_unavailable_tools": [
+        "imsg",
+        "macos-host"
+      ]
+    },
+    {
+      "context_supported": false,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-188",
+      "kind": "resource",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "work-unit-reporting",
+        "dogfood"
+      ],
+      "unsupported_denied_permissions": [
+        "remote_access"
+      ],
+      "unsupported_unavailable_tools": [
+        "FindMy.app",
+        "macos-host"
+      ]
+    },
+    {
+      "context_supported": false,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": true,
+      "hit": false,
+      "id": "independent-189",
+      "kind": "resource",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "touchdesigner-mcp"
+      ],
+      "unsupported_denied_permissions": [
+        "install_tools",
+        "connect_services"
+      ],
+      "unsupported_unavailable_tools": [
+        "twozero"
+      ]
+    },
+    {
+      "context_supported": false,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": true,
+      "hit": false,
+      "id": "independent-190",
+      "kind": "resource",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "opencode",
+        "simplify-code"
+      ],
+      "unsupported_denied_permissions": [
+        "install_tools",
+        "substitute_delegate"
+      ],
+      "unsupported_unavailable_tools": [
+        "opencode"
+      ]
+    },
+    {
+      "context_supported": false,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": true,
+      "hit": false,
+      "id": "independent-191",
+      "kind": "resource",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "claude-code"
+      ],
+      "unsupported_denied_permissions": [
+        "install_tools",
+        "substitute_delegate"
+      ],
+      "unsupported_unavailable_tools": [
+        "claude"
+      ]
+    },
+    {
+      "context_supported": false,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": true,
+      "hit": false,
+      "id": "independent-192",
+      "kind": "resource",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "codex"
+      ],
+      "unsupported_denied_permissions": [
+        "install_tools",
+        "substitute_delegate"
+      ],
+      "unsupported_unavailable_tools": [
+        "codex"
+      ]
+    },
+    {
+      "context_supported": false,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": true,
+      "hit": false,
+      "id": "independent-193",
+      "kind": "resource",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "airtable",
+        "blocked-page-recovery"
+      ],
+      "unsupported_denied_permissions": [
+        "network",
+        "queue_external_writes"
+      ],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": false,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-194",
+      "kind": "resource",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "session-librarian",
+        "work-unit-reporting"
+      ],
+      "unsupported_denied_permissions": [
+        "external_writes"
+      ],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": false,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": true,
+      "hit": false,
+      "id": "independent-195",
+      "kind": "resource",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "notion"
+      ],
+      "unsupported_denied_permissions": [
+        "external_writes",
+        "queue_external_writes"
+      ],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": false,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": true,
+      "hit": false,
+      "id": "independent-196",
+      "kind": "resource",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "box",
+        "blocked-page-recovery",
+        "harness-skill-gate-mechanics"
+      ],
+      "unsupported_denied_permissions": [
+        "create_external_shares"
+      ],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": false,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": true,
+      "hit": false,
+      "id": "independent-197",
+      "kind": "resource",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "work-unit-reporting",
+        "computer-use"
+      ],
+      "unsupported_denied_permissions": [
+        "desktop_control"
+      ],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-198",
+      "kind": "ambiguous",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "powerpoint"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [
+        [
+          "apple-notes",
+          "unsupported platform linux"
+        ]
+      ],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-199",
+      "kind": "ambiguous",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "obsidian"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-200",
+      "kind": "ambiguous",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "pdf"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-201",
+      "kind": "ambiguous",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "architecture-diagram"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-202",
+      "kind": "ambiguous",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "claude-code"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-203",
+      "kind": "ambiguous",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "meeting-action-items"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": false,
+      "forbidden_activation": false,
+      "hit": true,
+      "id": "independent-204",
+      "kind": "ambiguous",
+      "label_satisfied": true,
+      "mode": "Enhanced",
+      "selected": [
+        "weekly-review-planning"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    },
+    {
+      "context_supported": true,
+      "expected_rejections": [],
+      "extra_activation": true,
+      "forbidden_activation": false,
+      "hit": false,
+      "id": "independent-205",
+      "kind": "ambiguous",
+      "label_satisfied": false,
+      "mode": "Enhanced",
+      "selected": [
+        "rust-workspace-disk-hygiene"
+      ],
+      "unsupported_denied_permissions": [],
+      "unsupported_unavailable_tools": []
+    }
+  ],
+  "registered_tools": [
+    "browser_ui",
+    "delegate_task",
+    "read_file",
+    "read_skill",
+    "run_command",
+    "web_fetch",
+    "web_reader",
+    "web_search",
+    "write_file"
+  ],
+  "routing_source_sha256": "863db51f3967689a742862de74daef3da7f127a2e69d4439c8c6cb8be891f578",
+  "status": "measurement; failed quality remains visible",
+  "summary": {
+    "Enhanced:ambiguous": [
+      8,
+      6,
+      0,
+      2,
+      0,
+      6,
+      0
+    ],
+    "Enhanced:no_skill": [
+      60,
+      0,
+      43,
+      17,
+      0,
+      43,
+      0
+    ],
+    "Enhanced:positive": [
+      95,
+      82,
+      5,
+      17,
+      0,
+      73,
+      0
+    ],
+    "Enhanced:resource": [
+      12,
+      0,
+      0,
+      12,
+      9,
+      0,
+      12
+    ],
+    "Enhanced:sibling": [
+      30,
+      22,
+      0,
+      10,
+      7,
+      20,
+      0
+    ],
+    "Standard:ambiguous": [
+      8,
+      2,
+      6,
+      0,
+      0,
+      8,
+      0
+    ],
+    "Standard:no_skill": [
+      60,
+      0,
+      55,
+      5,
+      0,
+      55,
+      0
+    ],
+    "Standard:positive": [
+      95,
+      60,
+      33,
+      23,
+      0,
+      39,
+      0
+    ],
+    "Standard:resource": [
+      12,
+      0,
+      4,
+      8,
+      8,
+      0,
+      12
+    ],
+    "Standard:sibling": [
+      30,
+      15,
+      9,
+      12,
+      10,
+      9,
+      0
+    ]
+  }
+}

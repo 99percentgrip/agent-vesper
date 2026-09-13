@@ -1,0 +1,2519 @@
+{
+  "status": "retrieval-only experiment; native contracts and promotion not established",
+  "model": "sentence-transformers/all-MiniLM-L6-v2",
+  "revision": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+  "model_sha256": "6fd5d72fe4589f189f8ebc006442dbb529bb7ce38f8082112682524616046452",
+  "tokenizer_sha256": "be50c3628f2bf5bb5e3a7f17b1f74611b2561a3a27eeab05e5aa30f411572037",
+  "metadata_sha256": "96b28ecb189cbef73ef66b70a65571c3baf46d92b7320d1b2e8ccc8774991482",
+  "dimensions": 384,
+  "model_load_ms": 82.35262599191628,
+  "catalog_encode_ms": 780.4304219898768,
+  "query_warm_p95_ms": 3.214173993910663,
+  "vector_index_bytes": 291840,
+  "development_threshold": 0.3800000000000002,
+  "summary": {
+    "development:positive": {
+      "n": 40,
+      "hits": 34,
+      "abstentions": 4,
+      "activations": 36
+    },
+    "held_out:positive": {
+      "n": 40,
+      "hits": 36,
+      "abstentions": 3,
+      "activations": 37
+    },
+    "development:no_skill": {
+      "n": 20,
+      "hits": 0,
+      "abstentions": 20,
+      "activations": 0
+    },
+    "held_out:no_skill": {
+      "n": 20,
+      "hits": 0,
+      "abstentions": 20,
+      "activations": 0
+    }
+  },
+  "predictions": [
+    {
+      "id": "q001",
+      "split": "development",
+      "selected": [
+        "xlsx"
+      ],
+      "top3": [
+        {
+          "slug": "xlsx",
+          "cosine": 0.3824856579781776
+        },
+        {
+          "slug": "pdf",
+          "cosine": 0.3173626664557799
+        },
+        {
+          "slug": "nano-pdf",
+          "cosine": 0.23241864737466125
+        }
+      ]
+    },
+    {
+      "id": "q002",
+      "split": "held_out",
+      "selected": [
+        "xlsx"
+      ],
+      "top3": [
+        {
+          "slug": "xlsx",
+          "cosine": 0.4705754543451898
+        },
+        {
+          "slug": "excalidraw",
+          "cosine": 0.19622697702847697
+        },
+        {
+          "slug": "pdf",
+          "cosine": 0.19393704250770138
+        }
+      ]
+    },
+    {
+      "id": "q003",
+      "split": "development",
+      "selected": [
+        "xlsx"
+      ],
+      "top3": [
+        {
+          "slug": "xlsx",
+          "cosine": 0.514203145313972
+        },
+        {
+          "slug": "pdf",
+          "cosine": 0.2347053533633358
+        },
+        {
+          "slug": "document-to-action-items",
+          "cosine": 0.22765480901225607
+        }
+      ]
+    },
+    {
+      "id": "q004",
+      "split": "held_out",
+      "selected": [
+        "xlsx"
+      ],
+      "top3": [
+        {
+          "slug": "xlsx",
+          "cosine": 0.49074517528487216
+        },
+        {
+          "slug": "pdf",
+          "cosine": 0.29993440444889985
+        },
+        {
+          "slug": "nano-pdf",
+          "cosine": 0.26848463016634283
+        }
+      ]
+    },
+    {
+      "id": "q005",
+      "split": "development",
+      "selected": [
+        "xlsx"
+      ],
+      "top3": [
+        {
+          "slug": "xlsx",
+          "cosine": 0.4096933762696671
+        },
+        {
+          "slug": "pdf",
+          "cosine": 0.23382449047826015
+        },
+        {
+          "slug": "docx",
+          "cosine": 0.1927098260894537
+        }
+      ]
+    },
+    {
+      "id": "q006",
+      "split": "held_out",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "xlsx",
+          "cosine": 0.22510691437144276
+        },
+        {
+          "slug": "weekly-review-planning",
+          "cosine": 0.2240443004426242
+        },
+        {
+          "slug": "popular-web-designs",
+          "cosine": 0.18767781285107812
+        }
+      ]
+    },
+    {
+      "id": "q007",
+      "split": "development",
+      "selected": [
+        "docx",
+        "nano-pdf"
+      ],
+      "top3": [
+        {
+          "slug": "docx",
+          "cosine": 0.4899174126300014
+        },
+        {
+          "slug": "nano-pdf",
+          "cosine": 0.47304672875937115
+        },
+        {
+          "slug": "ocr-and-documents",
+          "cosine": 0.3574955254934992
+        }
+      ]
+    },
+    {
+      "id": "q008",
+      "split": "held_out",
+      "selected": [
+        "docx"
+      ],
+      "top3": [
+        {
+          "slug": "docx",
+          "cosine": 0.5471799418016083
+        },
+        {
+          "slug": "pdf",
+          "cosine": 0.3444859083139288
+        },
+        {
+          "slug": "research-paper-writing",
+          "cosine": 0.3213550484545862
+        }
+      ]
+    },
+    {
+      "id": "q009",
+      "split": "development",
+      "selected": [
+        "docx"
+      ],
+      "top3": [
+        {
+          "slug": "docx",
+          "cosine": 0.40270713233550054
+        },
+        {
+          "slug": "nano-pdf",
+          "cosine": 0.35435404601380316
+        },
+        {
+          "slug": "humanizer",
+          "cosine": 0.29413365247963674
+        }
+      ]
+    },
+    {
+      "id": "q010",
+      "split": "held_out",
+      "selected": [
+        "docx"
+      ],
+      "top3": [
+        {
+          "slug": "docx",
+          "cosine": 0.46185512954256575
+        },
+        {
+          "slug": "pdf",
+          "cosine": 0.33570364360168153
+        },
+        {
+          "slug": "nano-pdf",
+          "cosine": 0.33235982227626965
+        }
+      ]
+    },
+    {
+      "id": "q011",
+      "split": "development",
+      "selected": [
+        "ocr-and-documents"
+      ],
+      "top3": [
+        {
+          "slug": "ocr-and-documents",
+          "cosine": 0.3935775431215502
+        },
+        {
+          "slug": "docx",
+          "cosine": 0.36883065650604907
+        },
+        {
+          "slug": "document-to-action-items",
+          "cosine": 0.3361954676535092
+        }
+      ]
+    },
+    {
+      "id": "q012",
+      "split": "held_out",
+      "selected": [
+        "docx",
+        "nano-pdf",
+        "document-to-action-items"
+      ],
+      "top3": [
+        {
+          "slug": "docx",
+          "cosine": 0.5309575729038756
+        },
+        {
+          "slug": "nano-pdf",
+          "cosine": 0.5117955727018676
+        },
+        {
+          "slug": "document-to-action-items",
+          "cosine": 0.47910693383431474
+        }
+      ]
+    },
+    {
+      "id": "q013",
+      "split": "development",
+      "selected": [
+        "powerpoint"
+      ],
+      "top3": [
+        {
+          "slug": "powerpoint",
+          "cosine": 0.48847571644012494
+        },
+        {
+          "slug": "claude-design",
+          "cosine": 0.27711105835040983
+        },
+        {
+          "slug": "spike",
+          "cosine": 0.26039464257692985
+        }
+      ]
+    },
+    {
+      "id": "q014",
+      "split": "held_out",
+      "selected": [
+        "powerpoint"
+      ],
+      "top3": [
+        {
+          "slug": "powerpoint",
+          "cosine": 0.38074496893888393
+        },
+        {
+          "slug": "pdf",
+          "cosine": 0.30640268719912955
+        },
+        {
+          "slug": "baoyu-infographic",
+          "cosine": 0.30079975313637347
+        }
+      ]
+    },
+    {
+      "id": "q015",
+      "split": "development",
+      "selected": [
+        "powerpoint"
+      ],
+      "top3": [
+        {
+          "slug": "powerpoint",
+          "cosine": 0.5540271753561803
+        },
+        {
+          "slug": "baoyu-infographic",
+          "cosine": 0.3273854038023973
+        },
+        {
+          "slug": "songsee",
+          "cosine": 0.27552465763704487
+        }
+      ]
+    },
+    {
+      "id": "q016",
+      "split": "held_out",
+      "selected": [
+        "powerpoint"
+      ],
+      "top3": [
+        {
+          "slug": "powerpoint",
+          "cosine": 0.5223263451837202
+        },
+        {
+          "slug": "claude-design",
+          "cosine": 0.3629909758389504
+        },
+        {
+          "slug": "pretext",
+          "cosine": 0.3027039730670342
+        }
+      ]
+    },
+    {
+      "id": "q017",
+      "split": "development",
+      "selected": [
+        "powerpoint"
+      ],
+      "top3": [
+        {
+          "slug": "powerpoint",
+          "cosine": 0.45938965126545384
+        },
+        {
+          "slug": "ocr-and-documents",
+          "cosine": 0.33786784893049304
+        },
+        {
+          "slug": "ascii-art",
+          "cosine": 0.2652507268664275
+        }
+      ]
+    },
+    {
+      "id": "q018",
+      "split": "held_out",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "songsee",
+          "cosine": 0.32100249297722405
+        },
+        {
+          "slug": "powerpoint",
+          "cosine": 0.31440371476604045
+        },
+        {
+          "slug": "apple-notes",
+          "cosine": 0.2669458179932772
+        }
+      ]
+    },
+    {
+      "id": "q019",
+      "split": "development",
+      "selected": [
+        "pdf",
+        "docx"
+      ],
+      "top3": [
+        {
+          "slug": "pdf",
+          "cosine": 0.4843574557009956
+        },
+        {
+          "slug": "docx",
+          "cosine": 0.39787321378547247
+        },
+        {
+          "slug": "ocr-and-documents",
+          "cosine": 0.3632834561129703
+        }
+      ]
+    },
+    {
+      "id": "q020",
+      "split": "held_out",
+      "selected": [
+        "pdf"
+      ],
+      "top3": [
+        {
+          "slug": "pdf",
+          "cosine": 0.5272162257389612
+        },
+        {
+          "slug": "ocr-and-documents",
+          "cosine": 0.311386446479534
+        },
+        {
+          "slug": "nano-pdf",
+          "cosine": 0.3002352815263728
+        }
+      ]
+    },
+    {
+      "id": "q021",
+      "split": "development",
+      "selected": [
+        "pdf",
+        "docx",
+        "document-to-action-items"
+      ],
+      "top3": [
+        {
+          "slug": "pdf",
+          "cosine": 0.5426875969126528
+        },
+        {
+          "slug": "docx",
+          "cosine": 0.4524687591873338
+        },
+        {
+          "slug": "document-to-action-items",
+          "cosine": 0.43150113880984386
+        }
+      ]
+    },
+    {
+      "id": "q022",
+      "split": "held_out",
+      "selected": [
+        "pdf",
+        "ocr-and-documents",
+        "docx"
+      ],
+      "top3": [
+        {
+          "slug": "pdf",
+          "cosine": 0.419243228094985
+        },
+        {
+          "slug": "ocr-and-documents",
+          "cosine": 0.41379164138147184
+        },
+        {
+          "slug": "docx",
+          "cosine": 0.38104294595151983
+        }
+      ]
+    },
+    {
+      "id": "q023",
+      "split": "development",
+      "selected": [
+        "pdf"
+      ],
+      "top3": [
+        {
+          "slug": "pdf",
+          "cosine": 0.5034437933839478
+        },
+        {
+          "slug": "docx",
+          "cosine": 0.36252972667123035
+        },
+        {
+          "slug": "ocr-and-documents",
+          "cosine": 0.34510336965362387
+        }
+      ]
+    },
+    {
+      "id": "q024",
+      "split": "held_out",
+      "selected": [
+        "ocr-and-documents",
+        "pdf",
+        "docx"
+      ],
+      "top3": [
+        {
+          "slug": "ocr-and-documents",
+          "cosine": 0.474177344693031
+        },
+        {
+          "slug": "pdf",
+          "cosine": 0.44475550045088524
+        },
+        {
+          "slug": "docx",
+          "cosine": 0.38954923309700146
+        }
+      ]
+    },
+    {
+      "id": "q025",
+      "split": "development",
+      "selected": [
+        "arxiv"
+      ],
+      "top3": [
+        {
+          "slug": "arxiv",
+          "cosine": 0.476488955702534
+        },
+        {
+          "slug": "research-paper-writing",
+          "cosine": 0.27456412383491596
+        },
+        {
+          "slug": "ocr-and-documents",
+          "cosine": 0.24748242822108138
+        }
+      ]
+    },
+    {
+      "id": "q026",
+      "split": "held_out",
+      "selected": [
+        "arxiv",
+        "ocr-and-documents"
+      ],
+      "top3": [
+        {
+          "slug": "arxiv",
+          "cosine": 0.6854384672091501
+        },
+        {
+          "slug": "ocr-and-documents",
+          "cosine": 0.4232391561578869
+        },
+        {
+          "slug": "research-paper-writing",
+          "cosine": 0.3403773473332504
+        }
+      ]
+    },
+    {
+      "id": "q027",
+      "split": "development",
+      "selected": [
+        "arxiv",
+        "research-paper-writing"
+      ],
+      "top3": [
+        {
+          "slug": "arxiv",
+          "cosine": 0.7632405566120035
+        },
+        {
+          "slug": "research-paper-writing",
+          "cosine": 0.4163108584177857
+        },
+        {
+          "slug": "ocr-and-documents",
+          "cosine": 0.37848959419965605
+        }
+      ]
+    },
+    {
+      "id": "q028",
+      "split": "held_out",
+      "selected": [
+        "arxiv"
+      ],
+      "top3": [
+        {
+          "slug": "arxiv",
+          "cosine": 0.48125880522498093
+        },
+        {
+          "slug": "weights-and-biases",
+          "cosine": 0.3360077151683391
+        },
+        {
+          "slug": "serving-llms-vllm",
+          "cosine": 0.3260766759383421
+        }
+      ]
+    },
+    {
+      "id": "q029",
+      "split": "development",
+      "selected": [
+        "arxiv"
+      ],
+      "top3": [
+        {
+          "slug": "arxiv",
+          "cosine": 0.4823981023735392
+        },
+        {
+          "slug": "weights-and-biases",
+          "cosine": 0.33126180302056013
+        },
+        {
+          "slug": "serving-llms-vllm",
+          "cosine": 0.26684232757300563
+        }
+      ]
+    },
+    {
+      "id": "q030",
+      "split": "held_out",
+      "selected": [
+        "arxiv"
+      ],
+      "top3": [
+        {
+          "slug": "arxiv",
+          "cosine": 0.5067911128480131
+        },
+        {
+          "slug": "research-paper-writing",
+          "cosine": 0.3380815975456916
+        },
+        {
+          "slug": "comfyui",
+          "cosine": 0.2681212096951495
+        }
+      ]
+    },
+    {
+      "id": "q031",
+      "split": "development",
+      "selected": [
+        "maps"
+      ],
+      "top3": [
+        {
+          "slug": "maps",
+          "cosine": 0.38088732031669614
+        },
+        {
+          "slug": "findmy",
+          "cosine": 0.25344983662325304
+        },
+        {
+          "slug": "sdlc-review",
+          "cosine": 0.157392405232077
+        }
+      ]
+    },
+    {
+      "id": "q032",
+      "split": "held_out",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "maps",
+          "cosine": 0.3750204809064366
+        },
+        {
+          "slug": "opencode",
+          "cosine": 0.20025658922352518
+        },
+        {
+          "slug": "claude-code",
+          "cosine": 0.1868581822772338
+        }
+      ]
+    },
+    {
+      "id": "q033",
+      "split": "development",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "maps",
+          "cosine": 0.22762079829626425
+        },
+        {
+          "slug": "findmy",
+          "cosine": 0.19670288982184622
+        },
+        {
+          "slug": "product-price-monitor",
+          "cosine": 0.17438401942931
+        }
+      ]
+    },
+    {
+      "id": "q034",
+      "split": "held_out",
+      "selected": [
+        "maps"
+      ],
+      "top3": [
+        {
+          "slug": "maps",
+          "cosine": 0.504228247775017
+        },
+        {
+          "slug": "findmy",
+          "cosine": 0.2792763284817324
+        },
+        {
+          "slug": "provider-routed-surface-decoupling",
+          "cosine": 0.2011448980008749
+        }
+      ]
+    },
+    {
+      "id": "q035",
+      "split": "development",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "maps",
+          "cosine": 0.33932239693530464
+        },
+        {
+          "slug": "findmy",
+          "cosine": 0.18991014294698916
+        },
+        {
+          "slug": "product-price-monitor",
+          "cosine": 0.12291036323421665
+        }
+      ]
+    },
+    {
+      "id": "q036",
+      "split": "held_out",
+      "selected": [
+        "maps"
+      ],
+      "top3": [
+        {
+          "slug": "maps",
+          "cosine": 0.5266734264729074
+        },
+        {
+          "slug": "findmy",
+          "cosine": 0.34260926984494955
+        },
+        {
+          "slug": "songsee",
+          "cosine": 0.1565601253431486
+        }
+      ]
+    },
+    {
+      "id": "q037",
+      "split": "development",
+      "selected": [
+        "requesting-code-review",
+        "github-code-review",
+        "github-issue-to-pr"
+      ],
+      "top3": [
+        {
+          "slug": "requesting-code-review",
+          "cosine": 0.5383666804771244
+        },
+        {
+          "slug": "github-code-review",
+          "cosine": 0.4546110524818311
+        },
+        {
+          "slug": "github-issue-to-pr",
+          "cosine": 0.4333240526828496
+        }
+      ]
+    },
+    {
+      "id": "q038",
+      "split": "held_out",
+      "selected": [
+        "github-issue-to-pr",
+        "github-code-review",
+        "github-pr-workflow"
+      ],
+      "top3": [
+        {
+          "slug": "github-issue-to-pr",
+          "cosine": 0.574839077153806
+        },
+        {
+          "slug": "github-code-review",
+          "cosine": 0.5108786890151606
+        },
+        {
+          "slug": "github-pr-workflow",
+          "cosine": 0.4724375690612665
+        }
+      ]
+    },
+    {
+      "id": "q039",
+      "split": "development",
+      "selected": [
+        "requesting-code-review",
+        "github-code-review",
+        "weekly-review-planning"
+      ],
+      "top3": [
+        {
+          "slug": "requesting-code-review",
+          "cosine": 0.4915411131494065
+        },
+        {
+          "slug": "github-code-review",
+          "cosine": 0.4801761221623153
+        },
+        {
+          "slug": "weekly-review-planning",
+          "cosine": 0.3944298225236991
+        }
+      ]
+    },
+    {
+      "id": "q040",
+      "split": "held_out",
+      "selected": [
+        "github-code-review",
+        "github-issue-to-pr",
+        "github-issues"
+      ],
+      "top3": [
+        {
+          "slug": "github-code-review",
+          "cosine": 0.6201362686267279
+        },
+        {
+          "slug": "github-issue-to-pr",
+          "cosine": 0.5491320554316286
+        },
+        {
+          "slug": "github-issues",
+          "cosine": 0.517440437930203
+        }
+      ]
+    },
+    {
+      "id": "q041",
+      "split": "development",
+      "selected": [
+        "github-code-review",
+        "codebase-inspection"
+      ],
+      "top3": [
+        {
+          "slug": "github-code-review",
+          "cosine": 0.5468096808851997
+        },
+        {
+          "slug": "codebase-inspection",
+          "cosine": 0.38106007731250036
+        },
+        {
+          "slug": "test-driven-development",
+          "cosine": 0.319197527711682
+        }
+      ]
+    },
+    {
+      "id": "q042",
+      "split": "held_out",
+      "selected": [
+        "github-issue-to-pr",
+        "requesting-code-review",
+        "github-code-review"
+      ],
+      "top3": [
+        {
+          "slug": "github-issue-to-pr",
+          "cosine": 0.433320075090159
+        },
+        {
+          "slug": "requesting-code-review",
+          "cosine": 0.42241902483738863
+        },
+        {
+          "slug": "github-code-review",
+          "cosine": 0.419747018477961
+        }
+      ]
+    },
+    {
+      "id": "q043",
+      "split": "development",
+      "selected": [
+        "plan"
+      ],
+      "top3": [
+        {
+          "slug": "plan",
+          "cosine": 0.41942138032444565
+        },
+        {
+          "slug": "simplify-code",
+          "cosine": 0.3406619413176697
+        },
+        {
+          "slug": "test-driven-development",
+          "cosine": 0.3226293543892719
+        }
+      ]
+    },
+    {
+      "id": "q044",
+      "split": "held_out",
+      "selected": [
+        "plan"
+      ],
+      "top3": [
+        {
+          "slug": "plan",
+          "cosine": 0.4175068762176714
+        },
+        {
+          "slug": "llm-wiki",
+          "cosine": 0.37514695618689115
+        },
+        {
+          "slug": "notion",
+          "cosine": 0.30697727008650083
+        }
+      ]
+    },
+    {
+      "id": "q045",
+      "split": "development",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "docx",
+          "cosine": 0.34534064218337424
+        },
+        {
+          "slug": "design-md",
+          "cosine": 0.33896681440174387
+        },
+        {
+          "slug": "codex",
+          "cosine": 0.30786462451790947
+        }
+      ]
+    },
+    {
+      "id": "q046",
+      "split": "held_out",
+      "selected": [
+        "plan",
+        "llm-wiki"
+      ],
+      "top3": [
+        {
+          "slug": "plan",
+          "cosine": 0.41255122636934555
+        },
+        {
+          "slug": "llm-wiki",
+          "cosine": 0.39049321947863935
+        },
+        {
+          "slug": "document-to-action-items",
+          "cosine": 0.3372742110899652
+        }
+      ]
+    },
+    {
+      "id": "q047",
+      "split": "development",
+      "selected": [
+        "document-to-action-items"
+      ],
+      "top3": [
+        {
+          "slug": "document-to-action-items",
+          "cosine": 0.413608432531143
+        },
+        {
+          "slug": "work-unit-reporting",
+          "cosine": 0.3531647292495583
+        },
+        {
+          "slug": "plan",
+          "cosine": 0.33566637825568374
+        }
+      ]
+    },
+    {
+      "id": "q048",
+      "split": "held_out",
+      "selected": [
+        "llm-wiki",
+        "document-to-action-items"
+      ],
+      "top3": [
+        {
+          "slug": "llm-wiki",
+          "cosine": 0.4307100060492367
+        },
+        {
+          "slug": "document-to-action-items",
+          "cosine": 0.3996893121333085
+        },
+        {
+          "slug": "plan",
+          "cosine": 0.3410437692510511
+        }
+      ]
+    },
+    {
+      "id": "q049",
+      "split": "development",
+      "selected": [
+        "dogfood",
+        "requesting-code-review"
+      ],
+      "top3": [
+        {
+          "slug": "dogfood",
+          "cosine": 0.5396808194427368
+        },
+        {
+          "slug": "requesting-code-review",
+          "cosine": 0.39289800410714265
+        },
+        {
+          "slug": "github-issues",
+          "cosine": 0.3732530716711462
+        }
+      ]
+    },
+    {
+      "id": "q050",
+      "split": "held_out",
+      "selected": [
+        "dogfood"
+      ],
+      "top3": [
+        {
+          "slug": "dogfood",
+          "cosine": 0.4583321956597809
+        },
+        {
+          "slug": "interactive-developer",
+          "cosine": 0.3663064200677597
+        },
+        {
+          "slug": "work-unit-reporting",
+          "cosine": 0.3067328197352577
+        }
+      ]
+    },
+    {
+      "id": "q051",
+      "split": "development",
+      "selected": [
+        "dogfood",
+        "test-driven-development",
+        "codebase-inspection"
+      ],
+      "top3": [
+        {
+          "slug": "dogfood",
+          "cosine": 0.4197745725022271
+        },
+        {
+          "slug": "test-driven-development",
+          "cosine": 0.39873123923306275
+        },
+        {
+          "slug": "codebase-inspection",
+          "cosine": 0.3905991514226014
+        }
+      ]
+    },
+    {
+      "id": "q052",
+      "split": "held_out",
+      "selected": [
+        "dogfood",
+        "inspect-live-dom"
+      ],
+      "top3": [
+        {
+          "slug": "dogfood",
+          "cosine": 0.5189218207911871
+        },
+        {
+          "slug": "inspect-live-dom",
+          "cosine": 0.39025708176067525
+        },
+        {
+          "slug": "popular-web-designs",
+          "cosine": 0.31229851361379335
+        }
+      ]
+    },
+    {
+      "id": "q053",
+      "split": "development",
+      "selected": [
+        "dogfood"
+      ],
+      "top3": [
+        {
+          "slug": "dogfood",
+          "cosine": 0.5687303721460195
+        },
+        {
+          "slug": "grounded-citations",
+          "cosine": 0.32881628741878466
+        },
+        {
+          "slug": "email-inbox-triage",
+          "cosine": 0.31079811083226416
+        }
+      ]
+    },
+    {
+      "id": "q054",
+      "split": "held_out",
+      "selected": [
+        "dogfood",
+        "test-driven-development"
+      ],
+      "top3": [
+        {
+          "slug": "dogfood",
+          "cosine": 0.4386997551694277
+        },
+        {
+          "slug": "test-driven-development",
+          "cosine": 0.4011544214604747
+        },
+        {
+          "slug": "interactive-developer",
+          "cosine": 0.34081677352257433
+        }
+      ]
+    },
+    {
+      "id": "q055",
+      "split": "development",
+      "selected": [
+        "excalidraw",
+        "architecture-diagram"
+      ],
+      "top3": [
+        {
+          "slug": "excalidraw",
+          "cosine": 0.8348653844669073
+        },
+        {
+          "slug": "architecture-diagram",
+          "cosine": 0.47445752047065676
+        },
+        {
+          "slug": "ascii-art",
+          "cosine": 0.32073378092619903
+        }
+      ]
+    },
+    {
+      "id": "q056",
+      "split": "held_out",
+      "selected": [
+        "excalidraw"
+      ],
+      "top3": [
+        {
+          "slug": "excalidraw",
+          "cosine": 0.6360738454236554
+        },
+        {
+          "slug": "comfyui",
+          "cosine": 0.2566235944215593
+        },
+        {
+          "slug": "github-pr-workflow",
+          "cosine": 0.24187692545480055
+        }
+      ]
+    },
+    {
+      "id": "q057",
+      "split": "development",
+      "selected": [
+        "excalidraw"
+      ],
+      "top3": [
+        {
+          "slug": "excalidraw",
+          "cosine": 0.5994182767697859
+        },
+        {
+          "slug": "ascii-art",
+          "cosine": 0.28678649249382765
+        },
+        {
+          "slug": "architecture-diagram",
+          "cosine": 0.2731548931585415
+        }
+      ]
+    },
+    {
+      "id": "q058",
+      "split": "held_out",
+      "selected": [
+        "excalidraw"
+      ],
+      "top3": [
+        {
+          "slug": "excalidraw",
+          "cosine": 0.6400769162706181
+        },
+        {
+          "slug": "architecture-diagram",
+          "cosine": 0.31336697496305466
+        },
+        {
+          "slug": "llama-cpp",
+          "cosine": 0.278562888491988
+        }
+      ]
+    },
+    {
+      "id": "q059",
+      "split": "development",
+      "selected": [
+        "excalidraw"
+      ],
+      "top3": [
+        {
+          "slug": "excalidraw",
+          "cosine": 0.670830604459845
+        },
+        {
+          "slug": "ascii-video",
+          "cosine": 0.2630620890524953
+        },
+        {
+          "slug": "teams-meeting-pipeline",
+          "cosine": 0.21669909656667077
+        }
+      ]
+    },
+    {
+      "id": "q060",
+      "split": "held_out",
+      "selected": [
+        "excalidraw"
+      ],
+      "top3": [
+        {
+          "slug": "excalidraw",
+          "cosine": 0.7371497133144317
+        },
+        {
+          "slug": "architecture-diagram",
+          "cosine": 0.334640982219133
+        },
+        {
+          "slug": "ascii-art",
+          "cosine": 0.32836067010204806
+        }
+      ]
+    },
+    {
+      "id": "q061",
+      "split": "development",
+      "selected": [
+        "python-debugpy",
+        "codebase-inspection"
+      ],
+      "top3": [
+        {
+          "slug": "python-debugpy",
+          "cosine": 0.6505741401236907
+        },
+        {
+          "slug": "codebase-inspection",
+          "cosine": 0.3850883117241896
+        },
+        {
+          "slug": "acp-stdio-smoke-test",
+          "cosine": 0.35559490511515107
+        }
+      ]
+    },
+    {
+      "id": "q062",
+      "split": "held_out",
+      "selected": [
+        "python-debugpy"
+      ],
+      "top3": [
+        {
+          "slug": "python-debugpy",
+          "cosine": 0.6847407031899453
+        },
+        {
+          "slug": "acp-stdio-smoke-test",
+          "cosine": 0.35679759937483485
+        },
+        {
+          "slug": "node-inspect-debugger",
+          "cosine": 0.3191475007426699
+        }
+      ]
+    },
+    {
+      "id": "q063",
+      "split": "development",
+      "selected": [
+        "python-debugpy",
+        "codebase-inspection"
+      ],
+      "top3": [
+        {
+          "slug": "python-debugpy",
+          "cosine": 0.5979427313806965
+        },
+        {
+          "slug": "codebase-inspection",
+          "cosine": 0.4331744855433027
+        },
+        {
+          "slug": "claude-code",
+          "cosine": 0.35855023382999074
+        }
+      ]
+    },
+    {
+      "id": "q064",
+      "split": "held_out",
+      "selected": [
+        "python-debugpy"
+      ],
+      "top3": [
+        {
+          "slug": "python-debugpy",
+          "cosine": 0.5428890247216195
+        },
+        {
+          "slug": "node-inspect-debugger",
+          "cosine": 0.3357523427107586
+        },
+        {
+          "slug": "systematic-debugging",
+          "cosine": 0.30148691703996067
+        }
+      ]
+    },
+    {
+      "id": "q065",
+      "split": "development",
+      "selected": [
+        "python-debugpy",
+        "codebase-inspection"
+      ],
+      "top3": [
+        {
+          "slug": "python-debugpy",
+          "cosine": 0.5463193322086771
+        },
+        {
+          "slug": "codebase-inspection",
+          "cosine": 0.42440108339980326
+        },
+        {
+          "slug": "node-inspect-debugger",
+          "cosine": 0.3719942372014017
+        }
+      ]
+    },
+    {
+      "id": "q066",
+      "split": "held_out",
+      "selected": [
+        "python-debugpy"
+      ],
+      "top3": [
+        {
+          "slug": "python-debugpy",
+          "cosine": 0.6158427119573129
+        },
+        {
+          "slug": "rust-workspace-disk-hygiene",
+          "cosine": 0.3339868498941005
+        },
+        {
+          "slug": "acp-stdio-smoke-test",
+          "cosine": 0.31097971952012154
+        }
+      ]
+    },
+    {
+      "id": "q067",
+      "split": "development",
+      "selected": [
+        "humanizer",
+        "songwriting-and-ai-music",
+        "nano-pdf"
+      ],
+      "top3": [
+        {
+          "slug": "humanizer",
+          "cosine": 0.6368468013541069
+        },
+        {
+          "slug": "songwriting-and-ai-music",
+          "cosine": 0.5072332849549697
+        },
+        {
+          "slug": "nano-pdf",
+          "cosine": 0.40271385227173717
+        }
+      ]
+    },
+    {
+      "id": "q068",
+      "split": "held_out",
+      "selected": [
+        "humanizer",
+        "songwriting-and-ai-music"
+      ],
+      "top3": [
+        {
+          "slug": "humanizer",
+          "cosine": 0.49728196098351357
+        },
+        {
+          "slug": "songwriting-and-ai-music",
+          "cosine": 0.40360881394959724
+        },
+        {
+          "slug": "nano-pdf",
+          "cosine": 0.25239363268279147
+        }
+      ]
+    },
+    {
+      "id": "q069",
+      "split": "development",
+      "selected": [
+        "humanizer"
+      ],
+      "top3": [
+        {
+          "slug": "humanizer",
+          "cosine": 0.5641499329989008
+        },
+        {
+          "slug": "nano-pdf",
+          "cosine": 0.28790967192807465
+        },
+        {
+          "slug": "songwriting-and-ai-music",
+          "cosine": 0.2615242236368332
+        }
+      ]
+    },
+    {
+      "id": "q070",
+      "split": "held_out",
+      "selected": [
+        "humanizer"
+      ],
+      "top3": [
+        {
+          "slug": "humanizer",
+          "cosine": 0.518218478957101
+        },
+        {
+          "slug": "songwriting-and-ai-music",
+          "cosine": 0.3591084388135643
+        },
+        {
+          "slug": "nano-pdf",
+          "cosine": 0.31662490798074827
+        }
+      ]
+    },
+    {
+      "id": "q071",
+      "split": "development",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "humanizer",
+          "cosine": 0.28112381347755544
+        },
+        {
+          "slug": "nano-pdf",
+          "cosine": 0.23403893329542264
+        },
+        {
+          "slug": "vesper-skill-authoring",
+          "cosine": 0.1755298975462187
+        }
+      ]
+    },
+    {
+      "id": "q072",
+      "split": "held_out",
+      "selected": [
+        "humanizer"
+      ],
+      "top3": [
+        {
+          "slug": "humanizer",
+          "cosine": 0.5104067581727633
+        },
+        {
+          "slug": "nano-pdf",
+          "cosine": 0.32763849420140717
+        },
+        {
+          "slug": "songwriting-and-ai-music",
+          "cosine": 0.31671966782989724
+        }
+      ]
+    },
+    {
+      "id": "q073",
+      "split": "development",
+      "selected": [
+        "meeting-action-items",
+        "document-to-action-items",
+        "teams-meeting-pipeline"
+      ],
+      "top3": [
+        {
+          "slug": "meeting-action-items",
+          "cosine": 0.6433300043600776
+        },
+        {
+          "slug": "document-to-action-items",
+          "cosine": 0.5219533949460401
+        },
+        {
+          "slug": "teams-meeting-pipeline",
+          "cosine": 0.5058022875068149
+        }
+      ]
+    },
+    {
+      "id": "q074",
+      "split": "held_out",
+      "selected": [
+        "meeting-action-items",
+        "teams-meeting-pipeline",
+        "document-to-action-items"
+      ],
+      "top3": [
+        {
+          "slug": "meeting-action-items",
+          "cosine": 0.613784046469284
+        },
+        {
+          "slug": "teams-meeting-pipeline",
+          "cosine": 0.5056944419632289
+        },
+        {
+          "slug": "document-to-action-items",
+          "cosine": 0.4785467775111352
+        }
+      ]
+    },
+    {
+      "id": "q075",
+      "split": "development",
+      "selected": [
+        "meeting-action-items",
+        "teams-meeting-pipeline",
+        "document-to-action-items"
+      ],
+      "top3": [
+        {
+          "slug": "meeting-action-items",
+          "cosine": 0.6172328971896602
+        },
+        {
+          "slug": "teams-meeting-pipeline",
+          "cosine": 0.40200486893826176
+        },
+        {
+          "slug": "document-to-action-items",
+          "cosine": 0.3813319821583236
+        }
+      ]
+    },
+    {
+      "id": "q076",
+      "split": "held_out",
+      "selected": [
+        "meeting-action-items",
+        "document-to-action-items"
+      ],
+      "top3": [
+        {
+          "slug": "meeting-action-items",
+          "cosine": 0.5146877628365829
+        },
+        {
+          "slug": "document-to-action-items",
+          "cosine": 0.4927048246627722
+        },
+        {
+          "slug": "weekly-review-planning",
+          "cosine": 0.3679786835416009
+        }
+      ]
+    },
+    {
+      "id": "q077",
+      "split": "development",
+      "selected": [
+        "meeting-action-items",
+        "teams-meeting-pipeline",
+        "document-to-action-items"
+      ],
+      "top3": [
+        {
+          "slug": "meeting-action-items",
+          "cosine": 0.6137711470343721
+        },
+        {
+          "slug": "teams-meeting-pipeline",
+          "cosine": 0.5374103987192549
+        },
+        {
+          "slug": "document-to-action-items",
+          "cosine": 0.4027287810920855
+        }
+      ]
+    },
+    {
+      "id": "q078",
+      "split": "held_out",
+      "selected": [
+        "meeting-action-items",
+        "apple-notes",
+        "document-to-action-items"
+      ],
+      "top3": [
+        {
+          "slug": "meeting-action-items",
+          "cosine": 0.6886094072835198
+        },
+        {
+          "slug": "apple-notes",
+          "cosine": 0.4946112486061042
+        },
+        {
+          "slug": "document-to-action-items",
+          "cosine": 0.4669181239208971
+        }
+      ]
+    },
+    {
+      "id": "q079",
+      "split": "development",
+      "selected": [
+        "xlsx",
+        "document-to-action-items",
+        "pdf"
+      ],
+      "top3": [
+        {
+          "slug": "xlsx",
+          "cosine": 0.42641857180310466
+        },
+        {
+          "slug": "document-to-action-items",
+          "cosine": 0.40978308212939096
+        },
+        {
+          "slug": "pdf",
+          "cosine": 0.38696776448159476
+        }
+      ]
+    },
+    {
+      "id": "q080",
+      "split": "held_out",
+      "selected": [
+        "docx",
+        "nano-pdf"
+      ],
+      "top3": [
+        {
+          "slug": "docx",
+          "cosine": 0.5555202632907812
+        },
+        {
+          "slug": "nano-pdf",
+          "cosine": 0.4796718370369021
+        },
+        {
+          "slug": "pdf",
+          "cosine": 0.36723332866955605
+        }
+      ]
+    },
+    {
+      "id": "q081",
+      "split": "development",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "end-to-end-workflow-acceptance",
+          "cosine": 0.18496928943873167
+        },
+        {
+          "slug": "obsidian",
+          "cosine": 0.17281695575744113
+        },
+        {
+          "slug": "product-price-monitor",
+          "cosine": 0.1600732651588546
+        }
+      ]
+    },
+    {
+      "id": "q082",
+      "split": "held_out",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "email-inbox-triage",
+          "cosine": 0.21765785115964567
+        },
+        {
+          "slug": "weekly-review-planning",
+          "cosine": 0.18611272689160543
+        },
+        {
+          "slug": "codex",
+          "cosine": 0.11903305115124474
+        }
+      ]
+    },
+    {
+      "id": "q083",
+      "split": "development",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "manim-video",
+          "cosine": 0.19187058094101592
+        },
+        {
+          "slug": "product-price-monitor",
+          "cosine": 0.1805585068086952
+        },
+        {
+          "slug": "popular-web-designs",
+          "cosine": 0.1319444236466462
+        }
+      ]
+    },
+    {
+      "id": "q084",
+      "split": "held_out",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "pretext",
+          "cosine": 0.1453452209482628
+        },
+        {
+          "slug": "youtube-content",
+          "cosine": 0.1324424059044606
+        },
+        {
+          "slug": "subprocess-kill-in-agent-tools",
+          "cosine": 0.11400609343217542
+        }
+      ]
+    },
+    {
+      "id": "q085",
+      "split": "development",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "songwriting-and-ai-music",
+          "cosine": 0.18216316300319363
+        },
+        {
+          "slug": "meeting-action-items",
+          "cosine": 0.16973565504870075
+        },
+        {
+          "slug": "harness-skill-gate-mechanics",
+          "cosine": 0.1178244265956831
+        }
+      ]
+    },
+    {
+      "id": "q086",
+      "split": "held_out",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "songwriting-and-ai-music",
+          "cosine": 0.1253023986601655
+        },
+        {
+          "slug": "humanizer",
+          "cosine": 0.11294159009215825
+        },
+        {
+          "slug": "spike",
+          "cosine": 0.11180223120082736
+        }
+      ]
+    },
+    {
+      "id": "q087",
+      "split": "development",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "subprocess-kill-in-agent-tools",
+          "cosine": 0.13965446808921558
+        },
+        {
+          "slug": "nano-pdf",
+          "cosine": 0.137453596582706
+        },
+        {
+          "slug": "interactive-developer",
+          "cosine": 0.1337553110435245
+        }
+      ]
+    },
+    {
+      "id": "q088",
+      "split": "held_out",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "email-inbox-triage",
+          "cosine": 0.25152277763976805
+        },
+        {
+          "slug": "imessage",
+          "cosine": 0.25058810832255013
+        },
+        {
+          "slug": "himalaya",
+          "cosine": 0.21816086677538865
+        }
+      ]
+    },
+    {
+      "id": "q089",
+      "split": "development",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "email-inbox-triage",
+          "cosine": 0.25581897694887634
+        },
+        {
+          "slug": "weekly-review-planning",
+          "cosine": 0.17871404941892696
+        },
+        {
+          "slug": "apple-reminders",
+          "cosine": 0.15856511334044318
+        }
+      ]
+    },
+    {
+      "id": "q090",
+      "split": "held_out",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "songwriting-and-ai-music",
+          "cosine": 0.1430316254399118
+        },
+        {
+          "slug": "weekly-review-planning",
+          "cosine": 0.13971117966163618
+        },
+        {
+          "slug": "simplify-code",
+          "cosine": 0.13030169625898014
+        }
+      ]
+    },
+    {
+      "id": "q091",
+      "split": "development",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "ascii-art",
+          "cosine": 0.10128516269062891
+        },
+        {
+          "slug": "xlsx",
+          "cosine": 0.09722511298861225
+        },
+        {
+          "slug": "claude-code",
+          "cosine": 0.0922803908519507
+        }
+      ]
+    },
+    {
+      "id": "q092",
+      "split": "held_out",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "meeting-action-items",
+          "cosine": 0.21454762760035023
+        },
+        {
+          "slug": "product-price-monitor",
+          "cosine": 0.19556891832529902
+        },
+        {
+          "slug": "agent-vesper",
+          "cosine": 0.18006871946780173
+        }
+      ]
+    },
+    {
+      "id": "q093",
+      "split": "development",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "product-price-monitor",
+          "cosine": 0.1584553472334774
+        },
+        {
+          "slug": "pdf",
+          "cosine": 0.10154297296791069
+        },
+        {
+          "slug": "agent-vesper",
+          "cosine": 0.09728765996118342
+        }
+      ]
+    },
+    {
+      "id": "q094",
+      "split": "held_out",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "test-driven-development",
+          "cosine": 0.19323874533071758
+        },
+        {
+          "slug": "simplify-code",
+          "cosine": 0.1932094681048665
+        },
+        {
+          "slug": "meeting-action-items",
+          "cosine": 0.1778595750401876
+        }
+      ]
+    },
+    {
+      "id": "q095",
+      "split": "development",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "weekly-review-planning",
+          "cosine": 0.3514795858675583
+        },
+        {
+          "slug": "ascii-art",
+          "cosine": 0.08211562474915411
+        },
+        {
+          "slug": "meeting-action-items",
+          "cosine": 0.0816529752956108
+        }
+      ]
+    },
+    {
+      "id": "q096",
+      "split": "held_out",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "requesting-code-review",
+          "cosine": 0.1752667262742489
+        },
+        {
+          "slug": "apple-reminders",
+          "cosine": 0.1700521514208594
+        },
+        {
+          "slug": "weekly-review-planning",
+          "cosine": 0.1333172639120489
+        }
+      ]
+    },
+    {
+      "id": "q097",
+      "split": "development",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "huggingface-hub",
+          "cosine": 0.21403128185648584
+        },
+        {
+          "slug": "email-inbox-triage",
+          "cosine": 0.19120542174813324
+        },
+        {
+          "slug": "agent-vesper",
+          "cosine": 0.14914511575904066
+        }
+      ]
+    },
+    {
+      "id": "q098",
+      "split": "held_out",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "weekly-review-planning",
+          "cosine": 0.24230211719649522
+        },
+        {
+          "slug": "requesting-code-review",
+          "cosine": 0.23333887790530458
+        },
+        {
+          "slug": "simplify-code",
+          "cosine": 0.21868292854157445
+        }
+      ]
+    },
+    {
+      "id": "q099",
+      "split": "development",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "spike",
+          "cosine": 0.17816000855983652
+        },
+        {
+          "slug": "serving-llms-vllm",
+          "cosine": 0.13754891356708127
+        },
+        {
+          "slug": "weekly-review-planning",
+          "cosine": 0.12806014638183932
+        }
+      ]
+    },
+    {
+      "id": "q100",
+      "split": "held_out",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "email-inbox-triage",
+          "cosine": 0.19200421286256694
+        },
+        {
+          "slug": "huggingface-hub",
+          "cosine": 0.16426662778669468
+        },
+        {
+          "slug": "product-price-monitor",
+          "cosine": 0.15855775889856658
+        }
+      ]
+    },
+    {
+      "id": "q101",
+      "split": "development",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "claude-code",
+          "cosine": 0.3714072729213472
+        },
+        {
+          "slug": "opencode",
+          "cosine": 0.3350669009775801
+        },
+        {
+          "slug": "codex",
+          "cosine": 0.27217398049591884
+        }
+      ]
+    },
+    {
+      "id": "q102",
+      "split": "held_out",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "ascii-art",
+          "cosine": 0.1439747837863625
+        },
+        {
+          "slug": "product-price-monitor",
+          "cosine": 0.13400737857140727
+        },
+        {
+          "slug": "spike",
+          "cosine": 0.1274415685617877
+        }
+      ]
+    },
+    {
+      "id": "q103",
+      "split": "development",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "ascii-video",
+          "cosine": 0.19185529659728562
+        },
+        {
+          "slug": "airtable",
+          "cosine": 0.16112457803873861
+        },
+        {
+          "slug": "openhue",
+          "cosine": 0.13794442543258506
+        }
+      ]
+    },
+    {
+      "id": "q104",
+      "split": "held_out",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "humanizer",
+          "cosine": 0.13215442112677478
+        },
+        {
+          "slug": "agent-vesper",
+          "cosine": 0.12160947528201178
+        },
+        {
+          "slug": "product-price-monitor",
+          "cosine": 0.11793946097532272
+        }
+      ]
+    },
+    {
+      "id": "q105",
+      "split": "development",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "meeting-action-items",
+          "cosine": 0.14805235844353729
+        },
+        {
+          "slug": "product-price-monitor",
+          "cosine": 0.13231086580383197
+        },
+        {
+          "slug": "competitor-news-monitor",
+          "cosine": 0.13079700976327677
+        }
+      ]
+    },
+    {
+      "id": "q106",
+      "split": "held_out",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "simplify-code",
+          "cosine": 0.14866334212533788
+        },
+        {
+          "slug": "apple-reminders",
+          "cosine": 0.13789338591384934
+        },
+        {
+          "slug": "songwriting-and-ai-music",
+          "cosine": 0.13403793079489876
+        }
+      ]
+    },
+    {
+      "id": "q107",
+      "split": "development",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "product-price-monitor",
+          "cosine": 0.23651787247436182
+        },
+        {
+          "slug": "serving-llms-vllm",
+          "cosine": 0.205889459750514
+        },
+        {
+          "slug": "evaluating-llms-harness",
+          "cosine": 0.16939276878027637
+        }
+      ]
+    },
+    {
+      "id": "q108",
+      "split": "held_out",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "product-price-monitor",
+          "cosine": 0.1950202640526948
+        },
+        {
+          "slug": "claude-code",
+          "cosine": 0.1743468790102853
+        },
+        {
+          "slug": "agent-vesper",
+          "cosine": 0.17254202115429837
+        }
+      ]
+    },
+    {
+      "id": "q109",
+      "split": "development",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "product-price-monitor",
+          "cosine": 0.19262989340836106
+        },
+        {
+          "slug": "manim-video",
+          "cosine": 0.12779975174677985
+        },
+        {
+          "slug": "email-inbox-triage",
+          "cosine": 0.07283489677477656
+        }
+      ]
+    },
+    {
+      "id": "q110",
+      "split": "held_out",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "songwriting-and-ai-music",
+          "cosine": 0.2909525440299825
+        },
+        {
+          "slug": "agent-vesper",
+          "cosine": 0.23790610573870055
+        },
+        {
+          "slug": "claude-code",
+          "cosine": 0.21703851845133174
+        }
+      ]
+    },
+    {
+      "id": "q111",
+      "split": "development",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "llama-cpp",
+          "cosine": 0.23730056081367268
+        },
+        {
+          "slug": "huggingface-hub",
+          "cosine": 0.19498914839177575
+        },
+        {
+          "slug": "email-inbox-triage",
+          "cosine": 0.17487116969669086
+        }
+      ]
+    },
+    {
+      "id": "q112",
+      "split": "held_out",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "harness-skill-gate-mechanics",
+          "cosine": 0.22517641513985132
+        },
+        {
+          "slug": "document-to-action-items",
+          "cosine": 0.214815227987473
+        },
+        {
+          "slug": "plan",
+          "cosine": 0.21067502750493575
+        }
+      ]
+    },
+    {
+      "id": "q113",
+      "split": "development",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "email-inbox-triage",
+          "cosine": 0.2735920693565924
+        },
+        {
+          "slug": "apple-reminders",
+          "cosine": 0.2599098986833706
+        },
+        {
+          "slug": "requesting-code-review",
+          "cosine": 0.2437427075237162
+        }
+      ]
+    },
+    {
+      "id": "q114",
+      "split": "held_out",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "simplify-code",
+          "cosine": 0.1919472378654478
+        },
+        {
+          "slug": "spike",
+          "cosine": 0.16306568640863767
+        },
+        {
+          "slug": "blocked-page-recovery",
+          "cosine": 0.14874964790334005
+        }
+      ]
+    },
+    {
+      "id": "q115",
+      "split": "development",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "weekly-review-planning",
+          "cosine": 0.2271657120397555
+        },
+        {
+          "slug": "email-inbox-triage",
+          "cosine": 0.21780783457406994
+        },
+        {
+          "slug": "merge-reconciler",
+          "cosine": 0.20318866471295594
+        }
+      ]
+    },
+    {
+      "id": "q116",
+      "split": "held_out",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "weekly-review-planning",
+          "cosine": 0.3534135720941516
+        },
+        {
+          "slug": "email-inbox-triage",
+          "cosine": 0.2767686127446515
+        },
+        {
+          "slug": "apple-reminders",
+          "cosine": 0.275228541071278
+        }
+      ]
+    },
+    {
+      "id": "q117",
+      "split": "development",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "agent-vesper",
+          "cosine": 0.17839088400010653
+        },
+        {
+          "slug": "songwriting-and-ai-music",
+          "cosine": 0.15792909504685956
+        },
+        {
+          "slug": "interactive-developer",
+          "cosine": 0.14438672318156495
+        }
+      ]
+    },
+    {
+      "id": "q118",
+      "split": "held_out",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "manim-video",
+          "cosine": 0.17091756804027036
+        },
+        {
+          "slug": "interactive-developer",
+          "cosine": 0.16141095390184534
+        },
+        {
+          "slug": "songwriting-and-ai-music",
+          "cosine": 0.14593411037457293
+        }
+      ]
+    },
+    {
+      "id": "q119",
+      "split": "development",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "pdf",
+          "cosine": 0.19811563908740823
+        },
+        {
+          "slug": "product-price-monitor",
+          "cosine": 0.1565569881492632
+        },
+        {
+          "slug": "apple-reminders",
+          "cosine": 0.13259571667924397
+        }
+      ]
+    },
+    {
+      "id": "q120",
+      "split": "held_out",
+      "selected": [],
+      "top3": [
+        {
+          "slug": "imessage",
+          "cosine": 0.22119974832967446
+        },
+        {
+          "slug": "apple-reminders",
+          "cosine": 0.20478069684483524
+        },
+        {
+          "slug": "himalaya",
+          "cosine": 0.20098461641357102
+        }
+      ]
+    }
+  ]
+}

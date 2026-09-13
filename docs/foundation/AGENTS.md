@@ -23,6 +23,21 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 - `skill-routing-language-execution.md` owns the follow-up language normalization,
   development measurements, unchanged-corpus evaluation and remaining gates.
   `skill-routing-language-results.json` preserves its complete prediction receipt.
+- `skill-routing-request-recognition-execution.md` owns request-recognition
+  experiments, sourced language-asset reproduction and retained failed receipts.
+- `skill-routing-embedding-experiment.md` and `skill-routing-embedding-*` own
+  optional offline embedding probes and their unpromoted result receipts.
+  They never form a native runtime, library rewrite or automatic model download.
+- `skill-routing-independent-*` owns the evaluator-authored frozen corpus,
+  authoring provenance, native predictions and separately scoped static reviews.
+- `skill-routing-model-assistance-execution.md` owns native selector implementation,
+  offline boundary/host verification and separately authorized live quality evidence.
+  `skill-routing-model-verification.json` binds source files and offline receipt hashes.
+  `skill-routing-model-live-evaluation.md` and its summary helper separate live
+  decisions, native fallback, unsupported contexts and measured usage; inspected
+  regression cases never become unseen holdout evidence.
+  `skill-routing-current-quality-results.json` retains current four-size lexical
+  ablations, including failed gates.
 - `evidence-index.md` is the durable execution ledger and command record.
 - `completion-assurance-proposal.md` owns the researched proposal for native
   requirement coverage, execution receipts, and enforced completion decisions.

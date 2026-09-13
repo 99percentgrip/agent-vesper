@@ -231,3 +231,83 @@ fn explicit_override_never_overrides_read_only_task_restrictions() {
             .contains("task effect restriction")
     );
 }
+
+#[test]
+fn automatic_composition_requires_a_distinct_requested_topic() {
+    use std::collections::{BTreeMap, BTreeSet};
+    use vesper_memory::routing_quality::{RoutingMode, RoutingOptions};
+    use vesper_memory::{SkillRoutingQuery, SkillSlug, SkillStore};
+    let root = tempfile::tempdir().unwrap();
+    let store = SkillStore::open(root.path()).unwrap();
+    for (slug, description) in [
+        ("alpha", "Optical instrument calibration"),
+        ("beta", "Acoustic signal analysis"),
+        ("gamma", "Optical instrument reference"),
+    ] {
+        store.write(&SkillSlug::new(slug).unwrap(), &format!("---\nname: {slug}\ndescription: {description}\nrisk: read-only\n---\nOffline fixture procedure.\n")).unwrap();
+    }
+    let mut options = RoutingOptions::default();
+    options.preferences.mode = RoutingMode::Enhanced;
+    let tools = BTreeSet::from(["read_file".into()]);
+    let outcomes = BTreeMap::new();
+    let query = |prompt| {
+        store
+            .orchestrate_with_options(
+                &SkillRoutingQuery {
+                    prompt,
+                    explicit_skill: None,
+                    available_tools: &tools,
+                    platform: "linux",
+                    outcome_adjustments: &outcomes,
+                },
+                &options,
+            )
+            .selected_names()
+    };
+    assert_eq!(query("Calibrate the optical instrument"), vec!["alpha"]);
+    let selected = query("Calibrate the optical instrument and analyze the acoustic signal");
+    assert!(selected.contains(&"alpha".to_owned()), "{selected:?}");
+    assert!(selected.contains(&"beta".to_owned()));
+    assert!(!selected.contains(&"gamma".to_owned()));
+}
+
+#[test]
+fn topical_background_is_not_an_automatic_execution_request() {
+    use std::collections::{BTreeMap, BTreeSet};
+    use vesper_memory::routing_quality::{RoutingMode, RoutingOptions};
+    use vesper_memory::{SkillRoutingQuery, SkillSlug, SkillStore};
+    let root = tempfile::tempdir().unwrap();
+    let store = SkillStore::open(root.path()).unwrap();
+    store.write(&SkillSlug::new("alpha").unwrap(), "---\nname: alpha\ndescription: Optical instrument calibration\nrisk: read-only\n---\nFixture procedure").unwrap();
+    let mut options = RoutingOptions::default();
+    options.preferences.mode = RoutingMode::Enhanced;
+    let tools = BTreeSet::from(["read_file".into()]);
+    let outcomes = BTreeMap::new();
+    for prompt in [
+        "The optical instrument calibration was successful",
+        "I remember the optical instrument calibration",
+    ] {
+        let report = store.orchestrate_with_options(
+            &SkillRoutingQuery {
+                prompt,
+                explicit_skill: None,
+                available_tools: &tools,
+                platform: "linux",
+                outcome_adjustments: &outcomes,
+            },
+            &options,
+        );
+        assert!(report.selected_names().is_empty(), "{prompt}");
+    }
+    let report = store.orchestrate_with_options(
+        &SkillRoutingQuery {
+            prompt: "Check whether the optical instrument calibration was successful",
+            explicit_skill: None,
+            available_tools: &tools,
+            platform: "linux",
+            outcome_adjustments: &outcomes,
+        },
+        &options,
+    );
+    assert_eq!(report.selected_names(), vec!["alpha"]);
+}

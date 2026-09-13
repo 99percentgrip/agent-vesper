@@ -628,6 +628,14 @@ async fn edit_skills(
                 "Enhanced (preview)"
             }
         )];
+        labels.push(format!(
+            "Model-assisted selection: {}",
+            if preferences.model_assistance {
+                "ON (Enhanced only)"
+            } else {
+                "OFF"
+            }
+        ));
         labels.extend(catalog.iter().map(|skill| {
             format!(
                 "[{}] {}",
@@ -640,13 +648,18 @@ async fn edit_skills(
             )
         }));
         labels.push("Back".into());
-        let Some(index) = choice(terminal, "Settings · Skills", "Enhanced uses local metadata retrieval; quality evaluation has not approved promotion. Toggles affect this project. All skill files stay in your library. Changes remain a draft.", &labels, theme).await? else { return Ok(()); };
+        let Some(index) = choice(terminal, "Settings · Skills", "Enhanced is a preview. Model assistance sends the task and bounded skill metadata to your configured provider, adding one call, latency and usage. Your library stays intact. Save on exit applies this project draft.", &labels, theme).await? else { return Ok(()); };
         if index == 0 {
             preferences.mode = match preferences.mode {
                 RoutingMode::Standard => RoutingMode::Enhanced,
                 RoutingMode::Enhanced => RoutingMode::Standard,
             };
-        } else if let Some(skill) = catalog.get(index - 1) {
+        } else if index == 1 {
+            preferences.model_assistance = !preferences.model_assistance;
+            if preferences.model_assistance {
+                preferences.mode = RoutingMode::Enhanced;
+            }
+        } else if let Some(skill) = catalog.get(index - 2) {
             if !preferences.disabled.remove(&skill.slug) {
                 preferences.disabled.insert(skill.slug.clone());
             }

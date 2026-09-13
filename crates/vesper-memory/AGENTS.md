@@ -28,11 +28,21 @@ subsystem that backs the Tier C Phase 8 un-stubbed commands
   transforms never run in Standard or the chunk tier. Single-term activation
   requires a meaningful metadata anchor and a task-request form. Descriptor
   validation does not rebuild per-entry indexes on the warm path.
+  Embedded WordNet verb data recognizes request forms; a generic request verb
+  alone is not topic evidence for a document. Contracts retain the full query.
   `skills.rs` owns optional sibling `.routing.json` reads and an in-memory index
   cache keyed by the current eligible catalog, source freshness stamps and descriptors.
   No routing operation writes skill sources or creates durable index state.
   `orchestrate_with_options` preserves Standard as default and reuses the existing
   conflict/body/chunk loader; offline ablation seams are not native controls.
+- `src/model_routing.rs` owns bounded metadata selection offers and strict model
+  decisions. Offers bind the task, current policy and source revisions; no body is
+  loaded on the model-selected path before a decision passes fresh eligibility
+  and snapshot checks. Explicitly reported lexical fallback remains available for
+  oversized input or provider/parse failure. Snapshots bind store roots and bounded
+  catalog freshness, not cryptographic full-body/chunk attestations; existing loaders
+  validate current selected bodies/chunks and limits. Chunk ranking stays unchanged. The
+  model never becomes explicit user invocation or permission authority.
 - `src/profile.rs` — `UserProfile` (single markdown file with bounded
   size, append/forget with category sections).
 - `src/awareness.rs` — `AwarenessLedger` and the `EpistemicRecord` /
@@ -161,4 +171,4 @@ subsystem that backs the Tier C Phase 8 un-stubbed commands
 
 ## Child DOX Index
 
-No children.
+- `assets/AGENTS.md` — embedded routing language data, source provenance and license.

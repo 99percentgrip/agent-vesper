@@ -665,3 +665,357 @@ async fn enhanced_envelope_survives_actual_vro_and_react_orchestration() {
     assert_eq!(probe.0.lock().unwrap().len(), 1);
     assert!(probe.0.lock().unwrap()[0].contains("Primary runbook body."));
 }
+
+#[tokio::test]
+async fn model_selection_is_one_tool_free_bounded_request_and_loads_only_afterward() {
+    use vesper_harness::{
+        WorkerFactory, skill_model_selector::PendingSkillRoute, skill_routing_settings as routing,
+    };
+    let (base, store) = fixture_store();
+    store.write(&SkillSlug::new("ledger-audit").unwrap(), "---\nname: ledger-audit\ndescription: Audit ledger transactions and balances\nrisk: read-only\n---\nPRIVATE_BODY_CANARY").unwrap();
+    let store = Arc::new(store);
+    let env = QueryEnv::default();
+    let task = "Audit ledger balances";
+    let preferences = routing::RoutingPreferences {
+        mode: routing::RoutingMode::Enhanced,
+        model_assistance: true,
+        ..Default::default()
+    };
+    routing::save(base.path(), &preferences).unwrap();
+    let before = routing::route(
+        base.path(),
+        &store,
+        &env.query(task),
+        routing::RoutingTask::default(),
+    );
+    assert!(before.context().is_none());
+    let pending = PendingSkillRoute {
+        root: base.path().into(),
+        store,
+        prompt: task.into(),
+        tools: env.tools.clone(),
+        task: Default::default(),
+        outcomes: Default::default(),
+        prepared: before.prepared_selection.unwrap(),
+    };
+    let (agent, fake) = loop_with_fake(vec![scripted_text(
+        r#"{"outcome":"selected","skills":["ledger-audit"]}"#,
+    )])
+    .await;
+    let factory = WorkerFactory::new(agent.provider_registry(), agent.configuration().clone());
+    let report = pending
+        .resolve(
+            &factory,
+            Arc::new(vesper_runtime::RuntimeCancellation::new()),
+        )
+        .await;
+    assert_eq!(
+        report.selected_names(),
+        vec!["ledger-audit"],
+        "{:?}",
+        report.routing_trace
+    );
+    assert!(report.context().unwrap().contains("PRIVATE_BODY_CANARY"));
+    let requests = fake.requests();
+    assert_eq!(requests.len(), 1);
+    assert!(requests[0].tools.is_empty());
+    assert_eq!(requests[0].tool_choice, vesper_provider::ToolChoice::None);
+    assert_eq!(requests[0].maximum_output_tokens, Some(1024));
+    assert!(!format!("{:?}", requests[0]).contains("PRIVATE_BODY_CANARY"));
+    assert!(report.routing_trace.reason.contains("usage unavailable"));
+    // Revoking opt-in before dispatch must make no further provider request.
+    routing::save(base.path(), &routing::RoutingPreferences::default()).unwrap();
+    assert!(
+        pending
+            .resolve(
+                &factory,
+                Arc::new(vesper_runtime::RuntimeCancellation::new())
+            )
+            .await
+            .selected
+            .is_empty()
+    );
+    assert_eq!(fake.requests().len(), 1);
+}
+
+#[tokio::test]
+async fn model_selection_cancel_and_invalid_response_are_observable_without_tools() {
+    use vesper_harness::{WorkerFactory, skill_model_selector, skill_routing_settings as routing};
+    let (base, store) = fixture_store();
+    store.write(&SkillSlug::new("ledger-audit").unwrap(), "---\nname: ledger-audit\ndescription: Audit ledger transactions and balances\n---\nBODY").unwrap();
+    let env = QueryEnv::default();
+    let preferences = routing::RoutingPreferences {
+        mode: routing::RoutingMode::Enhanced,
+        model_assistance: true,
+        ..Default::default()
+    };
+    routing::save(base.path(), &preferences).unwrap();
+    let task = "Audit ledger balances";
+    let prepared = routing::route(base.path(), &store, &env.query(task), Default::default())
+        .prepared_selection
+        .unwrap();
+    let (agent, fake) = loop_with_fake(vec![scripted_text("I selected an invented skill")]).await;
+    let factory = WorkerFactory::new(agent.provider_registry(), agent.configuration().clone());
+    let cancelled = Arc::new(vesper_runtime::RuntimeCancellation::new());
+    cancelled.cancel();
+    assert!(
+        skill_model_selector::select(&factory, &prepared, task, cancelled)
+            .await
+            .decision
+            .is_err()
+    );
+    assert!(fake.requests().is_empty());
+    let result = skill_model_selector::select(
+        &factory,
+        &prepared,
+        task,
+        Arc::new(vesper_runtime::RuntimeCancellation::new()),
+    )
+    .await;
+    assert!(result.decision.is_err());
+    assert_eq!(fake.requests().len(), 1);
+}
+
+#[tokio::test]
+async fn model_selection_cannot_execute_a_tool_or_accept_oversized_output() {
+    use vesper_harness::{WorkerFactory, skill_model_selector, skill_routing_settings as routing};
+    let (base, store) = fixture_store();
+    store
+        .write(
+            &SkillSlug::new("ledger-audit").unwrap(),
+            "---\ndescription: Audit ledger balances\n---\nBODY",
+        )
+        .unwrap();
+    let env = QueryEnv::default();
+    let task = "Audit ledger balances";
+    let preferences = routing::RoutingPreferences {
+        mode: routing::RoutingMode::Enhanced,
+        model_assistance: true,
+        ..Default::default()
+    };
+    routing::save(base.path(), &preferences).unwrap();
+    let prepared = routing::route(base.path(), &store, &env.query(task), Default::default())
+        .prepared_selection
+        .unwrap();
+    let target = base.path().join("must-not-exist");
+    let tool_script = vec![
+        Ok(ProviderStreamEvent::ToolCallCompleted(
+            vesper_domain::ToolCall {
+                id: vesper_domain::ToolCallId::new("attempt").unwrap(),
+                tool_id: vesper_domain::ToolId::new("write_file").unwrap(),
+                arguments: serde_json::json!({"path":target,"content":"BAD"}),
+                extensions: Default::default(),
+            },
+        )),
+        Ok(ProviderStreamEvent::Completed {
+            finish: FinishOutcome::ToolCalls,
+            metadata: Default::default(),
+        }),
+    ];
+    for script in [tool_script, scripted_text(&"a".repeat(4097))] {
+        let (agent, fake) = loop_with_fake(vec![script]).await;
+        let factory = WorkerFactory::new(agent.provider_registry(), agent.configuration().clone());
+        assert!(
+            skill_model_selector::select(
+                &factory,
+                &prepared,
+                task,
+                Arc::new(vesper_runtime::RuntimeCancellation::new())
+            )
+            .await
+            .decision
+            .is_err()
+        );
+        assert_eq!(fake.requests().len(), 1);
+        assert!(!target.exists());
+    }
+}
+
+struct StalledSelectorFactory {
+    id: ProviderId,
+}
+impl ProviderFactory for StalledSelectorFactory {
+    type Session = FakeProviderSession;
+    fn provider_id(&self) -> &ProviderId {
+        &self.id
+    }
+    fn create_session<'a>(
+        &'a self,
+        _: &'a ProviderConfiguration,
+        _: Arc<dyn CancellationSignal>,
+    ) -> ProviderFuture<'a, Result<Self::Session, ProviderError>> {
+        Box::pin(std::future::pending())
+    }
+}
+#[tokio::test]
+async fn model_selection_times_out_a_provider_that_never_opens() {
+    use vesper_harness::{WorkerFactory, skill_model_selector};
+    let (_base, store) = fixture_store();
+    store
+        .write(
+            &SkillSlug::new("ledger-audit").unwrap(),
+            "---\ndescription: Audit ledger balances\n---\nBODY",
+        )
+        .unwrap();
+    let env = QueryEnv::default();
+    let mut options = vesper_memory::routing_quality::RoutingOptions::default();
+    options.preferences.mode = vesper_memory::routing_quality::RoutingMode::Enhanced;
+    options.preferences.model_assistance = true;
+    let task = "Audit ledger balances";
+    let prepared = store
+        .orchestrate_with_options(&env.query(task), &options)
+        .prepared_selection
+        .unwrap();
+    let registry = Arc::new(ProviderRegistry::new());
+    registry
+        .register(StalledSelectorFactory { id: provider_id() })
+        .await
+        .unwrap();
+    let factory = WorkerFactory::new(registry, loop_config(&provider_id()));
+    let result = skill_model_selector::select(
+        &factory,
+        &prepared,
+        task,
+        Arc::new(vesper_runtime::RuntimeCancellation::new()),
+    )
+    .await;
+    assert_eq!(result.decision.unwrap_err(), "Model selection timed out");
+    assert!(result.elapsed_ms >= 20_000);
+}
+
+struct RetainingSelectorFactory {
+    id: ProviderId,
+    received: Arc<std::sync::Mutex<Option<Arc<dyn CancellationSignal>>>>,
+}
+impl ProviderFactory for RetainingSelectorFactory {
+    type Session = FakeProviderSession;
+    fn provider_id(&self) -> &ProviderId {
+        &self.id
+    }
+    fn create_session<'a>(
+        &'a self,
+        _: &'a ProviderConfiguration,
+        cancellation: Arc<dyn CancellationSignal>,
+    ) -> ProviderFuture<'a, Result<Self::Session, ProviderError>> {
+        *self.received.lock().unwrap() = Some(cancellation);
+        Box::pin(std::future::pending())
+    }
+}
+#[tokio::test]
+async fn dropping_selector_cancels_a_signal_retained_by_provider() {
+    use vesper_harness::{WorkerFactory, skill_model_selector};
+    let (_base, store) = fixture_store();
+    store
+        .write(
+            &SkillSlug::new("ledger-audit").unwrap(),
+            "---\ndescription: Audit ledger balances\n---\nBODY",
+        )
+        .unwrap();
+    let env = QueryEnv::default();
+    let mut options = vesper_memory::routing_quality::RoutingOptions::default();
+    options.preferences.mode = vesper_memory::routing_quality::RoutingMode::Enhanced;
+    options.preferences.model_assistance = true;
+    let prepared = store
+        .orchestrate_with_options(&env.query("Audit ledger balances"), &options)
+        .prepared_selection
+        .unwrap();
+    let registry = Arc::new(ProviderRegistry::new());
+    let received = Arc::new(std::sync::Mutex::new(None));
+    registry
+        .register(RetainingSelectorFactory {
+            id: provider_id(),
+            received: received.clone(),
+        })
+        .await
+        .unwrap();
+    let factory = WorkerFactory::new(registry, loop_config(&provider_id()));
+    let task = tokio::spawn(async move {
+        skill_model_selector::select(
+            &factory,
+            &prepared,
+            "Audit ledger balances",
+            Arc::new(vesper_runtime::RuntimeCancellation::new()),
+        )
+        .await
+    });
+    tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        while received.lock().unwrap().is_none() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    task.abort();
+    let _ = task.await;
+    assert!(received.lock().unwrap().as_ref().unwrap().is_cancelled());
+}
+
+#[tokio::test]
+async fn expanded_file_contents_only_enter_the_coding_request() {
+    use vesper_harness::{
+        WorkerFactory, skill_model_selector::PendingSkillRoute, skill_routing_settings as routing,
+    };
+    let (base, store) = fixture_store();
+    store
+        .write(
+            &SkillSlug::new("ledger-audit").unwrap(),
+            "---\ndescription: Audit ledger balances\n---\nSKILL_BODY",
+        )
+        .unwrap();
+    std::fs::write(base.path().join("ledger.txt"), "FILE_CONTENT_CANARY").unwrap();
+    let original = "Audit ledger balances in @file:ledger.txt";
+    let expanded = vesper_agent::expand_references(base.path(), original).unwrap();
+    assert!(expanded.contains("FILE_CONTENT_CANARY"));
+    let env = QueryEnv::default();
+    routing::save(
+        base.path(),
+        &routing::RoutingPreferences {
+            mode: routing::RoutingMode::Enhanced,
+            model_assistance: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let before = routing::route_with_model_task(
+        base.path(),
+        &store,
+        &env.query(&expanded),
+        original,
+        Default::default(),
+    );
+    let pending = PendingSkillRoute {
+        root: base.path().into(),
+        store: Arc::new(store),
+        prompt: original.into(),
+        tools: env.tools.clone(),
+        task: Default::default(),
+        outcomes: Default::default(),
+        prepared: before.prepared_selection.unwrap(),
+    };
+    let (agent, fake) = loop_with_fake(vec![
+        scripted_text(r#"{"outcome":"selected","skills":["ledger-audit"]}"#),
+        scripted_text("done"),
+    ])
+    .await;
+    let report = pending
+        .resolve(
+            &WorkerFactory::new(agent.provider_registry(), agent.configuration().clone()),
+            Arc::new(vesper_runtime::RuntimeCancellation::new()),
+        )
+        .await;
+    assert!(!format!("{:?}", fake.requests()[0]).contains("FILE_CONTENT_CANARY"));
+    assert!(!format!("{:?}", fake.requests()[0]).contains("SKILL_BODY"));
+    let message = transient_turn(&expanded, &report.context().unwrap()).message;
+    agent
+        .run_prompt(
+            message,
+            SessionOperatingMode::Plan,
+            SessionPermissionMode::ReadOnly,
+        )
+        .await
+        .unwrap();
+    let requests = fake.requests();
+    assert_eq!(requests.len(), 2);
+    assert!(format!("{:?}", requests[1]).contains("FILE_CONTENT_CANARY"));
+    assert!(format!("{:?}", requests[1]).contains("SKILL_BODY"));
+}

@@ -74,9 +74,32 @@ pub fn route(
     query: &SkillRoutingQuery<'_>,
     task: RoutingTask,
 ) -> SkillRoutingReport {
+    route_with_model_task(root, store, query, query.prompt, task)
+}
+
+/// Keep reference-expanded files out of the additional provider selection request.
+pub fn route_with_model_task(
+    root: &Path,
+    store: &SkillStore,
+    query: &SkillRoutingQuery<'_>,
+    original_task: &str,
+    task: RoutingTask,
+) -> SkillRoutingReport {
     match load(root) {
         Ok(preferences) => {
-            store.orchestrate_with_options(query, &RoutingOptions { preferences, task })
+            let selection_query = SkillRoutingQuery {
+                prompt: if preferences.model_assistance && preferences.mode == RoutingMode::Enhanced
+                {
+                    original_task
+                } else {
+                    query.prompt
+                },
+                explicit_skill: query.explicit_skill,
+                available_tools: query.available_tools,
+                platform: query.platform,
+                outcome_adjustments: query.outcome_adjustments,
+            };
+            store.orchestrate_with_options(&selection_query, &RoutingOptions { preferences, task })
         }
         Err(_) => {
             // Do not ignore a potentially disabled skill in corrupt preferences.
@@ -98,8 +121,9 @@ pub fn command(root: &Path, argument: &str) -> Result<String, String> {
     match parse_skill_routing_control(argument)? {
         SkillRoutingControl::Status => {
             return Ok(format!(
-                "Skill routing: {:?}. Disabled: {}. Enhanced is a preview; Standard remains the default.\n/skills settings save mode standard|enhanced\n/skills settings save enable|disable <skill>",
+                "Skill routing: {:?}. Model assistance: {} (one configured-provider call; latency and usage). Disabled: {}. Enhanced is a preview; Standard remains the default.\n/skills settings save mode standard|enhanced\n/skills settings save model-assistance on|off\n/skills settings save enable|disable <skill>",
                 settings.mode,
+                settings.model_assistance,
                 settings
                     .disabled
                     .iter()
@@ -107,6 +131,12 @@ pub fn command(root: &Path, argument: &str) -> Result<String, String> {
                     .collect::<Vec<_>>()
                     .join(", ")
             ));
+        }
+        SkillRoutingControl::SaveModelAssistance { enabled } => {
+            settings.model_assistance = enabled;
+            if enabled {
+                settings.mode = RoutingMode::Enhanced;
+            }
         }
         SkillRoutingControl::SaveMode { enhanced } => {
             settings.mode = if enhanced {

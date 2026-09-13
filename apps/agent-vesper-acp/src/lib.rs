@@ -929,7 +929,8 @@ impl AcpHarnessEngine {
             .into_iter()
             .map(|definition| definition.harness_name.as_str().to_owned())
             .collect::<std::collections::BTreeSet<_>>();
-        let skill_report = self.hosted.orchestrate_skills(
+        let config = self.turn_configuration(&request).await;
+        let mut skill_report = self.hosted.orchestrate_skills(
             &workspace_root_path(&request.workspace_roots),
             &text,
             None,
@@ -939,6 +940,45 @@ impl AcpHarnessEngine {
                 request.permission_mode,
             ),
         );
+        if let Some(prepared) = skill_report.prepared_selection.take()
+            && let Some(store) = self.hosted.stores().skills()
+        {
+            let cancellation = Arc::new(RuntimeCancellation::new());
+            self.cancellations
+                .lock()
+                .await
+                .entry(request.session_id.clone())
+                .or_default()
+                .push(cancellation.clone());
+            let pending = vesper_harness::skill_model_selector::PendingSkillRoute {
+                root: workspace_root_path(&request.workspace_roots),
+                store: store.clone(),
+                prompt: text.clone(),
+                tools: available_tools.clone(),
+                task: vesper_harness::skill_routing_settings::task_for_controls(
+                    request.operating_mode,
+                    request.permission_mode,
+                ),
+                outcomes: Default::default(),
+                prepared,
+            };
+            let factory = vesper_harness::WorkerFactory::new(self.registry.clone(), config.clone());
+            skill_report = pending.resolve(&factory, cancellation.clone()).await;
+            self.cancellations
+                .lock()
+                .await
+                .entry(request.session_id.clone())
+                .or_default()
+                .retain(|entry| !Arc::ptr_eq(entry, &cancellation));
+            if cancellation.is_cancelled() {
+                return Ok(AcpPromptResult {
+                    text: "Skill selection cancelled".into(),
+                    cancelled: true,
+                    persist_turn: false,
+                    history_replacement: None,
+                });
+            }
+        }
         if let Some(error) = skill_report.explicit_error.as_ref() {
             return Ok(AcpPromptResult {
                 text: format!("skill routing failed: {error}"),
@@ -981,7 +1021,6 @@ impl AcpHarnessEngine {
             history.push(message);
             history.clone()
         };
-        let config = self.turn_configuration(&request).await;
         // VRO dispatch (TUI parity): when orchestration is enabled for this
         // process and the profiled strategy benefits from it, route the turn
         // through the orchestrator instead of the direct loop. `Direct`
