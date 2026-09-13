@@ -60,11 +60,16 @@ skills remain an honest no-match; a plausible name is not proof of suitability.
 | [SkillRouter, v5](https://arxiv.org/abs/2603.22455v5) | Bodies carry useful discriminating information; body-distilled descriptions recover some, but not all, of the gap in its benchmarks. | Improve authored routing descriptors first; compare embeddings experimentally. Do not promise descriptor equivalence to full-body routing. |
 | [Right Family, Wrong Skill, v2](https://arxiv.org/abs/2606.10388v2) | Similar capabilities can differ in required resources, procedures or artifacts. Helpful retrieval and risky sibling exposure are separate metrics. | Test sibling pairs with different contracts, including role reversals. |
 | [GitHub tool selection](https://github.blog/ai-and-ml/github-copilot/how-were-making-github-copilot-smarter-with-fewer-tools/) | GitHub describes embedding-guided routing, clustering and reducing its default tools from 40 to 13. | Shortlist candidates and reduce duplication; do not copy its tool count or infer equivalent skill results. |
+| Assistant-vendor tool-search documentation (upstream alias; no direct link under the naming embargo) | Deferred tool definitions can be discovered on demand. | Borrow the discovery pattern, not provider-specific request fields or a new provider dependency. |
 
 The video's percentage and attention claims are not acceptance targets. No claim
 that a given share of model attention equals a universal share of routing signal.
 
+<<<<<<< HEAD
 ## 3. Inspected baseline and original gaps (5cf5835)
+=======
+## 3. Current implementation and actual gaps
+>>>>>>> b19dc7f (docs: add skill routing quality proposal)
 
 - `crates/vesper-memory/src/skill_orchestrator.rs` already owns shared deterministic
   eligibility, metadata scoring, conflicts, loading and outcome adjustments.
@@ -104,7 +109,11 @@ flowchart LR
 ### D1. Improve the information used for selection
 
 Introduce optional, versioned routing descriptors alongside existing frontmatter:
+<<<<<<< HEAD
 `family`, `purpose`, `actions`, `use_when`, `avoid_when`, `inputs`, `outputs`, `preconditions`,
+=======
+`family`, `purpose`, `use_when`, `avoid_when`, `inputs`, `outputs`, `preconditions`,
+>>>>>>> b19dc7f (docs: add skill routing quality proposal)
 `effects`, and a small set of positive/negative task examples. Examples distinguish
 nearby procedures; they must not be exact copies of evaluation prompts.
 
@@ -190,7 +199,11 @@ rule and the root contract. It requires a separate accepted contract/ADR change,
 provenance review and isolated-skill privacy design before implementation. A paper
 is not authorization to introduce body ranking, model downloads or external calls.
 Enhanced lexical routing must remain fully usable without embeddings, a GPU or
+<<<<<<< HEAD
 another account. No automatic model installation or remote upload of skill content, except the separately approved, explicitly enabled bounded task/metadata call described in the [model-assisted amendment](skill-routing-model-assistance-proposal.md). Full skill bodies never enter that selection call.
+=======
+another account. No automatic model installation or remote upload of skill content.
+>>>>>>> b19dc7f (docs: add skill routing quality proposal)
 
 ## 5. Requirements and acceptance matrix
 
@@ -281,8 +294,13 @@ No weakened labels, removed hard negatives or hidden failed configurations.
 
 Implementation must read each owning DOX chain and run `cargo xtask verify`,
 changed-crate Rust 1.88 checks, routing ablations and host acceptance. Before any
+<<<<<<< HEAD
 release, follow the existing exact-commit pipeline. Alex subsequently approved implementation with GLM score-floor coexistence.
 No new release or replacement of Alex's installation is authorized by that approval.
+=======
+release, follow the existing exact-commit pipeline. This planning request does
+not authorize implementation, a new release, or replacement of Alex's installation.
+>>>>>>> b19dc7f (docs: add skill routing quality proposal)
 
 ## 8. Non-goals
 
@@ -290,6 +308,7 @@ No skill-library deletion, automatic archiving/disabling, source rewriting,
 automatic tool pruning, provider-specific tool-search
 API integration, full-body ranking, model training, or threshold changes to
 unrelated rankers. No public claims of measured improvement before evaluation.
+<<<<<<< HEAD
 
 ## Concurrent score-floor implementation
 
@@ -337,3 +356,5 @@ Published as [v0.22.4](https://github.com/99percentgrip/agent-vesper/releases/ta
 on `fdac018d31ef790d528132f649b99a31a9fa5fed`, after all four exact-commit gates.
 The release report records 16 verified assets and registry PR #539 updated in
 place. Alex's local installation and skill library remain unchanged.
+=======
+>>>>>>> b19dc7f (docs: add skill routing quality proposal)
