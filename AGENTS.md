@@ -76,6 +76,10 @@ Default section order:
 
 ## User Preferences
 
+- Requested microphone UI: keep a visible bottom-panel red circle “Push to talk”
+  toggle that becomes a red square “Stop” while recording. One click starts, one
+  click stops; preserve F5, truthful recorder state and responsive input.
+
 - Optional dependency setup belongs in native Settings: detect healthy local
   runtimes, offer confirmed setup/repair, show real progress and verify readiness.
   Beginners should not need normal configuration-file editing or package commands.

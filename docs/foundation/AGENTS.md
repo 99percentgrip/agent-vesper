@@ -6,6 +6,9 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `voice-control-recon.md` owns the missing-footer regression diagnosis and
+  requested dynamic microphone control implementation boundaries.
+
 - `v0.22.5-release-execution.md` owns guided setup publication and exact-commit release evidence.
 
 - `dependency-setup-execution.md` and `dependency-setup-verification.json` own guided

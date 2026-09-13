@@ -6,6 +6,9 @@ Own durable project documentation and evidence-backed engineering records.
 
 ## Ownership
 
+- `voice-control-prd.md` owns the requested persistent red microphone toggle,
+  recorder state projection, responsive lifecycle and terminal acceptance.
+
 - `dependency-setup-prd.md` owns confirmed native runtime installation, reuse,
   managed-machine recovery, readiness checks and platform acceptance gates.
 
