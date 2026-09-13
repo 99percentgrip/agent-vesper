@@ -60,9 +60,11 @@ pub async fn configured_backend(
         if !vesper_config::is_digest_pinned_image(&image) {
             return Err("Swarm requires a verified immutable driver image.".into());
         }
+        let engine = crate::dependency_setup::runtime_ready().await?;
         let backend = vesper_sandbox::DockerBackend::new(vesper_sandbox::DockerSandboxConfig {
             image: Some(image),
-            docker_bin: Some(crate::web_settings::container_cli()),
+            docker_bin: Some(engine.binary),
+            connection: engine.connection,
             ..Default::default()
         });
         Ok((Arc::new(backend), SandboxBackendChoice::Docker))

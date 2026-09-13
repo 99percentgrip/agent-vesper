@@ -112,7 +112,7 @@ Use the included `agent-vesper-acp` server as a custom external agent. Follow th
 Start with the app and your chosen provider. Add dependencies only for the features you use:
 
 - **Project tooling:** Git, compilers, package managers, and test runners needed by your repository.
-- **Web tools and container workers:** Docker or Podman, running with Linux containers. The browser-driver image is included in Vesper's package.
+- **Web tools and container workers:** Docker or Podman, running with Linux containers. The browser-driver image is included in Vesper's package. See the [setup guide](docs/installation.md#web-tools-and-container-workers) for released and upcoming guided setup.
 - **Voice input:** Optional Linux/macOS microphone and transcription setup.
 
 [Dependency installation and feature setup →](docs/installation.md#optional-dependencies)

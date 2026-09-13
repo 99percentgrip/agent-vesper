@@ -10,10 +10,12 @@ In the TUI, open `/settings`, select **Web tools**, then use Up/Down and
 Enter/Space to switch web access, fetching, JavaScript rendering, browser
 interaction, and robots.txt handling on or off. `/web` and `/settings web`
 also open this screen. The screen detects the installed driver automatically.
-If setup is needed, choose **Set up / repair driver** to import the image
-included in your installation. When entering through the main Settings menu,
+In source builds, choose **Set up features / repair** for confirmed runtime
+preparation and contained browser checks; see [setup and platform status](installation.md#web-tools-and-container-workers).
+Released builds retain **Set up / repair driver** for importing the bundled image. When entering through the main Settings menu,
 go Back, leave Settings, and choose **Save changes** to save the whole draft.
-**Discard changes** drops ordinary edits; it does not undo a driver import.
+**Discard changes** drops ordinary edits; it does not undo an explicitly confirmed
+runtime installation or driver import.
 The standalone `/web` and `/settings web` editor retains **Save settings**
 (or S) and Esc cancellation. Restart the host to apply saved web choices.
 
@@ -27,8 +29,10 @@ The application saves a workspace `.agent-vesper/web-settings.json` snapshot
 without modifying your TOML. That saved snapshot takes precedence over TOML;
 the first save retains its existing allowlist, user agent, and output budget.
 Docker or Podman is detected from PATH; `VESPER_DOCKER_BIN` remains an optional
-operator override. Setup never downloads an image or starts a browser
-container. No manual file editing or driver-asset search is needed.
+operator override. Import-only `/web setup` starts no container; guided
+`/web prepare` previews dependency setup and `/web prepare confirm` performs it,
+including a contained readiness probe. Guided setup stores the verified engine
+under the user home in `.agent-vesper/runtime.json`, separately from web toggles. No manual file editing or driver-asset search is needed.
 
 ## Install the driver
 
@@ -45,12 +49,13 @@ Podman ID formats, and verifies the imported image against the bundled ID.
 An enabled web runtime uses that bundled ID unless an explicit image override
 was configured; users do not need to copy a digest into settings.
 
-Docker or Podman must be installed and running (Linux containers on
-macOS/Windows). If the engine is unavailable during installation, the bundled
+In released builds, Docker or Podman must already be installed and running
+(Linux containers on macOS/Windows). If the engine is unavailable during installation, the bundled
 driver remains on disk: start the engine and use **Set up / repair driver**
 in Settings. The UI shows progress and supports Esc cancellation. An import
 already accepted by the engine may remain after cancellation; no web settings
-are saved by cancelling. No administrative engine installation is attempted.
+are saved by cancelling. The installer preflight never installs a container engine;
+guided setup requires its own confirmation.
 
 The following separate-asset instructions are only for older packages and
 advanced deployment with a different container-daemon architecture:

@@ -78,6 +78,8 @@ pub struct DockerSandboxConfig {
     /// Docker binary; defaults to `"docker"` unless [`DOCKER_BIN_OVERRIDE`]
     /// is set.
     pub docker_bin: Option<PathBuf>,
+    /// Explicit Podman connection, scoped to this backend; never changes global defaults.
+    pub connection: Option<String>,
     /// CPU quota for `--cpus`; defaults to [`DEFAULT_CPU_LIMIT`].
     pub cpus: Option<String>,
     /// Memory limit for `--memory`; defaults to [`DEFAULT_MEMORY_LIMIT`].
@@ -163,6 +165,7 @@ impl DockerBackend {
     /// pull an image while provisioning a tool operation.
     pub fn probe_image(&self) -> Result<(), SandboxError> {
         let mut child = Command::new(self.docker_bin())
+            .args(self.connection_args())
             .args([
                 "image",
                 "inspect",
@@ -204,6 +207,14 @@ impl DockerBackend {
         self.config.resolved_bin()
     }
 
+    fn connection_args(&self) -> Vec<String> {
+        self.config
+            .connection
+            .as_ref()
+            .map(|name| vec!["--connection".into(), name.clone()])
+            .unwrap_or_default()
+    }
+
     /// Container name for one provision.
     #[must_use]
     pub fn container_name(&self) -> String {
@@ -221,6 +232,7 @@ impl DockerBackend {
         let binary = self.docker_bin();
         let mut command = Command::new(&binary);
         command
+            .args(self.connection_args())
             .args(["version", "--format", "{{.Server.Version}}"])
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -406,6 +418,7 @@ impl SandboxBackend for DockerBackend {
         let mut args = self.exec_args(name, &cwd, argv);
         args.insert(1, "-i".into());
         let child = Command::new(binary)
+            .args(self.connection_args())
             .args(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -480,6 +493,7 @@ impl SandboxBackend for DockerBackend {
                 private_root_mount(&mut args, &root)?;
             }
             command
+                .args(self.connection_args())
                 .args(args)
                 .stdin(Stdio::null())
                 .stdout(Stdio::piped())
@@ -515,16 +529,15 @@ impl SandboxBackend for DockerBackend {
             }
             // Record cleanup independently of client lifetime so Drop can
             // attempt removal even if this client exits first.
-            let mut teardown = vec![
-                binary.to_string_lossy().into_owned(),
-                "rm".into(),
-                "-f".into(),
-            ];
+            let mut teardown = vec![binary.to_string_lossy().into_owned()];
+            teardown.extend(self.connection_args());
+            teardown.extend(["rm".into(), "-f".into()]);
             teardown.push(name.clone());
             // A sentinel child we own for PID bookkeeping: a short-lived
             // `docker version` re-check that exits immediately. The real
             // cleanup lever is `teardown_command` above.
             let sentinel = Command::new(&binary)
+                .args(self.connection_args())
                 .arg("version")
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
@@ -564,6 +577,7 @@ impl SandboxBackend for DockerBackend {
             let container_cwd = Self::container_cwd(&handle.writable_root, &argv.cwd);
             let mut command = Command::new(&binary);
             command
+                .args(self.connection_args())
                 .args(self.exec_args(name, &container_cwd, &argv))
                 .stdin(Stdio::null())
                 .stdout(Stdio::piped())

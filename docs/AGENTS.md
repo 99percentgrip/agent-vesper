@@ -6,6 +6,9 @@ Own durable project documentation and evidence-backed engineering records.
 
 ## Ownership
 
+- `dependency-setup-prd.md` owns confirmed native runtime installation, reuse,
+  managed-machine recovery, readiness checks and platform acceptance gates.
+
 - `README.md` is the documentation landing page, separating user guides from
   contributor references, specifications, and historical evidence.
 - `installation.md` owns user prerequisites, dependency setup, installation,

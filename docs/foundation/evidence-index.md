@@ -1,6 +1,19 @@
 # Foundation Evidence Index
 
+[Guided dependency setup](dependency-setup-execution.md) records 2,315 passing
+workspace tests, 23 acceptance cases, Rust 1.88 compatibility and real isolated
+Linux setup through CLI and Settings. Clean-platform installation and restart
+acceptance remain pending; no release or local update was performed.
+
+
 Status: evidence index; acceptance status is scoped to each section.
+
+## Dependency setup reconnaissance — COMPLETE; implementation proposed — 2026-09-13
+
+[Dependency setup recon](dependency-setup-recon.md) identifies the missing engine
+installation/start/health workflow and proposes shared native setup with real
+readiness checks, reboot recovery and preservation of existing user state.
+No dependencies were installed and no implementation acceptance is claimed.
 
 ## Security policy refresh — COMPLETE — 2026-09-13
 

@@ -249,7 +249,6 @@ pub mod holder {
     use super::*;
     use std::sync::OnceLock;
     use vesper_sandbox::LinuxNamespacesBackend;
-    #[cfg(not(feature = "docker"))]
     use vesper_sandbox::UnavailableBackend;
 
     static ROUTE_HOLDER: OnceLock<Option<Arc<SandboxRoute>>> = OnceLock::new();
@@ -318,7 +317,19 @@ pub mod holder {
             SandboxBackendChoice::Docker => {
                 #[cfg(feature = "docker")]
                 {
-                    Arc::new(vesper_sandbox::DockerBackend::new(Default::default()))
+                    match crate::dependency_setup::runtime_snapshot() {
+                        Ok(engine) => Arc::new(vesper_sandbox::DockerBackend::new(
+                            vesper_sandbox::DockerSandboxConfig {
+                                docker_bin: Some(engine.binary),
+                                connection: engine.connection,
+                                image: std::env::var("VESPER_DOCKER_IMAGE")
+                                    .ok()
+                                    .or_else(|| crate::web_settings::bundled_image_id().ok()),
+                                ..Default::default()
+                            },
+                        )),
+                        Err(_) => Arc::new(UnavailableBackend),
+                    }
                 }
                 // Feature off: refuse honestly rather than silently falling
                 // back to another backend. The all-Unavailable capability

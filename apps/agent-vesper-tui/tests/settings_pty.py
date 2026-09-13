@@ -16,7 +16,7 @@ import termios
 import time
 
 class Host:
-    def __init__(self, binary, root):
+    def __init__(self, binary, root, extra_env=None):
         self.master, slave = pty.openpty()
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 40, 120, 0, 0))
         self.screen = [[' '] * 120 for _ in range(40)]
@@ -34,6 +34,8 @@ class Host:
                    AGENT_VESPER_LMSTUDIO_ROOT=str(root/'lmstudio'),
                    AGENT_VESPER_GLOBAL_MEMORY_ROOT=str(root/'global-memory'),
                    AGENT_VESPER_GLOBAL_COGNITION_ROOT=str(root/'global-cognition'))
+        if extra_env:
+            env.update(extra_env)
         self.child = subprocess.Popen([binary], cwd=root, env=env, stdin=slave,
                                       stdout=slave, stderr=slave, start_new_session=True)
         os.close(slave)

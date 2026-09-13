@@ -67,6 +67,8 @@ through safe `std::process`.
   (`UnavailableBackend`) reports everything unavailable and fails closed.
   The `sandbox_init` binary likewise compiles to an inert entry point off
   Linux, so workspace-wide test builds never link Linux syscall symbols there.
+- A supplied Podman connection is local to the backend. All probes, run/exec,
+  duplex and recorded teardown commands retain it; no global default changes.
 - Docker backend (VRO-13 PR-4) is **feature-gated** behind
   `--features docker`; default builds gain zero new dependencies. It wraps
   `docker run --rm -d` with `--cpus`/`--memory`/`--pids-limit` limits, a

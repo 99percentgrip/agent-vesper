@@ -127,7 +127,7 @@ printf '  %s\n' "$install_dir/agent-vesper-tui"
 if [ -f "$bundle_dir/web-driver/image.tar.gz" ]; then
     printf 'Setting up bundled web driver...\n'
     if ! "$bundle_dir/agent-vesper-acp" --setup-web-driver; then
-        printf 'Web driver is included. Start Docker/Podman, then use Settings > Web tools > Set up / repair driver.\n' >&2
+        printf 'Web driver is included. Open Settings > Web tools > Set up features / repair for guided runtime installation and browser checks.\n' >&2
     fi
 else
     printf 'This older release has no bundled web driver; upgrade to a complete driver-bundled release.\n' >&2

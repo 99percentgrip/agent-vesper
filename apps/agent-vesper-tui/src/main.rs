@@ -2998,25 +2998,60 @@ async fn setup_web_driver_ui(
     hub: &mut agent_vesper_tui::web_hub::WebHub,
     theme: &str,
 ) -> Result<String, String> {
-    let setup = vesper_harness::web_settings::setup_driver();
-    tokio::pin!(setup);
-    let mut ticks = 0usize;
+    if settings_host::choice(
+        terminal,
+        "Set up features",
+        vesper_harness::dependency_setup::CONSENT,
+        &[
+            "Set up web and isolated tools".into(),
+            "Continue coding without setup".into(),
+        ],
+        theme,
+    )
+    .await?
+        != Some(0)
+    {
+        return Err("Setup declined; your settings are unchanged.".into());
+    }
+    let (sender, mut progress) = tokio::sync::watch::channel("Checking dependencies…".to_string());
+    let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let task_cancel = cancel.clone();
+    let mut task = tokio::spawn(async move {
+        vesper_harness::dependency_setup::setup_cancellable(
+            |phase| {
+                let _ = sender.send(phase.to_owned());
+            },
+            || task_cancel.load(std::sync::atomic::Ordering::Acquire),
+        )
+        .await
+    });
     loop {
-        hub.notice = format!(
-            "Verifying / loading the bundled driver{} Esc cancels. No download required.",
-            ".".repeat(ticks % 4)
-        );
+        hub.notice = if cancel.load(std::sync::atomic::Ordering::Acquire) {
+            "Stopping after the current OS transaction and cleanup finish…".into()
+        } else {
+            progress.borrow_and_update().clone()
+        };
         terminal
-            .draw(|frame| agent_vesper_tui::web_hub::render(frame, hub, theme))
+            .draw(|frame| {
+                agent_vesper_tui::settings_menu::render_menu(
+                    frame,
+                    &["Preparing optional features…".into()],
+                    0,
+                    "Set up features",
+                    &hub.notice,
+                    "Esc requests stop after the current step · OS prompts may need approval",
+                    theme,
+                )
+            })
             .map_err(|error| error.to_string())?;
         tokio::select! {
-            result = &mut setup => return result,
+            result = &mut task => return result.map_err(|_| "Dependency setup stopped unexpectedly.".to_string())?,
             () = tokio::time::sleep(std::time::Duration::from_millis(100)) => {
-                ticks += 1;
-                if event::poll(std::time::Duration::ZERO).map_err(|error| error.to_string())?
-                    && let Event::Key(key) = event::read().map_err(|error| error.to_string())?
-                    && key.code == KeyCode::Esc {
-                    return Err("Setup cancelled. An already-imported image may remain; settings were not saved.".into());
+                // Drain input so keys typed during an OS prompt cannot activate settings later.
+                while event::poll(std::time::Duration::ZERO).map_err(|error| error.to_string())? {
+                    if let Ok(Event::Key(key)) = event::read() && key.code == KeyCode::Esc {
+                        cancel.store(true, std::sync::atomic::Ordering::Release);
+                    }
                 }
             }
         }

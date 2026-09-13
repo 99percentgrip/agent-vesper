@@ -6,6 +6,9 @@ Verify terminal interaction through the production TUI binary with isolated stat
 
 ## Ownership
 
+- `dependency_setup_pty.py` checks real setup consent/decline/failure/retry with
+  an explicit missing engine override, structurally preventing package installation.
+
 - `settings_pty.py` owns the stdlib-only Linux/macOS Settings lifecycle smoke test.
 - `skill_routing_pty.py` reuses its isolated terminal driver for Skills draft,
   discard, keep-editing, save, restart, model-assistance opt-in and unchanged-library checks.

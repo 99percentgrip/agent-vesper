@@ -1,0 +1,50 @@
+{
+  "schema": 1,
+  "date": "2026-09-13",
+  "base": "89bdc075cb725e5982408521dfb390ce27896b22",
+  "source_sha256": {
+    ".github/workflows/web-driver.yml": "e5285a00f0f26442c4fbab2b2734202af7259cd262f2f3b75f75573c0b681c9a",
+    "Cargo.lock": "d462e8cbf05b6d4140823fa845250aeeb5c84c1c5beaab74f3c077670503b1bd",
+    "apps/agent-vesper-acp/src/lib.rs": "f937bfc5d055693f8b2c8e45b25ed64d8c45bc6ae5bcd619785529f2aa030cb6",
+    "apps/agent-vesper-acp/tests/dependency_setup_controls.rs": "3c51a32762e8a88a2752f6a0b3f57503b9037afb706215fa301b729d14d53d4d",
+    "apps/agent-vesper-tui/src/main.rs": "5ab0881cfb2970564f640390a63f7679669915d7bbbf535ac3da54c49092629a",
+    "apps/agent-vesper-tui/src/settings_host.rs": "b8b996d8c2f5f85c5538c30445dff2e98e2657ea3e6485c6d18b0db536465a42",
+    "apps/agent-vesper-tui/src/web_hub.rs": "31ae89ac7d7da81a8c8691d70e62477f522735449d84a020bcf31e01518b0d4c",
+    "apps/agent-vesper-tui/tests/dependency_setup_pty.py": "ec0c2afe9a6c1565cb4cf6df615377d380787256e00a1c28f383dcc5e8df9abb",
+    "apps/agent-vesper-tui/tests/settings_pty.py": "a4fbaf5fdb6d467f0ca6b2c87c958a24f503f38cdaa29165c90603e80015cd03",
+    "crates/vesper-harness/Cargo.toml": "d5625431f26c97cd382a8fb6b11fde95de9d82bb92c946f18289d19a42d7676b",
+    "crates/vesper-harness/src/dependency_setup.rs": "9009609fd7774f176237f335c817e35b85d86bff662ae982c7abba3ff7eb99e8",
+    "crates/vesper-harness/src/dependency_setup_tests.rs": "6a30de4800380a3f3c3116852831049600ead646c5ad7590b1e847aef3239b58",
+    "crates/vesper-harness/src/lib.rs": "591407f1b7522e28d42e0053e54f103b79c233822cf90a1525601b250c9a1e00",
+    "crates/vesper-harness/src/sandbox_backend.rs": "c430b68948f33cb03f1d580b701f6d821313c4a7c476fab22e4199cf64773ae1",
+    "crates/vesper-harness/src/swarm_service.rs": "0f7f3d5684847b993d32fdc4bb6cde79d857b0e451e779bde801b66752e6afca",
+    "crates/vesper-harness/src/web_runtime.rs": "e77a57e700af23f57d478f1f5767d8a8845edb1752d6f6a8b3be0207dc768566",
+    "crates/vesper-harness/src/web_settings.rs": "ac85808e2f50d11448605b3c3cb9f23b5890c35be2c05af20fc0a7c4b00898b6",
+    "crates/vesper-harness/tests/dependency_cli_fixture.sh": "b4eb3dd4effeee26c87bbe78cead71da71eaa6d4b0c41f04ee8912c27ffa0d57",
+    "crates/vesper-sandbox/src/docker.rs": "a6c5ab081b4f7154d229178382c88344ddffe7b49fb5a657ddaa0c9a35a026ff",
+    "scripts/install.ps1": "2bb4321596f5026e8eda1c4421602bb57997e782753ae13ec31b93ee5e048d31",
+    "scripts/install.sh": "d5cdfe38459ef86dca3b1ad5e36b70f6b2524a76929c30d8678378e556abf5c9"
+  },
+  "log_sha256": {
+    "/tmp/vesper-dependency-verify-final.log": "d27534722d83417bc0c8ff445c5ca9b222eedba0bd034918697919bb64b4f68b",
+    "/tmp/vesper-dependency-acceptance.log": "b779288addb3781ccd9727bf63421f592a8fd8432e730e6431774e9333ac502c",
+    "/tmp/vesper-dependency-msrv.log": "d9dfa94e95f5bfb6d12562583492d602f85fa6586372843c0ee93af2c4e34eb4",
+    "/tmp/vesper-dependency-build.log": "65a54bf3f1f80a7283f84b6e7de44620ee7129d1ff7896524c26ab39b22a39b4",
+    "/tmp/vesper-dependency-pty.log": "7ee1c8a52a3713301cacbfad5bcc647835d5f941e26d53f008c4092f7b83b1ad",
+    "/tmp/vesper-dependency-settings.log": "f46b5b86bdf0b14004b4c8ac1d36abb7c779a80e367dd2d36b826f7fa7960842",
+    "/tmp/vesper-dependency-native.log": "a140cd40abda1cec0b813ebca9e59c4a99a73004c0d12854e20334616a2503a0",
+    "/tmp/vesper-dependency-real-pty.log": "9255ab9352ddd06c66d4f094690d5372ff625a55369d3b2ef842085cd68046cf",
+    "/tmp/vesper-dependency-installer.log": "51c62b92f3b7736a8bca8a6a39c8974f05015fff4f7d6bd36beceda68b3ea3f4"
+  },
+  "workspace": {
+    "passed": 2315,
+    "failed": 0,
+    "ignored": 36
+  },
+  "acceptance_cases_passed": 23,
+  "live_provider_calls": 0,
+  "real_runtime_platform": "Fedora 44 x86_64; isolated Podman storage",
+  "clean_os_installation_verified": false,
+  "macos_windows_installation_verified": false,
+  "released": false
+}

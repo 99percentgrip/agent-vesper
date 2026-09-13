@@ -59,6 +59,10 @@ test-only conformance support.
   parse/strip/prune/convert DOM pipeline with strictly zero I/O (no network,
   no filesystem, no clock). Transports and the headless renderer are
   composition-boundary ports, never implemented here.
+- Explicit native dependency setup in `vesper-harness` may invoke fixed OS package
+  managers and checksum-pinned installer downloads after separate user confirmation.
+  This setup-only exception is never a model tool or a host HTTP fallback for web
+  execution; provider transport and runtime network permissions remain unchanged.
 - `vesper-harness` may compose `vesper-web-fetch` behind the shared opt-in
   web service. Helper execution stays inside a network-granted sandbox and
   off the render thread; no host HTTP fallback is permitted.

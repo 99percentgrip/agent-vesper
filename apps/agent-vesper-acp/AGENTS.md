@@ -239,6 +239,11 @@ shared web-settings service against the request's primary workspace. Saves
 are explicit user actions, never startup writes or provider tool calls.
 Settings require a host restart and do not change an in-flight turn, so this
 command is concurrent-safe. The TUI-only settings modal has the same controls.
+`/web prepare` previews dependency setup; `/web prepare confirm` executes the
+shared service, emits fixed progress through ACP content events and observes
+session cancellation between OS transactions. OS authorization uses native prompts,
+never protocol stdin/stdout. `--setup-features --confirm` exposes the same explicit
+pre-provider operation. Runtime preferences are user-wide, separate from web saves.
 `--setup-web-driver` is an explicit installer preflight before provider or ACP
 boot. It verifies/imports the bundled image, writes diagnostics only to stderr,
 and does not create workspace state or enable web tools.

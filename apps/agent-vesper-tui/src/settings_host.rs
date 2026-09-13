@@ -713,7 +713,12 @@ async fn edit_web(
         rows.push("Back".into());
         match choice(terminal, "Settings · Web tools", &hub.notice, &rows, theme).await? {
             Some(5) => match setup_web_driver_ui(terminal, &mut hub, theme).await {
-                Ok(image) => hub.config.driver_image = Some(image),
+                Ok(image) => {
+                    hub.config.driver_image = Some(image);
+                    hub.notice =
+                        "Browser and isolation ready. Leave Settings to save your web choices."
+                            .into();
+                }
                 Err(error) => hub.notice = error,
             },
             Some(index) if index < 5 => {

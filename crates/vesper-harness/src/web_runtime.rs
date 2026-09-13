@@ -15,6 +15,8 @@ pub(crate) struct WebRuntime {
 }
 
 struct State {
+    #[cfg(feature = "docker")]
+    engine: crate::dependency_setup::Engine,
     browser: Option<BrowserSession>,
     route: Arc<WebSandboxPort>,
     _root: tempfile::TempDir,
@@ -75,10 +77,14 @@ impl WebRuntime {
                 "web driver image must be digest-pinned".into(),
             ));
         }
+        let engine = tokio::runtime::Handle::current()
+            .block_on(crate::dependency_setup::runtime_ready())
+            .map_err(FetchError::Sandbox)?;
         let backend: Arc<dyn vesper_sandbox::SandboxBackend> = Arc::new(
             vesper_sandbox::DockerBackend::new(vesper_sandbox::DockerSandboxConfig {
                 network: true,
-                docker_bin: Some(crate::web_settings::container_cli()),
+                docker_bin: Some(engine.binary.clone()),
+                connection: engine.connection.clone(),
                 image: Some(image),
                 ..Default::default()
             }),
@@ -95,6 +101,7 @@ impl WebRuntime {
             };
             config.user_agent = self.scope.user_agent.clone();
             Ok(State {
+                engine,
                 browser: None,
                 route: Arc::new(WebSandboxPort::new(backend, config)),
                 _root: root,
@@ -138,6 +145,7 @@ impl WebRuntime {
                 );
             }
             let state = slot.as_mut().expect("initialized");
+            ensure_state(state).map_err(|e| DriverError::Sandbox(e.to_string()))?;
             let handle = tokio::runtime::Handle::current();
             if state.browser.is_none() {
                 if !matches!(action, BrowserAction::Navigate { .. }) {
@@ -188,6 +196,7 @@ impl WebRuntime {
             if slot.is_none() {
                 *slot = Some(runtime.initialize()?);
             }
+            ensure_state(slot.as_ref().expect("initialized"))?;
             let route = slot.as_ref().expect("initialized").route.clone();
             drop(slot);
             let handle = tokio::runtime::Handle::current();
@@ -280,6 +289,7 @@ impl FetchTransport for RuntimeFetch {
                     if slot.is_none() {
                         *slot = Some(runtime.initialize()?);
                     }
+                    ensure_state(slot.as_ref().expect("initialized"))?;
                     slot.as_ref().expect("initialized").route.clone()
                 };
                 tokio::runtime::Handle::current().block_on(route.fetch(&request))
@@ -287,5 +297,17 @@ impl FetchTransport for RuntimeFetch {
             .await
             .map_err(|_| FetchError::Sandbox("web worker failed".into()))?
         })
+    }
+}
+
+fn ensure_state(state: &State) -> Result<(), FetchError> {
+    #[cfg(feature = "docker")]
+    return tokio::runtime::Handle::current()
+        .block_on(crate::dependency_setup::ensure_engine(&state.engine))
+        .map_err(FetchError::Sandbox);
+    #[cfg(not(feature = "docker"))]
+    {
+        let _ = state;
+        Ok(())
     }
 }

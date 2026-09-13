@@ -36,24 +36,9 @@ pub fn save(root: &Path, config: &WebScopeConfig) -> Result<(), String> {
 
 /// Honor explicit operator selection, otherwise find Docker or Podman on PATH.
 pub fn container_cli() -> PathBuf {
-    if let Some(value) = std::env::var_os("VESPER_DOCKER_BIN").filter(|value| !value.is_empty()) {
-        return value.into();
-    }
-    for name in ["docker", "podman"] {
-        let executable = if cfg!(windows) {
-            format!("{name}.exe")
-        } else {
-            name.into()
-        };
-        if let Some(path) = std::env::var_os("PATH").and_then(|paths| {
-            std::env::split_paths(&paths)
-                .map(|dir| dir.join(&executable))
-                .find(|path| path.is_file())
-        }) {
-            return path;
-        }
-    }
-    PathBuf::from("docker")
+    crate::dependency_setup::runtime_snapshot()
+        .map(|engine| engine.binary)
+        .unwrap_or_else(|_| "docker".into())
 }
 
 /// Inspect the already-installed driver; never pull or start a container.
@@ -64,7 +49,7 @@ pub async fn detect_driver() -> Result<String, String> {
     } else {
         "vesper-web-driver:validated".into()
     };
-    inspect_driver(&container_cli(), &reference).await
+    inspect_engine(&crate::dependency_setup::discover().await?, &reference).await
 }
 
 fn normalize_image_id(value: &str) -> Option<String> {
@@ -145,21 +130,52 @@ fn verify_bundle(dir: &Path) -> Result<String, String> {
 /// Load the checksum-verified image supplied by the installation package.
 /// Explicit setup only: no downloads, containers, or workspace settings writes.
 pub async fn setup_driver() -> Result<String, String> {
-    setup_driver_from(&bundled_driver_dir()?, &container_cli()).await
+    verify_bundled_driver().await?;
+    setup_driver_with_engine(&crate::dependency_setup::discover().await?).await
 }
 
+/// Validate the package before offering any OS installation side effect.
+pub(crate) async fn verify_bundled_driver() -> Result<String, String> {
+    let dir = bundled_driver_dir()?;
+    tokio::task::spawn_blocking(move || verify_bundle(&dir))
+        .await
+        .map_err(|_| "Driver verification stopped.".to_string())?
+}
+
+pub(crate) async fn setup_driver_with_engine(
+    engine: &crate::dependency_setup::Engine,
+) -> Result<String, String> {
+    setup_engine_from(&bundled_driver_dir()?, engine).await
+}
+#[cfg(test)]
 async fn setup_driver_from(dir: &Path, cli: &Path) -> Result<String, String> {
+    setup_engine_from(
+        dir,
+        &crate::dependency_setup::Engine {
+            binary: cli.into(),
+            connection: None,
+            managed_machine: false,
+            verified: false,
+        },
+    )
+    .await
+}
+async fn setup_engine_from(
+    dir: &Path,
+    engine: &crate::dependency_setup::Engine,
+) -> Result<String, String> {
     let source = dir.to_owned();
     let expected = tokio::task::spawn_blocking(move || verify_bundle(&source))
         .await
         .map_err(|error| error.to_string())??;
-    if inspect_driver(cli, &expected)
+    if inspect_engine(engine, &expected)
         .await
         .is_ok_and(|actual| actual == expected)
     {
         return Ok(expected);
     }
-    let mut child = tokio::process::Command::new(cli)
+    let mut child = engine
+        .command()
         .args(["load", "--input"])
         .arg(dir.join("image.tar.gz"))
         .stdin(std::process::Stdio::null())
@@ -182,7 +198,7 @@ async fn setup_driver_from(dir: &Path, cli: &Path) -> Result<String, String> {
     if !status.success() {
         return Err("Driver is bundled, but import failed. Start Docker/Podman with Linux containers and retry Setup.".into());
     }
-    let actual = inspect_driver(cli, &expected).await?;
+    let actual = inspect_engine(engine, &expected).await?;
     if actual != expected {
         return Err("Imported driver identity does not match the bundled image.".into());
     }
@@ -191,6 +207,24 @@ async fn setup_driver_from(dir: &Path, cli: &Path) -> Result<String, String> {
 
 /// Installer preflight shared by both binaries; never starts a provider or UI.
 pub async fn handle_setup_flag() -> Option<bool> {
+    if std::env::args().any(|arg| arg == "--setup-features") {
+        if !std::env::args().any(|arg| arg == "--confirm") {
+            eprintln!(
+                "{}\nRun again with --setup-features --confirm to proceed.",
+                crate::dependency_setup::CONSENT
+            );
+            return Some(false);
+        }
+        return Some(
+            match crate::dependency_setup::setup(|phase| eprintln!("{phase}")).await {
+                Ok(_) => true,
+                Err(error) => {
+                    eprintln!("{error}");
+                    false
+                }
+            },
+        );
+    }
     if !std::env::args().any(|arg| arg == "--setup-web-driver") {
         return None;
     }
@@ -206,9 +240,25 @@ pub async fn handle_setup_flag() -> Option<bool> {
     })
 }
 
+#[cfg(test)]
 async fn inspect_driver(cli: &Path, reference: &str) -> Result<String, String> {
+    inspect_engine(
+        &crate::dependency_setup::Engine {
+            binary: cli.into(),
+            connection: None,
+            managed_machine: false,
+            verified: false,
+        },
+        reference,
+    )
+    .await
+}
+async fn inspect_engine(
+    engine: &crate::dependency_setup::Engine,
+    reference: &str,
+) -> Result<String, String> {
     use tokio::io::AsyncReadExt;
-    let mut command = tokio::process::Command::new(cli);
+    let mut command = engine.command();
     command
         .args(["image", "inspect", reference, "--format", "{{.Id}}"])
         .kill_on_drop(true)
@@ -252,12 +302,23 @@ async fn inspect_driver(cli: &Path, reference: &str) -> Result<String, String> {
 
 /// Text host equivalent of the terminal settings controls.
 pub async fn command(root: &Path, argument: &str) -> Result<String, String> {
+    if argument.trim() == "prepare" {
+        return Ok(format!(
+            "{}\n{}\nConfirm with /web prepare confirm.",
+            crate::dependency_setup::status().await,
+            crate::dependency_setup::CONSENT
+        ));
+    }
+    if argument.trim() == "prepare confirm" {
+        crate::dependency_setup::setup(|_| {}).await?;
+        return Ok("Web/browser runtime ready. Enable your desired web features separately; restart the host to apply. Core coding and other feature prerequisites are unchanged.".into());
+    }
     let mut config = load(root)?;
     let words: Vec<_> = argument.split_whitespace().collect();
     match words.as_slice() {
         [] | ["status"] => {
             return Ok(format!(
-                "Web tools (saved; restart host to apply): enabled={}, fetch={}, render={}, interact={}, robots={}. Driver: {}.\n/web <enabled|fetch|render|interact|robots> <on|off>; /web setup (bundled driver); /web detect (read-only)",
+                "Web tools (saved; restart host to apply): enabled={}, fetch={}, render={}, interact={}, robots={}. Driver: {}.\n/web <enabled|fetch|render|interact|robots> <on|off>; /web prepare (guided dependencies); /web setup (bundled driver); /web detect (read-only)",
                 config.enabled,
                 config.fetch_enabled,
                 config.render_enabled,

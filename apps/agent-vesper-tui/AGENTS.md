@@ -92,8 +92,10 @@ business logic.
   provider control, not an ACP terminal modal.
 - `src/web_hub.rs` owns the standalone Web tools editor (`/web`, `/settings web`):
   draft on/off controls, explicit Save/Cancel, automatic installed-driver
-  detection when opened, and bundled-driver setup/repair with visible progress
-  and cancellation. Persistence and setup use shared `vesper-harness::web_settings`.
+  detection when opened, and confirmed Set up features / repair using shared
+  `dependency_setup` progress. Esc requests stop between OS transactions; the
+  current transaction and cleanup finish before returning. Runtime preparation
+  is separate from the Settings draft. Import-only controls use `web_settings`.
   Changes are workspace-scoped and require host restart; the screen must say
   so. `/web` with arguments uses the same text controls as ACP. The interactive
   modal is terminal-specific; ACP exposes the shared slash controls instead.

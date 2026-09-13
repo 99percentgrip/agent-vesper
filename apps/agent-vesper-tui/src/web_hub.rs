@@ -41,7 +41,7 @@ impl WebHub {
         .map(|(label, value)| format!("{label}: {}", if value { "ON" } else { "OFF" }))
         .collect();
         rows.extend([
-            "Set up / repair driver".into(),
+            "Set up features / repair".into(),
             "Save settings".into(),
             "Cancel".into(),
         ]);
@@ -137,7 +137,7 @@ mod tests {
             "Web tools",
             "JavaScript rendering",
             "Browser interaction",
-            "Set up / repair driver",
+            "Set up features / repair",
             "Save settings",
             "restarting",
         ] {

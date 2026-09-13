@@ -134,7 +134,7 @@ try {
             $ErrorActionPreference = $driverErrorPreference
         }
         if ($LASTEXITCODE -ne 0) {
-            Write-Warning "Web driver is included. Start Docker/Podman with Linux containers, then use Settings > Web tools > Set up / repair driver."
+            Write-Warning "Web driver is included. Open Settings > Web tools > Set up features / repair for guided runtime installation and browser checks."
         }
     } else {
         Write-Warning "This older release has no bundled web driver; upgrade to a complete driver-bundled release."

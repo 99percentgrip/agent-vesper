@@ -30,8 +30,9 @@ platform assumptions on hosts unavailable locally.
   the successful exact-commit driver artifact selected by the release gate,
   verifies its hash before packaging, and never rebuilds it. Both hosts build
   with Docker and Swarm features; Swarm activation remains default-off in native
-  Settings and requires configured embeddings and a permitted backend. Docker/Podman itself remains a host prerequisite;
-  installers and Settings import the bundled image without enabling web access.
+  Settings and requires configured embeddings and a permitted backend. Docker/Podman
+  supplies the host runtime; native guided setup offers separate confirmed preparation,
+  while installer preflight remains import-only and never enables web access.
 - The default toolchain is pinned to Rust 1.95.0 via `rust-toolchain.toml`
   (with `clippy` and `rustfmt` components); MSRV 1.88.0 is enforced
   independently in `msrv.yml` and the spike workflows.
@@ -94,7 +95,7 @@ platform assumptions on hosts unavailable locally.
 - `workflows/msrv.yml` — dedicated Rust 1.88.0 foundational verification with
   per-stage fixture coverage.
 - `workflows/web-driver.yml` — native x86_64/arm64 image builds and gated
-  real pipe-browser tests plus real scoped Hive lifecycle acceptance (three
+  real pipe-browser tests, native dependency browser/cleanup readiness, and real scoped Hive lifecycle acceptance (three
   independent workers, permissioned command continuations, scale/replacement
   and verified cleanup) using the same immutable built image. The explicit Hive
   gate fails on unavailable isolation; it never counts a skipped body as passing.

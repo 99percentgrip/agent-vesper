@@ -76,6 +76,12 @@ Default section order:
 
 ## User Preferences
 
+- Optional dependency setup belongs in native Settings: detect healthy local
+  runtimes, offer confirmed setup/repair, show real progress and verify readiness.
+  Beginners should not need normal configuration-file editing or package commands.
+  Preserve existing runtimes/workloads; OS approval and reboot requirements remain
+  explicit. Core coding stays usable when optional setup is declined.
+
 - For prose-only corrections, review content, links and whitespace; do not run
   program test suites or a version/release pipeline. A documentation-only push
   may skip CI when the user requests a text-only update without tests.
@@ -242,7 +248,8 @@ When the user requests a durable behavior change, record it here or in the relev
 - `fixtures/AGENTS.md` — language-neutral compatibility scenarios, schemas, and captured oracle results.
 - `.github/AGENTS.md` — CI-only external platform validation workflows.
 - `.cargo/AGENTS.md` — repository-local Cargo command and resolver policy.
-- `crates/AGENTS.md` — production foundational crate boundaries and dependency direction.
+- `crates/AGENTS.md` — production foundational crate boundaries, dependency direction,
+  and the explicit native dependency-setup exception.
 - `apps/AGENTS.md` — thin production composition binaries.
 - `registry/AGENTS.md` — ACP registry manifest for Zed discovery/install.
 - `skills/AGENTS.md` — curated seed skill library bundled in release archives.

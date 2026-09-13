@@ -67,7 +67,9 @@ with each release.
 - Complete packages include `web-driver/` (archive, checksum, immutable ID).
   Both installers call the bundled ACP binary's `--setup-web-driver` to
   verify/import it. Missing or stopped Docker/Podman leaves the archive
-  installed and gives the in-app setup/repair route; it must not require
+  installed and gives the in-app Set up features / repair route. Native guided
+  setup may install an engine after separate confirmation; installers themselves
+  do not authorize OS package or VM installation. The flow must not require
   users to search for driver assets. Setup never enables workspace web tools.
   Older packages without the archive receive an explicit upgrade notice.
 - POSIX upgrades remove legacy launcher symlinks before writing replacement

@@ -1335,6 +1335,44 @@ impl AcpHarnessEngine {
                 };
             }
             if lowered == "web" {
+                if raw_argument.trim() == "prepare confirm" {
+                    let cancellation = Arc::new(RuntimeCancellation::new());
+                    self.cancellations
+                        .lock()
+                        .await
+                        .entry(request.session_id.clone())
+                        .or_default()
+                        .push(cancellation.clone());
+                    let result = vesper_harness::dependency_setup::setup_cancellable(
+                        |phase| {
+                            if let Some(sink) = &request.event_sink {
+                                sink.event(vesper_acp::AcpEngineEvent::ContentDelta {
+                                    text: format!("{phase}\n"),
+                                });
+                            }
+                        },
+                        || cancellation.is_cancelled(),
+                    )
+                    .await;
+                    self.cancellations
+                        .lock()
+                        .await
+                        .entry(request.session_id.clone())
+                        .or_default()
+                        .retain(|entry| !Arc::ptr_eq(entry, &cancellation));
+                    let text = match result {
+                        Ok(_) => "Browser and isolation ready. Enable web features separately and restart the host to apply.".into(),
+                        Err(error) => error,
+                    };
+                    // ACP suppresses its final-body fallback after any streamed text;
+                    // emit the terminal outcome on the same stream as setup progress.
+                    if let Some(sink) = &request.event_sink {
+                        sink.event(vesper_acp::AcpEngineEvent::ContentDelta {
+                            text: format!("{text}\n"),
+                        });
+                    }
+                    return slash_result(text);
+                }
                 let root = workspace_root_path(&request.workspace_roots);
                 return slash_result(
                     vesper_harness::web_settings::command(&root, raw_argument)

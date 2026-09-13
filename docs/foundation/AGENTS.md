@@ -6,6 +6,15 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `dependency-setup-execution.md` and `dependency-setup-verification.json` own guided
+  dependency setup implementation,
+  isolated readiness evidence and explicit missing clean-platform acceptance.
+
+- `dependency-setup-recon.md` owns the dependency-bootstrap investigation and
+  proposed native setup flow. The requested UX is automatic preparation for
+  selected features, without normal users copying shell commands or editing
+  configuration; OS consent and actual readiness checks remain explicit.
+
 - `v0.22.4-release-execution.md` owns the routing-preview release, exact-commit
   gate and registry receipts, documentation refresh and preserved local installation.
 

@@ -83,28 +83,32 @@ Install [LM Studio](https://lmstudio.ai/docs/app), download and load a model sui
 
 ### Web tools and container workers
 
-Install either [Docker](https://docs.docker.com/get-started/get-docker/) or [Podman](https://podman.io/docs/installation). Follow the official installation instructions for your OS. On macOS/Windows, use a running Linux-container engine.
+In source builds with guided setup, open **Settings → Web tools → Set up features / repair**.
+These builds need the complete browser bundle; compiling the executable alone does
+not include the browser archive. Release packaging supplies it automatically.
+Confirm setup and approve any operating-system authorization prompt. Vesper reuses
+an available local Docker/Podman engine, or offers Podman installation. It then
+imports the bundled image and checks contained browser execution and cleanup.
+Save your web choices separately and restart the host when prompted.
 
-For Podman on Debian/Ubuntu or Fedora, the [official installation guide](https://podman.io/docs/installation) provides package-manager instructions:
+Automatic package plans cover Debian/Ubuntu and Fedora (with a graphical `pkexec`
+authorization agent), official Podman packages on macOS, and Windows x86_64.
+macOS/Windows need a Linux VM; a new Vesper machine uses 2 CPUs, 2 GiB RAM and
+up to 20 GiB disk. Downloads can exceed 1 GiB. Windows may require OS virtualization
+approval and a restart; reopen Vesper and repeat setup afterward. Existing machines
+are never reset. A previously verified Vesper machine can start again when needed.
 
-```sh
-# Debian / Ubuntu
-sudo apt-get install podman
-```
+The guided flow is **not released yet**. Its real Linux contained-browser check has
+passed; clean-machine package installation and macOS/Windows acceptance remain
+pending. See the [acceptance record](foundation/dependency-setup-execution.md).
+Released builds use **Set up / repair driver** after installing and starting
+[Docker](https://docs.docker.com/get-started/get-docker/) or
+[Podman](https://podman.io/docs/installation) through the official OS instructions.
 
-```sh
-# Fedora
-sudo dnf install podman
-```
-
-On macOS/Windows, Podman uses a virtual machine. After installing Podman, initialize it once and start it:
-
-```sh
-podman machine init
-podman machine start
-```
-
-Check your chosen engine with `docker info` or `podman info`. Then open **`/settings` → Web tools → Set up / repair driver**, save your choices, and restart when prompted. Vesper imports the image already included in its package; you do not need to find a separate browser download.
+Esc requests a stop after the current setup transaction. Installed packages/imports
+remain available for Retry; unsaved web toggles stay unsaved. Core coding remains
+available when setup is declined or blocked by device policy. Voice, local models,
+embeddings and project build tools have separate requirements.
 
 Web access and browser interaction are opt-in. See [web tools](web-tools.md) for permissions, settings, and supported operations. Multi-worker execution additionally needs configured embeddings and an available permitted sandbox backend; see [using workers](using-vesper.md#reasoning-and-workers).
 

@@ -31,6 +31,7 @@ pub mod acceptance;
 mod acceptance_runner;
 pub mod acceptance_settings;
 mod acceptance_snapshot;
+pub mod dependency_setup;
 pub mod lens_tools;
 pub mod sandbox_backend;
 pub mod scope_holder;

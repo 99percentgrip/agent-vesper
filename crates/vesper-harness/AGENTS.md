@@ -12,6 +12,19 @@ Z.ai and Playwright MCP server descriptors.
 
 ## Ownership
 
+- `dependency_setup` owns explicit native dependency consent, local engine health,
+  fixed Podman package plans, bounded credential-free progress, setup serialization
+  with `fs2`, user-wide runtime preferences and managed VM intent/recovery. It is
+  never a model tool. Package-manager/official installer execution is an explicit
+  setup-only exception to workspace I/O and helper-only networking; it cannot
+  enable web tools or change permission grants. Reads create no preferences.
+  Setup uses OS authorization; no provider or arbitrary shell input enters a plan.
+  Cancellation stops between OS transactions and always awaits probe cleanup.
+  A managed VM can auto-start on opted-in runtime use only after verified setup;
+  normal tool execution never installs packages or initializes/downloads a VM.
+  Browser readiness runs a bounded network-disabled, read-only container with no
+  host mounts and verifies removal. Missing platform acceptance remains in the PRD.
+
 - `lens_tools` owns shared native artifact-review and planning-interview tools:
   bounded question validation, workspace confinement, real Lens invocation and
   provider-visible feedback serialization. Both hosts use the same executor;
@@ -131,10 +144,12 @@ Z.ai and Playwright MCP server descriptors.
   (or explicit `AGENT_VESPER_BUNDLE_DIR`), verifies SHA-256 before importing,
   caps import at 180 seconds, and verifies the exact bundled image ID after
   import. This explicit installer/settings operation is the exception to
-  workspace-root I/O confinement; it is never a model-facing tool. No image
-  download or container launch occurs. Both hosts expose `--setup-web-driver`
+  workspace-root I/O confinement; it is never a model-facing tool. Import-only
+  setup launches no container. Guided `dependency_setup` adds separate confirmed
+  runtime installation and contained readiness probes. Both hosts expose `--setup-web-driver`
   before provider boot and `/web setup` for workspace selection. Web runtime
-  CLI selection also finds Podman when Docker is absent. No sandbox or
+  CLI selection shares the saved runtime and explicit connection; health-aware
+  discovery checks Podman when installed Docker is unavailable. No sandbox or
   private-address protection may be switched off by these controls.
   An enabled runtime without an explicit image override uses the bundled
   immutable image ID; activation never requires copying a digest by hand.
