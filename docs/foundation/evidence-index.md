@@ -1,5 +1,12 @@
 # Foundation Evidence Index
 
+[Acceptance enrollment visibility](acceptance-enrollment-visibility-execution.md)
+fixes the field-reported acceptance freeze: nested reviewer agents now
+stream `Status` stage lines to both hosts, the contract ladder is capped
+at 2 attempts with a 300 s enrollment ceiling, and refusal/failure is one
+loud actionable outcome instead of a silent grind. Red-first receipts;
+all pre-existing acceptance pins green; 2,329/0.
+
 [v0.22.9 release](v0.22.9-release-execution.md) publishes the voice
 silence-hallucination guard: all four exact-commit gates on `342f5b1`,
 16 verified assets, registry PR #539 updated in place (byte-identical

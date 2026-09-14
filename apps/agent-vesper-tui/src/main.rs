@@ -457,6 +457,8 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
     let mut session = TuiSession {
         turn_cancellation: None,
         acceptance: None,
+        acceptance_progress: None,
+        acceptance_status_rx: None,
         // The active provider's superpower policy (provider-routed model/plan/
         // reasoning logic), shared with every helper via this session wrapper.
         policy: policy.clone(),
@@ -869,6 +871,12 @@ async fn register_default_providers(
 struct TuiSession {
     turn_cancellation: Option<Arc<vesper_runtime::RuntimeCancellation>>,
     acceptance: Option<Arc<vesper_harness::acceptance::AcceptanceSession>>,
+    /// Host progress sink shared with harness-internal acceptance work so
+    /// enrollment reviews stay visible (enrollment-visibility PRD D1).
+    acceptance_progress: Option<Arc<dyn AgentProgressPort>>,
+    /// Receiver draining `acceptance_progress` Status lines into the
+    /// activity feed; session-lifetime, independent of any turn channel.
+    acceptance_status_rx: Option<mpsc::UnboundedReceiver<String>>,
     policy: Arc<dyn vesper_provider::SuperpowerPolicy>,
     provider_ids: Vec<(String, String)>,
     /// Per-model capability index for the ACTIVE provider (PRD
@@ -1258,6 +1266,21 @@ impl AgentProgressPort for ChannelProgressPort {
     }
 }
 
+/// Session-lifetime progress sink for harness-internal work that runs
+/// outside any spawned turn (acceptance enrollment reviews). `Status`
+/// lines are forwarded over a channel the main loop drains every frame;
+/// other events are dropped — turns own their own full progress ports.
+struct SessionStatusPort {
+    tx: mpsc::UnboundedSender<String>,
+}
+impl AgentProgressPort for SessionStatusPort {
+    fn emit(&self, event: AgentProgressEvent) {
+        if let AgentProgressEvent::Status { text } = event {
+            let _ = self.tx.send(text);
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)] // single-call composition boundary
 async fn drive_loop(
     show_landing: bool,
@@ -1435,6 +1458,19 @@ async fn drive_loop(
         // is non-blocking (`try_recv`); if the turn is still running we just
         // fall through and render the in-flight banner.
         drain_voice(session);
+        if let Some(rx) = session.acceptance_status_rx.as_mut() {
+            let mut lines = Vec::new();
+            for _ in 0..32 {
+                match rx.try_recv() {
+                    Ok(text) => lines.push(text),
+                    Err(tokio::sync::mpsc::error::TryRecvError::Empty) => break,
+                    Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => break,
+                }
+            }
+            for text in lines {
+                push_activity(session, format!("◌ {text}"));
+            }
+        }
         drain_agent_event(session);
         // Mid-turn queued prompt (Claude Code parity): a prompt submitted
         // while a turn was running fires the moment that turn completes.
@@ -2235,7 +2271,21 @@ async fn drive_loop(
                                 continue;
                             }
                         };
-                        let factory = vesper_harness::WorkerFactory::new(registry.clone(), config);
+                        // Enrollment-visibility PRD D1: give acceptance
+                        // reviewer agents a host-visible status sink so their
+                        // stage lines reach the activity feed instead of
+                        // freezing silently. Session-lifetime; drained every
+                        // frame below.
+                        if session.acceptance_progress.is_none() {
+                            let (status_tx, status_rx) = mpsc::unbounded_channel::<String>();
+                            session.acceptance_progress =
+                                Some(Arc::new(SessionStatusPort { tx: status_tx }));
+                            session.acceptance_status_rx = Some(status_rx);
+                        }
+                        let factory = vesper_harness::WorkerFactory::new(registry.clone(), config)
+                            .with_progress(
+                                session.acceptance_progress.clone().expect("just installed"),
+                            );
                         let argument = if argument == "settings" {
                             let initial = session
                                 .acceptance
@@ -8515,6 +8565,9 @@ fn apply_agent_progress(progress: AgentProgressEvent, session: &mut TuiSession) 
             session.state.status = Some(format!(
                 "Context compaction failed safely; original history retained: {reason}"
             ));
+        }
+        AgentProgressEvent::Status { text } => {
+            push_activity(session, format!("◌ {text}"));
         }
     }
 }
@@ -16292,6 +16345,8 @@ mod tests {
         let mut session = TuiSession {
             turn_cancellation: None,
             acceptance: None,
+            acceptance_progress: None,
+            acceptance_status_rx: None,
             policy: std::sync::Arc::new(vesper_provider::PermissiveSuperpowerPolicy),
             provider_ids: vec![("zai".into(), "Z.ai".into())],
             capabilities: agent_vesper_tui::ModelCapabilityIndex::empty(),
@@ -16360,6 +16415,8 @@ mod tests {
         let mut session = TuiSession {
             turn_cancellation: None,
             acceptance: None,
+            acceptance_progress: None,
+            acceptance_status_rx: None,
             policy: std::sync::Arc::new(vesper_provider::PermissiveSuperpowerPolicy),
             provider_ids: vec![("zai".into(), "Z.ai".into())],
             capabilities: agent_vesper_tui::ModelCapabilityIndex::empty(),
@@ -16426,6 +16483,8 @@ mod tests {
         let mut session = TuiSession {
             turn_cancellation: None,
             acceptance: None,
+            acceptance_progress: None,
+            acceptance_status_rx: None,
             policy: std::sync::Arc::new(vesper_provider::PermissiveSuperpowerPolicy),
             provider_ids: vec![("zai".into(), "Z.ai".into())],
             capabilities: agent_vesper_tui::ModelCapabilityIndex::empty(),
@@ -17523,6 +17582,8 @@ mod tests {
         TuiSession {
             turn_cancellation: None,
             acceptance: None,
+            acceptance_progress: None,
+            acceptance_status_rx: None,
             policy: Arc::new(vesper_provider::PermissiveSuperpowerPolicy)
                 as Arc<dyn vesper_provider::SuperpowerPolicy>,
             provider_ids: Vec::new(),

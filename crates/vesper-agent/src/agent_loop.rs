@@ -94,6 +94,10 @@ pub enum AgentProgressEvent {
     CompactionCompleted { report: Box<CompactionReport> },
     /// Compaction could not be committed; original history remains intact.
     CompactionFailed { reason: String },
+    /// A bounded harness-internal stage line (e.g. acceptance enrollment
+    /// reviewer progress). Hosts render it as a transient activity line;
+    /// it is not model-visible content and never enters provider history.
+    Status { text: String },
 }
 
 /// Argument keys whose values are safe to surface in the UI telemetry

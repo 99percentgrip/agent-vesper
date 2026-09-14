@@ -8,6 +8,7 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicU64, Ordering},
     },
+    time::Duration,
 };
 use vesper_agent::acceptance::{
     CompletionPort, evaluate_receipts, validate_checks, validate_contract, validate_review,
@@ -32,6 +33,19 @@ pub trait AcceptanceReviewer: Send + Sync {
 
 pub struct NativeAcceptanceReviewer {
     factory: crate::WorkerFactory,
+    /// Host-visible stage lines (enrollment-visibility PRD D1). Absent in
+    /// tests unless attached; never carries tool payloads.
+    progress: Option<Arc<dyn vesper_agent::AgentProgressPort>>,
+}
+
+impl NativeAcceptanceReviewer {
+    fn stage(&self, text: &str) {
+        if let Some(progress) = &self.progress {
+            progress.emit(vesper_agent::AgentProgressEvent::Status {
+                text: text.chars().take(300).collect(),
+            });
+        }
+    }
 }
 
 pub enum AcceptanceControlResult {
@@ -256,9 +270,38 @@ struct EnrollmentReview {
 impl NativeAcceptanceReviewer {
     #[must_use]
     pub fn new(factory: crate::WorkerFactory) -> Self {
-        Self { factory }
+        let progress = factory.progress();
+        Self { factory, progress }
     }
 }
+/// Forwards bounded reviewer activity to the host progress port while
+/// preserving the internal read-count contract. Only tool lifecycle events
+/// pass through as `Status` lines — never content or reasoning.
+struct ForwardingProgress {
+    host: Arc<dyn vesper_agent::AgentProgressPort>,
+    reads: Arc<ReadsCounter>,
+}
+impl vesper_agent::AgentProgressPort for ForwardingProgress {
+    fn emit(&self, event: vesper_agent::AgentProgressEvent) {
+        if let vesper_agent::AgentProgressEvent::ToolStarted { name, .. } = &event {
+            self.host.emit(vesper_agent::AgentProgressEvent::Status {
+                text: format!("acceptance reviewer reading via {name}"),
+            });
+        }
+        self.reads.emit(event);
+    }
+}
+
+struct ReadsCounter(AtomicU64);
+impl vesper_agent::AgentProgressPort for ReadsCounter {
+    fn emit(&self, event: vesper_agent::AgentProgressEvent) {
+        if matches!(event, vesper_agent::AgentProgressEvent::ToolFinished { name, success: true, .. } if name == "read_file")
+        {
+            self.0.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+}
+
 impl AcceptanceReviewer for NativeAcceptanceReviewer {
     fn inspect<'a>(
         &'a self,
@@ -270,16 +313,29 @@ impl AcceptanceReviewer for NativeAcceptanceReviewer {
             let requires_inspection = request.starts_with("Review acceptance check adequacy")
                 || request.starts_with("Final gap review")
                 || request.starts_with("Review automatic PRD enrollment");
-            struct Reads(AtomicU64);
-            impl vesper_agent::AgentProgressPort for Reads {
-                fn emit(&self, event: vesper_agent::AgentProgressEvent) {
-                    if matches!(event, vesper_agent::AgentProgressEvent::ToolFinished { name, success: true, .. } if name == "read_file")
-                    {
-                        self.0.fetch_add(1, Ordering::Relaxed);
-                    }
-                }
+            if request.starts_with("Review automatic PRD enrollment") {
+                self.stage("acceptance: independent scope review of the proposed PRD is running");
+            } else if request.starts_with("Create the complete") {
+                self.stage("acceptance: independent contract review is running (this can take a few minutes)");
+            } else if request.starts_with("Review acceptance check adequacy") {
+                self.stage("acceptance: independent check-adequacy review is running");
+            } else if request.starts_with("Final gap review") {
+                self.stage("acceptance: final gap review is running");
             }
-            let reads = Arc::new(Reads(AtomicU64::new(0)));
+            let reads = Arc::new(ReadsCounter(AtomicU64::new(0)));
+            // Enrollment-visibility PRD D1: forward a bounded per-tool line
+            // to the host so nested reviewer activity is visible instead of
+            // a silent multi-minute freeze. Never content, only names.
+            let bridge: Arc<dyn vesper_agent::AgentProgressPort> = match &self.progress {
+                Some(host) => {
+                    let host = host.clone();
+                    Arc::new(ForwardingProgress {
+                        host,
+                        reads: reads.clone(),
+                    })
+                }
+                None => reads.clone(),
+            };
             let mut config = self.factory.config.clone();
             config.workspace_roots = vec![WorkspaceRoot {
                 name: vesper_domain::BoundedString::new("acceptance-review").expect("bounded"),
@@ -300,7 +356,7 @@ impl AcceptanceReviewer for NativeAcceptanceReviewer {
                 "grep".into(),
             ]);
             let agent = vesper_agent::AgentLoop::new(self.factory.registry.clone(), tools, config)
-                .with_progress_port(reads.clone());
+                .with_progress_port(bridge);
             let (outcome, _) = tokio::time::timeout(
                 std::time::Duration::from_secs(180),
                 agent.run_prompt_with_history_with_cancellation(
@@ -382,6 +438,7 @@ pub struct AcceptanceSession {
     automatic: bool,
     original_request: Mutex<String>,
     enrolled: std::sync::OnceLock<Arc<AcceptanceSession>>,
+    reviewer_progress: Option<Arc<dyn vesper_agent::AgentProgressPort>>,
 }
 
 impl AcceptanceSession {
@@ -402,6 +459,12 @@ impl AcceptanceSession {
     }
     fn enrolled(&self) -> Option<&Arc<Self>> {
         self.enrolled.get()
+    }
+
+    /// Session-level host progress sink captured at construction time
+    /// (enrollment-visibility PRD D3). None in non-host tests.
+    fn reviewer_progress(&self) -> Option<Arc<dyn vesper_agent::AgentProgressPort>> {
+        self.reviewer_progress.clone()
     }
 
     pub fn settings_preferences(&self) -> crate::acceptance_settings::AcceptanceSettings {
@@ -472,6 +535,17 @@ impl AcceptanceSession {
         prd: &str,
         reviewer: Arc<dyn AcceptanceReviewer>,
     ) -> Result<Arc<Self>, String> {
+        Self::open_with_progress(root, prd, reviewer, None)
+    }
+
+    /// Same as [`Self::open`], plus a host progress sink so enrollment
+    /// stage lines and bounded-failure outcomes are host-visible.
+    pub fn open_with_progress(
+        root: &Path,
+        prd: &str,
+        reviewer: Arc<dyn AcceptanceReviewer>,
+        reviewer_progress: Option<Arc<dyn vesper_agent::AgentProgressPort>>,
+    ) -> Result<Arc<Self>, String> {
         let root = root.canonicalize().map_err(|_| "workspace unavailable")?;
         if prd.is_empty() {
             return Ok(Arc::new(Self {
@@ -501,6 +575,7 @@ impl AcceptanceSession {
                 automatic: true,
                 original_request: Mutex::new(String::new()),
                 enrolled: std::sync::OnceLock::new(),
+                reviewer_progress,
             }));
         }
         let source_path = vesper_agent::confinement::confine(&root, prd)
@@ -583,6 +658,7 @@ impl AcceptanceSession {
             automatic: false,
             original_request: Mutex::new(String::new()),
             enrolled: std::sync::OnceLock::new(),
+            reviewer_progress,
         }))
     }
 
@@ -637,7 +713,10 @@ impl AcceptanceSession {
         );
         let mut accepted = None;
         let mut last_error = String::new();
-        for _ in 0..3 {
+        // Enrollment-visibility PRD D2: at most two proposals. A third
+        // silent retry turned the gate into a multi-minute dead end; two
+        // refusals mean the scope itself needs a human decision.
+        for _ in 0..2 {
             let attempt = async {
                 let contract: AcceptanceContract = parse(&self.reviewer.inspect(&self.root, request.clone(), context.cancellation.clone()).await?)?;
                 validate_contract(&contract, &self.sources)?;
@@ -662,7 +741,13 @@ impl AcceptanceSession {
                 }
             }
         }
-        let contract = accepted.ok_or(last_error)?;
+        let contract = accepted.ok_or_else(|| {
+            // Enrollment-visibility PRD D3: the ladder is exhausted — stop
+            // retrying and surface one actionable, user-facing outcome.
+            format!(
+                "acceptance enrollment failed after bounded review attempts: {last_error}. Stop retrying and ask the user to check the PRD scope or provide the correct PRD path."
+            )
+        })?;
         let mut state = self.lock();
         state.contract_digest = digest(json(&(&self.source_digest, &contract))?.as_bytes());
         state.contract = Some(contract);
@@ -978,6 +1063,12 @@ impl ToolService for AcceptanceSession {
                 if context.cancellation.is_cancelled() {
                     return Err(ToolError::Failed("PRD enrollment cancelled".into()));
                 }
+                // Enrollment-visibility PRD D2: one wall-clock ceiling for
+                // the whole enrollment (scope review + contract review).
+                // The tool started at the outer loop's ToolStarted event;
+                // an unbounded run here was the reported freeze.
+                let enrollment_started = std::time::Instant::now();
+                const ENROLLMENT_CEILING: Duration = Duration::from_secs(300);
                 #[derive(serde::Deserialize)]
                 #[serde(deny_unknown_fields)]
                 struct Args {
@@ -1010,19 +1101,41 @@ impl ToolService for AcceptanceSession {
                 );
                 let snapshot = SourceSnapshot::capture(&self.root).map_err(ToolError::Failed)?;
                 let dir = snapshot.materialize().map_err(ToolError::Failed)?;
-                let reviewed = self
-                    .reviewer
-                    .inspect(dir.path(), request, context.cancellation.clone())
-                    .await
-                    .map_err(ToolError::Failed)?;
+                if enrollment_started.elapsed() > ENROLLMENT_CEILING {
+                    return Err(ToolError::Failed(
+                        "acceptance enrollment failed: the bounded enrollment window elapsed before scope review completed. Stop retrying and ask the user to check the PRD path or enroll explicitly with /acceptance start <PRD>."
+                            .into(),
+                    ));
+                }
+                let reviewed = tokio::time::timeout(
+                    ENROLLMENT_CEILING.saturating_sub(enrollment_started.elapsed()),
+                    self.reviewer
+                        .inspect(dir.path(), request, context.cancellation.clone()),
+                )
+                .await
+                .map_err(|_| {
+                    ToolError::Failed(
+                        "acceptance enrollment failed: the bounded enrollment window elapsed during scope review. Stop retrying and ask the user to check the PRD path or enroll explicitly with /acceptance start <PRD>.".into(),
+                    )
+                })?
+                .map_err(ToolError::Failed)?;
                 let review: EnrollmentReview = parse(&reviewed).map_err(ToolError::Failed)?;
                 if !review.matches_scope
                     || review.reason.trim().is_empty()
                     || review.reason.len() > 4096
                 {
+                    // Enrollment-visibility PRD D3: refusal is a loud bounded
+                    // outcome — one clear host-visible line, no retry loop.
+                    let reason: String = review.reason.chars().take(4096).collect();
+                    if let Some(progress) = &self.reviewer_progress() {
+                        progress.emit(vesper_agent::AgentProgressEvent::Status {
+                            text: format!(
+                                "acceptance enrollment refused by independent scope review: {reason}"
+                            ),
+                        });
+                    }
                     return Err(ToolError::Failed(format!(
-                        "PRD scope enrollment refused: {}",
-                        review.reason.chars().take(4096).collect::<String>()
+                        "PRD scope enrollment refused: {reason}. Do not retry; ask the user to adjust the PRD or enroll a specific file with /acceptance start <PRD>."
                     )));
                 }
                 active.source_unchanged().map_err(ToolError::Failed)?;

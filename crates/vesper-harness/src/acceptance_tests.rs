@@ -1046,3 +1046,206 @@ async fn automatic_scope_review_refusal_and_cancellation_do_not_remember_a_path(
             .exists()
     );
 }
+
+#[tokio::test]
+async fn enrollment_forwards_status_events_to_the_host_progress_port() {
+    // Enrollment-visibility PRD AC-1: the nested reviewer must surface
+    // bounded Status lines to the host while it runs, so enabling the gate
+    // can never again look like a silent freeze.
+    let root = project();
+    let recorder = Arc::new(Progress::default());
+    // Nested reviewer agents are driven by WorkerFactory; the stage lines
+    // flow through the factory's progress port.
+    let contract_json = json(&contract()).unwrap();
+    let review_body = json(&AcceptanceReview {
+        inspected_source_ids: vec!["source-001".into()],
+        inspected_scenario_ids: vec!["S1".into()],
+        findings: vec![],
+    })
+    .unwrap();
+    // Scripts are per provider TURN: a tool-call turn ends with
+    // Completed(ToolCalls); the verdict JSON is its own later turn.
+    let scope_review_json = json(&EnrollmentReview {
+        matches_scope: true,
+        reason: "Scope comparison against the captured user request".into(),
+    })
+    .unwrap();
+    let scripts = vec![
+        // Scope review agent: turn 1 reads (inspection guard), turn 2 verdicts.
+        tool("read_file", serde_json::json!({"path":"PRD.md"})),
+        stop(&scope_review_json),
+        // Contract agent: emits the contract JSON directly.
+        stop(&contract_json),
+        // Coverage review agent: read turn, then verdict turn.
+        tool("read_file", serde_json::json!({"path":"src/lib.rs"})),
+        stop(&review_body),
+    ];
+    let (factory, _observed) = fixture_factory(root.path(), scripts).await;
+    let factory = factory.with_progress(recorder.clone());
+    let acceptance = AcceptanceSession::open(
+        root.path(),
+        "",
+        Arc::new(NativeAcceptanceReviewer::new(factory)),
+    )
+    .unwrap();
+    acceptance
+        .capture_request("Implement PRD.md fully")
+        .unwrap();
+    let call = ToolCall {
+        id: ToolCallId::new("enroll").unwrap(),
+        tool_id: ToolId::new("acceptance_enroll").unwrap(),
+        arguments: serde_json::json!({"prd":"PRD.md"}),
+        extensions: Default::default(),
+    };
+    acceptance
+        .execute(&call, &context(root.path()))
+        .await
+        .unwrap();
+    let events = recorder.0.lock().unwrap().clone();
+    assert!(
+        events.iter().any(|e| matches!(
+            e,
+            vesper_agent::AgentProgressEvent::Status { text }
+                if text.contains("scope review")
+        )),
+        "enrollment scope-review Status line missing: {events:?}"
+    );
+    assert!(
+        events.iter().any(|e| matches!(
+            e,
+            vesper_agent::AgentProgressEvent::Status { text }
+                if text.contains("contract review")
+        )),
+        "contract-review Status line missing: {events:?}"
+    );
+}
+
+#[tokio::test]
+async fn contract_review_ladder_is_capped_at_two_attempts() {
+    // Enrollment-visibility PRD AC-2: a refusing contract reviewer is
+    // called at most twice; the third silent retry is gone.
+    use std::sync::atomic::AtomicUsize;
+    struct RefusingContract {
+        contract_calls: AtomicUsize,
+    }
+    impl AcceptanceReviewer for RefusingContract {
+        fn inspect<'a>(
+            &'a self,
+            _root: &'a Path,
+            request: String,
+            _cancel: Arc<dyn vesper_agent::CancellationSignal>,
+        ) -> ToolFuture<'a, Result<String, String>> {
+            if request.starts_with("Review automatic PRD enrollment") {
+                return Box::pin(async move {
+                    json(&EnrollmentReview {
+                        matches_scope: true,
+                        reason: "matches".into(),
+                    })
+                });
+            }
+            if request.starts_with("Create the complete") {
+                self.contract_calls.fetch_add(1, Ordering::Relaxed);
+                return Box::pin(
+                    async move { Err("coverage gaps: (fixture refusal)".to_string()) },
+                );
+            }
+            Box::pin(async move { Err("unexpected review request".into()) })
+        }
+    }
+    let root = project();
+    let counter = Arc::new(AtomicUsize::new(0));
+    let counter_for_reviewer = counter.clone();
+    let reviewer = Arc::new(RefusingContract {
+        contract_calls: AtomicUsize::new(0),
+    });
+    // Wrap: count via the reviewer's own atomic.
+    let counter_clone = counter.clone();
+    let reviewer = {
+        let _ = counter_for_reviewer;
+        let _ = counter_clone;
+        reviewer
+    };
+    let session = AcceptanceSession::open(root.path(), "PRD.md", reviewer.clone()).unwrap();
+    let context = context(root.path());
+    let error = session
+        .prepare(&context)
+        .await
+        .expect_err("bounded ladder must fail loudly");
+    assert!(
+        error.contains("bounded review attempts"),
+        "failure must be the loud bounded outcome: {error}"
+    );
+    assert!(
+        error.contains("ask the user"),
+        "failure must instruct the model to stop and ask the user: {error}"
+    );
+    assert_eq!(
+        reviewer.contract_calls.load(Ordering::Relaxed),
+        2,
+        "contract reviewer must be attempted exactly twice, then stop"
+    );
+}
+
+#[tokio::test]
+async fn enrollment_scope_refusal_emits_status_and_fails_loudly_without_saving() {
+    // Enrollment-visibility PRD AC-4/AC-3: a refused scope review emits a
+    // host Status line, fails loudly with "do not retry" guidance, saves
+    // nothing, and leaves the gate unenrolled.
+    use std::sync::atomic::AtomicUsize;
+    struct RefusingScope {
+        calls: AtomicUsize,
+    }
+    impl AcceptanceReviewer for RefusingScope {
+        fn inspect<'a>(
+            &'a self,
+            _root: &'a Path,
+            request: String,
+            _cancel: Arc<dyn vesper_agent::CancellationSignal>,
+        ) -> ToolFuture<'a, Result<String, String>> {
+            self.calls.fetch_add(1, Ordering::Relaxed);
+            if request.starts_with("Review automatic PRD enrollment") {
+                return Box::pin(async move {
+                    json(&EnrollmentReview {
+                        matches_scope: false,
+                        reason: "PRD is unrelated to the captured request".into(),
+                    })
+                });
+            }
+            Box::pin(async move { Err("unexpected review request".into()) })
+        }
+    }
+    let root = project();
+    let recorder = Arc::new(Progress::default());
+    let reviewer = Arc::new(RefusingScope {
+        calls: AtomicUsize::new(0),
+    });
+    let session = AcceptanceSession::open_with_progress(
+        root.path(),
+        "",
+        reviewer.clone(),
+        Some(recorder.clone()),
+    )
+    .unwrap();
+    session.capture_request("Implement PRD.md fully").unwrap();
+    let call = ToolCall {
+        id: ToolCallId::new("enroll").unwrap(),
+        tool_id: ToolId::new("acceptance_enroll").unwrap(),
+        arguments: serde_json::json!({"prd":"PRD.md"}),
+        extensions: Default::default(),
+    };
+    let error = session
+        .execute(&call, &context(root.path()))
+        .await
+        .expect_err("refused enrollment must fail");
+    let error_text = error.to_string();
+    assert!(
+        error_text.contains("Do not retry"),
+        "refusal must instruct the model to stop retrying: {error_text}"
+    );
+    assert!(session.enrolled().is_none());
+    let saved = crate::acceptance_settings::AcceptanceSettings::load(root.path());
+    assert!(
+        saved.is_err() || !saved.unwrap().enabled,
+        "a refused enrollment must not save enabled settings"
+    );
+}

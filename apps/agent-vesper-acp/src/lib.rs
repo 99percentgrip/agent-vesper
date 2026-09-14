@@ -875,10 +875,21 @@ impl AcpHarnessEngine {
         let config = self.turn_configuration(&request).await;
         let root = workspace_root_path(&request.workspace_roots);
         let mut acceptance = self.acceptance_session(&request.session_id);
+        // Enrollment-visibility PRD D1: route acceptance reviewer stage
+        // lines through the turn's progress port so the client sees live
+        // enrollment activity instead of silence.
+        let acceptance_factory = WorkerFactory::new(self.registry.clone(), config.clone())
+            .with_progress(Arc::new(AcpEngineProgressPort {
+                sink: request.event_sink.clone(),
+                tool_seq: std::sync::atomic::AtomicU64::new(0),
+                outstanding: std::sync::Mutex::new(BTreeMap::new()),
+                session_id: request.session_id.clone(),
+                plans: self.plans_shared(),
+            }));
         vesper_harness::acceptance::activate_for_prompt(
             &mut acceptance,
             &root,
-            WorkerFactory::new(self.registry.clone(), config),
+            acceptance_factory,
             &text,
         )?;
         if let Some(acceptance) = acceptance {
@@ -2024,6 +2035,9 @@ impl vesper_agent::AgentProgressPort for AcpEngineProgressPort {
                 sink.event(AcpEngineEvent::ReasoningDelta {
                     text: format!("Context compaction failed safely: {reason}"),
                 });
+            }
+            vesper_agent::AgentProgressEvent::Status { text } => {
+                sink.event(AcpEngineEvent::ReasoningDelta { text });
             }
             vesper_agent::AgentProgressEvent::TurnStarted
             | vesper_agent::AgentProgressEvent::ProviderTurnStarted { .. } => {}

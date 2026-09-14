@@ -2419,6 +2419,11 @@ impl MemoryStores {
 pub struct WorkerFactory {
     registry: Arc<vesper_runtime::ProviderRegistry>,
     config: vesper_agent::AgentLoopConfig,
+    /// Optional host progress sink for harness-internal sub-work (e.g.
+    /// acceptance reviewer agents). Bounded `Status` lines only; never
+    /// tool payloads. Absent in tests and composition paths that do not
+    /// opt in.
+    progress: Option<Arc<dyn vesper_agent::AgentProgressPort>>,
 }
 
 impl WorkerFactory {
@@ -2427,7 +2432,23 @@ impl WorkerFactory {
         registry: Arc<vesper_runtime::ProviderRegistry>,
         config: vesper_agent::AgentLoopConfig,
     ) -> Self {
-        Self { registry, config }
+        Self {
+            registry,
+            config,
+            progress: None,
+        }
+    }
+
+    /// Attaches a host progress sink so harness-internal work is visible
+    /// while it runs (acceptance-enrollment visibility PRD D1).
+    #[must_use]
+    pub fn with_progress(mut self, progress: Arc<dyn vesper_agent::AgentProgressPort>) -> Self {
+        self.progress = Some(progress);
+        self
+    }
+
+    pub(crate) fn progress(&self) -> Option<Arc<dyn vesper_agent::AgentProgressPort>> {
+        self.progress.clone()
     }
 }
 
