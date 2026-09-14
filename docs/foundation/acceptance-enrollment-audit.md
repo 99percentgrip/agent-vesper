@@ -104,8 +104,32 @@ defaults to the production 300 s value; CI cost is two ~10 s tests.
 - Ladder bound: exactly 2 attempts (pinned by an atomic counter).
 - No-save pins across refusal/cancellation/missing-file paths — green.
 - Workspace floor: **2,331 passed / 0 failed** (2,329 + 2 audit pins).
-- `cargo xtask acceptance` 23/23 · clippy clean · fmt clean ·
-  naming-guard 18 frozen (0 erosion).
+- `cargo xtask acceptance` 23/23 · clippy clean under the exact CI flags
+  (`--workspace --all-targets --all-features -- -D warnings`) · fmt
+  clean · naming-guard 18 frozen (0 erosion).
+- Cross-platform CI: **4/4 workflows success on `8e13c40`**
+  (pull-request-validation, msrv, five-target-foundation, web-driver).
+
+## Fix iteration honesty (continuation, 2026-09-15)
+
+The audit's own repair initially repeated the verification mistake it
+was auditing for:
+
+- **CI caught clippy defects in the audit-repair code itself**
+  (`bc0ddf1` → failed `pull-request-validation`): a useless `format!`
+  on the scope-review guard and two `to_string`-in-format-args lints in
+  the audit pins. Root cause: the local clippy run omitted
+  `-D warnings` and the log-grep filters swallowed exactly those lint
+  classes. Fixed in `c41b600`; local verification now runs the CI flags
+  verbatim, unfiltered.
+- **A same-day RustSec advisory** (RUSTSEC-2026-0285, rustls TLS 1.3
+  handshake across encryption levels, medium, fix ≥0.23.45) fail-closed
+  the supply-chain advisory gate. Minimal lockfile bump
+  `rustls 0.23.42 → 0.23.45` (`8e13c40`); workspace 2,331/0 and
+  acceptance 23/23 re-run after the bump.
+
+All receipts above were taken on the final tree (`8e13c40`), not the
+intermediate ones.
 
 ## Verdict
 
@@ -117,7 +141,8 @@ documented ~5-minute worst case, with the mechanism pinned.
 
 ## Open items
 
-- Release: the repaired code is on `main` but unreleased; ships with
+- Release: the repaired code is on `main`, pushed and CI-green on
+  `8e13c40`, but unreleased; ships with
   the next version cut.
 - Real-device acceptance of the repaired UX remains Alex's
   (update → enable acceptance → confirm status lines within seconds and

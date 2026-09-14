@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | COMPLETE — 2026-09-14 · **audited & repaired 2026-09-15**: AC-3 had no test and the ceiling did not cover the contract ladder (true worst case ~17 min, not ~5). Both repaired red-first; see [audit note](#9-audit-correction-2026-09-15) |
+| **Status** | COMPLETE — 2026-09-14 · **audited & repaired 2026-09-15**: AC-3 had no test and the ceiling did not cover the contract ladder (true worst case ~17 min, not ~5). Both repaired red-first; see [audit note](#8-audit-correction-2026-09-15) and `foundation/acceptance-enrollment-audit.md` |
 | **Target** | `vesper-harness/src/acceptance.rs` (+ host wiring, tests) |
 | **Owner** | Alex (product) |
 | **Related** | `native-acceptance-completion-prd.md` (the gate), ADR 0028 (completion assurance), `voice-f5-cancel-trap-repair.md` (same symptom class: silent long work looks frozen) |
