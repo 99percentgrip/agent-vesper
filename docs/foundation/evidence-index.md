@@ -1,5 +1,10 @@
 # Foundation Evidence Index
 
+[v0.22.8 release](v0.22.8-release-execution.md) publishes the voice
+F5-cancel repair: all four exact-commit gates on `4a37af5`, 16 verified
+assets, unauthenticated latest discovery, registry PR #539 updated in
+place (byte-identical read-back), local installation preserved.
+
 [Voice F5-cancel trap repair](voice-f5-cancel-trap-repair.md) fixes the
 field-reported "Voice preparation cancelled" dead end: F5 during first-use
 preparation used to cancel the multi-minute install (the feature's own
