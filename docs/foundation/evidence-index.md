@@ -1,5 +1,10 @@
 # Foundation Evidence Index
 
+[v0.22.9 release](v0.22.9-release-execution.md) publishes the voice
+silence-hallucination guard: all four exact-commit gates on `342f5b1`,
+16 verified assets, registry PR #539 updated in place (byte-identical
+read-back), local installation preserved.
+
 [Voice VAD silence guard](voice-vad-silence-guard-execution.md) fixes the
 "1 min"×77 trailing-silence hallucination: the sidecar now passes
 `vad_filter=True` on every call (measured: 30 s zeros → "You" unfiltered,
