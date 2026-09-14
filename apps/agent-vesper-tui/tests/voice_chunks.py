@@ -15,7 +15,10 @@ spec = importlib.util.spec_from_file_location('voice_transcribe', source)
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 class Model:
-    def transcribe(self, samples):
+    def transcribe(self, samples, **kwargs):
+        # The production sidecar must pass vad_filter=True on every call
+        # (silence-hallucination guard); this plain-model harness asserts it.
+        assert kwargs.get('vad_filter') is True, 'sidecar must send vad_filter=True'
         assert len(samples) == 480000
         marker = round(float(samples[0])*32768)
         return [SimpleNamespace(text=f'word{marker}')], None

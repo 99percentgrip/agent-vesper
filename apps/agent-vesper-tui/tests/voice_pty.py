@@ -59,6 +59,7 @@ def run(binary, python):
             assert not list(audio.glob('vesper-voice-*'))
             host.key('\x7f'*250)
             loads = (root/'model-loads').read_text().count('loaded')
+            (root/'vad').unlink(missing_ok=True)
             # More than 90 seconds of real wall-clock transcription with progress.
             (root/'delay').write_text('5')
             host.key('\x1b[15~')
@@ -71,6 +72,11 @@ def run(binary, python):
             host.wait('Push to talk', timeout=125)
             assert time.monotonic()-started > 90
             assert (root/'model-loads').read_text().count('loaded') == loads
+            # VAD contract: every production transcribe call must pass
+            # vad_filter=True (silence-hallucination guard; the fixture
+            # records each filtered call).
+            assert (root/'vad').exists() and (root/'vad').read_text().count('vad') >= 2, \
+                'production sidecar must pass vad_filter=True'
             (root/'delay').unlink()
             # F5 remains reachable through command-menu and focus-mode interaction.
             host.key('\x7f'*500)

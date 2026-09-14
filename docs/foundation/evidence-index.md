@@ -1,5 +1,11 @@
 # Foundation Evidence Index
 
+[Voice VAD silence guard](voice-vad-silence-guard-execution.md) fixes the
+"1 min"×77 trailing-silence hallucination: the sidecar now passes
+`vad_filter=True` on every call (measured: 30 s zeros → "You" unfiltered,
+"" filtered). Red-first PTY receipt, real-model probe, all harnesses
+assert the kwarg.
+
 [v0.22.8 release](v0.22.8-release-execution.md) publishes the voice
 F5-cancel repair: all four exact-commit gates on `4a37af5`, 16 verified
 assets, unauthenticated latest discovery, registry PR #539 updated in

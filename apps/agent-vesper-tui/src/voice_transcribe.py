@@ -25,7 +25,11 @@ def transcribe(path, skip, model):
                 samples = np.frombuffer(raw, dtype="<i2").astype(np.float32) / 32768.0
                 if channels > 1:
                     samples = samples.reshape(-1, channels).mean(axis=1)
-                segments, _ = model.transcribe(samples)
+                # vad_filter=True feeds silence/noise to the VAD instead of
+                # the model, preventing trailing-silence hallucinations
+                # (measured: 30 s of zeros transcribed as "You" unfiltered,
+                # as "" filtered — primary-source probe on the real model).
+                segments, _ = model.transcribe(samples, vad_filter=True)
                 text = " ".join(segment.text.strip() for segment in segments).strip()
                 emit({"index": index, "text": text, "seconds": min((index + 1) * 30, audio.getnframes() // 16000)})
             index += 1
