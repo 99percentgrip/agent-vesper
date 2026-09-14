@@ -87,6 +87,24 @@ He can also pre-build it:
   --python ~/.local/share/agent-vesper/voice-venv/bin/python
 ```
 
+## Real-device acceptance (user-supplied, 2026-09-14)
+
+After updating and testing on his Linux machine, Alex confirmed push-to-talk
+works end to end: a >60-second dictation transcribed cleanly and coherently,
+247 words total, nothing truncated, tail intact. This closes the real-device
+acceptance that the v0.22.6 voice report explicitly left open (all prior
+voice evidence was fixture-based, no physical microphone). macOS capture and
+native OS-permission-denial paths remain unexercised by design (Linux-only
+device test).
+
+Observed, known-behavior note (not a regression of this repair): the
+transcript's tail repeated "1 min" ~77 times — the classic
+faster-whisper artifact on trailing silence/noise after the speech ends.
+The v0.22.6 scope statement already disclaims perfect recognition
+("fixed nonoverlapping slices… does not promise perfect speech
+recognition"). A silence-trim pass before transcription is a possible
+follow-up if it annoys in practice.
+
 ## Deviations / open items
 
 - The deeper UX question — preparation should stream progress instead of
