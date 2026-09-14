@@ -1,5 +1,10 @@
 # Foundation Evidence Index
 
+[v0.23.0 release execution](v0.23.0-release-execution.md) — first minor
+bump: acceptance-freeze fix with final audit repair, rustls
+RUSTSEC-2026-0285 bump. 4/4 CI green on `f4a2eea` before the tag;
+16 assets; registry PR #539 updated in place (byte-identical).
+
 [Acceptance enrollment audit](acceptance-enrollment-audit.md) — final
 audit of the enrollment visibility unit: found AC-3 untested and the
 ceiling missing the contract ladder (true worst case ~17 min, not ~5);
