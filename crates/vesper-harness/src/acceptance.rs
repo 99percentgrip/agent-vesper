@@ -1123,9 +1123,10 @@ impl ToolService for AcceptanceSession {
                 let snapshot = SourceSnapshot::capture(&self.root).map_err(ToolError::Failed)?;
                 let dir = snapshot.materialize().map_err(ToolError::Failed)?;
                 if enrollment_started.elapsed() > enrollment_ceiling {
-                    return Err(ToolError::Failed(format!(
+                    return Err(ToolError::Failed(
                         "acceptance enrollment failed: the bounded enrollment window elapsed before scope review completed. Stop retrying and ask the user to check the PRD path or enroll explicitly with /acceptance start <PRD>."
-                    )));
+                            .to_string(),
+                    ));
                 }
                 let reviewed = tokio::time::timeout(
                     enrollment_ceiling.saturating_sub(enrollment_started.elapsed()),

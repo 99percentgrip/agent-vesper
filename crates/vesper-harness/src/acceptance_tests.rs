@@ -1300,8 +1300,7 @@ async fn enrollment_wall_clock_ceiling_bounds_the_total_window() {
         error
             .to_string()
             .contains("bounded enrollment window elapsed"),
-        "failure must name the bounded window: {}",
-        error.to_string()
+        "failure must name the bounded window: {error}"
     );
     assert!(session.enrolled().is_none());
 }
@@ -1371,8 +1370,7 @@ async fn enrollment_ceiling_covers_the_contract_ladder_too() {
         error
             .to_string()
             .contains("bounded enrollment window elapsed"),
-        "failure must name the bounded window: {}",
-        error.to_string()
+        "failure must name the bounded window: {error}"
     );
     assert!(session.enrolled().is_none());
 }
