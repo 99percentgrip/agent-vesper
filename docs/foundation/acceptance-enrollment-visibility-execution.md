@@ -1,6 +1,9 @@
 # Acceptance enrollment visibility & bounds execution
 
 Date: 2026-09-14. Status: **complete**.
+**Audit 2026-09-15**: AC-3 was untested and the ceiling missed the
+contract ladder — repaired red-first; see the PRD audit note and
+`acceptance-enrollment-audit.md`.
 Owner PRD: [Acceptance enrollment visibility](../acceptance-enrollment-visibility-prd.md).
 Trigger: Alex's field report — with acceptance enabled, the agent
 "freezes and does nothing"; the slash command itself responded fine.

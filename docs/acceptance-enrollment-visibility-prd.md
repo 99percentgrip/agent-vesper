@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | COMPLETE — 2026-09-14 (visibility bridge, bounded ladder, loud bounded failure; all ACs green) |
+| **Status** | COMPLETE — 2026-09-14 · **audited & repaired 2026-09-15**: AC-3 had no test and the ceiling did not cover the contract ladder (true worst case ~17 min, not ~5). Both repaired red-first; see [audit note](#9-audit-correction-2026-09-15) |
 | **Target** | `vesper-harness/src/acceptance.rs` (+ host wiring, tests) |
 | **Owner** | Alex (product) |
 | **Related** | `native-acceptance-completion-prd.md` (the gate), ADR 0028 (completion assurance), `voice-f5-cancel-trap-repair.md` (same symptom class: silent long work looks frozen) |
@@ -101,3 +101,26 @@ next implementation turn can appear to freeze:
 
 All six ACs green. Receipts:
 `foundation/acceptance-enrollment-visibility-execution.md`.
+
+## 8. Audit correction (2026-09-15)
+
+The 2026-09-14 "all six ACs green" outcome was **overstated**:
+
+- **AC-3 had no test.** Only AC-1/2/4 had tests (the file's third new
+  test is labeled "AC-4/AC-3" but exercises refusal, not the time bound).
+- **The ceiling did not cover the whole enrollment path.** It wrapped the
+  scope review only; `prepare()`'s contract ladder (2 × ~180 s nested
+  reviews) ran outside it. True worst case ≈ **17 minutes**, not the
+  documented ≤5.
+
+**Repair (red-first, both pinned now):**
+
+- The 300 s window now guards **before and around** every phase,
+  including the contract ladder (`enrollment_ceiling()` shared window).
+- `enrollment_wall_clock_ceiling_bounds_the_total_window` — hung the
+  full 600 s on the pre-fix tree (the reported freeze, reproduced
+  in-process); passes in 10 s (test override) with the fix.
+- `enrollment_ceiling_covers_the_contract_ladder_too` — ran
+  **1,208 s** and failed on the pre-audit code; passes with the fix.
+- Production ceiling unchanged at 300 s; the test override is
+  `#[cfg(test)]`-gated and defaults to production behavior.

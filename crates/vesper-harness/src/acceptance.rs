@@ -966,6 +966,21 @@ impl AcceptanceSession {
     }
 }
 
+#[cfg(test)]
+static ENROLLMENT_CEILING_TEST_OVERRIDE_SECS: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+fn enrollment_ceiling() -> Duration {
+    #[cfg(test)]
+    {
+        let secs = ENROLLMENT_CEILING_TEST_OVERRIDE_SECS.load(std::sync::atomic::Ordering::Relaxed);
+        if secs > 0 {
+            return Duration::from_secs(secs);
+        }
+    }
+    Duration::from_secs(300)
+}
+
 impl CompletionPort for AcceptanceSession {
     fn active(&self) -> bool {
         true
@@ -1068,7 +1083,13 @@ impl ToolService for AcceptanceSession {
                 // The tool started at the outer loop's ToolStarted event;
                 // an unbounded run here was the reported freeze.
                 let enrollment_started = std::time::Instant::now();
-                const ENROLLMENT_CEILING: Duration = Duration::from_secs(300);
+                let enrollment_ceiling = enrollment_ceiling();
+                // Audit repair (2026-09-14): every nested phase of enrollment
+                // (scope review, contract ladder) shares ONE wall-clock
+                // window. Guards below re-check elapsed time before and
+                // around each phase; a phase that would exceed the window
+                // fails loudly instead of hanging.
+
                 #[derive(serde::Deserialize)]
                 #[serde(deny_unknown_fields)]
                 struct Args {
@@ -1101,14 +1122,13 @@ impl ToolService for AcceptanceSession {
                 );
                 let snapshot = SourceSnapshot::capture(&self.root).map_err(ToolError::Failed)?;
                 let dir = snapshot.materialize().map_err(ToolError::Failed)?;
-                if enrollment_started.elapsed() > ENROLLMENT_CEILING {
-                    return Err(ToolError::Failed(
+                if enrollment_started.elapsed() > enrollment_ceiling {
+                    return Err(ToolError::Failed(format!(
                         "acceptance enrollment failed: the bounded enrollment window elapsed before scope review completed. Stop retrying and ask the user to check the PRD path or enroll explicitly with /acceptance start <PRD>."
-                            .into(),
-                    ));
+                    )));
                 }
                 let reviewed = tokio::time::timeout(
-                    ENROLLMENT_CEILING.saturating_sub(enrollment_started.elapsed()),
+                    enrollment_ceiling.saturating_sub(enrollment_started.elapsed()),
                     self.reviewer
                         .inspect(dir.path(), request, context.cancellation.clone()),
                 )
@@ -1139,7 +1159,28 @@ impl ToolService for AcceptanceSession {
                     )));
                 }
                 active.source_unchanged().map_err(ToolError::Failed)?;
-                let instruction = active.prepare(context).await.map_err(ToolError::Failed)?;
+                // Audit repair (2026-09-14): the contract ladder inside
+                // prepare() runs INSIDE the same enrollment window. Its two
+                // 180 s nested reviews previously sat outside the ceiling —
+                // the true worst case was ~17 minutes, not ~5 as documented.
+                if enrollment_started.elapsed() > enrollment_ceiling {
+                    return Err(ToolError::Failed(
+                        "acceptance enrollment failed: the bounded enrollment window elapsed before contract preparation. Stop retrying and ask the user to check the PRD path or enroll explicitly with /acceptance start <PRD>."
+                            .into(),
+                    ));
+                }
+                let instruction = tokio::time::timeout(
+                    enrollment_ceiling.saturating_sub(enrollment_started.elapsed()),
+                    active.prepare(context),
+                )
+                .await
+                .map_err(|_| {
+                    ToolError::Failed(
+                        "acceptance enrollment failed: the bounded enrollment window elapsed during contract preparation. Stop retrying and ask the user to check the PRD path or enroll explicitly with /acceptance start <PRD>."
+                            .into(),
+                    )
+                })?
+                .map_err(ToolError::Failed)?;
                 if context.cancellation.is_cancelled() {
                     return Err(ToolError::Failed("PRD enrollment cancelled".into()));
                 }

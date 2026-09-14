@@ -1249,3 +1249,130 @@ async fn enrollment_scope_refusal_emits_status_and_fails_loudly_without_saving()
         "a refused enrollment must not save enabled settings"
     );
 }
+
+#[tokio::test]
+async fn enrollment_wall_clock_ceiling_bounds_the_total_window() {
+    // Audit AC-3 (red-first: hung the full 600 s on the pre-fix tree —
+    // the reported freeze reproduced in-process). Production uses a 300 s
+    // window; this test pins the mechanism with a 10 s override.
+    super::ENROLLMENT_CEILING_TEST_OVERRIDE_SECS.store(10, Ordering::Relaxed);
+    struct StallingScope;
+    impl AcceptanceReviewer for StallingScope {
+        fn inspect<'a>(
+            &'a self,
+            _root: &'a Path,
+            request: String,
+            _cancel: Arc<dyn vesper_agent::CancellationSignal>,
+        ) -> ToolFuture<'a, Result<String, String>> {
+            if !request.starts_with("Review automatic PRD enrollment") {
+                return Box::pin(async move { Err("unexpected review request".into()) });
+            }
+            Box::pin(async move {
+                tokio::time::sleep(Duration::from_secs(600)).await;
+                json(&EnrollmentReview {
+                    matches_scope: true,
+                    reason: "never reached".into(),
+                })
+            })
+        }
+    }
+    let root = project();
+    let session = AcceptanceSession::open(root.path(), "", Arc::new(StallingScope)).unwrap();
+    session.capture_request("Implement PRD.md fully").unwrap();
+    let call = ToolCall {
+        id: ToolCallId::new("enroll").unwrap(),
+        tool_id: ToolId::new("acceptance_enroll").unwrap(),
+        arguments: serde_json::json!({"prd":"PRD.md"}),
+        extensions: Default::default(),
+    };
+    let started = std::time::Instant::now();
+    let error = session
+        .execute(&call, &context(root.path()))
+        .await
+        .expect_err("stalled enrollment must fail loudly");
+    super::ENROLLMENT_CEILING_TEST_OVERRIDE_SECS.store(0, Ordering::Relaxed);
+    assert!(
+        started.elapsed() < Duration::from_secs(30),
+        "ceiling must bound enrollment; took {:?}",
+        started.elapsed()
+    );
+    assert!(
+        error
+            .to_string()
+            .contains("bounded enrollment window elapsed"),
+        "failure must name the bounded window: {}",
+        error.to_string()
+    );
+    assert!(session.enrolled().is_none());
+}
+
+#[tokio::test]
+async fn enrollment_ceiling_covers_the_contract_ladder_too() {
+    // Audit repair pin: the contract ladder inside prepare() shares the
+    // enrollment window. A slow-but-passing scope review followed by a
+    // stalling contract ladder must hit the window — not 2×180 s on top.
+    super::ENROLLMENT_CEILING_TEST_OVERRIDE_SECS.store(10, Ordering::Relaxed);
+    struct SlowThenStall {
+        contract_calls: std::sync::atomic::AtomicUsize,
+    }
+    impl AcceptanceReviewer for SlowThenStall {
+        fn inspect<'a>(
+            &'a self,
+            _root: &'a Path,
+            request: String,
+            _cancel: Arc<dyn vesper_agent::CancellationSignal>,
+        ) -> ToolFuture<'a, Result<String, String>> {
+            if request.starts_with("Review automatic PRD enrollment") {
+                // Burn most of the 10 s window so the contract phase
+                // starts with a nearly-empty budget.
+                return Box::pin(async move {
+                    tokio::time::sleep(Duration::from_secs(8)).await;
+                    json(&EnrollmentReview {
+                        matches_scope: true,
+                        reason: "matches".into(),
+                    })
+                });
+            }
+            if request.starts_with("Create the complete") {
+                self.contract_calls
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                return Box::pin(async move {
+                    tokio::time::sleep(Duration::from_secs(600)).await;
+                    Err("never reached".to_string())
+                });
+            }
+            Box::pin(async move { Err("unexpected review request".into()) })
+        }
+    }
+    let root = project();
+    let reviewer = Arc::new(SlowThenStall {
+        contract_calls: std::sync::atomic::AtomicUsize::new(0),
+    });
+    let session = AcceptanceSession::open(root.path(), "", reviewer.clone()).unwrap();
+    session.capture_request("Implement PRD.md fully").unwrap();
+    let call = ToolCall {
+        id: ToolCallId::new("enroll").unwrap(),
+        tool_id: ToolId::new("acceptance_enroll").unwrap(),
+        arguments: serde_json::json!({"prd":"PRD.md"}),
+        extensions: Default::default(),
+    };
+    let started = std::time::Instant::now();
+    let error = session
+        .execute(&call, &context(root.path()))
+        .await
+        .expect_err("window must expire during the contract ladder");
+    super::ENROLLMENT_CEILING_TEST_OVERRIDE_SECS.store(0, Ordering::Relaxed);
+    assert!(
+        started.elapsed() < Duration::from_secs(60),
+        "contract ladder must share the enrollment window; took {:?}",
+        started.elapsed()
+    );
+    assert!(
+        error
+            .to_string()
+            .contains("bounded enrollment window elapsed"),
+        "failure must name the bounded window: {}",
+        error.to_string()
+    );
+    assert!(session.enrolled().is_none());
+}

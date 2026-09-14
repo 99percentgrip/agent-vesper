@@ -1,11 +1,18 @@
 # Foundation Evidence Index
 
+[Acceptance enrollment audit](acceptance-enrollment-audit.md) — final
+audit of the enrollment visibility unit: found AC-3 untested and the
+ceiling missing the contract ladder (true worst case ~17 min, not ~5);
+both repaired red-first with in-process freeze reproduction (1,208 s
+receipt). Floor 2,331/0; acceptance 23/23.
+
 [Acceptance enrollment visibility](acceptance-enrollment-visibility-execution.md)
 fixes the field-reported acceptance freeze: nested reviewer agents now
 stream `Status` stage lines to both hosts, the contract ladder is capped
 at 2 attempts with a 300 s enrollment ceiling, and refusal/failure is one
 loud actionable outcome instead of a silent grind. Red-first receipts;
-all pre-existing acceptance pins green; 2,329/0.
+all pre-existing acceptance pins green; 2,329/0. **Superseded in part by
+the audit above** (ceiling coverage, AC-3 test).
 
 [v0.22.9 release](v0.22.9-release-execution.md) publishes the voice
 silence-hallucination guard: all four exact-commit gates on `342f5b1`,
