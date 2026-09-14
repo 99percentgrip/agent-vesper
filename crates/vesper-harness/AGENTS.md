@@ -180,6 +180,13 @@ Z.ai and Playwright MCP server descriptors.
   independently reviews the candidate scope, freezes it once and remembers its
   workspace path under normal mutation permissions. Pending enrollment cannot
   complete. No model tool can disable or replace an enrolled objective.
+  Enrollment is bounded by one wall-clock window (300 s production) shared by
+  every nested phase — scope review and the contract ladder (max 2 proposals);
+  window expiry, ladder exhaustion and scope refusal each fail loudly with
+  do-not-retry guidance, save nothing and leave the gate unenrolled. Nested
+  reviewers stream `AgentProgressEvent::Status` stage lines so enrollment is
+  never silent; `acceptance_tests` pins the window, the ladder cap and the
+  `#[cfg(test)]` ceiling override defaults to the production value.
 - ADR 0028: `acceptance`, `acceptance_snapshot`, `acceptance_runner` and
   `acceptance_settings` own original PRD/project-rule capture, independent read-only
   review, exact Rust test execution, private in-memory receipts and native controls.
