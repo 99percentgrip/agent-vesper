@@ -3862,6 +3862,11 @@ fn session_setting_candidates(
                     "/settings swarm".into(),
                     "Swarm · independent scoped workers".into(),
                 ),
+                #[cfg(feature = "bridge")]
+                (
+                    "/settings bridge".into(),
+                    "Bridge · application control (experimental)".into(),
+                ),
                 (
                     "/provider".into(),
                     "Providers · select the provider for your next launch".into(),
@@ -15550,6 +15555,14 @@ mod tests {
         assert!(!command_expands_to_argument("/web", &surface));
         assert!(command_expands_to_argument("/permission", &surface));
         assert!(!command_expands_to_argument("/permission bypass", &surface));
+        // VB-PRD-001: the Settings menu offers Bridge activation exactly
+        // when the `bridge` feature is compiled in — house rule: feature
+        // activation belongs in native Settings, never hand-edited JSON.
+        assert_eq!(
+            settings.iter().any(|choice| choice.0 == "/settings bridge"),
+            cfg!(feature = "bridge"),
+            "the /settings bridge entry must exist exactly when the feature is on"
+        );
     }
 
     #[test]

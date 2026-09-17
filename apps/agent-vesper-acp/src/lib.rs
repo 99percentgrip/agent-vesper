@@ -277,6 +277,10 @@ struct AcpHarnessEngine {
     registry: Arc<ProviderRegistry>,
     #[cfg(feature = "swarm")]
     swarm: swarm_host::SwarmHost,
+    /// VB-PRD-001: per-session `/settings bridge` draft state (BR-21 ACP
+    /// parity with the TUI's native Settings panel).
+    #[cfg(feature = "bridge")]
+    bridge_settings: std::sync::Mutex<vesper_harness::bridge_settings::BridgeControls>,
     config: vesper_agent::AgentLoopConfig,
     hosted: Arc<HarnessToolService>,
     /// Cognitive-memory bundle (Stage 16 / ADR 0015 + 0016) shared with the
@@ -501,6 +505,8 @@ impl AcpHarnessEngine {
             acceptance: std::sync::Mutex::new(BTreeMap::new()),
             #[cfg(feature = "swarm")]
             swarm: Default::default(),
+            #[cfg(feature = "bridge")]
+            bridge_settings: std::sync::Mutex::new(Default::default()),
             config,
             hosted,
             cognition: Arc::new(cognition),
@@ -1363,6 +1369,22 @@ impl AcpHarnessEngine {
                     Ok(result) => SlashFlow::Respond(result),
                     Err(error) => slash_result(error),
                 };
+            }
+            #[cfg(feature = "bridge")]
+            if lowered == "settings"
+                && (raw_argument == "bridge" || raw_argument.starts_with("bridge "))
+            {
+                // VB-PRD-001: ACP parity for Bridge activation (BR-21) —
+                // text controls with swarm-like draft/save/cancel; the
+                // TUI exposes the same persisted shape via its native
+                // Settings panel.
+                let argument = raw_argument
+                    .strip_prefix("bridge")
+                    .unwrap_or_default()
+                    .trim();
+                let root = std::env::current_dir().unwrap_or_default();
+                let mut controls = self.bridge_settings.lock().expect("bridge settings");
+                return slash_result(controls.command(&root, argument).unwrap_or_else(|e| e));
             }
             #[cfg(feature = "bridge")]
             if lowered == "bridge" {

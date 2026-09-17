@@ -74,16 +74,10 @@ fn at01_enabled_bridge_startup_observes_no_extra_process_or_socket() {
     let global = tempfile::tempdir().unwrap();
 
     // --- Pass 1: bridge ENABLED via the user-owned settings file.
-    let bridge_on_root = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(bridge_on_root.path().join(".agent-vesper")).unwrap();
-    std::fs::write(
-        bridge_on_root
-            .path()
-            .join(".agent-vesper/bridge-settings.json"),
-        serde_json::json!({"enabled": true}).to_string(),
-    )
-    .unwrap();
-
+    // The host resolves workspace settings from its OWN cwd, which the
+    // process harness pins to the isolated temp root — so the settings
+    // file must live at the root itself, not in a stray tempdir that the
+    // host never reads (the previous shape passed only vacuously).
     let mut enabled = ProcessHarness::spawn_with_environment(
         listener.local_addr().unwrap(),
         [
@@ -99,19 +93,24 @@ fn at01_enabled_bridge_startup_observes_no_extra_process_or_socket() {
             ),
         ],
     );
-    // The settings root the host reads is the workspace cwd.
-    let workspace = enabled.isolated_root().join("workspace");
-    std::fs::create_dir_all(workspace.join(".agent-vesper")).unwrap();
+    // The host's cwd is the isolated ROOT (spawn pins current_dir there),
+    // so the enabled settings file must sit at the root's .agent-vesper/
+    // for this pass to be non-vacuous.
+    std::fs::create_dir_all(enabled.isolated_root().join(".agent-vesper")).unwrap();
     std::fs::write(
-        workspace.join(".agent-vesper/bridge-settings.json"),
+        enabled
+            .isolated_root()
+            .join(".agent-vesper/bridge-settings.json"),
         serde_json::json!({"enabled": true}).to_string(),
     )
     .unwrap();
+    let enabled_workspace = enabled.isolated_root().join("workspace");
+    std::fs::create_dir_all(&enabled_workspace).unwrap();
 
     enabled
         .send(json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1}}));
     assert!(enabled.response(1).get("error").is_none());
-    enabled.send(json!({"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":workspace,"mcpServers":[]}}));
+    enabled.send(json!({"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":enabled_workspace,"mcpServers":[]}}));
     let session = enabled.response(2)["result"]["sessionId"]
         .as_str()
         .unwrap()

@@ -79,6 +79,90 @@ pub mod holder {
 
 use std::path::PathBuf;
 
+/// VB-PRD-001: shared text controls for Bridge settings, so both hosts
+/// answer `/settings bridge` with identical semantics (BR-21 parity).
+/// Like swarm: draft → explicit save; no filesystem effect until save.
+#[derive(Debug, Clone)]
+pub struct BridgeSettingsDraft {
+    pub settings: BridgeSettings,
+}
+
+impl BridgeSettingsDraft {
+    fn open(root: &Path) -> Self {
+        Self {
+            settings: BridgeSettings::load(root),
+        }
+    }
+    fn apply(&mut self, argument: &str) -> Result<(), String> {
+        let words: Vec<_> = argument.split_whitespace().collect();
+        match words.as_slice() {
+            ["enabled", value @ ("on" | "off")] => self.settings.enabled = *value == "on",
+            _ => {
+                return Err("Use enabled on|off.".into());
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Per-session command state for the ACP text surface (the TUI uses the
+/// native panel; both edit the same persisted shape).
+#[derive(Default)]
+pub struct BridgeControls {
+    draft: Option<BridgeSettingsDraft>,
+    root: Option<std::path::PathBuf>,
+}
+
+impl BridgeControls {
+    /// Answer `/settings bridge [argument]` (ACP) with swarm-like
+    /// draft/save/cancel semantics.
+    pub fn command(&mut self, root: &Path, argument: &str) -> Result<String, String> {
+        let canonical = root
+            .canonicalize()
+            .map_err(|_| "Cannot resolve workspace root.")?;
+        if self.root.as_ref() != Some(&canonical) {
+            self.draft = None;
+            self.root = Some(canonical);
+        }
+        let argument = argument.trim();
+        if argument == "cancel" {
+            self.draft = None;
+            return Ok("Bridge settings cancelled; nothing saved.".into());
+        }
+        if argument == "save" {
+            self.draft
+                .as_ref()
+                .ok_or("Open bridge settings before saving.")?
+                .settings
+                .save(root)?;
+            self.draft = None;
+            return Ok(
+                "Bridge preferences saved. Restart the host to apply; enabling constructs no adapter, driver or process.".into(),
+            );
+        }
+        if argument.is_empty() || argument == "status" {
+            let saved = BridgeSettings::load(root);
+            return Ok(format!(
+                "Bridge saved preference: enabled={}. Restart applies changes. Enabling constructs only the no-adapter tool surface.\n/settings bridge enabled on|off · /settings bridge save · /settings bridge cancel",
+                saved.enabled
+            ));
+        }
+        if self.draft.is_none() {
+            self.draft = Some(BridgeSettingsDraft::open(root));
+        }
+        let draft = self.draft.as_mut().expect("opened draft");
+        if let Some(edit) = argument.strip_prefix("enabled ") {
+            draft.apply(&format!("enabled {edit}"))?;
+        } else {
+            return Err("Use enabled on|off, save, or cancel.".into());
+        }
+        Ok(format!(
+            "Bridge draft: enabled={}.\n/settings bridge enabled on|off · /settings bridge save · /settings bridge cancel",
+            draft.settings.enabled
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -129,5 +213,66 @@ mod tests {
             "web settings untouched"
         );
         assert!(BridgeSettings::load(root.path()).enabled);
+    }
+
+    #[test]
+    fn controls_draft_save_cancel_mirror_the_tui_panel() {
+        // VB-PRD-001 BR-21: the ACP text controls must share semantics with
+        // the TUI native panel — draft until explicit save, cancel writes
+        // nothing, status is read-only.
+        let root = tempfile::tempdir().unwrap();
+        let mut controls = BridgeControls::default();
+
+        // status is read-only and reports the saved (off) state
+        let status = controls.command(root.path(), "status").unwrap();
+        assert!(status.starts_with("Bridge saved preference: enabled=false"));
+
+        // drafting ON does not touch disk
+        controls.command(root.path(), "enabled on").unwrap();
+        assert!(!root.path().join(".agent-vesper").exists());
+        assert!(status.contains("/settings bridge"));
+
+        // cancel writes nothing
+        controls.command(root.path(), "cancel").unwrap();
+        assert!(!BridgeSettings::load(root.path()).enabled);
+
+        // save round-trips and is honest about restart semantics
+        controls.command(root.path(), "enabled on").unwrap();
+        let saved = controls.command(root.path(), "save").unwrap();
+        assert!(saved.contains("Restart the host to apply"));
+        assert!(BridgeSettings::load(root.path()).enabled);
+
+        // drafts cannot cross workspaces: switching roots resets the draft,
+        // so a save must fail until the new workspace drafts explicitly
+        let other = tempfile::tempdir().unwrap();
+        assert!(
+            controls.command(other.path(), "save").is_err(),
+            "a draft from another workspace must not save here"
+        );
+        assert!(
+            !BridgeSettings::load(other.path()).enabled,
+            "workspace A's draft must not enable workspace B"
+        );
+    }
+
+    #[test]
+    fn controls_reject_unknown_edits() {
+        let root = tempfile::tempdir().unwrap();
+        let mut controls = BridgeControls::default();
+        assert!(controls.command(root.path(), "enabled maybe").is_err());
+        assert!(controls.command(root.path(), "explode").is_err());
+    }
+
+    #[test]
+    fn disabled_status_points_to_native_settings_not_hand_edited_files() {
+        // House rule: feature activation belongs in Settings; the disabled
+        // answer must never instruct hand-editing a JSON file.
+        let root = tempfile::tempdir().unwrap();
+        let text = crate::bridge_command::status_text(Some(root.path()));
+        assert!(text.contains("/settings"), "must point at Settings: {text}");
+        assert!(
+            !text.contains("bridge-settings.json"),
+            "must not instruct hand-editing: {text}"
+        );
     }
 }

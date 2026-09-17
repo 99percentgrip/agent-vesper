@@ -256,6 +256,10 @@ pub(super) async fn open(
     let mut swarm = vesper_harness::swarm_settings::SwarmSettingsDraft::open(&root)?;
     #[cfg(feature = "swarm")]
     let initial_swarm = swarm.settings.clone();
+    #[cfg(feature = "bridge")]
+    let mut bridge = vesper_harness::bridge_settings::BridgeSettings::load(&root);
+    #[cfg(feature = "bridge")]
+    let initial_bridge = bridge;
     let mut refreshed_catalog = None;
     let mut catalog_notice = session
         .state
@@ -414,6 +418,10 @@ pub(super) async fn open(
                 {
                     dirty |= swarm.settings != initial_swarm;
                 }
+                #[cfg(feature = "bridge")]
+                {
+                    dirty |= bridge != initial_bridge;
+                }
                 if !dirty {
                     return Ok("Settings unchanged.".into());
                 }
@@ -477,6 +485,10 @@ pub(super) async fn open(
                         if swarm.settings != initial_swarm {
                             paths.push(root.join(".agent-vesper/swarm-settings.json"));
                         }
+                        #[cfg(feature = "bridge")]
+                        if bridge != initial_bridge {
+                            paths.push(root.join(".agent-vesper/bridge-settings.json"));
+                        }
                         let result = save_group(&paths, || {
                             if skills != initial_skills {
                                 vesper_harness::skill_routing_settings::save(&root, &skills)?;
@@ -490,6 +502,10 @@ pub(super) async fn open(
                             #[cfg(feature = "swarm")]
                             if swarm.settings != initial_swarm {
                                 swarm.save(&root)?;
+                            }
+                            #[cfg(feature = "bridge")]
+                            if bridge != initial_bridge {
+                                bridge.save(&root)?;
                             }
                             save_theme_preference(&preferences_root, &draft.preferences.theme)
                                 .map_err(|e| e.to_string())?;
@@ -530,6 +546,10 @@ pub(super) async fn open(
                                 .await?
                         }
                         "/web" => edit_web(terminal, &mut web, &draft.preferences.theme).await?,
+                        #[cfg(feature = "bridge")]
+                        "/settings bridge" => {
+                            edit_bridge(terminal, &mut bridge, &draft.preferences.theme).await?
+                        }
                         #[cfg(feature = "swarm")]
                         "/settings swarm" => {
                             edit_swarm(terminal, &mut swarm, &draft.preferences.theme).await?
@@ -732,6 +752,37 @@ async fn edit_web(
         }
     }
 }
+/// VB-PRD-001: native Settings panel for Bridge activation. House rule:
+/// feature activation belongs in Settings, never in hand-edited JSON.
+/// Single draft; saved with the other Settings choices via Save changes /
+/// Discard changes on exit. Enabling constructs only the no-adapter tool
+/// surface — no drivers, processes or transports are started.
+#[cfg(feature = "bridge")]
+async fn edit_bridge(
+    terminal: &mut Terminal<Backend>,
+    draft: &mut vesper_harness::bridge_settings::BridgeSettings,
+    theme: &str,
+) -> Result<(), String> {
+    loop {
+        let rows = vec![
+            format!("Bridge: {}", if draft.enabled { "ON" } else { "OFF" }),
+            "Back".into(),
+        ];
+        match choice(
+            terminal,
+            "Settings › Bridge",
+            "Application control (experimental). ON advertises the Bridge tools for the next launch; enabling constructs no adapter, driver or process. Restart the host to apply.",
+            &rows,
+            theme,
+        )
+        .await?
+        {
+            Some(0) => draft.enabled = !draft.enabled,
+            _ => return Ok(()),
+        }
+    }
+}
+
 #[cfg(feature = "swarm")]
 async fn edit_swarm(
     terminal: &mut Terminal<Backend>,

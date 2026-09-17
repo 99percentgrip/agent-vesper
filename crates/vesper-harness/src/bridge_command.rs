@@ -60,7 +60,7 @@ pub fn status_text(root: Option<&Path>) -> String {
         if enabled {
             "Bridge: enabled (no adapter attached). Capabilities report dependency_missing/unknown truthfully; nothing is controllable yet.".into()
         } else {
-            "Bridge: disabled. Enable via .agent-vesper/bridge-settings.json {\"enabled\":true} and restart; the disabled path performs no process, capture, network or model activity.".into()
+            "Bridge: disabled. Open /settings → Bridge and turn it ON, then restart the host to apply. The disabled path performs no process, capture, network or model activity.".into()
         }
     }
     #[cfg(not(feature = "bridge"))]

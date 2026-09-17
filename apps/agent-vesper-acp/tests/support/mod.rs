@@ -118,6 +118,11 @@ impl ProcessHarness {
         }
         let mut command = Command::new(binary);
         command
+            // The host resolves workspace settings from its cwd; running
+            // inside the isolated temp root keeps that read hermetic (the
+            // AT-01 lane previously depended on the *test runner's* cwd,
+            // which made its enabled-settings assertion vacuous).
+            .current_dir(&temp)
             .env_clear()
             .env("HOME", &temp)
             .env("AGENT_VESPER_OPENAI_CREDENTIALS_PATH", &openai_fixture)
