@@ -1175,3 +1175,5 @@ v0.21.6 release notes own the final run links, image IDs and local-install recei
 - [Routing request recognition](skill-routing-request-recognition-execution.md): ongoing sourced-verb and topic-evidence experiments; retains negative-activation regressions and pending independent evaluation.
 
 - [v0.22.6 release execution](v0.22.6-release-execution.md) — voice controls, long dictation and exact-commit publication.
+
+[Increment 37 — v0.23.1 PUBLISHED](../foundation/v0.23.1-release-final.md): Bridge shipped experimental/default-off on 5 platforms (14 checksummed artifacts); one registry-manifest gate failure caught + fixed + re-tagged; registry PR #539 updated in place per continuous-update contract. Live: github.com/99percentgrip/agent-vesper/releases/tag/v0.23.1
