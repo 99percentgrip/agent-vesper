@@ -241,10 +241,8 @@ impl ReactAgent for LiveLmStudioReactAgent {
                         transcript.push_str(&format!("[{i}] ACTION: {name}({arguments})\n"));
                     }
                     TrajectoryEntry::Observation { text, success } => {
-                        transcript.push_str(&format!(
-                            "[{i}] OBSERVATION (success={}): {text}\n",
-                            success
-                        ));
+                        transcript
+                            .push_str(&format!("[{i}] OBSERVATION (success={success}): {text}\n"));
                     }
                 }
             }

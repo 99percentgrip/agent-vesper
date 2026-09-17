@@ -202,8 +202,7 @@ async fn run_command_enforces_its_timeout() {
         .unwrap_err();
     assert!(
         result.to_string().contains("timed out"),
-        "a 1s timeout must kill the long-running command: {}",
-        result
+        "a 1s timeout must kill the long-running command: {result}"
     );
 }
 

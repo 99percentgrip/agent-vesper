@@ -151,6 +151,9 @@ pub enum CommandOutcome {
     Acceptance(String),
     #[cfg(feature = "swarm")]
     Swarm(String),
+    /// VB-PRD-001: the Bridge command surface (feature-gated).
+    #[cfg(feature = "bridge")]
+    Bridge(String),
 
     // === Tier C Phase 7 (ADR 0010) — workflow prompts ===
     /// A workflow command built a prompt that should drive a background
@@ -1101,6 +1104,8 @@ impl CommandRegistry {
             "settings" if argument.trim() == "swarm" => CommandOutcome::Swarm("settings".into()),
             #[cfg(feature = "swarm")]
             "swarm" => CommandOutcome::Swarm(argument.trim().into()),
+            #[cfg(feature = "bridge")]
+            "bridge" => CommandOutcome::Bridge(argument.trim().into()),
             "settings" if argument.trim() == "acceptance" => {
                 CommandOutcome::Acceptance("settings".into())
             }
@@ -2079,6 +2084,8 @@ const ORACLE_COMMAND_SURFACE: &[OracleCommandEntry] = &[
     OracleCommandEntry { name: "settings",          description: "Open all live session settings" },
     #[cfg(feature = "swarm")]
     OracleCommandEntry { name: "swarm", description: vesper_domain::slash_commands::SWARM_SLASH_COMMAND.description },
+    #[cfg(feature = "bridge")]
+    OracleCommandEntry { name: "bridge", description: vesper_domain::slash_commands::BRIDGE_SLASH_COMMAND.description },
     OracleCommandEntry { name: "web",               description: "Configure Web tools on/off settings" },
     OracleCommandEntry { name: "acceptance", description: "Enforce PRD completion: start <path>, status, resume, export <path>, stop" },
     OracleCommandEntry { name: "reasoning",         description: "Override the VRO reasoning mode: set mode=<auto|fast|balanced|deep|maximum|off> | clear" },
@@ -2713,10 +2720,15 @@ mod tests {
         );
         assert_eq!(
             registry.names().len(),
-            102 + usize::from(cfg!(feature = "swarm")),
+            102 + usize::from(cfg!(feature = "swarm")) + usize::from(cfg!(feature = "bridge")),
             "the complete oracle-compatible and Vesper-native command surface must stay registered"
         );
         assert_eq!(registry.contains("swarm"), cfg!(feature = "swarm"));
+        assert_eq!(
+            registry.contains("bridge"),
+            cfg!(feature = "bridge"),
+            "the /bridge command must exist exactly when the bridge feature is on"
+        );
     }
 
     /// §5.5 latency gate (VRO-13 PR-7): 10,000 synthetic keystrokes

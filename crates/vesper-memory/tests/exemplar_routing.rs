@@ -57,7 +57,9 @@ fn manifest_proof_sixteen_valid_entries_all_files_present_under_cap() {
     );
     assert_eq!(metadata.chunks.len(), 16, "expected 16 manifest entries");
     for entry in &metadata.chunks {
-        entry.validate().expect(entry.name.as_str());
+        entry
+            .validate()
+            .unwrap_or_else(|error| panic!("{}: {error}", entry.name));
     }
     // Disk-level validation runs inside orchestrate; the routing proofs below
     // assert its success indirectly (a broken manifest would make the skill

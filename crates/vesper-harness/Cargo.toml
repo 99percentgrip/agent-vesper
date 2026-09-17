@@ -24,6 +24,7 @@ vesper-mcp = { path = "../vesper-mcp", version = "=0.23.0" }
 vesper-memory = { path = "../vesper-memory", version = "=0.23.0" }
 vesper-runtime = { path = "../vesper-runtime", version = "=0.23.0" }
 vesper-sandbox = { path = "../vesper-sandbox", version = "=0.23.0" }
+vesper-bridge = { path = "../vesper-bridge", version = "=0.23.0", optional = true }
 vesper-sessions = { path = "../vesper-sessions", version = "=0.23.0" }
 # VRO-14 PR-5: the web tools' pure surfaces (perception pipeline, egress
 # policy, action vocabulary) live in vesper-web; the transport stays behind
@@ -38,6 +39,11 @@ vesper-provider = { path = "../vesper-provider", version = "=0.23.0", optional =
 
 [features]
 # VRO-13 PR-6: the daemon's single-writer flock discipline. Unix-only
+
+# VB-PRD-001 Phase 2: the hosted Bridge tool service (pure core
+# composition; no adapter yet). Default-off: the disabled build advertises
+# zero bridge tools and creates no bridge state (BR-30, NF-01, AT-01).
+bridge = ["dep:vesper-bridge"]
 
 # Forwards to vesper-sandbox's docker backend so hosts can enable it
 docker = ["vesper-sandbox/docker"]

@@ -338,6 +338,14 @@ Z.ai and Playwright MCP server descriptors.
   `--features docker` to include the feature-gated cold-start arm).
 - Run `cargo xtask architecture` and `cargo xtask verify`.
 
+- `src/bridge_service.rs` (behind the default-off `bridge` feature)
+  composes the pure `vesper-bridge` core (VB-PRD-001 Phase 2): the
+  8-tool Bridge surface, single-session ownership and denial text. No
+  adapter/transport/I/O lives here; `with_bridge(false)` or the feature
+  off leaves zero bridge tools and no bridge state (BR-30/NF-01).
+  Evidence: `src/bridge_service_tests.rs` (10 integration tests,
+  feature-gated).
+
 ## Child DOX Index
 
 No children.

@@ -29,6 +29,9 @@ pub enum GlmAdapterError {
     /// GLM protocol data was structurally invalid.
     #[error("GLM protocol data is malformed")]
     MalformedProtocol,
+    /// The quota monitor answered an explicit error envelope (2ai).
+    #[error("Z.ai quota monitor error: {0}")]
+    MonitorError(String),
     /// Checked usage arithmetic failed.
     #[error("GLM usage arithmetic overflow")]
     UsageOverflow,
@@ -93,9 +96,14 @@ pub(crate) fn adapter_error(error: &GlmAdapterError, visible: bool) -> ProviderE
         GlmAdapterError::MalformedProtocol => {
             (ErrorCategory::MalformedProtocol, "malformed-protocol")
         }
+        GlmAdapterError::MonitorError(_) => (ErrorCategory::MalformedProtocol, "quota-monitor"),
         GlmAdapterError::UsageOverflow => (ErrorCategory::MalformedProtocol, "usage-overflow"),
     };
-    provider_error(
+    let mut monitor_detail = None;
+    if let GlmAdapterError::MonitorError(detail) = error {
+        monitor_detail = Some(detail.clone());
+    }
+    let mut provider_error = provider_error(
         category,
         Retryability::Never,
         visible,
@@ -110,12 +118,22 @@ pub(crate) fn adapter_error(error: &GlmAdapterError, visible: bool) -> ProviderE
             }
             GlmAdapterError::Limit(_) => "GLM response exceeded a safety limit",
             GlmAdapterError::MalformedProtocol => "GLM returned malformed protocol data",
+            GlmAdapterError::MonitorError(_) => "Z.ai quota monitor reported an account error",
             GlmAdapterError::UsageOverflow => "GLM usage counters overflowed",
         },
         Some(code),
         None,
         None,
-    )
+    );
+    if let Some(detail) = monitor_detail {
+        provider_error
+            .info
+            .diagnostics
+            .fields
+            .insert("zai:quota-monitor-msg", json!(detail))
+            .expect("bounded monitor detail (24 words)");
+    }
+    provider_error
 }
 
 pub(crate) fn authentication_error() -> ProviderError {

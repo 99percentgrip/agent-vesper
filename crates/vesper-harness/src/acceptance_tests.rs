@@ -1255,7 +1255,7 @@ async fn enrollment_wall_clock_ceiling_bounds_the_total_window() {
     // Audit AC-3 (red-first: hung the full 600 s on the pre-fix tree —
     // the reported freeze reproduced in-process). Production uses a 300 s
     // window; this test pins the mechanism with a 10 s override.
-    super::ENROLLMENT_CEILING_TEST_OVERRIDE_SECS.store(10, Ordering::Relaxed);
+    super::ENROLLMENT_CEILING_TEST_OVERRIDE_SECS.store(1, Ordering::Relaxed);
     struct StallingScope;
     impl AcceptanceReviewer for StallingScope {
         fn inspect<'a>(
@@ -1292,7 +1292,7 @@ async fn enrollment_wall_clock_ceiling_bounds_the_total_window() {
         .expect_err("stalled enrollment must fail loudly");
     super::ENROLLMENT_CEILING_TEST_OVERRIDE_SECS.store(0, Ordering::Relaxed);
     assert!(
-        started.elapsed() < Duration::from_secs(30),
+        started.elapsed() < Duration::from_secs(10),
         "ceiling must bound enrollment; took {:?}",
         started.elapsed()
     );
@@ -1310,7 +1310,7 @@ async fn enrollment_ceiling_covers_the_contract_ladder_too() {
     // Audit repair pin: the contract ladder inside prepare() shares the
     // enrollment window. A slow-but-passing scope review followed by a
     // stalling contract ladder must hit the window — not 2×180 s on top.
-    super::ENROLLMENT_CEILING_TEST_OVERRIDE_SECS.store(10, Ordering::Relaxed);
+    super::ENROLLMENT_CEILING_TEST_OVERRIDE_SECS.store(1, Ordering::Relaxed);
     struct SlowThenStall {
         contract_calls: std::sync::atomic::AtomicUsize,
     }
@@ -1362,7 +1362,7 @@ async fn enrollment_ceiling_covers_the_contract_ladder_too() {
         .expect_err("window must expire during the contract ladder");
     super::ENROLLMENT_CEILING_TEST_OVERRIDE_SECS.store(0, Ordering::Relaxed);
     assert!(
-        started.elapsed() < Duration::from_secs(60),
+        started.elapsed() < Duration::from_secs(10),
         "contract ladder must share the enrollment window; took {:?}",
         started.elapsed()
     );

@@ -528,8 +528,7 @@ impl Governor {
     pub fn new(config: GovernanceConfig) -> Result<Self, String> {
         if !config.validated() {
             return Err(format!(
-                "gate timeout must be bounded between {:?} and {:?}",
-                MIN_GATE_TIMEOUT, MAX_GATE_TIMEOUT
+                "gate timeout must be bounded between {MIN_GATE_TIMEOUT:?} and {MAX_GATE_TIMEOUT:?}"
             ));
         }
         Ok(Self {

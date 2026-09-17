@@ -155,6 +155,8 @@ pub struct SessionState {
     pub pending_acceptance_command: Option<String>,
     #[cfg(feature = "swarm")]
     pub pending_swarm_command: Option<String>,
+    /// VB-PRD-001: queued /bridge command awaiting the idle-turn boundary.
+    pub pending_bridge_command: Option<String>,
     #[cfg(feature = "swarm")]
     pub swarm_cancel: Option<vesper_harness::swarm_service::CancelFlag>,
     /// Whether the binary should open the provider selection modal.
@@ -476,6 +478,10 @@ fn apply_outcome(
         pending_acceptance_command,
         #[cfg(feature = "swarm")]
         pending_swarm_command,
+        #[cfg(feature = "bridge")]
+        pending_bridge_command,
+        #[cfg(not(feature = "bridge"))]
+            pending_bridge_command: _,
         #[cfg(feature = "swarm")]
             swarm_cancel: _,
         pending_provider_switch,
@@ -489,6 +495,10 @@ fn apply_outcome(
         #[cfg(feature = "swarm")]
         CommandOutcome::Swarm(argument) => {
             *pending_swarm_command = Some(argument);
+        }
+        #[cfg(feature = "bridge")]
+        CommandOutcome::Bridge(argument) => {
+            *pending_bridge_command = Some(argument);
         }
         CommandOutcome::WebSettings(argument) => {
             *pending_web_command = Some(argument);

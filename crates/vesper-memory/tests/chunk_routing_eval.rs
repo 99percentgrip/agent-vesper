@@ -192,16 +192,14 @@ fn harness_condition_isolation() {
     // must NOT be routed as the top hit (or not loaded at all).
     assert!(
         !flat.0,
-        "flat routing must fail the metadata-only case; got {:?}",
-        flat
+        "flat routing must fail the metadata-only case; got {flat:?}"
     );
     // The metadata conditions CAN: observable difference proves the
     // ablation axis is actually varied.
     let summary_only = run_case(metadata_case, ChunkRoutingCondition::SummaryOnly);
     assert!(
         summary_only.0,
-        "summary must resolve the metadata-only case; got {:?}",
-        summary_only
+        "summary must resolve the metadata-only case; got {summary_only:?}"
     );
     assert!(full.0, "full metadata must resolve the metadata-only case");
 

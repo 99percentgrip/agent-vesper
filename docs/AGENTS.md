@@ -9,6 +9,10 @@ Own durable project documentation and evidence-backed engineering records.
 - `voice-control-prd.md` owns the requested persistent red microphone toggle,
   recorder state projection, responsive lifecycle and terminal acceptance.
 
+- `Vesper bridge/` owns VB-PRD-001 (Vesper Bridge application-control
+  subsystem): the frozen PRD, the Phase 0 reconnaissance evidence package
+  with digest-pinned upstream sources, and later phase reports.
+
 - `dependency-setup-prd.md` owns confirmed native runtime installation, reuse,
   managed-machine recovery, readiness checks and platform acceptance gates.
 

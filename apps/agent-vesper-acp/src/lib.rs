@@ -1,6 +1,8 @@
 #![forbid(unsafe_code)]
 //! Thin composition shared by the release binary and process-only conformance driver.
 
+#[cfg(feature = "bridge")]
+mod bridge_host;
 #[cfg(feature = "swarm")]
 mod swarm_host;
 
@@ -123,7 +125,8 @@ where
                 Some(worker_factory),
                 checkpoint_gate().is_some(),
             )
-            .with_web_scope(vesper_harness::web_service::holder::shared()),
+            .with_web_scope(vesper_harness::web_service::holder::shared())
+            .with_bridge(bridge_enabled_from_settings()),
         );
         let engine = Arc::new(AcpHarnessEngine::new(
             Arc::clone(&providers),
@@ -193,6 +196,22 @@ fn checkpoint_gate() -> Option<PathBuf> {
         })
         .unwrap_or(false);
     (enabled || explicit_root).then(checkpoint_root_path)
+}
+
+// VB-PRD-001 Phase 2: resolve the Bridge enable flag once per process.
+// Default-off; without the `bridge` feature this is always false.
+fn bridge_enabled_from_settings() -> bool {
+    #[cfg(feature = "bridge")]
+    {
+        vesper_harness::bridge_settings::holder::shared(
+            &std::env::current_dir().unwrap_or_default(),
+        )
+        .enabled
+    }
+    #[cfg(not(feature = "bridge"))]
+    {
+        false
+    }
 }
 
 /// Pure VRO dispatch decision (TUI `react_dispatch_for` spirit): only
@@ -1344,6 +1363,27 @@ impl AcpHarnessEngine {
                     Ok(result) => SlashFlow::Respond(result),
                     Err(error) => slash_result(error),
                 };
+            }
+            #[cfg(feature = "bridge")]
+            if lowered == "bridge" {
+                // VB-PRD-001: `/bridge stop|resume` execute against the
+                // LIVE hosted service (NF-02: no model inference); every
+                // other verb is a read-only shared answer. Connect flows
+                // through the model tool surface, never around it.
+                let argument = raw_argument.trim();
+                let root = std::env::current_dir().unwrap_or_default();
+                return slash_result(match argument.to_ascii_lowercase().as_str() {
+                    "stop" => self.hosted.bridge_stop(),
+                    "resume" => self.hosted.bridge_resume(),
+                    // H4: disconnect EXECUTES against the live service —
+                    // a real close with the C3 close-report surfaced,
+                    // not an explanatory string.
+                    "disconnect" => self.hosted.bridge_disconnect(),
+                    "release confirmed" | "confirm release" => {
+                        self.hosted.bridge_confirm_input_release()
+                    }
+                    _ => bridge_host::command(argument, Some(&root)),
+                });
             }
             if lowered == "web" {
                 if raw_argument.trim() == "prepare confirm" {
@@ -3075,6 +3115,12 @@ fn host_parity_commands() -> Vec<vesper_domain::SlashCommandDescriptor> {
     let commands = {
         let mut commands = commands;
         commands.push(vesper_domain::slash_commands::SWARM_SLASH_COMMAND);
+        commands
+    };
+    #[cfg(feature = "bridge")]
+    let commands = {
+        let mut commands = commands;
+        commands.push(vesper_domain::slash_commands::BRIDGE_SLASH_COMMAND);
         commands
     };
     commands

@@ -628,7 +628,10 @@ impl AcceptanceSession {
             }
         }
         if sources.is_empty() || sources.len() > MAX_REQUIREMENTS {
-            return Err("PRD requires 1–256 source paragraphs".into());
+            return Err(format!(
+                "PRD requires 1–{MAX_REQUIREMENTS} source paragraphs (found {}); the input stays byte-capped at 256 KiB",
+                sources.len()
+            ));
         }
         let report = incomplete(
             "PRD acceptance",
@@ -1285,3 +1288,7 @@ fn parse<T: DeserializeOwned>(text: &str) -> Result<T, String> {
 #[cfg(test)]
 #[path = "acceptance_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "acceptance_enrollment_bounds_tests.rs"]
+mod enrollment_bounds_tests;

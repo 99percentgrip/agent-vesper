@@ -408,7 +408,7 @@ fn unregistered_verifier_result(id: &VerifierId) -> VerificationResult {
         status: VerificationStatus::Error,
         confidence: 0.0,
         findings: vec![VerificationFinding {
-            message: format!("verifier `{}` is not registered", id),
+            message: format!("verifier `{id}` is not registered"),
             severity: vesper_domain::VerificationSeverity::Error,
             location: None,
         }],

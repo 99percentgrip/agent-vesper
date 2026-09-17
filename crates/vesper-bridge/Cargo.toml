@@ -1,0 +1,25 @@
+[package]
+name = "vesper-bridge"
+description = "Pure provider-neutral application-control contracts for Agent Vesper (VB-PRD-001)"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+vesper-domain = { path = "../vesper-domain", version = "=0.23.0" }
+vesper-security = { path = "../vesper-security", version = "=0.23.0" }
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[features]
+default = []
+
+[lints]
+workspace = true

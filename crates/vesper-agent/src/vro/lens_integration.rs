@@ -162,7 +162,7 @@ pub fn feedback_as_context_message(feedback: &LensFeedback) -> String {
                 out.push_str(&format!("      target:    {target}\n"));
             }
             if let Some(html) = &a.suggested_html {
-                out.push_str(&format!("      suggested: {}\n", html));
+                out.push_str(&format!("      suggested: {html}\n"));
             }
         }
     }

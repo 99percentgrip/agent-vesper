@@ -1450,6 +1450,9 @@ fn allowed_dependencies() -> BTreeMap<&'static str, BTreeSet<&'static str>> {
                 "vesper-security",
                 "vesper-policy",
                 "vesper-config",
+                // VB-PRD-001 Phase 1: the visibly-fake deterministic Bridge
+                // driver (FakeApplication) for test-only evidence.
+                "vesper-bridge",
             ]),
         ),
         (
@@ -1540,6 +1543,11 @@ fn allowed_dependencies() -> BTreeMap<&'static str, BTreeSet<&'static str>> {
                 // VRO-14 PR-5: the WebService hosts the five opt-in web
                 // tools over vesper-web's pure pipeline types.
                 "vesper-web",
+                // VB-PRD-001 Phase 2: the hosted Bridge tool service
+                // (optional, default-off `bridge` feature) composes the
+                // pure vesper-bridge core. No adapter, transport or I/O
+                // here; every decision routes through the core gate.
+                "vesper-bridge",
                 "vesper-web-fetch",
             ]),
         ),
@@ -1594,6 +1602,15 @@ fn allowed_dependencies() -> BTreeMap<&'static str, BTreeSet<&'static str>> {
             // foundations; execution/inference/sandboxing are trait ports
             // fulfilled at the composition boundary, never here.
             "vesper-swarm",
+            BTreeSet::from(["vesper-domain", "vesper-security"]),
+        ),
+        (
+            // VB-PRD-001 Phase 1: the pure application-control core
+            // (identities, capability manifest, operation/session state
+            // machines, fenced leases, journal port, observations, error
+            // contract). No I/O, clock or transport; adapters compose in
+            // the hosted layer behind these ports.
+            "vesper-bridge",
             BTreeSet::from(["vesper-domain", "vesper-security"]),
         ),
         ("xtask", BTreeSet::from(["vesper-testkit"])),

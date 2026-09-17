@@ -182,8 +182,8 @@ mod sys {
             return Err("unshare(CLONE_NEWUSER|NEWNS|NEWPID|NEWNET) failed".into());
         }
         write_proc("/proc/self/setgroups", "deny")?;
-        write_proc("/proc/self/uid_map", &format!("0 {} 1\n", outer_uid))?;
-        write_proc("/proc/self/gid_map", &format!("0 {} 1\n", outer_gid))?;
+        write_proc("/proc/self/uid_map", &format!("0 {outer_uid} 1\n"))?;
+        write_proc("/proc/self/gid_map", &format!("0 {outer_gid} 1\n"))?;
         Ok(())
     }
 

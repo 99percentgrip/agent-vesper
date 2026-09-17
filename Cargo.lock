@@ -3986,6 +3986,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "vesper-bridge"
+version = "0.23.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror",
+ "vesper-domain",
+ "vesper-security",
+]
+
+[[package]]
 name = "vesper-checkpoints"
 version = "0.23.0"
 dependencies = [
@@ -4051,6 +4062,7 @@ dependencies = [
  "tokio",
  "url",
  "vesper-agent",
+ "vesper-bridge",
  "vesper-checkpoints",
  "vesper-config",
  "vesper-domain",
@@ -4260,6 +4272,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "thiserror",
+ "vesper-bridge",
  "vesper-config",
  "vesper-domain",
  "vesper-policy",

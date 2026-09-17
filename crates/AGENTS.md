@@ -41,6 +41,17 @@ test-only conformance support.
   confined to the Linux-only `sandbox_init` supervisor binary target; it owns
   the opt-in namespaces backend with probed, honest capabilities (ADR 0022 —
   Sandbox Supervisor as the Sole Raw-Syscall Boundary).
+- `vesper-bridge` depends only on `vesper-domain` and `vesper-security`
+  (plus `serde`/`serde_json`/`thiserror`); it owns the pure
+  provider-neutral application-control core for VB-PRD-001 —
+  generation-bound identities, the versioned capability manifest, typed
+  operation envelopes and result classification, session/operation state
+  machines, fenced exclusive mutation leases, the intent-journal port,
+  bounded observations and the error taxonomy. No I/O, clock, transport,
+  application or provider names; adapters and supervision compose in
+  `vesper-harness` behind its ports. Unknown implementation status is
+  never dispatchable; driver acknowledgments settle as `Applied`, never
+  `Verified`.
 - `vesper-swarm` depends only on `vesper-domain` and `vesper-security` among
   workspace crates; it owns topology, pooling, priority messaging, assignment,
   the ephemeral ledger, sandbox lease coordination and hive orchestration.
@@ -121,6 +132,9 @@ test-only conformance support.
 - `vesper-auth/AGENTS.md` — native-first provider-neutral credential storage
   and owner-only Unix vault fallback.
 - `vesper-policy/AGENTS.md` — pure permission and policy decisions.
+- `vesper-bridge/AGENTS.md` — pure provider-neutral application-control
+  core (VB-PRD-001 Phase 1): identities, capability manifest, operation
+  and session state machines, leases, journal port, observations, errors.
 - `vesper-testkit/AGENTS.md` — fixture and fake-conformance helpers.
 - `vesper-swarm/AGENTS.md` — pure provider-neutral swarm-coordination
   foundations (VRO-15; topology, pooling, bus, ledger, leases and hive).

@@ -4,7 +4,12 @@ use serde::{Deserialize, Serialize};
 
 pub const ACCEPTANCE_VERSION: u32 = 1;
 pub const ACCEPTANCE_COLLECTOR: &str = "vesper-native-cargo-v1";
-pub const MAX_REQUIREMENTS: usize = 256;
+/// ADR 0028/0029 ceiling for PRD source paragraphs (the PRD plus every
+/// `AGENTS.md` instruction file along the workspace route). 512 admits real
+/// specifications such as VB-PRD-001 (234 PRD + 50 instruction paragraphs
+/// = 284) while still bounding reviewer input; the 256 KiB byte cap in the
+/// harness remains the hard input limit.
+pub const MAX_REQUIREMENTS: usize = 512;
 pub const MAX_CHECKS: usize = 128;
 
 /// A source paragraph is retained independently of model-generated requirements.

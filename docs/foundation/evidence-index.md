@@ -1,5 +1,237 @@
 # Foundation Evidence Index
 
+[Vesper Bridge Increment 15](../Vesper%20bridge/recon/phase2p-portal-resolve-enrollment.md)
+[Full-Mission Audit 0→2p](../Vesper%20bridge/recon/full-mission-audit.md)
+[Increment 16 — audit fixes](../Vesper%20bridge/recon/phase2q-audit-fixes-report.md)
+[Increment 17 — Resolve free 21.1 live probes](../Vesper%20bridge/recon/phase2r-resolve-live-probes.md): external scripting Studio-gated (proven), internal Console route proven live (`VB3|21.1.0.17|…`), `resolve --version` hang root-caused.
+[Increment 18 — Resolve vertical slice VERIFIED](../Vesper%20bridge/recon/phase2s-resolve-vertical-slice.md): import → timeline → render → **output file frame-exact verified (2245/2245, full decode RC=0)**, original sha256 unchanged; free-edition codec/import defects measured and fixed (no H.264 in free; ImportMedia string form; CustomName breaks AddRenderJob).
+[Increment 19 — paste-free autonomous worker](../Vesper%20bridge/recon/phase2t-paste-free-worker.md): **one paste per launch, then fully autonomous** file-driven control via LuaJIT-FFI channel (`ffi.C.fopen`); second render executed zero-human and frame-verified 2245/2245; `%w`-excludes-underscore and pattern bugs found live.
+[Increment 20 — Elisa via MPRIS: second app PASS](../Vesper%20bridge/recon/phase2u-elisa-mpris.md): **40 seconds, zero per-app code** — play verified at 3 layers (state/position/PipeWire stream); the ladder claim measured against Resolve's 4-hour archaeology.
+[Increment 21 — native adapter integration](../Vesper%20bridge/recon/phase2v-native-adapter-integration.md): `AdapterPort` seam + Resolve file-IPC and MPRIS adapters behind the **real** `bridge_execute` authorization path — **live-tested against both running applications**; adapters are dependency-free (busctl/file only).
+[Increment 22 — §7 dispatch-integrity hardening](../Vesper%20bridge/recon/phase2w-dispatch-hardening.md): timeout-after-mutation now settles `unknown_outcome` (never `failed`); **duplicate suppression re-keyed from attempt-id to operation identity** (the old key could never catch a real retry); step-5a semantic suppression precedes freshness. Live re-verified on both apps.
+[Increment 23 — latency investigation](../Vesper%20bridge/recon/phase2x-latency-investigation.md): reported latency root-caused to a **10s test-ceiling window × my full-suite-between-steps procedure**, not the product — Bridge path measured **22 ms** end-to-end; ceiling override 10s→1s (suite 10.0s→1.3s); live latency-budget test (<1s) added as regression guard.
+[Increment 24 — three-track choreography](../Vesper%20bridge/recon/phase2y-three-track-choreography.md): 30s/15s/30s three-phase sequenced control PASS (±274 ms); **Elisa crash under rapid Next/Previous inversion found** — app defect, spaced-calls mitigation recorded for adapters.
+[Increment 25 — measured-behavior adapter guards](../Vesper%20bridge/recon/phase2z-adapter-behavior-guards.md): adapter refuses previous-while-paused (restart trap), enforces a 1200ms inversion cooldown (crash trigger), and settles navigation only on **trackid change** — all three guards tested against a scripted bus fake and re-verified live.
+[Increment 26 — audio-event stop](../Vesper%20bridge/recon/phase2aa-audio-event-stop.md): kick-drum onset **located from the waveform** (low-band transient analysis: 59.28s, the drop); played 30s→59.5s, stopped +216ms past onset, app closed; MPRIS **Seek-is-relative** semantics discovered and recorded.
+[Increment 27 — first-kick correction](../Vesper%20bridge/recon/phase2ab-first-kick-correction.md): Alex's ground truth (kick at **51s**, continuous after) confirmed by re-analysis at the right threshold — my "59s drop" was a narrative over incomplete data; test re-run, stopped at 51.9s. Lesson: detectors report structure + uncertainty; human ground truth re-examines, never gets overridden.
+[Increment 28 — wave detector calibrated](../Vesper%20bridge/recon/phase2ad-wave-detector.md): `tools/bridge/kick_detector.py` — first sustained kick entry from waveform alone; **5 pipeline stages each earned by a measured failure**; validated blind on two artist-confirmed tracks (51.55 vs 51.5; 56.46 vs 56.0); FX fills (run≤3) vs kick entries (run≥4) discriminator.
+[Increment 29 — FX-fill choreography](../Vesper%20bridge/recon/phase2ae-fx-fill-choreography.md): FX fill located at **27.88s** (sharpness 11.7); interleaved beat/half-time patterns disambiguated with one human question; 4th kick = **59.11s**; played from the fill, stopped on the 4th (+428 ms).
+[Increment 30 — repeat choreography + close](../Vesper%20bridge/recon/phase2af-fx-fill-repeat.md): full user-level task end-to-end — both waveform facts **independently re-derived** (no cached values), 4th-kick stop at **+98 ms** (tightest yet), Elisa closed and verified gone.
+[Increment 31 — video edit delivered](../Vesper%20bridge/recon/phase2ag-video-edit-delivery.md): Suno banner **blurred 175–185s (edge-energy verified 10× collapse)**, LinkedIn MP4 (1080p30, 172 MB) produced, original sha256 untouched; six Resolve-Fusion free-edition findings recorded; blur executed via ffmpeg after the scripted Fusion route proved unrenderable.
+[Increment 32 — v2 full-panel fix](../Vesper%20bridge/recon/phase2ah-video-edit-v2.md): v1 rejection accepted (region missed lower rows; coverage gaps) — full panel square blurred 172–188s (Alex-confirmed only visible window), verified unreadable on the delivered file, original intact.
+[Increment 33 — v3 full-height blur](../Vesper%20bridge/recon/phase2ah-video-edit-v3.md): Alex's screenshot showed text below AND above the v2 box — row-profile scan measured the panel at y 0.04–0.93; v3 blurs the full window height 174–187s, verified 0.04–0.24 edge inside vs 1.1–3.8 outside. Worker-loop Console blocking, item-query and timeline-shell behaviors recorded.
+[Increment 34 — v4 tight text-box](../Vesper%20bridge/recon/phase2ah-video-edit-v4.md): "Too big!" — box re-sized to the text block only (x 460–1573, y 378–831); inside 0.11 vs outside 1.4–5.7 edge energy; outside content sharp, full decode clean.
+[Increment 35 — /usage regression root-caused](../Vesper%20bridge/recon/phase2ai-usage-regression.md): live-wire evidence — Z.ai account exhausted (chat 429 `1113`), monitor answers HTTP 200 error-envelope; client bug fixed red-first (4/4) so the panel now says "Z.ai quota monitor reported an account error" instead of blaming malformed protocol; PTY loop on the real release binary PASS; plan recharge is Alex's manual action.
+[Increment 36 — Manor Lords input fixed, flow documented](../Vesper%20bridge/recon/phase2aj-manor-lords-status.md): menu-clicking root cause found — XWayland pointer mapping ×1.4 + `mousemove --sync` hangs forever (never use); clicks + spectacle observation proven, full tutorial video decoded frame-by-frame (dev-popup Continue, C=construction NOT B); reached in-game HUD twice; village build BLOCKED on identifying one setup screen — Alex's one-word answer unblocks.
+[Increment 36 — Manor Lords mission](../Vesper%20bridge/recon/phase2aj-manor-lords.md): menu-clicking **FIXED** (xdotool `--sync` hangs on XWayland; HiDPI real=logical×1.4 mapping measured; keys reach game) — launched, New Game, region+START, dev-popup Continue all navigated live; docs read properly (C=construction confirmed from keycap glyphs; Alex's correction verified); **village placement BLOCKED** by raw-input in-world cursor (needs ydotool/uinput); game exited via accidental Quit — no new save on disk, recorded honestly.
+[Increment 37 — input injection engineered](../Vesper%20bridge/recon/phase2ak-input-injection.md): `vesper_pointer.py` builds full uinput stack userland (correct `input_event` `<qqHHi` layout, UI_DEV_SETUP API); devices register and KWin lists them as pointers — **events dropped at compositor seat arbitration** (measured, with journal evidence); 5 injection routes tested and mapped; game relaunched, menu control re-verified; single unblock action recorded (sudo install ydotoold).
+— portal probe **executed under Alex's approval: PASS at OS level** (4
+real 2880×1800 captures via the xdg Screenshot portal) — but the earlier
+hypothesis "portal unblocks Cua capture" is **refuted by measurement**:
+0.28.1's wayland-helper is GNOME-Shell-only and upstream states KDE
+needs a KWin activation adapter "not yet provided" (libei input is
+focus-global). Certifiable lanes listed: X11/GNOME session or the KWin
+adapter; none claimed supported. Resolve **free 21.1 confirmed to exist
+for Linux** (API: `davinci-resolve` 21.1.014) but the zip sits behind a
+JS registration flow — probed page/bundle/API/CDN, no bypass used, two
+manual options offered. **Enrollment fixed and ARMED** to the original
+PRD (234 ≤ 512 ceiling); takes effect on Alex's TUI restart — no
+Settings typing needed.
+
+[Vesper Bridge Increment 14](../Vesper%20bridge/recon/phase2o-installs-report.md)
+— installs executed under Alex's explicit authorization: repaired
+Vesper binaries installed (installed bytes verified to carry the
+512-paragraph ceiling; running process left untouched); **Cua Driver
+0.28.1 digest-verified** (`a068b6e4…` exact) and installed
+(`~/.local/opt/cua-driver-rs-0.28.1/`, telemetry disabled, daemon
+serving); first real lane measurements: screen size and
+process/window tree PASS, **full-display capture BLOCKED** (X11 Match
+on GetImage — stock-Wayland session, no portal path in 0.28.1; manual
+action: KWin ScreenCast portal probe or an X session). Input tools
+listed, not exercised. Resolve remains the sole fully-external blocker.
+
+[Vesper Bridge Final Audit](../Vesper%20bridge/recon/phase2n-final-audit.md)
+— hand re-derivation of every invariant claim: **found a 13th defect —
+increment 13 had greened its suite by editing the test to assert the
+broken behavior** (resume-from-Paused stayed `Paused`; report claimed
+"dispatchable"). Corrected in place: `resume()` now transitions Paused →
+Recovering, the test asserts the correct state and fails on pre-audit
+code; bridge **68/68**. **First complete workspace run of the mission:
+`cargo test --workspace` → 162 targets ok / 0 failures** (closing the
+gap that the four MSRV-clippy-touched crates had only been compiled,
+never test-run: sandbox 19/0, agent 424+474/0, memory 120/0, swarm
+331/0); AT-01 PTY re-run PASS post-lifecycle-change; clippy ×2, fmt,
+acceptance 23/23 green. Producer/consumer table verified by hand for all
+7 session states, 7 outcomes, and both lease terminals.
+**ADR 0030 promoted** (recon drafts AD-01…AD-08 → accepted record;
+`docs/adr/0030-vesper-bridge-application-control.md`; index updated;
+post-promotion gates green).
+
+[Vesper Bridge Increment 13](../Vesper%20bridge/recon/phase2m-increment-report.md)
+— **`Paused`/`Closed` had no producers** (state machine could never
+enter them; increment 12's recorded debt), and production
+`bridge_disconnect` **silently discarded** held-input leases and
+outstanding jobs behind a flat "session closed". Added `pause()` (Ready/
+Recovering only; cannot weaken quarantine) and `close()` (terminal,
+idempotent); disconnect now surfaces unresolved inputs/jobs before
+closing. Red-first 3/3 (two compile-fail proofs); bridge **68/68**;
+harness 142/0+116/0; ACP 84/0; TUI 395/0; clippy ×2 clean; gates green.
+**The reachability sweep is complete: 12 defects of this class, every
+enum state now has producer + consumer.**
+
+[Vesper Bridge Increment 12](../Vesper%20bridge/recon/phase2l-increment-report.md)
+— **`OperationOutcome::Cancelled` and `Partial` were unreachable**: §7
+enumerates them but no code path anywhere constructed either — a
+cancellation could never be recorded as a cancellation. Added
+`cancel()` (terminal, not success, reservations deliberately retained
+per §7) and `settle_partial()`; red-first 3/3 (two as compile-fail
+proofs of absent APIs). Bridge **65/65**; harness 142/0; clippy ×2
+clean; gates green. `Paused`/`Closed` recorded honestly as
+representation debt (no producers) for the adapter phase. Defects
+10–11 of the reachability sweep.
+
+[Vesper Bridge Increment 11](../Vesper%20bridge/recon/phase2k-increment-report.md)
+— **quarantine lifecycle broken two ways**: `resume()` on a Quarantined
+session returned Ok (the host then claimed "admission open" while every
+dispatch stayed denied — a truthful-reporting lie), and NO code path
+cleared `Quarantined` (one uncertain outcome permanently bricked the
+session). Red-first 2/2: quarantined resume now refuses with
+`CleanupUnconfirmed`; evidence-backed reconcile moves Quarantined →
+Recovering (resume+fresh observation still gate dispatch). Bridge
+**62/62**; harness 142/0+116/0; ACP 84/0; TUI 395/0; clippy ×2 clean;
+gates green. Ninth reachability defect of the mission.
+
+[Vesper Bridge Increment 10](../Vesper%20bridge/recon/phase2j-increment-report.md)
+— **`InputLeaseState::Released` was unreachable**: no code path anywhere
+constructed it; `stop()` always reported `Unconfirmed` forever (BR-17
+settlement could never terminate) and increment 8's emergency path would
+re-report settled inputs. Added explicit host confirmation
+(`confirm_input_release` → `settle_input_release` clearing live+stranded
+input records), `/bridge release confirmed` in both hosts, settled vs
+UNCONFIRMED stop wording. Red-first 2/2; bridge **60/60**; harness
+142/0+116/0; ACP 84/0; TUI 395/0; clippy ×2 clean; gates green; real-TUI
+PTY proof. Eighth reachability defect of the mission.
+
+[Vesper Bridge Increment 9](../Vesper%20bridge/recon/phase2i-increment-report.md)
+— **no production stop path existed**: the eight-tool surface had no stop,
+`stop_for_tests` was the only trigger, and `/bridge stop`'s text pointed
+at a tool that did not exist. Added production `stop()`/`resume()` on the
+service (synchronous, no model inference, truthful reports), exposed via
+`HarnessToolService::bridge_stop/bridge_resume`, executed by BOTH hosts
+(`/bridge stop|resume`); TUI keeps a concrete feature-gated session
+handle (trait object erasure). 4 new production-route tests; real-TUI PTY
+proof ("no session … nothing to stop" — honest). Harness **142/0** on /
+116/0 off; ACP 84/0; TUI 395/0; bridge 58/0; clippy ×2 clean; gates green.
+
+[Vesper Bridge Increment 8](../Vesper%20bridge/recon/phase2h-increment-report.md)
+— **§8.4/NF-03 violation found and repaired**: emergency input release
+scanned only live leases, so an input-holding lease revoked in an
+ordinary stop vanished from the emergency path (stranded key/button);
+worse, the unit test named `revocation_does_not_strand_emergency_release`
+asserted exactly the stranding (`released.is_empty()`). Red-first 3/3,
+corrected unit contract, `stranded_inputs` retention drains once per
+generation. Bridge suite **58/58**; harness 137/0; clippy ×2 clean;
+gates green. Lesson: a green test named for a safety property is not
+evidence of the property.
+
+[Vesper Bridge Increment 7](../Vesper%20bridge/recon/phase2g-increment-report.md)
+— core-side bounded state (NF-05/07/08, AT-37): `MAX_OPERATION_RECORDS`/
+`MAX_OUTSTANDING_JOBS` enforced in the core with oldest-first eviction
+(never refusal), **and the production-path `MemoryJournal` bounded**
+(`MAX_RECORDS`, evicted ids read honestly as Fresh), red-first 5/5 then
+55/55 green; **second latent bug found**: request ids derived from
+`records.len()` would collide with journal entries after eviction
+(~512 ops) and misfire BR-16 duplicate suppression — replaced with a
+monotonic `request_sequence`. All pinned source digests re-verified
+16/16; enrollment-ceiling probe PASS under `--ignored`; repo gates green.
+
+[Vesper Bridge Increment 6](../Vesper%20bridge/recon/phase2f-increment-report.md)
+— TUI AT-01 lane closed via real-binary PTY observation (`bridge_at01_pty.py`:
+kernel children + `ss` socket equality, both settings states); the new test
+**exposed a real defect** — the TUI silently dropped `/bridge` commands
+(dispatch stored the pending command, main loop never consumed it) — repaired
+by moving the answer text to shared `vesper-harness::bridge_command` (both
+hosts consume one implementation, BR-21) and adding the missing TUI consumer.
+Harness 137/0 (+3 shared-answer tests), TUI 395/0, ACP 84/0 & 83/0, bridge
+50/0, clippy clean on 1.88.0 + stable, architecture 28, acceptance 23/23.
+
+[Vesper Bridge Increment 5](../Vesper%20bridge/recon/phase2e-increment-report.md)
+— AT-01 OS-observation lane closed for the ACP host: real-process test
+(`bridge_at01_os_observation.rs`, `bridge`+unix gated) proving an
+enabled-but-idle Bridge host holds **no child processes**
+(`/proc/<pid>/task/*/children`), **no TCP sockets beyond the disabled
+baseline** (`ss -tnp -H`), and **no durable state**; both settings
+states verified via `/bridge status` transcript. ACP 84/0 with bridge,
+83/0 without; clippy clean on 1.88.0 and stable; architecture 28,
+naming-guard 33 frozen, acceptance 23/23. TUI observation + adapter
+lanes remain open/blocked.
+
+[Vesper Bridge Increment 4](../Vesper%20bridge/recon/phase2d-increment-report.md)
+— MSRV 1.88 closed for the bridge combination (workspace-wide `+1.88.0`
+clippy `--all-targets --all-features` clean after mechanical lint fixes
+in 10 files); **self-deadlock found and repaired** in
+`BridgeToolService::replay_observation` (std Mutex re-lock; gdb-pinned),
+invalidating the phase2b "131 passed" receipt — corrected receipt 134
+passed/0 failed, reproducible single- and multi-threaded; missing
+observation no longer mints a synthetic fresh one (BR-15 freshness
+enforced, denial precedence preserved); all repo gates green
+(architecture 28, naming-guard 33 frozen, acceptance 23/23).
+
+[Vesper Bridge Increment 3](../Vesper%20bridge/recon/phase2c-increment-report.md)
+— Cua 0.28.1 provenance pinned (digest `a068b6e4…`, **prerelease** noted;
+install BLOCKED pending Alex's authorization), living compatibility
+manifest published (per-lane manual actions), +4 contract-invariant tests
+(NF-10 retry matrix over all errors, idempotency totality, capture-identity
+reuse, outcome classification). Bridge suite now 50 deterministic tests.
+
+[Vesper Bridge Phase 1 completion](../Vesper%20bridge/recon/phase1-fake-driver-report.md)
+— deterministic `FakeApplication` driver in testkit + 6 end-to-end
+scenarios (verify-once, restart invalidation, ack-without-effect,
+reconcile-before-retry, shared-fence two-writers, unknown-op rejection);
+core hardened red-first (verify requires independent evidence; leases are
+per-resource across sessions); MSRV 1.88 checks clean for all new units;
+clippy/fmt/architecture/naming-guard green. Contract-class evidence only.
+
+[Vesper Bridge Phase 2b](../Vesper%20bridge/recon/phase2b-report.md) —
+host wiring: shared `bridge-settings.json` (fail-closed, atomic, symlink-
+refusing) + once-per-process holder, host-neutral `/bridge` descriptor,
+TUI/ACP advertisement parity under a default-off feature in both hosts,
+ACP `/bridge` handler (read-only host answers), with_bridge no-op variant.
+Harness 131/116 (on/off), ACP 16 targets both ways, TUI green, clippy/
+fmt/architecture(28)/naming-guard/xtask-acceptance(23/23). AT-34 and
+OS-level AT-01 remain NOT TESTED.
+
+[Vesper Bridge Phase 2](../Vesper%20bridge/recon/phase2-report.md) —
+harness composition behind default-off `bridge` feature: 8-tool surface,
+advertisement gating proven both ways (0 tools disabled / refusal on
+direct call; 8 + honest no-adapter refusals enabled), gate-order repair
+(denial precedence), 126 harness tests with feature, 116 without,
+clippy/fmt/architecture(28)/naming-guard/xtask-acceptance(23/23) green.
+Host TUI/ACP wiring still open; all 44 AT rows formally NOT TESTED.
+
+[Vesper Bridge Phase 1](../Vesper%20bridge/recon/phase1-report.md) —
+`vesper-bridge` pure core landed: 46 deterministic tests (denial, stale
+generation/observation, lease fencing, duplicate suppression,
+ack≠verified, stop/quarantine), clippy `-D warnings` clean, architecture
+gate now 28 packages, naming-guard clean. All 44 AT rows still NOT
+TESTED; MSRV 1.88 check unexecuted; Phase 2+ not started.
+
+[Vesper Bridge Phase 0 reconnaissance](../Vesper%20bridge/recon/phase0-report.md)
+— VB-PRD-001 rev 1.0 architecture verdict: baseline revalidated at
+`5a3ce20`, integration map to file/symbol level, Cua 0.28.1 + Resolve
+scripting evidence refreshed and digest-pinned, adapter decision
+(Studio-scripting sidecar + Cua stdio leaf on the X11/XWayland lane),
+threat model/AT plan, ADR drafts. Enrollment mechanically blocked by the
+256-paragraph ceiling (283 measured); Resolve not installed (lane BLOCKED);
+all 44 AT rows NOT TESTED.
+
+[Enrollment ceiling repair](enrollment-ceiling-repair.md) — raises
+`MAX_REQUIREMENTS` 256→512 red-first (284-paragraph VB-PRD-001 case),
+honest `(found N)` error text, real-PRD probe; acceptance gate 23/23,
+architecture/clippy/fmt clean. Session `acceptance_enroll` still runs the
+pre-repair installed binary and refuses — hosting-process restart pending
+(user-side).
+
 [v0.23.0 release execution](v0.23.0-release-execution.md) — first minor
 bump: acceptance-freeze fix with final audit repair, rustls
 RUSTSEC-2026-0285 bump. 4/4 CI green on `f4a2eea` before the tag;

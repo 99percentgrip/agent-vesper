@@ -17,6 +17,11 @@ fakes, and synthetic read-store/disk-invariance helpers.
 - Normalization never changes event order, linkage, policy outcomes, finish
   reasons, hashes, redaction, or cancellation classification.
 
+- `src/bridge_fake.rs` owns the VB-PRD-001 deterministic fake driver
+  (`FakeApplication`): visibly fake, test-only, restart-bumps-generation,
+  unknown≠native manifest split. Its results certify Bridge contract
+  behavior only, never application control.
+
 ## Verification
 
 - Run `cargo test -p vesper-testkit`.

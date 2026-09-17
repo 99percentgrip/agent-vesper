@@ -1,0 +1,18 @@
+## SHA256 Checksums
+```
+02693499d34d6fe30bef99ef2f3051974ee7989469e3e7a9edc404896bdc6bbd  cua-driver-rs-0.28.1-linux-arm64-binary.tar.gz
+0f864381d3bcf29e7caf20d4b93bdf8476faf4e1ba986ce03890162beba5c3ee  cua-driver-rs-0.28.1-windows-x86_64.zip
+3fbd1e7540e9084e294d03f92a0e933427fa60cbbba6e94844e5d55af679d17f  cua-driver-rs-v0.28.1-skills.tar.gz
+52fdabd1947c9b252d881a257d3169372ed1a2d4ea90cdcce7dd624e8360d133  cua-driver-rs-0.28.1-darwin-universal.tar.gz
+6a0dde9732a68c139760ccc573899668757995a6e9190d80ccaad6db26bd6fe8  cua-driver-rs-0.28.1-darwin-universal-binary.tar.gz
+71aa92533de90a68a0a2af930243f1770d23e45b896b57d67a1763da4bfaeaf7  cua-driver-rs-0.28.1-linux-x86_64-binary.tar.gz
+83fceb030a0f3f2a7a8e46e31ad1ab549c3c27a2cfc0bbdd9ed67bbf6354e13d  cua-hyprland-plugin-0.28.1-d8028a7943087ee258dc1b4d19dc12a7cd27669c-build-kit.tar.gz
+97bb33986cb1281c54dfe76d1e426fd8e00f4c5636969614253c6bb0891b2803  cua-hyprland-plugin-0.28.1-d8028a7943087ee258dc1b4d19dc12a7cd27669c.tar.gz
+a068b6e477893b77ced74bceccf7db7483cf140e8d54150ce5849b6252b90bcf  cua-driver-rs-0.28.1-linux-x86_64.tar.gz
+a863951ef0699fd25091adb87bd114d69709b887fdfc059e795aca49ef8ac19c  cua-driver-rs-0.28.1-linux-arm64.tar.gz
+ab90418a54f84102f549cde4537daef3a0e20ba8254b7e24524a50fc5f4174d3  cua-driver-rs-0.28.1-windows-x86_64-binary.zip
+b21dd46691b9fb268f9668a9a3c0537578df39bea29d4ac54e5d6a663bdb0d17  cua-driver-rs-0.28.1-windows-arm64.zip
+b3cb3781feb9855dfcdd616bc5c9c8e627453e3e16a073c1446326691a549b24  cua-driver-rs-0.28.1-darwin-arm64.tar.gz
+bc9e607f03609a92f3291cf18dae17d16896ae0dde39d72fc2a5db7d71e207a1  cua-driver-rs-0.28.1-darwin-x86_64.tar.gz
+d260e6110e029680d543d317f3c3c09569475f8d65855fcedda202e2ee989bf0  cua-driver-rs-0.28.1-windows-arm64-binary.zip
+```

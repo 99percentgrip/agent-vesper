@@ -12,6 +12,8 @@ publish = false
 # builds can enable it; zero new mandatory dependencies for default builds.
 docker = ["vesper-harness/docker"]
 swarm = ["vesper-harness/swarm"]
+# VB-PRD-001 Phase 2: the hosted Bridge tool surface (default-off).
+bridge = ["vesper-harness/bridge"]
 
 [dependencies]
 tempfile.workspace = true

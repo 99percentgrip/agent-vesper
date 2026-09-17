@@ -31,6 +31,13 @@ pub mod acceptance;
 mod acceptance_runner;
 pub mod acceptance_settings;
 mod acceptance_snapshot;
+#[cfg(feature = "bridge")]
+pub mod bridge_adapters;
+pub mod bridge_command;
+#[cfg(feature = "bridge")]
+pub mod bridge_service;
+#[cfg(feature = "bridge")]
+pub mod bridge_settings;
 pub mod dependency_setup;
 pub mod lens_tools;
 pub mod sandbox_backend;
@@ -2107,6 +2114,8 @@ mod tests {
             skill_outcomes: Arc::new(vesper_memory::SkillOutcomeTracker::default()),
             cron_abort: None,
             web: None,
+            #[cfg(feature = "bridge")]
+            bridge: None,
         };
         let names = service
             .definitions()
@@ -2497,6 +2506,12 @@ pub struct HarnessToolService {
     /// `[web]` is absent or disabled) registers zero web tools — the
     /// registry path stays byte-identical to the pre-web build.
     web: Option<Arc<crate::web_service::WebService>>,
+    /// VB-PRD-001 Phase 2: the opt-in Bridge service. `None` (default, and
+    /// always when built without the `bridge` feature) registers zero
+    /// bridge tools and creates no Bridge state — the disabled path stays
+    /// byte-identical to the pre-bridge build (BR-30, NF-01, AT-01).
+    #[cfg(feature = "bridge")]
+    bridge: Option<Arc<crate::bridge_service::BridgeToolService>>,
     worker_factory: Option<Arc<WorkerFactory>>,
     skill_outcomes: Arc<vesper_memory::SkillOutcomeTracker>,
     cron_abort: Option<tokio::task::AbortHandle>,
@@ -2570,6 +2585,8 @@ impl HarnessToolService {
             session_root,
             checkpoints_enabled,
             web: None,
+            #[cfg(feature = "bridge")]
+            bridge: None,
             worker_factory,
             skill_outcomes: Arc::new(vesper_memory::SkillOutcomeTracker::default()),
             cron_abort,
@@ -2602,6 +2619,93 @@ impl HarnessToolService {
     pub fn with_web_scope(mut self, scope: Option<crate::web_service::WebScope>) -> Self {
         self.web = scope.map(|scope| Arc::new(crate::web_service::WebService::from_scope(scope)));
         self
+    }
+
+    /// VB-PRD-001 Phase 2: attaches the opt-in Bridge service. Called by
+    /// hosts only when Bridge is explicitly enabled in configuration; a
+    /// `false`/absent setting leaves the registry path byte-identical to
+    /// the pre-bridge build (zero bridge tools, no bridge state).
+    ///
+    /// Adapter selection (Phase 3, evidence-based): when
+    /// `VESPER_BRIDGE_RESOLVE_IPC` points at a live Resolve worker IPC
+    /// directory, the file-IPC adapter is attached; otherwise, when an
+    /// MPRIS player is live on the session bus, the MPRIS adapter binds
+    /// to it. Neither condition holds → the truthful no-adapter
+    /// composition. Hosts never launch applications here (§1: this
+    /// prompt does not authorize uncontrolled desktop operation).
+    #[cfg(feature = "bridge")]
+    #[must_use]
+    pub fn with_bridge(mut self, enabled: bool) -> Self {
+        self.bridge = enabled.then(|| {
+            let mut service = crate::bridge_service::BridgeToolService::no_adapter();
+            if let Ok(ipc_dir) = std::env::var("VESPER_BRIDGE_RESOLVE_IPC") {
+                let adapter =
+                    std::sync::Arc::new(crate::bridge_adapters::FileIpcAdapter::new(ipc_dir));
+                service = service.with_adapter(adapter);
+            } else if let Some(player) = crate::bridge_adapters::discover_mpris_players()
+                .into_iter()
+                .next()
+            {
+                let adapter =
+                    std::sync::Arc::new(crate::bridge_adapters::MprisAdapter::new(player));
+                service = service.with_adapter(adapter);
+            }
+            Arc::new(service)
+        });
+        self
+    }
+
+    /// Feature-off variant: a no-op so host composition code stays
+    /// identical with and without the `bridge` feature. The disabled
+    /// build cannot construct bridge state at all.
+    #[cfg(not(feature = "bridge"))]
+    #[must_use]
+    pub fn with_bridge(self, _enabled: bool) -> Self {
+        self
+    }
+
+    /// Production Bridge stop (NF-02): closes admission without a model
+    /// turn. Truthful report; no application is killed. No session and
+    /// feature-off compositions report that honestly.
+    #[must_use]
+    pub fn bridge_stop(&self) -> String {
+        #[cfg(feature = "bridge")]
+        if let Some(bridge) = &self.bridge {
+            return bridge.stop();
+        }
+        "Bridge: not enabled; nothing to stop.".to_string()
+    }
+
+    /// Production Bridge resume (NF-02): reopens admission and requires a
+    /// fresh observation before the next dispatch.
+    #[must_use]
+    pub fn bridge_resume(&self) -> String {
+        #[cfg(feature = "bridge")]
+        if let Some(bridge) = &self.bridge {
+            return bridge.resume();
+        }
+        "Bridge: not enabled; nothing to resume.".to_string()
+    }
+
+    /// Production Bridge input-release confirmation (BR-17 settlement).
+    #[must_use]
+    pub fn bridge_confirm_input_release(&self) -> String {
+        #[cfg(feature = "bridge")]
+        if let Some(bridge) = &self.bridge {
+            return bridge.confirm_input_release();
+        }
+        "Bridge: not enabled; nothing to confirm.".to_string()
+    }
+
+    /// Production Bridge disconnect (H4, BR-21): closes the session for
+    /// real and surfaces the C3 close report. Shared by both hosts.
+    #[must_use]
+    pub fn bridge_disconnect(&self) -> String {
+        #[cfg(feature = "bridge")]
+        if let Some(bridge) = &self.bridge {
+            return bridge.disconnect();
+        }
+        "Bridge: not enabled; nothing to disconnect.".to_string()
     }
 
     /// The shared durable stores backing slash-command report commands
@@ -2658,6 +2762,8 @@ impl HarnessToolService {
             session_root: self.session_root.clone(),
             checkpoints_enabled: self.checkpoints_enabled,
             web: self.web.clone(),
+            #[cfg(feature = "bridge")]
+            bridge: self.bridge.clone(),
             worker_factory: None,
             skill_outcomes: Arc::clone(&self.skill_outcomes),
             cron_abort: None,
@@ -3034,6 +3140,11 @@ impl vesper_agent::ToolService for HarnessToolService {
                 web.scope(),
             ));
         }
+        #[cfg(feature = "bridge")]
+        if let Some(bridge) = &self.bridge {
+            definitions.extend(crate::bridge_service::bridge_definitions());
+            let _ = bridge;
+        }
         definitions
     }
 
@@ -3043,6 +3154,17 @@ impl vesper_agent::ToolService for HarnessToolService {
         context: &'a vesper_agent::ToolContext,
     ) -> vesper_agent::ToolFuture<'a, Result<vesper_agent::ToolResult, vesper_agent::ToolError>>
     {
+        #[cfg(feature = "bridge")]
+        if crate::bridge_service::BRIDGE_TOOL_NAMES.contains(&call.tool_id.as_str()) {
+            if let Some(bridge) = &self.bridge {
+                return vesper_agent::ToolService::execute(bridge.as_ref(), call, context);
+            }
+            return Box::pin(async {
+                Err(vesper_agent::ToolError::Failed(
+                    "Bridge tools are disabled.".into(),
+                ))
+            });
+        }
         if crate::web_service::WEB_TOOL_NAMES.contains(&call.tool_id.as_str()) {
             if let Some(web) = &self.web {
                 return vesper_agent::ToolService::execute(web.as_ref(), call, context);

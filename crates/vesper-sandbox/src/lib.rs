@@ -458,7 +458,7 @@ pub(crate) fn spawn_hold(
     }
     command
         .spawn()
-        .map_err(|error| SandboxError::Provision(format!("spawn {:?}: {error}", supervisor)))
+        .map_err(|error| SandboxError::Provision(format!("spawn {supervisor:?}: {error}")))
 }
 
 /// Spawns the supervisor's `probe` subcommand.
@@ -469,7 +469,7 @@ pub(crate) fn spawn_probe(supervisor: &std::path::Path) -> Result<Child, Sandbox
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|error| SandboxError::Provision(format!("spawn probe {:?}: {error}", supervisor)))
+        .map_err(|error| SandboxError::Provision(format!("spawn probe {supervisor:?}: {error}")))
 }
 
 /// Parses the supervisor's one-line probe report:

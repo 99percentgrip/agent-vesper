@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 //! Fixture consumers and deterministic fakes. Production crates must not depend here.
 
+mod bridge_fake;
 mod compare;
 mod conformance;
 mod fake;
@@ -8,6 +9,7 @@ mod fixture;
 mod normalize;
 mod session_store;
 
+pub use bridge_fake::FakeApplication;
 pub use compare::{Comparison, ComparisonError, compare};
 pub use conformance::{
     BoundedEventSink, ConformanceError, assert_cancellation, assert_harness_event_order,

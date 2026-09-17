@@ -151,6 +151,26 @@ pub(crate) fn parse_plan_usage(
     payload: &Value,
     platform: &str,
 ) -> Result<GlmPlanUsage, GlmAdapterError> {
+    // The monitor endpoint answers some account failures with HTTP 200 and
+    // an explicit error envelope (`success:false`, `code`, `msg`) instead of
+    // `data.limits`. Classifying that as MalformedProtocol hides the
+    // provider's own reason (expired plan, exhausted balance, auth failure)
+    // behind "malformed protocol data" — 2ai. Surface the provider text.
+    if payload.get("success").and_then(Value::as_bool) == Some(false) {
+        let detail = payload
+            .get("msg")
+            .and_then(Value::as_str)
+            .map(|message| {
+                message
+                    .split_whitespace()
+                    .take(24)
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            })
+            .filter(|message| !message.is_empty())
+            .unwrap_or_else(|| "the quota monitor rejected the request".to_owned());
+        return Err(GlmAdapterError::MonitorError(detail));
+    }
     let data = payload
         .get("data")
         .unwrap_or(payload)

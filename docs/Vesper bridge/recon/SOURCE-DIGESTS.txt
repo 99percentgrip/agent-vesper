@@ -1,0 +1,32 @@
+# Vesper Bridge — Source digests (Phase 0 refresh, 2026-09-15)
+
+Pinned read-only copies under `docs/Vesper bridge/recon/`. All fetched from
+upstream `main`/release APIs over HTTPS on 15 September 2026 (UTC).
+
+| SHA-256 (prefix) | File | Upstream |
+|---|---|---|
+| 277e7123afbac96a | cua-driver-readme.md | https://raw.githubusercontent.com/trycua/cua/main/libs/cua-driver/README.md |
+| c0f25fd4dac09f9d | cua-platform.mdx | https://raw.githubusercontent.com/trycua/cua/main/docs/content/docs/reference/cua-driver/platform-support.mdx |
+| dc365e413d6e53f6 | cua-linux-plan.md | https://raw.githubusercontent.com/trycua/cua/main/libs/cua-driver/docs/linux-support-completion-plan.md |
+| 1ac96fb101c7a498 | cua-mcp-protocol.md | https://raw.githubusercontent.com/trycua/cua/main/libs/cua-driver/docs/mcp-protocol-and-skills.md |
+| ee418beea3bbdaff | cua-release.json | https://api.github.com/repos/trycua/cua/releases/tags/cua-driver-rs-v0.28.1 |
+| a070ba0412817676 | resolve-mcp-readme.md | https://raw.githubusercontent.com/samuelgursky/davinci-resolve-mcp/main/README.md |
+| 3e104e0b07aa91e1 | resolve-api-coverage.md | .../main/docs/reference/api-coverage.md |
+| b12c961176d79a5f | resolve-changelog.md | .../main/docs/reference/resolve_scripting_changelog_21.1.md |
+| 4ccdd6c91c2ded17 | resolve-typed.md | .../main/docs/reference/resolve-211-typed-api.md |
+| 2e0f67bc1c65fc4b | resolve-align.md | .../main/docs/reference/resolve211-alignment.md |
+| 51e1cebfcc19c643 | resolve211-read.md | .../main/docs/reference/resolve211-read-controls.md |
+| 767b3e524eb928d8 | resolve-headless.md | .../main/docs/reference/headless-capability-matrix.md |
+| 7a7c2d53631bcfb3 | resolve-headless-cli.md | .../main/docs/reference/headless-cli.md |
+| 9c4c1a6d07c35d04 | resolve-limits.md | .../main/docs/reference/api-limitations.md |
+| 2d5af3af933d328c | playwright-mcp-readme.md | https://raw.githubusercontent.com/microsoft/playwright-mcp/main/README.md |
+
+| 35fbf023e27f65b7 | cua-0.28.1-checksums.txt | https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.28.1/checksums.txt |
+
+Fetched live (not stored, quoted in phase0-report.md): MCP
+2026-07-28 transports/versioning pages, XDG RemoteDesktop/ScreenCast portal
+docs, blackmagicdesign.com Studio + developer/support pages.
+
+The vendor-typed Resolve snapshot referenced by `resolve-typed.md` carries
+its own recorded SHA-256 `00078fa1256851b9807621a4eea5e670f4266b0e7003763cba4a62655543f0ec`
+(upstream-declared, from Studio 21.1.0.14 on 2026-09-09).

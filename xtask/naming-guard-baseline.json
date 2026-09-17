@@ -2,61 +2,6 @@
   "version": 1,
   "entries": [
     {
-      "path": "README.md",
-      "sha256": "10ffed82f82676aba589f342d09d6324cd35febf87c6c4d5145268c925595ffe",
-      "count": 1
-    },
-    {
-      "path": "README.md",
-      "sha256": "2a0a7e00e24286cd8d0d74df704c621b9ae2e4a2d03ccc970441545d4f634773",
-      "count": 1
-    },
-    {
-      "path": "README.md",
-      "sha256": "2b4d823aaa2a4d31f3b4a3e1560072f0d7db7947537bcfb12f95b6eae769d3a8",
-      "count": 1
-    },
-    {
-      "path": "README.md",
-      "sha256": "458b26845d5bb9c7edaeda47d18af687a765fccf1a35bb88f8edab83a89ac51e",
-      "count": 1
-    },
-    {
-      "path": "README.md",
-      "sha256": "547030d23f758d432d7e14c6732961a0e59b2ef70439dbc9a9d4bd87f4db3f9b",
-      "count": 1
-    },
-    {
-      "path": "README.md",
-      "sha256": "78aef2477d8c4e7f4b1b40e04a6433733e2ed8bb2e29de3cae4c00db5a614703",
-      "count": 1
-    },
-    {
-      "path": "README.md",
-      "sha256": "7c7928b4fed9c6b3bd9375354f9e4181834637180df4476b44ea802ac4795c9b",
-      "count": 1
-    },
-    {
-      "path": "README.md",
-      "sha256": "8430f6ebebf280349a95a5009ae7ddb8165e03db61665c67232642e5a82e56dd",
-      "count": 1
-    },
-    {
-      "path": "README.md",
-      "sha256": "8819b42111876f7522efb139360fef915c9e8884d4c0f8d3bca80244516d6c1d",
-      "count": 1
-    },
-    {
-      "path": "crates/vesper-agent/AGENTS.md",
-      "sha256": "21321451581afdc95af4134e8ba40a9a993f8ee2499446a963301e020f0a2dfe",
-      "count": 1
-    },
-    {
-      "path": "crates/vesper-agent/AGENTS.md",
-      "sha256": "a11e289faa4b0e2303c64ac4d2199f92c934e59f55b9a85a81607814b622f48c",
-      "count": 1
-    },
-    {
       "path": "crates/vesper-agent/src/executor.rs",
       "sha256": "d4d1e19a44a862755a86ff605c92d7770f059e7de82125bedede0c28bb325916",
       "count": 1
@@ -64,11 +9,6 @@
     {
       "path": "crates/vesper-agent/src/project_context.rs",
       "sha256": "69eb73fb1067b8a488766d7fe8dccddd312175cbe436079195ec65ed32078edd",
-      "count": 1
-    },
-    {
-      "path": "crates/vesper-agent/src/registry.rs",
-      "sha256": "c333fe9d2297a3ccf84f93e4f81da52f870bec81b100f433c22c39754028d3bc",
       "count": 1
     },
     {
@@ -84,6 +24,81 @@
     {
       "path": "crates/vesper-domain/src/tool.rs",
       "sha256": "cf50463b0643003608908c6fbb86bf252e3f4084ead0ebf52a0c1b16dbfc01ce",
+      "count": 1
+    },
+    {
+      "path": "docs/Vesper bridge/recon/cua-driver-readme.md",
+      "sha256": "1f986cec11f948d5ce90b29ff7cabc92783bcb7a1bbdd8c16934396432f3ca50",
+      "count": 1
+    },
+    {
+      "path": "docs/Vesper bridge/recon/cua-driver-readme.md",
+      "sha256": "24a7d6c00814e339684fc311c1776aba48e2a6b34e8d6372239289ac8f3e0756",
+      "count": 1
+    },
+    {
+      "path": "docs/Vesper bridge/recon/cua-driver-readme.md",
+      "sha256": "27ebd6a8d01d7f6fa34d58b7df41db3d3056acda6099b36e882e2ecb3f37c61e",
+      "count": 1
+    },
+    {
+      "path": "docs/Vesper bridge/recon/cua-driver-readme.md",
+      "sha256": "460b2f67b841110f10980263aeeaa9de67027be7635adafcc9f3a39516d428a7",
+      "count": 1
+    },
+    {
+      "path": "docs/Vesper bridge/recon/cua-driver-readme.md",
+      "sha256": "c5d587b8fac46b400ca722a2124c574242a8971ed47680355bb43d80992dc852",
+      "count": 1
+    },
+    {
+      "path": "docs/Vesper bridge/recon/cua-driver-readme.md",
+      "sha256": "d2e4b97e16b534b07f0c1e8e0e3efb4a50690a7f59ffa21935ec04c6e9d45381",
+      "count": 1
+    },
+    {
+      "path": "docs/Vesper bridge/recon/cua-driver-readme.md",
+      "sha256": "eec04cee5bd831e14e95f8c977daa2356b7c4ee9bf49fc65248a60fae9d511b0",
+      "count": 1
+    },
+    {
+      "path": "docs/Vesper bridge/recon/cua-mcp-protocol.md",
+      "sha256": "69989dde68a8df0e370ef95f77131d78912a597820ae9fad96fa8b21da7fc010",
+      "count": 1
+    },
+    {
+      "path": "docs/Vesper bridge/recon/playwright-mcp-readme.md",
+      "sha256": "1404eb81adf5f9158aeee0d0467e56cb555779bba8cdcbaf46e6d316ef5afc0f",
+      "count": 1
+    },
+    {
+      "path": "docs/Vesper bridge/recon/playwright-mcp-readme.md",
+      "sha256": "1435299b692cc25e9d5be42c1682b21b5dea6bcd1ca1be37381d01eb97f2d48e",
+      "count": 1
+    },
+    {
+      "path": "docs/Vesper bridge/recon/playwright-mcp-readme.md",
+      "sha256": "41ca2c4c0cbd9b6d439a5ea0e983ab8ecbcbe1c120acaa64fb347ffc304d87bf",
+      "count": 1
+    },
+    {
+      "path": "docs/Vesper bridge/recon/playwright-mcp-readme.md",
+      "sha256": "470925653aadcc53510aa86e4783cff283fd7e9487cc56065a5899bf290d357e",
+      "count": 1
+    },
+    {
+      "path": "docs/Vesper bridge/recon/playwright-mcp-readme.md",
+      "sha256": "c5d648044d9e2f1a653260ef7086448a5c8d7fafe43c48bd1cac7eb5c657d39c",
+      "count": 1
+    },
+    {
+      "path": "docs/Vesper bridge/recon/resolve-mcp-readme.md",
+      "sha256": "257595c746315f68329dd34790f3371569187e28dc942b0344573a5649612551",
+      "count": 1
+    },
+    {
+      "path": "docs/Vesper bridge/recon/resolve-mcp-readme.md",
+      "sha256": "d552af6d2bd962eb873d834cc76504e53c15ed43ee5d0431f9a3315802948504",
       "count": 1
     },
     {

@@ -432,6 +432,10 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
         .with_interview_question_policy(interview_question_policy.clone())
         .with_lens_review(Arc::clone(&lens_port), lens_url_tx),
     );
+    // VB-PRD-001 NF-02: concrete handle so `/bridge stop|resume` reach the
+    // live hosted service without a model turn (the trait object below
+    // erases the harness-specific methods).
+    let agent_tools_bridge = Arc::clone(&agent_tools);
     let (approval_port, approval_rx) = vesper_agent::ApprovalBroker::channel();
     // VRO-5.3: keep clones of the shared tool service + permission broker so
     // the `RegistryToolInvoker` for the Tool-Grounded ReAct path uses the
@@ -453,9 +457,18 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
         .map_err(|error| format!("agent loop construction failed: {error}"))?
         .with_permission_port(approval_port),
     );
+    // VB-PRD-001 NF-02: concrete handle moved into the session so
+    // `/bridge stop|resume` reach the live hosted service without a
+    // model turn (the trait object erases the harness methods).
+    #[cfg(feature = "bridge")]
+    let bridge_handle = Some(agent_tools_bridge);
+    #[cfg(not(feature = "bridge"))]
+    let _ = agent_tools_bridge;
 
     let mut session = TuiSession {
         turn_cancellation: None,
+        #[cfg(feature = "bridge")]
+        bridge_handle,
         acceptance: None,
         acceptance_progress: None,
         acceptance_status_rx: None,
@@ -871,6 +884,10 @@ async fn register_default_providers(
 struct TuiSession {
     turn_cancellation: Option<Arc<vesper_runtime::RuntimeCancellation>>,
     acceptance: Option<Arc<vesper_harness::acceptance::AcceptanceSession>>,
+    /// Concrete hosted-tool handle for `/bridge stop|resume` (NF-02):
+    /// executes against the live service without a model turn.
+    #[cfg(feature = "bridge")]
+    bridge_handle: Option<Arc<TuiToolService>>,
     /// Host progress sink shared with harness-internal acceptance work so
     /// enrollment reviews stay visible (enrollment-visibility PRD D1).
     acceptance_progress: Option<Arc<dyn AgentProgressPort>>,
@@ -2334,6 +2351,43 @@ async fn drive_loop(
                             Err(error) => session.state.status = Some(error),
                         }
                     }
+                }
+                #[cfg(feature = "bridge")]
+                if let Some(argument) = session.state.pending_bridge_command.take() {
+                    // VB-PRD-001: `/bridge stop|resume` execute against the
+                    // LIVE service (NF-02: no model inference required);
+                    // every other verb is a read-only shared answer.
+                    // Shared implementation with the ACP host (BR-21).
+                    let root = std::env::current_dir().unwrap_or_default();
+                    let trimmed = argument.trim().to_ascii_lowercase();
+                    session.state.status = Some(match trimmed.as_str() {
+                        "stop" => session
+                            .bridge_handle
+                            .as_ref()
+                            .map(|service| service.inner.bridge_stop())
+                            .unwrap_or_else(|| "Bridge: not enabled; nothing to stop.".into()),
+                        "resume" => session
+                            .bridge_handle
+                            .as_ref()
+                            .map(|service| service.inner.bridge_resume())
+                            .unwrap_or_else(|| "Bridge: not enabled; nothing to resume.".into()),
+                        // H4: disconnect EXECUTES against the live service
+                        // (real close, C3 report surfaced) — parity with
+                        // stop/resume, shared with the ACP host (BR-21).
+                        "disconnect" => session
+                            .bridge_handle
+                            .as_ref()
+                            .map(|service| service.inner.bridge_disconnect())
+                            .unwrap_or_else(|| {
+                                "Bridge: not enabled; nothing to disconnect.".into()
+                            }),
+                        "release confirmed" | "confirm release" => session
+                            .bridge_handle
+                            .as_ref()
+                            .map(|service| service.inner.bridge_confirm_input_release())
+                            .unwrap_or_else(|| "Bridge: not enabled; nothing to confirm.".into()),
+                        _ => vesper_harness::bridge_command::command(&argument, Some(&root)),
+                    });
                 }
                 #[cfg(feature = "swarm")]
                 if let Some(argument) = session.state.pending_swarm_command.take() {
@@ -10902,6 +10956,22 @@ struct TuiToolService {
     interview_question_policy: InterviewQuestionPolicy,
 }
 
+/// VB-PRD-001 Phase 2: resolve the Bridge enable flag once per process.
+/// Default-off; without the `bridge` feature this is always false.
+fn bridge_enabled_from_settings() -> bool {
+    #[cfg(feature = "bridge")]
+    {
+        vesper_harness::bridge_settings::holder::shared(
+            &std::env::current_dir().unwrap_or_default(),
+        )
+        .enabled
+    }
+    #[cfg(not(feature = "bridge"))]
+    {
+        false
+    }
+}
+
 impl TuiToolService {
     fn new(
         _stores: Arc<MemoryStores>,
@@ -10923,7 +10993,8 @@ impl TuiToolService {
                     plugin_root,
                     worker_factory,
                 )
-                .with_web_scope(vesper_harness::web_service::holder::shared()),
+                .with_web_scope(vesper_harness::web_service::holder::shared())
+                .with_bridge(bridge_enabled_from_settings()),
             ),
             lens_review: None,
             lens_url_tx: None,
@@ -13425,7 +13496,7 @@ fn drain_checkpoint_op(
                         value.chars().take(60).collect::<String>(),
                         native_label
                     ));
-                    state.status = Some(format!("Copied {}.", native_label));
+                    state.status = Some(format!("Copied {native_label}."));
                 }
                 Err(error) => {
                     state.transcript.push(format!("copy: failed — {error}"));
@@ -13551,10 +13622,9 @@ fn drain_checkpoint_op(
                             ));
                         }
                         state.transcript.push(format!(
-                            "watch: {} watcher(s) in scope {scope}:\n{report}",
-                            total
+                            "watch: {total} watcher(s) in scope {scope}:\n{report}"
                         ));
-                        state.status = Some(format!("{} watcher(s)", total));
+                        state.status = Some(format!("{total} watcher(s)"));
                     }
                 }
                 Err(error) => {
@@ -13767,14 +13837,14 @@ fn drain_mcp_op(
                 Ok(true) => {
                     state
                         .transcript
-                        .push(format!("mcp remove: unregistered `{}`", id));
-                    state.status = Some(format!("MCP server `{}` removed.", id));
+                        .push(format!("mcp remove: unregistered `{id}`"));
+                    state.status = Some(format!("MCP server `{id}` removed."));
                 }
                 Ok(false) => {
                     state
                         .transcript
-                        .push(format!("mcp remove: `{}` was not registered", id));
-                    state.status = Some(format!("`{}` was not registered.", id));
+                        .push(format!("mcp remove: `{id}` was not registered"));
+                    state.status = Some(format!("`{id}` was not registered."));
                 }
                 Err(error) => {
                     state
@@ -13795,13 +13865,13 @@ fn drain_mcp_op(
             let Some(config) = registry.get(&id) else {
                 state
                     .transcript
-                    .push(format!("mcp tools: `{}` is not registered", id));
-                state.status = Some(format!("`{}` is not registered.", id));
+                    .push(format!("mcp tools: `{id}` is not registered"));
+                state.status = Some(format!("`{id}` is not registered."));
                 return;
             };
             state
                 .transcript
-                .push(format!("mcp tools: connecting to `{}`...", id));
+                .push(format!("mcp tools: connecting to `{id}`..."));
             // Spawn + handshake + tools/list. This is a blocking call; in
             // a real interactive session the binary would dispatch it on a
             // background thread to keep the UI responsive.
@@ -13810,11 +13880,10 @@ fn drain_mcp_op(
                     if tools.is_empty() {
                         state
                             .transcript
-                            .push(format!("mcp tools: `{}` advertised no tools", id));
+                            .push(format!("mcp tools: `{id}` advertised no tools"));
                     } else {
                         state.transcript.push(format!(
-                            "mcp tools: `{}` advertised {} tool(s)",
-                            id,
+                            "mcp tools: `{id}` advertised {} tool(s)",
                             tools.len()
                         ));
                         for tool in tools.iter().take(50) {
@@ -13822,12 +13891,12 @@ fn drain_mcp_op(
                             state.transcript.push(format!("  - {} {}", tool.name, desc));
                         }
                     }
-                    state.status = Some(format!("`{}` tools listed.", id));
+                    state.status = Some(format!("`{id}` tools listed."));
                 }
                 Err(error) => {
                     state
                         .transcript
-                        .push(format!("mcp tools: `{}` failed — {error}", id));
+                        .push(format!("mcp tools: `{id}` failed — {error}"));
                     state.status = Some(format!("mcp tools failed: {error}"));
                 }
             }
@@ -13958,8 +14027,8 @@ fn drain_mcp_op(
                     }
                     state
                         .transcript
-                        .push(format!("plugins trust: `{}` now trusted", publisher));
-                    state.status = Some(format!("Publisher `{}` trusted.", publisher));
+                        .push(format!("plugins trust: `{publisher}` now trusted"));
+                    state.status = Some(format!("Publisher `{publisher}` trusted."));
                 }
                 Err(error) => {
                     state
@@ -14564,8 +14633,7 @@ fn apply_embedding_set(
         );
         let active_dim = probed_dim.or(cfg.dimension).unwrap_or(default_dim);
         state.transcript.push(format!(
-            "embedding: hot-reload starting in {:?} mode; background probe will upgrade to Hybrid if reachable.",
-            initial_mode
+            "embedding: hot-reload starting in {initial_mode:?} mode; background probe will upgrade to Hybrid if reachable."
         ));
         let engines: Vec<_> = [bundle.engine.as_ref(), bundle.global_engine.as_ref()]
             .into_iter()
@@ -16344,6 +16412,8 @@ mod tests {
         // an abort notice instead of wedging the UI on WORKING... forever.
         let mut session = TuiSession {
             turn_cancellation: None,
+            #[cfg(feature = "bridge")]
+            bridge_handle: None,
             acceptance: None,
             acceptance_progress: None,
             acceptance_status_rx: None,
@@ -16414,6 +16484,8 @@ mod tests {
         // drain must NOT clear the in-flight flag — the WORKING banner stays.
         let mut session = TuiSession {
             turn_cancellation: None,
+            #[cfg(feature = "bridge")]
+            bridge_handle: None,
             acceptance: None,
             acceptance_progress: None,
             acceptance_status_rx: None,
@@ -16482,6 +16554,8 @@ mod tests {
         // frame for the Conversation and Reasoning panels.
         let mut session = TuiSession {
             turn_cancellation: None,
+            #[cfg(feature = "bridge")]
+            bridge_handle: None,
             acceptance: None,
             acceptance_progress: None,
             acceptance_status_rx: None,
@@ -17581,6 +17655,8 @@ mod tests {
         // re-implementing all 5 trait methods.
         TuiSession {
             turn_cancellation: None,
+            #[cfg(feature = "bridge")]
+            bridge_handle: None,
             acceptance: None,
             acceptance_progress: None,
             acceptance_status_rx: None,

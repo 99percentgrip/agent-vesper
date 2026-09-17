@@ -141,6 +141,13 @@ pub const ORACLE_SLASH_COMMANDS: [SlashCommandDescriptor; 28] = [
     },
 ];
 
+/// VB-PRD-001: the Bridge command surface, advertised by both hosts only
+/// when their default-off `bridge` build is enabled.
+pub const BRIDGE_SLASH_COMMAND: SlashCommandDescriptor = SlashCommandDescriptor {
+    name: "bridge",
+    description: "Bridge: /bridge status, /bridge discover, /bridge connect <app>, /bridge stop, /bridge disconnect",
+};
+
 /// Host-neutral Vesper extensions implemented by both production hosts.
 /// Kept separate from the frozen oracle catalog so compatibility fixtures
 /// remain byte-stable while ACP clients can discover the real added surface.

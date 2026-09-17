@@ -71,6 +71,14 @@ business logic.
   TUI retains its live interview-limit policy, bordered UI and URL/browser-launch
   presentation. ACP uses the same feedback validation and native tool results.
 
+- VB-PRD-001 composition is behind the default-off `bridge` build
+  feature. `bridge_enabled_from_settings()` resolves the explicit
+  user-owned `.agent-vesper/bridge-settings.json` once per process
+  (fail-closed) and `with_bridge` attaches the harness Bridge service;
+  the disabled build compiles zero bridge code. `/bridge` (status,
+  discover, stop, disconnect) answers read-only at host level; connect
+  and all application actions flow only through the model tool surface
+  and the pure core's gate.
 - VRO-15 composition is behind the default-off `swarm` build feature.
   `src/swarm_host.rs` wires the shared native service and workspace Save/Cancel
   controls, active provider configuration, configured semantic embeddings,

@@ -8,6 +8,7 @@ members = [
     "crates/vesper-auth",
     "crates/vesper-cognition",
     "crates/vesper-harness",
+    "crates/vesper-bridge",
     "crates/vesper-checkpoints",
     "crates/vesper-domain",
     "crates/vesper-mcp",

@@ -49,3 +49,12 @@ pub use sse::{
 pub fn provider_id() -> ProviderId {
     ProviderId::new("zai").expect("static provider ID")
 }
+
+/// Test seam for the 2ai quota-envelope regression tests: reaches the
+/// crate-private `parse_plan_usage` without making it public API.
+#[doc(hidden)]
+pub fn __quota_parse_for_tests(
+    payload: &serde_json::Value,
+) -> Result<quota::GlmPlanUsage, GlmAdapterError> {
+    quota::parse_plan_usage(payload, "Z.ai")
+}

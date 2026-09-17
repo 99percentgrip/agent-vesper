@@ -13,6 +13,16 @@ Own accepted, durable architecture and compatibility decisions for Agent Vesper.
   coverage, collector-owned evidence, independent review, bounded repair, both-host
   publication and opt-in audit lineage. The live gate is separate from model plan status
   and provider stop.
+- ADR 0030 records the accepted Vesper Bridge application-control
+  architecture (promoted from the VB-PRD-001 phase0 drafts AD-01…AD-08
+  after Phases 1–2 landed it): pure provider-neutral core in
+  `vesper-bridge`, harness composition behind the default-off `bridge`
+  feature, one shared `/bridge` command implementation in both hosts,
+  MCP as transport-not-model, route ladder with no-denial-fallback,
+  per-resource fenced leases with emergency release settled only by
+  explicit host confirmation, model-independent stop/resume/settlement,
+  core-bounded state, and evidence-classified outcomes. Live-application
+  lanes stay blocked until their installations exist.
 
 - Accepted ADRs are immutable decisions; superseding requires a new ADR.
 - Every ADR links historical foundation evidence and executable verification.
