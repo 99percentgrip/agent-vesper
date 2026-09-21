@@ -642,6 +642,12 @@ business logic.
 
 ## Local Contracts
 
+- MCP discovery, browser presets and deferred calls retain one conversation
+  owner through direct/VRO/ReAct registries built by `build_hosted_registry`.
+  Loading another transcript resets MCP before changing conversation identity;
+  a busy owner refuses the switch. Exit drops the owner (ADR 0031).
+  `mcp_tui_wrapped_registry_retains_the_session_gateway` checks wrapper wiring.
+
 - OpenAI account models refresh after native authentication and when reopening
   Settings. Render from the bounded result, use an available default for a fresh
   surface, retain explicit selections for validation, and reject unavailable choices

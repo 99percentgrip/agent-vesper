@@ -166,6 +166,7 @@ fn mcp_descriptor_to_tool_definition(
 /// [`vesper_mcp::McpClient::call_tool`].
 pub struct McpGatewayExecutor {
     plugin_root: std::path::PathBuf,
+    mcp: Arc<vesper_mcp::McpSession>,
 }
 
 impl std::fmt::Debug for McpGatewayExecutor {
@@ -182,7 +183,10 @@ impl McpGatewayExecutor {
     /// `McpRegistry` lives in.
     #[must_use]
     pub fn new(plugin_root: std::path::PathBuf) -> Self {
-        Self { plugin_root }
+        Self {
+            plugin_root,
+            mcp: Arc::new(vesper_mcp::McpSession::default()),
+        }
     }
 }
 
@@ -203,12 +207,14 @@ impl vesper_agent::ToolExecutor for McpGatewayExecutor {
     fn execute<'a>(
         &'a self,
         call: &'a vesper_domain::ToolCall,
-        _context: &'a vesper_agent::ToolContext,
+        context: &'a vesper_agent::ToolContext,
     ) -> vesper_agent::ToolFuture<'a, Result<vesper_agent::ToolResult, vesper_agent::ToolError>>
     {
         let name = call.tool_id.as_str().to_owned();
         let arguments = call.arguments.clone();
         let plugin_root = self.plugin_root.clone();
+        let mcp = self.mcp.clone();
+        let cancellation = context.cancellation.clone();
         Box::pin(async move {
             let (server, tool) = parse_mcp_gateway_name(&name).ok_or_else(|| {
                 vesper_agent::ToolError::Failed(format!(
@@ -223,11 +229,14 @@ impl vesper_agent::ToolExecutor for McpGatewayExecutor {
                 let server = registry.get_with_builtins(&server_owned).ok_or_else(|| {
                     vesper_agent::ToolError::Failed(format!("MCP server not found: {server_owned}"))
                 })?;
-                vesper_mcp::McpClient::call_tool(&server, &tool_owned, arguments)
-                    .map_err(|error| tui_tool_failure("mcp_gateway", error))
+                mcp.call_tool_cancellable(&server, &tool_owned, arguments, &|| {
+                    cancellation.is_cancelled()
+                })
+                .map_err(|error| tui_tool_failure("mcp_gateway", error))
             })
             .await
             .map_err(|_| vesper_agent::ToolError::Failed("mcp gateway task failed".into()))??;
+            ensure_mcp_success(&result)?;
             vesper_agent::ToolResult::new(truncate_text(
                 &serde_json::to_string(&result)
                     .map_err(|error| tui_tool_failure("mcp_gateway", error))?,
@@ -237,7 +246,44 @@ impl vesper_agent::ToolExecutor for McpGatewayExecutor {
     }
 }
 
+/// Compose a hosted service and route deferred MCP names back to that same
+/// service. Wrappers must delegate unknown calls to their inner harness.
+#[must_use]
+pub fn build_hosted_registry(service: Arc<dyn vesper_agent::ToolService>) -> ToolRegistry {
+    struct Gateway(Arc<dyn vesper_agent::ToolService>);
+    impl vesper_agent::ToolExecutor for Gateway {
+        fn definition(&self) -> vesper_domain::ToolDefinition {
+            vesper_agent::schema_definition(
+                "mcp_gateway",
+                "Session-owned MCP gateway",
+                vesper_domain::ToolExecutionClass::NestedWorkflow,
+                &[],
+            )
+        }
+        fn execute<'a>(
+            &'a self,
+            call: &'a vesper_domain::ToolCall,
+            context: &'a vesper_agent::ToolContext,
+        ) -> vesper_agent::ToolFuture<'a, Result<vesper_agent::ToolResult, vesper_agent::ToolError>>
+        {
+            self.0.execute(call, context)
+        }
+    }
+    ToolRegistry::parity_default()
+        .with_service(service.clone())
+        .with_gateway(MCP_GATEWAY_PREFIX, Arc::new(Gateway(service)))
+}
+
+fn ensure_mcp_success(result: &serde_json::Value) -> Result<(), vesper_agent::ToolError> {
+    if result.get("isError") == Some(&serde_json::Value::Bool(true)) {
+        return Err(tui_tool_failure("MCP", "server reported tool failure"));
+    }
+    Ok(())
+}
+
 fn mcp_result(
+    mcp: Arc<vesper_mcp::McpSession>,
+    context: &vesper_agent::ToolContext,
     name: &str,
     registry_root: &std::path::Path,
     server_id: String,
@@ -245,6 +291,7 @@ fn mcp_result(
     arguments: serde_json::Value,
 ) -> impl std::future::Future<Output = Result<vesper_agent::ToolResult, vesper_agent::ToolError>> + Send
 {
+    let cancellation = context.cancellation.clone();
     let registry_root = registry_root.to_path_buf();
     let error_name = name.to_owned();
     async move {
@@ -255,11 +302,12 @@ fn mcp_result(
             let server = registry.get_with_builtins(&server_id).ok_or_else(|| {
                 vesper_agent::ToolError::Failed(format!("MCP server not found: {server_id}"))
             })?;
-            vesper_mcp::McpClient::call_tool(&server, &tool, arguments)
+            mcp.call_tool_cancellable(&server, &tool, arguments, &|| cancellation.is_cancelled())
                 .map_err(|error| tui_tool_failure(&task_error_name, error))
         })
         .await
         .map_err(|_| vesper_agent::ToolError::Failed("MCP call task failed".into()))??;
+        ensure_mcp_success(&result)?;
         vesper_agent::ToolResult::new(truncate_text(
             &serde_json::to_string(&result)
                 .map_err(|error| tui_tool_failure(&error_name, error))?,
@@ -282,6 +330,7 @@ async fn execute_extended_tui_tool(
     plugin_loader: Option<&vesper_mcp::PluginLoader>,
     trusted_publishers: &vesper_mcp::TrustedPublishers,
     plugin_root: &std::path::Path,
+    mcp: Arc<vesper_mcp::McpSession>,
     session_root: &std::path::Path,
     worker_factory: Option<&WorkerFactory>,
     worker_service: Arc<HarnessToolService>,
@@ -409,6 +458,8 @@ async fn execute_extended_tui_tool(
                 });
             }
             mcp_result(
+                mcp,
+                context,
                 name,
                 plugin_root,
                 "zai_search".into(),
@@ -428,6 +479,8 @@ async fn execute_extended_tui_tool(
                 });
             }
             mcp_result(
+                mcp,
+                context,
                 name,
                 plugin_root,
                 "zai_reader".into(),
@@ -453,6 +506,8 @@ async fn execute_extended_tui_tool(
                 });
             }
             mcp_result(
+                mcp,
+                context,
                 name,
                 plugin_root,
                 "zai_vision".into(),
@@ -498,6 +553,8 @@ async fn execute_extended_tui_tool(
                 });
             }
             mcp_result(
+                mcp,
+                context,
                 name,
                 plugin_root,
                 optional_string("server").unwrap_or_else(|| "playwright".into()),
@@ -508,6 +565,7 @@ async fn execute_extended_tui_tool(
         }
         "mcp_search" => {
             let requested_server = optional_string("server");
+            let cancellation = context.cancellation.clone();
             let registry_root = plugin_root.to_path_buf();
             let descriptors = tokio::task::spawn_blocking(move || {
                 let registry = vesper_mcp::McpRegistry::open(&registry_root)
@@ -520,12 +578,20 @@ async fn execute_extended_tui_tool(
                     {
                         continue;
                     }
-                    let tools = vesper_mcp::McpClient::tools(&server)
-                        .map_err(|error| tui_tool_failure("mcp_search", error))?;
-                    output.push(serde_json::json!({
-                        "server": server.id,
-                        "tools": tools,
-                    }));
+                    match mcp.tools_cancellable(&server, &|| cancellation.is_cancelled()) {
+                        Ok(tools) => {
+                            output.push(serde_json::json!({"server": server.id, "tools": tools}))
+                        }
+                        Err(error) if requested_server.is_some() || cancellation.is_cancelled() => {
+                            return Err(tui_tool_failure("mcp_search", error));
+                        }
+                        Err(error) => output.push(
+                            serde_json::json!({"server": server.id, "error": error.to_string()}),
+                        ),
+                    }
+                }
+                if requested_server.is_some() && output.is_empty() {
+                    return Err(tui_tool_failure("mcp_search", "MCP server not found"));
                 }
                 Ok::<_, vesper_agent::ToolError>(output)
             })
@@ -539,6 +605,7 @@ async fn execute_extended_tui_tool(
         "mcp_list_tools" => {
             let server_id = required_string("server")?;
             let server_id_for_injection = server_id.clone();
+            let cancellation = context.cancellation.clone();
             let registry_root = plugin_root.to_path_buf();
             let descriptors = tokio::task::spawn_blocking(move || {
                 let registry = vesper_mcp::McpRegistry::open(&registry_root)
@@ -546,7 +613,7 @@ async fn execute_extended_tui_tool(
                 let server = registry.get_with_builtins(&server_id).ok_or_else(|| {
                     vesper_agent::ToolError::Failed(format!("MCP server not found: {server_id}"))
                 })?;
-                vesper_mcp::McpClient::tools(&server)
+                mcp.tools_cancellable(&server, &|| cancellation.is_cancelled())
                     .map_err(|error| tui_tool_failure("mcp_list_tools", error))
             })
             .await
@@ -580,6 +647,7 @@ async fn execute_extended_tui_tool(
                     reason: "`arguments` must be a JSON object".into(),
                 });
             }
+            let cancellation = context.cancellation.clone();
             let registry_root = plugin_root.to_path_buf();
             let result = tokio::task::spawn_blocking(move || {
                 let registry = vesper_mcp::McpRegistry::open(&registry_root)
@@ -587,11 +655,14 @@ async fn execute_extended_tui_tool(
                 let server = registry.get_with_builtins(&server_id).ok_or_else(|| {
                     vesper_agent::ToolError::Failed(format!("MCP server not found: {server_id}"))
                 })?;
-                vesper_mcp::McpClient::call_tool(&server, &tool, arguments)
-                    .map_err(|error| tui_tool_failure("mcp_call", error))
+                mcp.call_tool_cancellable(&server, &tool, arguments, &|| {
+                    cancellation.is_cancelled()
+                })
+                .map_err(|error| tui_tool_failure("mcp_call", error))
             })
             .await
             .map_err(|_| vesper_agent::ToolError::Failed("mcp call task failed".into()))??;
+            ensure_mcp_success(&result)?;
             vesper_agent::ToolResult::new(truncate_text(
                 &serde_json::to_string(&result).map_err(|error| tui_tool_failure(name, error))?,
                 16_000,
@@ -2108,6 +2179,7 @@ mod tests {
             plugin_loader: None,
             trusted_publishers: vesper_mcp::TrustedPublishers::new(),
             plugin_root: PathBuf::new(),
+            mcp: Arc::new(vesper_mcp::McpSession::default()),
             session_root: PathBuf::new(),
             checkpoints_enabled: true,
             worker_factory: None,
@@ -2498,6 +2570,7 @@ pub struct HarnessToolService {
     plugin_loader: Option<Arc<vesper_mcp::PluginLoader>>,
     trusted_publishers: vesper_mcp::TrustedPublishers,
     plugin_root: std::path::PathBuf,
+    mcp: Arc<vesper_mcp::McpSession>,
     session_root: std::path::PathBuf,
     /// Whether the checkpoint/lineage subsystem may create durable state.
     /// See [`HarnessToolService::new_with_checkpoint_gate`].
@@ -2582,6 +2655,7 @@ impl HarnessToolService {
             plugin_loader,
             trusted_publishers,
             plugin_root,
+            mcp: Arc::new(vesper_mcp::McpSession::default()),
             session_root,
             checkpoints_enabled,
             web: None,
@@ -2600,15 +2674,7 @@ impl HarnessToolService {
     /// by their `mcp__<server>__<tool>` name on a later turn.
     #[must_use]
     pub fn build_default_registry(self: Arc<Self>) -> ToolRegistry {
-        let plugin_root = self.plugin_root.clone();
-        let hosted: Arc<dyn vesper_agent::ToolService> = Arc::clone(&self) as _;
-        let registry = ToolRegistry::parity_default().with_service(hosted);
-        // The hosted service includes and routes its scoped web tools, also
-        // when wrapped by a frontend's composition-specific tool service.
-        registry.with_gateway(
-            MCP_GATEWAY_PREFIX,
-            Arc::new(McpGatewayExecutor::new(plugin_root)),
-        )
+        build_hosted_registry(self)
     }
 
     /// VRO-14 PR-5: attaches the opt-in `[web]` scope. Called by both
@@ -2751,6 +2817,34 @@ impl HarnessToolService {
         self.skill_outcomes.record(skills, succeeded);
     }
 
+    /// Returns this hosted conversation's MCP owner for explicit host teardown.
+    pub fn mcp_session(&self) -> Arc<vesper_mcp::McpSession> {
+        self.mcp.clone()
+    }
+
+    /// Clones composition ports with an explicitly conversation-owned MCP lifecycle.
+    /// The clone does not start another cron scheduler or share browser state.
+    pub fn fork_mcp_session(&self) -> Self {
+        let mcp = Arc::new(vesper_mcp::McpSession::default());
+        Self {
+            stores: self.stores.clone(),
+            core: self.core.clone(),
+            cron_root: self.cron_root.clone(),
+            plugin_loader: self.plugin_loader.clone(),
+            trusted_publishers: self.trusted_publishers.clone(),
+            plugin_root: self.plugin_root.clone(),
+            mcp,
+            session_root: self.session_root.clone(),
+            checkpoints_enabled: self.checkpoints_enabled,
+            web: self.web.clone(),
+            #[cfg(feature = "bridge")]
+            bridge: self.bridge.clone(),
+            worker_factory: self.worker_factory.clone(),
+            skill_outcomes: self.skill_outcomes.clone(),
+            cron_abort: None,
+        }
+    }
+
     fn read_only_worker_service(&self) -> Arc<Self> {
         Arc::new(Self {
             stores: Arc::clone(&self.stores),
@@ -2759,6 +2853,7 @@ impl HarnessToolService {
             plugin_loader: self.plugin_loader.clone(),
             trusted_publishers: self.trusted_publishers.clone(),
             plugin_root: self.plugin_root.clone(),
+            mcp: Arc::new(vesper_mcp::McpSession::default()),
             session_root: self.session_root.clone(),
             checkpoints_enabled: self.checkpoints_enabled,
             web: self.web.clone(),
@@ -3154,6 +3249,15 @@ impl vesper_agent::ToolService for HarnessToolService {
         context: &'a vesper_agent::ToolContext,
     ) -> vesper_agent::ToolFuture<'a, Result<vesper_agent::ToolResult, vesper_agent::ToolError>>
     {
+        if parse_mcp_gateway_name(call.tool_id.as_str()).is_some() {
+            let gateway = McpGatewayExecutor {
+                plugin_root: self.plugin_root.clone(),
+                mcp: self.mcp.clone(),
+            };
+            return Box::pin(async move {
+                vesper_agent::ToolExecutor::execute(&gateway, call, context).await
+            });
+        }
         #[cfg(feature = "bridge")]
         if crate::bridge_service::BRIDGE_TOOL_NAMES.contains(&call.tool_id.as_str()) {
             if let Some(bridge) = &self.bridge {
@@ -3181,6 +3285,7 @@ impl vesper_agent::ToolService for HarnessToolService {
         let plugin_loader = self.plugin_loader.clone();
         let trusted_publishers = self.trusted_publishers.clone();
         let plugin_root = self.plugin_root.clone();
+        let mcp = self.mcp.clone();
         let session_root = self.session_root.clone();
         let worker_factory = self.worker_factory.clone();
         let worker_service = self.read_only_worker_service();
@@ -3202,6 +3307,7 @@ impl vesper_agent::ToolService for HarnessToolService {
                         plugin_loader.as_deref(),
                         &trusted_publishers,
                         &plugin_root,
+                        mcp,
                         &session_root,
                         worker_factory.as_deref(),
                         worker_service,
@@ -3213,3 +3319,6 @@ impl vesper_agent::ToolService for HarnessToolService {
         })
     }
 }
+
+#[cfg(test)]
+mod mcp_session_tests;

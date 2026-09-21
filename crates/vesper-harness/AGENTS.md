@@ -278,9 +278,13 @@ Z.ai and Playwright MCP server descriptors.
   `ToolResult::with_injected_tools` instead of a stringified text payload.
   `McpGatewayExecutor` (registered under the `mcp__` prefix by
   `HarnessToolService::build_default_registry`) parses the call name back into
-  `(server, tool)` and dispatches to `McpClient::call_tool`. Workers and ACP
-  composition now route through this gateway so injected MCP tools advertised
-  on the next turn are actually executable when the model calls them by name.
+  `(server, tool)` and dispatches through the service's shared `McpSession`.
+  `build_hosted_registry` preserves this gateway through host wrappers, including
+  TUI direct/VRO/ReAct. Discovery, browser presets and explicit calls share one
+  owner. `fork_mcp_session` and read-only workers receive fresh MCP owners;
+  permission restrictions still remove gateways. Unscoped discovery reports
+  per-server failures without hiding healthy servers; `isError` is failure.
+  `src/mcp_session_tests.rs` verifies real fixture-process continuity/isolation.
 
 ## Work Guidance
 

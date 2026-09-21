@@ -41,11 +41,15 @@ unsigned plugin by any code path.
   "binary extensions" language in the directive refers to the plugin
   *package* being a binary blob that must be signed — not that plugins
   contain executable code.
-- **Subprocess RAII.** `McpClient` spawns the configured stdio server
-  with piped stdin/stdout. The `Child` is scoped to the function body;
-  when `tools()` returns the child has been dropped and the process
-  reaped (mirrors the Errno-24-prevention discipline of
-  `vesper-checkpoints`).
+- **Subprocess ownership (ADR 0031).** `McpClient` remains one-shot;
+  hosted calls use `src/session.rs` (`McpSession`) to retain at most 16 stdio
+  connections per conversation. Requests are serialized with busy refusal,
+  bounded bytes/channels, cancellation polling and a maximum 60-second deadline.
+  Transport failures quarantine until explicit close/reset; never replay actions.
+  Changed configurations refuse reuse. Close/reset/drop kills and reaps direct
+  children; arbitrary descendant cleanup is not certified. HTTP remains per-call.
+  `src/session_tests.rs` covers lifecycle/faults; `src/playwright_live_tests.rs`
+  is an ignored opt-in real isolated-browser acceptance test.
 - **HTTP MCP transport is bounded and opt-in.** It uses a short timeout,
   caps response bytes, and reads an optional bearer token from a named
   environment variable; the secret is never persisted. Foundation tests use

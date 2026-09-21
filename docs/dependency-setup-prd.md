@@ -49,3 +49,9 @@ those gates. All missing or failed items remain visible in the execution report.
 - [Implementation and acceptance](foundation/dependency-setup-execution.md)
 
 - [Release status](foundation/v0.22.5-release-execution.md)
+
+## MCP session repair evidence
+
+[Persistent MCP execution report](foundation/mcp-session-lifecycle-repair.md)
+records source-level browser continuity and host wiring. It does not close native
+Settings setup, clean-platform installation or release acceptance gates.

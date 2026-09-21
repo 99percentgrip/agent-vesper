@@ -6,6 +6,9 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `mcp-session-lifecycle-repair.md` owns persistent MCP source repair,
+  isolated Playwright continuity evidence, host wiring and platform limitations.
+
 - `v0.22.6-release-execution.md` owns the microphone release gate and publication receipts.
 
 - `voice-control-execution.md` owns dynamic microphone implementation, long-audio

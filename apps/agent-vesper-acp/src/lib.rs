@@ -283,6 +283,7 @@ struct AcpHarnessEngine {
     bridge_settings: std::sync::Mutex<vesper_harness::bridge_settings::BridgeControls>,
     config: vesper_agent::AgentLoopConfig,
     hosted: Arc<HarnessToolService>,
+    mcp_sessions: std::sync::Mutex<BTreeMap<vesper_domain::SessionId, Arc<HarnessToolService>>>,
     /// Cognitive-memory bundle (Stage 16 / ADR 0015 + 0016) shared with the
     /// TUI's durable stores. Powers the `/remember` family and silent
     /// pre-reply recall injection.
@@ -375,7 +376,17 @@ impl AcpHarnessEngine {
             .cloned()
     }
 
+    fn session_hosted(&self, id: &vesper_domain::SessionId) -> Arc<HarnessToolService> {
+        self.mcp_sessions
+            .lock()
+            .expect("MCP sessions")
+            .entry(id.clone())
+            .or_insert_with(|| Arc::new(self.hosted.fork_mcp_session()))
+            .clone()
+    }
+
     fn tool_registry(&self, request: &AcpPromptRequest) -> vesper_agent::ToolRegistry {
+        let hosted = self.session_hosted(&request.session_id);
         let sink = request.event_sink.clone();
         let on_url = Arc::new(move |url: &str| {
             if let Some(sink) = &sink {
@@ -387,14 +398,10 @@ impl AcpHarnessEngine {
             }
         });
         let lens = vesper_harness::lens_tools::LensToolService::new(
-            self.hosted.clone(), Arc::new(vesper_harness::lens_tools::NativeLensPort::new()),
+            hosted.clone(), Arc::new(vesper_harness::lens_tools::NativeLensPort::new()),
             on_url, 12, "Choose only the unresolved, decision-relevant questions needed (1–12); do not pad the interview.".into(),
         );
-        let tools = self
-            .hosted
-            .clone()
-            .build_default_registry()
-            .with_service(Arc::new(lens));
+        let tools = hosted.build_default_registry().with_service(Arc::new(lens));
         if let Some(session) = self.acceptance_session(&request.session_id) {
             tools.with_service(session)
         } else {
@@ -509,6 +516,7 @@ impl AcpHarnessEngine {
             bridge_settings: std::sync::Mutex::new(Default::default()),
             config,
             hosted,
+            mcp_sessions: std::sync::Mutex::new(BTreeMap::new()),
             cognition: Arc::new(cognition),
             vro,
             reasoning_overrides: Mutex::new(BTreeMap::new()),
@@ -1729,6 +1737,10 @@ impl AcpHarnessEngine {
                 }
             }
             "clear-history" => {
+                self.mcp_sessions
+                    .lock()
+                    .expect("MCP sessions")
+                    .remove(&request.session_id);
                 let removed = self
                     .histories
                     .lock()
@@ -1766,7 +1778,7 @@ impl AcpHarnessEngine {
                 let session_id = request.session_id.as_str().to_owned();
                 let workspace_root = workspace_root_path(&request.workspace_roots);
                 let transcript = self.transcript_lines(&request.session_id).await;
-                let hosted = Arc::clone(&self.hosted);
+                let hosted = self.session_hosted(&request.session_id);
                 let name = name.to_owned();
                 let name_for_error = name.clone();
                 let argument = argument.to_owned();
@@ -3151,6 +3163,69 @@ fn host_parity_commands() -> Vec<vesper_domain::SlashCommandDescriptor> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mcp_owners_are_per_acp_session_and_reused_between_turns() {
+        let root = tempfile::tempdir().unwrap();
+        let stores = Arc::new(MemoryStores::open_at(
+            root.path(),
+            root.path().join("no-global"),
+        ));
+        let hosted = Arc::new(HarnessToolService::new_with_checkpoint_gate(
+            stores,
+            root.path().join("cron"),
+            root.path().join("mcp"),
+            None,
+            false,
+        ));
+        let provider = ProviderId::new("fixture").unwrap();
+        let config = vesper_agent::AgentLoopConfig {
+            provider_id: provider.clone(),
+            provider_configuration: vesper_provider::ProviderConfiguration {
+                provider_id: provider.clone(),
+                values: vesper_domain::VersionedExtensionEnvelope {
+                    namespace: vesper_domain::ExtensionNamespace::new("provider.fixture").unwrap(),
+                    version: vesper_domain::SchemaVersion::new(1).unwrap(),
+                    values: Default::default(),
+                },
+            },
+            model: vesper_domain::QualifiedModelId {
+                provider_id: provider,
+                model_id: vesper_domain::ModelId::new("fixture").unwrap(),
+            },
+            context_window_tokens: 8192,
+            system_instructions: vec![],
+            workspace_roots: vec![],
+            max_tool_iterations: 1,
+            firewall: None,
+            sandbox: None,
+        };
+        let engine = AcpHarnessEngine::new(
+            Arc::new(ProviderRegistry::new()),
+            config,
+            hosted,
+            cognition::CognitionBundle::open_disabled(),
+            vesper_agent::VroOrchestrator::disabled(),
+            BTreeMap::new(),
+        );
+        let a = vesper_domain::SessionId::new("a").unwrap();
+        let b = vesper_domain::SessionId::new("b").unwrap();
+        let first = engine.session_hosted(&a);
+        assert!(Arc::ptr_eq(
+            &first.mcp_session(),
+            &engine.session_hosted(&a).mcp_session()
+        ));
+        assert!(!Arc::ptr_eq(
+            &first.mcp_session(),
+            &engine.session_hosted(&b).mcp_session()
+        ));
+        assert!(first.clone().build_default_registry().has_gateway("mcp__"));
+        engine.mcp_sessions.lock().unwrap().remove(&a);
+        assert!(!Arc::ptr_eq(
+            &first.mcp_session(),
+            &engine.session_hosted(&a).mcp_session()
+        ));
+    }
 
     #[test]
     fn completion_reporting_mandate_is_injected_and_matches_shared_contract() {

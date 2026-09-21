@@ -29,6 +29,11 @@ transport, stderr-only tracing, and orderly shutdown.
 
 ## Local Contracts
 
+- MCP stdio ownership is per ACP session ID, retained across turn registry
+  rebuilds and removed on clear-history or engine shutdown (ADR 0031).
+  Identical configurations in distinct sessions never share browser state.
+  `mcp_owners_are_per_acp_session_and_reused_between_turns` verifies ownership.
+
 - ADR 0028/0029 `/acceptance` and `/settings acceptance on [PRD]|off` compose the shared
   native completion gate. Saved activation is loaded before dispatch; live authority
   remains per-session and outside compaction. Empty-path opt-in admits pending

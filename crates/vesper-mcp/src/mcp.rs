@@ -4,7 +4,7 @@
 //! list of MCP servers (stdio command or future HTTP URL). [`McpClient`]
 //! is a bounded JSON-RPC 2.0 over stdio client that performs the MCP
 //! handshake and supports discovery plus `tools/call`. The subprocess is
-//! scoped and killed/reaped on every path, so no child process leaks.
+//! owned by a call or an explicit conversation-scoped session.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -603,13 +603,17 @@ fn decode_http_payload(bytes: &[u8], content_type: &str) -> Result<serde_json::V
 /// A single scoped MCP subprocess. The reader is retained across requests;
 /// creating a fresh `BufReader` per request could discard bytes a server
 /// wrote ahead of the response being awaited.
-struct McpProcess {
+type McpWrite = (String, std::sync::mpsc::SyncSender<Result<(), McpError>>);
+
+pub(crate) struct McpProcess {
     child: std::process::Child,
-    stdout: std::io::BufReader<std::process::ChildStdout>,
+    writer: Option<std::sync::mpsc::SyncSender<McpWrite>>,
+    responses: std::sync::mpsc::Receiver<Result<(serde_json::Value, usize), McpError>>,
 }
 
 impl McpProcess {
-    fn spawn(config: &McpServerConfig) -> Result<Self, McpError> {
+    pub(crate) fn spawn(config: &McpServerConfig) -> Result<Self, McpError> {
+        config.validate()?;
         if config.transport != McpTransport::Stdio {
             return Err(McpError::Subprocess("non-stdio transport"));
         }
@@ -662,29 +666,97 @@ impl McpProcess {
             .stdout
             .take()
             .ok_or(McpError::Subprocess("no stdout"))?;
+        let stdin = child.stdin.take().ok_or(McpError::Subprocess("no stdin"))?;
+        let (writer, writes) = std::sync::mpsc::sync_channel::<McpWrite>(1);
+        std::thread::Builder::new()
+            .name("mcp-stdin".into())
+            .spawn(move || {
+                let mut stdin = stdin;
+                while let Ok((line, reply)) = writes.recv() {
+                    let result = write_line(Some(&mut stdin), &line);
+                    let failed = result.is_err();
+                    if reply.send(result).is_err() || failed {
+                        break;
+                    }
+                }
+            })
+            .map_err(|_| {
+                let _ = child.kill();
+                let _ = child.wait();
+                McpError::Subprocess("writer thread spawn")
+            })?;
+        let (sender, responses) = std::sync::mpsc::sync_channel(1);
+        std::thread::Builder::new()
+            .name("mcp-stdout".into())
+            .spawn(move || {
+                use std::io::{BufRead, Read};
+                let mut stdout = std::io::BufReader::new(stdout);
+                loop {
+                    let mut bytes = Vec::new();
+                    let result = match stdout
+                        .by_ref()
+                        .take((MAX_RESPONSE_BYTES + 1) as u64)
+                        .read_until(b'\n', &mut bytes)
+                    {
+                        Ok(0) => Err(McpError::Subprocess("no response")),
+                        Ok(_) if bytes.len() > MAX_RESPONSE_BYTES => {
+                            Err(McpError::BoundsViolated("response size"))
+                        }
+                        Ok(_) if bytes.iter().all(u8::is_ascii_whitespace) => {
+                            Ok(serde_json::Value::Null)
+                        }
+                        Ok(_) => serde_json::from_slice(&bytes)
+                            .map_err(|_| McpError::Subprocess("parse")),
+                        Err(_) => Err(McpError::Subprocess("read")),
+                    };
+                    let result = result.map(|value| (value, bytes.len()));
+                    let failed = result.is_err();
+                    if sender.send(result).is_err() || failed {
+                        break;
+                    }
+                }
+            })
+            .map_err(|_| {
+                let _ = child.kill();
+                let _ = child.wait();
+                McpError::Subprocess("reader thread spawn")
+            })?;
         Ok(Self {
             child,
-            stdout: std::io::BufReader::new(stdout),
+            writer: Some(writer),
+            responses,
         })
     }
 
     fn initialize(&mut self) -> Result<(), McpError> {
-        let request = jsonrpc_request(
+        self.initialize_cancellable(
+            std::time::Instant::now() + std::time::Duration::from_secs(60),
+            &|| false,
+        )
+    }
+
+    pub(crate) fn initialize_cancellable(
+        &mut self,
+        deadline: std::time::Instant,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<(), McpError> {
+        let response = self.request_cancellable(
             1,
             "initialize",
             serde_json::json!({
-                "protocolVersion": MCP_PROTOCOL_VERSION,
-                "capabilities": {},
-                "clientInfo": {
-                    "name": "agent-vesper-tui",
-                    "version": env!("CARGO_PKG_VERSION"),
-                }
+                "protocolVersion": MCP_PROTOCOL_VERSION, "capabilities": {},
+                "clientInfo": {"name": "agent-vesper", "version": env!("CARGO_PKG_VERSION")}
             }),
-        );
-        let _ = self.request_raw(&request)?;
-        write_line(
-            self.child.stdin.as_mut(),
-            &jsonrpc_notification("notifications/initialized", serde_json::json!({})),
+            deadline,
+            cancelled,
+        )?;
+        if response.get("error").is_some() || response.get("result").is_none() {
+            return Err(McpError::Subprocess("initialization rejected"));
+        }
+        self.write_bounded(
+            jsonrpc_notification("notifications/initialized", serde_json::json!({})),
+            deadline,
+            cancelled,
         )
     }
 
@@ -694,20 +766,102 @@ impl McpProcess {
         method: &str,
         params: serde_json::Value,
     ) -> Result<serde_json::Value, McpError> {
-        self.request_raw(&jsonrpc_request(id, method, params))
+        self.request_cancellable(
+            id,
+            method,
+            params,
+            std::time::Instant::now() + std::time::Duration::from_secs(60),
+            &|| false,
+        )
     }
 
-    fn request_raw(&mut self, request: &str) -> Result<serde_json::Value, McpError> {
-        let parsed: serde_json::Value =
-            serde_json::from_str(request).map_err(|_| McpError::Serde)?;
-        let id = parsed.get("id").cloned().unwrap_or(serde_json::Value::Null);
-        write_line(self.child.stdin.as_mut(), request)?;
-        read_response(&mut self.stdout, id)
+    pub(crate) fn request_cancellable(
+        &mut self,
+        id: u64,
+        method: &str,
+        params: serde_json::Value,
+        deadline: std::time::Instant,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<serde_json::Value, McpError> {
+        self.write_bounded(jsonrpc_request(id, method, params), deadline, cancelled)?;
+        let mut total = 0usize;
+        loop {
+            let (value, bytes) = receive_bounded(&self.responses, deadline, cancelled)??;
+            total = total.saturating_add(bytes);
+            if total > MAX_RESPONSE_BYTES {
+                return Err(McpError::BoundsViolated("response size"));
+            }
+            if value.get("id") == Some(&serde_json::Value::from(id)) {
+                return Ok(value);
+            }
+        }
+    }
+
+    fn write_bounded(
+        &self,
+        line: String,
+        deadline: std::time::Instant,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<(), McpError> {
+        if cancelled() {
+            return Err(McpError::Subprocess("cancelled before dispatch"));
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err(McpError::Subprocess("deadline expired before dispatch"));
+        }
+        if line.len() > MAX_RESPONSE_BYTES {
+            return Err(McpError::BoundsViolated("request size"));
+        }
+        let (reply, received) = std::sync::mpsc::sync_channel(1);
+        self.writer
+            .as_ref()
+            .ok_or(McpError::Subprocess("closed stdin"))?
+            .try_send((line, reply))
+            .map_err(|_| McpError::Subprocess("writer unavailable"))?;
+        receive_bounded(&received, deadline, cancelled)?
+    }
+}
+
+fn receive_bounded<T>(
+    receiver: &std::sync::mpsc::Receiver<T>,
+    deadline: std::time::Instant,
+    cancelled: &dyn Fn() -> bool,
+) -> Result<T, McpError> {
+    loop {
+        if cancelled() {
+            return Err(McpError::Subprocess(
+                "cancelled; dispatched effects may be unknown",
+            ));
+        }
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        if remaining.is_zero() {
+            return Err(McpError::Subprocess(
+                "timeout; dispatched effects may be unknown",
+            ));
+        }
+        match receiver.recv_timeout(remaining.min(std::time::Duration::from_millis(20))) {
+            Ok(value) => return Ok(value),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+            Err(_) => {
+                return Err(McpError::Subprocess(
+                    "transport disconnected; effects may be unknown",
+                ));
+            }
+        }
     }
 }
 
 impl Drop for McpProcess {
     fn drop(&mut self) {
+        // EOF lets cooperative servers close their browser children first.
+        self.writer.take();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(300);
+        while std::time::Instant::now() < deadline {
+            if matches!(self.child.try_wait(), Ok(Some(_))) {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
@@ -722,41 +876,6 @@ fn write_line(stdin: Option<&mut std::process::ChildStdin>, line: &str) -> Resul
     writeln!(stdin, "{line}").map_err(|_| McpError::Subprocess("write"))?;
     stdin.flush().map_err(|_| McpError::Subprocess("flush"))?;
     Ok(())
-}
-
-/// Reads one JSON-RPC line from the child's stdout, skipping
-/// non-JSON-RPC notifications until a `result` for our id arrives.
-fn read_response(
-    stdout: &mut std::io::BufReader<std::process::ChildStdout>,
-    expected_id: serde_json::Value,
-) -> Result<serde_json::Value, McpError> {
-    use std::io::BufRead;
-    let mut total_bytes = 0usize;
-    let mut buffer = String::new();
-    loop {
-        buffer.clear();
-        let read = stdout
-            .read_line(&mut buffer)
-            .map_err(|_| McpError::Subprocess("read"))?;
-        if read == 0 {
-            break;
-        }
-        total_bytes = total_bytes.saturating_add(read);
-        if total_bytes > MAX_RESPONSE_BYTES || buffer.len() > MAX_RESPONSE_BYTES {
-            return Err(McpError::BoundsViolated("response size"));
-        }
-        let line = buffer.trim_end();
-        if line.trim().is_empty() {
-            continue;
-        }
-        let value: serde_json::Value =
-            serde_json::from_str(line).map_err(|_| McpError::Subprocess("parse"))?;
-        // Skip notifications (no id) and mismatched ids.
-        if value.get("id") == Some(&expected_id) {
-            return Ok(value);
-        }
-    }
-    Err(McpError::Subprocess("no response"))
 }
 
 /// Builds a JSON-RPC 2.0 request string.

@@ -436,6 +436,7 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
     // live hosted service without a model turn (the trait object below
     // erases the harness-specific methods).
     let agent_tools_bridge = Arc::clone(&agent_tools);
+    let mcp_session = Some(agent_tools.inner.mcp_session());
     let (approval_port, approval_rx) = vesper_agent::ApprovalBroker::channel();
     // VRO-5.3: keep clones of the shared tool service + permission broker so
     // the `RegistryToolInvoker` for the Tool-Grounded ReAct path uses the
@@ -467,6 +468,7 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
 
     let mut session = TuiSession {
         turn_cancellation: None,
+        mcp_session,
         #[cfg(feature = "bridge")]
         bridge_handle,
         acceptance: None,
@@ -883,6 +885,7 @@ async fn register_default_providers(
 /// Wraps the library-owned [`SessionState`] (pure Plan Mode + override +
 struct TuiSession {
     turn_cancellation: Option<Arc<vesper_runtime::RuntimeCancellation>>,
+    mcp_session: Option<Arc<vesper_mcp::McpSession>>,
     acceptance: Option<Arc<vesper_harness::acceptance::AcceptanceSession>>,
     /// Concrete hosted-tool handle for `/bridge stop|resume` (NF-02):
     /// executes against the live service without a model turn.
@@ -5415,7 +5418,7 @@ fn build_agent_loop(
         .push(completion_reporting_instruction());
     Ok(AgentLoop::new(
         registry,
-        ToolRegistry::parity_default().with_service(tool_service),
+        vesper_harness::build_hosted_registry(tool_service),
         config,
     ))
 }
@@ -6105,9 +6108,9 @@ fn spawn_submitted_prompt(
                 agent
                     .as_ref()
                     .clone()
-                    .with_tool_registry(
-                        ToolRegistry::parity_default().with_service(Arc::clone(agent_tools)),
-                    )
+                    .with_tool_registry(vesper_harness::build_hosted_registry(Arc::clone(
+                        agent_tools,
+                    )))
                     .with_capability_advisor(
                         capability_advisor_for(surface.provider_id(), &session.capabilities),
                         vesper_provider::CapabilityContext {
@@ -7188,7 +7191,7 @@ fn build_vro_react_bundle(
     // not mutate the live `AgentLoop`'s registry (which would race with the
     // direct path). The same `ToolService` Arc is shared so model-facing
     // hosted tools work identically on both paths.
-    let registry = ToolRegistry::parity_default().with_service(Arc::clone(agent_tools));
+    let registry = vesper_harness::build_hosted_registry(Arc::clone(agent_tools));
     let agent_config = agent.configuration();
     let mut context = uncancellable_context(
         agent_config.workspace_roots.clone(),
@@ -8873,6 +8876,9 @@ fn load_tui_session(selected: &str, session: &mut TuiSession) -> Result<(), Stri
             content: vec![ContentPart::Text(content)],
             extensions: ExtensionMap::default(),
         });
+    }
+    if let Some(mcp) = &session.mcp_session {
+        mcp.reset().map_err(|error| error.to_string())?;
     }
     session.session_id = selected.to_owned();
     session.conversation = conversation;
@@ -14778,6 +14784,34 @@ mod tests {
     //! touch crossterm or a real terminal.
 
     use super::*;
+    #[test]
+    fn mcp_tui_wrapped_registry_retains_the_session_gateway() {
+        let root = tempfile::tempdir().unwrap();
+        let inner = Arc::new(
+            vesper_harness::HarnessToolService::new_with_checkpoint_gate(
+                Arc::new(vesper_harness::MemoryStores::open_at(
+                    root.path(),
+                    root.path().join("no-global"),
+                )),
+                root.path().join("cron"),
+                root.path().join("mcp"),
+                None,
+                false,
+            ),
+        );
+        let owner = inner.mcp_session();
+        let service = Arc::new(TuiToolService {
+            inner,
+            lens_review: None,
+            lens_url_tx: None,
+            interview_question_policy: InterviewQuestionPolicy::default(),
+        });
+        let direct = vesper_harness::build_hosted_registry(service.clone());
+        let react = vesper_harness::build_hosted_registry(service.clone());
+        assert!(direct.has_gateway("mcp__") && react.has_gateway("mcp__"));
+        assert!(Arc::ptr_eq(&owner, &service.inner.mcp_session()));
+        assert!(direct.contains("mcp__fixture__browser_snapshot"));
+    }
 
     #[test]
     fn openai_account_choices_and_spark_context_reach_turn_configuration() {
@@ -16425,6 +16459,7 @@ mod tests {
         // an abort notice instead of wedging the UI on WORKING... forever.
         let mut session = TuiSession {
             turn_cancellation: None,
+            mcp_session: None,
             #[cfg(feature = "bridge")]
             bridge_handle: None,
             acceptance: None,
@@ -16497,6 +16532,7 @@ mod tests {
         // drain must NOT clear the in-flight flag — the WORKING banner stays.
         let mut session = TuiSession {
             turn_cancellation: None,
+            mcp_session: None,
             #[cfg(feature = "bridge")]
             bridge_handle: None,
             acceptance: None,
@@ -16567,6 +16603,7 @@ mod tests {
         // frame for the Conversation and Reasoning panels.
         let mut session = TuiSession {
             turn_cancellation: None,
+            mcp_session: None,
             #[cfg(feature = "bridge")]
             bridge_handle: None,
             acceptance: None,
@@ -17668,6 +17705,7 @@ mod tests {
         // re-implementing all 5 trait methods.
         TuiSession {
             turn_cancellation: None,
+            mcp_session: None,
             #[cfg(feature = "bridge")]
             bridge_handle: None,
             acceptance: None,

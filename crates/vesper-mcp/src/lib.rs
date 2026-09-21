@@ -42,6 +42,11 @@
 pub mod error;
 pub mod mcp;
 pub mod plugins;
+pub mod session;
+pub use session::McpSession;
+
+#[cfg(test)]
+mod session_tests;
 
 pub use error::McpError;
 pub use mcp::{McpClient, McpRegistry, McpServerConfig, McpToolDescriptor, McpTransport};
@@ -49,3 +54,6 @@ pub use plugins::{
     MAX_PLUGIN_BYTES, MAX_PLUGIN_FILES, PluginLoader, PluginManifest, PluginRecord,
     PluginSignature, TrustedPublisher, TrustedPublishers,
 };
+
+#[cfg(test)]
+mod playwright_live_tests;

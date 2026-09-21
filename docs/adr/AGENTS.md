@@ -6,6 +6,9 @@ Own accepted, durable architecture and compatibility decisions for Agent Vesper.
 
 ## Local Contracts
 
+- ADR 0031 refines ADR 0013 with conversation-owned persistent MCP stdio,
+  bounded cancellable I/O, quarantine/no replay and both-host ownership.
+
 - ADR 0029 refines ADR 0028 enrollment: native opt-in permits automatic PRD
   recognition with independent scope review and remembered paths; pending scope
   grants no completion and evidence requirements remain unchanged.

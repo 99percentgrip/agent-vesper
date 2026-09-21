@@ -1178,3 +1178,9 @@ v0.21.6 release notes own the final run links, image IDs and local-install recei
 
 [Increment 37 — v0.23.1 PUBLISHED](../foundation/v0.23.1-release-final.md): Bridge shipped experimental/default-off on 5 platforms (14 checksummed artifacts); one registry-manifest gate failure caught + fixed + re-tagged; registry PR #539 updated in place per continuous-update contract. Live: github.com/99percentgrip/agent-vesper/releases/tag/v0.23.1
 [Increment 38 — v0.23.3: Bridge actually IN the binaries + native Settings activation](v0.23.3-release-execution.md): v0.23.1 artifacts contained ZERO Bridge code (release.yml built only docker,swarm); release matrix now compiles bridge into both hosts (byte-grep receipts). Native activation: TUI `/settings → Bridge` panel + ACP `/settings bridge` text controls (BR-21 parity); `/bridge` disabled text points to Settings, never hand-edited JSON. Found + fixed a VACUOUS AT-01 pass: the old assertion matched the JSON snippet embedded in the disabled message; child cwd now pinned to the isolated root. Gates: fmt/clippy(both toolchains)/arch 28/naming 33/acceptance 23/23; suites harness 155+122, ACP 84+83, TUI 395, bridge 78 — all 0 failed.
+
+## MCP conversation lifecycle repair
+
+- [Execution report](mcp-session-lifecycle-repair.md): conversation-owned stdio,
+  fault quarantine, host gateway wiring and isolated real-browser acceptance.
+  Source repair only; installed-binary and cross-platform acceptance remain separate.
