@@ -10,15 +10,20 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
+#[cfg(unix)]
 use std::time::Duration;
 
+#[cfg(unix)]
 use futures_util::StreamExt;
+#[cfg(unix)]
 use vesper_voice::audio::AudioFormat;
 use vesper_voice::cancel::VoiceCancel;
 use vesper_voice::composition::blocking::ThreadPoolExecutor;
 use vesper_voice::config::CaptureBudget;
 use vesper_voice::hygiene::{GatedSentence, HygieneGate, HygieneMarker};
-use vesper_voice::ports::{TtsChunk, VoiceTts};
+#[cfg(unix)]
+use vesper_voice::ports::TtsChunk;
+use vesper_voice::ports::VoiceTts;
 use vesper_voice::tts_subprocess::{SubprocessTts, SubprocessTtsConfig};
 
 fn executor() -> Arc<ThreadPoolExecutor> {
@@ -53,6 +58,7 @@ fn hygiene_units_are_bounded_and_validated() {
 /// Writes a fixture "engine": an executable whose stdout emits a valid
 /// WAV (22050 Hz mono s16, streaming placeholder sizes) with
 /// configurable failure modes.
+#[cfg(unix)]
 fn fixture_engine(dir: &std::path::Path, kind: FixtureKind) -> PathBuf {
     use std::os::unix::fs::PermissionsExt;
     static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -107,6 +113,7 @@ sys.stdout.buffer.write(header + samples)
 }
 
 #[derive(Clone, Copy, Debug)]
+#[cfg(unix)]
 enum FixtureKind {
     Ok,
     NonZeroExit,
@@ -116,6 +123,7 @@ enum FixtureKind {
     Slow,
 }
 
+#[cfg(unix)]
 fn tts_with(kind: FixtureKind) -> SubprocessTts {
     // One per-process fixture dir (bounded, reused across tests; the
     // adapter itself creates nothing — this dir is test-owned).
@@ -139,6 +147,7 @@ fn profile(tts: &SubprocessTts) -> vesper_voice::ports::VoiceProfile {
 }
 
 #[test]
+#[cfg(unix)]
 fn synthesis_returns_canonical_pcm_from_streaming_wav() {
     let tts = tts_with(FixtureKind::Ok);
     let cancel = VoiceCancel::new();
@@ -167,6 +176,7 @@ fn synthesis_returns_canonical_pcm_from_streaming_wav() {
 }
 
 #[test]
+#[cfg(unix)]
 fn nonzero_exit_is_inference_failure() {
     let tts = tts_with(FixtureKind::NonZeroExit);
     let cancel = VoiceCancel::new();
@@ -181,6 +191,7 @@ fn nonzero_exit_is_inference_failure() {
 }
 
 #[test]
+#[cfg(unix)]
 fn malformed_output_is_invalid_input() {
     let tts = tts_with(FixtureKind::Malformed);
     let cancel = VoiceCancel::new();
@@ -192,6 +203,7 @@ fn malformed_output_is_invalid_input() {
 }
 
 #[test]
+#[cfg(unix)]
 fn odd_trailing_byte_is_truncation() {
     let tts = tts_with(FixtureKind::Truncated);
     let cancel = VoiceCancel::new();
@@ -203,6 +215,7 @@ fn odd_trailing_byte_is_truncation() {
 }
 
 #[test]
+#[cfg(unix)]
 fn oversized_output_is_resource_exhausted() {
     let tts = tts_with(FixtureKind::Oversized);
     let cancel = VoiceCancel::new();
@@ -214,6 +227,7 @@ fn oversized_output_is_resource_exhausted() {
 }
 
 #[test]
+#[cfg(unix)]
 fn pre_start_cancellation_never_spawns() {
     let tts = tts_with(FixtureKind::Ok);
     let cancel = VoiceCancel::new();
@@ -226,6 +240,7 @@ fn pre_start_cancellation_never_spawns() {
 }
 
 #[test]
+#[cfg(unix)]
 fn mid_stream_cancellation_suppresses_remaining_audio() {
     let tts = tts_with(FixtureKind::Ok);
     let cancel = VoiceCancel::new();
@@ -240,6 +255,7 @@ fn mid_stream_cancellation_suppresses_remaining_audio() {
 }
 
 #[test]
+#[cfg(unix)]
 fn slow_engine_is_deadline_bounded() {
     let tts = tts_with(FixtureKind::Slow);
     let cancel = VoiceCancel::new();
@@ -253,6 +269,7 @@ fn slow_engine_is_deadline_bounded() {
 }
 
 #[test]
+#[cfg(unix)]
 fn empty_text_is_refused() {
     let tts = tts_with(FixtureKind::Ok);
     let cancel = VoiceCancel::new();
@@ -316,6 +333,7 @@ fn config_rejects_shell_metacharacters() {
 // ------------------------------------------------------- storage-safety proof
 
 #[test]
+#[cfg(unix)]
 fn synthesis_creates_no_files_anywhere() {
     // Structural + behavioral: the adapter's only writes are stdin
     // bytes to its child; stdout is read into memory. Prove no files
@@ -340,6 +358,7 @@ fn synthesis_creates_no_files_anywhere() {
     );
 }
 
+#[cfg(unix)]
 fn owned_tmp_snapshot() -> Vec<String> {
     let mut names: Vec<String> = std::fs::read_dir(std::env::temp_dir())
         .map(|entries| {
@@ -355,6 +374,7 @@ fn owned_tmp_snapshot() -> Vec<String> {
 }
 
 #[test]
+#[cfg(unix)]
 fn repeated_synthesis_does_not_accumulate_children_or_files() {
     let tts = tts_with(FixtureKind::Ok);
     let cancel = VoiceCancel::new();
@@ -373,6 +393,7 @@ fn repeated_synthesis_does_not_accumulate_children_or_files() {
 }
 
 #[test]
+#[cfg(unix)]
 fn bounded_output_under_stalled_consumer() {
     // A consumer that never polls: the buffered stream is bounded by the
     // max_output_bytes config (2 MiB here) — memory, not disk, and
@@ -413,6 +434,7 @@ fn optional_write_refusal_is_represented() {
 }
 
 #[test]
+#[cfg(unix)]
 fn cleanup_after_failure_paths_leaves_no_owned_files() {
     for kind in [
         FixtureKind::NonZeroExit,

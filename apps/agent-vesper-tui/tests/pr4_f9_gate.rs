@@ -21,6 +21,11 @@
 
 use std::path::PathBuf;
 
+fn fixture_id() -> u64 {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
 /// Controlled search path: a fixture bin dir so readiness observes
 /// exactly the executables we place there (no process-env mutation).
 struct FixturePath {
@@ -34,10 +39,7 @@ impl FixturePath {
         let fixture = std::env::temp_dir().join(format!(
             "vesper-f9-path-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
+            fixture_id()
         ));
         std::fs::create_dir_all(&fixture).unwrap();
         for (name, contents) in bin {
@@ -80,10 +82,7 @@ impl ScopedWorkspace {
         let root = std::env::temp_dir().join(format!(
             "vesper-f9-ws-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
+            fixture_id()
         ));
         std::fs::create_dir_all(root.join(".agent-vesper")).unwrap();
         std::fs::write(root.join(".agent-vesper/config.toml"), toml).unwrap();

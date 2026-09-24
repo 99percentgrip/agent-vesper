@@ -43,6 +43,7 @@ fn speech_frames() -> Vec<PcmFrame> {
 /// Writes a fixture sidecar "interpreter": an executable wrapper whose
 /// shebang runs python3 with the fixture body via `-c`. The adapter
 /// invokes the interpreter path directly (no shell involved).
+#[cfg(unix)]
 fn fixture_sidecar_script(dir: &std::path::Path, script: &str) -> std::path::PathBuf {
     use std::os::unix::fs::PermissionsExt;
     static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -70,6 +71,7 @@ fn fixture_sidecar_script(dir: &std::path::Path, script: &str) -> std::path::Pat
     path
 }
 
+#[cfg(unix)]
 const SIDECAR_OK: &str = r#"
 import json, sys, wave
 def emit(v): print(json.dumps(v), flush=True)
@@ -82,6 +84,7 @@ for line in sys.stdin:
     emit({"done": True, "chunks": 1})
 "#;
 
+#[cfg(unix)]
 const SIDECAR_EMPTY: &str = r#"
 import json, sys
 def emit(v): print(json.dumps(v), flush=True)
@@ -91,6 +94,7 @@ for line in sys.stdin:
     emit({"done": True, "chunks": 1})
 "#;
 
+#[cfg(unix)]
 const SIDECAR_ERROR: &str = r#"
 import json, sys
 def emit(v): print(json.dumps(v), flush=True)
@@ -99,6 +103,7 @@ for line in sys.stdin:
     emit({"error": "transcription failed"})
 "#;
 
+#[cfg(unix)]
 const SIDECAR_MALFORMED: &str = r#"
 import sys
 print("not json at all", flush=True)
@@ -106,6 +111,7 @@ for line in sys.stdin:
     print("still not json", flush=True)
 "#;
 
+#[cfg(unix)]
 const SIDECAR_STALL: &str = r#"
 import sys, time
 print('{"ready": true}', flush=True)
@@ -113,6 +119,7 @@ for line in sys.stdin:
     time.sleep(60)
 "#;
 
+#[cfg(unix)]
 const SIDECAR_HANG_NO_READY: &str = r#"
 import sys, time
 time.sleep(120)
@@ -120,6 +127,7 @@ time.sleep(120)
 
 // ------------------------------------------------------------- sidecar tests
 
+#[cfg(unix)]
 fn sidecar_with(script: &str) -> SidecarStt {
     let dir = std::env::temp_dir().join(format!("vesper-voice-pr1-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
@@ -140,6 +148,7 @@ fn block_on<F: std::future::Future>(future: F) -> F::Output {
 }
 
 #[test]
+#[cfg(unix)]
 fn sidecar_speaks_the_shipped_protocol() {
     let sidecar = sidecar_with(SIDECAR_OK);
     let cancel = VoiceCancel::new();
@@ -152,6 +161,7 @@ fn sidecar_speaks_the_shipped_protocol() {
 }
 
 #[test]
+#[cfg(unix)]
 fn sidecar_empty_result_is_vad_confirmed_silence() {
     // The shipped script applies vad_filter=True; its empty finalized
     // result is the VAD outcome — distinct from the legacy worker's
@@ -167,6 +177,7 @@ fn sidecar_empty_result_is_vad_confirmed_silence() {
 }
 
 #[test]
+#[cfg(unix)]
 fn sidecar_error_line_is_inference_failure_not_silence() {
     let sidecar = sidecar_with(SIDECAR_ERROR);
     let cancel = VoiceCancel::new();
@@ -175,6 +186,7 @@ fn sidecar_error_line_is_inference_failure_not_silence() {
 }
 
 #[test]
+#[cfg(unix)]
 fn sidecar_malformed_line_is_invalid_input() {
     let sidecar = sidecar_with(SIDECAR_MALFORMED);
     let cancel = VoiceCancel::new();
@@ -183,6 +195,7 @@ fn sidecar_malformed_line_is_invalid_input() {
 }
 
 #[test]
+#[cfg(unix)]
 fn sidecar_stall_becomes_unavailable_under_deadline() {
     let dir = std::env::temp_dir().join(format!("vesper-voice-pr1-stall-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
@@ -231,7 +244,13 @@ fn sidecar_missing_interpreter_is_unavailable_with_setup_hint() {
 
 #[test]
 fn sidecar_empty_audio_is_invalid_input() {
-    let sidecar = sidecar_with(SIDECAR_OK);
+    let sidecar = SidecarStt::new(
+        SidecarConfig {
+            python: std::path::PathBuf::from("/nonexistent/interpreter"),
+            ..SidecarConfig::default()
+        },
+        executor(),
+    );
     let cancel = VoiceCancel::new();
     assert!(matches!(
         block_on(sidecar.transcribe(&[], &cancel)),
@@ -240,6 +259,7 @@ fn sidecar_empty_audio_is_invalid_input() {
 }
 
 #[test]
+#[cfg(unix)]
 fn sidecar_pre_start_cancellation_never_spawns() {
     let dir = std::env::temp_dir().join(format!("vesper-voice-pr1-nospawn-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
@@ -272,6 +292,7 @@ fn sidecar_config_rejects_shell_metacharacters() {
 }
 
 #[test]
+#[cfg(unix)]
 fn sidecar_drop_reaps_exactly_its_child() {
     // A script that lingers; Drop must reap it (bounded teardown).
     let dir = std::env::temp_dir().join(format!("vesper-voice-pr1-reap-{}", std::process::id()));
@@ -753,6 +774,7 @@ fn partial_gate_never_exposes_turn_submission() {
 // ---------------------------------------------------------- cancellation tests
 
 #[test]
+#[cfg(unix)]
 fn cancellation_hierarchy_under_adapter_use() {
     // Parent cancels child mid-flight; the adapter result is discarded.
     let sidecar = sidecar_with(SIDECAR_OK);
@@ -777,7 +799,13 @@ fn cancellation_hierarchy_under_adapter_use() {
 
 #[test]
 fn repeated_cancellation_is_idempotent() {
-    let sidecar = sidecar_with(SIDECAR_OK);
+    let sidecar = SidecarStt::new(
+        SidecarConfig {
+            python: std::path::PathBuf::from("/nonexistent/interpreter"),
+            ..SidecarConfig::default()
+        },
+        executor(),
+    );
     let cancel = VoiceCancel::new();
     cancel.cancel();
     cancel.cancel();
@@ -789,6 +817,7 @@ fn repeated_cancellation_is_idempotent() {
 }
 
 #[test]
+#[cfg(unix)]
 fn repeated_error_cycles_do_not_leak_resources() {
     // Bounded lifetimes over repeated failures: many adapters created,
     // each failing, all dropped — completes promptly (no thread/process

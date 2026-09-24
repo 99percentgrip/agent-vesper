@@ -44,6 +44,10 @@ Verify terminal interaction through the production TUI binary with isolated stat
 - `voice_playback_diagnostics.rs` uses fake player processes to verify safe
   device-error classification and stderr-pressure drainage without audio devices.
 
+- `pr4_f9_gate.rs` allocates fixture roots with a process-local atomic identity;
+  parallel tests must never use wall-clock resolution as their uniqueness
+  boundary or overwrite another case's saved voice scope.
+
 - `voice_flm_route.rs` also pins the transport failure-classification contract
   (2026-09-23 Verify-read repair): a reset from a dying server reports
   `owned ASR process exited while answering`, never the timeout phrasing; a

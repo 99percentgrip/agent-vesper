@@ -111,7 +111,10 @@ types, and deterministic in-memory fakes.
 - `cargo test -p vesper-voice` and
   `cargo test -p vesper-voice --features stt-sidecar,stt-http,tts-subprocess`
   (unit + `tests/pr0_contracts.rs` + `tests/pr1_adapters.rs` +
-  `tests/pr2_tts.rs` including the storage-safety suite).
+  `tests/pr2_tts.rs` including the storage-safety suite). Tests whose fixtures
+  are executable POSIX shell wrappers run only on Unix; Windows still compiles
+  and runs the platform-neutral adapter validation, HTTP, composition, and
+  contract cases.
 - `cargo xtask architecture` enforces the dependency allowlist
   (vesper-domain, vesper-security only).
 - Pure core must build with no features; adapter features must stay

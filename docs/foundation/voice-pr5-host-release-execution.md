@@ -218,6 +218,25 @@ Pre-commit focused checks:
   Adding explicit `None` preserved its production-engine behavior. A cleaned
   all-feature TUI library rebuild passed **285 tests**, and the full Rust 1.88
   workspace then passed with all features.
+- Exact-commit five-target run `35980320616` then exposed a separate Windows
+  compile defect in the older PR-1/PR-2 voice adapter regressions. Their
+  controlled subprocess fixtures are POSIX shell wrappers, but the files
+  unconditionally imported `std::os::unix::fs::PermissionsExt`; Windows failed
+  before running any test. Only the shell-backed helpers and their dependent
+  cases are now `cfg(unix)`. Platform-neutral configuration, HTTP, failover,
+  partial-gate, cancellation and contract tests remain enabled on Windows. A
+  focused Windows-target all-feature test check reproduced both files' E0433/
+  E0599 errors and passed after the correction. The Unix PR-1/PR-2 adapter
+  binaries then passed five consecutive runs: **245 tests passed, 0 failed**.
+  A whole-workspace Windows cross-check cannot link Windows C dependencies from
+  this Linux host (`lib.exe`/MSVC are absent); the native Windows matrix remains
+  the authoritative whole-workspace execution gate.
+- The next exact local canonical run exposed a parallel fixture-name collision
+  in `pr4_f9_gate`: workspace roots used process id plus wall-clock nanoseconds,
+  but the clock can return the same value to concurrent tests. An enabled-scope
+  case could overwrite the disabled scope before its Settings assertion. Both
+  fixture classes now use one process-local atomic identity, which is unique
+  regardless of clock resolution.
 
 The final commit SHA, complete local gate results, exact-commit workflow run IDs,
 tag, release assets/checksums and registry PR receipt are appended only after
