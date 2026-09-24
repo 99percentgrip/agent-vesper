@@ -344,6 +344,7 @@ fn run_fixture() {
     );
     // A long validated sentence must not wait for one whole-sentence inference.
     fs::remove_file(root.join("player-first-pcm")).unwrap();
+    fs::remove_file(root.join("release-player")).unwrap();
     worker.enqueue(SpeechJob { segment: 0, text: "Keep the mutex guard out of blocking audio playback because a blocked writer can prevent Stop from acquiring the lock and leave the interface unresponsive until the player drains the pipe.".into() });
     let early_pcm = wait_for(|| root.join("player-first-pcm").exists());
     worker.stop();
@@ -372,6 +373,7 @@ fn run_fixture() {
         "partial-sentence Stop must settle exactly once"
     );
     // A complete fragmented unit reuses one player and settles only once.
+    fs::write(root.join("release-player"), "").unwrap();
     let before = fs::read_to_string(root.join("player-starts"))
         .unwrap()
         .lines()

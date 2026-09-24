@@ -12,7 +12,11 @@ Verify terminal interaction through the production TUI binary with isolated stat
   synthesis bank (banked audio never starts a player; stale generations never
   speak) via the boundary-gap regression `unit_boundary_gap_…` (red at a
   1.019 s inter-unit gap on the pre-fix tree), checks Stop
-  and stale admission, verifies cumulative progress across the latency-sized
+  and stale admission. The partial-sentence Stop case removes the fixture's
+  completion marker before waiting for first PCM, so Stop deterministically
+  owns settlement rather than racing a successful fake-player exit; it restores
+  the marker before the following recovery case. The suite verifies cumulative
+  progress across the latency-sized
   multi-piece unit, and verifies new-generation FIFO playback after Stop.
 
 - `voice_execution_policy.rs` proves the clarified-R16 no-NPU matrix through the
