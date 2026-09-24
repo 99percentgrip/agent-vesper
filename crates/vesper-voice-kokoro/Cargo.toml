@@ -23,9 +23,9 @@ serde_json.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["process", "time"] }
-vesper-domain = { path = "../vesper-domain", version = "=0.23.4" }
-vesper-security = { path = "../vesper-security", version = "=0.23.4" }
-vesper-voice = { path = "../vesper-voice", version = "=0.23.4", features = ["stt-sidecar", "tts-subprocess"] }
+vesper-domain = { path = "../vesper-domain", version = "=0.23.5" }
+vesper-security = { path = "../vesper-security", version = "=0.23.5" }
+vesper-voice = { path = "../vesper-voice", version = "=0.23.5", features = ["stt-sidecar", "tts-subprocess"] }
 ort = { version = "=2.0.0-rc.13", optional = true, default-features = false, features = ["std", "load-dynamic", "ndarray"] }
 
 [dev-dependencies]
