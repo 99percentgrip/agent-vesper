@@ -1,13 +1,15 @@
-# CRITICAL — recurring tool-output stall: PATCH VERIFIED
+# CRITICAL — recurring tool-output stall: CLOSED — RELEASED IN v0.23.6
 
 ## Current issue status
 
-**Severity: CRITICAL. Status: PASS — PATCH VERIFIED** on 2026-09-25. The
+**Severity: CRITICAL. Status: CLOSED — RELEASED IN v0.23.6** on 2026-09-25. The
 classification-D shared executor defect reproduced red at the production
 `RunCommand` boundary and is green after concurrent bounded draining, owned
 process-tree cleanup, truthful settlement, and native five-target behavioral CI.
-The historical incidents and manual recoveries below remain evidence of the
-pre-repair defect.
+Exact release commit `1da983400602ec98fa0b6007d90a2591dbe71726` passed
+canonical, MSRV, five-target and web-driver gates, and release workflow
+`36069150695` published 16 checksum-verified v0.23.6 assets. The historical
+incidents and manual recoveries below remain evidence of the pre-repair defect.
 
 **2026-09-25 verification closeout:** the
 [permanent-repair execution report](2026-09-24-critical-tool-output-stall-repair.md)
@@ -31,8 +33,8 @@ The [platform-verification record](2026-09-25-tool-output-stall-platform-verific
 documents the cross-platform test/ownership defects, Windows red-to-green
 fixture corrections, exact-ref CI receipts and final five-target PASS.
 The [v0.23.6 release record](2026-09-25-v0.23.6-release-execution.md) owns
-exact-release-commit gating, publication and asset verification; release
-preparation does not change the accepted repair verdict above.
+exact-release-commit gating, publication, asset/checksum verification and the
+ACP Registry update.
 
 The [06:10 UTC recurrence](2026-09-21-agent-tool-stall-0610z-recheck.md) involves
 a new shell `702497` and `cat` child `702500` under the same TUI `650318`.
