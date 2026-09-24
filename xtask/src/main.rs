@@ -1215,10 +1215,15 @@ fn naming_guard(regenerate: bool) -> Result<(), String> {
         // compound above embeds this stem, but the short form is used alone
         // in the upstream's CLI verbs, config keys and doc filenames)
         "7265736561726368636c6177",
+        // pattern 10 (VRO-17 voice oracle upstream: product name stem)
+        "6a6172766973",
+        // pattern 11 (VRO-17 voice oracle upstream's agent runtime: brand
+        // stem; appears in its API surface and config keys)
+        "6865726d6573",
     ];
     // The frozen baseline also pins the expected token-count; a guard edit
     // that silently drops a check must fail instead of passing quietly.
-    const FORBIDDEN_TOKEN_COUNT: usize = 11;
+    const FORBIDDEN_TOKEN_COUNT: usize = 13;
 
     let mut pattern_bytes = Vec::with_capacity(FORBIDDEN_HEX.len());
     for hex in FORBIDDEN_HEX {
@@ -1419,6 +1424,29 @@ fn allowed_dependencies() -> BTreeMap<&'static str, BTreeSet<&'static str>> {
             BTreeSet::from(["vesper-domain"]),
         ),
         (
+            // VRO-17 PR-0: the voice subsystem's pure core. Contracts,
+            // ports, descriptors, configuration, and fakes only — no
+            // adapters, no I/O, no clock, no device access. Hosts
+            // translate runtime/provider events into voice-owned inputs
+            // at the composition boundary; this crate never depends on
+            // the runtime, agent, harness, or any provider adapter.
+            // Speech-egress policy and bounded budgets live here
+            // (config validation); real engines arrive in PR-1/PR-2.
+            "vesper-voice",
+            BTreeSet::from(["vesper-domain", "vesper-security"]),
+        ),
+        (
+            // VRO-17 R3: the Natural Voice pack adapter (composition
+            // adapter for the voice core's TTS port). Depends on the
+            // pure voice core (which owns the ports) plus the shared
+            // domain/security foundations; the inference backend is a
+            // lazily loaded, digest-verified pack component — never a
+            // build-time link. Default-off `ort`/`mock-synthesis`
+            // features; the crate compiles bare.
+            "vesper-voice-kokoro",
+            BTreeSet::from(["vesper-domain", "vesper-security", "vesper-voice"]),
+        ),
+        (
             // VRO-14 PR-3: the sandboxed fetch route. This is the ONE
             // production unit allowed to reference the sandbox backend and
             // reqwest-scanning exception: it executes the fetch helper
@@ -1594,6 +1622,15 @@ fn allowed_dependencies() -> BTreeMap<&'static str, BTreeSet<&'static str>> {
                 "vesper-runtime",
                 "vesper-security",
                 "vesper-sessions",
+                // VRO-17 PR-4: opt-in voice conversation mode behind the
+                // default-off `voice-conversation` feature; the pure
+                // voice core is agent-free (same class as vesper-web).
+                "vesper-voice",
+                // VRO-17 R3: the Natural Voice pack adapter behind the
+                // default-off `voice-kokoro` feature (composition-only;
+                // the heavy inference backend is lazily loaded from the
+                // verified pack, never linked into the binary).
+                "vesper-voice-kokoro",
             ]),
         ),
         (

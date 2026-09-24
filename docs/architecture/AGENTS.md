@@ -7,6 +7,10 @@ Vesper terminology, feeding future feature PRDs (e.g. VRO-16 hive governance).
 
 ## Ownership
 
+- `recon_existing_voice_stack.md` owns the read-only inventory of
+  Vesper's own shipped voice capabilities (push-to-talk trace, the
+  speech-output negative result, reuse-vs-gap matrix, and the
+  recommendation-only PR-2 scope correction) that gates PR-2 planning.
 - Reports in this directory analyze external repositories from documentation
   and configuration only; production source files are never ingested.
 - Each report pins the analyzed external commits, records licenses, and maps
@@ -30,6 +34,12 @@ Vesper terminology, feeding future feature PRDs (e.g. VRO-16 hive governance).
   URLs, or branded file/command identifiers). New reconnaissance reports
   request aliases from Alex before first use; aliases follow the
   `web oracle alpha/beta/gamma` precedent and are never used bare.
+- Authorized deviations are recorded in place: the voice-oracle mission
+  (recon_voice_oracle.md) was directed to analyze the cloned implementation
+  itself, so that mission read upstream production source (MIT, pinned
+  commit) rather than docs/config only. The deviation is noted in the
+  report and in `docs/foundation/voice-oracle-recon-execution.md`; it does
+  not generalize to other missions.
 
 ## Work Guidance
 

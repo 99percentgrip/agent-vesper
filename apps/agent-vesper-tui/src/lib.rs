@@ -46,8 +46,24 @@ pub mod superpowers;
 #[cfg(feature = "swarm")]
 pub mod swarm_hub;
 pub mod ui;
+#[cfg(feature = "voice-conversation")]
+pub mod voice_accel;
+// R20 (2026-09-23 repair): the capture store is the shared capture-safety
+// primitive for BOTH dictation (F5, default builds) and conversation
+// (feature builds) — it is compiled ungated so the default F5 path owns
+// its captures through it too. Pure std; no conversation behavior is
+// pulled into the default path.
+pub mod voice_capture_store;
+#[cfg(feature = "voice-conversation")]
+pub mod voice_conversation;
+#[cfg(feature = "voice-conversation")]
+pub mod voice_playback;
+#[cfg(feature = "voice-conversation")]
+pub mod voice_readiness;
+#[cfg(feature = "voice-conversation")]
+#[path = "voice_speech_worker.rs"]
+pub mod voice_speech_worker;
 pub mod web_hub;
-
 pub use auth_hub::{
     AuthHubAction, AuthHubState, AuthProvider, StartupRoute, render_auth_hub, startup_route,
 };
@@ -132,6 +148,101 @@ pub async fn query_startup_view(
         provider_id: provider_id.clone(),
         superpowers,
         auth,
+    }
+}
+
+/// Resolve the harness-owned voice backend venv root. Precedence:
+/// `$AGENT_VESPER_VOICE_VENV` → `$XDG_DATA_HOME/agent-vesper/voice-venv` →
+/// `~/.local/share/agent-vesper/voice-venv` (auto-bootstrapped by the
+/// dictation worker on first F5).
+pub fn voice_venv_root() -> std::path::PathBuf {
+    if let Some(root) = std::env::var_os("AGENT_VESPER_VOICE_VENV") {
+        return std::path::PathBuf::from(root);
+    }
+    if let Some(xdg) = std::env::var_os("XDG_DATA_HOME") {
+        return std::path::PathBuf::from(xdg)
+            .join("agent-vesper")
+            .join("voice-venv");
+    }
+    let home = std::env::var_os("HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir);
+    home.join(".local/share/agent-vesper/voice-venv")
+}
+
+/// The audio player path for the preview surface (same PATH-resolution
+/// rules as the conversation playback owner; one convention).
+#[cfg(feature = "voice-kokoro")]
+pub fn resolve_player_for_preview() -> std::path::PathBuf {
+    std::env::var_os("PATH")
+        .and_then(|path| {
+            std::env::split_paths(&path)
+                .map(|dir| dir.join("aplay"))
+                .find(|candidate| candidate.is_file())
+        })
+        .unwrap_or_else(|| std::path::PathBuf::from("aplay"))
+}
+
+#[cfg(feature = "voice-conversation")]
+pub mod voice_shared_stt;
+
+#[cfg(feature = "voice-flm")]
+pub mod voice_flm;
+/// VRO-17 R16: the FLM NPU recognition composition (default-off; see
+/// the `voice-flm` feature). Asset verification is compiled whenever
+/// the conversation surface exists so Settings/readiness can report the
+/// pack's state without spawning anything.
+#[cfg(feature = "voice-conversation")]
+pub mod voice_flm_assets;
+#[cfg(feature = "voice-flm")]
+pub mod voice_flm_vad;
+
+/// Test seam: the feature-gated Settings menu entries this build
+/// offers (the same tuples the settings menu renders). Voice appears
+/// only in feature builds; absent otherwise (R9 parity).
+pub fn feature_gated_settings_entries() -> Vec<(&'static str, &'static str)> {
+    #[cfg(feature = "voice-conversation")]
+    {
+        vec![(
+            "/settings voice",
+            "Voice · dictation and conversation modes",
+        )]
+    }
+    #[cfg(not(feature = "voice-conversation"))]
+    {
+        Vec::new()
+    }
+}
+
+/// The managed voice-capture namespace root (R20). Lives under the
+/// harness data root (same root as the voice venv): private, owned,
+/// and reservation-accounted across TUI instances.
+pub fn voice_capture_root() -> std::path::PathBuf {
+    let base = std::env::var_os("XDG_DATA_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".local/share"))
+        })
+        .unwrap_or_else(std::env::temp_dir);
+    base.join("agent-vesper")
+}
+
+/// Test seam for the Settings → Voice save path: the production
+/// `save_voice_scope` (no validation bypass; same failure semantics).
+#[cfg(feature = "voice-conversation")]
+#[path = "settings_voice_save.rs"]
+pub mod settings_voice_save;
+
+/// Test seam for the Settings → Voice save path: the production
+/// `save_voice_scope` (single implementation; no validation bypass).
+#[cfg(feature = "voice-conversation")]
+pub mod settings_host_test {
+    /// Saves the voice scope exactly as the Settings Save flow does.
+    pub fn save_voice_for_test(
+        root: &std::path::Path,
+        scope: &vesper_voice::VoiceScope,
+    ) -> Result<(), String> {
+        crate::settings_voice_save::save_voice_scope(root, scope)
     }
 }
 

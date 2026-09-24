@@ -11,13 +11,30 @@ publish = false
 # VRO-13 PR-4: forwards to the harness/sandbox docker backend so release
 # builds can enable it; zero new mandatory dependencies for default builds.
 docker = ["vesper-harness/docker"]
+# VRO-17 PR-4: opt-in voice conversation mode. Default-off: with the
+# feature disabled, no voice-conversation code is compiled and default
+# builds are untouched (R9 parity). The pure core is agent-free; the
+# adapters add zero production dependencies.
+voice-conversation = ["dep:vesper-voice"]
+# VRO-17 R3: the Natural Voice pack (local neural TTS). Implies the voice
+# conversation feature; the Kokoro adapter crate is linked only here.
+# Default builds never compile or load it. The mock-synthesis feature of
+# the adapter crate is test-only (deterministic double for wiring tests).
+voice-kokoro = ["voice-conversation", "dep:vesper-voice-kokoro"]
+# VRO-17 R16: the FLM NPU speech-recognition composition (owned loopback
+# ASR process + local Silero VAD preprocessing + final-only adapter).
+# Implies the conversation surface; default builds remain untouched.
+voice-flm = ["voice-conversation"]
 swarm = ["vesper-harness/swarm"]
 # VB-PRD-001 Phase 2: the hosted Bridge tool surface (default-off).
 bridge = ["vesper-harness/bridge"]
 
 [dependencies]
+vesper-voice = { path = "../../crates/vesper-voice", version = "=0.23.4", optional = true, features = ["stt-sidecar", "tts-subprocess"] }
+vesper-voice-kokoro = { path = "../../crates/vesper-voice-kokoro", version = "=0.23.4", optional = true, features = ["ort", "mock-synthesis"] }
 tempfile.workspace = true
-vesper-provider-openai = { path = "../../crates/vesper-provider-openai", version = "=0.23.3" }
+libc.workspace = true
+vesper-provider-openai = { path = "../../crates/vesper-provider-openai", version = "=0.23.4" }
 arboard.workspace = true
 base64.workspace = true
 crossterm.workspace = true
@@ -35,27 +52,27 @@ tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 uuid.workspace = true
-vesper-agent = { path = "../../crates/vesper-agent", version = "=0.23.3" }
-vesper-policy = { path = "../../crates/vesper-policy", version = "=0.23.3" }
-vesper-auth = { path = "../../crates/vesper-auth", version = "=0.23.3" }
-vesper-checkpoints = { path = "../../crates/vesper-checkpoints", version = "=0.23.3" }
-vesper-cognition = { path = "../../crates/vesper-cognition", version = "=0.23.3" }
-vesper-domain = { path = "../../crates/vesper-domain", version = "=0.23.3" }
-vesper-harness = { path = "../../crates/vesper-harness", version = "=0.23.3" }
-vesper-mcp = { path = "../../crates/vesper-mcp", version = "=0.23.3" }
-vesper-memory = { path = "../../crates/vesper-memory", version = "=0.23.3" }
-vesper-observability = { path = "../../crates/vesper-observability", version = "=0.23.3" }
-vesper-provider = { path = "../../crates/vesper-provider", version = "=0.23.3" }
-vesper-provider-glm = { path = "../../crates/vesper-provider-glm", version = "=0.23.3" }
-vesper-runtime = { path = "../../crates/vesper-runtime", version = "=0.23.3" }
-vesper-sessions = { path = "../../crates/vesper-sessions", version = "=0.23.3" }
+vesper-agent = { path = "../../crates/vesper-agent", version = "=0.23.4" }
+vesper-policy = { path = "../../crates/vesper-policy", version = "=0.23.4" }
+vesper-auth = { path = "../../crates/vesper-auth", version = "=0.23.4" }
+vesper-checkpoints = { path = "../../crates/vesper-checkpoints", version = "=0.23.4" }
+vesper-cognition = { path = "../../crates/vesper-cognition", version = "=0.23.4" }
+vesper-domain = { path = "../../crates/vesper-domain", version = "=0.23.4" }
+vesper-harness = { path = "../../crates/vesper-harness", version = "=0.23.4" }
+vesper-mcp = { path = "../../crates/vesper-mcp", version = "=0.23.4" }
+vesper-memory = { path = "../../crates/vesper-memory", version = "=0.23.4" }
+vesper-observability = { path = "../../crates/vesper-observability", version = "=0.23.4" }
+vesper-provider = { path = "../../crates/vesper-provider", version = "=0.23.4" }
+vesper-provider-glm = { path = "../../crates/vesper-provider-glm", version = "=0.23.4" }
+vesper-runtime = { path = "../../crates/vesper-runtime", version = "=0.23.4" }
+vesper-sessions = { path = "../../crates/vesper-sessions", version = "=0.23.4" }
 zeroize.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
 tempfile.workspace = true
-vesper-provider-synthetic = { path = "../../crates/vesper-provider-synthetic", version = "=0.23.3" }
-vesper-security = { path = "../../crates/vesper-security", version = "=0.23.3" }
+vesper-provider-synthetic = { path = "../../crates/vesper-provider-synthetic", version = "=0.23.4" }
+vesper-security = { path = "../../crates/vesper-security", version = "=0.23.4" }
 
 [lints]
 workspace = true
@@ -63,3 +80,68 @@ workspace = true
 [[bin]]
 name = "agent-vesper-tui"
 path = "src/main.rs"
+
+[[test]]
+name = "r3_speech_worker"
+required-features = ["voice-conversation"]
+
+[[test]]
+name = "voice_execution_policy"
+required-features = ["voice-conversation", "voice-flm"]
+
+[[test]]
+name = "voice_policy_parity"
+required-features = ["voice-kokoro"]
+
+[[test]]
+name = "voice_multiturn_playback"
+required-features = ["voice-conversation"]
+
+# R20 default-build capture contract: runs in EVERY feature set (that is
+# the point — the default F5 path is bounded).
+[[test]]
+name = "voice_r20_default_capture"
+
+# R4 (amended 2026-09-23): capability-aware partials presentation +
+# reasoning-provider-neutrality invariant guard. Runs in every feature
+# set: the neutrality contract is build-independent, and the Settings
+# presentation contract must hold wherever the Voice panel exists.
+[[test]]
+name = "voice_provider_neutrality"
+required-features = ["voice-conversation"]
+
+# R6 §2.4 binding repair (2026-09-24): one-gesture barge-in + explicit
+# Stop at the production host entry points.
+[[test]]
+name = "voice_r6_binding"
+required-features = ["voice-conversation"]
+
+# Requires the conversation surface it exercises (previously autodiscovered,
+# which broke --no-default-features test compilation; pre-existing).
+[[test]]
+name = "voice_speech_pipeline"
+required-features = ["voice-conversation"]
+
+[[test]]
+name = "voice_flm_route"
+required-features = ["voice-flm"]
+
+[[test]]
+name = "voice_flm_assets"
+required-features = ["voice-conversation"]
+
+[[example]]
+name = "r3_full_path_repro"
+required-features = ["voice-kokoro"]
+
+[[example]]
+name = "flm_stt_receipt"
+required-features = ["voice-flm"]
+
+[[example]]
+name = "r3_worker_device_check"
+required-features = ["voice-kokoro"]
+
+[[example]]
+name = "continuity_pause_receipt"
+required-features = ["voice-kokoro"]

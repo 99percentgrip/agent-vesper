@@ -1,0 +1,59 @@
+[package]
+name = "vesper-voice-kokoro"
+description = "VRO-17 R3: local neural TTS adapter — Kokoro-82M ONNX inference behind the vesper-voice ports (feature-gated composition adapter)"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[features]
+# Inference (ort + ONNX Runtime via load-dynamic). Default-off: this crate
+# must compile bare — pack files exist only after explicit user setup.
+ort = ["dep:ort"]
+# Development-only deterministic double for red tests of TUI/host wiring.
+# Test-only: bounded-buffer replay, no inference, never a production path.
+mock-synthesis = []
+
+[dependencies]
+futures-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["process", "time"] }
+vesper-domain = { path = "../vesper-domain", version = "=0.23.4" }
+vesper-security = { path = "../vesper-security", version = "=0.23.4" }
+vesper-voice = { path = "../vesper-voice", version = "=0.23.4", features = ["stt-sidecar", "tts-subprocess"] }
+ort = { version = "=2.0.0-rc.13", optional = true, default-features = false, features = ["std", "load-dynamic", "ndarray"] }
+
+[dev-dependencies]
+futures-util.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "rt", "time"] }
+
+[lints]
+workspace = true
+
+# Evidence helpers require the inference feature (they drive the real
+# engine); they are excluded from default builds automatically.
+[[example]]
+name = "real_setup_receipt"
+required-features = ["ort"]
+
+[[example]]
+name = "perf_receipt"
+required-features = ["ort"]
+
+[[example]]
+name = "repro_tui_path"
+required-features = ["ort"]
+
+[[example]]
+name = "repro_tui_path2"
+required-features = ["ort"]
+
+[[example]]
+name = "repro_tui_path5"
+required-features = ["ort"]

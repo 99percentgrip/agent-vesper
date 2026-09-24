@@ -35,6 +35,25 @@ test-only conformance support.
   Ed25519-signed plugin loader (ADR 0013 — Stage 15). The unsigned-plugin
   loading code path is structurally erased from `--release` builds via
   `#[cfg(debug_assertions)]`.
+- `vesper-voice` depends only on `vesper-domain` and `vesper-security`;
+  it owns the VRO-17 voice pure core — validated PCM framing, STT/TTS
+  ports/descriptors, the error taxonomy (NoSpeech ≠ Unavailable), the
+  speech-egress policy and `[voice]` scope, host↔core event vocabulary,
+  per-turn report types, and deterministic fakes. No adapters, no I/O,
+  no runtime/agent/harness/provider dependency; hosts translate
+  runtime/provider events into voice-owned inputs. PRD:
+  `docs/voice-oracle-extraction-prd.md`.
+- `vesper-voice-kokoro` depends on `vesper-domain`, `vesper-security`,
+  and `vesper-voice`; it owns the R3 Natural Voice pack composition
+  adapter — pack descriptor/integrity/lifecycle over one managed
+  per-user cache, the espeak-ng IPA pronunciation bridge (reimplemented
+  algorithm, no port), the bounded ONNX engine (ORT loaded dynamically
+  from the digest-verified pack; no build-time link), the `VoiceTts`
+  adapter, and the setup pipeline (confirm → byte-true progress →
+  verify → silent-synthesis probe → publish). `#![forbid(unsafe_code)]`;
+  `ort` sits behind the default-off `ort` feature (`default-features =
+  false`); the crate compiles bare. Evidence:
+  `docs/foundation/voice-oracle-kokoro-implementation.md`.
 - `vesper-config` depends only on `vesper-domain` and `vesper-security`.
 - `vesper-policy` depends only on `vesper-domain` and `vesper-security`.
 - `vesper-sandbox` depends only on `vesper-security` plus platform `libc`
@@ -171,3 +190,6 @@ test-only conformance support.
   prune/convert pipeline (zero I/O, offline golden corpus).
 - `vesper-web-fetch/AGENTS.md` — VRO-14 PR-3 sandboxed fetch route: egress
   gate, helper binary, and `FetchTransport` over the ADR-0022 sandbox.
+- `vesper-voice-kokoro/AGENTS.md` — VRO-17 R3 Natural Voice pack adapter:
+  pack integrity/lifecycle, pronunciation bridge, bounded engine, port
+  adapter, setup pipeline.

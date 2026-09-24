@@ -27,6 +27,8 @@
 mod acceptance_host;
 mod mobile;
 mod voice;
+#[cfg(feature = "voice-conversation")]
+mod voice_turn_instruction;
 
 #[cfg(feature = "swarm")]
 mod swarm_host;
@@ -548,6 +550,11 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
         working_tree_view: None,
         working_tree_lines: Vec::new(),
         voice: voice::Controller::default(),
+        #[cfg(feature = "voice-conversation")]
+        voice_conversation_host: None,
+        capture_origin: CaptureOrigin::Dictation,
+        #[cfg(feature = "voice-conversation")]
+        voice_conversation_phase: ConversationPhase::Idle,
         selection_anchor: None,
         selected_text: String::new(),
         reasoning_diagnostics: None,
@@ -1020,6 +1027,30 @@ struct TuiSession {
     /// Bounded live output for the selected working-tree view.
     working_tree_lines: Vec<String>,
     voice: voice::Controller,
+    /// VRO-17 PR-4: conversation-mode phase (feature-gated).
+    #[cfg(feature = "voice-conversation")]
+    voice_conversation_phase: ConversationPhase,
+    /// VRO-17 PR-4: the production conversation host (controller owner).
+    /// Constructed lazily on the first ENABLED F9 gesture; `None` at
+    /// startup and when unconfigured (R9: no conversation
+    /// initialization before explicit activation). VRO-17 R16: in
+    /// `voice-flm` builds the host is type-erased over the STT port so
+    /// the selected route (CPU sidecar or the composed FLM NPU adapter)
+    /// is chosen by the saved execution policy through the shared rule.
+    #[cfg(feature = "voice-conversation")]
+    #[cfg(not(feature = "voice-flm"))]
+    voice_conversation_host:
+        Option<agent_vesper_tui::voice_conversation::ConversationHost<DictationSharedStt>>,
+    #[cfg(all(feature = "voice-conversation", feature = "voice-flm"))]
+    voice_conversation_host: Option<
+        agent_vesper_tui::voice_conversation::ConversationHost<
+            dyn vesper_voice::ports::VoiceStt + Send + Sync,
+        >,
+    >,
+    /// Origin mode of the capture currently owned by the voice worker,
+    /// so finals route by their originating gesture — not by whichever
+    /// drain happens to run.
+    capture_origin: CaptureOrigin,
 
     /// Mouse-selection anchor row in the visible conversation.
     selection_anchor: Option<u16>,
@@ -1324,6 +1355,19 @@ async fn drive_loop(
     checkpoint_stores: &mut CheckpointStores,
     mcp_stores: &mut McpStores,
 ) -> Result<(), String> {
+    // Read-only integrity preflight for an already enabled neural voice.
+    // Run while the user is in landing/settings, not on the first F9 key.
+    // No model inference, microphone, downloads or settings writes.
+    #[cfg(feature = "voice-kokoro")]
+    std::thread::spawn(|| {
+        if let Ok(root) = std::env::current_dir()
+            && let Ok(scope) = vesper_voice::read_voice_scope(&root)
+            && scope.enabled
+            && agent_vesper_tui::voice_readiness::neural_voice_selected(scope.tts.as_ref())
+        {
+            let _ = vesper_voice_kokoro::assess_pack(&vesper_voice_kokoro::pack_root());
+        }
+    });
     let mut terminal = Terminal::new(Backend::new(stdout()))
         .map_err(|error| format!("terminal init failed: {error}"))?;
     if let Some(provider) = auth.clone() {
@@ -1477,6 +1521,19 @@ async fn drive_loop(
         // "WORKING..." banner clears the moment the result lands. The drain
         // is non-blocking (`try_recv`); if the turn is still running we just
         // fall through and render the in-flight banner.
+        #[allow(clippy::too_many_arguments)]
+        #[cfg(feature = "voice-conversation")]
+        drain_voice(
+            session,
+            agent,
+            agent_tools,
+            &approval_port_for_react,
+            vro,
+            surface,
+            cognition_bundle,
+            memory_stores,
+        );
+        #[cfg(not(feature = "voice-conversation"))]
         drain_voice(session);
         if let Some(rx) = session.acceptance_status_rx.as_mut() {
             let mut lines = Vec::new();
@@ -1492,6 +1549,8 @@ async fn drive_loop(
             }
         }
         drain_agent_event(session);
+        #[cfg(feature = "voice-conversation")]
+        drain_speech_status(session);
         // Mid-turn queued prompt (Claude Code parity): a prompt submitted
         // while a turn was running fires the moment that turn completes.
         if !session.agent_running
@@ -3878,6 +3937,11 @@ fn session_setting_candidates(
                     "/web".into(),
                     "Web tools · fetch, rendering and browser interaction".into(),
                 ),
+                #[cfg(feature = "voice-conversation")]
+                (
+                    "/settings voice".into(),
+                    "Voice · dictation and conversation modes".into(),
+                ),
                 (
                     "/permission".to_string(),
                     format!("Permissions · current {:?}", state.controls.permission_mode),
@@ -4307,6 +4371,7 @@ fn default_keybindings() -> std::collections::BTreeMap<String, String> {
         ("settings", "f3"),
         ("toggle_working_tree", "f4"),
         ("toggle_voice", "f5"),
+        ("toggle_voice_conversation", "f9"),
         ("open_history", "f6"),
         ("toggle_native_mouse", "f7"),
         ("toggle_screen_reader", "f8"),
@@ -4452,21 +4517,6 @@ fn push_unique(candidates: &mut Vec<String>, c: String) {
 /// `~/.local/share/agent-vesper/voice-venv`. This venv is auto-bootstrapped
 /// by the voice worker on first F5 so that a fresh installer user
 /// gets a working `faster-whisper` backend with no separate setup.
-fn voice_venv_root() -> std::path::PathBuf {
-    if let Some(root) = std::env::var_os("AGENT_VESPER_VOICE_VENV") {
-        return std::path::PathBuf::from(root);
-    }
-    if let Some(xdg) = std::env::var_os("XDG_DATA_HOME") {
-        return std::path::PathBuf::from(xdg)
-            .join("agent-vesper")
-            .join("voice-venv");
-    }
-    let home = std::env::var_os("HOME")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir);
-    home.join(".local/share/agent-vesper/voice-venv")
-}
-
 /// Ordered candidate Python interpreters to probe for `faster-whisper`,
 /// requiring **no user configuration**. Precedence:
 /// 1. Explicit env override (`VESPER_PYTHON_PATH` / `GLM_VENV_PATH`).
@@ -4475,7 +4525,7 @@ fn voice_venv_root() -> std::path::PathBuf {
 ///    (`.venv`/`venv`/`.virtualenv` layouts).
 /// 4. Bare `python3` (system PATH).
 fn candidate_whisper_pythons() -> Vec<String> {
-    let voice_venv = voice_venv_root();
+    let voice_venv = agent_vesper_tui::voice_venv_root();
     let projects_dir = std::env::var_os("HOME")
         .map(std::path::PathBuf::from)
         .map(|home| home.join("Projects"));
@@ -4562,14 +4612,389 @@ fn toggle_voice_recording(session: &mut TuiSession) {
     session.voice.toggle();
 }
 
-fn drain_voice(session: &mut TuiSession) {
+/// VRO-17 PR-4: explicit opt-in conversation capture (F9). Distinct
+/// from F5 dictation: the captured utterance becomes ordinary agent
+/// input after valid final transcription (never keystrokes, commands,
+/// or approval answers). Without the `voice-conversation` build
+/// feature or a configured/enabled scope, this reports the honest
+/// activation route instead of silently doing nothing.
+fn toggle_voice_conversation(session: &mut TuiSession) {
+    #[cfg(feature = "voice-conversation")]
+    {
+        use agent_vesper_tui::voice_conversation::{ConversationHost, GestureOutcome};
+        // The gate separates configuration enablement from operational
+        // readiness, and refuses BEFORE touching any device or
+        // constructing anything.
+        // 1) Disabled (effective configuration) → the activation route.
+        // 2) Enabled but a prerequisite is missing → name the verified
+        //    blocker; never tell the user to enable what is already on.
+        match conversation_gate_decision() {
+            GateDecision::Ready => {}
+            GateDecision::Disabled => {
+                session.state.status = Some(
+                    "Voice conversation is not enabled: enable it in Settings → Voice.".into(),
+                );
+                return;
+            }
+            GateDecision::Blocked(message) => {
+                session.state.status = Some(message);
+                return;
+            }
+        }
+        // Lazily construct the production host (first enabled gesture).
+        if session.voice_conversation_host.is_none() {
+            #[cfg(feature = "voice-flm")]
+            {
+                let shared = SelectedStt::build().into_shared();
+                // R16: the shared recorder transcribes F9-origin
+                // captures through the SELECTED adapter (the composed
+                // FLM NPU route when the scope selects it) — never the
+                // CPU sidecar. The same instance backs the host, so
+                // one warm child serves both seams.
+                session.voice.set_conversation_stt(shared.clone());
+                session.voice_conversation_host = Some(ConversationHost::new(shared, None));
+            }
+            #[cfg(not(feature = "voice-flm"))]
+            {
+                let shared = DictationSharedStt {
+                    inner: agent_vesper_tui::voice_shared_stt::SharedSidecarStt::new(),
+                };
+                session.voice_conversation_host =
+                    Some(ConversationHost::new(std::sync::Arc::new(shared), None));
+            }
+        }
+        let Some(host) = session.voice_conversation_host.as_mut() else {
+            return;
+        };
+        let dictation_phase = session.voice.snapshot().phase;
+        // §2.4 binding repair (2026-09-24): F9 while SPEAKING is the
+        // GENUINE BARGE-IN — one gesture performs playback stop,
+        // synthesis cancellation (worker generation bump), the session's
+        // single interrupt transition (bounded acked-playback note,
+        // CancelRuntimeTurn), AND immediately opens the new capture.
+        // The historical round-3 stop-only behavior violated §2.4 (no
+        // runtime cancel, no capture; the runtime kept running silently)
+        // and is superseded; the round-3 note-staging defect it guarded
+        // against is fixed in the PR-3 session (acked-playback-only,
+        // staged once).
+        // One call is one production gesture. The host owns the semantic
+        // choice and routes Speaking directly through genuine BargeIn; the
+        // TUI never composes StopRequested + CaptureStarted itself.
+        let result = host.apply_conversation_gesture(
+            session.voice_conversation_phase == ConversationPhase::Speaking,
+            dictation_phase == agent_vesper_tui::ui::VoicePhase::Recording,
+        );
+        // Execute recorded runtime cancellation through the EXISTING generic
+        // token (provider-neutral; never a bespoke stream drop).
+        if !result.runtime_cancels.is_empty()
+            && let Some(cancel) = &session.turn_cancellation
+        {
+            cancel.cancel();
+        }
+        match result.outcome {
+            GestureOutcome::Accepted => {
+                surface_conversation_events(session, result.events);
+                if result.capture_started {
+                    session.capture_origin = CaptureOrigin::Conversation;
+                    // The shared recorder starts exactly like F5
+                    // (one capture owner per process).
+                    session.voice.toggle();
+                    session.voice_conversation_phase = ConversationPhase::Capturing;
+                } else {
+                    session.voice.toggle();
+                    session.voice_conversation_phase = ConversationPhase::Transcribing;
+                }
+                session.state.status = Some(voice_conversation_glue::conversation_status_line(
+                    session.voice_conversation_phase,
+                    session.voice.snapshot().phase,
+                ));
+            }
+            GestureOutcome::Refused(reason) => {
+                session.state.status = Some(reason);
+            }
+        }
+        return;
+    }
+    #[allow(unreachable_code)]
+    {
+        let _ = session;
+        session.state.status = Some(
+            "Voice conversation requires a build with the `voice-conversation` feature.".into(),
+        );
+    }
+}
+
+/// Surfaces conversation client events truthfully (status lines only;
+/// no transcript/audio content into logs).
+#[cfg(feature = "voice-conversation")]
+fn surface_conversation_events(
+    session: &mut TuiSession,
+    events: Vec<vesper_voice::events::VoiceClientEvent>,
+) {
+    use vesper_voice::events::VoiceClientEvent;
+    for event in events {
+        match event {
+            VoiceClientEvent::Transcript { text } => {
+                // Conversation transcripts surface as a transcript line —
+                // NOT composer insertion (that is F5 dictation only).
+                session
+                    .state
+                    .transcript
+                    .push(format!("you (voice): {}", text.as_str()));
+            }
+            VoiceClientEvent::PartialTranscript { .. } => {}
+            VoiceClientEvent::Interrupted { .. } => {
+                session.voice_conversation_phase = ConversationPhase::Interrupted;
+            }
+            VoiceClientEvent::Failed(error) => {
+                session.state.status = Some(format!("voice: {error}"));
+            }
+            VoiceClientEvent::TurnDone(report) => {
+                session.voice_conversation_phase = ConversationPhase::Idle;
+                let _ = report;
+            }
+            VoiceClientEvent::Speak(unit) => {
+                // R3 repair: enqueue only — synthesis + playback run on
+                // the speech worker (the event loop never blocks).
+                session.voice_conversation_phase = ConversationPhase::Speaking;
+                if let Some(Err(error)) = session
+                    .voice_conversation_host
+                    .as_mut()
+                    .map(|host| host.speak_unit(&unit))
+                {
+                    session.state.status = Some(format!("speech failed: {error}"));
+                } else {
+                    session.state.status =
+                        Some("Voice conversation: speaking · audio starts after synthesis".into());
+                }
+                drain_speech_status(session);
+            }
+            VoiceClientEvent::SpeechAudio { .. } | VoiceClientEvent::PlaybackStop => {}
+            VoiceClientEvent::AgentActivity(_) => {}
+        }
+    }
+}
+
+/// Non-blocking drain of speech-worker outcomes: failures surface as a
+/// truthful status line; the textual answer stays on screen (PR-4).
+#[cfg(feature = "voice-conversation")]
+fn drain_speech_status(session: &mut TuiSession) {
+    let failures = session
+        .voice_conversation_host
+        .as_mut()
+        .map(|host| host.drain_speech())
+        .unwrap_or_default();
+    if failures.is_empty() {
+        if let Some(activity) = session
+            .voice_conversation_host
+            .as_ref()
+            .and_then(|host| host.speech_activity())
+        {
+            session.state.status = Some(activity);
+            session.voice_conversation_phase = ConversationPhase::Speaking;
+        } else if session.voice_conversation_phase == ConversationPhase::Speaking {
+            session.voice_conversation_phase = if session.agent_running {
+                ConversationPhase::AwaitingRuntime
+            } else {
+                ConversationPhase::Idle
+            };
+            if session
+                .state
+                .status
+                .as_deref()
+                .is_some_and(|status| status.starts_with("Voice:"))
+            {
+                session.state.status =
+                    Some("Voice playback finished; audibility remains user-confirmed.".into());
+            }
+        } else if session.voice_conversation_phase == ConversationPhase::AwaitingRuntime
+            && session.agent_running
+            && let Some(started) = session.turn_started
+        {
+            // This includes agent/tool work and sentence gating, not just provider
+            // inference. Do not label it synthesis or invent time-to-audio.
+            session.state.status = Some(format!(
+                "Voice: waiting for speakable agent text · turn {:.1}s",
+                started.elapsed().as_secs_f64()
+            ));
+        }
+    }
+    for error in failures {
+        let notice = format!("speech failed: {error}");
+        session.state.transcript.push(notice.clone());
+        session.state.status = Some(notice);
+    }
+}
+
+/// Conversation readiness from the persisted voice scope (Settings →
+/// Voice) plus local backend detection. No device probing here beyond
+/// executable existence; a detected executable is not device
+/// acceptance.
+#[cfg(feature = "voice-conversation")]
+/// The production F9 gate decision (single source of truth for the
+/// handler AND the integration regression): enabled? → all
+/// prerequisites present? → refusal messages classified accurately.
+#[cfg(feature = "voice-conversation")]
+pub(crate) enum GateDecision {
+    Ready,
+    Disabled,
+    Blocked(String),
+}
+
+#[cfg(feature = "voice-conversation")]
+fn conversation_gate_decision() -> GateDecision {
+    let root = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let scope = vesper_voice::read_voice_scope(&root).unwrap_or_default();
+    if !scope.enabled {
+        return GateDecision::Disabled;
+    }
+    #[cfg(not(feature = "voice-kokoro"))]
+    if scope
+        .tts
+        .as_ref()
+        .is_some_and(|provider| provider.as_str() == "voice-kokoro")
+    {
+        return GateDecision::Blocked("The saved neural voice requires a build with Natural Voice support; no other engine was selected.".into());
+    }
+    // VRO-17 R16 clarified: resolve the per-stage execution policies
+    // BEFORE prerequisites. A strict NPU policy on a machine with no
+    // verified route is a stage-specific refusal naming the exact
+    // blocker and the Settings action — never a silent CPU dispatch,
+    // never a relabeled CPU success, and never a stale copied-success
+    // dispatch (readiness is machine-local and re-derived per process).
+    for stage in [
+        (vesper_voice::SpeechStage::Stt, scope.stt_compute),
+        (vesper_voice::SpeechStage::Tts, scope.tts_compute),
+    ] {
+        if let vesper_voice::StageResolution::Refused { message, .. } =
+            agent_vesper_tui::voice_accel::stage_route_for_policy(stage.0, stage.1)
+        {
+            return GateDecision::Blocked(message.as_str().to_owned());
+        }
+    }
+    if let Some(blocker) = agent_vesper_tui::voice_readiness::first_blocker() {
+        return GateDecision::Blocked(agent_vesper_tui::voice_readiness::blocked_message(&blocker));
+    }
+    // VRO-17 R3: when the neural voice is the selected engine, the pack
+    // and its prerequisites join the SAME shared assessment (Settings,
+    // preview and F9 cannot disagree). An enabled-but-blocked state
+    // names the actual missing piece; no automatic fallback to the
+    // baseline engine.
+    #[cfg(feature = "voice-kokoro")]
+    if agent_vesper_tui::voice_readiness::neural_voice_selected(scope.tts.as_ref())
+        && let Some(blocker) = agent_vesper_tui::voice_readiness::first_neural_blocker()
+    {
+        return GateDecision::Blocked(agent_vesper_tui::voice_readiness::blocked_message(&blocker));
+    }
+    GateDecision::Ready
+}
+
+#[allow(clippy::too_many_arguments)]
+fn drain_voice(
+    session: &mut TuiSession,
+    #[cfg(feature = "voice-conversation")] agent: &Arc<AgentLoop>,
+    #[cfg(feature = "voice-conversation")] agent_tools: &Arc<dyn vesper_agent::ToolService>,
+    #[cfg(feature = "voice-conversation")] approval_port_for_react: &Arc<
+        dyn vesper_agent::PermissionPort,
+    >,
+    #[cfg(feature = "voice-conversation")] vro: &vesper_agent::VroOrchestrator,
+    #[cfg(feature = "voice-conversation")] surface: &ProviderSuperpowerSurface,
+    #[cfg(feature = "voice-conversation")] cognition_bundle: &CognitionBundle,
+    #[cfg(feature = "voice-conversation")] memory_stores: &MemoryStores,
+) {
     if let Some(text) = session.voice.take_text() {
+        // Route by the capture's ORIGINATING gesture: F5 finals append
+        // to the editable composer (never submit); F9 finals flow to the
+        // conversation host as ordinary agent input after validation.
+        #[cfg(feature = "voice-conversation")]
+        if session.capture_origin == CaptureOrigin::Conversation {
+            session.capture_origin = CaptureOrigin::Dictation;
+            let final_result =
+                vesper_voice::session::SttFinal::Transcript(vesper_voice::ports::SttTranscript {
+                    text: vesper_domain::BoundedString::new(text)
+                        .unwrap_or_else(|_| vesper_domain::BoundedString::new("").expect("fits")),
+                    provider: vesper_domain::ProviderId::new("shared-sidecar").expect("fits"),
+                    confidence: None,
+                    provenance: vesper_voice::ports::TranscriptProvenance::InferredText,
+                });
+            if let Some(host) = session.voice_conversation_host.as_mut() {
+                let (events, submitted) = host.deliver_final(final_result);
+                surface_conversation_events(session, events);
+                if let Some(input) = submitted.last() {
+                    dispatch_voice_submission(
+                        session,
+                        agent,
+                        agent_tools,
+                        approval_port_for_react,
+                        vro,
+                        surface,
+                        cognition_bundle,
+                        memory_stores,
+                        input.clone(),
+                    );
+                }
+            }
+            return;
+        }
+        session.capture_origin = CaptureOrigin::Dictation;
         if !session.input.is_empty() && !session.input.ends_with(' ') {
             session.input.push(' ');
         }
         session.input.push_str(&text);
         session.state.preferences.composer_cursor = session.input.len();
     }
+}
+
+/// Executes the conversation `SubmitTurn` through the normal user-turn
+/// submission seam (typed-Enter path) — exactly once, as ordinary
+/// input: no keystroke simulation, no slash-command dispatch, never an
+/// approval. Empty/failed/limit-stopped captures never reach here
+/// (they never produce a final).
+#[cfg(feature = "voice-conversation")]
+#[allow(clippy::too_many_arguments)] // single-call composition boundary
+fn dispatch_voice_submission(
+    session: &mut TuiSession,
+    agent: &Arc<AgentLoop>,
+    agent_tools: &Arc<dyn vesper_agent::ToolService>,
+    approval_port_for_react: &Arc<dyn vesper_agent::PermissionPort>,
+    vro: &vesper_agent::VroOrchestrator,
+    surface: &ProviderSuperpowerSurface,
+    cognition_bundle: &CognitionBundle,
+    memory_stores: &MemoryStores,
+    input: String,
+) {
+    session.voice_conversation_phase = ConversationPhase::AwaitingRuntime;
+    // Scope the host-delivery contract to this submitted turn. All normal
+    // direct/VRO routes inherit this configuration; typed turns remain unchanged.
+    let agent = voice_turn_agent(agent);
+    // The voice input dispatches through the IDENTICAL path as typed
+    // Enter (spawn_submitted_prompt) — ordinary user content, normal
+    // tools/permissions/history, exactly once. Typed drafts are
+    // untouched (input was never placed in the composer).
+    spawn_submitted_prompt(
+        &agent,
+        agent_tools,
+        approval_port_for_react,
+        vro,
+        surface,
+        cognition_bundle,
+        memory_stores,
+        input,
+        session,
+    );
+}
+
+#[cfg(feature = "voice-conversation")]
+fn voice_turn_agent(agent: &Arc<AgentLoop>) -> Arc<AgentLoop> {
+    let mut config = agent.configuration().clone();
+    config.system_instructions.push(SystemInstruction {
+        content: vec![ContentPart::Text(
+            ContentText::new(voice_turn_instruction::INSTRUCTION).expect("bounded voice contract"),
+        )],
+        cache_stable: false,
+        extensions: ExtensionMap::default(),
+    });
+    Arc::new(agent.as_ref().clone().with_turn_configuration(config))
 }
 
 fn keybindings_path() -> std::path::PathBuf {
@@ -4730,11 +5155,42 @@ fn apply_keybinding_action(
     match action {
         "quit_agent" => return true,
         "cancel_turn" => {
+            // §2.4 binding repair (2026-09-24): explicit Stop. When voice
+            // conversation speech is active, this gesture executes the
+            // COMPLETE stop semantics — playback stop, synthesis cancel,
+            // the session's StopRequested transition (bounded note) —
+            // and NO new capture; the runtime cancellation flows through
+            // the same generic token below. Outside an active voice turn
+            // the pre-existing generic behavior is unchanged.
+            #[cfg(feature = "voice-conversation")]
+            let mut voice_stopped = false;
+            #[cfg(feature = "voice-conversation")]
+            if session.voice_conversation_phase
+                == voice_conversation_glue::ConversationPhase::Speaking
+                && let Some(host) = session.voice_conversation_host.as_mut()
+            {
+                let result = host.apply_interruption_control(
+                    agent_vesper_tui::voice_conversation::InterruptionControl::Stop,
+                );
+                voice_stopped = true;
+                surface_conversation_events(session, result.events);
+                session.voice_conversation_phase =
+                    voice_conversation_glue::ConversationPhase::Interrupted;
+            }
             if session.agent_running {
                 cancel_active_turn_preserving_partial(session, "cancelled by user");
                 session.state.status = Some("Active turn cancelled.".into());
             } else {
-                session.state.status = Some("No active turn to cancel.".into());
+                #[cfg(feature = "voice-conversation")]
+                if voice_stopped {
+                    session.state.status = Some("Voice playback stopped.".into());
+                } else {
+                    session.state.status = Some("No active turn to cancel.".into());
+                }
+                #[cfg(not(feature = "voice-conversation"))]
+                {
+                    session.state.status = Some("No active turn to cancel.".into());
+                }
             }
         }
         "clear_transcript" => session.state.transcript.clear(),
@@ -4754,6 +5210,7 @@ fn apply_keybinding_action(
         "toggle_thinking" => session.state.panels.reasoning = !session.state.panels.reasoning,
         "toggle_working_tree" => cycle_working_tree_panel(session),
         "toggle_voice" => toggle_voice_recording(session),
+        "toggle_voice_conversation" => toggle_voice_conversation(session),
         "discard_voice" => session.voice.discard(),
         "toggle_vim" => {
             session.state.preferences.vim = !session.state.preferences.vim;
@@ -7348,6 +7805,21 @@ fn spawn_vro_react_turn(
         if let Some(skill_context) = routed_skills.context {
             react_prompt.push_str(&skill_context);
         }
+        #[cfg(feature = "voice-conversation")]
+        if compaction_agent
+            .configuration()
+            .system_instructions
+            .iter()
+            .any(|instruction| {
+                instruction.content.iter().any(|part| {
+                    matches!(part, ContentPart::Text(text)
+                if text.as_str() == voice_turn_instruction::INSTRUCTION)
+                })
+            })
+        {
+            react_prompt.push_str("\n\n");
+            react_prompt.push_str(voice_turn_instruction::INSTRUCTION);
+        }
         react_prompt.push_str(&acceptance_instructions);
         let request = vesper_domain::ReasoningRequest {
             request_id: vesper_domain::RequestId::new(uuid::Uuid::new_v4().to_string())
@@ -8137,6 +8609,51 @@ fn drain_agent_event(session: &mut TuiSession) {
             }
             Ok(mut event) => {
                 session.agent_running = false;
+                // VRO-17 PR-4: runtime settlement reaches the voice
+                // session (distinct from message completion); a failed
+                // turn settles as Failed.
+                #[cfg(feature = "voice-conversation")]
+                if session.voice_conversation_host.is_some() {
+                    if let AgentEvent::Completed {
+                        outcome:
+                            AgentTurnOutcome::Completed {
+                                assistant_content, ..
+                            }
+                            | AgentTurnOutcome::Interrupted {
+                                assistant_content, ..
+                            },
+                        ..
+                    } = &event
+                    {
+                        let text = assistant_content
+                            .iter()
+                            .filter_map(|part| match part {
+                                ContentPart::Text(text) => Some(text.as_str()),
+                                _ => None,
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        let events = session
+                            .voice_conversation_host
+                            .as_mut()
+                            .map(|host| host.assistant_final(&text))
+                            .unwrap_or_default();
+                        surface_conversation_events(session, events);
+                    }
+                    let outcome = match &event {
+                        AgentEvent::Completed { .. } => {
+                            vesper_voice::events::AgentSettlement::Completed
+                        }
+                        AgentEvent::Failed(_) => vesper_voice::events::AgentSettlement::Failed,
+                        _ => vesper_voice::events::AgentSettlement::Completed,
+                    };
+                    let events = session
+                        .voice_conversation_host
+                        .as_mut()
+                        .map(|host| host.runtime_settled(outcome))
+                        .unwrap_or_default();
+                    surface_conversation_events(session, events);
+                }
                 session.turn_cancellation = None;
                 session.agent_rx = None;
                 session.steering_tx = None;
@@ -8530,6 +9047,23 @@ fn apply_agent_progress(progress: AgentProgressEvent, session: &mut TuiSession) 
         }
         AgentProgressEvent::ContentDelta { text } => {
             append_bounded(&mut session.live_response, text.as_str(), 32 * 1024);
+            // VRO-17 PR-4: the same visible delta feeds the conversation
+            // speech path (hygiene/gating once, then synthesis effects).
+            #[cfg(feature = "voice-conversation")]
+            if let Some(host) = session.voice_conversation_host.as_mut() {
+                let (units, _) = host.assistant_delta(text.as_str());
+                for unit in &units {
+                    // R3 repair: enqueue (never synthesize inline — the
+                    // event thread must stay responsive for either engine).
+                    let _ = host.speak_unit(unit);
+                }
+                if !units.is_empty()
+                    && session.voice_conversation_phase == ConversationPhase::AwaitingRuntime
+                {
+                    session.voice_conversation_phase = ConversationPhase::Speaking;
+                }
+                drain_speech_status(session);
+            }
         }
         AgentProgressEvent::ToolStarted { name, hint } => {
             // VRO-11.4/11.6/11.8: tool telemetry renders INLINE in the
@@ -14775,6 +15309,7 @@ fn cognitive_context_for_prompt(bundle: &CognitionBundle, prompt: &str) -> Optio
 
 #[cfg(test)]
 mod tests {
+
     //! Phase 6 (ADR 0010) wiring tests.
     //!
     //! The Plan Mode / dispatch / renderer surface lives in the library and
@@ -14897,6 +15432,38 @@ mod tests {
         );
         assert!(!choices(&api, "gpt-6-astra").contains(&"none".into()));
         assert!(surface.by_alias("model").unwrap().allowed_values.iter().any(|v| matches!(v, vesper_provider::SuperpowerValue::Choice { value } if value.as_str() == "gpt-5.3-codex-spark")));
+    }
+
+    #[cfg(feature = "voice-conversation")]
+    #[test]
+    fn f9_instruction_is_turn_scoped_and_survives_configuration_projection() {
+        let provider = ProviderId::new("zai").unwrap();
+        let base = Arc::new(AgentLoop::new(
+            Arc::new(vesper_runtime::ProviderRegistry::new()),
+            ToolRegistry::parity_default(),
+            build_agent_config(&provider).unwrap(),
+        ));
+        let original = base.configuration().system_instructions.len();
+        let voice = voice_turn_agent(&base);
+        let surface = ProviderSuperpowerSurface::new(provider, Vec::new());
+        let projected = turn_configuration(&voice, &SessionState::new(), &surface).unwrap();
+        assert_eq!(base.configuration().system_instructions.len(), original);
+        assert_eq!(projected.system_instructions.len(), original + 1);
+        let text = projected
+            .system_instructions
+            .last()
+            .unwrap()
+            .content
+            .iter()
+            .filter_map(|part| match part {
+                ContentPart::Text(text) => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<String>();
+        assert!(text.contains("not model tools"));
+        assert!(text.contains("Do not discover, invoke, install, or substitute"));
+        assert!(text.contains("also keeps the answer in chat"));
+        assert!(text.contains("Never claim audio played successfully"));
     }
 
     #[tokio::test]
@@ -15748,6 +16315,7 @@ mod tests {
             ("settings", "f3"),
             ("toggle_working_tree", "f4"),
             ("toggle_voice", "f5"),
+            ("toggle_voice_conversation", "f9"),
             ("open_history", "f6"),
             ("toggle_native_mouse", "f7"),
             ("toggle_screen_reader", "f8"),
@@ -16510,6 +17078,11 @@ mod tests {
             working_tree_view: None,
             working_tree_lines: Vec::new(),
             voice: voice::Controller::default(),
+            #[cfg(feature = "voice-conversation")]
+            voice_conversation_host: None,
+            capture_origin: CaptureOrigin::Dictation,
+            #[cfg(feature = "voice-conversation")]
+            voice_conversation_phase: ConversationPhase::Idle,
             selection_anchor: None,
             selected_text: String::new(),
             reasoning_diagnostics: None,
@@ -16583,6 +17156,11 @@ mod tests {
             working_tree_view: None,
             working_tree_lines: Vec::new(),
             voice: voice::Controller::default(),
+            #[cfg(feature = "voice-conversation")]
+            voice_conversation_host: None,
+            capture_origin: CaptureOrigin::Dictation,
+            #[cfg(feature = "voice-conversation")]
+            voice_conversation_phase: ConversationPhase::Idle,
             selection_anchor: None,
             selected_text: String::new(),
             reasoning_diagnostics: None,
@@ -16654,6 +17232,11 @@ mod tests {
             working_tree_view: None,
             working_tree_lines: Vec::new(),
             voice: voice::Controller::default(),
+            #[cfg(feature = "voice-conversation")]
+            voice_conversation_host: None,
+            capture_origin: CaptureOrigin::Dictation,
+            #[cfg(feature = "voice-conversation")]
+            voice_conversation_phase: ConversationPhase::Idle,
             selection_anchor: None,
             selected_text: String::new(),
             reasoning_diagnostics: None,
@@ -17695,6 +18278,24 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "voice-conversation")]
+    #[test]
+    fn voice_wait_status_distinguishes_agent_work_from_synthesis() {
+        let mut session = fresh_tui_session_for_trajectory_tests();
+        session.voice_conversation_phase = ConversationPhase::AwaitingRuntime;
+        session.agent_running = true;
+        session.turn_started = Some(std::time::Instant::now() - std::time::Duration::from_secs(20));
+        drain_speech_status(&mut session);
+        let status = session.state.status.as_deref().unwrap();
+        assert!(status.contains("waiting for speakable agent text"));
+        assert!(status.contains("turn 20."));
+        assert!(!status.contains("Synthesizing"));
+        session.voice_conversation_phase = ConversationPhase::Idle;
+        session.state.status = Some("non-voice status".into());
+        drain_speech_status(&mut session);
+        assert_eq!(session.state.status.as_deref(), Some("non-voice status"));
+    }
+
     /// Builds a minimal TuiSession for the trajectory-drain tests. We don't
     /// need a real provider registry / approval broker — only the
     /// `trajectory_rx` and `reasoning` fields are exercised.
@@ -17757,6 +18358,11 @@ mod tests {
             working_tree_view: None,
             working_tree_lines: Vec::new(),
             voice: voice::Controller::default(),
+            #[cfg(feature = "voice-conversation")]
+            voice_conversation_host: None,
+            capture_origin: CaptureOrigin::Dictation,
+            #[cfg(feature = "voice-conversation")]
+            voice_conversation_phase: ConversationPhase::Idle,
             selection_anchor: None,
             selected_text: String::new(),
             reasoning_diagnostics: None,
@@ -18888,6 +19494,43 @@ mod tests {
     }
 
     #[test]
+    fn non_voice_ctrl_c_keeps_the_generic_runtime_cancellation_path() {
+        let mut session = fresh_tui_session_for_trajectory_tests();
+        let cancellation = Arc::new(vesper_runtime::RuntimeCancellation::new());
+        session.turn_cancellation = Some(Arc::clone(&cancellation));
+        session.agent_running = true;
+        #[cfg(feature = "voice-conversation")]
+        {
+            session.voice_conversation_phase = ConversationPhase::Idle;
+            assert!(session.voice_conversation_host.is_none());
+        }
+        let checkpoints = CheckpointStores {
+            ledger: None,
+            sessions: None,
+            cron: None,
+            exporter: None,
+            clipboard: None,
+            workspace_root: std::env::current_dir().unwrap(),
+            root_display: "test".into(),
+            active_session_id: "test".into(),
+        };
+
+        let quit = apply_keybinding_action(
+            "cancel_turn",
+            &mut session,
+            &CommandRegistry::stage_11b(),
+            &palette_surface(),
+            &ProviderId::new("test-provider").unwrap(),
+            &checkpoints,
+        );
+
+        assert!(!quit);
+        assert!(cancellation.is_cancelled());
+        #[cfg(feature = "voice-conversation")]
+        assert!(session.voice_conversation_host.is_none());
+    }
+
+    #[test]
     fn pasted_image_paths_are_distinguished_from_slash_commands() {
         assert_eq!(
             pasted_image_path("/tmp/reference.avif"),
@@ -19005,3 +19648,149 @@ mod tests {
 
 #[cfg(all(test, feature = "swarm", feature = "docker", unix))]
 mod swarm_host_tests;
+
+/// Which gesture started the capture the voice worker currently owns.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum CaptureOrigin {
+    /// F5: transcript appended to the editable composer; never submits.
+    #[default]
+    Dictation,
+    /// F9: transcript routed to the conversation host as ordinary agent
+    /// input after a valid final.
+    #[cfg(feature = "voice-conversation")]
+    Conversation,
+}
+
+/// The one shared STT adapter instance per TUI process (PR-4 shared
+/// input policy): wraps the shipped sidecar script/venv exactly like
+/// dictation, so conversation reuses the same model and environment
+/// instead of spawning a second sidecar.
+#[cfg(feature = "voice-conversation")]
+struct DictationSharedStt {
+    inner: agent_vesper_tui::voice_shared_stt::SharedSidecarStt,
+}
+
+#[cfg(feature = "voice-conversation")]
+impl vesper_voice::ports::VoiceStt for DictationSharedStt {
+    fn transcribe<'a>(
+        &'a self,
+        audio: &'a [vesper_voice::audio::PcmFrame],
+        cancel: &'a vesper_voice::VoiceCancel,
+    ) -> vesper_voice::ports::VoiceFuture<
+        'a,
+        Result<vesper_voice::ports::SttTranscript, vesper_voice::VoiceError>,
+    > {
+        self.inner.transcribe(audio, cancel)
+    }
+    fn descriptor(&self) -> &vesper_voice::ports::SttDescriptor {
+        self.inner.descriptor()
+    }
+}
+
+/// VRO-17 R16: the selected STT adapter for a conversation host,
+/// resolved from the SAVED execution policy through the shared rule
+/// (the same resolution the F9 gate already used to admit the gesture).
+/// CPU/lesser facts construct the CPU sidecar; a verified FLM route in
+/// a `voice-flm` build constructs the composed NPU adapter. The CPU
+/// sidecar is NOT constructed when the NPU route is selected (no
+/// second recognizer allocation for the NPU path).
+#[cfg(all(feature = "voice-conversation", feature = "voice-flm"))]
+enum SelectedStt {
+    Cpu(DictationSharedStt),
+    FlmNpu(agent_vesper_tui::voice_flm::FlmNpuStt),
+}
+
+#[cfg(all(feature = "voice-conversation", feature = "voice-flm"))]
+impl SelectedStt {
+    fn build() -> Self {
+        let root = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let scope = vesper_voice::read_voice_scope(&root).unwrap_or_default();
+        match agent_vesper_tui::voice_accel::stage_route_for_policy(
+            vesper_voice::SpeechStage::Stt,
+            scope.stt_compute,
+        ) {
+            vesper_voice::execution::StageResolution::Execute(decision)
+                if matches!(
+                    decision.backend,
+                    vesper_voice::execution::StageBackend::Accelerator { .. }
+                ) =>
+            {
+                #[cfg(feature = "voice-flm")]
+                {
+                    let pool = std::sync::Arc::new(
+                        vesper_voice::composition::blocking::ThreadPoolExecutor::new(2),
+                    );
+                    let erased: std::sync::Arc<
+                        dyn vesper_voice::composition::blocking::ValueExecutor,
+                    > = pool as std::sync::Arc<
+                        dyn vesper_voice::composition::blocking::ValueExecutor,
+                    >;
+                    Self::FlmNpu(agent_vesper_tui::voice_flm::FlmNpuStt::new(erased))
+                }
+                #[cfg(not(feature = "voice-flm"))]
+                {
+                    // The gate refuses accelerator selection in builds
+                    // without the route; reaching here is a state bug —
+                    // fall to the honest CPU path, never a fake claim.
+                    Self::Cpu(DictationSharedStt {
+                        inner: agent_vesper_tui::voice_shared_stt::SharedSidecarStt::new(),
+                    })
+                }
+            }
+            _ => Self::Cpu(DictationSharedStt {
+                inner: agent_vesper_tui::voice_shared_stt::SharedSidecarStt::new(),
+            }),
+        }
+    }
+
+    fn into_shared(self) -> std::sync::Arc<dyn vesper_voice::ports::VoiceStt> {
+        match self {
+            Self::Cpu(inner) => std::sync::Arc::new(inner),
+            #[cfg(feature = "voice-flm")]
+            Self::FlmNpu(inner) => std::sync::Arc::new(inner),
+        }
+    }
+}
+
+/// VRO-17 PR-4: conversation glue on the bin side (TuiSession-specific).
+#[cfg(feature = "voice-conversation")]
+mod voice_conversation_glue {
+
+    /// Conversation-mode phase mirrored on the session for rendering.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+    pub enum ConversationPhase {
+        #[default]
+        Idle,
+        Capturing,
+        Transcribing,
+        AwaitingRuntime,
+        Speaking,
+        Interrupted,
+    }
+
+    /// Truthful status line keeping capture/transcription/runtime/speech
+    /// distinct (never a single spinner).
+    pub fn conversation_status_line(
+        phase: ConversationPhase,
+        dictation: agent_vesper_tui::ui::VoicePhase,
+    ) -> String {
+        let dictation = match dictation {
+            agent_vesper_tui::ui::VoicePhase::Idle => "idle",
+            agent_vesper_tui::ui::VoicePhase::Recording => "recording",
+            agent_vesper_tui::ui::VoicePhase::Preparing => "preparing",
+            agent_vesper_tui::ui::VoicePhase::Transcribing => "transcribing",
+            agent_vesper_tui::ui::VoicePhase::Error => "error",
+        };
+        let conversation = match phase {
+            ConversationPhase::Idle => "idle",
+            ConversationPhase::Capturing => "capturing",
+            ConversationPhase::Transcribing => "transcribing",
+            ConversationPhase::AwaitingRuntime => "awaiting agent",
+            ConversationPhase::Speaking => "speaking",
+            ConversationPhase::Interrupted => "interrupted",
+        };
+        format!("Voice conversation: {conversation} · dictation {dictation}")
+    }
+}
+#[cfg(feature = "voice-conversation")]
+use voice_conversation_glue::ConversationPhase;

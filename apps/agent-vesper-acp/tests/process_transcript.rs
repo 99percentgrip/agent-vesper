@@ -157,6 +157,13 @@ fn stdio_transcript_reaches_real_glm_adapter_with_protocol_pure_stdout() {
         json!({"jsonrpc":"2.0","id":3,"method":"session/new","params":{"cwd":"/tmp","mcpServers":[]}}),
     );
     let session_response = response_for(&line_receiver, 3, &mut Vec::new());
+    let session_surface = serde_json::to_string(&session_response["result"]).unwrap();
+    for unsupported in ["voice", "speech", "microphone", "audio"] {
+        assert!(
+            !session_surface.to_ascii_lowercase().contains(unsupported),
+            "ACP session configuration must not advertise unsupported {unsupported} controls"
+        );
+    }
     let session = session_response["result"]["sessionId"]
         .as_str()
         .unwrap()
@@ -184,6 +191,16 @@ fn stdio_transcript_reaches_real_glm_adapter_with_protocol_pure_stdout() {
         "the post-response advertisement carries frozen plus host-parity commands \
          (28 frozen + 19 host-parity, including /skill and /web)"
     );
+    let advertised_commands =
+        serde_json::to_string(&advertisement["params"]["update"]["availableCommands"])
+            .unwrap()
+            .to_ascii_lowercase();
+    for unsupported in ["voice", "speech", "microphone", "audio"] {
+        assert!(
+            !advertised_commands.contains(unsupported),
+            "ACP command catalog must not advertise unsupported {unsupported} controls"
+        );
+    }
 
     send(
         &mut stdin,

@@ -1,0 +1,67 @@
+{
+  "criterion": "case-insensitive exact match of the whitespace-normalized transcript to the pre-selected expected sentence (chosen before running; case folding because the two cached models differ in case fidelity)",
+  "sentence": "Testing voice recognition with a clear sentence.",
+  "runs": [
+    {
+      "model": "tiny",
+      "vad": "vad_filter=True (shipped script)",
+      "fixture": "speech",
+      "fixture_sha256": "eeb0f91fedc39af5682b8cda48815e1c1503c1b92f8482c01e1f5e93b5014bfc",
+      "expected": "Testing voice recognition with a clear sentence.",
+      "observed_normalized": "Testing voice recognition with a clear sentence.",
+      "pass": true,
+      "source": "synthetic speech (espeak-ng render of a fixed sentence); not human-microphone evidence"
+    },
+    {
+      "model": "tiny",
+      "vad": "vad_filter=True (shipped script)",
+      "fixture": "speech_trailing",
+      "fixture_sha256": "8fe0c0f395778ab379bc471940044bdbb91651928cea420b7f65553e3bc50341",
+      "expected": "Testing voice recognition with a clear sentence.",
+      "observed_normalized": "Testing voice recognition with a clear sentence.",
+      "pass": true,
+      "source": "synthetic speech (espeak-ng render of a fixed sentence); not human-microphone evidence"
+    },
+    {
+      "model": "tiny",
+      "vad": "vad_filter=True (shipped script)",
+      "fixture": "silence",
+      "fixture_sha256": "40abc924dc63f75aafb2400bb99fd66741e22eb9ff2450973a18db53a06286ac",
+      "expected": "",
+      "observed_normalized": "",
+      "pass": true,
+      "source": "synthetic speech (espeak-ng render of a fixed sentence); not human-microphone evidence"
+    },
+    {
+      "model": "base",
+      "vad": "vad_filter=True (shipped script)",
+      "fixture": "speech",
+      "fixture_sha256": "eeb0f91fedc39af5682b8cda48815e1c1503c1b92f8482c01e1f5e93b5014bfc",
+      "expected": "Testing voice recognition with a clear sentence.",
+      "observed_normalized": "testing voice recognition with a clear sentence.",
+      "pass": true,
+      "source": "synthetic speech (espeak-ng render of a fixed sentence); not human-microphone evidence"
+    },
+    {
+      "model": "base",
+      "vad": "vad_filter=True (shipped script)",
+      "fixture": "speech_trailing",
+      "fixture_sha256": "8fe0c0f395778ab379bc471940044bdbb91651928cea420b7f65553e3bc50341",
+      "expected": "Testing voice recognition with a clear sentence.",
+      "observed_normalized": "testing voice recognition with a clear sentence.",
+      "pass": true,
+      "source": "synthetic speech (espeak-ng render of a fixed sentence); not human-microphone evidence"
+    },
+    {
+      "model": "base",
+      "vad": "vad_filter=True (shipped script)",
+      "fixture": "silence",
+      "fixture_sha256": "40abc924dc63f75aafb2400bb99fd66741e22eb9ff2450973a18db53a06286ac",
+      "expected": "",
+      "observed_normalized": "",
+      "pass": true,
+      "source": "synthetic speech (espeak-ng render of a fixed sentence); not human-microphone evidence"
+    }
+  ],
+  "overall_pass": true
+}

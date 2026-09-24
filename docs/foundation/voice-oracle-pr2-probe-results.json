@@ -1,0 +1,70 @@
+{
+  "runs": [
+    {
+      "text_kind": "short",
+      "engine": "espeak-ng",
+      "engine_version": "eSpeak NG text-to-speech: 1.52.0  Data at: /usr/share/espeak-ng-data",
+      "first_output_s": 0.0076,
+      "total_generation_s": 0.0088,
+      "exit_code": 0,
+      "wav": {
+        "audio_format": 1,
+        "channels": 1,
+        "sample_rate_hz": 22050,
+        "bits": 16,
+        "riff_size_field": 2147479588,
+        "data_size_field": 2147479552,
+        "actual_bytes": 61450,
+        "duration_s": 1.392
+      },
+      "note": "audio proves synthesis output only; no listening/intelligibility check performed"
+    },
+    {
+      "text_kind": "sentence-pair",
+      "engine": "espeak-ng",
+      "engine_version": "eSpeak NG text-to-speech: 1.52.0  Data at: /usr/share/espeak-ng-data",
+      "first_output_s": 0.0054,
+      "total_generation_s": 0.0082,
+      "exit_code": 0,
+      "wav": {
+        "audio_format": 1,
+        "channels": 1,
+        "sample_rate_hz": 22050,
+        "bits": 16,
+        "riff_size_field": 2147479588,
+        "data_size_field": 2147479552,
+        "actual_bytes": 140334,
+        "duration_s": 3.181
+      },
+      "note": "audio proves synthesis output only; no listening/intelligibility check performed"
+    },
+    {
+      "text_kind": "code-skipped",
+      "engine": "espeak-ng",
+      "engine_version": "eSpeak NG text-to-speech: 1.52.0  Data at: /usr/share/espeak-ng-data",
+      "first_output_s": 0.0054,
+      "total_generation_s": 0.0079,
+      "exit_code": 0,
+      "wav": {
+        "audio_format": 1,
+        "channels": 1,
+        "sample_rate_hz": 22050,
+        "bits": 16,
+        "riff_size_field": 2147479588,
+        "data_size_field": 2147479552,
+        "actual_bytes": 139492,
+        "duration_s": 3.162
+      },
+      "note": "audio proves synthesis output only; no listening/intelligibility check performed"
+    }
+  ],
+  "storage": {
+    "probe_dir": "/tmp/vesper-voice-pr2-probe",
+    "peak_aggregate_bytes": 341276,
+    "residual_after_cleanup": 0,
+    "tmp_avail_before_bytes": 14277828608,
+    "tmp_avail_after_bytes": 14277828608,
+    "per_file_limit": 8388608,
+    "aggregate_limit": 33554432
+  }
+}

@@ -118,8 +118,9 @@ Voice input is optional and supported in the Linux/macOS terminal app. It needs 
 
 Starting with v0.23.0, click the red **● Push to talk** control (or press **F5**)
 to start recording. Click **■ Stop** or press F5 again to transcribe. Recording
-continues until Stop, with elapsed time shown; available disk and recorder limits
-still apply. Transcription shows progress and keeps the composer editable.
+continues until Stop or the managed 120-second/4-MiB per-capture bound, with
+elapsed time shown. The store also enforces a 32-MiB cross-instance aggregate
+cap and a 1-GiB free-space reserve. Transcription shows progress and keeps the composer editable.
 Press F5 while preparing/transcribing to cancel. Failed or cancelled transcription
 retains private audio for **Retry voice** or **Discard** (Delete); it is removed
 on success, discard or normal app exit. Completed dictation is appended to the
@@ -128,6 +129,39 @@ composer for review and is never sent automatically.
 If no suitable transcription environment exists, first use attempts to install `faster-whisper` into Vesper's voice environment and download the chosen model. This needs network access and can take time. The POSIX installer bundles `uv` when its download succeeds; a system `uv` or Python virtual-environment setup is the fallback.
 
 If recording is unavailable, confirm the recording command is on PATH and the terminal has microphone access. Voice setup is separate from ordinary text-based coding.
+
+For conversation, open **Settings → Voice**, turn **Voice conversation** on,
+choose recognition/synthesis compute and a speech engine, then leave Settings
+and choose **Save changes**. Press F9 once to start capture and again to Stop and
+submit the final transcript as one normal turn. Current CPU and FLM recognizers
+are final-only: the **Live transcript preview** row says that preview is not
+supported while confirming that final text still appears after Stop. F9 during
+spoken output performs barge-in; it stops old speech and begins replacement
+capture in the same gesture. Ctrl+C / explicit Stop cancels the current voice
+work without opening capture.
+
+On compatible AMD Linux systems with FLM and its Whisper model already present,
+use **Accelerated recognition (FLM NPU) → Verify**. Verify checks the device,
+runtime, model and local recognition path without recording or downloading.
+CPU recognition remains available when accelerated recognition is not selected
+or supported. Vesper does not provide NPU speech synthesis.
+
+### Optional Natural Voice pack
+
+Voice conversation can speak through the system speech engine. For a local neural voice, the Linux x86_64 terminal build offers an optional voice pack — Settings → Voice → *Natural Voice pack* → **Install voice pack**. The confirmation shows the exact download (about 98 MiB), installed size (about 113 MiB), and peak extra space before anything is downloaded; progress is real byte progress you can stop with Esc. Installation verifies every file against its pinned source and runs a silent synthesis check before the pack reads Ready. It never selects the engine, enables conversation, or plays audio by itself.
+
+After installation, choose **Speech engine → Neural voice**, pick Heart or Michael, and leave Settings with **Save changes**. **Preview voice** plays a fixed phrase through your audio player without submitting anything to the agent. **Repair / Verify** revalidates the pack; **Remove voice pack** reclaims about 113 MiB and deletes only pack-owned files (it refuses while another running Vesper process is using the pack). Speech runs entirely locally; it does not change your main coding provider. Removing the pack while it is your selected voice makes that voice unavailable until you choose another engine and save.
+
+Pronunciation uses your system `espeak-ng`; install it with your package manager if it is missing (the readiness report names it). Licenses: model/voices/export Apache-2.0, ONNX Runtime MIT, espeak-ng GPL-3.0 (system component used at a process boundary).
+
+All shipped STT/TTS routes are local or explicitly configured self-hosted
+routes. Vesper v1 includes no third-party cloud speech provider. Local speech
+never silently falls back to cloud; future optional cloud adapters must use the
+existing credential and egress controls, and cloud TTS must pass mandatory text
+hygiene/redaction before transmission. Local speech does not make the selected
+reasoning provider local: the final transcript and ordinary agent context still
+go to that provider. ACP editor sessions have no microphone/audio transport,
+speaker playback or Voice Settings surface; use the terminal app for voice.
 
 ## Update or choose a version
 

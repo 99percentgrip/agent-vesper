@@ -50,6 +50,44 @@ Use `/settings` for provider selection and optional feature setup. Provider cont
 
 `/usage` reports the current model, reasoning, permissions, estimated context, and provider-reported account windows when available. Missing account information is shown as unavailable. Using a local harness does not make cloud-provider requests local; the selected provider receives the context needed for those requests.
 
+## Voice in the terminal app
+
+Voice is opt-in in **Settings → Voice**. Use **F5** (or the bottom-panel
+**Push to talk** control) for dictation: press once to record and again to Stop.
+The final transcript is added to the composer for review and is never submitted
+automatically. Use **F9** for voice conversation after enabling it and saving
+Settings: Stop completes capture, submits exactly one ordinary agent turn, and
+speaks the reply through the selected local engine.
+
+Current recognizers are final-only. Settings therefore labels **Live transcript
+preview** as unsupported by the selected recognizer while also stating that the
+final text appears after Stop. This describes the optional preview capability;
+it does not mean recognition is unavailable. CPU recognition is the portable
+local route. On supported AMD Linux systems, **Accelerated recognition (FLM
+NPU) → Verify** checks the installed device, runtime and model through the real
+local recognition composition before Automatic or NPU-required selection can
+use it. Verification does not record, download, or send audio.
+
+For speech output, the system voice remains available. The optional **Natural
+Voice pack** adds local CPU Kokoro voices after its confirmed install and
+verification flow. No NPU TTS route is advertised. While Vesper is speaking,
+one F9 press stops the old speech and starts replacement capture; repeated
+barge-in is supported. **Ctrl+C / Stop** cancels playback, synthesis and the
+active runtime turn without starting capture, and a later F9 remains available.
+
+Microphone audio and local synthesized speech stay on the machine. The selected
+reasoning provider is separate: the final transcript and normal conversation
+context are sent to that provider under its own privacy terms. Vesper v1 ships
+no third-party cloud STT or TTS adapter, never silently falls back from local
+speech to cloud, and does not advertise cloud speech. Such adapters are a future
+optional feature behind explicit configuration, credentials, egress/privacy,
+redaction and provider acceptance gates.
+
+ACP editor sessions advertise no audio capability and do not expose microphone,
+speaker, voice-status or Voice Settings controls. They retain the same generic
+reasoning-provider runtime and cancellation semantics; audio stays a terminal
+host capability and never appears as raw PCM or local status on ACP stdout.
+
 ## Useful commands
 
 Type `/` to explore available commands or `/help` for the installed version's reference. Some terminal-only controls differ from editor controls.

@@ -8,7 +8,17 @@
     },
     {
       "path": "crates/vesper-agent/src/project_context.rs",
+      "sha256": "09455125f949bc6effab2b75ba84294d96dd16be8bc3625ab57ca3c331c9d1ac",
+      "count": 1
+    },
+    {
+      "path": "crates/vesper-agent/src/project_context.rs",
       "sha256": "69eb73fb1067b8a488766d7fe8dccddd312175cbe436079195ec65ed32078edd",
+      "count": 1
+    },
+    {
+      "path": "crates/vesper-agent/src/project_context.rs",
+      "sha256": "6b1ff4fd834d654d82acec1950ba775c38a09d6fa236cdc45c3c1282a14f74cf",
       "count": 1
     },
     {
@@ -24,6 +34,11 @@
     {
       "path": "crates/vesper-domain/src/tool.rs",
       "sha256": "cf50463b0643003608908c6fbb86bf252e3f4084ead0ebf52a0c1b16dbfc01ce",
+      "count": 1
+    },
+    {
+      "path": "crates/vesper-security/src/scope.rs",
+      "sha256": "9912965f72ae61ade89ba12173181b9d197f87c2e135712d3d3559f867596931",
       "count": 1
     },
     {

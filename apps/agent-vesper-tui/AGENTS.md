@@ -648,6 +648,142 @@ business logic.
   a busy owner refuses the switch. Exit drops the owner (ADR 0031).
   `mcp_tui_wrapped_registry_retains_the_session_gateway` checks wrapper wiring.
 
+- Voice latency optimization must preserve Alex's selected model/reasoning unless
+  separately changed by the user. Native NPU support is requested for BOTH STT
+  and TTS, with independent backend/model/offload/quality gates and CPU kept usable.
+  Detection is not inference support; setup/activation must be native Settings,
+  consented, verified, and preserve existing runtimes/workloads. Current NPU
+  evidence and open gates live in `docs/foundation/voice-first-speech-and-npu-assessment.md`.
+  Clarified-R16 selection policy is enforced by `voice_accel.rs` + the pure-core
+  `vesper_voice::execution` resolver: per-stage CPU / Automatic-verified-only /
+  strict-NPU; CPU policy never consults the accelerator registry (zero calls);
+  Automatic-choosing-CPU is an ordinary outcome; strict refusals name the stage
+  blocker and the Settings action; readiness facts are evidence-based and cached
+  in-process only. No NPU route is registered until a real adapter passes its
+  gate — the strict menu option stays hidden, never decorative. Evidence:
+  `docs/foundation/voice-capability-gated-execution.md`.
+
+- The playback player argv must NOT request fatal-error behavior
+  (`--fatal-errors`): the player's documented default recovers device xruns,
+  while the flag aborts mid-stream — under per-piece feeding that killed the
+  child during starvation gaps and surfaced as EPIPE on the next piece
+  (Alex's repeated-turn failure). A pipe-write failure means the child died
+  first: preserve the original io error (kind + OS code) with the truthful
+  consequence text, never an invented device hypothesis. A failed stream is
+  contained (remaining pieces fail fast; next turn opens a fresh child), and
+  exit 0 before our stdin close is a short-consumer failure, never `Drained`.
+  Evidence: `docs/foundation/voice-multiturn-playback-repair.md`.
+
+- Preview and F9 share ONE execution-policy rule: the Natural Voice pack screen
+  resolves the TTS stage through `voice_accel::preview_policy_gate` (the same
+  shared `stage_route_for_policy` the F9 gate uses) against the visible draft,
+  refuses identically under strict policy, and never saves the draft. Pack-screen
+  rows and action handlers derive from one ordered `PackAction` list — never
+  recompute indexes by hand (an off-by-one made Preview fire Repair; caught by
+  the PTY loop, not unit tests). `ConversationHost::reload_engine_selection`
+  sends `Replace` only on a real selection change: a no-op or voice-only save
+  must not bump the speech generation or rebuild the acoustic engine. Production
+  loop evidence and the interruption/lifecycle suites:
+  `docs/foundation/voice-cpu-production-acceptance.md`.
+
+- Speech sentence delivery overlaps successor synthesis with current playback
+  through a rendezvous handoff carrying a BOUNDED TWO-UNIT bank
+  (`sync_channel::<PreparedSpeech>(2)`, D25 boundary repair — depth 1 is
+  derived-insufficient and depth 0 serialized the producer behind the lane's
+  write+drain, landing uncovered slow successors as dead air); do not
+  reintroduce serial synthesis/drain pauses or unbounded ahead-of-playback
+  buffering. Hygiene-approved units split
+  losslessly: the FIRST piece targets 28 characters at a genuine clause boundary
+  (word fallback, honestly reported) protecting acoustic onset, and SUCCESSORS are
+  sentence-level — one whole sentence per inference within the 510-phoneme-ID
+  context budget, with the bounded clause/word fallback for over-budget
+  sentences. (Supersedes the historical 28/48 micro-cut policy: per-piece model
+  fade quiet stacked 0.25–0.46 s per side at every artificial mid-sentence cut —
+  7.2 s inserted silence in a 41 s passage — versus 2.9 s at natural sentence
+  boundaries under the sentence-level policy. Very short units stay whole.) One
+  player stream, cumulative byte receipts and exactly
+  one terminal outcome remain attached to the original segment. Prepared canonical
+  PCM is capped at 16 MiB per piece (adapter allocations are separate). Stop and selection
+  replacement invalidate queued/prepared audio and serialize with stream admission,
+  never blocking pipe writes or drain waits. Stale work cannot reopen the player;
+  fresh generations recover normally. Independent synthesis/player stage clocks
+  and the upstream speakable-text wait status distinguish local work from agent
+  waiting without claiming acoustic onset or assigning all waiting to the provider.
+  This is terminal audio composition; ACP has no device-playback owner.
+
+- Kokoro edge cleanup is limited to short hygiene units (at most 64
+  characters), where the model's fixed leading/trailing padding dominates the
+  reply and caused the reproduced hiccup. Neural PCM keeps 50 ms at artificial
+  piece joins and 100 ms per side at real sentence joins; the first onset stays
+  intact. Long units retain their full envelope and synthesis-cover margin,
+  system speech is untouched, and wholly quiet/very-soft PCM fails safe without
+  trimming. Evidence: `docs/foundation/voice-short-reply-quality-repair.md`.
+
+- Voice latency is an explicit user requirement: F9 recording must not wait for
+  Python import/probing or inference-session load. Start an existing backend
+  sidecar concurrently with capture; prepare Kokoro on the speech worker.
+  Enabled neural voice gets read-only background integrity preflight at terminal
+  startup; unchanged assets use the bounded verified-identity cache. The Natural
+  Voice pack screen owns one reusable Preview worker that prepares while its menu
+  is visible and serves repeat previews without reconstructing the runtime; leaving
+  the screen drops it. Cold/changed assets still require full verification. Measure recorder onset and first PCM
+  separately from real transcription/provider/audio latency; do not claim instant
+  replies from fixture timings. Missing setup and recorder failures stay visible.
+- Managed capture space checks accept a not-yet-created data root by measuring
+  its nearest existing ancestor. Only absence allows ascent; unknown space or
+  permission failures still refuse capture before allocation.
+
+- Playback drains player stderr concurrently and classifies only the first 4096
+  bytes into static actionable diagnostics; raw stderr never enters chat. Error
+  classification is not proof of device health or audibility.
+
+- F9 is host-owned speech delivery through the saved engine/voice, with the
+  substantive answer retained in chat. `src/voice_turn_instruction.rs` describes
+  that contract only on voice turns; it forbids model-authored shell speech or
+  alternate-engine substitution. It is instruction, not a shell security filter.
+  Direct/VRO inherit the turn configuration; ReAct receives the same voice-only
+  context. ACP has no F9/playback owner: this is a justified terminal-only
+  exclusion, not a new model tool or shared cognition behavior.
+- VRO-17 R6 binds one production F9 gesture through
+  `ConversationHost::apply_conversation_gesture`. Speaking with no active
+  recorder delegates directly to the session-owned genuine `BargeIn`
+  transition: urgent playback flush + speech-worker generation invalidation,
+  one transactional runtime-cancel request, and immediate replacement capture.
+  The TUI must not synthesize this as `StopRequested` + `CaptureStarted` or
+  require a second F9. Explicit `cancel_turn`/Ctrl+C routes active speech
+  through `InterruptionControl::Stop` (same urgent stop and transactional
+  cancel, no capture); outside active voice speech the generic Ctrl+C path is
+  unchanged. Interruption context is staged by the session at most once.
+  Production-entry evidence: `tests/voice_r6_binding.rs`; execution record:
+  `docs/foundation/voice-r6-binding-repair.md`.
+- F9-origin capture transcription runs through the *selected* STT adapter:
+  `voice.rs`'s worker carries a conversation-STT slot the F9 gate fills from
+  `SelectedStt::build()` (the composed FLM NPU route when the saved scope and
+  per-process verification admit it; the shared CPU sidecar instance
+  otherwise — one recognizer per process either way). A conversation-origin
+  `Control::Stop` transcribes via that adapter and never spawns or consults a
+  second CPU sidecar; the CPU path stays acceleration-blind. The shared
+  sidecar's interpreter resolution honors the same `VESPER_PYTHON_PATH` /
+  `GLM_VENV_PATH` / installed-venv precedence as dictation F5
+  (`shared_voice_python`; the silent drop of that precedence was the
+  FLM-session regression the legacy PTY loop caught). Settings' readiness
+  lines resolve through the shared `execution_rows` rule and report
+  requested policy, availability, next-request route and the real
+  last-request receipt as separate facts; "using" is never claimed from a
+  static picture.
+- Settings calls optional partial STT output a **Live transcript preview**.
+  A final-only recognizer says the preview is not supported and explicitly
+  confirms that final text still appears after Stop; it never labels speech
+  recognition itself unavailable. The saved future-capability preference is
+  preserved and the R4 provider-capability gate remains authoritative.
+- Streamed and terminal-only voice answers feed the same hygiene gate, without
+  replaying streamed answers on completion. Speech failures remain visible in
+  chat; pipe writes never imply playback completion. Worker admission is bounded
+  to 32 units of at most 8192 bytes; queued jobs retain their enqueue generation.
+  Playback control locks must not span blocking pipe writes or drain waits.
+  Speech Stop suppresses later units for that reply without losing its text;
+  a new voice turn clears the suppression.
+
 - OpenAI account models refresh after native authentication and when reopening
   Settings. Render from the bounded result, use an available default for a fresh
   surface, retain explicit selections for validation, and reject unavailable choices
@@ -886,6 +1022,15 @@ business logic.
   F4 cycles bounded real Changes/Git/Diff/Files/GitHub views. `src/voice.rs`
   owns the microphone worker, recorder/sidecar processes and private temporary
   audio. `src/voice_transcribe.py` is the embedded local PCM chunk protocol.
+  `src/voice_vad.py` is the persistent backend-neutral Silero VAD worker
+  (canonical mono i16 16 kHz WAV in; distinct confirmed-silence result with no
+  output file; speech-only canonical WAV out, atomically published; bounded
+  metadata-only errors). It exists to front speech backends that have no VAD of
+  their own (FLM ASR hallucinates on unfiltered silence); installed
+  faster-whisper 1.2.1's `collect_chunks` returns `(audio_tuple, segments)` and
+  the worker concatenates the per-segment arrays before quantization. It is not
+  yet wired into production routing; evidence and the launch-gate correction
+  live in `docs/foundation/voice-npu-stt-implementation-progress.md`.
   F5 and the footer toggle start/stop capture; red circle “Push to talk” becomes
   red square “Stop”. Preparing/transcribing remain cancellable and do not block
   rendering or composer input. Voice Stop is distinct from agent cancellation.
@@ -1009,6 +1154,22 @@ The crate pins `ratatui = "=0.30.2"` and `crossterm = "=0.29.0"` together:
 Do not downgrade ratatui or crossterm, and do not drop the `windows`
 feature, without re-running `cargo deny check`, `cargo audit`, and the
 five-target CI matrix.
+
+- VRO-17 R3 (opt-in `voice-kokoro` feature, implies `voice-conversation`):
+  the Natural Voice pack. `settings_host.rs` owns the Voice panel's
+  engine selection, the pack screen (Install with the confirmed real-
+  numbers dialog, real byte progress with Esc-stop, Preview through the
+  real adapter + PlaybackOwner with a visible stop — never a turn, never
+  the microphone, never committing the draft —, Repair/Verify that asks
+  before transfers, measured ownership-safe Remove, Details with
+  licenses/provenance), and the save-flow engine re-resolution.
+  `voice_readiness.rs` joins pack+phonemizer checks into the ONE shared
+  assessment the F9 gate and the panel both read (enabled-but-blocked
+  names the prerequisite; no silent engine fallback). The adapter crate
+  `vesper-voice-kokoro` owns the pack cache under
+  `~/.local/share/agent-vesper/voice-pack`; the TUI never seeds or
+  bypasses setup. Default/`voice-conversation`-only builds compile none
+  of this and offer no install that can never work.
 
 ## Child DOX Index
 

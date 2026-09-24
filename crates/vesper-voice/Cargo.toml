@@ -1,0 +1,46 @@
+[package]
+name = "vesper-voice"
+description = "VRO-17 PR-0: provider-neutral voice contracts - types, ports, descriptors, configuration, fakes (no adapters, no I/O)"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[features]
+# PR-1 adapter surfaces. Default-off: the pure core must compile bare.
+# stt-sidecar: Rust adapter driving the shipped Python sidecar (compatibility inference).
+stt-sidecar = []
+# stt-http: configured self-hosted remote STT over HTTP.
+stt-http = []
+# PR-2: synthesis-only local TTS over a user-installed system speech
+# engine (text in, canonical PCM out; no playback, no files).
+tts-subprocess = []
+
+[dependencies]
+futures-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+vesper-domain = { path = "../vesper-domain", version = "=0.23.4" }
+vesper-security = { path = "../vesper-security", version = "=0.23.4" }
+
+[[test]]
+name = "pr1_adapters"
+required-features = ["stt-sidecar", "stt-http"]
+
+[[test]]
+name = "pr2_tts"
+required-features = ["tts-subprocess"]
+
+[[test]]
+name = "pr3_session"
+
+[dev-dependencies]
+futures-util.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "rt", "time"] }
+
+[lints]
+workspace = true

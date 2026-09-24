@@ -154,7 +154,7 @@ jobs:
           test "$registry_version" = "$workspace_version"
       - name: Build ACP and TUI binaries
         shell: bash
-        run: cargo build --locked --release --package agent-vesper-acp --package agent-vesper-tui --package vesper-web-fetch --package vesper-sandbox --features agent-vesper-acp/docker,agent-vesper-tui/docker,agent-vesper-acp/swarm,agent-vesper-tui/swarm,agent-vesper-acp/bridge,agent-vesper-tui/bridge --target "${{ matrix.target }}"
+        run: cargo build --locked --release --package agent-vesper-acp --package agent-vesper-tui --package vesper-web-fetch --package vesper-sandbox --features agent-vesper-acp/docker,agent-vesper-tui/docker,agent-vesper-acp/swarm,agent-vesper-tui/swarm,agent-vesper-acp/bridge,agent-vesper-tui/bridge,agent-vesper-tui/voice-kokoro,agent-vesper-tui/voice-flm --target "${{ matrix.target }}"
       - name: Package Unix archive
         if: matrix.platform == 'unix'
         shell: bash
@@ -238,6 +238,7 @@ jobs:
             gh release create "$RELEASE_TAG" \
               --repo "$GITHUB_REPOSITORY" \
               --title "Agent Vesper $RELEASE_TAG" \
+              --notes "VRO-17 ships the local terminal speech stack: CPU and capability-verified FLM/NPU recognition plus local CPU Kokoro synthesis. Cloud STT/TTS adapters are planned future optional integrations and are not included in this release. ACP continues to advertise no microphone/audio capability." \
               --generate-notes
           fi
           gh release upload "$RELEASE_TAG" dist/* \

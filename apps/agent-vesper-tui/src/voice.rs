@@ -34,6 +34,14 @@ pub struct Controller {
     cancel: Arc<AtomicBool>,
     quit: Arc<AtomicBool>,
     worker: Option<thread::JoinHandle<()>>,
+    /// VRO-17 R16: mirror of the worker's conversation-STT slot
+    /// (the SELECTED adapter: the composed FLM NPU route when the
+    /// saved scope and per-process verification admit it, otherwise
+    /// the shared CPU sidecar instance — one recognizer per process
+    /// either way).
+    #[cfg(all(feature = "voice-conversation", feature = "voice-flm"))]
+    conversation_stt:
+        std::sync::Arc<std::sync::Mutex<Option<std::sync::Arc<dyn vesper_voice::ports::VoiceStt>>>>,
 }
 impl Default for Controller {
     fn default() -> Self {
@@ -42,11 +50,23 @@ impl Default for Controller {
         let state = Arc::new(Mutex::new(Snapshot::default()));
         let cancel = Arc::new(AtomicBool::new(false));
         let quit = Arc::new(AtomicBool::new(false));
+        #[cfg(all(feature = "voice-conversation", feature = "voice-flm"))]
+        let conversation_stt = std::sync::Arc::new(std::sync::Mutex::new(None));
         let worker = {
             let state = state.clone();
             let cancel = cancel.clone();
             let quit = quit.clone();
-            thread::spawn(move || Worker::new(state, cancel, quit, out).run(rx))
+            #[cfg(all(feature = "voice-conversation", feature = "voice-flm"))]
+            let conversation_stt = conversation_stt.clone();
+            thread::spawn(move || {
+                #[allow(unused_mut)]
+                let mut worker = Worker::new(state, cancel, quit, out);
+                #[cfg(all(feature = "voice-conversation", feature = "voice-flm"))]
+                {
+                    worker.conversation_stt = conversation_stt;
+                }
+                worker.run(rx)
+            })
         };
         Self {
             tx,
@@ -55,6 +75,8 @@ impl Default for Controller {
             cancel,
             quit,
             worker: Some(worker),
+            #[cfg(all(feature = "voice-conversation", feature = "voice-flm"))]
+            conversation_stt,
         }
     }
 }
@@ -64,6 +86,17 @@ impl Controller {
     }
     pub fn take_text(&self) -> Option<String> {
         self.text.try_recv().ok()
+    }
+    /// VRO-17 R16: installs the conversation-selected STT adapter
+    /// for F9-origin captures (the composed FLM NPU route when the
+    /// saved scope selects it). Called by the F9 gate after the
+    /// shared assessment admits the gesture; the CPU scope leaves
+    /// the slot empty so the existing sidecar path is unchanged.
+    #[cfg(all(feature = "voice-conversation", feature = "voice-flm"))]
+    pub fn set_conversation_stt(&self, stt: std::sync::Arc<dyn vesper_voice::ports::VoiceStt>) {
+        if let Ok(mut slot) = self.conversation_stt.lock() {
+            *slot = Some(stt);
+        }
     }
     pub fn toggle(&self) {
         let mut state = self.state.lock().unwrap();
@@ -128,6 +161,34 @@ impl Drop for Controller {
     }
 }
 struct Process(Child);
+/// The Linux recorder-stream pump: joins the drain thread and holds the
+/// shared capture slot (the worker takes the capture back at Stop).
+struct PumpHandle {
+    join: Option<std::thread::JoinHandle<()>>,
+    slot: std::sync::Arc<
+        std::sync::Mutex<Option<agent_vesper_tui::voice_capture_store::ManagedCapture>>,
+    >,
+    /// Set when the store's hard CAP (not a mere EOF) ended the capture.
+    cap_hit: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+impl PumpHandle {
+    /// Joins the pump thread after the recorder stopped (its stdout
+    /// closes; the loop exits; the capture is finalized in-thread).
+    fn join_and_finish(&mut self) {
+        if let Some(join) = self.join.take() {
+            let _ = join.join();
+        }
+    }
+}
+impl Drop for PumpHandle {
+    fn drop(&mut self) {
+        if let Some(join) = self.join.take() {
+            let _ = join.join();
+        }
+        // If the capture is still in the slot at drop (worker died
+        // before Stop), the un-retained ManagedCapture cleans itself.
+    }
+}
 impl Drop for Process {
     fn drop(&mut self) {
         // Place POSIX helpers in their own group; cancel package-manager descendants too.
@@ -157,11 +218,18 @@ fn spawn(command: &mut Command) -> Result<Process, String> {
     })
 }
 struct Audio {
-    _dir: tempfile::TempDir,
+    /// Retained managed capture, when the capture is store-owned (the
+    /// normal path after the R20 repair). Holding it keeps the capture
+    /// directory alive until this Audio is dropped/cleaned.
+    managed: Option<agent_vesper_tui::voice_capture_store::ManagedCapture>,
+    /// Legacy private tempdir (kept only for pre-repair compatibility of
+    /// the in-file unit tests below; production captures are managed).
+    _dir: Option<tempfile::TempDir>,
     path: PathBuf,
     chunks: Vec<String>,
 }
 impl Audio {
+    #[cfg(test)]
     fn new() -> Result<Self, String> {
         let dir = tempfile::Builder::new()
             .prefix("vesper-voice-")
@@ -169,13 +237,45 @@ impl Audio {
             .map_err(|_| "Cannot create private audio directory.")?;
         let path = dir.path().join("recording.wav");
         Ok(Self {
-            _dir: dir,
+            managed: None,
+            _dir: Some(dir),
             path,
             chunks: vec![],
         })
     }
+    /// Wraps a retained managed capture (R20): the store owns the file;
+    /// `retain_for_transcription` has already marked it retained.
+    fn for_managed(mut capture: agent_vesper_tui::voice_capture_store::ManagedCapture) -> Self {
+        let path = capture.retain_for_transcription();
+        Self {
+            managed: Some(capture),
+            _dir: None,
+            path,
+            chunks: vec![],
+        }
+    }
+}
+impl Drop for Audio {
+    fn drop(&mut self) {
+        // Explicit cleanup on every drop: the retained capture directory
+        // is ours; never a foreign file, never a symlink target.
+        if let Some(capture) = self.managed.take() {
+            let _ = capture.cleanup();
+        }
+    }
 }
 struct Worker {
+    /// VRO-17 R20 (2026-09-23 repair): every explicit capture is owned
+    /// by the ONE managed store. On Linux the capture lives in the pump
+    /// slot during recording and is taken back at Stop; on macOS the
+    /// recorder writes the store path directly and the capture stays
+    /// here. Dictation (F5, default builds) and conversation (F9,
+    /// feature builds) share this ownership policy; only what happens
+    /// after transcription differs.
+    #[cfg(not(target_os = "linux"))]
+    managed: Option<agent_vesper_tui::voice_capture_store::ManagedCapture>,
+    #[cfg(target_os = "linux")]
+    pump: Option<PumpHandle>,
     state: Arc<Mutex<Snapshot>>,
     cancel: Arc<AtomicBool>,
     quit: Arc<AtomicBool>,
@@ -185,6 +285,15 @@ struct Worker {
     started: Option<Instant>,
     python: Option<String>,
     sidecar: Option<Sidecar>,
+    /// VRO-17 R16: the conversation-selected STT adapter (F9 origin).
+    /// When present, a conversation capture's transcription runs through
+    /// this adapter (the composed FLM NPU route when the saved scope
+    /// selects it) — never the CPU sidecar. Shared with the conversation
+    /// host (one instance, one warm child per process); the worker never
+    /// constructs a second recognizer.
+    #[cfg(all(feature = "voice-conversation", feature = "voice-flm"))]
+    conversation_stt:
+        std::sync::Arc<std::sync::Mutex<Option<std::sync::Arc<dyn vesper_voice::ports::VoiceStt>>>>,
 }
 impl Worker {
     fn new(
@@ -194,6 +303,10 @@ impl Worker {
         out: mpsc::SyncSender<String>,
     ) -> Self {
         Self {
+            #[cfg(not(target_os = "linux"))]
+            managed: None,
+            #[cfg(target_os = "linux")]
+            pump: None,
             state,
             cancel,
             quit,
@@ -203,6 +316,8 @@ impl Worker {
             started: None,
             python: None,
             sidecar: None,
+            #[cfg(all(feature = "voice-conversation", feature = "voice-flm"))]
+            conversation_stt: std::sync::Arc::new(std::sync::Mutex::new(None)),
         }
     }
     fn publish(&self, phase: VoicePhase, detail: impl Into<String>) {
@@ -221,6 +336,25 @@ impl Worker {
         };
     }
 
+    /// R20: whether the managed capture has already been finalized by a
+    /// hard cap (the writer closed while data existed). On Linux the
+    /// pump finalizes in-thread at the cap; the slot still holds the
+    /// capture. On macOS the recorder writes the store path directly
+    /// and the cap is enforced at finish.
+    fn capture_finished_by_cap(&self) -> bool {
+        #[cfg(target_os = "linux")]
+        {
+            self.pump
+                .as_ref()
+                .is_some_and(|pump| pump.cap_hit.load(std::sync::atomic::Ordering::Acquire))
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            self.managed
+                .as_ref()
+                .is_some_and(|capture| capture.hit_cap())
+        }
+    }
     fn cancelled(&self) -> bool {
         self.cancel.load(Ordering::Acquire) || self.quit.load(Ordering::Acquire)
     }
@@ -235,7 +369,26 @@ impl Worker {
                 Ok(command) => {
                     let result = match command {
                         Control::Start => self.start(),
-                        Control::Stop => self.stop().and_then(|()| self.transcribe()),
+                        Control::Stop => self.stop().and_then(|()| {
+                            #[cfg(all(feature = "voice-conversation", feature = "voice-flm"))]
+                            let adapter = self
+                                .conversation_stt
+                                .lock()
+                                .ok()
+                                .and_then(|slot| slot.clone());
+                            #[cfg(all(feature = "voice-conversation", feature = "voice-flm"))]
+                            if let Some(adapter) = adapter {
+                                let result = self.transcribe_through(&adapter);
+                                agent_vesper_tui::voice_accel::record_last_stt_route(format!(
+                                    "selected adapter ({})",
+                                    adapter.descriptor().provider.as_str()
+                                ));
+                                return result;
+                            }
+                            #[cfg(all(feature = "voice-conversation", feature = "voice-flm"))]
+                            agent_vesper_tui::voice_accel::record_last_stt_route("CPU sidecar");
+                            self.transcribe()
+                        }),
                         Control::Retry if self.audio.is_some() => self.transcribe(),
                         Control::Retry => self.start(),
                         Control::Discard => unreachable!(),
@@ -253,8 +406,28 @@ impl Worker {
                         self.publish(VoicePhase::Recording, "Recording microphone · F5 Stop")
                     }
                     _ => {
-                        self.recorder = None;
-                        self.publish(VoicePhase::Error, "Microphone recorder stopped unexpectedly. Check device permissions and free disk space. F5 retries saved audio; Del discards.");
+                        // R20: a recorder exit is a FAILURE only when the
+                        // capture is still open (no cap reached, no Stop).
+                        // When the store's hard cap already finalized the
+                        // capture (byte/time bound), the recorder exiting on
+                        // the closed pipe is the EXPECTED end of capture:
+                        // transition like an ordinary Stop (audio retained
+                        // for transcription; never an error, never an
+                        // auto-submit).
+                        let capture_ended_by_cap = self.capture_finished_by_cap();
+                        if capture_ended_by_cap {
+                            self.recorder = None;
+                            let _ = self.stop();
+                        } else {
+                            self.recorder = None;
+                            // Abnormal recorder exit: salvage the capture
+                            // (if any audio exists) so F5 Retry and Del
+                            // Discard keep working on it — same lifecycle
+                            // as an ordinary Stop, but surfaced as an
+                            // error (the recorder died unexpectedly).
+                            let _ = self.stop();
+                            self.publish(VoicePhase::Error, "Microphone recorder stopped unexpectedly. Check device permissions and free disk space. F5 retries saved audio; Del discards.");
+                        }
                     }
                 }
             }
@@ -311,7 +484,7 @@ impl Worker {
                 return Ok(python);
             }
         }
-        let root = super::voice_venv_root();
+        let root = agent_vesper_tui::voice_venv_root();
         std::fs::create_dir_all(root.parent().ok_or("Invalid voice directory.")?)
             .map_err(|_| "Cannot create voice backend directory.")?;
         let python = root.join("bin/python");
@@ -350,30 +523,124 @@ impl Worker {
         if !cfg!(any(target_os = "linux", target_os = "macos")) {
             return Err("Microphone capture currently supports Linux and macOS.".into());
         }
-        let python = self.prepare()?;
+        // Capture must not wait for Python imports, package probing or model
+        // loading. A known installed interpreter can load the sidecar in
+        // parallel with recording; missing setup is handled at transcription.
         if self.sidecar.is_none() {
-            self.sidecar = Some(Sidecar::spawn(&python)?);
+            let (configured, explicit) = super::vesper_python_interpreter_from(
+                std::env::var_os("VESPER_PYTHON_PATH").as_deref(),
+                std::env::var_os("GLM_VENV_PATH").as_deref(),
+            );
+            let installed = agent_vesper_tui::voice_venv_root().join("bin/python");
+            let python = self.python.clone().or_else(|| {
+                if explicit {
+                    Some(configured)
+                } else {
+                    installed
+                        .is_file()
+                        .then(|| installed.to_string_lossy().into_owned())
+                }
+            });
+            if let Some(python) = python {
+                self.sidecar = Some(Sidecar::spawn(&python)?);
+                self.python = Some(python);
+            }
         }
         if self.cancelled() {
             return Err("Voice preparation cancelled.".into());
         }
-        let audio = Audio::new()?;
+        // VRO-17 R20 (2026-09-23 repair): EVERY explicit capture — F5
+        // dictation in default builds and F9 conversation in feature
+        // builds — is created through the ONE managed store (hard
+        // 120 s / 4 MiB caps, cross-instance aggregate reservation,
+        // lease-backed cleanup, free-space reserve, dead-lease
+        // recovery). Low/unknown space or aggregate exhaustion defers
+        // the capture with an actionable reason: never relocation,
+        // unbounded buffering, or user-data deletion.
+        let managed = match agent_vesper_tui::voice_capture_store::ManagedCapture::start_passthrough(
+            &agent_vesper_tui::voice_capture_root(),
+        ) {
+            Ok(managed) => managed,
+            Err(error) => {
+                return Err(format!("Voice capture deferred: {error}"));
+            }
+        };
+        // The recorder's destination is the managed capture. On Linux
+        // the recorder streams WAV on stdout into the store's capped
+        // writer (byte cap at the writer boundary — never polling); on
+        // macOS afrecord needs a path and writes the store's capture
+        // file directly (the store bounds and owns it).
         let mut command = if cfg!(target_os = "linux") {
             let mut c = Command::new("arecord");
-            c.args(["-q", "-f", "S16_LE", "-r", "16000", "-c", "1", "-t", "wav"]);
+            // "-" streams the WAV to stdout.
+            c.args([
+                "-q", "-f", "S16_LE", "-r", "16000", "-c", "1", "-t", "wav", "-",
+            ]);
             c
         } else {
             let mut c = Command::new("afrecord");
             c.args(["-f", "WAVE", "-d", "LEI16@16000", "-c", "1"]);
+            c.arg(managed.wav_path());
             c
         };
         command
-            .arg(&audio.path)
             .stdin(Stdio::null())
-            .stdout(Stdio::null())
+            .stdout(if cfg!(target_os = "linux") {
+                Stdio::piped()
+            } else {
+                Stdio::null()
+            })
             .stderr(Stdio::null());
-        self.recorder = Some(spawn(&mut command)?);
-        self.audio = Some(audio);
+        let mut process = spawn(&mut command)?;
+        #[cfg(target_os = "linux")]
+        {
+            if let Some(stdout) = process.0.stdout.take() {
+                let slot: std::sync::Arc<
+                    std::sync::Mutex<Option<agent_vesper_tui::voice_capture_store::ManagedCapture>>,
+                > = std::sync::Arc::new(std::sync::Mutex::new(Some(managed)));
+                let pump_slot = std::sync::Arc::clone(&slot);
+                let cap_hit = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+                let pump_cap = std::sync::Arc::clone(&cap_hit);
+                let pump = std::thread::spawn(move || {
+                    use std::io::Read;
+                    let mut stdout = stdout;
+                    let mut buffer = [0u8; 16 * 1024];
+                    loop {
+                        match stdout.read(&mut buffer) {
+                            Ok(0) | Err(_) => break,
+                            Ok(count) => {
+                                let Ok(mut guard) = pump_slot.lock() else {
+                                    break;
+                                };
+                                let Some(capture) = guard.as_mut() else {
+                                    break;
+                                };
+                                if !capture.write_pcm(&buffer[..count]).unwrap_or(false) {
+                                    pump_cap.store(true, std::sync::atomic::Ordering::Release);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if let Ok(mut guard) = pump_slot.lock()
+                        && let Some(capture) = guard.as_mut()
+                    {
+                        capture.finish();
+                    }
+                });
+                self.pump = Some(PumpHandle {
+                    join: Some(pump),
+                    slot,
+                    cap_hit,
+                });
+            }
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            self.managed = Some(managed);
+        }
+        self.recorder = Some(process);
+        self.audio = None; // the managed store owns the capture file
         self.started = Some(Instant::now());
         self.publish(VoicePhase::Recording, "Recording microphone · F5 Stop");
         Ok(())
@@ -398,6 +665,24 @@ impl Worker {
             {
                 thread::sleep(Duration::from_millis(20));
             }
+        }
+        // R20: take the finished capture back and retain it for
+        // transcription (explicit lifecycle: Stop never submits; the
+        // transcript stays editable; Del discards and cleans).
+        #[cfg(target_os = "linux")]
+        if let Some(mut pump) = self.pump.take() {
+            pump.join_and_finish();
+            if let Ok(mut slot) = pump.slot.lock()
+                && let Some(mut capture) = slot.take()
+            {
+                capture.finish();
+                self.audio = Some(Audio::for_managed(capture));
+            }
+        }
+        #[cfg(not(target_os = "linux"))]
+        if let Some(mut capture) = self.managed.take() {
+            capture.finish();
+            self.audio = Some(Audio::for_managed(capture));
         }
         Ok(())
     }
@@ -430,6 +715,78 @@ impl Worker {
         }
         result
     }
+    /// VRO-17 R16: conversation-origin transcription through the
+    /// selected adapter (the composed FLM NPU route). Reads the capture
+    /// WAV once, drives the adapter's future to completion with the
+    /// worker's cancel flag bridged into it, and emits the final text
+    /// through the same channel the CPU path uses (drain_voice routes it
+    /// by capture origin). The CPU sidecar is never spawned or consulted
+    /// on this path.
+    #[cfg(all(feature = "voice-conversation", feature = "voice-flm"))]
+    fn transcribe_through(
+        &mut self,
+        adapter: &std::sync::Arc<dyn vesper_voice::ports::VoiceStt>,
+    ) -> Result<(), String> {
+        let audio = self
+            .audio
+            .as_ref()
+            .ok_or("No saved audio; discard and record again.")?;
+        let bytes = std::fs::read(&audio.path)
+            .map_err(|_| "Cannot read saved audio; discard and record again.")?;
+        if bytes.len() <= 44 {
+            return Err(
+                "No recoverable audio. Check the microphone, then discard and record again.".into(),
+            );
+        }
+        self.publish(
+            VoicePhase::Transcribing,
+            "Transcribing through accelerated speech · Del cancels",
+        );
+        let frame = vesper_voice::audio::PcmFrame::from_aligned(bytes[44..].to_vec())
+            .map_err(|_| "Capture audio is not sample-aligned.".to_owned())?;
+        let cancel = vesper_voice::cancel::VoiceCancel::new();
+        let future = adapter.transcribe(std::slice::from_ref(&frame), &cancel);
+        let waker = std::task::Waker::noop();
+        let mut context = std::task::Context::from_waker(waker);
+        let mut future = std::pin::pin!(future);
+        let deadline = Instant::now() + Duration::from_secs(300);
+        let outcome = loop {
+            match future.as_mut().poll(&mut context) {
+                std::task::Poll::Ready(result) => break result,
+                std::task::Poll::Pending => {
+                    if self.cancelled() {
+                        cancel.cancel();
+                    }
+                    if Instant::now() > deadline {
+                        break Err(vesper_voice::error::VoiceError::Inference(
+                            "accelerated transcription exceeded its time bound".into(),
+                        ));
+                    }
+                    thread::sleep(Duration::from_millis(20));
+                }
+            }
+        };
+        match outcome {
+            Ok(transcript) => {
+                let text = transcript.text.as_str().trim().to_string();
+                if text.is_empty() {
+                    return Err("No speech detected; audio retained for retry.".into());
+                }
+                self.out.try_send(text).map_err(|_| {
+                    "Composer has not consumed the previous dictation; audio retained.".to_owned()
+                })?;
+                self.audio = None;
+                self.started = None;
+                self.publish(
+                    VoicePhase::Idle,
+                    "Dictation transcribed through accelerated speech.",
+                );
+                Ok(())
+            }
+            Err(error) => Err(format!("{error}")),
+        }
+    }
+
     fn collect(
         &mut self,
         rx: &mpsc::Receiver<Result<serde_json::Value, &'static str>>,
@@ -593,6 +950,8 @@ mod tests {
             cancel,
             quit,
             worker: None,
+            #[cfg(all(feature = "voice-conversation", feature = "voice-flm"))]
+            conversation_stt: std::sync::Arc::new(std::sync::Mutex::new(None)),
         };
         (controller, rx)
     }

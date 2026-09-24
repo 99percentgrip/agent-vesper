@@ -14,7 +14,8 @@ class WhisperModel:
         # VAD contract (silence-hallucination PRD): the sidecar must pass
         # vad_filter=True on every call; the fixture records it so the PTY
         # suite can assert the production script actually sends it.
-        assert len(samples) == 30*16000
+        # R20: captures are bounded-managed (<=120s); any nonempty length is valid.
+        assert len(samples) > 0
         if kwargs.get('vad_filter') is True:
             with (self.root/'vad').open('a') as f:
                 f.write('vad\n')
@@ -23,4 +24,8 @@ class WhisperModel:
             raise RuntimeError('fixture failure')
         if (self.root/'delay').exists():
             time.sleep(float((self.root/'delay').read_text()))
-        return iter([SimpleNamespace(text='dictation')]), None
+        text = 'dictation'
+        override = self.root / 'transcript'
+        if override.exists():
+            text = override.read_text().strip()
+        return iter([SimpleNamespace(text=text)]), None

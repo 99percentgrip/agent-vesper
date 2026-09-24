@@ -252,6 +252,10 @@ pub(super) async fn open(
     let initial_acceptance = acceptance.clone();
     let mut web = vesper_harness::web_settings::load(&root)?;
     let initial_web = web.clone();
+    #[cfg(feature = "voice-conversation")]
+    let mut voice = vesper_voice::read_voice_scope(&root).unwrap_or_default();
+    #[cfg(feature = "voice-conversation")]
+    let initial_voice = voice.clone();
     #[cfg(feature = "swarm")]
     let mut swarm = vesper_harness::swarm_settings::SwarmSettingsDraft::open(&root)?;
     #[cfg(feature = "swarm")]
@@ -414,6 +418,10 @@ pub(super) async fn open(
                     || acceptance != initial_acceptance
                     || web != initial_web
                     || skills != initial_skills;
+                #[cfg(feature = "voice-conversation")]
+                {
+                    dirty |= settings_voice_save::voice_dirty(&voice, &initial_voice);
+                }
                 #[cfg(feature = "swarm")]
                 {
                     dirty |= swarm.settings != initial_swarm;
@@ -481,6 +489,10 @@ pub(super) async fn open(
                         if web != initial_web {
                             paths.push(root.join(".agent-vesper/web-settings.json"));
                         }
+                        #[cfg(feature = "voice-conversation")]
+                        if voice != initial_voice {
+                            paths.push(root.join(".agent-vesper/config.toml"));
+                        }
                         #[cfg(feature = "swarm")]
                         if swarm.settings != initial_swarm {
                             paths.push(root.join(".agent-vesper/swarm-settings.json"));
@@ -499,6 +511,14 @@ pub(super) async fn open(
                             if web != initial_web {
                                 vesper_harness::web_settings::save(&root, &web)?;
                             }
+                            #[cfg(feature = "voice-conversation")]
+                            if settings_voice_save::voice_save_required(
+                                &voice,
+                                &initial_voice,
+                                web != initial_web,
+                            ) {
+                                save_voice_scope(&root, &voice)?;
+                            }
                             #[cfg(feature = "swarm")]
                             if swarm.settings != initial_swarm {
                                 swarm.save(&root)?;
@@ -516,6 +536,17 @@ pub(super) async fn open(
                                 "Save did not finish: {error}. Your draft is retained; retry saving."
                             );
                             continue;
+                        }
+                        // VRO-17 PR-4: the live conversation host follows the
+                        // saved scope immediately (enable takes effect on the
+                        // next F9 without a restart; disable tears it down
+                        // with bounded speech cleanup).
+                        #[cfg(feature = "voice-conversation")]
+                        if let Some(host) = session.voice_conversation_host.as_mut() {
+                            host.set_scope_enabled(voice.enabled);
+                            // VRO-17 R3: engine/voice selection re-resolves
+                            // at the next unit boundary (never mid-sentence).
+                            host.reload_engine_selection();
                         }
                         session.state.overrides = draft.overrides;
                         session.state.controls = draft.controls;
@@ -546,6 +577,10 @@ pub(super) async fn open(
                                 .await?
                         }
                         "/web" => edit_web(terminal, &mut web, &draft.preferences.theme).await?,
+                        #[cfg(feature = "voice-conversation")]
+                        "/settings voice" => {
+                            edit_voice(terminal, &mut voice, &draft.preferences.theme).await?
+                        }
                         #[cfg(feature = "bridge")]
                         "/settings bridge" => {
                             edit_bridge(terminal, &mut bridge, &draft.preferences.theme).await?
@@ -708,6 +743,1032 @@ async fn edit_acceptance(
         }
     }
 }
+/// Settings → Voice panel: activation, readiness truth, the Natural
+/// Voice pack lifecycle, and policy.
+/// Inspection never installs, downloads, opens devices, or runs speech.
+#[cfg(feature = "voice-conversation")]
+#[path = "settings_voice_save.rs"]
+mod settings_voice_save;
+#[cfg(feature = "voice-conversation")]
+use settings_voice_save::save_voice_scope;
+
+/// The saved selection label for the speech engine row (feature-oriented
+/// wording; engine details live behind Details).
+#[cfg(feature = "voice-conversation")]
+fn engine_row_label(voice: &vesper_voice::VoiceScope) -> String {
+    let _ = voice;
+    #[cfg(feature = "voice-kokoro")]
+    {
+        if agent_vesper_tui::voice_readiness::neural_voice_selected(voice.tts.as_ref()) {
+            let voice_name = match voice.voice.as_deref() {
+                Some("am_michael") => "Michael",
+                _ => "Heart",
+            };
+            return format!("current Neural voice · {voice_name}");
+        }
+    }
+    "current System voice (espeak-ng)".to_owned()
+}
+
+#[cfg(feature = "voice-conversation")]
+async fn edit_voice(
+    terminal: &mut Terminal<Backend>,
+    voice: &mut vesper_voice::VoiceScope,
+    theme: &str,
+) -> Result<(), String> {
+    loop {
+        let mut rows = vec![
+            format!(
+                "Voice conversation · current {}",
+                if voice.enabled { "ON" } else { "OFF" }
+            ),
+            agent_vesper_tui::voice_accel::partials_settings_row(voice),
+            format!("Speech engine · {}", engine_row_label(voice)),
+            format!(
+                "Speech recognition compute · current {}",
+                voice.stt_compute.label()
+            ),
+            format!(
+                "Speech synthesis compute · current {}",
+                voice.tts_compute.label()
+            ),
+        ];
+        // Pack lifecycle rows exist only in builds with the capability
+        // (a build without it must say so, never offer an install that
+        // can never work — directive §2).
+        #[cfg(feature = "voice-kokoro")]
+        {
+            rows.push("Natural Voice pack · install, verify or remove…".into());
+        }
+        // VRO-17 R16: the accelerated-recognition (FLM) row exists only
+        // where a real route can exist — the runtime is present on this
+        // machine or is honestly absent (never a bogus setup offer).
+        if agent_vesper_tui::voice_flm_assets::flm_executable().is_some() {
+            rows.push("Accelerated recognition (FLM NPU) · verify or review…".into());
+        }
+        rows.push("Readiness · providers, backend and limits".into());
+        rows.push("Back".into());
+        let pack_row_index = if cfg!(feature = "voice-kokoro") {
+            Some(5usize)
+        } else {
+            None
+        };
+        let flm_row_index = if cfg!(feature = "voice-kokoro") { 6 } else { 5 };
+        let flm_row_offered = agent_vesper_tui::voice_flm_assets::flm_executable().is_some();
+        let readiness_index = if cfg!(feature = "voice-kokoro") {
+            if flm_row_offered { 7 } else { 6 }
+        } else if flm_row_offered {
+            6
+        } else {
+            4
+        };
+        let notice = "Changes are a draft until you leave Settings and choose Save changes (Esc → Save changes). Local speech does not change your main coding provider.";
+        match choice(terminal, "Settings · Voice", notice, &rows, theme).await? {
+            Some(0) => voice.enabled = !voice.enabled,
+            Some(1) => {
+                // Capability gate: flipping is meaningful only for a
+                // partial-capable backend; on a final-only backend the
+                // control explains itself and never appears flippable.
+                if agent_vesper_tui::voice_accel::selected_stt_partials_mode(voice).is_some() {
+                    voice.partials = !voice.partials;
+                }
+            }
+            Some(2) => {
+                edit_speech_engine(terminal, voice, theme).await?;
+            }
+            Some(3) => {
+                edit_stage_compute(terminal, voice, vesper_voice::SpeechStage::Stt, theme).await?;
+            }
+            Some(4) => {
+                edit_stage_compute(terminal, voice, vesper_voice::SpeechStage::Tts, theme).await?;
+            }
+            Some(index) if Some(index) == pack_row_index => {
+                #[cfg(feature = "voice-kokoro")]
+                manage_voice_pack(terminal, voice, theme).await?;
+                #[cfg(not(feature = "voice-kokoro"))]
+                {
+                    let _ = index;
+                }
+            }
+            Some(index) if flm_row_offered && index == flm_row_index => {
+                manage_flm_recognition(terminal, theme).await?;
+            }
+            Some(index) if index == readiness_index => {
+                voice_readiness_panel(terminal, voice, theme).await?;
+            }
+            _ => return Ok(()),
+        }
+    }
+}
+
+/// The speech engine selection row → per-provider choice (draft-only:
+/// selection persists with Save, installation is separate and explicit).
+#[cfg(feature = "voice-conversation")]
+async fn edit_speech_engine(
+    terminal: &mut Terminal<Backend>,
+    voice: &mut vesper_voice::VoiceScope,
+    theme: &str,
+) -> Result<(), String> {
+    let rows = vec![
+        "System voice (espeak-ng) · built-in, robotic".into(),
+        "Neural voice (Kokoro) · natural, local after setup".into(),
+        "Back".into(),
+    ];
+    match choice(terminal, "Settings · Voice · Speech engine", "The engine choice is a draft until Save changes. Selecting the neural voice does not install anything by itself; installation is its own confirmed step.", &rows, theme).await? {
+        Some(0) => {
+            voice.tts = None;
+            voice.voice = None;
+        }
+        Some(1) => {
+            #[cfg(feature = "voice-kokoro")]
+            {
+                use vesper_domain::ProviderId;
+                voice.tts = Some(
+                    ProviderId::new(vesper_voice_kokoro::PROVIDER_ID)
+                        .map_err(|_| "invalid provider id".to_owned())?,
+                );
+                if voice.voice.as_deref().is_none_or(|v| {
+                    v != "af_heart" && v != "am_michael"
+                }) {
+                    voice.voice = Some("af_heart".to_owned());
+                }
+                choose_neural_voice(terminal, voice, theme).await?;
+            }
+            #[cfg(not(feature = "voice-kokoro"))]
+            {
+                return Err(
+                    "This build does not include the Natural Voice pack capability. Install a complete Vesper build to use it; your settings are unchanged."
+                        .to_owned(),
+                );
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// The voice selection submenu when the neural engine is selected
+/// (catalog-verified display names; exact ids in Details).
+#[cfg(feature = "voice-kokoro")]
+async fn choose_neural_voice(
+    terminal: &mut Terminal<Backend>,
+    voice: &mut vesper_voice::VoiceScope,
+    theme: &str,
+) -> Result<(), String> {
+    let rows = vec![
+        format!(
+            "Heart · current {}",
+            if voice.voice.as_deref() == Some("af_heart") || voice.voice.is_none() {
+                "yes"
+            } else {
+                "no"
+            }
+        ),
+        format!(
+            "Michael · current {}",
+            if voice.voice.as_deref() == Some("am_michael") {
+                "yes"
+            } else {
+                "no"
+            }
+        ),
+        "Back".into(),
+    ];
+    match choice(
+        terminal,
+        "Settings · Voice · Voice",
+        "Voice choice is a draft until Save changes.",
+        &rows,
+        theme,
+    )
+    .await?
+    {
+        Some(0) => voice.voice = Some("af_heart".to_owned()),
+        Some(1) => voice.voice = Some("am_michael".to_owned()),
+        _ => {}
+    }
+    Ok(())
+}
+
+/// The per-stage execution-policy submenu (draft-only). Rows are honest
+/// about this machine: the strict NPU option appears only when a route
+/// is registered for that stage (never a decorative control), and every
+/// screen explains that CPU stays fully usable.
+#[cfg(feature = "voice-conversation")]
+async fn edit_stage_compute(
+    terminal: &mut Terminal<Backend>,
+    voice: &mut vesper_voice::VoiceScope,
+    stage: vesper_voice::SpeechStage,
+    theme: &str,
+) -> Result<(), String> {
+    let stage_name = stage_word_for_menu(stage);
+    let current = match stage {
+        vesper_voice::SpeechStage::Stt => voice.stt_compute,
+        vesper_voice::SpeechStage::Tts => voice.tts_compute,
+    };
+    // The strict option is offered only when a route is registered for
+    // this stage in this build (decorative controls are prohibited);
+    // every build offers CPU and Automatic.
+    let routes_registered = agent_vesper_tui::voice_accel::registered_routes()
+        .iter()
+        .any(|route| route.stage == stage);
+    let rows: Vec<String> = [
+        format!(
+            "CPU · current {}",
+            if current == vesper_voice::StageExecutionPolicy::Cpu {
+                "yes"
+            } else {
+                "no"
+            }
+        ),
+        format!(
+            "Automatic · compatible acceleration only · current {}",
+            if current == vesper_voice::StageExecutionPolicy::AutomaticAccelerator {
+                "yes"
+            } else {
+                "no"
+            }
+        ),
+    ]
+    .into_iter()
+    .chain(routes_registered.then(|| {
+        format!(
+            "NPU required · current {}",
+            if current == vesper_voice::StageExecutionPolicy::NpuRequired {
+                "yes"
+            } else {
+                "no"
+            }
+        )
+    }))
+    .chain(std::iter::once("Back".to_owned()))
+    .collect();
+    let effective_line = agent_vesper_tui::voice_accel::execution_rows(voice)
+        .into_iter()
+        .find(|row| row.stage == stage_name)
+        .map(|row| format!("Effective now: {} ({})", row.backend, row.reason))
+        .unwrap_or_default();
+    let notice = format!(
+        "The choice is a draft until Save changes. CPU speech stays fully usable on every machine; acceleration runs only after a verified compatible route for this stage exists on this machine. When no compatible accelerator is present, Automatic uses CPU as an ordinary supported outcome — not a warning, not a setup failure. {effective_line}"
+    );
+    match choice(
+        terminal,
+        &format!("Settings · Voice · {stage_name} compute"),
+        &notice,
+        &rows,
+        theme,
+    )
+    .await?
+    {
+        Some(0) => set_stage_policy(voice, stage, vesper_voice::StageExecutionPolicy::Cpu),
+        Some(1) => set_stage_policy(
+            voice,
+            stage,
+            vesper_voice::StageExecutionPolicy::AutomaticAccelerator,
+        ),
+        Some(2) if routes_registered => set_stage_policy(
+            voice,
+            stage,
+            vesper_voice::StageExecutionPolicy::NpuRequired,
+        ),
+        _ => {}
+    }
+    Ok(())
+}
+
+/// Applies the draft policy to the correct stage field (stages are
+/// independent; selecting on one stage never rewrites the other).
+#[cfg(feature = "voice-conversation")]
+fn set_stage_policy(
+    voice: &mut vesper_voice::VoiceScope,
+    stage: vesper_voice::SpeechStage,
+    policy: vesper_voice::StageExecutionPolicy,
+) {
+    match stage {
+        vesper_voice::SpeechStage::Stt => voice.stt_compute = policy,
+        vesper_voice::SpeechStage::Tts => voice.tts_compute = policy,
+    }
+}
+
+/// Menu-facing stage word (title case).
+#[cfg(feature = "voice-conversation")]
+fn stage_word_for_menu(stage: vesper_voice::SpeechStage) -> &'static str {
+    match stage {
+        vesper_voice::SpeechStage::Stt => "Speech recognition",
+        vesper_voice::SpeechStage::Tts => "Speech synthesis",
+    }
+}
+
+/// The shared readiness panel (same assessment the F9 gate uses), now
+/// including Natural Voice pack rows and per-stage execution rows when
+/// applicable.
+#[cfg(feature = "voice-conversation")]
+async fn voice_readiness_panel(
+    terminal: &mut Terminal<Backend>,
+    voice: &vesper_voice::VoiceScope,
+    theme: &str,
+) -> Result<(), String> {
+    #[allow(unused_mut)]
+    let mut checks = agent_vesper_tui::voice_readiness::voice_readiness();
+    #[cfg(feature = "voice-kokoro")]
+    if agent_vesper_tui::voice_readiness::neural_voice_selected(voice.tts.as_ref()) {
+        checks.extend(agent_vesper_tui::voice_readiness::neural_voice_checks());
+    }
+    let execution_lines = {
+        let mut lines = agent_vesper_tui::voice_accel::machine_capability_lines(voice);
+        lines.push(agent_vesper_tui::voice_accel::last_stt_route_line());
+        lines
+    };
+    let lines: Vec<String> = std::iter::once(format!(
+        "Voice mode (configured): {}",
+        if voice.enabled { "yes" } else { "no" }
+    ))
+    .chain(checks.iter().map(|check| {
+        format!(
+            "{}: {}",
+            check.name,
+            if check.ok {
+                "yes".to_owned()
+            } else {
+                format!("no — {}", check.remedy)
+            }
+        )
+    }))
+    .chain(execution_lines)
+    .collect();
+    let body = format!(
+        "{}
+
+Detected ≠ device-accepted: microphone and speaker acceptance is verified only by your own voice test.",
+        lines.join("
+")
+    );
+    choice(
+        terminal,
+        "Settings · Voice · readiness",
+        &body,
+        &["Back".into()],
+        theme,
+    )
+    .await?;
+    Ok(())
+}
+
+/// One selectable action of the Natural Voice pack screen. Rows and
+/// action indexes are derived from ONE ordered list so they cannot
+/// disagree when Preview is policy-hidden.
+#[cfg(feature = "voice-kokoro")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PackAction {
+    Preview,
+    Repair,
+    Remove,
+    Install,
+}
+
+/// The pack screen's notice: the standard explanation plus, when the
+/// draft TTS policy refuses Preview, the exact stage-specific refusal
+/// (never silent hiding; never a setup prompt for absent hardware).
+#[cfg(feature = "voice-kokoro")]
+fn pack_screen_notice(voice: &vesper_voice::VoiceScope) -> String {
+    let base = "Runs locally after setup. Installing the pack never selects the engine, enables conversation, or plays audio; engine and voice choices are Settings drafts until Save changes.";
+    match agent_vesper_tui::voice_accel::preview_policy_gate(voice) {
+        Ok(()) => base.to_owned(),
+        Err(message) => format!("{base}\n\nPreview is unavailable: {message}"),
+    }
+}
+
+/// VRO-17 R16: the accelerated-recognition (FLM NPU) management screen.
+/// Shows the passive pack state and offers the real bounded Verify: a
+/// controlled loopback semantic check through the production adapter
+/// (no microphone, no speaker, no download). Installed does not mean
+/// Ready — verification is what permits accelerated dispatch in this
+/// process, and the compute choice remains a separate saved draft.
+#[cfg(feature = "voice-conversation")]
+async fn manage_flm_recognition(
+    terminal: &mut Terminal<Backend>,
+    theme: &str,
+) -> Result<(), String> {
+    use agent_vesper_tui::voice_flm_assets::{PackState, assess_pack};
+    let state = assess_pack();
+    let state_label = match &state {
+        PackState::Installed => "model installed (files present, digest verified)".to_owned(),
+        PackState::RuntimeMissing => "runtime missing on this machine".to_owned(),
+        PackState::AssetsMissing => "model files missing".to_owned(),
+        PackState::SizeMismatch { actual } => {
+            format!("model file size mismatch ({actual} bytes; expected the pinned revision)")
+        }
+        PackState::DigestMismatch => "model failed its integrity check".to_owned(),
+    };
+    // The Verify row exists only where the composition is compiled and
+    // the pack is verifiable (never a decorative action).
+    #[cfg(feature = "voice-flm")]
+    let verify_available = matches!(state, PackState::Installed);
+    #[cfg(not(feature = "voice-flm"))]
+    let verify_available = false;
+    let verified_now = cfg!(feature = "voice-flm")
+        && matches!(
+            agent_vesper_tui::voice_accel::stage_readiness(vesper_voice::SpeechStage::Stt),
+            vesper_voice::AcceleratorReadiness::Ready { .. }
+        );
+    let status_line = if verified_now {
+        "Verified in this session: accelerated recognition may be selected for speech recognition compute."
+    } else if verify_available {
+        "Not yet verified in this session: accelerated dispatch stays unavailable until Verify completes."
+    } else {
+        "Verification is unavailable on this machine/build; CPU recognition remains fully usable."
+    };
+    let mut rows = vec![format!("Status · {state_label}")];
+    if verify_available {
+        rows.push("Verify accelerated recognition · bounded local check…".into());
+    }
+    rows.push("Back".into());
+    let notice = format!(
+        "The accelerated recognizer uses the local FLM runtime with the installed Whisper model on this machine's NPU. Speech detection (VAD) runs on CPU first; only speech-containing audio is sent to the recognizer. Verifying never sends audio anywhere else, never records, and never downloads. The compute choice (CPU / Automatic / NPU required) is a separate draft on this screen's parent, saved with Save changes.\n\n{status_line}"
+    );
+    match choice(
+        terminal,
+        "Settings · Voice · Accelerated recognition",
+        &notice,
+        &rows,
+        theme,
+    )
+    .await?
+    {
+        Some(1) if verify_available => {
+            #[cfg(feature = "voice-flm")]
+            run_flm_verify(terminal, theme).await?;
+            #[cfg(not(feature = "voice-flm"))]
+            {
+                let _ = theme;
+            }
+            Ok(())
+        }
+        _ => Ok(()),
+    }
+}
+
+/// The bounded real-model Verify: starts the owned loopback service,
+/// sends one synthetic nonsensitive speech-like fixture through the
+/// production VAD + adapter composition, and requires a valid
+/// response shape. Success records the in-process verification; a
+/// failure reports the exact boundary and never flips Ready.
+#[cfg(feature = "voice-flm")]
+async fn run_flm_verify(terminal: &mut Terminal<Backend>, theme: &str) -> Result<(), String> {
+    use std::sync::Arc;
+    use vesper_voice::audio::PcmFrame;
+    use vesper_voice::cancel::VoiceCancel;
+    use vesper_voice::composition::blocking::ThreadPoolExecutor;
+    use vesper_voice::ports::VoiceStt;
+
+    let draw_status = |terminal: &mut Terminal<Backend>, line: &str| {
+        let _ = terminal.draw(|frame| {
+            let block = ratatui::widgets::Paragraph::new(format!(
+                "Verifying accelerated recognition…\n\n{line}\n\nThis runs a local check only: it never records audio and never downloads anything."
+            ))
+            .wrap(ratatui::widgets::Wrap { trim: true });
+            frame.render_widget(block, frame.area());
+        });
+    };
+    draw_status(
+        terminal,
+        "Starting the local recognizer service (this loads the model once)…",
+    );
+    let pool = Arc::new(ThreadPoolExecutor::new(1));
+    let erased: Arc<dyn vesper_voice::composition::blocking::ValueExecutor> = pool;
+    let adapter = agent_vesper_tui::voice_flm::FlmNpuStt::new(erased);
+    // Nonsensitive synthetic fixture: the SAME three fixed-frequency
+    // sin²-enveloped segments the recorded backend gate proved
+    // detectable by the installed Silero defaults (detected window
+    // [0, 1.584 s)). It proves request/response execution through the
+    // full composition, not word accuracy — the receipt says exactly
+    // that.
+    let segments = [
+        (0.25_f64, 0.60_f64, 190.0_f64),
+        (0.95, 0.70, 240.0),
+        (2.10, 0.55, 210.0),
+    ];
+    let total = (4.0 * 16_000.0) as usize;
+    let mut pcm: Vec<u8> = Vec::with_capacity(total * 2);
+    for index in 0..total {
+        let t = index as f64 / 16_000.0;
+        let mut sample: f64 = 0.0;
+        for &(start, duration, f0) in &segments {
+            if (start..start + duration).contains(&t) {
+                let local = t - start;
+                let envelope = (std::f64::consts::PI * local / duration).sin().max(0.0);
+                sample = envelope
+                    * ((2.0 * std::f64::consts::PI * f0 * local).sin()
+                        + 0.5 * (2.0 * std::f64::consts::PI * 2.0 * f0 * local).sin()
+                        + 0.25 * (2.0 * std::f64::consts::PI * 3.0 * f0 * local).sin())
+                    / 1.75;
+            }
+        }
+        let quantized = (sample * 22_000.0).clamp(-32_768.0, 32_767.0) as i16;
+        pcm.extend_from_slice(&quantized.to_le_bytes());
+    }
+    let audio: Vec<PcmFrame> = pcm
+        .chunks(2)
+        .map(|chunk| PcmFrame::from_aligned(chunk.to_vec()).expect("aligned"))
+        .collect();
+    draw_status(
+        terminal,
+        "Running one local recognition check through the production composition…",
+    );
+    let cancel = VoiceCancel::default();
+    let future = adapter.transcribe(&audio, &cancel);
+    let waker = std::task::Waker::noop();
+    let mut context = std::task::Context::from_waker(waker);
+    let mut future = std::pin::pin!(future);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(240);
+    let outcome = loop {
+        match future.as_mut().poll(&mut context) {
+            std::task::Poll::Ready(result) => {
+                break result;
+            }
+            std::task::Poll::Pending => {
+                if std::time::Instant::now() > deadline {
+                    adapter.shutdown();
+                    return Err(
+                        "Verification timed out; accelerated recognition stays unavailable. CPU recognition is unaffected."
+                            .to_owned(),
+                    );
+                }
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+        }
+    };
+
+    adapter.shutdown();
+    let ok = outcome
+        .as_ref()
+        .is_ok_and(|transcript| !transcript.text.as_str().trim().is_empty());
+    let message = match &outcome {
+        Ok(transcript) => {
+            if transcript.text.as_str().trim().is_empty() {
+                // VAD zero-speech on the fixture: the detector decided
+                // there was no speech. Honest failure — no Ready flip.
+                "The local speech detector found no speech in the check fixture; verification did not complete.".to_owned()
+            } else {
+                agent_vesper_tui::voice_accel::record_flm_stt_verification();
+                "Verified: the accelerated recognizer answered a local check through the full composition (CPU speech detection + local NPU recognition). It may now be selected for speech recognition compute.".to_owned()
+            }
+        }
+        Err(error) => format!(
+            "Verification failed at the local boundary: {error}. Accelerated recognition stays unavailable; CPU recognition is unaffected."
+        ),
+    };
+    let ok = ok
+        && matches!(
+            agent_vesper_tui::voice_accel::stage_readiness(vesper_voice::SpeechStage::Stt),
+            vesper_voice::AcceleratorReadiness::Ready { .. }
+        );
+    let rows = vec!["Close".to_owned()];
+    let _ = choice(
+        terminal,
+        if ok {
+            "Accelerated recognition · verified"
+        } else {
+            "Accelerated recognition · not verified"
+        },
+        &message,
+        &rows,
+        theme,
+    )
+    .await?;
+    Ok(())
+}
+
+/// The Natural Voice pack management screen: status, install with the
+/// full confirmation dialog, real progress, repair, and removal.
+#[cfg(feature = "voice-kokoro")]
+async fn manage_voice_pack(
+    terminal: &mut Terminal<Backend>,
+    voice: &vesper_voice::VoiceScope,
+    theme: &str,
+) -> Result<(), String> {
+    // Keep one worker for this screen. It prepares while the user reads the
+    // menu and is reused by immediate repeat previews, instead of paying pack
+    // verification + ORT session construction after every Preview click.
+    let mut preview_worker: Option<agent_vesper_tui::voice_speech_worker::SpeechWorker> = None;
+    let mut preview_segment = 0u64;
+    loop {
+        let root = vesper_voice_kokoro::pack_root();
+        let state = match vesper_voice_kokoro::assess_pack(&root) {
+            Ok(None) => "Ready — synthesis verified".to_owned(),
+            Ok(Some(problem)) => match problem {
+                vesper_voice_kokoro::PackProblem::NotInstalled => "Not installed".to_owned(),
+                other => format!("Blocked — {}", other.description()),
+            },
+            Err(error) => format!("Unavailable — {error}"),
+        };
+        let mut rows = vec![format!("Voice pack · {state}")];
+        let installed = matches!(
+            vesper_voice_kokoro::assess_pack(&root),
+            Ok(None)
+                | Ok(Some(
+                    vesper_voice_kokoro::PackProblem::ComponentInvalid { .. }
+                ))
+        );
+        if installed && preview_worker.is_none() {
+            let voice_id = voice.voice.clone().unwrap_or_else(|| "af_heart".to_owned());
+            let playback =
+                std::sync::Arc::new(agent_vesper_tui::voice_playback::PlaybackOwner::new(
+                    agent_vesper_tui::resolve_player_for_preview(),
+                    None,
+                ));
+            preview_worker = Some(agent_vesper_tui::voice_speech_worker::SpeechWorker::spawn(
+                agent_vesper_tui::voice_conversation::EngineSelection::Neural { voice_id },
+                playback,
+            ));
+        }
+        if installed {
+            // VRO-17 §2: Preview resolves the TTS execution policy through
+            // the SAME shared rule the F9 gate uses (against this screen's
+            // DRAFT). A strict policy that cannot run here refuses Preview
+            // identically — never a silent CPU synthesis that F9 would
+            // refuse. CPU/Automatic stay ordinary outcomes.
+            if agent_vesper_tui::voice_accel::preview_policy_gate(voice).is_ok() {
+                rows.push("Preview voice".into());
+            }
+            rows.push("Repair / Verify".into());
+            rows.push("Remove voice pack".into());
+        } else {
+            rows.push("Install voice pack".into());
+        }
+        rows.push("Details".into());
+        rows.push("Back".into());
+        let action = choice(
+            terminal,
+            "Settings · Voice · Natural Voice pack",
+            &pack_screen_notice(voice),
+            &rows,
+            theme,
+        )
+        .await?;
+        let back = rows.len() - 1;
+        let details_index = rows.len() - 2;
+        // Action indexes are computed from the same ordered list that
+        // built the rows, offset by the status row (row 0), so the
+        // rows and the handlers can never disagree when Preview is
+        // policy-hidden (the PTY loop regression caught this class:
+        // a mismatched index made the Preview row fire Repair).
+        let mut action_rows = Vec::new();
+        if installed {
+            if agent_vesper_tui::voice_accel::preview_policy_gate(voice).is_ok() {
+                action_rows.push(PackAction::Preview);
+            }
+            action_rows.push(PackAction::Repair);
+            action_rows.push(PackAction::Remove);
+        } else {
+            action_rows.push(PackAction::Install);
+        }
+        let action_index = |action: PackAction| {
+            action_rows
+                .iter()
+                .position(|candidate| *candidate == action)
+                .map(|index| index + 1)
+        };
+        let install_index = action_index(PackAction::Install);
+        let preview_index = action_index(PackAction::Preview);
+        let repair_index = action_index(PackAction::Repair);
+        let remove_index = action_index(PackAction::Remove);
+        match action {
+            Some(index) if Some(index) == install_index => {
+                install_voice_pack(terminal, theme).await?;
+            }
+            Some(index) if Some(index) == preview_index => {
+                let Some(worker) = preview_worker.as_ref() else {
+                    return Err("the Preview voice worker could not start".to_owned());
+                };
+                preview_segment = preview_segment.wrapping_add(1);
+                preview_neural_voice(terminal, worker, preview_segment, theme).await?;
+            }
+            Some(index) if Some(index) == repair_index => {
+                repair_voice_pack(terminal, theme).await?;
+            }
+            Some(index) if Some(index) == remove_index => {
+                remove_voice_pack(terminal, theme).await?;
+            }
+            Some(index) if index == details_index => {
+                pack_details(terminal, theme).await?;
+            }
+            Some(index) if index == back => return Ok(()),
+            // Row 0 is the STATUS display row (and any other key): stay
+            // in the screen — only Back leaves. (Alex's "biggest button":
+            // the status row previously fell through to an implicit exit,
+            // so pressing Enter on it silently left the pack screen.)
+            _ => continue,
+        }
+    }
+}
+
+/// The pre-install confirmation dialog: real numbers from the pinned
+/// manifest and the observed free space (no fabricated estimates).
+#[cfg(feature = "voice-kokoro")]
+async fn install_voice_pack(terminal: &mut Terminal<Backend>, theme: &str) -> Result<(), String> {
+    let setup = vesper_voice_kokoro::setup::VoicePackSetup::new(vesper_voice_kokoro::pack_root());
+    let plan = setup.plan().map_err(|error| error.message())?;
+    let mib = |bytes: u64| format!("{:.1} MiB", bytes as f64 / (1024.0 * 1024.0));
+    let space_line = plan
+        .available_bytes
+        .map(|available| {
+            format!(
+                "Available at destination: {} ({available} bytes)",
+                mib(available)
+            )
+        })
+        .unwrap_or_else(|| {
+            "Available at destination: unknown (setup will stop if space runs out)".to_owned()
+        });
+    let reused_line = if plan.phonemizer_present {
+        "Reused from your system: espeak-ng pronunciation engine".to_owned()
+    } else {
+        "Missing prerequisite: espeak-ng (setup cannot continue without it)".to_owned()
+    };
+    let summary = format!(
+        "Install the Natural Voice pack?\n\nDownload size: {}\nAdded after install: {}\nPeak extra space during setup: {}\n{space_line}\n{reused_line}\n\nRuns locally after setup. Speech stays on this machine. It does not change your main coding provider.",
+        mib(plan.transfer_bytes),
+        mib(plan.retained_bytes),
+        mib(plan.peak_bytes),
+    );
+    match choice(
+        terminal,
+        "Install Natural Voice pack",
+        &summary,
+        &["Install".into(), "Cancel".into()],
+        theme,
+    )
+    .await?
+    {
+        Some(0) => {}
+        _ => return Ok(()),
+    }
+    run_setup_progress(terminal, setup, theme).await
+}
+
+/// Real progress loop: stage labels + exact bytes; Esc requests stop
+/// after the current step (existing dependency-setup conventions).
+#[cfg(feature = "voice-kokoro")]
+async fn run_setup_progress(
+    terminal: &mut Terminal<Backend>,
+    setup: vesper_voice_kokoro::setup::VoicePackSetup,
+    theme: &str,
+) -> Result<(), String> {
+    let (sender, mut progress) =
+        tokio::sync::watch::channel(vesper_voice_kokoro::setup::StageProgress {
+            stage: vesper_voice_kokoro::setup::SetupStage::Prepare,
+            bytes_done: 0,
+            bytes_total: 0,
+        });
+    let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let task_cancel = cancel.clone();
+    let mut task = tokio::spawn(async move {
+        setup
+            .run(
+                |stage_progress| {
+                    let _ = sender.send(stage_progress);
+                },
+                || task_cancel.load(std::sync::atomic::Ordering::Acquire),
+                None,
+            )
+            .await
+    });
+    loop {
+        let stage_progress = progress.borrow_and_update().clone();
+        let mut line = stage_progress.stage.label().to_owned();
+        if stage_progress.bytes_total > 0 {
+            line.push_str(&format!(
+                " · {} / {} bytes",
+                stage_progress.bytes_done, stage_progress.bytes_total
+            ));
+        }
+        let stopping = cancel.load(std::sync::atomic::Ordering::Acquire);
+        terminal
+            .draw(|frame| {
+                agent_vesper_tui::settings_menu::render_menu(
+                    frame,
+                    &["Installing Natural Voice pack…".into()],
+                    0,
+                    "Natural Voice pack",
+                    &line,
+                    if stopping {
+                        "Stopping after the current step…"
+                    } else {
+                        "Esc requests stop after the current step"
+                    },
+                    theme,
+                );
+            })
+            .map_err(|error| error.to_string())?;
+        tokio::select! {
+            result = &mut task => {
+                return match result {
+                    Ok(Ok(())) => Ok(()),
+                    Ok(Err(error)) => Err(error.message()),
+                    Err(_) => Err("Voice pack setup stopped unexpectedly.".to_owned()),
+                };
+            }
+            _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {
+                while event::poll(std::time::Duration::ZERO).map_err(|error| error.to_string())? {
+                    if let Ok(event::Event::Key(key)) = event::read() && key.code == KeyCode::Esc {
+                        cancel.store(true, std::sync::atomic::Ordering::Release);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Preview: fixed nonsensitive phrase through the REAL selected adapter
+/// and the existing playback owner, only on explicit action, with a
+/// visible Stop control; never submits a turn, never uses the
+/// microphone, never commits unsaved settings.
+#[cfg(feature = "voice-kokoro")]
+async fn preview_neural_voice(
+    terminal: &mut Terminal<Backend>,
+    worker: &agent_vesper_tui::voice_speech_worker::SpeechWorker,
+    segment: u64,
+    theme: &str,
+) -> Result<(), String> {
+    const PREVIEW_PHRASE: &str = "This is a preview of the selected voice.";
+    worker.enqueue(agent_vesper_tui::voice_speech_worker::SpeechJob {
+        segment,
+        text: PREVIEW_PHRASE.into(),
+    });
+    loop {
+        for outcome in worker.drain() {
+            use agent_vesper_tui::voice_speech_worker::SpeechOutcome;
+            match outcome {
+                SpeechOutcome::Spoke {
+                    segment: outcome_segment,
+                    ..
+                } if outcome_segment == segment => return Ok(()),
+                SpeechOutcome::Failed {
+                    segment: outcome_segment,
+                    error,
+                } if outcome_segment == segment || outcome_segment == 0 => return Err(error),
+                SpeechOutcome::Stale {
+                    segment: outcome_segment,
+                } if outcome_segment == segment => return Ok(()),
+                // A prior stopped preview may settle after the next one was
+                // admitted. Ignore only that older generation's receipt.
+                SpeechOutcome::Progress {
+                    segment: outcome_segment,
+                    ..
+                }
+                | SpeechOutcome::Spoke {
+                    segment: outcome_segment,
+                    ..
+                }
+                | SpeechOutcome::Stale {
+                    segment: outcome_segment,
+                }
+                | SpeechOutcome::Failed {
+                    segment: outcome_segment,
+                    ..
+                } if outcome_segment != segment => {}
+                _ => {}
+            }
+        }
+        terminal.draw(|frame| {
+            agent_vesper_tui::settings_menu::render_menu(
+                frame, &[worker.stage_status()], 0, "Preview voice",
+                "Fixed phrase through the selected neural voice. No agent turn or microphone. Playback success is not proof you heard it.",
+                "S stops the preview · Esc returns", theme);
+        }).map_err(|error| error.to_string())?;
+        if event::poll(std::time::Duration::from_millis(50)).map_err(|error| error.to_string())?
+            && let Ok(event::Event::Key(key)) = event::read()
+            && matches!(
+                key.code,
+                KeyCode::Char('s') | KeyCode::Char('S') | KeyCode::Esc
+            )
+        {
+            worker.stop();
+            return Ok(());
+        }
+        tokio::task::yield_now().await;
+    }
+}
+
+/// Repair/Verify: revalidates the pack in place; asks before any new
+/// transfer (an install is only started by an explicit second choice).
+#[cfg(feature = "voice-kokoro")]
+async fn repair_voice_pack(terminal: &mut Terminal<Backend>, theme: &str) -> Result<(), String> {
+    let root = vesper_voice_kokoro::pack_root();
+    match vesper_voice_kokoro::assess_pack(&root) {
+        Ok(None) => {
+            choice(
+                terminal,
+                "Repair / Verify voice pack",
+                "Every pack file matches its verified source. Nothing to repair.",
+                &["Back".into()],
+                theme,
+            )
+            .await?;
+            Ok(())
+        }
+        Ok(Some(vesper_voice_kokoro::PackProblem::ComponentInvalid { detail })) => {
+            match choice(
+                terminal,
+                "Repair / Verify voice pack",
+                &format!("A pack file is invalid: {detail}\n\nRe-download the affected files now?"),
+                &["Repair now".into(), "Cancel".into()],
+                theme,
+            )
+            .await?
+            {
+                Some(0) => {
+                    let setup = vesper_voice_kokoro::setup::VoicePackSetup::new(
+                        vesper_voice_kokoro::pack_root(),
+                    );
+                    run_setup_progress(terminal, setup, theme).await
+                }
+                _ => Ok(()),
+            }
+        }
+        Ok(Some(problem)) => {
+            choice(
+                terminal,
+                "Repair / Verify voice pack",
+                &problem.description(),
+                &["Back".into()],
+                theme,
+            )
+            .await?;
+            Ok(())
+        }
+        Err(error) => {
+            choice(
+                terminal,
+                "Repair / Verify voice pack",
+                &format!("The pack could not be inspected: {error}"),
+                &["Back".into()],
+                theme,
+            )
+            .await?;
+            Ok(())
+        }
+    }
+}
+
+/// Removal: confirms the measured reclaimable amount, deletes only
+/// pack-owned assets, refuses while another live process holds the pack,
+/// and explains that the selected voice becomes unavailable.
+#[cfg(feature = "voice-kokoro")]
+async fn remove_voice_pack(terminal: &mut Terminal<Backend>, theme: &str) -> Result<(), String> {
+    let root = vesper_voice_kokoro::pack_root();
+    let reclaim = vesper_voice_kokoro::pack::RETAINED_PACK_BYTES;
+    let mib = format!("{:.1} MiB", reclaim as f64 / (1024.0 * 1024.0));
+    match choice(
+        terminal,
+        "Remove voice pack",
+        &format!(
+            "Remove the Natural Voice pack? About {mib} of disk space is reclaimed. Only pack-owned files are deleted. The selected voice becomes unavailable unless you choose another speech engine and save; nothing switches automatically."
+        ),
+        &["Remove".into(), "Cancel".into()],
+        theme,
+    )
+    .await?
+    {
+        Some(0) => {
+            vesper_voice_kokoro::setup::remove(&root).map_err(|error| error.message())?;
+            choice(
+                terminal,
+                "Remove voice pack",
+                "Voice pack removed.",
+                &["Back".into()],
+                theme,
+            )
+            .await?;
+            Ok(())
+        }
+        _ => Ok(()),
+    }
+}
+
+/// Details: versions, provenance, licenses, architecture, and the
+/// managed location (engine details available, never forced).
+#[cfg(feature = "voice-kokoro")]
+async fn pack_details(terminal: &mut Terminal<Backend>, theme: &str) -> Result<(), String> {
+    let location = vesper_voice_kokoro::pack_root();
+    let body = format!(
+        "Voice model: Kokoro-82M (q8f16 ONNX export), revision {}\nVoices: Heart (af_heart), Michael (am_michael)\nPronunciation: espeak-ng IPA (your system installation)\nInference runtime: ONNX Runtime {} (CPU, x86_64 Linux)\n\nLicenses: model/voices/export Apache-2.0; ONNX Runtime MIT; espeak-ng GPL-3.0 (system component, used at a process boundary)\nNotices are shown in the application about screen and preserved beside the runtime library.\nManaged location: {}\n\nThe local neural voice does not change your separately configured main reasoning provider.",
+        vesper_voice_kokoro::PINNED_REVISION,
+        vesper_voice_kokoro::RUNTIME_VERSION,
+        location.display(),
+    );
+    choice(
+        terminal,
+        "Natural Voice pack · Details",
+        &body,
+        &["Back".into()],
+        theme,
+    )
+    .await?;
+    Ok(())
+}
+
 async fn edit_web(
     terminal: &mut Terminal<Backend>,
     draft: &mut WebScopeConfig,

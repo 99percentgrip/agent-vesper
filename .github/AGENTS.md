@@ -29,10 +29,16 @@ platform assumptions on hosts unavailable locally.
   `image.tar.gz`, `image.sha256`, and `image-id`. Each matrix job downloads
   the successful exact-commit driver artifact selected by the release gate,
   verifies its hash before packaging, and never rebuilds it. Both hosts build
-  with Docker and Swarm features; Swarm activation remains default-off in native
+  with Docker, Swarm and Bridge features. The TUI also builds with the VRO-17
+  `voice-kokoro` and `voice-flm` features so the shipped binary exposes the
+  accepted local voice stack; optional model/runtime assets remain user-installed
+  through native Settings and are not bundled. Swarm activation remains default-off in native
   Settings and requires configured embeddings and a permitted backend. Docker/Podman
   supplies the host runtime; native guided setup offers separate confirmed preparation,
   while installer preflight remains import-only and never enables web access.
+- VRO-17 release notes state that the release ships the local speech stack;
+  third-party cloud STT/TTS are planned future optional integrations, ACP has
+  no microphone/audio capability, and no NPU TTS claim is made.
 - The default toolchain is pinned to Rust 1.95.0 via `rust-toolchain.toml`
   (with `clippy` and `rustfmt` components); MSRV 1.88.0 is enforced
   independently in `msrv.yml` and the spike workflows.

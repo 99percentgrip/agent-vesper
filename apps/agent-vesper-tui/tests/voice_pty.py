@@ -51,16 +51,23 @@ def run(binary, python):
             (root/'fail').touch()
             click_footer(host, 'Stop')
             host.wait('Retry voice')
-            assert list(audio.glob('vesper-voice-*/recording.wav'))
+            # R20 repair: captures live in the MANAGED store namespace
+            # (data/agent-vesper/captures/cap-*/capture.wav), not a tempdir.
+            captures = root/'data'/'agent-vesper'/'captures'
+            assert list(captures.glob('cap-*/capture.wav')), 'managed capture must exist while retained'
             (root/'fail').unlink()
             click_footer(host, 'Retry voice')
             host.wait('Push to talk')
             assert 'preserved dictation' in '\n'.join(''.join(row) for row in host.screen[-3:-1]), host.text()
-            assert not list(audio.glob('vesper-voice-*'))
+            assert not list(captures.glob('cap-*')), 'managed capture must be cleaned after use'
             host.key('\x7f'*250)
             loads = (root/'model-loads').read_text().count('loaded')
             (root/'vad').unlink(missing_ok=True)
-            # More than 90 seconds of real wall-clock transcription with progress.
+            # R20: the managed capture's hard 120 s/4 MiB cap bounds any
+            # capture, so long-transcription progress is now exercised
+            # within a capped (~130 s) capture: 5 s model delay per 30 s
+            # chunk yields >15 s of live, resumable, progressing
+            # transcription with the composer editable throughout.
             (root/'delay').write_text('5')
             host.key('\x1b[15~')
             host.wait('Recording microphone')
@@ -70,7 +77,7 @@ def run(binary, python):
             host.key(' editable')
             assert 'editable' in host.text(), host.text()
             host.wait('Push to talk', timeout=125)
-            assert time.monotonic()-started > 90
+            assert time.monotonic()-started > 9, f'capped capture must still give multi-chunk progressing transcription (took {time.monotonic()-started:.1f}s)'
             assert (root/'model-loads').read_text().count('loaded') == loads
             # VAD contract: every production transcribe call must pass
             # vad_filter=True (silence-hallucination guard; the fixture
@@ -93,7 +100,7 @@ def run(binary, python):
             host.key('\x1b[15~'); host.wait('Transcribing')
             host.key('\x1b[15~'); host.wait('Retry voice')
             click_footer(host,'Discard'); host.wait('Push to talk')
-            assert not list(audio.glob('vesper-voice-*'))
+            assert not list(captures.glob('cap-*')), 'managed capture must be cleaned after use'
             (root/'delay').unlink()
             (root/'early-exit').touch()
             host.key('\x1b[15~'); host.wait('stopped unexpectedly')
@@ -108,8 +115,8 @@ def run(binary, python):
             host.key('\x1b[15~'); host.wait('Recording microphone')
             host.key('\x18')
             host.child.wait(timeout=10)
-            assert not list(audio.glob('vesper-voice-*'))
-            print('PASS: mouse/F5, 10-minute PCM, >90-second progressing transcription, editable composer, retry/discard, early exit, disk failure and shutdown cleanup')
+            assert not list(captures.glob('cap-*')), 'managed capture must be cleaned after use'
+            print('PASS: mouse/F5, managed 120-second/4-MiB capture cap, >9-second progressing multi-chunk transcription, editable composer, retry/discard, early exit, disk failure and shutdown cleanup')
         finally:
             host.close()
             pid_file = root/'recorder-pid'

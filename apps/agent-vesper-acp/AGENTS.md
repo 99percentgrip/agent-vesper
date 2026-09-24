@@ -292,11 +292,22 @@ Every host-agnostic capability shipped in the TUI MUST also be wired here
   the same AgentLoop tool transaction as TUI. ACP does not launch desktop apps.
 - **Justified exclusions** (host-specific UX): TUI rendering niceties
   (single-column layout, markdown renderer, scrollbar, bracketed paste,
-  F-keys), push-to-talk voice (interactive terminal capture),
+  F-keys), push-to-talk voice (interactive terminal capture and playback),
   desktop browser launch, `/interview-limit` (the ACP interview currently uses
   the bounded automatic 1–12 question policy), and terminal-only
   catalog commands. ACP advertises the frozen 28-command compatibility
   catalog plus the shared implemented host-neutral extension catalog.
+- **VRO-17 voice exclusion:** ACP v1 advertises
+  `promptCapabilities.audio = false` and exposes no microphone capture,
+  speaker playback, live voice status, Voice Settings, speech-provider picker,
+  or F5/F9/Stop surface. It must not place raw PCM, local playback state or
+  terminal voice status on ACP stdout. Voice-origin text in the TUI still uses
+  the same provider-neutral registry/runtime dispatch and cancellation path as
+  ACP text turns; future `VoiceStt`/`VoiceTts` adapters therefore require no ACP
+  protocol extension or reasoning-provider branch. The real-process
+  `process_transcript` test pins the audio capability and absence of voice
+  configuration/command advertisement. Starting ACP without an explicit user
+  action must not initialize microphone, speaker, STT, TTS or model workloads.
 
 ## Sandbox `/sandbox on|off|status` (VRO-13 PR-4)
 

@@ -93,6 +93,17 @@ Own durable project documentation and evidence-backed engineering records.
   routing arithmetic is explicitly out of scope; the bounded prompt-side
   residual (520-pt literal match) is a recorded, accepted limitation, not a
   hidden one.
+- `voice-oracle-extraction-prd.md` owns VRO-17 — the planned real-time
+  bidirectional voice subsystem extracted (no port) from the voice oracle
+  upstream: `vesper-voice` as a provider-neutral, agent-free core with
+  interchangeable local/cloud STT and TTS ports, barge-in routed through
+  the existing transactional cancellation path, sentence-gated streaming
+  TTS with pre-cloud secret redaction, and the PR-0…PR-5 gated migration.
+  VRO-17 v1 ships the local speech stack; concrete third-party cloud STT/TTS
+  are future optional features behind the existing ports and security gates.
+  Its upstream is referenced exclusively as the voice oracle; reconnaissance
+  evidence and upstream pin live in
+  `architecture/recon_voice_oracle.md`.
 - `chunk-score-floor-prd.md` owns the completed (2026-09-13) requirements
   for eliminating the chunk-tier cosine noise floor (finding:
   `foundation/exemplar-migration-execution.md` §5.1). Landed contract:

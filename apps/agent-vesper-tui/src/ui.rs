@@ -924,6 +924,16 @@ fn run_status_line(model: &ViewModel, show_sidebar: bool, palette: ThemePalette)
             ),
         ]);
     }
+    if let Some(status) = model
+        .status
+        .as_deref()
+        .filter(|status| status.starts_with("Voice:"))
+    {
+        return Line::from(vec![
+            Span::styled("◌ ", Style::default().fg(palette.warning)),
+            Span::styled(status.to_owned(), Style::default().fg(palette.text)),
+        ]);
+    }
     const FRAMES: [&str; 8] = ["✦", "✧", "✶", "✷", "✹", "✷", "✶", "✧"];
     let symbol = FRAMES[(model.animation_frame as usize) % FRAMES.len()];
     let mut detail = vec![format_duration(model.turn_elapsed_ms)];
@@ -3974,4 +3984,20 @@ fn voice_stop_survives_permission_and_command_overlays() {
             );
         }
     }
+}
+
+#[test]
+fn voice_wait_is_visible_during_an_active_agent_turn() {
+    let model = ViewModel {
+        agent_running: true,
+        status: Some("Voice: waiting for speakable agent text · turn 20.0s".into()),
+        turn_elapsed_ms: 20_000,
+        ..ViewModel::default()
+    };
+    let line = run_status_line(&model, false, theme_palette("chatgpt-black"));
+    assert!(
+        line.to_string()
+            .contains("waiting for speakable agent text"),
+        "running voice stage must not be hidden by generic agent activity: {line}"
+    );
 }

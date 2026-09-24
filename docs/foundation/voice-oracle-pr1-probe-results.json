@@ -1,0 +1,70 @@
+{
+  "runs": [
+    {
+      "model": "tiny",
+      "vad": "vad_filter=True (shipped script default)",
+      "fixture": "silence-30s",
+      "seconds": 30,
+      "wall_s": 1.6,
+      "empty": true,
+      "text_len": 0,
+      "text_head": "",
+      "source": "real model (cached faster-whisper) via real script protocol"
+    },
+    {
+      "model": "tiny",
+      "vad": "vad_filter=True (shipped script default)",
+      "fixture": "long-silence-90s",
+      "seconds": 90,
+      "wall_s": 1.45,
+      "empty": true,
+      "text_len": 0,
+      "text_head": "",
+      "source": "real model (cached faster-whisper) via real script protocol"
+    },
+    {
+      "model": "tiny",
+      "vad": "vad_filter=True (shipped script default)",
+      "fixture": "tone-burst-30s",
+      "seconds": 30,
+      "wall_s": 1.02,
+      "empty": true,
+      "text_len": 0,
+      "text_head": "",
+      "source": "real model (cached faster-whisper) via real script protocol"
+    },
+    {
+      "model": "base",
+      "vad": "vad_filter=True (shipped script default)",
+      "fixture": "silence-30s",
+      "seconds": 30,
+      "wall_s": 1.34,
+      "empty": true,
+      "text_len": 0,
+      "text_head": "",
+      "source": "real model (cached faster-whisper) via real script protocol"
+    },
+    {
+      "model": "base",
+      "vad": "vad_filter=True (shipped script default)",
+      "fixture": "long-silence-90s",
+      "seconds": 90,
+      "wall_s": 1.98,
+      "empty": true,
+      "text_len": 0,
+      "text_head": "",
+      "source": "real model (cached faster-whisper) via real script protocol"
+    },
+    {
+      "model": "base",
+      "vad": "vad_filter=True (shipped script default)",
+      "fixture": "tone-burst-30s",
+      "seconds": 30,
+      "wall_s": 1.41,
+      "empty": true,
+      "text_len": 0,
+      "text_head": "",
+      "source": "real model (cached faster-whisper) via real script protocol"
+    }
+  ]
+}
