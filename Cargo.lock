@@ -106,6 +106,7 @@ dependencies = [
  "arboard",
  "base64",
  "crossterm",
+ "fs2",
  "futures-util",
  "image",
  "libc",

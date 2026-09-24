@@ -81,9 +81,9 @@ pub struct CaptureLease {
 }
 
 impl CaptureLease {
-    /// Reads the current process's lease identity (Linux /proc; other
-    /// platforms fall back to PID + wall time, which is weaker —
-    /// recovery then refuses adoption unless the PID is gone).
+    /// Reads the current process's lease identity (Linux `/proc`; other
+    /// platforms use a weaker PID-only identity, so recovery refuses
+    /// adoption unless the PID is provably gone).
     #[must_use]
     pub fn for_current_process() -> Self {
         let pid = std::process::id();
@@ -105,7 +105,7 @@ impl CaptureLease {
         }
         match process_start_ms(self.pid) {
             Some(start) => start != self.process_start_ms,
-            None => true,
+            None => !process_exists(self.pid),
         }
     }
 }
@@ -143,7 +143,53 @@ fn boot_time_ms() -> Option<u64> {
 }
 
 fn process_exists(pid: u32) -> bool {
-    Path::new(&format!("/proc/{pid}")).exists()
+    #[cfg(unix)]
+    {
+        let pid_text = pid.to_string();
+        if std::process::Command::new("kill")
+            .arg("-0")
+            .arg(&pid_text)
+            .output()
+            .is_ok_and(|output| output.status.success())
+        {
+            return true;
+        }
+        // `kill -0` can also fail for a live process owned by somebody
+        // else. `ps` distinguishes that case; failure to launch the probe
+        // is unknown and therefore conservatively treated as live.
+        std::process::Command::new("ps")
+            .args(["-p", &pid_text, "-o", "pid="])
+            .output()
+            .map_or(true, |output| {
+                output.status.success()
+                    && String::from_utf8_lossy(&output.stdout)
+                        .split_whitespace()
+                        .any(|field| field == pid_text)
+            })
+    }
+
+    #[cfg(windows)]
+    {
+        let pid_text = pid.to_string();
+        let filter = format!("PID eq {pid}");
+        std::process::Command::new("tasklist")
+            .args(["/FI", &filter, "/FO", "CSV", "/NH"])
+            .output()
+            .map_or(true, |output| {
+                output.status.success()
+                    && String::from_utf8_lossy(&output.stdout).lines().any(|line| {
+                        line.split(',')
+                            .nth(1)
+                            .is_some_and(|field| field.trim().trim_matches('"') == pid_text)
+                    })
+            })
+    }
+
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = pid;
+        true
+    }
 }
 
 /// One managed capture (directory + bounded writer + lease).
@@ -207,7 +253,7 @@ impl ManagedCapture {
             });
         }
         // 3. Private owned directory + lease file.
-        let id = format!("cap-{}-{}", std::process::id(), now_ms());
+        let id = format!("cap-{}-{}", std::process::id(), uuid::Uuid::new_v4());
         let dir = root.join("captures").join(id);
         std::fs::create_dir_all(&dir).map_err(|error| CaptureStoreError::Io {
             reason: error.to_string(),
@@ -445,20 +491,7 @@ fn free_bytes(path: &Path) -> Option<u64> {
 }
 
 fn statvfs_bytes(path: &Path) -> Option<u64> {
-    // No libc dependency: use `df -B1` on the exact path (checked
-    // output, no shell string from user data).
-    let output = std::process::Command::new("df")
-        .arg("-B1")
-        .arg("--output=avail")
-        .arg(path)
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let text = String::from_utf8_lossy(&output.stdout);
-    let line = text.lines().nth(1)?.trim().to_owned();
-    line.parse::<u64>().ok()
+    fs2::available_space(path).ok()
 }
 
 fn aggregate_bytes(root: &Path) -> Result<u64, CaptureStoreError> {
@@ -531,6 +564,13 @@ mod tests {
     }
 
     #[test]
+    fn free_space_probe_uses_the_existing_ancestor_portably() {
+        let base = tempfile::tempdir().unwrap();
+        let root = base.path().join("not-created/voice-root");
+        assert!(free_bytes(&root).is_some());
+    }
+
+    #[test]
     fn start_write_cleanup_round_trip() {
         let root = store_root();
         let mut capture = ManagedCapture::start(&root).unwrap();
@@ -540,6 +580,18 @@ mod tests {
         assert!(path.exists());
         capture.cleanup().unwrap();
         assert!(!path.exists());
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn back_to_back_captures_have_distinct_owned_directories() {
+        let root = store_root();
+        let first = ManagedCapture::start(&root).unwrap();
+        let second = ManagedCapture::start(&root).unwrap();
+        assert_ne!(first.dir, second.dir);
+        first.cleanup().unwrap();
+        assert!(second.wav_path().is_file());
+        second.cleanup().unwrap();
         std::fs::remove_dir_all(&root).ok();
     }
 
@@ -669,11 +721,18 @@ mod tests {
 
     #[test]
     fn pid_reuse_is_detected_by_start_time() {
-        // A lease claiming our PID with a DIFFERENT start time is dead.
-        let mut lease = CaptureLease::for_current_process();
+        let current = CaptureLease::for_current_process();
+        assert!(!current.owner_is_dead());
+        let mut lease = current.clone();
         lease.process_start_ms = lease.process_start_ms.saturating_add(60_000);
-        assert!(lease.owner_is_dead(), "same pid, different start ⇒ dead");
-        assert!(!CaptureLease::for_current_process().owner_is_dead());
+        if current.process_start_ms == 0 {
+            assert!(
+                !lease.owner_is_dead(),
+                "without a platform start marker, a live PID is conservatively retained"
+            );
+        } else {
+            assert!(lease.owner_is_dead(), "same pid, different start ⇒ dead");
+        }
     }
 
     #[test]

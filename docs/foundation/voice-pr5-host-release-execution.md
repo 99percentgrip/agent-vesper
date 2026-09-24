@@ -69,6 +69,21 @@ listed `153.0.8010.52-1~deb12u1` for both amd64 and arm64. The Dockerfile now
 pins that shared available version; the immutable base-image digest and the
 two-architecture image/test contract are unchanged.
 
+The replacement exact-commit five-target workflow exposed a separate macOS
+Apple Silicon R20 portability defect: capture free-space checks invoked GNU-only
+`df -B1 --output=avail`, while lease liveness consulted Linux `/proc` on every
+platform. Seven real TUI library tests failed with `UnknownFreeSpace` or treated
+the current process as dead. Capture space now uses `fs2`'s cross-platform
+filesystem query. Linux retains its process-start identity check; Unix and
+Windows use direct process probes for PID liveness, and an unavailable start
+marker is conservatively live until the PID is proved absent.
+
+The focused repair run then reproduced a same-process collision that the prior
+`df` subprocess latency had masked: two captures opened within one millisecond
+shared `cap-<pid>-<timestamp>`, and cleaning the first removed the second.
+Capture directories now use the crate's existing UUID facility, with an
+explicit back-to-back ownership regression.
+
 ## Files
 
 - `.github/workflows/release.yml`, `.github/AGENTS.md` — ship and document the
@@ -90,6 +105,9 @@ two-architecture image/test contract are unchanged.
 - `crates/vesper-web-fetch/Dockerfile` — refresh the exact Debian Bookworm
   headless-shell package pin required by the release-blocking contained-driver
   workflow.
+- `apps/agent-vesper-tui/src/voice_capture_store.rs`, its manifest and owning
+  `AGENTS.md` — make R20 free-space and conservative lease-liveness checks
+  portable across the release matrix.
 
 ## Exact evidence
 
@@ -123,6 +141,11 @@ Pre-commit focused checks:
   `bookworm-security` indexes identify `153.0.8010.52-1~deb12u1` for both
   architectures. Green replacement-run evidence is recorded after the updated
   exact commit completes.
+- Remote five-target red evidence: run `35961360242`, job `107510423888`,
+  failed seven `voice_capture_store` tests on macOS Apple Silicon. The log
+  records GNU-only free-space probing as `UnknownFreeSpace` and current-process
+  lease misclassification without Linux `/proc`. Focused red-to-green and the
+  replacement five-target run are recorded after the repair completes.
 
 The final commit SHA, complete local gate results, exact-commit workflow run IDs,
 tag, release assets/checksums and registry PR receipt are appended only after

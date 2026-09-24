@@ -729,9 +729,13 @@ business logic.
   the screen drops it. Cold/changed assets still require full verification. Measure recorder onset and first PCM
   separately from real transcription/provider/audio latency; do not claim instant
   replies from fixture timings. Missing setup and recorder failures stay visible.
-- Managed capture space checks accept a not-yet-created data root by measuring
-  its nearest existing ancestor. Only absence allows ascent; unknown space or
-  permission failures still refuse capture before allocation.
+- Managed capture space checks use the portable filesystem API and accept a
+  not-yet-created data root by measuring its nearest existing ancestor. Only
+  absence allows ascent; unknown space or permission failures still refuse
+  capture before allocation. Lease recovery uses Linux process-start identity
+  when available; other platforms retain a live PID conservatively and reclaim
+  only a PID proved absent. Every capture directory uses a UUID identity so
+  back-to-back captures cannot alias within one clock tick.
 
 - Playback drains player stderr concurrently and classifies only the first 4096
   bytes into static actionable diagnostics; raw stderr never enters chat. Error
