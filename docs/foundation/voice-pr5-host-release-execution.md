@@ -91,6 +91,15 @@ valid and deliberately broken fixtures could reuse each other's artifacts,
 making two negative tests report `Passed`. Every fixture now receives a UUID
 package identity, retaining parallel execution while separating Cargo caches.
 
+The next exact-commit five-target run exposed another pre-existing test
+isolation defect in the PR-4 F9 readiness regression. Its `PATH` fixtures owned
+the speech-engine and player files, but the test still probed Alex's real
+harness voice interpreter. Clean Linux, macOS and Windows runners therefore
+reported the interpreter as the first blocker in four tests. Readiness now has
+a narrow path-injection seam; production still supplies the same harness path,
+while the regression supplies all three prerequisite files from its fixture.
+The test also no longer imports Unix-only permission APIs.
+
 ## Files
 
 - `.github/workflows/release.yml`, `.github/AGENTS.md` — ship and document the
@@ -118,6 +127,9 @@ package identity, retaining parallel execution while separating Cargo caches.
 - `crates/vesper-agent/src/vro/verifiers.rs` — isolate parallel real-Cargo
   verifier fixtures so a shared release target directory cannot cross-contaminate
   pass/fail evidence.
+- `apps/agent-vesper-tui/src/voice_readiness.rs`,
+  `apps/agent-vesper-tui/tests/pr4_f9_gate.rs` — make PR-4 readiness evidence
+  hermetic and portable without changing the production prerequisite path.
 
 ## Exact evidence
 
@@ -156,6 +168,13 @@ Pre-commit focused checks:
   records GNU-only free-space probing as `UnknownFreeSpace` and current-process
   lease misclassification without Linux `/proc`. Focused red-to-green and the
   replacement five-target run are recorded after the repair completes.
+- Remote five-target red evidence: run `35964811060` failed the same four
+  `pr4_f9_gate` cases on clean Linux, macOS and Windows runners because the
+  fixture omitted the harness voice interpreter. After injecting that path,
+  `cargo test -p agent-vesper-tui --test pr4_f9_gate --features
+  voice-conversation -- --test-threads=8` is green: **6 passed, 0 failed**.
+  Production `voice_readiness_in` still derives the interpreter from
+  `voice_venv_root`; only the controlled test route supplies a different path.
 
 The final commit SHA, complete local gate results, exact-commit workflow run IDs,
 tag, release assets/checksums and registry PR receipt are appended only after

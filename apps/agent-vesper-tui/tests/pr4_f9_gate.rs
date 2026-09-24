@@ -5,8 +5,8 @@
 //! `voice_save_required`, `voice_dirty`, the readiness assessment the
 //! F9 gate calls, and `read_voice_scope`), not test doubles of them.
 //! Only the external device/inference boundary is controlled: the
-//! readiness checks are exercised by manipulating PATH presence of the
-//! real executables they probe (no microphone, no speaker, no model).
+//! readiness checks are exercised with fixture paths for every executable
+//! they probe (no microphone, no speaker, no model or machine setup).
 //!
 //! RED at the time of writing (pre-fix): the F9 gate conflated
 //! enabled+readiness and its readiness check evaluated
@@ -24,7 +24,9 @@ use std::path::PathBuf;
 /// Controlled search path: a fixture bin dir so readiness observes
 /// exactly the executables we place there (no process-env mutation).
 struct FixturePath {
+    root: PathBuf,
     value: std::ffi::OsString,
+    interpreter: PathBuf,
 }
 
 impl FixturePath {
@@ -40,24 +42,29 @@ impl FixturePath {
         std::fs::create_dir_all(&fixture).unwrap();
         for (name, contents) in bin {
             std::fs::write(fixture.join(name), contents).unwrap();
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(fixture.join(name), std::fs::Permissions::from_mode(0o755))
-                .unwrap();
         }
+        let interpreter = fixture.join("voice-venv-python");
+        std::fs::write(&interpreter, b"fixture").unwrap();
         Self {
-            value: fixture.into_os_string(),
+            value: fixture.clone().into_os_string(),
+            root: fixture,
+            interpreter,
         }
     }
 
     fn as_search(&self) -> &std::ffi::OsStr {
         &self.value
     }
+
+    fn interpreter(&self) -> &std::path::Path {
+        &self.interpreter
+    }
 }
 
 impl Drop for FixturePath {
     fn drop(&mut self) {
         // Remove ONLY our own fixture directory (never a parent).
-        let _ = std::fs::remove_dir_all(PathBuf::from(&self.value));
+        let _ = std::fs::remove_dir_all(&self.root);
     }
 }
 
@@ -104,14 +111,17 @@ enum Gate {
     Ready,
 }
 
-fn f9_gate(root: &std::path::Path, search: Option<&std::ffi::OsStr>) -> Gate {
+fn f9_gate(root: &std::path::Path, fixture: &FixturePath) -> Gate {
     let enabled = vesper_voice::read_voice_scope(root)
         .unwrap_or_default()
         .enabled;
     if !enabled {
         return Gate::Disabled;
     }
-    match agent_vesper_tui::voice_readiness::first_blocker_in(search) {
+    match agent_vesper_tui::voice_readiness::first_blocker_with_interpreter(
+        fixture.interpreter(),
+        Some(fixture.as_search()),
+    ) {
         Some(blocker) => {
             Gate::Blocked(agent_vesper_tui::voice_readiness::blocked_message(&blocker))
         }
@@ -131,9 +141,6 @@ fn f9_after_real_settings_save_produces_capture_or_named_blocker() {
     // change, then run the REAL F9 gate.
     let _workspace = ScopedWorkspace::with_scope("[voice]\nenabled = false\n");
     let path = FixturePath::with(FAKE_TOOLS);
-    // The venv prerequisite uses the real harness path (present on this
-    // machine); if absent this case degrades to Blocked — which the
-    // assertion still requires to name THAT prerequisite, never "enable".
 
     // 1) Production save decision + save (voice-only change).
     let mut voice = vesper_voice::read_voice_scope(_workspace.root()).unwrap();
@@ -151,7 +158,7 @@ fn f9_after_real_settings_save_produces_capture_or_named_blocker() {
     // 2) Real F9 gate with all prerequisites present → Ready (capture
     // proceeds). RED pre-fix: relative-path espeak-ng check made this
     // Blocked with the misleading "not enabled" message.
-    match f9_gate(_workspace.root(), Some(path.as_search())) {
+    match f9_gate(_workspace.root(), &path) {
         Gate::Ready => {}
         other => panic!("enabled + all prerequisites present must pass the gate, got: {other:?}"),
     }
@@ -164,7 +171,7 @@ fn enabled_but_missing_prerequisite_names_the_blocker_not_enable() {
     let _workspace = ScopedWorkspace::with_scope("[voice]\nenabled = true\n");
     let path = FixturePath::with(&[("aplay", "#!/bin/sh\nexit 0\n")]);
 
-    match f9_gate(_workspace.root(), Some(path.as_search())) {
+    match f9_gate(_workspace.root(), &path) {
         Gate::Blocked(message) => {
             assert!(
                 message.contains("Voice is enabled, but"),
@@ -189,7 +196,7 @@ fn enabled_but_missing_prerequisite_names_the_blocker_not_enable() {
 fn disabled_uses_the_activation_route() {
     let _workspace = ScopedWorkspace::with_scope("[voice]\nenabled = false\n");
     let path = FixturePath::with(FAKE_TOOLS);
-    match f9_gate(_workspace.root(), Some(path.as_search())) {
+    match f9_gate(_workspace.root(), &path) {
         Gate::Disabled => {}
         other => panic!("disabled scope must use the disabled branch: {other:?}"),
     }
@@ -210,7 +217,7 @@ fn failed_save_surfaces_error_and_keeps_disabled() {
     let result = agent_vesper_tui::settings_host_test::save_voice_for_test(&root, &scope);
     assert!(result.is_err(), "failed save must surface");
     // And the gate stays disabled (the failed save left it so).
-    match f9_gate(_workspace.root(), Some(path.as_search())) {
+    match f9_gate(_workspace.root(), &path) {
         Gate::Disabled => {}
         other => panic!("failed save must not enable: {other:?}"),
     }
@@ -223,7 +230,7 @@ fn configuration_reload_preserves_saved_value() {
     let reloaded = vesper_voice::read_voice_scope(_workspace.root()).unwrap();
     assert!(reloaded.enabled && reloaded.partials);
     let path = FixturePath::with(FAKE_TOOLS);
-    match f9_gate(_workspace.root(), Some(path.as_search())) {
+    match f9_gate(_workspace.root(), &path) {
         Gate::Ready => {}
         other => panic!("reload must preserve enabled+ready: {other:?}"),
     }
@@ -236,13 +243,16 @@ fn settings_panel_and_f9_share_one_assessment() {
     // must agree it is the blocker.
     let _workspace = ScopedWorkspace::with_scope("[voice]\nenabled = true\n");
     let path = FixturePath::with(&[("espeak-ng", "#!/bin/sh\nexit 0\n")]); // no aplay
-    let checks = agent_vesper_tui::voice_readiness::voice_readiness_in(Some(path.as_search()));
+    let checks = agent_vesper_tui::voice_readiness::voice_readiness_with_interpreter(
+        path.interpreter(),
+        Some(path.as_search()),
+    );
     let aplay_check = checks
         .iter()
         .find(|check| check.name.contains("aplay"))
         .expect("aplay check present");
     assert!(!aplay_check.ok);
-    match f9_gate(_workspace.root(), Some(path.as_search())) {
+    match f9_gate(_workspace.root(), &path) {
         Gate::Blocked(message) => assert!(
             message.contains("aplay") || message.contains("audio player"),
             "same blocker as the panel: {message}"

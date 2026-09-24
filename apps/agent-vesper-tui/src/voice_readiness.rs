@@ -58,11 +58,14 @@ pub fn resolve_executable(name: &str) -> Option<PathBuf> {
 
 /// The shared readiness assessment. Every check is read-only existence
 /// probing — no devices are opened, no processes spawned, nothing
-/// installed. The optional search path exists for controlled tests
-/// (production passes `None` = the real `PATH`).
+/// installed. Tests can supply both external inputs without depending on
+/// machine-owned setup; production supplies the harness voice interpreter
+/// and the real `PATH`.
 #[must_use]
-pub fn voice_readiness_in(search: Option<&std::ffi::OsStr>) -> Vec<ReadinessCheck> {
-    let venv_python = crate::voice_venv_root().join("bin").join("python");
+pub fn voice_readiness_with_interpreter(
+    venv_python: &Path,
+    search: Option<&std::ffi::OsStr>,
+) -> Vec<ReadinessCheck> {
     vec![
         ReadinessCheck {
             name: "voice backend (dictation venv interpreter)",
@@ -82,6 +85,14 @@ pub fn voice_readiness_in(search: Option<&std::ffi::OsStr>) -> Vec<ReadinessChec
     ]
 }
 
+/// The shared readiness assessment with an injectable executable search
+/// path. The voice interpreter remains the production harness path.
+#[must_use]
+pub fn voice_readiness_in(search: Option<&std::ffi::OsStr>) -> Vec<ReadinessCheck> {
+    let venv_python = crate::voice_venv_root().join("bin").join("python");
+    voice_readiness_with_interpreter(&venv_python, search)
+}
+
 /// The production assessment (real `PATH`).
 #[must_use]
 pub fn voice_readiness() -> Vec<ReadinessCheck> {
@@ -92,6 +103,18 @@ pub fn voice_readiness() -> Vec<ReadinessCheck> {
 #[must_use]
 pub fn first_blocker_in(search: Option<&std::ffi::OsStr>) -> Option<ReadinessCheck> {
     voice_readiness_in(search)
+        .into_iter()
+        .find(|check| !check.ok)
+}
+
+/// The first failing prerequisite when both filesystem inputs are supplied.
+/// This is the hermetic counterpart to [`first_blocker_in`].
+#[must_use]
+pub fn first_blocker_with_interpreter(
+    venv_python: &Path,
+    search: Option<&std::ffi::OsStr>,
+) -> Option<ReadinessCheck> {
+    voice_readiness_with_interpreter(venv_python, search)
         .into_iter()
         .find(|check| !check.ok)
 }
