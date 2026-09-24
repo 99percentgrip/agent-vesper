@@ -30,6 +30,9 @@ OpenAI is preserved without a frequency explanation.
 The [platform-verification record](2026-09-25-tool-output-stall-platform-verification.md)
 documents the cross-platform test/ownership defects, Windows red-to-green
 fixture corrections, exact-ref CI receipts and final five-target PASS.
+The [v0.23.6 release record](2026-09-25-v0.23.6-release-execution.md) owns
+exact-release-commit gating, publication and asset verification; release
+preparation does not change the accepted repair verdict above.
 
 The [06:10 UTC recurrence](2026-09-21-agent-tool-stall-0610z-recheck.md) involves
 a new shell `702497` and `cat` child `702500` under the same TUI `650318`.

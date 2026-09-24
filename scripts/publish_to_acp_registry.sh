@@ -187,10 +187,11 @@ SHA-256 checksummed by the installer.
 ## Verification
 
 - \`cargo xtask verify\` green on the v${VERSION} HEAD.
-- All four CI workflows (\`ci.yml\`, \`msrv.yml\`, \`platform-foundation.yml\`,
-  \`release.yml\`) \`success\` on the tag HEAD.
-- Local install verified: both \`agent-vesper-tui\` and \`agent-vesper-acp\`
-  print \`${VERSION}\`.
+- All five release workflows (\`ci.yml\`, \`msrv.yml\`,
+  \`platform-foundation.yml\`, \`web-driver.yml\`, and \`release.yml\`)
+  \`success\` on the release commit/tag.
+- Published ACP and TUI archive binaries report \`${VERSION}\`; release
+  verification does not replace a user's local installation.
 EOF
 )
 

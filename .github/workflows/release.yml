@@ -238,7 +238,7 @@ jobs:
             gh release create "$RELEASE_TAG" \
               --repo "$GITHUB_REPOSITORY" \
               --title "Agent Vesper $RELEASE_TAG" \
-              --notes "VRO-17 ships the local terminal speech stack: CPU and capability-verified FLM/NPU recognition plus local CPU Kokoro synthesis. Cloud STT/TTS adapters are planned future optional integrations and are not included in this release. ACP continues to advertise no microphone/audio capability." \
+              --notes "Agent Vesper v0.23.6 fixes the recurring command/tool-output deadlock. Command execution now drains stdout and stderr concurrently, bounds retained output independently of transport draining, settles timeout and cancellation within bounded cleanup budgets, cleans up owned descendant processes, and preserves truthful partial-output and failure state. The settlement matrix passed behaviorally on Linux x86_64, Linux ARM64, Windows x86_64, macOS Intel, and macOS Apple Silicon. Historical OpenAI-vs-GLM frequency correlation was not live-retested because GLM live access is no longer available; this explanatory limitation does not affect the provider-neutral shared-executor reproduction and repair." \
               --generate-notes
           fi
           gh release upload "$RELEASE_TAG" dist/* \

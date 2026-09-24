@@ -13,6 +13,9 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 - `2026-09-25-tool-output-stall-platform-verification.md` owns the portable
   Windows/macOS settlement-matrix preparation, Job Object/process-group repair,
   CI-ref constraint, local red-to-green follow-up and exact remaining gates.
+- `2026-09-25-v0.23.6-release-execution.md` owns the exact-commit gate,
+  publication, asset/checksum and ACP Registry receipts for the critical
+  tool-output-stall stability release.
 
 - `mcp-session-lifecycle-repair.md` owns persistent MCP source repair,
   isolated Playwright continuity evidence, host wiring and platform limitations.
