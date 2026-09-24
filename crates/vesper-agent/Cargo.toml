@@ -42,6 +42,7 @@ vesper-provider = { path = "../vesper-provider", version = "=0.23.5" }
 vesper-runtime = { path = "../vesper-runtime", version = "=0.23.5" }
 
 [dev-dependencies]
+base64.workspace = true
 # VRO-9 (Directive 3): live HTTP integration tests for the ReAct loop drive
 # a real local LM Studio endpoint at localhost:1234. The crate's production
 # source tree (src/) never references reqwest (architecture scan enforced);
