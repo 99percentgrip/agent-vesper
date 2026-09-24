@@ -145,3 +145,35 @@ required-features = ["voice-kokoro"]
 [[example]]
 name = "continuity_pause_receipt"
 required-features = ["voice-kokoro"]
+
+[[example]]
+name = "cold_warm_starvation"
+required-features = ["voice-kokoro"]
+
+[[example]]
+name = "continuity_turn_receipt"
+required-features = ["voice-kokoro"]
+
+[[example]]
+name = "first_speech_receipt"
+required-features = ["voice-kokoro"]
+
+[[example]]
+name = "preview_first_pcm_receipt"
+required-features = ["voice-kokoro"]
+
+[[example]]
+name = "preview_latency_receipt"
+required-features = ["voice-kokoro"]
+
+[[example]]
+name = "short_reply_boundary_receipt"
+required-features = ["voice-kokoro"]
+
+[[example]]
+name = "speech_pipeline_receipt"
+required-features = ["voice-kokoro"]
+
+[[example]]
+name = "verify_repro"
+required-features = ["voice-flm"]

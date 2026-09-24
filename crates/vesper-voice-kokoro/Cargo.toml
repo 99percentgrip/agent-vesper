@@ -57,3 +57,55 @@ required-features = ["ort"]
 [[example]]
 name = "repro_tui_path5"
 required-features = ["ort"]
+
+[[example]]
+name = "boundary_silence_receipt"
+required-features = ["ort"]
+
+[[example]]
+name = "latency_receipt"
+required-features = ["ort"]
+
+[[example]]
+name = "phoneme_char_matrix"
+required-features = ["ort"]
+
+[[example]]
+name = "phoneme_full_path"
+required-features = ["ort"]
+
+[[example]]
+name = "phoneme_markdown_units"
+required-features = ["ort"]
+
+[[example]]
+name = "phoneme_numeric_probe"
+required-features = ["ort"]
+
+[[example]]
+name = "phoneme_recon"
+required-features = ["ort"]
+
+[[example]]
+name = "phoneme_shape_matrix"
+required-features = ["ort"]
+
+[[example]]
+name = "phoneme_strand_check"
+required-features = ["ort"]
+
+[[example]]
+name = "piece_rtf_receipt"
+required-features = ["ort"]
+
+[[example]]
+name = "pron_ab_audio"
+required-features = ["ort"]
+
+[[example]]
+name = "repaired_boundary_receipt"
+required-features = ["ort"]
+
+[[example]]
+name = "signal_receipt"
+required-features = ["ort"]

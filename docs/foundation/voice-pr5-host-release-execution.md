@@ -54,6 +54,13 @@ The workflow now compiles both voice features in every release target. Optional
 Kokoro/FLM model weights and runtimes remain user-installed through Settings;
 they are not bundled. ACP remains voice-free.
 
+The first default-feature workspace run also exposed that feature-only voice
+evidence examples were being auto-discovered without manifest feature gates.
+They referenced Kokoro, conversation and FLM modules that are intentionally
+absent from a default build. Each example now declares its owning `ort`,
+`voice-kokoro` or `voice-flm` requirement in `Cargo.toml`; default builds skip
+those evidence binaries while all-feature builds continue compiling them.
+
 ## Files
 
 - `.github/workflows/release.yml`, `.github/AGENTS.md` — ship and document the
@@ -68,6 +75,8 @@ they are not bundled. ACP remains voice-free.
   decision.
 - Workspace manifests, lockfile and `registry/agent.json` — v0.23.4 release
   identity and matching archive URLs.
+- TUI and Kokoro manifests — gate feature-only voice evidence examples so the
+  default workspace remains buildable.
 - VRO-17 production, regression and evidence files accumulated through PR-0 to
   PR-4/R1–R20 — committed as the source being released.
 
@@ -93,6 +102,10 @@ Pre-commit focused checks:
   presentation strings. The ACP binary contains none of those host surfaces.
 - `cargo fmt --all -- --check`, `git diff --check`, and the registry assertion
   (`version == 0.23.4`; all five archive URLs contain `/v0.23.4/`) — **passed**.
+- Default workspace red → green: the first `cargo test --workspace` failed to
+  compile feature-only voice examples because their modules were absent from
+  the default feature set; after adding manifest `required-features`, the same
+  command completed with **0 failures**.
 
 The final commit SHA, complete local gate results, exact-commit workflow run IDs,
 tag, release assets/checksums and registry PR receipt are appended only after
