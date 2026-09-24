@@ -175,6 +175,16 @@ Pre-commit focused checks:
   voice-conversation -- --test-threads=8` is green: **6 passed, 0 failed**.
   Production `voice_readiness_in` still derives the interpreter from
   `voice_venv_root`; only the controlled test route supplies a different path.
+- Remote five-target red evidence: exact-commit run `35968227802` reached the
+  repaired F9 gate but failed `presentation_separates_selection_from_availability_and_receipt`
+  on clean Linux and macOS runners. The test incorrectly required the runner's
+  physical FLM readiness before recording the verification receipt it actually
+  exercises, while two parallel tests could reset the same process-global
+  receipt. The regression now serializes every receipt mutation in that test
+  binary and establishes the required state directly; it performs no hardware
+  discovery or NPU work. The formerly failing test binary then passed five
+  consecutive all-feature runs with 12 parallel test threads: **60 passed,
+  0 failed**.
 
 The final commit SHA, complete local gate results, exact-commit workflow run IDs,
 tag, release assets/checksums and registry PR receipt are appended only after

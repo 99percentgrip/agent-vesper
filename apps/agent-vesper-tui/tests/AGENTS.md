@@ -25,9 +25,10 @@ Verify terminal interaction through the production TUI binary with isolated stat
   honesty — extended 2026-09-23 with the presentation-separation contract
   (CPU-selected vs available-not-selected vs unavailable-refusal vs last-request
   route receipt, draft-vs-saved with no scope rewrite; tests that require a
-  specific FLM verification state set it explicitly via
-  `reset_flm_stt_verification_for_test`). No devices, no downloads, no NPU
-  runtimes.
+  specific FLM verification state hold `FLM_VERIFICATION_LOCK` for the whole
+  test and set it explicitly via `reset_flm_stt_verification_for_test` or
+  `record_flm_stt_verification`; they never infer a prerequisite from the
+  developer machine. No devices, no downloads, no NPU runtimes.
 
 - `voice_r20_default_capture.rs` (2026-09-23 R20 closure) pins the
   default-build capture contract in EVERY feature set (no

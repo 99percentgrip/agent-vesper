@@ -20,14 +20,19 @@
 #![cfg(feature = "voice-conversation")]
 #![forbid(unsafe_code)]
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 
 use vesper_domain::BoundedString;
 use vesper_voice::execution::{
     AcceleratorReadiness, ReadinessCache, ReadinessCacheKey, ReadinessInvalidation, SpeechStage,
     StageBackend, StageExecutionPolicy, StageResolution,
 };
+
+/// Serializes tests that set the process-global FLM verification receipt.
+/// Each test still establishes the exact state it needs while holding this
+/// guard, so parallel execution cannot reset another test's prerequisite.
+static FLM_VERIFICATION_LOCK: Mutex<()> = Mutex::new(());
 
 /// Instrumented route registry mirror: counts every consultation. The
 /// production `registered_routes()` returns zero routes today; this
@@ -322,20 +327,7 @@ fn copied_strict_config_is_locally_revalidated_and_explained_not_rewritten() {
 
 #[test]
 fn presentation_separates_selection_from_availability_and_receipt() {
-    // The verification state may be pending or recorded in this process;
-    // the assertions below hold under both.
-    let pending_stt = matches!(
-        agent_vesper_tui::voice_accel::stage_readiness(SpeechStage::Stt),
-        AcceleratorReadiness::VerificationPending { .. }
-    );
-    let ready_stt = matches!(
-        agent_vesper_tui::voice_accel::stage_readiness(SpeechStage::Stt),
-        AcceleratorReadiness::Ready { .. }
-    );
-    assert!(
-        pending_stt || ready_stt,
-        "test requires the real FLM verification state"
-    );
+    let _verification_guard = FLM_VERIFICATION_LOCK.lock().unwrap();
 
     // CPU-selected configuration with a verified FLM option: the main
     // line says CPU is selected and FLM is available but NOT selected;
@@ -543,6 +535,7 @@ fn placement_attribution_never_fabricates_full_npu_success() {
 
 #[test]
 fn settings_save_and_execution_rows_round_trip_both_policies() {
+    let _verification_guard = FLM_VERIFICATION_LOCK.lock().unwrap();
     // Explicit state contract: this test expects no recorded FLM
     // verification in this process (see the presentation tests, which
     // record it deliberately).
@@ -615,6 +608,7 @@ fn settings_save_and_execution_rows_round_trip_both_policies() {
 
 #[test]
 fn unconfigured_scope_stays_fully_disabled_and_defaults_are_cpu() {
+    let _verification_guard = FLM_VERIFICATION_LOCK.lock().unwrap();
     // Explicit state contract: default resolution requires no recorded
     // verification in this process.
     agent_vesper_tui::voice_accel::reset_flm_stt_verification_for_test();
