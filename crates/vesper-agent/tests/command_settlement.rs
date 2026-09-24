@@ -131,13 +131,15 @@ fn timeout_command() -> String {
 
 #[cfg(unix)]
 fn cancellation_command(marker: &str) -> String {
-    format!("echo before-cancel; (sleep 2; echo stale > {marker}) & while :; do printf y; done")
+    format!(
+        "echo before-cancel; touch cancel.ready; (sleep 2; echo stale > {marker}) & while :; do printf y; done"
+    )
 }
 
 #[cfg(windows)]
 fn cancellation_command(marker: &str) -> String {
     powershell(&format!(
-        "Write-Output before-cancel; {}; while ($true) {{ [Console]::Out.Write('y' * 4096) }}",
+        "[Console]::Out.WriteLine('before-cancel'); [Console]::Out.Flush(); Set-Content -LiteralPath cancel.ready -Value ready; {}; while ($true) {{ [Console]::Out.Write('y' * 4096) }}",
         powershell_descendant(&format!(
             "Start-Sleep -Seconds 2; Set-Content -LiteralPath {marker} -Value stale"
         ))
@@ -174,6 +176,18 @@ async fn assert_marker_absent_after_cleanup(path: &std::path::Path) {
     assert!(
         !path.exists(),
         "owned descendant survived cleanup and wrote {}",
+        path.display()
+    );
+}
+
+async fn wait_for_marker(path: &std::path::Path) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !path.exists() && Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert!(
+        path.exists(),
+        "fixture command did not start: {}",
         path.display()
     );
 }
@@ -263,7 +277,7 @@ async fn cancellation_preserves_partial_output_and_next_command_runs() {
     let ctx = context(root.path(), signal);
     let call = call(&cancellation_command("cancelled.marker"), 20);
     let task = tokio::spawn(async move { RunCommand.execute(&call, &ctx).await });
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    wait_for_marker(&root.path().join("cancel.ready")).await;
     cancel.0.store(true, Ordering::Release);
     let error = tokio::time::timeout(Duration::from_secs(3), task)
         .await
@@ -296,11 +310,7 @@ async fn dropping_async_caller_still_cleans_owned_process_tree() {
     ));
     let call = call(&command, 20);
     let task = tokio::spawn(async move { RunCommand.execute(&call, &ctx).await });
-    let deadline = Instant::now() + Duration::from_secs(2);
-    while !ready_path.exists() && Instant::now() < deadline {
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-    assert!(ready_path.exists(), "fixture command did not start");
+    wait_for_marker(&ready_path).await;
     task.abort();
     let _ = task.await;
     assert_marker_absent_after_cleanup(&root.path().join("dropped.marker")).await;
