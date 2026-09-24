@@ -88,6 +88,9 @@ quota normalization, and legacy GLM compatibility translation.
 ## Verification
 
 - Run `cargo test -p vesper-provider-glm --all-features`.
+- Keep the complete nine-tool request serialization regression green; names,
+  descriptions, schemas, ordering and the documented default-auto intent must
+  reach the GLM request unchanged.
 - Run `cargo xtask provider glm verify`.
 - Run strict workspace Clippy and architecture checks.
 

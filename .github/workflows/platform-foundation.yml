@@ -120,6 +120,12 @@ jobs:
         env:
           RUSTC_WRAPPER: ${{ steps.sccache_check.outputs.sccache_ready == 'true' && 'sccache' || '' }}
         run: cargo test -p agent-vesper-acp --all-features --test process_blockers -- --test-threads=1
+      - name: Run shared command-settlement behavior
+        shell: bash
+        timeout-minutes: 12
+        env:
+          RUSTC_WRAPPER: ${{ steps.sccache_check.outputs.sccache_ready == 'true' && 'sccache' || '' }}
+        run: cargo test -p vesper-agent --test command_settlement -- --test-threads=1
       - name: Run process conformance tests
         shell: bash
         env:

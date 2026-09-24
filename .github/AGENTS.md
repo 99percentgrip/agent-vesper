@@ -60,6 +60,11 @@ platform assumptions on hosts unavailable locally.
   required; cache outages never count as test passes.
 - The five-target matrix runs the Stage 4.1 real-process blocker suite with
   bounded timeouts; Linux-only RSS evidence must not be generalized. The
+  matrix also runs `vesper-agent`'s shared `command_settlement` behavior on
+  every target family so Windows/macOS output draining, timeout/cancellation,
+  descendant cleanup, caller-drop cleanup and recovery cannot pass by
+  cross-compilation or an empty platform-filtered test binary.
+  The
   Linux sandbox step is stall-proofed in layers: it skips `apt` entirely when
   the runner image already ships `bwrap`; when it must install it REWRITES
   (never deletes) `/etc/apt/apt-mirrors.txt` to the canonical

@@ -8,6 +8,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
+command-group.workspace = true
 futures-util.workspace = true
 glob.workspace = true
 # VRO-7 (Verified Workflow Learning) — SecretScrubber uses \b/\s/\w word

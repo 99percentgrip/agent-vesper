@@ -6,6 +6,14 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `2026-09-24-critical-tool-output-stall-repair.md` owns the permanent shared
+  command-output settlement repair evidence, provider/tool-surface
+  reconnaissance, host-route tests, platform limits, and remaining live
+  provider-correlation gate.
+- `2026-09-25-tool-output-stall-platform-verification.md` owns the portable
+  Windows/macOS settlement-matrix preparation, Job Object/process-group repair,
+  CI-ref constraint, local red-to-green follow-up and exact remaining gates.
+
 - `mcp-session-lifecycle-repair.md` owns persistent MCP source repair,
   isolated Playwright continuity evidence, host wiring and platform limitations.
 

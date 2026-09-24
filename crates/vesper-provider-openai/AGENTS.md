@@ -87,6 +87,9 @@ Both hosts register one provider with API-key and subscription authentication.
   account filtering, failed refresh, cancellation, redirects, body limits and deadline;
   Spark tests cover summary omission and image rejection. Memory extraction discovers
   an available account model rather than assuming the historical default is accessible.
+- Keep the complete nine-tool serialization regression green in both native
+  authentication modes; names, descriptions, schemas, ordering and automatic
+  tool-choice intent must reach the Responses request unchanged.
 - Run ACP `openai_native` process tests and TUI native OpenAI wiring tests.
 - Run `cargo xtask architecture`.
 
