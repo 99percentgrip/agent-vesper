@@ -101,6 +101,29 @@ impl SpeechWorker {
     /// Spawns the worker with the current selection and playback owner.
     #[must_use]
     pub fn spawn(selection: EngineSelection, playback: Arc<PlaybackOwner>) -> Self {
+        Self::spawn_inner(selection, playback, None)
+    }
+
+    /// Spawns the real worker pipeline with deterministic synthesis.
+    ///
+    /// This integration-test seam keeps playback, queueing, generation,
+    /// and recovery behavior in production while removing any dependency
+    /// on a developer machine's installed speech engine.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn spawn_with_tts_for_test(
+        selection: EngineSelection,
+        playback: Arc<PlaybackOwner>,
+        tts: Arc<dyn vesper_voice::ports::VoiceTts>,
+    ) -> Self {
+        Self::spawn_inner(selection, playback, Some(tts))
+    }
+
+    fn spawn_inner(
+        selection: EngineSelection,
+        playback: Arc<PlaybackOwner>,
+        initial_tts: Option<Arc<dyn vesper_voice::ports::VoiceTts>>,
+    ) -> Self {
         let (command_tx, command_rx) = std::sync::mpsc::channel::<Command>();
         let (result_tx, result_rx) = std::sync::mpsc::channel::<SpeechOutcome>();
         let feedback = result_tx.clone();
@@ -131,6 +154,7 @@ impl SpeechWorker {
                     command_rx,
                     worker_feedback,
                     selection,
+                    initial_tts,
                     worker_playback,
                     worker_generation,
                     worker_dead,
@@ -274,12 +298,32 @@ impl Drop for SpeechWorker {
     }
 }
 
+#[derive(Clone)]
+enum SpeechEngine {
+    Selected(Arc<EngineHandle>),
+    Injected(Arc<dyn vesper_voice::ports::VoiceTts>),
+}
+
+impl SpeechEngine {
+    fn tts(&self) -> &dyn vesper_voice::ports::VoiceTts {
+        match self {
+            Self::Selected(selected) => match selected.as_ref() {
+                EngineHandle::System(system) => system.as_ref(),
+                #[cfg(feature = "voice-kokoro")]
+                EngineHandle::Neural(neural) => neural.as_ref(),
+            },
+            Self::Injected(tts) => tts.as_ref(),
+        }
+    }
+}
+
 /// Owns synthesis; hands one prepared unit at a time to the playback lane.
 #[allow(clippy::too_many_arguments)] // worker composition boundary
 fn run_worker(
     commands: std::sync::mpsc::Receiver<Command>,
     results: WorkerFeedback,
     selection: EngineSelection,
+    initial_tts: Option<Arc<dyn vesper_voice::ports::VoiceTts>>,
     playback: Arc<PlaybackOwner>,
     generation: Arc<SpeechControl>,
     dead: Arc<AtomicBool>,
@@ -327,7 +371,9 @@ fn run_worker(
     }
     let mut selection = selection;
     let mut voice_id = selection_voice_id(&selection);
-    let mut engine: Option<Arc<EngineHandle>> = build_engine(&selection);
+    let mut engine = initial_tts
+        .map(SpeechEngine::Injected)
+        .or_else(|| build_engine(&selection).map(SpeechEngine::Selected));
     let mut onset_piece_used = false;
     if engine.is_none() {
         let _ = results.send(SpeechOutcome::Failed {
@@ -350,7 +396,7 @@ fn run_worker(
                     results.stage("Preparing voice runtime");
                     selection = new_selection;
                     voice_id = selection_voice_id(&selection);
-                    engine = build_engine(&selection);
+                    engine = build_engine(&selection).map(SpeechEngine::Selected);
                     if engine.is_none() {
                         let _ = results.send(SpeechOutcome::Failed {
                             segment: 0,
@@ -407,7 +453,7 @@ fn run_worker(
                         })
                     } else {
                         prepare_one(
-                            engine.as_ref(),
+                            engine.tts(),
                             &part,
                             job_generation,
                             &generation.generation,
@@ -716,18 +762,13 @@ struct PlaybackSequence {
 
 /// Synthesizes one bounded unit without waiting for the player's device drain.
 fn prepare_one(
-    engine: &EngineHandle,
+    inner: &dyn vesper_voice::ports::VoiceTts,
     job: &SpeechJob,
     expected_generation: u64,
     generation: &AtomicU64,
     results: &WorkerFeedback,
     voice_id: &str,
 ) -> Result<Vec<u8>, SpeechOutcome> {
-    let inner: &dyn vesper_voice::ports::VoiceTts = match engine {
-        EngineHandle::System(system) => system.as_ref(),
-        #[cfg(feature = "voice-kokoro")]
-        EngineHandle::Neural(neural) => neural.as_ref(),
-    };
     let profile = vesper_voice::ports::VoiceProfile {
         voice_id: vesper_domain::BoundedString::<128>::new(voice_id.to_owned()).unwrap_or_else(
             |_| vesper_domain::BoundedString::<128>::new("af_heart".to_owned()).expect("fits"),
@@ -1257,6 +1298,7 @@ mod regression_tests {
             EngineSelection::System {
                 voice_name: String::new(),
             },
+            None,
             Arc::new(PlaybackOwner::new("/nonexistent-player".into(), None)),
             Arc::new(SpeechControl {
                 generation: AtomicU64::new(1),

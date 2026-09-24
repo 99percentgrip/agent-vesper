@@ -440,11 +440,12 @@ fn ten_consecutive_turns_in_one_process_all_complete() {
         player(&root, "realistic", PlayerScript::Realistic),
         None,
     ));
-    let worker = agent_vesper_tui::voice_speech_worker::SpeechWorker::spawn(
+    let worker = agent_vesper_tui::voice_speech_worker::SpeechWorker::spawn_with_tts_for_test(
         EngineSelection::System {
             voice_name: "en".into(),
         },
         Arc::clone(&owner),
+        Arc::new(vesper_voice::fakes::FakeTts::on_device()),
     );
     for turn in 1..=10u64 {
         worker.enqueue(agent_vesper_tui::voice_speech_worker::SpeechJob {
@@ -492,11 +493,12 @@ fn third_turn_player_death_fails_once_then_recovery_turn_works() {
     let healthy = player(&root, "healthy", PlayerScript::Realistic);
     let aborting = player(&root, "abort", PlayerScript::AbortMidStream);
     let owner = Arc::new(PlaybackOwner::new(healthy.clone(), None));
-    let worker = agent_vesper_tui::voice_speech_worker::SpeechWorker::spawn(
+    let worker = agent_vesper_tui::voice_speech_worker::SpeechWorker::spawn_with_tts_for_test(
         EngineSelection::System {
             voice_name: "en".into(),
         },
         Arc::clone(&owner),
+        Arc::new(vesper_voice::fakes::FakeTts::on_device()),
     );
 
     // Turns 1-2: complete spoken turns on the healthy player.

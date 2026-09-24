@@ -130,6 +130,10 @@ The test also no longer imports Unix-only permission APIs.
 - `apps/agent-vesper-tui/src/voice_readiness.rs`,
   `apps/agent-vesper-tui/tests/pr4_f9_gate.rs` — make PR-4 readiness evidence
   hermetic and portable without changing the production prerequisite path.
+- `apps/agent-vesper-tui/src/voice_speech_worker.rs`,
+  `apps/agent-vesper-tui/tests/voice_multiturn_playback.rs`, and the test DOX
+  record — inject deterministic synthesis into sustained playback tests while
+  retaining the real worker and playback pipeline.
 
 ## Exact evidence
 
@@ -196,6 +200,24 @@ Pre-commit focused checks:
   promotes the route to `Ready`; poisoned test locks recover without cascading.
   The repaired all-feature test binary passed five consecutive runs with 12
   parallel threads: **65 passed, 0 failed**.
+- Exact-commit canonical run `35974282356`, MSRV run `35974282453`, and
+  five-target run `35974282350` all reached the same two failures in
+  `voice_multiturn_playback`: the tests selected the real system TTS adapter,
+  so clean runners without `espeak-ng` failed on turn 1 before playback. The
+  workstation's installed engine had masked this machine dependency. The real
+  worker now has a narrow integration-test synthesis injection seam; production
+  `spawn` and selection replacement still construct the selected real adapter.
+  Both sustained-worker cases inject the provider-neutral `FakeTts` while
+  retaining the production queue, generation, playback and recovery paths.
+  With `PATH` restricted to a directory containing only `python3` (no speech
+  engine or audio player command), the two formerly failing tests passed five
+  consecutive parallel runs: **10 passed, 0 failed**. The complete all-feature
+  test binary then passed: **11 passed, 0 failed**.
+- The first Rust 1.88 audit compile found the internal stale-generation unit
+  test's direct `run_worker` call missing the new optional injection argument.
+  Adding explicit `None` preserved its production-engine behavior. A cleaned
+  all-feature TUI library rebuild passed **285 tests**, and the full Rust 1.88
+  workspace then passed with all features.
 
 The final commit SHA, complete local gate results, exact-commit workflow run IDs,
 tag, release assets/checksums and registry PR receipt are appended only after

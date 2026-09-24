@@ -114,7 +114,8 @@ Verify terminal interaction through the production TUI binary with isolated stat
   stream, original-error (errno) preservation, no `--fatal-errors` in the
   production argv, appended-stream byte accounting, and the EPIPE-mechanism
   pin (write-after-reap fails; write-after-unreaped-signal still succeeds).
-  Never opens a real audio device.
+  Worker-level cases inject deterministic `VoiceTts` frames and must not
+  discover an installed speech engine. Never opens a real audio device.
 
 - `voice_chunks.py` verifies ten-minute production PCM slicing and resume order
   with real numpy and controlled inference.
