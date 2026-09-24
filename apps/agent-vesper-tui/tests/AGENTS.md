@@ -51,7 +51,10 @@ Verify terminal interaction through the production TUI binary with isolated stat
   timeout. The read-deadline seam
   (`voice_flm::with_request_read_deadline_for_test`) is process-global: every
   test that reads through `transcribe_request` holds `FLM_STATE_LOCK` while
-  doing so, or the short override shrinks a parallel test's deadline.
+  doing so, or the short override shrinks a parallel test's deadline. Readiness
+  tests assert the machine-independent evidence rule (reset is never Ready;
+  recording verification promotes to Ready), without requiring physical FLM
+  prerequisites on CI runners.
 
 - `voice_pty.py` requires the **voice-venv python** as its second argument
   (`python3 tests/voice_pty.py <binary> ~/.local/share/agent-vesper/

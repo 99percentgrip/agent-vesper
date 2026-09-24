@@ -185,6 +185,17 @@ Pre-commit focused checks:
   discovery or NPU work. The formerly failing test binary then passed five
   consecutive all-feature runs with 12 parallel test threads: **60 passed,
   0 failed**.
+- Replacement exact-commit MSRV run `35971352460` and five-target run
+  `35971352466` exposed the same machine-assumption defect in the separate
+  `voice_flm_route` binary: its own header promised no device was required, but
+  `readiness_is_pending_until_real_verification` required a fully provisioned
+  machine and panicked on the correct clean-runner `DeviceAbsent` state. That
+  panic poisoned the shared seam lock and produced three secondary failures.
+  The test now asserts the provider contract rather than Alex's machine state:
+  reset verification is never `Ready`, while an explicit verification receipt
+  promotes the route to `Ready`; poisoned test locks recover without cascading.
+  The repaired all-feature test binary passed five consecutive runs with 12
+  parallel threads: **65 passed, 0 failed**.
 
 The final commit SHA, complete local gate results, exact-commit workflow run IDs,
 tag, release assets/checksums and registry PR receipt are appended only after
