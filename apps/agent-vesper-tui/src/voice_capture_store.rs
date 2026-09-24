@@ -641,12 +641,12 @@ mod tests {
         }
         drop(handle);
         // Live lease for the foreign capture: recovery must NOT reclaim.
-        // PID 1 exists on Linux with a real start time; lease [1, 0, 0]
-        // claims pid=1 with unknown start (0) — owner_is_dead uses the
-        // weaker PID-exists rule, so PID 1 alive ⇒ lease alive.
+        // Use this test process rather than a platform-specific sentinel PID.
+        let mine = CaptureLease::for_current_process();
         std::fs::write(
             big.join("lease.json"),
-            serde_json::to_vec(&[1u64, 0, 0]).unwrap(),
+            serde_json::to_vec(&[u64::from(mine.pid), mine.process_start_ms, mine.created_ms])
+                .unwrap(),
         )
         .unwrap();
         let outcome = ManagedCapture::start(&root);

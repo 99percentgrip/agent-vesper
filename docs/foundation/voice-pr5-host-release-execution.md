@@ -268,6 +268,14 @@ Pre-commit focused checks:
   its path on Windows. The unit case is now Unix-gated and the integration
   fixture declares that path only on Unix. The platform-neutral R20 recovery,
   ownership and bounds cases remain enabled on Windows.
+- Follow-up exact-commit run `35994617725`, Windows job `107616503342`,
+  then exposed a second platform assumption in
+  `aggregate_reservation_blocks_second_instance_simulation`: the fixture used
+  Linux PID 1 as a live lease, so Windows reclaimed it and admitted a capture.
+  The fixture now uses `CaptureLease::for_current_process()` and records the
+  real PID/start identity, preserving the live-lease assertion on every host.
+  The Windows failure was reproduced from the complete log and the focused
+  test, full TUI library and R20 integration pass locally after the repair.
 
 The final commit SHA, complete local gate results, exact-commit workflow run IDs,
 tag, release assets/checksums and registry PR receipt are appended only after
