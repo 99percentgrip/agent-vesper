@@ -61,6 +61,14 @@ absent from a default build. Each example now declares its owning `ort`,
 `voice-kokoro` or `voice-flm` requirement in `Cargo.toml`; default builds skip
 those evidence binaries while all-feature builds continue compiling them.
 
+The first exact-commit web-driver workflow then rejected the candidate before
+container tests because the Dockerfile's exact
+`chromium-headless-shell=152.0.7977.82-1~deb12u1` package had left the current
+Debian Bookworm repositories. Official `bookworm-security` package metadata
+listed `153.0.8010.52-1~deb12u1` for both amd64 and arm64. The Dockerfile now
+pins that shared available version; the immutable base-image digest and the
+two-architecture image/test contract are unchanged.
+
 ## Files
 
 - `.github/workflows/release.yml`, `.github/AGENTS.md` — ship and document the
@@ -79,6 +87,9 @@ those evidence binaries while all-feature builds continue compiling them.
   default workspace remains buildable.
 - VRO-17 production, regression and evidence files accumulated through PR-0 to
   PR-4/R1–R20 — committed as the source being released.
+- `crates/vesper-web-fetch/Dockerfile` — refresh the exact Debian Bookworm
+  headless-shell package pin required by the release-blocking contained-driver
+  workflow.
 
 ## Exact evidence
 
@@ -106,6 +117,12 @@ Pre-commit focused checks:
   compile feature-only voice examples because their modules were absent from
   the default feature set; after adding manifest `required-features`, the same
   command completed with **0 failures**.
+- Remote contained-driver red evidence: exact-commit web-driver run
+  `35959319156` failed on both x86_64 and arm64 at `apt-get install` with
+  `Version '152.0.7977.82-1~deb12u1' ... was not found`. Debian's current
+  `bookworm-security` indexes identify `153.0.8010.52-1~deb12u1` for both
+  architectures. Green replacement-run evidence is recorded after the updated
+  exact commit completes.
 
 The final commit SHA, complete local gate results, exact-commit workflow run IDs,
 tag, release assets/checksums and registry PR receipt are appended only after

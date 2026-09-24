@@ -20,7 +20,7 @@ RUN curl --fail --location --proto '=https' --tlsv1.2 \
     && make -j2 setpriv
 
 FROM docker.io/library/debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171
-ARG HEADLESS_VERSION=152.0.7977.82-1~deb12u1
+ARG HEADLESS_VERSION=153.0.8010.52-1~deb12u1
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates chromium-headless-shell=${HEADLESS_VERSION} libcap-ng0 procps tini \
     && apt-get clean
