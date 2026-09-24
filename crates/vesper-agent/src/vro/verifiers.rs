@@ -547,16 +547,11 @@ mod tests {
     fn scaffold_crate(lib_src: &str) -> tempfile::TempDir {
         use std::fs;
         let dir = tempfile::tempdir().expect("temp dir");
+        let package_name = format!("vro_test_crate_{}", uuid::Uuid::new_v4().simple());
         fs::write(
             dir.path().join("Cargo.toml"),
-            concat!(
-                "[package]\n",
-                "name = \"vro_test_crate\"\n",
-                "version = \"0.1.0\"\n",
-                "edition = \"2021\"\n",
-                "\n",
-                "[lib]\n",
-                "path = \"src/lib.rs\"\n",
+            format!(
+                "[package]\nname = \"{package_name}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[lib]\npath = \"src/lib.rs\"\n"
             ),
         )
         .expect("write Cargo.toml");

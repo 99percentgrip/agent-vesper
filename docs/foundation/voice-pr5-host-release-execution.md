@@ -84,6 +84,13 @@ shared `cap-<pid>-<timestamp>`, and cleaning the first removed the second.
 Capture directories now use the crate's existing UUID facility, with an
 explicit back-to-back ownership regression.
 
+The first canonical rerun also exposed a pre-existing verifier-test isolation
+race: four real-Cargo tests created different temporary workspaces with the
+same package identity while inheriting one shared `CARGO_TARGET_DIR`. Parallel
+valid and deliberately broken fixtures could reuse each other's artifacts,
+making two negative tests report `Passed`. Every fixture now receives a UUID
+package identity, retaining parallel execution while separating Cargo caches.
+
 ## Files
 
 - `.github/workflows/release.yml`, `.github/AGENTS.md` — ship and document the
@@ -108,6 +115,9 @@ explicit back-to-back ownership regression.
 - `apps/agent-vesper-tui/src/voice_capture_store.rs`, its manifest and owning
   `AGENTS.md` — make R20 free-space and conservative lease-liveness checks
   portable across the release matrix.
+- `crates/vesper-agent/src/vro/verifiers.rs` — isolate parallel real-Cargo
+  verifier fixtures so a shared release target directory cannot cross-contaminate
+  pass/fail evidence.
 
 ## Exact evidence
 
