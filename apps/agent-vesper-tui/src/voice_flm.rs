@@ -194,6 +194,7 @@ fn owned_child_registry() -> std::path::PathBuf {
 /// abandoned exactly when its registrar host is gone — never merely
 /// because its parent changed, which systemd --user reparenting makes
 /// normal on this platform).
+#[cfg(unix)]
 #[derive(serde::Serialize, serde::Deserialize)]
 struct OwnedChildRecord {
     pid: u32,

@@ -535,6 +535,8 @@ fn set_private(dir: &Path) -> Result<(), CaptureStoreError> {
             }
         })?;
     }
+    #[cfg(not(unix))]
+    let _ = dir;
     Ok(())
 }
 

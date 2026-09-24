@@ -356,8 +356,10 @@ fn set_private_file_mode(path: &Path) -> Result<(), CredentialStoreError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
     use tempfile::TempDir;
 
+    #[cfg(unix)]
     const ZAI: CredentialId = CredentialId::new("zai", "api-key");
 
     #[cfg(unix)]

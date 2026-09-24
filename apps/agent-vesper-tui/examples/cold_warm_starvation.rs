@@ -8,6 +8,12 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+#[cfg(not(unix))]
+fn main() {
+    eprintln!("requires Unix and voice-kokoro");
+}
+
+#[cfg(unix)]
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let voice = args.get(1).cloned().unwrap_or_else(|| "am_michael".into());

@@ -77,6 +77,9 @@ as the verified inference runtime.
   playback acknowledgments remain the host's `PlaybackOwner` semantics.
 - Readiness must stay cheap per call: identity-gated digest checks, no
   inference on redraws.
+- Pack removal treats liveness-probe failure as an active lease and therefore
+  preserves pack data. Linux may use `/proc`; other Unix platforms use
+  `kill -0` plus `ps`, and Windows uses `tasklist`.
 - `#![forbid(unsafe_code)]` (the ORT unsafe lives inside `ort-sys`).
 
 ## Work Guidance

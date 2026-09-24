@@ -217,11 +217,11 @@ mod tests {
 
     #[test]
     fn rejects_symlink_escape() {
-        let root = tempdir().unwrap();
-        let outside = tempdir().unwrap();
         // Create a symlink inside the root pointing outside it.
         #[cfg(unix)]
         {
+            let root = tempdir().unwrap();
+            let outside = tempdir().unwrap();
             std::os::unix::fs::symlink(outside.path(), root.path().join("escape")).unwrap();
             let result = confine(root.path(), "escape/secret.txt");
             assert!(

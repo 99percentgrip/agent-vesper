@@ -40,6 +40,9 @@ Own manually invoked, non-shipped evaluation entry points that compose real adap
 
 - Live execution requires separate user authorization. Foundation verification may
   compile this example but must never pass `--execute-live`.
+- Receipt launchers that build executable POSIX shell/player fixtures run only on
+  Unix and compile a truthful no-op notice on Windows; all-target CI must never
+  compile Unix APIs unconditionally.
 - Preserve the skill library, use no tools, perform no installation or settings writes.
 - One pass, at most 205 selector calls, 20 seconds each; no automatic retries by this
   launcher. Adapter transport retries remain inside each deadline.

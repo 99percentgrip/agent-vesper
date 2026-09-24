@@ -5,6 +5,7 @@
 //! artificial onset split. It opens no microphone, speaker, provider, network,
 //! settings, or user-state writer.
 
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -17,6 +18,12 @@ use vesper_voice::hygiene::HygieneGate;
 
 const QUIET_ABS_THRESHOLD: i32 = 400;
 
+#[cfg(not(unix))]
+fn main() {
+    eprintln!("requires Unix and voice-kokoro");
+}
+
+#[cfg(unix)]
 fn main() {
     let voice_id = std::env::args()
         .nth(1)

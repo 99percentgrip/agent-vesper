@@ -2,6 +2,7 @@
 //! SpeechWorker -> real installed Kokoro -> canonical-rate no-device sink.
 //! Synthetic text only; no network, microphone, speaker, or saved settings.
 
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -14,6 +15,12 @@ use vesper_voice::hygiene::HygieneGate;
 
 const PASSAGE: &str = "I'm running inside the Agent Vesper harness with cognitive memory active, so context from past sessions carries over automatically. The workspace is intact, and nothing is blocking me right now: no pending failures or half-finished work on my side. Tools, skills, and the project contracts are all loaded and ready for whatever you want to do next. I'm only waiting on you to confirm this came through audibly.";
 
+#[cfg(not(unix))]
+fn main() {
+    eprintln!("requires Unix and voice-kokoro");
+}
+
+#[cfg(unix)]
 fn main() {
     let root = tempfile::tempdir().expect("temp root");
     let sink = root.path().join("paced-player");

@@ -503,6 +503,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[cfg(unix)]
     fn stop_remains_responsive_under_pipe_backpressure() {
         let dir = tempfile::tempdir().unwrap();
         let owner = Arc::new(PlaybackOwner::new(
@@ -525,6 +526,7 @@ mod tests {
         ));
     }
 
+    #[cfg(unix)]
     fn fixture_player(dir: &std::path::Path, behavior: &str) -> PathBuf {
         use std::os::unix::fs::PermissionsExt;
         static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -561,6 +563,7 @@ sys.exit(0)
         wrapper
     }
 
+    #[cfg(unix)]
     fn root() -> PathBuf {
         static DIR_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let dir = std::env::temp_dir().join(format!(
@@ -573,6 +576,7 @@ sys.exit(0)
     }
 
     #[test]
+    #[cfg(unix)]
     fn clean_drain_yields_drained_receipt() {
         let owner = PlaybackOwner::new(fixture_player(&root(), "ok"), None);
         owner.begin_stream().unwrap();
@@ -584,6 +588,7 @@ sys.exit(0)
     }
 
     #[test]
+    #[cfg(unix)]
     fn nonzero_exit_is_failure_not_completion() {
         let owner = PlaybackOwner::new(fixture_player(&root(), "fail_fast"), None);
         owner.begin_stream().unwrap();
@@ -604,6 +609,7 @@ sys.exit(0)
     }
 
     #[test]
+    #[cfg(unix)]
     fn queue_is_bounded_with_explicit_backpressure() {
         let owner = PlaybackOwner::new(fixture_player(&root(), "ok"), None);
         owner.begin_stream().unwrap();
@@ -619,6 +625,7 @@ sys.exit(0)
     }
 
     #[test]
+    #[cfg(unix)]
     fn stop_flush_is_immediate_and_independent() {
         let owner = PlaybackOwner::new(fixture_player(&root(), "slow"), None);
         owner.begin_stream().unwrap();
@@ -633,6 +640,7 @@ sys.exit(0)
     }
 
     #[test]
+    #[cfg(unix)]
     fn stopped_stream_ignores_late_audio_within_the_same_stream() {
         // Stop suppresses the CURRENT stream's late audio (no stale
         // playback from a canceled utterance).
@@ -646,6 +654,7 @@ sys.exit(0)
     }
 
     #[test]
+    #[cfg(unix)]
     fn new_stream_after_stop_is_audible_again() {
         // Alex's defect regression: after barge-in stopped stream #1,
         // a LATER turn's stream must play — the stop latch must not
@@ -664,6 +673,7 @@ sys.exit(0)
     }
 
     #[test]
+    #[cfg(unix)]
     fn repeated_stop_is_idempotent() {
         let owner = PlaybackOwner::new(fixture_player(&root(), "ok"), None);
         owner.begin_stream().unwrap();

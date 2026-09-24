@@ -777,6 +777,7 @@ mod tests {
     #[test]
     fn symlinked_pack_file_is_refused() {
         let dir = tempfile::tempdir().expect("tempdir");
+        #[cfg(unix)]
         let link = dir.path().join(ASSET_VOCAB.installed_name);
         #[cfg(unix)]
         std::os::unix::fs::symlink("/etc/hostname", &link).expect("symlink");

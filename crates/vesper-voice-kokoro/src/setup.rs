@@ -808,7 +808,11 @@ fn free_bytes(path: &Path) -> Option<u64> {
 /// [`SetupError::InUse`] when another live process holds the pack;
 /// [`SetupError::Storage`] on IO failure.
 pub fn remove(root: &Path) -> Result<u64, SetupError> {
-    if let Some(holder) = live_lease_holder(root) {
+    remove_excluding(root, std::process::id())
+}
+
+fn remove_excluding(root: &Path, current_pid: u32) -> Result<u64, SetupError> {
+    if let Some(holder) = live_lease_holder(root, current_pid) {
         let _ = holder;
         return Err(SetupError::InUse);
     }
@@ -860,10 +864,9 @@ pub fn clear_lease(root: &Path) {
 
 /// Finds a live foreign lease holder, if any (stale leases from dead
 /// processes are ignored; they will be overwritten by reuse).
-fn live_lease_holder(root: &Path) -> Option<u32> {
+fn live_lease_holder(root: &Path, current_pid: u32) -> Option<u32> {
     let dir = root.join(LEASE_DIR);
     let entries = std::fs::read_dir(dir).ok()?;
-    let me = std::process::id();
     for entry in entries.flatten() {
         let name = entry.file_name();
         let Some(text) = name.to_str() else { continue };
@@ -873,7 +876,7 @@ fn live_lease_holder(root: &Path) -> Option<u32> {
         else {
             continue;
         };
-        if pid == me {
+        if pid == current_pid {
             continue;
         }
         if process_alive(pid) {
@@ -884,7 +887,63 @@ fn live_lease_holder(root: &Path) -> Option<u32> {
 }
 
 fn process_alive(pid: u32) -> bool {
-    Path::new(&format!("/proc/{pid}")).exists()
+    if pid == 0 {
+        return false;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let proc_root = Path::new("/proc");
+        if proc_root.is_dir() {
+            return proc_root.join(pid.to_string()).exists();
+        }
+    }
+
+    #[cfg(unix)]
+    {
+        let pid_text = pid.to_string();
+        if std::process::Command::new("kill")
+            .args(["-0", &pid_text])
+            .output()
+            .is_ok_and(|output| output.status.success())
+        {
+            return true;
+        }
+        // Permission can make `kill -0` fail for a live foreign process.
+        // `ps` distinguishes that case; an unavailable probe is unknown,
+        // so removal fails closed and preserves the active pack.
+        std::process::Command::new("ps")
+            .args(["-p", &pid_text, "-o", "pid="])
+            .output()
+            .map_or(true, |output| {
+                output.status.success()
+                    && String::from_utf8_lossy(&output.stdout)
+                        .split_whitespace()
+                        .any(|field| field == pid_text)
+            })
+    }
+
+    #[cfg(windows)]
+    {
+        let pid_text = pid.to_string();
+        let filter = format!("PID eq {pid}");
+        std::process::Command::new("tasklist")
+            .args(["/FI", &filter, "/FO", "CSV", "/NH"])
+            .output()
+            .map_or(true, |output| {
+                output.status.success()
+                    && String::from_utf8_lossy(&output.stdout).lines().any(|line| {
+                        line.split(',')
+                            .nth(1)
+                            .is_some_and(|field| field.trim().trim_matches('"') == pid_text)
+                    })
+            })
+    }
+
+    #[cfg(not(any(unix, windows)))]
+    {
+        true
+    }
 }
 
 fn process_start_ms() -> u64 {
@@ -990,10 +1049,12 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let root = dir.path();
         std::fs::create_dir_all(root.join(LEASE_DIR)).expect("mkdir");
-        // Our own PID lease does not block; simulate a foreign live PID by
-        // using PID 1 (always alive on Linux).
-        std::fs::write(root.join(LEASE_DIR).join("1.json"), b"{}").expect("write");
-        let result = remove(root);
+        let live_pid = std::process::id();
+        std::fs::write(root.join(LEASE_DIR).join(format!("{live_pid}.json")), b"{}")
+            .expect("write");
+        // Treat this process as foreign to exercise the removal guard without
+        // assuming that Linux PID 1 or `/proc` exists on the test platform.
+        let result = remove_excluding(root, u32::MAX);
         assert!(matches!(result, Err(SetupError::InUse)));
     }
 

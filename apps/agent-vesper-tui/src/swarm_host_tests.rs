@@ -81,6 +81,7 @@ fn respond(stream: &mut TcpStream, kind: &str, body: &str) {
 }
 
 #[test]
+#[cfg(unix)]
 #[ignore = "requires real container runtime and bundled Landlock image; all state is isolated"]
 fn native_tui_swarm_settings_task_and_history_round_trip() {
     if std::env::var("VESPER_TUI_SWARM_CHILD").as_deref() == Ok("1") {

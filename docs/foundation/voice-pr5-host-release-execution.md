@@ -134,6 +134,9 @@ The test also no longer imports Unix-only permission APIs.
   `apps/agent-vesper-tui/tests/voice_multiturn_playback.rs`, and the test DOX
   record — inject deterministic synthesis into sustained playback tests while
   retaining the real worker and playback pipeline.
+- `crates/vesper-voice-kokoro/src/setup.rs` and its owning `AGENTS.md` — make
+  pack-removal lease liveness portable and fail closed when a platform probe is
+  unavailable.
 
 ## Exact evidence
 
@@ -237,6 +240,27 @@ Pre-commit focused checks:
   case could overwrite the disabled scope before its Settings assertion. Both
   fixture classes now use one process-local atomic identity, which is unique
   regardless of clock resolution.
+- Replacement five-target run `35983279272` compiled beyond the repaired voice
+  adapter tests on Windows and exposed the same portability class in a Kokoro
+  measurement example: POSIX permissions and shell launchers were compiled
+  unconditionally. A repository-wide Unix-API audit found four such VRO-17
+  receipt examples plus POSIX-only playback/swarm test fixtures. The examples
+  now compile truthful Windows notice stubs, and only the dependent test cases
+  are Unix-gated; platform-neutral playback validation remains cross-platform.
+- The completed `35983279272` failure set contained two causes, not three:
+  Windows job `107579968410` failed the unconditional Unix example compile;
+  macOS Apple Silicon job `107579968274` and macOS Intel job `107579968446`
+  both failed `removal_is_refused_with_a_live_foreign_lease`. That regression
+  assumed Linux PID 1 and production lease liveness used Linux `/proc` on every
+  platform. Linux x86_64 and ARM64 passed; exact-commit quality, supply-chain,
+  MSRV and web-driver runs also passed. Kokoro removal now uses `/proc` on
+  Linux, `kill -0` plus `ps` on other Unix platforms, and `tasklist` on Windows;
+  unavailable probes conservatively preserve the pack. The regression uses the
+  current live process through a narrow exclusion seam instead of a platform
+  PID assumption. The repaired all-feature Kokoro suite passed **42 tests**;
+  strict Clippy passed; locked all-feature checks passed for
+  `x86_64-apple-darwin`, `aarch64-apple-darwin`, and
+  `x86_64-pc-windows-msvc`.
 
 The final commit SHA, complete local gate results, exact-commit workflow run IDs,
 tag, release assets/checksums and registry PR receipt are appended only after

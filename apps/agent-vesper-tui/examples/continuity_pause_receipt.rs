@@ -13,6 +13,7 @@
 //!
 //! No production code changes; no device; no network; bounded runtime.
 
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -28,6 +29,12 @@ use agent_vesper_tui::voice_speech_worker::{SpeechJob, SpeechOutcome, SpeechWork
 #[allow(dead_code)]
 const QUIET: i16 = 200;
 
+#[cfg(not(unix))]
+fn main() {
+    eprintln!("requires Unix and voice-kokoro");
+}
+
+#[cfg(unix)]
 fn main() {
     let root = tempfile::tempdir().expect("temp root");
     // Paced sink: reads stdin at the canonical rate (32000 B/s), records
