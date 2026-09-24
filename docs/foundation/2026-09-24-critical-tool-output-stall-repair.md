@@ -1,5 +1,13 @@
 # Critical Tool-Output Stall Permanent Repair — 2026-09-24
 
+> **Superseded closeout status (2026-09-25):** exact candidate
+> `27a3f17bd818294e1a52e0bf194b02ba761e3464` passed the five-target native
+> behavioral workflow (`36036088105`), including Windows and both macOS lanes.
+> Per Alex's corrected acceptance scope, provider correlation is **NOT EXECUTED —
+> GLM live access unavailable** and is an explanatory limitation rather than a
+> blocker to release of the independently proven classification-D repair. The
+> earlier OPEN statements below describe this report's pre-CI checkpoint.
+
 ## Objective
 
 Permanently repair the recurring `run_command` stall under large stdout/stderr,
