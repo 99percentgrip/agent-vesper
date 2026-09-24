@@ -693,6 +693,7 @@ mod tests {
         std::fs::remove_dir_all(&root).ok();
     }
 
+    #[cfg(unix)]
     #[test]
     fn symlink_escape_is_never_followed() {
         let root = store_root();

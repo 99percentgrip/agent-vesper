@@ -238,8 +238,11 @@ fn foreign_and_symlink_content_survive_all_outcomes() {
     let foreign = captures_dir(&root).join("foreign-dir");
     std::fs::create_dir_all(&foreign).unwrap();
     std::fs::write(foreign.join("keep.txt"), b"keep").unwrap();
+    #[cfg(unix)]
     let outside = tempfile::tempdir().unwrap();
+    #[cfg(unix)]
     std::fs::write(outside.path().join("target.bin"), b"target").unwrap();
+    #[cfg(unix)]
     let link = captures_dir(&root).join("escape-link");
     #[cfg(unix)]
     std::os::unix::fs::symlink(outside.path(), &link).unwrap();

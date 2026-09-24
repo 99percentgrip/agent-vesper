@@ -261,6 +261,13 @@ Pre-commit focused checks:
   strict Clippy passed; locked all-feature checks passed for
   `x86_64-apple-darwin`, `aarch64-apple-darwin`, and
   `x86_64-pc-windows-msvc`.
+- Exact-commit five-target run `35989669001`, Windows job `107600481144`,
+  compiled beyond the repaired examples and exposed one remaining Unix-only
+  symlink call in the R20 capture store's internal unit tests. The separate R20
+  integration test correctly gated the symlink operation but still declared
+  its path on Windows. The unit case is now Unix-gated and the integration
+  fixture declares that path only on Unix. The platform-neutral R20 recovery,
+  ownership and bounds cases remain enabled on Windows.
 
 The final commit SHA, complete local gate results, exact-commit workflow run IDs,
 tag, release assets/checksums and registry PR receipt are appended only after
