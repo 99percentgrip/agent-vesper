@@ -1102,6 +1102,10 @@ work (ACP mid-turn-slash-grace parity; see `apps/agent-vesper-acp/AGENTS.md`).
 
 ## Verification
 
+- `tui_host_registry_settles_large_command_output_and_recovers` exercises the
+  real hosted TUI registry for mixed large output, truncation, timeout,
+  cancellation, descendant-held pipes, and a successful following command.
+
 - Loopback fixtures accepting from nonblocking listeners explicitly switch accepted
   streams to blocking mode before applying read timeouts; macOS may inherit the
   listener's mode. Retain bounded accept/read deadlines and wire assertions.

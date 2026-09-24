@@ -800,6 +800,69 @@ mod tests {
     }
 
     #[test]
+    fn complete_shared_tool_surface_serializes_without_filtering_or_renaming() {
+        let expected = [
+            "apply_patch",
+            "edit_file",
+            "grep",
+            "list_directory",
+            "read_file",
+            "run_command",
+            "search_files",
+            "update_plan",
+            "write_file",
+        ];
+        let mut request = base_request();
+        request.capabilities.extend([
+            CapabilityRequest {
+                capability: CapabilityId::new("provider:tools").unwrap(),
+                requirement: FeatureRequirement::Require,
+                fallback: None,
+            },
+            CapabilityRequest {
+                capability: CapabilityId::new("provider:tool-choice").unwrap(),
+                requirement: FeatureRequirement::Require,
+                fallback: None,
+            },
+        ]);
+        request.tools = expected
+            .iter()
+            .map(|name| ToolDefinition {
+                id: ToolId::new(*name).unwrap(),
+                harness_name: HarnessToolName::new(*name).unwrap(),
+                provider_name: None,
+                description: format!("{name} fixture description"),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {"fixture": {"type": "string"}},
+                    "required": ["fixture"]
+                }),
+                execution_class: ToolExecutionClass::ReadOnly,
+                extensions: Default::default(),
+                defer_loading: false,
+            })
+            .collect();
+        request.tool_choice = ToolChoiceIntent::Auto;
+        let body = serialize_request(&request, &GlmConfig::default())
+            .unwrap()
+            .body;
+        let tools = body["tools"].as_array().unwrap();
+        assert_eq!(tools.len(), expected.len());
+        for ((wire, definition), name) in tools.iter().zip(&request.tools).zip(expected) {
+            assert_eq!(wire["function"]["name"], name);
+            assert_eq!(wire["function"]["description"], definition.description);
+            assert_eq!(wire["function"]["parameters"], definition.input_schema);
+            assert_eq!(definition.id.as_str(), name);
+            assert_eq!(definition.harness_name.as_str(), name);
+            assert_eq!(definition.provider_name, None);
+        }
+        assert!(
+            body.get("tool_choice").is_none(),
+            "GLM's documented/default auto intent is represented by omission"
+        );
+    }
+
+    #[test]
     fn continuation_is_adapter_owned_and_strictly_namespaced() {
         let mut request = base_request();
         request.capabilities.push(CapabilityRequest {

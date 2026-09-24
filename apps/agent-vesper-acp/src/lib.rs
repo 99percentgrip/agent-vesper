@@ -3164,6 +3164,96 @@ fn host_parity_commands() -> Vec<vesper_domain::SlashCommandDescriptor> {
 mod tests {
     use super::*;
 
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn acp_host_registry_settles_large_command_output_and_recovers() {
+        let root = tempfile::tempdir().unwrap();
+        let hosted = Arc::new(HarnessToolService::new_with_checkpoint_gate(
+            Arc::new(MemoryStores::open_at(
+                root.path(),
+                root.path().join("no-global"),
+            )),
+            root.path().join("cron"),
+            root.path().join("mcp"),
+            None,
+            false,
+        ));
+        let registry = hosted.build_default_registry();
+        let context = vesper_agent::tools::stub_context(
+            vec![vesper_domain::WorkspaceRoot {
+                name: vesper_domain::BoundedString::new("workspace").unwrap(),
+                path: vesper_domain::BoundedString::new(root.path().to_string_lossy().to_string())
+                    .unwrap(),
+                primary: true,
+            }],
+            vesper_domain::SessionOperatingMode::Code,
+            vesper_domain::SessionPermissionMode::Bypass,
+        );
+        let command = |id: &str, body: &str, timeout: u64| vesper_domain::ToolCall {
+            id: vesper_domain::ToolCallId::new(id).unwrap(),
+            tool_id: vesper_domain::ToolId::new("run_command").unwrap(),
+            arguments: serde_json::json!({"command": body, "timeout": timeout}),
+            extensions: vesper_domain::ExtensionMap::default(),
+        };
+        let large = registry
+            .execute(
+                &command(
+                    "acp-large",
+                    "python3 -c 'import sys; sys.stdout.write(\"o\"*262144); sys.stderr.write(\"e\"*262144)'",
+                    5,
+                ),
+                &context,
+            )
+            .await
+            .unwrap();
+        assert!(large.text.as_str().contains("output truncated"));
+        let timeout = registry
+            .execute(
+                &command("acp-timeout", "while :; do printf x; done", 1),
+                &context,
+            )
+            .await
+            .unwrap_err();
+        assert!(timeout.to_string().contains("cleanup=verified"));
+        let cancellation = Arc::new(vesper_runtime::RuntimeCancellation::new());
+        let mut cancelled_context = vesper_agent::tools::stub_context(
+            context.workspace_roots.clone(),
+            vesper_domain::SessionOperatingMode::Code,
+            vesper_domain::SessionPermissionMode::Bypass,
+        );
+        cancelled_context.cancellation = cancellation.clone();
+        let cancel_call = command("acp-cancel", "echo partial; while :; do printf c; done", 20);
+        let cancel_later = async {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            cancellation.cancel();
+        };
+        let (cancelled, ()) = tokio::join!(
+            registry.execute(&cancel_call, &cancelled_context),
+            cancel_later
+        );
+        let cancelled = cancelled.unwrap_err().to_string();
+        assert!(cancelled.contains("command cancelled"));
+        assert!(cancelled.contains("cleanup=verified"));
+        assert!(cancelled.contains("partial"));
+        let held_pipe = registry
+            .execute(
+                &command(
+                    "acp-descendant",
+                    "(sleep 30; echo stale) & printf settled",
+                    5,
+                ),
+                &context,
+            )
+            .await
+            .unwrap();
+        assert_eq!(held_pipe.text.as_str(), "settled");
+        let next = registry
+            .execute(&command("acp-next", "printf recovered", 5), &context)
+            .await
+            .unwrap();
+        assert_eq!(next.text.as_str(), "recovered");
+    }
+
     #[test]
     fn mcp_owners_are_per_acp_session_and_reused_between_turns() {
         let root = tempfile::tempdir().unwrap();

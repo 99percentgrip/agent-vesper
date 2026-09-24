@@ -72,6 +72,57 @@ fn both_auth_modes_use_responses_and_harness_function_schema() {
 }
 
 #[test]
+fn complete_shared_tool_surface_serializes_identically_in_both_auth_modes() {
+    let expected = [
+        "apply_patch",
+        "edit_file",
+        "grep",
+        "list_directory",
+        "read_file",
+        "run_command",
+        "search_files",
+        "update_plan",
+        "write_file",
+    ];
+    let mut request = fixture_request();
+    request.tools = expected
+        .iter()
+        .map(|name| ToolDefinition {
+            id: ToolId::new(*name).unwrap(),
+            harness_name: HarnessToolName::new(*name).unwrap(),
+            provider_name: None,
+            description: format!("{name} fixture description"),
+            input_schema: json!({
+                "type": "object",
+                "properties": {"fixture": {"type": "string"}},
+                "required": ["fixture"]
+            }),
+            execution_class: ToolExecutionClass::ReadOnly,
+            extensions: Default::default(),
+            defer_loading: false,
+        })
+        .collect();
+    for mode in [
+        auth::AuthenticationMode::ApiKey,
+        auth::AuthenticationMode::ChatGpt,
+    ] {
+        let body = wire::request(&request, mode, "medium").unwrap();
+        let tools = body["tools"].as_array().unwrap();
+        assert_eq!(tools.len(), expected.len());
+        for ((wire, definition), name) in tools.iter().zip(&request.tools).zip(expected) {
+            assert_eq!(wire["name"], name);
+            assert_eq!(wire["description"], definition.description);
+            assert_eq!(wire["parameters"], definition.input_schema);
+            assert_eq!(wire["strict"], false);
+            assert_eq!(definition.id.as_str(), name);
+            assert_eq!(definition.harness_name.as_str(), name);
+            assert_eq!(definition.provider_name, None);
+        }
+        assert_eq!(body["tool_choice"], "auto");
+    }
+}
+
+#[test]
 fn every_catalog_model_and_advertised_effort_serializes_natively() {
     assert!(OpenAiCatalog::snapshot().models.len() >= 8);
     for model in OpenAiCatalog::snapshot().models {
