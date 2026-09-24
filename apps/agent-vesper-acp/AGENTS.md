@@ -374,6 +374,10 @@ into exactly one always-safe, argument-dependent, or interrupting class.
 
 ## Verification
 
+- `acp_host_registry_settles_large_command_output_and_recovers` exercises the
+  real ACP hosted registry for mixed large output, truncation, timeout,
+  cancellation, descendant-held pipes, and a successful following command.
+
 - `tests/swarm_native_process.rs` explicitly checks Settings/run through real ACP
   transport with isolated state, configured loopback chat/embedding services,
   both scope modes, overlapping workers and final artifact-report delivery.

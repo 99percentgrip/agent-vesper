@@ -6,11 +6,14 @@
 //! implementations matching the Python oracle (`glm_acp/tools.py:205-404`).
 
 use std::fs;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
 
+use command_group::CommandGroup;
 use vesper_domain::{
     DiffLine, DiffLineKind, FileChangeOperation, FileChangePreview, SessionOperatingMode,
     SessionPermissionMode, ToolCall, ToolExecutionClass,
@@ -459,16 +462,21 @@ impl ToolExecutor for RunCommand {
             let command_for_task = command.clone();
             let cwd_for_task = cwd.clone();
             let cancelled_for_task = cancelled.clone();
+            let dropped = Arc::new(AtomicBool::new(false));
+            let dropped_for_task = Arc::clone(&dropped);
+            let mut drop_guard = CommandDropGuard::new(Arc::clone(&dropped));
             let output = tokio::task::spawn_blocking(move || {
                 run_bounded(
                     &command_for_task,
                     &cwd_for_task,
                     timeout,
                     &cancelled_for_task,
+                    &dropped_for_task,
                 )
             })
             .await
             .map_err(|e| ToolError::Failed(format!("command task failed: {e}")))??;
+            drop_guard.disarm();
             ToolResult::new(bounded(&output))
         })
     }
@@ -568,11 +576,12 @@ fn bounded(value: &str) -> String {
     if value.len() <= MAX_OUTPUT_BYTES {
         return value.to_string();
     }
-    let mut end = MAX_OUTPUT_BYTES;
+    const MARKER: &str = "… [truncated]";
+    let mut end = MAX_OUTPUT_BYTES.saturating_sub(MARKER.len());
     while end > 0 && !value.is_char_boundary(end) {
         end -= 1;
     }
-    format!("{}… [truncated]", &value[..end])
+    format!("{}{}", &value[..end], MARKER)
 }
 
 /// Selects an inclusive 1-based line range from a file's contents.
@@ -788,74 +797,334 @@ pub fn apply_unified_diff(original: &str, patch: &str) -> Result<String, ToolErr
     Ok(original.replacen(&before, &after, 1))
 }
 
-/// Runs `command` via the platform shell in `cwd`, bounded by `timeout_secs`.
-/// Observes `cancellation` between polls. Runs on a blocking thread.
-///
-/// On timeout the shell leader is killed and reaped, but the pipes are *not*
-/// read (a killed `sh -c "…"` may leave a grandchild holding the pipe open;
-/// reading would block until it exits). Grandchildren may briefly outlive the
-/// kill — the tradeoff of `#![forbid(unsafe_code)]` (no safe `killpg`).
+struct CommandDropGuard {
+    dropped: Arc<AtomicBool>,
+    armed: bool,
+}
+
+impl CommandDropGuard {
+    fn new(dropped: Arc<AtomicBool>) -> Self {
+        Self {
+            dropped,
+            armed: true,
+        }
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for CommandDropGuard {
+    fn drop(&mut self) {
+        if self.armed {
+            self.dropped.store(true, Ordering::Release);
+        }
+    }
+}
+
+#[derive(Debug)]
+struct CapturedPipe {
+    bytes: Vec<u8>,
+    total: u64,
+    truncated: bool,
+    read_error: Option<String>,
+}
+
+fn drain_pipe(
+    mut pipe: impl Read + Send + 'static,
+    retained_budget: Arc<AtomicUsize>,
+) -> mpsc::Receiver<CapturedPipe> {
+    let (sender, receiver) = mpsc::sync_channel(1);
+    std::thread::spawn(move || {
+        let mut capture = CapturedPipe {
+            bytes: Vec::new(),
+            total: 0,
+            truncated: false,
+            read_error: None,
+        };
+        let mut chunk = [0_u8; 8192];
+        loop {
+            match pipe.read(&mut chunk) {
+                Ok(0) => break,
+                Ok(count) => {
+                    capture.total = capture.total.saturating_add(count as u64);
+                    let available = retained_budget
+                        .fetch_update(Ordering::AcqRel, Ordering::Acquire, |remaining| {
+                            Some(remaining.saturating_sub(count))
+                        })
+                        .unwrap_or(0);
+                    let keep = count.min(available);
+                    capture.bytes.extend_from_slice(&chunk[..keep]);
+                    capture.truncated |= keep != count;
+                }
+                Err(error) => {
+                    capture.read_error = Some(error.to_string());
+                    break;
+                }
+            }
+        }
+        let _ = sender.send(capture);
+    });
+    receiver
+}
+
+fn receive_capture(
+    receiver: &mpsc::Receiver<CapturedPipe>,
+    deadline: Instant,
+) -> Option<CapturedPipe> {
+    receiver
+        .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+        .ok()
+}
+
+fn process_group_already_absent(error: &std::io::Error) -> bool {
+    if matches!(
+        error.kind(),
+        std::io::ErrorKind::InvalidInput | std::io::ErrorKind::NotFound
+    ) {
+        return true;
+    }
+    #[cfg(unix)]
+    {
+        // POSIX ESRCH: no process has the owned process-group identity.
+        error.raw_os_error() == Some(3)
+    }
+    #[cfg(not(unix))]
+    false
+}
+
+fn render_command_output(stdout: &CapturedPipe, stderr: &CapturedPipe) -> String {
+    let mut output = String::from_utf8_lossy(&stdout.bytes).into_owned();
+    if !stderr.bytes.is_empty() {
+        output.push_str("\n[stderr]\n");
+        output.push_str(&String::from_utf8_lossy(&stderr.bytes));
+    }
+    if stdout.truncated || stderr.truncated {
+        let marker = format!(
+            "\n[output truncated; stdout drained={} retained={}; stderr drained={} retained={}]",
+            stdout.total,
+            stdout.bytes.len(),
+            stderr.total,
+            stderr.bytes.len()
+        );
+        if output.len().saturating_add(marker.len()) > MAX_OUTPUT_BYTES {
+            let target = MAX_OUTPUT_BYTES.saturating_sub(marker.len());
+            let mut end = target.min(output.len());
+            while end > 0 && !output.is_char_boundary(end) {
+                end -= 1;
+            }
+            output.truncate(end);
+        }
+        output.push_str(&marker);
+    }
+    bounded(&output)
+}
+
+fn command_failure(
+    reason: &str,
+    status: Option<std::process::ExitStatus>,
+    cleanup_verified: bool,
+    stdout: Option<&CapturedPipe>,
+    stderr: Option<&CapturedPipe>,
+) -> ToolError {
+    let status = status
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "unknown".into());
+    let mut message = format!(
+        "{reason}; exit_status={status}; cleanup={}",
+        if cleanup_verified {
+            "verified"
+        } else {
+            "uncertain"
+        }
+    );
+    if let (Some(stdout), Some(stderr)) = (stdout, stderr) {
+        let mut partial = render_command_output(stdout, stderr);
+        if !partial.is_empty() {
+            let summary = partial
+                .rfind("\n[output truncated;")
+                .map(|index| partial.split_off(index))
+                .unwrap_or_else(|| {
+                    format!(
+                        "\n[partial output drained; stdout={} stderr={}]",
+                        stdout.total, stderr.total
+                    )
+                });
+            let available = MAX_OUTPUT_BYTES
+                .saturating_sub(message.len())
+                .saturating_sub(1)
+                .saturating_sub(summary.len());
+            if partial.len() > available {
+                let mut end = available;
+                while end > 0 && !partial.is_char_boundary(end) {
+                    end -= 1;
+                }
+                partial.truncate(end);
+            }
+            message.push('\n');
+            message.push_str(&partial);
+            message.push_str(&summary);
+        }
+    }
+    ToolError::Failed(bounded(&message))
+}
+
+/// Runs a shell command with concurrent bounded capture and owned-tree cleanup.
+/// Transport draining continues after the retained-output budget is exhausted.
 fn run_bounded(
     command: &str,
     cwd: &Path,
     timeout_secs: u64,
     cancellation: &std::sync::Arc<dyn CancellationSignal>,
+    dropped: &AtomicBool,
 ) -> Result<String, ToolError> {
     let (program, flag) = if cfg!(windows) {
         ("cmd", "/C")
     } else {
         ("sh", "-c")
     };
-    let mut child = Command::new(program)
+    let mut process = Command::new(program);
+    process
         .arg(flag)
         .arg(command)
         .current_dir(cwd)
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(windows)]
+    let mut child = process
+        .group()
+        .kill_on_drop(true)
         .spawn()
         .map_err(|e| ToolError::Failed(format!("spawn failed: {e}")))?;
+    #[cfg(not(windows))]
+    let mut child = process
+        .group_spawn()
+        .map_err(|e| ToolError::Failed(format!("spawn failed: {e}")))?;
+    let retained_budget = Arc::new(AtomicUsize::new(MAX_OUTPUT_BYTES));
+    let stdout = drain_pipe(
+        child
+            .inner()
+            .stdout
+            .take()
+            .ok_or_else(|| ToolError::Failed("spawned command has no stdout pipe".into()))?,
+        Arc::clone(&retained_budget),
+    );
+    let stderr = drain_pipe(
+        child
+            .inner()
+            .stderr
+            .take()
+            .ok_or_else(|| ToolError::Failed("spawned command has no stderr pipe".into()))?,
+        retained_budget,
+    );
     let deadline = Instant::now() + Duration::from_secs(timeout_secs);
-    loop {
-        if cancellation.is_cancelled() {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(ToolError::Failed("command cancelled".into()));
+    let (reason, status): (Option<String>, Option<std::process::ExitStatus>) = loop {
+        if cancellation.is_cancelled() || dropped.load(Ordering::Acquire) {
+            break (Some("command cancelled".into()), None);
         }
-        match child.try_wait() {
-            Ok(Some(_)) => break, // shell exited; pipes are closed and safe to read
+        match child.inner().try_wait() {
+            Ok(Some(status)) => break (None, Some(status)),
             Ok(None) => {
                 if Instant::now() >= deadline {
-                    // Kill + reap the leader without reading the pipes so a
-                    // lingering grandchild cannot block us.
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return Err(ToolError::Failed("command timed out and was killed".into()));
+                    break (Some("command timed out".into()), None);
                 }
                 std::thread::sleep(Duration::from_millis(25));
             }
             Err(error) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(ToolError::Failed(format!("wait failed: {error}")));
+                break (Some(format!("wait failed: {error}")), None);
             }
         }
+    };
+
+    // Leader completion and pipe EOF are separate. Signal the exact process
+    // tree even after leader exit so an inherited pipe cannot hold settlement.
+    // `GroupChild` owns a POSIX process group on Unix and a Job Object on
+    // Windows. Killing that exact object remains valid after the shell leader
+    // exits, unlike PID-tree discovery through `taskkill`.
+    let cleanup_verified = match child.kill() {
+        Ok(()) => true,
+        Err(error) if process_group_already_absent(&error) => true,
+        Err(_) => false,
+    };
+    let mut final_status = status;
+    let reap_deadline = Instant::now() + Duration::from_millis(500);
+    while final_status.is_none() && Instant::now() < reap_deadline {
+        match child.inner().try_wait() {
+            Ok(Some(observed)) => final_status = Some(observed),
+            Ok(None) => std::thread::sleep(Duration::from_millis(10)),
+            Err(_) => break,
+        }
     }
-    let output = child
-        .wait_with_output()
-        .map_err(|e| ToolError::Failed(format!("read output failed: {e}")))?;
-    let mut combined = String::from_utf8_lossy(&output.stdout).into_owned();
-    if !output.stderr.is_empty() {
-        combined.push_str("\n[stderr]\n");
-        combined.push_str(&String::from_utf8_lossy(&output.stderr));
+    let leader_reaped = final_status.is_some();
+    let capture_deadline = Instant::now() + Duration::from_secs(2);
+    let stdout = receive_capture(&stdout, capture_deadline);
+    let stderr = receive_capture(&stderr, capture_deadline);
+    let pipes_settled = stdout.is_some() && stderr.is_some();
+    #[cfg(windows)]
+    let tree_settled = cleanup_verified || (reason.is_none() && pipes_settled);
+    #[cfg(not(windows))]
+    let tree_settled = cleanup_verified;
+    let settled = tree_settled && leader_reaped && pipes_settled;
+
+    let Some(stdout) = stdout else {
+        return Err(command_failure(
+            reason.as_deref().unwrap_or("stdout pipe did not settle"),
+            final_status,
+            false,
+            None,
+            None,
+        ));
+    };
+    let Some(stderr) = stderr else {
+        return Err(command_failure(
+            reason.as_deref().unwrap_or("stderr pipe did not settle"),
+            final_status,
+            false,
+            Some(&stdout),
+            None,
+        ));
+    };
+    if stdout.read_error.is_some() || stderr.read_error.is_some() {
+        return Err(command_failure(
+            "command output read failed",
+            final_status,
+            settled,
+            Some(&stdout),
+            Some(&stderr),
+        ));
     }
-    if !output.status.success() {
-        return Err(ToolError::Failed(format!(
-            "command exited {}\n{}",
-            output.status,
-            bounded(&combined)
-        )));
+    if let Some(reason) = reason {
+        return Err(command_failure(
+            &reason,
+            final_status,
+            settled,
+            Some(&stdout),
+            Some(&stderr),
+        ));
     }
-    Ok(bounded(&combined))
+    let status =
+        final_status.unwrap_or_else(|| unreachable!("settled command must have a reaped leader"));
+    if !settled {
+        return Err(command_failure(
+            "command cleanup could not be verified",
+            Some(status),
+            false,
+            Some(&stdout),
+            Some(&stderr),
+        ));
+    }
+    if !status.success() {
+        return Err(command_failure(
+            "command exited unsuccessfully",
+            Some(status),
+            true,
+            Some(&stdout),
+            Some(&stderr),
+        ));
+    }
+    Ok(render_command_output(&stdout, &stderr))
 }
 
 /// VRO-13 PR-4: executes one shell command through the sandboxed path.
@@ -909,6 +1178,37 @@ async fn run_sandboxed(
 #[cfg(test)]
 mod change_preview_tests {
     use super::*;
+
+    struct PartialThenError {
+        sent: bool,
+    }
+
+    impl Read for PartialThenError {
+        fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+            if self.sent {
+                return Err(std::io::Error::other("injected reader failure"));
+            }
+            self.sent = true;
+            buffer[..7].copy_from_slice(b"partial");
+            Ok(7)
+        }
+    }
+
+    #[test]
+    fn pipe_reader_preserves_partial_bytes_when_reading_fails() {
+        let receiver = drain_pipe(
+            PartialThenError { sent: false },
+            Arc::new(AtomicUsize::new(MAX_OUTPUT_BYTES)),
+        );
+        let captured = receiver.recv_timeout(Duration::from_secs(1)).unwrap();
+        assert_eq!(captured.bytes, b"partial");
+        assert_eq!(captured.total, 7);
+        assert!(!captured.truncated);
+        assert_eq!(
+            captured.read_error.as_deref(),
+            Some("injected reader failure")
+        );
+    }
 
     #[test]
     fn preview_source_numbers_start_at_real_context_and_legacy_remains_unknown() {

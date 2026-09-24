@@ -527,7 +527,8 @@ the multi-turn, tool-executing layer above it.
   token pressure, not message count, triggers compaction. Hosts retain the
   returned provider history and may separately preserve a complete display
   transcript.
-- Depends on `vesper-domain`, `vesper-provider`, `vesper-runtime` (+ `glob`,
+- Depends on `vesper-domain`, `vesper-provider`, `vesper-runtime` (+
+  `command-group` for safe POSIX process-group/Windows Job Object ownership, `glob`,
   `regex` for search; `sha2` for VRO-7 deterministic procedure IDs; workspace
   `uuid` for VesperLens session tokens; `tempfile` dev-only). Must NOT depend
   on `vesper-acp`, `vesper-sessions`, SQLite, MCP,
@@ -541,8 +542,14 @@ the multi-turn, tool-executing layer above it.
 - Every path-bearing tool routes its argument through `confinement::confine`
   against the session's primary workspace root before any I/O. `run_command`
   runs in the workspace root via the platform shell (`sh -c` / `cmd /C`) with a
-  bounded timeout; its grandchild risk is documented (no safe `killpg` under
-  `#![forbid(unsafe_code)]`).
+  bounded timeout. Its stdout and stderr readers drain concurrently for the
+  command lifetime while sharing a 64 KiB retained-output budget; truncation
+  never stops transport draining. The executor owns a distinct process group,
+  settles leader status and pipe EOF separately, and performs bounded exact-tree
+  cleanup on timeout, cancellation, caller drop, and leader completion. Any
+  uncertain cleanup, reader failure, timeout, cancellation, or nonzero exit is a
+  failed tool result with truthful bounded partial output; commands are never
+  replayed automatically.
 - `update_plan` writes only `.agent/plan.md` (confined) and returns the rendered
   markdown so the loop surfaces it for the TUI REVIEW transition.
 - The permission gate is the single authority checkpoint before any executor
@@ -634,6 +641,12 @@ the multi-turn, tool-executing layer above it.
   working by name.
 
 ## Verification
+
+- `tests/command_settlement.rs` exercises the production `RunCommand` boundary
+  on every supported CI target under stdout/stderr pressure, the 64 KiB
+  retention boundary, the historical 71,443-byte workload, timeout,
+  cancellation, dropped callers, nonzero exit, descendant-held pipes,
+  delayed-marker descendant cleanup, and post-failure recovery.
 
 - Run `cargo test -p vesper-agent`.
 - Run `cargo xtask verify` (fmt + clippy + workspace tests + architecture).

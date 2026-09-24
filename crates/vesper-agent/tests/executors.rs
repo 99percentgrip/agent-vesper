@@ -306,3 +306,23 @@ async fn nonzero_shell_exit_is_a_failed_tool_with_output() {
     assert!(result.to_string().contains("7"));
     assert!(result.to_string().contains("failed-check"));
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn run_command_drains_large_stdout_while_process_is_running() {
+    let root = tempfile::tempdir().unwrap();
+    let result = RunCommand
+        .execute(
+            &call(
+                "run_command",
+                json!({
+                    "command": "python3 -c 'import sys; sys.stdout.write(\"x\" * 262144)'",
+                    "timeout": 2
+                }),
+            ),
+            &root_context(root.path()),
+        )
+        .await
+        .expect("large stdout must drain without blocking the child");
+    assert!(result.text.as_str().starts_with('x'));
+}
