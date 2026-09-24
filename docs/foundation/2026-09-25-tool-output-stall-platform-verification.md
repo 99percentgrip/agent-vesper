@@ -1,87 +1,111 @@
-# Tool-Output Stall Platform Verification Preparation — 2026-09-25
+# Tool-Output Stall Five-Target Platform Verification — 2026-09-25
 
 ## Objective
 
-Close the release-relevant Windows/macOS behavioral gap for the accepted
-classification-D shared executor repair without committing, pushing, versioning,
-tagging, releasing or installing.
+Close the release-relevant Windows and macOS behavioral gap for the accepted
+classification-D shared executor repair. Use a dedicated temporary ref only;
+do not version, tag, release, install or merge unrelated work.
 
-## Method and Findings
+## Candidate and Method
 
-The five-target workflow accepts only a GitHub ref and checks out repository
-content. GitHub-hosted Windows 2025, macOS 15 Intel and macOS 15 Apple-silicon
-runners therefore cannot execute this uncommitted worktree. Dispatching `main`
-would test baseline `01461a32…`, not this repair; creating a remote ref would
-violate Alex's explicit no-commit/no-push constraint. No misleading workflow was
-launched.
+- Verification ref: `verify/tool-output-settlement-20260925`
+- Exact behavior candidate: `27a3f17bd818294e1a52e0bf194b02ba761e3464`
+- Final workflow: `five-target-foundation` run `36036088105`
+- Workflow URL: <https://github.com/99percentgrip/agent-vesper/actions/runs/36036088105>
+- Native targets: Linux x86_64, Linux ARM64, Windows x86_64, macOS Intel and
+  macOS Apple Silicon.
 
-The audit found two concrete platform defects before remote execution:
+Every target ran `cargo test --workspace --all-features` and then the explicit
+single-threaded `command_settlement` matrix. The nine cases cover large stdout,
+large stderr, alternating mixed streams, shared-cap truncation while continuing
+to drain, exact retained-output boundaries, the historical 71 KiB and larger
+stress shapes, timeout, signal cancellation, caller/task abortion, nonzero exit,
+descendant-held pipes, descendants writing after leader exit, owned-tree cleanup
+and subsequent-command recovery.
 
-- `command_settlement.rs` was globally `cfg(unix)`, so Windows executed zero new
-  behavior tests. Its descendant-absence assertions were Linux-only.
-- Windows cleanup used `taskkill /T` after the shell leader could already have
-  exited. That PID-tree rediscovery cannot reliably own an orphaned former child.
+## Red-to-Green Platform Evidence
 
-The candidate now uses `command-group` 5.0.1: an owned POSIX process group on
-Unix and a retained Windows Job Object with kill-on-close. The portable test
-matrix uses Windows PowerShell/cmd fixtures or POSIX fixtures and delayed marker
-files to prove descendant cleanup after timeout, signal cancellation, caller
-abort, leader exit and continued descendant writing. The five-target workflow
-has a named, bounded command-settlement step, preventing empty filtered tests.
+Initial run `36033634456` at `12ebaf989268d821d4b2fe02822555ca161c4bd6`
+proved that the first portable fixtures were invalid on Windows: five of nine
+cases failed because quoted PowerShell was reinterpreted by `cmd /C`, producing
+short error output or the wrong exit code. Linux ARM64 also encountered an
+unrelated transient `vesper-voice` executable-busy test failure. Both obsolete
+runs were retained as evidence and then cancelled after their terminal logs were
+captured.
 
-## Evidence
+Candidate `9d30a7f2cf951fb0fb7683b86e5f49091575c007` changed Windows fixtures to
+UTF-16LE PowerShell `-EncodedCommand` payloads. Run `36035098957` flipped seven
+of nine Windows cases green. The remaining two failures showed startup-race
+assertions: cancellation could fire before partial output appeared, and caller
+abort allowed only two seconds for PowerShell startup.
 
-- Red during local abstraction integration: 6/9 Linux cases reported cleanup
-  uncertainty because POSIX `ESRCH` (the owned group is already absent) was not
-  classified as successful absence.
-- Green after exact correction: 9/9 portable settlement cases passed on Linux
-  in 14.05 seconds, then 9/9 passed in the full agent suite in 3.55 seconds.
-- `cargo test -p vesper-agent`: PASS (425 unit tests plus integration suites).
-- ACP hosted registry route: PASS 1/1.
-- TUI hosted registry route: PASS 1/1 after moving generated artifacts out of
-  the bounded `/tmp` filesystem.
-- `cargo +1.88.0 check -p vesper-agent --all-targets`: PASS.
-- strict affected-package Clippy: PASS.
-- `cargo xtask architecture`: PASS, 30 packages.
-- `cargo deny check`: PASS, including the new dependency.
-- Linux-to-Windows/macOS test cross-build attempts were blocked by missing native
-  `aws-lc-sys` target C toolchains. They are not counted as platform evidence.
+Candidate `27a3f17bd818294e1a52e0bf194b02ba761e3464` replaced those sleeps with
+explicit readiness markers and a bounded five-second fixture-start budget. Local
+Linux verification remained 9/9 green; strict affected-package Clippy, formatting
+and whitespace checks passed. Exact-candidate run `36036088105` then passed all
+five jobs and every dedicated settlement step.
 
-## Acceptance Interpretation
+## Exact Results
 
-The authoritative incident record explicitly labels matched live OpenAI/GLM
-comparison as patch-acceptance item 6. It therefore remains OPEN / NOT EXECUTED
-pending Alex authorization. This is an incident-closeout evidence requirement,
-not missing proof for classification D: both adapters have fixture-backed tool
-surface/protocol parity, and the provider-neutral production executor reproduced
-the pipe defect directly.
+| Target | Job ID | Dedicated settlement | Full job |
+|---|---:|---|---|
+| Linux x86_64 | `107756425168` | PASS, 18:00:07–18:00:22 UTC | PASS |
+| Linux ARM64 | `107756425250` | PASS, 18:01:37–18:01:52 UTC | PASS |
+| Windows x86_64 | `107756425081` | PASS, 18:19:41–18:20:00 UTC | PASS |
+| macOS Apple Silicon | `107756424741` | PASS, 18:01:53–18:02:09 UTC | PASS |
+| macOS Intel | `107756425176` | PASS, 18:30:22–18:30:39 UTC | PASS |
 
-Installed/source identity is a historical provenance limitation. The old
-installed 0.23.3 incident binary is not byte-identical to source baseline 0.23.5,
-but current source independently reproduced the same mechanism red at the real
-`RunCommand` boundary. Release gating can therefore evaluate the repaired current
-source without establishing the old binary's unavailable digest-to-source map.
+The native Windows Job Object and POSIX process-group implementations therefore
+pass descendant-held-pipe and descendant-cleanup behavior on every supported
+target family. Compilation alone is not used as evidence.
+
+## Provider-Correlation Boundary
+
+Provider correlation is **NOT EXECUTED — GLM live access unavailable**. Alex no
+longer has an active GLM subscription/access and does not authorize restoring or
+purchasing access for this diagnostic. Preserve the historical observation that
+the stall appeared much more frequently with OpenAI, but infer no frequency
+explanation.
+
+Fixture-backed OpenAI/GLM tests prove provider-visible tool-surface parity and
+tool-call protocol handling. The provider-neutral production executor reproduced
+red and the shared repair is green. Those receipts establish classification D;
+they are not a matched live-provider comparison. The unavailable comparison is
+an unresolved explanatory limitation, not a blocker to release of this repair.
+
+## Provenance and Scope
+
+The old installed incident binary cannot be mapped byte-for-byte to the current
+source and remains a historical provenance limitation. It does not block release:
+current source independently reproduced the defect at the real `RunCommand`
+boundary and the repaired exact source passed native five-target behavior.
+
+The primary dirty checkout at `/home/Alex/Projects/agent-vesper` was not changed.
+All implementation and CI work stayed in the isolated worktree and temporary
+verification ref. No version bump, tag, release, installation or unrelated merge
+was performed.
 
 ## Changed Files
 
-- `Cargo.toml`, `Cargo.lock`, `crates/vesper-agent/Cargo.toml`
-- `crates/vesper-agent/src/tools.rs`
-- `crates/vesper-agent/tests/command_settlement.rs`
-- `.github/workflows/platform-foundation.yml`
-- applicable `.github`, crate and foundation DOX records
-- the incident and permanent-repair reports
+- Shared executor and regression files recorded in the permanent-repair report.
+- `.github/workflows/platform-foundation.yml` for the explicit five-target
+  behavioral step.
+- Windows-only test fixture encoding and readiness synchronization.
+- This report, the authoritative incident ledger and evidence index.
 
-## Deviations and Unresolved Items
+## Verification Commands and Receipts
 
-- Windows 2025 behavior: NOT RUN.
-- macOS 15 Intel behavior: NOT RUN.
-- macOS 15 Apple-silicon behavior: NOT RUN.
-- Live OpenAI/GLM correlation: NOT EXECUTED pending explicit authorization.
-- The prepared candidate requires a committed remote ref before GitHub-hosted
-  runners can execute it. No commit or push was performed.
+- `cargo test -p vesper-agent --test command_settlement -- --test-threads=1`:
+  local PASS, 9/9 after each fixture correction.
+- `cargo clippy -p vesper-agent --all-targets -- -D warnings`: PASS.
+- `cargo fmt --all -- --check`: PASS.
+- `git diff --check`: PASS.
+- GitHub Actions run `36036088105`: PASS, five of five native jobs; exact head
+  `27a3f17bd818294e1a52e0bf194b02ba761e3464`.
 
 ## Readiness Effect
 
-The implementation and CI matrix are prepared for an exact-ref run. Alex
-authorized one dedicated temporary verification commit/ref on 2026-09-25; hosted
-behavioral results remain pending until that workflow completes.
+Windows, macOS Intel and macOS Apple Silicon behavioral acceptance is closed.
+The shared executor repair is PASS and the critical tool-output stall is PASS at
+the approved scope. The candidate is ready for release preparation. Release work
+was not started in this unit.

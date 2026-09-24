@@ -1,33 +1,35 @@
-# CRITICAL — recurring tool-output stall: PATCH REQUIRED
+# CRITICAL — recurring tool-output stall: PATCH VERIFIED
 
 ## Current issue status
 
-**Severity: CRITICAL. Status: OPEN — PATCH REQUIRED**, explicitly directed by
-Alex on 2026-09-21 after another recurrence. Ordinary read-only tool output
-blocks autonomous work and requires manual intervention; terminating a stuck
-command is only an operational workaround, never resolution of this defect.
+**Severity: CRITICAL. Status: PASS — PATCH VERIFIED** on 2026-09-25. The
+classification-D shared executor defect reproduced red at the production
+`RunCommand` boundary and is green after concurrent bounded draining, owned
+process-tree cleanup, truthful settlement, and native five-target behavioral CI.
+The historical incidents and manual recoveries below remain evidence of the
+pre-repair defect.
 
-**2026-09-24 repair-candidate update:** the
+**2026-09-25 verification closeout:** the
 [permanent-repair execution report](2026-09-24-critical-tool-output-stall-repair.md)
-records a red-to-green shared-executor repair, bounded capture, Linux descendant
-cleanup, and TUI/ACP recovery. The incident remains **OPEN** because installed
-incident-binary identity is partial, matched live OpenAI/GLM provider correlation
-was not executed, and Windows/macOS behavioral cleanup lanes were not run.
+records the red-to-green repair, bounded capture, and TUI/ACP recovery. Exact
+candidate `27a3f17bd818294e1a52e0bf194b02ba761e3464` passed the native
+Windows x86_64, macOS Intel, macOS Apple Silicon, Linux x86_64 and Linux ARM64
+behavioral matrix in workflow run `36036088105`, including descendant-held
+pipes, process-tree cleanup and subsequent-command recovery.
 
-The source/installed mismatch is a historical provenance limitation rather than
-a release blocker for the current patch: the current production `RunCommand`
-boundary independently reproduced the same pipe-pressure mechanism red and is
-green after repair. Acceptance item 6 below still formally requires the matched
-live OpenAI/GLM experiment to close this incident, pending Alex authorization.
-That comparison is explanatory/provider-correlation evidence; it is not needed
-to establish classification D after provider surface/protocol parity and a
-provider-neutral direct reproduction. Windows and macOS behavioral cleanup remain
-release-relevant and cannot close from cross-compilation.
+The source/installed mismatch remains a historical provenance limitation rather
+than a release blocker: current source independently reproduced the same
+pipe-pressure mechanism at the real production boundary. The matched live
+OpenAI/GLM comparison is **NOT EXECUTED — GLM live access unavailable**. Alex no
+longer has an active GLM subscription/access and does not authorize restoring or
+purchasing access for this diagnostic. This is an unresolved explanatory
+limitation, not a release blocker for the independently proven provider-neutral
+repair. The historical observation that stalls appeared more frequently with
+OpenAI is preserved without a frequency explanation.
 
-The [platform-verification preparation record](2026-09-25-tool-output-stall-platform-verification.md)
-documents the cross-platform test/ownership defects found during follow-up, their
-local repair, and why Windows/macOS hosted behavior remains NOT RUN until a remote
-verification ref is authorized.
+The [platform-verification record](2026-09-25-tool-output-stall-platform-verification.md)
+documents the cross-platform test/ownership defects, Windows red-to-green
+fixture corrections, exact-ref CI receipts and final five-target PASS.
 
 The [06:10 UTC recurrence](2026-09-21-agent-tool-stall-0610z-recheck.md) involves
 a new shell `702497` and `cat` child `702500` under the same TUI `650318`.
@@ -43,7 +45,7 @@ another confirmed recurrence of the shared output-pipe stall. Once the active
 voice PRD work is complete, Alex's explicitly requested first engineering task
 is the permanent tool-output-stall repair, before other follow-up work.
 
-Required patch acceptance (all **OPEN / NOT EXECUTED**):
+Required patch acceptance (**PASS** at approved scope):
 
 1. Identify the actual installed and source capture paths; reproduce the hang
    in isolated regression tests that fail on the pre-fix implementation.
@@ -60,16 +62,17 @@ Required patch acceptance (all **OPEN / NOT EXECUTED**):
 5. Verify the shared executor and both TUI/ACP host routes; cover the repeated
    large-instruction-file scenario and run applicable platform gates. Record
    unsupported/unexecuted cases rather than claiming universal resolution.
-6. Run matched, repeated reproductions through native OpenAI and Z.ai/GLM,
-   recording provider/model/auth mode, host and capture-path identity, stream-event
-   ordering, drained/retained bytes, truncation, settlement and descendant cleanup.
-   Alex observes the stall more often with OpenAI selected; treat that as an
-   investigation lead until controlled trials establish a rate or cause. A
-   provider correlation must not weaken the shared executor regression scope.
+6. Provider correlation remains **NOT EXECUTED — GLM live access unavailable**.
+   Preserve Alex's observation that the stall appeared much more frequently with
+   OpenAI, but do not infer a rate or explanation. Fixture-backed OpenAI/GLM
+   tool-surface and protocol checks plus the provider-neutral direct reproduction
+   establish classification D; they are not described as a matched live-provider
+   comparison. This explanatory limitation does not block release of the proven
+   shared-executor repair.
 
-These are patch requirements, not a source-level root-cause finding or a claim
-that tests passed. Source repair is not part of this documentation/recovery
-request. The earlier recovery evidence below remains historical.
+These were the patch requirements established before implementation. The current
+PASS rests on the linked red-to-green source and native CI receipts; the earlier
+recovery evidence below remains historical.
 
 [Provider-correlation observation](2026-09-21-tool-stall-provider-observation.md):
 Alex reports that the symptom occurs more often with native OpenAI selected than
