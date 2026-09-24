@@ -1,5 +1,7 @@
 //! Regression matrix for bounded shell-command settlement.
 
+#[cfg(windows)]
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::json;
 use std::fs;
 use std::sync::Arc;
@@ -59,20 +61,46 @@ async fn run(command: &str, timeout: u64) -> Result<String, String> {
 }
 
 #[cfg(unix)]
-fn pressure_commands() -> [&'static str; 3] {
+fn pressure_commands() -> [String; 3] {
     [
-        "python3 -c 'import sys; sys.stdout.write(\"o\" * 1048576)'",
-        "python3 -c 'import sys; sys.stderr.write(\"e\" * 1048576)'",
-        "python3 -c 'import sys; [(sys.stdout.write(\"o\"*4096), sys.stdout.flush(), sys.stderr.write(\"e\"*4096), sys.stderr.flush()) for _ in range(128)]'",
+        "python3 -c 'import sys; sys.stdout.write(\"o\" * 1048576)'".into(),
+        "python3 -c 'import sys; sys.stderr.write(\"e\" * 1048576)'".into(),
+        "python3 -c 'import sys; [(sys.stdout.write(\"o\"*4096), sys.stdout.flush(), sys.stderr.write(\"e\"*4096), sys.stderr.flush()) for _ in range(128)]'".into(),
     ]
 }
 
 #[cfg(windows)]
-fn pressure_commands() -> [&'static str; 3] {
+fn powershell(script: &str) -> String {
+    let utf16 = script
+        .encode_utf16()
+        .flat_map(u16::to_le_bytes)
+        .collect::<Vec<_>>();
+    format!(
+        "powershell.exe -NoProfile -NonInteractive -EncodedCommand {}",
+        STANDARD.encode(utf16)
+    )
+}
+
+#[cfg(windows)]
+fn powershell_descendant(script: &str) -> String {
+    let utf16 = script
+        .encode_utf16()
+        .flat_map(u16::to_le_bytes)
+        .collect::<Vec<_>>();
+    format!(
+        "Start-Process powershell.exe -NoNewWindow -ArgumentList @('-NoProfile','-NonInteractive','-EncodedCommand','{}')",
+        STANDARD.encode(utf16)
+    )
+}
+
+#[cfg(windows)]
+fn pressure_commands() -> [String; 3] {
     [
-        "powershell.exe -NoProfile -NonInteractive -Command \"[Console]::Out.Write('o' * 1048576)\"",
-        "powershell.exe -NoProfile -NonInteractive -Command \"[Console]::Error.Write('e' * 1048576)\"",
-        "powershell.exe -NoProfile -NonInteractive -Command \"1..128 | ForEach-Object { [Console]::Out.Write('o' * 4096); [Console]::Out.Flush(); [Console]::Error.Write('e' * 4096); [Console]::Error.Flush() }\"",
+        powershell("[Console]::Out.Write('o' * 1048576)"),
+        powershell("[Console]::Error.Write('e' * 1048576)"),
+        powershell(
+            "1..128 | ForEach-Object { [Console]::Out.Write('o' * 4096); [Console]::Out.Flush(); [Console]::Error.Write('e' * 4096); [Console]::Error.Flush() }",
+        ),
     ]
 }
 
@@ -83,19 +111,22 @@ fn exact_output_command(count: usize) -> String {
 
 #[cfg(windows)]
 fn exact_output_command(count: usize) -> String {
-    format!(
-        "powershell.exe -NoProfile -NonInteractive -Command \"[Console]::Out.Write('x' * {count})\""
-    )
+    powershell(&format!("[Console]::Out.Write('x' * {count})"))
 }
 
 #[cfg(unix)]
-fn timeout_command() -> &'static str {
-    "echo partial; (sleep 2; echo stale > descendant.marker) & while :; do printf x; done"
+fn timeout_command() -> String {
+    "echo partial; (sleep 2; echo stale > descendant.marker) & while :; do printf x; done".into()
 }
 
 #[cfg(windows)]
-fn timeout_command() -> &'static str {
-    "echo partial & start \"\" /B powershell.exe -NoProfile -NonInteractive -Command \"Start-Sleep -Seconds 2; Set-Content -LiteralPath descendant.marker -Value stale\" & powershell.exe -NoProfile -NonInteractive -Command \"while ($true) { [Console]::Out.Write('x' * 4096) }\""
+fn timeout_command() -> String {
+    powershell(&format!(
+        "Write-Output partial; {}; while ($true) {{ [Console]::Out.Write('x' * 4096) }}",
+        powershell_descendant(
+            "Start-Sleep -Seconds 2; Set-Content -LiteralPath descendant.marker -Value stale"
+        )
+    ))
 }
 
 #[cfg(unix)]
@@ -105,19 +136,37 @@ fn cancellation_command(marker: &str) -> String {
 
 #[cfg(windows)]
 fn cancellation_command(marker: &str) -> String {
-    format!(
-        "echo before-cancel & start \"\" /B powershell.exe -NoProfile -NonInteractive -Command \"Start-Sleep -Seconds 2; Set-Content -LiteralPath {marker} -Value stale\" & powershell.exe -NoProfile -NonInteractive -Command \"while ($true) {{ [Console]::Out.Write('y' * 4096) }}\""
-    )
+    powershell(&format!(
+        "Write-Output before-cancel; {}; while ($true) {{ [Console]::Out.Write('y' * 4096) }}",
+        powershell_descendant(&format!(
+            "Start-Sleep -Seconds 2; Set-Content -LiteralPath {marker} -Value stale"
+        ))
+    ))
 }
 
 #[cfg(unix)]
-fn held_pipe_command() -> &'static str {
-    "(sleep 2; echo stale > descendant.marker; echo stale) & echo leader-done"
+fn held_pipe_command() -> String {
+    "(sleep 2; echo stale > descendant.marker; echo stale) & echo leader-done".into()
 }
 
 #[cfg(windows)]
-fn held_pipe_command() -> &'static str {
-    "start \"\" /B powershell.exe -NoProfile -NonInteractive -Command \"Start-Sleep -Seconds 2; Set-Content -LiteralPath descendant.marker -Value stale; [Console]::Out.Write('stale')\" & echo leader-done"
+fn held_pipe_command() -> String {
+    powershell(&format!(
+        "{}; Write-Output leader-done",
+        powershell_descendant(
+            "Start-Sleep -Seconds 2; Set-Content -LiteralPath descendant.marker -Value stale; [Console]::Out.Write('stale')"
+        )
+    ))
+}
+
+#[cfg(unix)]
+fn nonzero_command() -> String {
+    "printf out; printf err >&2; exit 7".into()
+}
+
+#[cfg(windows)]
+fn nonzero_command() -> String {
+    powershell("[Console]::Out.Write('out'); [Console]::Error.Write('err'); exit 7")
 }
 
 async fn assert_marker_absent_after_cleanup(path: &std::path::Path) {
@@ -133,7 +182,7 @@ async fn assert_marker_absent_after_cleanup(path: &std::path::Path) {
 async fn drains_large_stdout_stderr_and_alternating_streams() {
     for command in pressure_commands() {
         let started = Instant::now();
-        let output = run(command, 5).await.expect("stream pressure must settle");
+        let output = run(&command, 5).await.expect("stream pressure must settle");
         assert!(started.elapsed() < Duration::from_secs(3));
         assert!(output.contains("output truncated"));
         assert!(output.contains("drained=524288") || output.contains("drained=1048576"));
@@ -192,7 +241,7 @@ async fn timeout_preserves_partial_output_and_cleans_descendants() {
     let started = Instant::now();
     let error = RunCommand
         .execute(
-            &call(timeout_command(), 1),
+            &call(&timeout_command(), 1),
             &context(root.path(), Arc::new(Cancel::default())),
         )
         .await
@@ -236,10 +285,16 @@ async fn dropping_async_caller_still_cleans_owned_process_tree() {
     let ctx = context(root.path(), Arc::new(Cancel::default()));
     #[cfg(unix)]
     let command =
-        "touch leader.ready; (sleep 2; echo stale > dropped.marker) & while :; do printf d; done";
+        "touch leader.ready; (sleep 2; echo stale > dropped.marker) & while :; do printf d; done"
+            .to_owned();
     #[cfg(windows)]
-    let command = "type nul > leader.ready & start \"\" /B powershell.exe -NoProfile -NonInteractive -Command \"Start-Sleep -Seconds 2; Set-Content -LiteralPath dropped.marker -Value stale\" & powershell.exe -NoProfile -NonInteractive -Command \"while ($true) { [Console]::Out.Write('d' * 4096) }\"";
-    let call = call(command, 20);
+    let command = powershell(&format!(
+        "Set-Content -LiteralPath leader.ready -Value ready; {}; while ($true) {{ [Console]::Out.Write('d' * 4096) }}",
+        powershell_descendant(
+            "Start-Sleep -Seconds 2; Set-Content -LiteralPath dropped.marker -Value stale"
+        )
+    ));
+    let call = call(&command, 20);
     let task = tokio::spawn(async move { RunCommand.execute(&call, &ctx).await });
     let deadline = Instant::now() + Duration::from_secs(2);
     while !ready_path.exists() && Instant::now() < deadline {
@@ -258,7 +313,7 @@ async fn leader_exit_does_not_wait_for_descendant_held_pipe() {
     let ctx = context(root.path(), Arc::new(Cancel::default()));
     let started = Instant::now();
     let output = RunCommand
-        .execute(&call(held_pipe_command(), 5), &ctx)
+        .execute(&call(&held_pipe_command(), 5), &ctx)
         .await
         .expect("owned descendant must be cleaned after leader exit")
         .text
@@ -275,12 +330,19 @@ async fn descendant_writing_after_leader_exit_is_cleaned() {
     let root = tempfile::tempdir().unwrap();
     let ctx = context(root.path(), Arc::new(Cancel::default()));
     #[cfg(unix)]
-    let command = "(while :; do printf z; done) & (sleep 2; echo stale > writer.marker) & exit 0";
+    let command =
+        "(while :; do printf z; done) & (sleep 2; echo stale > writer.marker) & exit 0".to_owned();
     #[cfg(windows)]
-    let command = "start \"\" /B powershell.exe -NoProfile -NonInteractive -Command \"while ($true) { [Console]::Out.Write('z' * 4096) }\" & start \"\" /B powershell.exe -NoProfile -NonInteractive -Command \"Start-Sleep -Seconds 2; Set-Content -LiteralPath writer.marker -Value stale\" & exit /b 0";
+    let command = powershell(&format!(
+        "{}; {}",
+        powershell_descendant("while ($true) { [Console]::Out.Write('z' * 4096) }"),
+        powershell_descendant(
+            "Start-Sleep -Seconds 2; Set-Content -LiteralPath writer.marker -Value stale"
+        )
+    ));
     let started = Instant::now();
     let output = RunCommand
-        .execute(&call(command, 5), &ctx)
+        .execute(&call(&command, 5), &ctx)
         .await
         .expect("writer descendant must be cleaned")
         .text
@@ -293,9 +355,7 @@ async fn descendant_writing_after_leader_exit_is_cleaned() {
 
 #[tokio::test]
 async fn nonzero_exit_keeps_output_status_and_failure() {
-    let error = run("printf out; printf err >&2; exit 7", 5)
-        .await
-        .unwrap_err();
+    let error = run(&nonzero_command(), 5).await.unwrap_err();
     assert!(error.contains("command exited unsuccessfully"));
     assert!(error.contains("exit status: 7") || error.contains("exit code: 7"));
     assert!(error.contains("out"));
