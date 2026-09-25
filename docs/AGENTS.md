@@ -47,7 +47,8 @@ Own durable project documentation and evidence-backed engineering records.
 - `vro18-native-xai-provider-prd.md` owns VRO-18 native xAI reasoning-provider
   requirements, phased acceptance, billing-path isolation, and adjacent-service
   exclusions. `architecture/recon_xai_native_provider.md` and
-  `foundation/xai-provider-recon-execution.md` own its PR-0 evidence.
+  `foundation/xai-provider-recon-execution.md` own its PR-0 evidence;
+  `foundation/xai-provider-pr1-execution.md` owns the offline API-key transport evidence.
 - `web-tools.md` owns web-driver installation, immutable image identity,
   native Settings → Web tools and ACP `/web` activation, advanced opt-in
   configuration, operation bounds, and deployment troubleshooting.

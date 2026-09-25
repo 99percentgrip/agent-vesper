@@ -1,0 +1,30 @@
+[package]
+name = "vesper-provider-xai"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+futures-core.workspace = true
+futures-util.workspace = true
+reqwest.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+url.workspace = true
+vesper-auth = { path = "../vesper-auth", version = "=0.23.6" }
+vesper-domain = { path = "../vesper-domain", version = "=0.23.6" }
+vesper-provider = { path = "../vesper-provider", version = "=0.23.6" }
+vesper-security = { path = "../vesper-security", version = "=0.23.6" }
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio = { workspace = true, features = ["io-util", "net", "test-util"] }
+
+[lints]
+workspace = true
+
+[features]
+integration-test-harness = []

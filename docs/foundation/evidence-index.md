@@ -1,5 +1,15 @@
 # Foundation Evidence Index
 
+## VRO-18 PR-1 native API-key Responses transport (2026-09-25)
+
+- Execution: [`xai-provider-pr1-execution.md`](xai-provider-pr1-execution.md)
+- Verdict: PR-1 PASS at offline fixture scope. The dedicated xAI crate owns
+  API-key credentials, fixed Responses dispatch, strict tool serialization,
+  bounded SSE decoding, cancellation, safe errors and opaque reasoning. Red
+  strict-schema and oversized-event regressions are green (11/11). The adapter
+  is not registered or advertised; PR-2 through PR-8 and live acceptance remain
+  open.
+
 ## VRO-18 native xAI provider reconnaissance (2026-09-25)
 
 - Requirements: [`../vro18-native-xai-provider-prd.md`](../vro18-native-xai-provider-prd.md)

@@ -4295,6 +4295,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "vesper-provider-xai"
+version = "0.23.6"
+dependencies = [
+ "futures-core",
+ "futures-util",
+ "reqwest",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "url",
+ "vesper-auth",
+ "vesper-domain",
+ "vesper-provider",
+ "vesper-security",
+]
+
+[[package]]
 name = "vesper-runtime"
 version = "0.23.6"
 dependencies = [

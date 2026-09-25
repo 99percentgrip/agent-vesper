@@ -112,6 +112,10 @@ test-only conformance support.
   transport, passive subscription usage, and tool-free memory extraction; it may depend on
   auth/domain/provider/config/security, HTTP, and `fs2` credential-operation
   locks. Both hosts compose it without a Codex runtime dependency.
+- `vesper-provider-xai` owns native xAI authentication, catalog, Responses
+  transport, stream/error translation, and later Grok-session proxy behavior;
+  it may depend on auth/domain/provider/security and HTTP. API-key and
+  Grok-account billing paths remain explicitly isolated.
 - `vesper-runtime` may depend on domain/provider and the read-only repository,
   converted-state, and transactional write ports from `vesper-sessions`;
   filesystem I/O remains implemented only by `vesper-sessions`, and runtime
@@ -160,6 +164,8 @@ test-only conformance support.
 - `vesper-provider-glm/AGENTS.md` — Z.ai GLM provider adapter.
 - `vesper-provider-openai/AGENTS.md` — native OpenAI adapter,
   with no Codex installation or runtime dependency.
+- `vesper-provider-xai/AGENTS.md` — native xAI adapter with isolated API-key
+  and Grok-account authentication paths.
 - `vesper-provider-synthetic/AGENTS.md` — deterministic in-process reference
   provider proving multi-provider contract neutrality.
 - `vesper-runtime/AGENTS.md` — provider-neutral session actors and converted

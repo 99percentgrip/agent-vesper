@@ -2262,3 +2262,19 @@ removal of host-side provider-ID defaults. Hosted-tool/citation types are a
 separate provider-neutral prerequisite for PR-5. The existing image,
 structured-output, opaque continuation, device-login, stream, tool-loop, and
 auxiliary compaction contracts are reusable.
+
+
+## 40. PR-1 closeout — 2026-09-25
+
+PR-1 is closed at offline fixture scope by
+[`foundation/xai-provider-pr1-execution.md`](foundation/xai-provider-pr1-execution.md).
+The new `vesper-provider-xai` crate owns API-key credential resolution, the
+fixed public Responses endpoint, request serialization, bounded SSE decoding,
+typed safe errors, cancellation and loopback fixtures. The red strict-function
+schema and oversized-event settlement cases now pass; the complete targeted
+suite is 11/11.
+
+This does not make xAI user-selectable. The crate is not registered in TUI or
+ACP, its static Grok 4.7 entry is fixture/configuration metadata rather than
+account availability, and no live request was made. PR-2 through PR-8 remain
+open under their original acceptance boundaries.

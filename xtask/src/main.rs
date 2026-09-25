@@ -1509,6 +1509,17 @@ fn allowed_dependencies() -> BTreeMap<&'static str, BTreeSet<&'static str>> {
             ]),
         ),
         (
+            // VRO-18: native xAI HTTP adapter. Provider wire/authentication
+            // behavior stays in this leaf crate and does not enter shared runtime.
+            "vesper-provider-xai",
+            BTreeSet::from([
+                "vesper-auth",
+                "vesper-domain",
+                "vesper-provider",
+                "vesper-security",
+            ]),
+        ),
+        (
             "vesper-runtime",
             BTreeSet::from([
                 "vesper-domain",
@@ -1729,7 +1740,10 @@ fn scan_production_sources(root: &Path) -> Result<(), String> {
                     "vesper-testkit",
                     "vesper_provider_glm",
                 ]
-            } else if crate_name == Some("vesper-provider-openai") {
+            } else if matches!(
+                crate_name,
+                Some("vesper-provider-openai" | "vesper-provider-xai")
+            ) {
                 &[
                     "agent_client_protocol",
                     "agent-client-protocol",

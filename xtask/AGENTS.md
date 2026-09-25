@@ -24,6 +24,9 @@ architecture, MSRV, and source-oracle checks.
   foundations retain their HTTP and frontend bans.
 - `vesper-provider-openai` is a concrete HTTP adapter boundary with no
   process-runtime or frontend dependencies; both hosts may compose it.
+- `vesper-provider-xai` is a concrete HTTP adapter boundary with no
+  process-runtime or frontend dependencies. Host composition remains gated by
+  the VRO-18 host-parity phase.
 - `vesper-harness` may depend on `vesper-web-fetch` to compose the shared
   sandbox-only helper transport; `vesper-web` remains pure.
 
