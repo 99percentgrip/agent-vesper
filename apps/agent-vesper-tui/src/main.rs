@@ -8601,7 +8601,7 @@ fn turn_configuration(
         };
         config.hosted_tools =
             vesper_provider_xai::hosted_tool_selections(&config.provider_configuration)
-                .map_err(|error| error.info.safe_message.as_str().to_owned())?;
+                .map_err(|error| error.to_string())?;
         return Ok(config);
     }
     if config.provider_id.as_str() != "zai" {

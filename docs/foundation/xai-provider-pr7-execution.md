@@ -75,18 +75,17 @@ remain hidden.
 Focused green receipts include xAI control projection in both hosts, dynamic
 TUI/ACP command routing, descriptor login metadata, all six hosted selections,
 generic hosted-selection delivery through AgentLoop, and safe citation
-rendering. The affected all-feature package run passes 57 ACP library tests,
+rendering. The affected all-feature package run passes 58 ACP library tests,
 285 TUI library tests, 161 TUI binary tests, 19 provider-contract tests and 40
 xAI adapter tests, plus the applicable integration and doc-test targets.
 
 ## Verification and environment
 
 `cargo fmt --all -- --check` and `git diff --check` pass. The current candidate
-also passes 27 xAI-adapter tests, 487 shared-agent tests across its test
-targets, 412 TUI tests and 57 ACP tests. The first ACP link attempt ended in a
+passes the complete workspace all-feature test suite. The first ACP link attempt ended in a
 linker `SIGBUS` after the 14 GiB temporary filesystem filled with mixed build
 graphs; after a Cargo-native clean of only the isolated target, the unchanged
-candidate rebuilt and all 57 ACP tests passed with 11 GiB free. Earlier
+candidate rebuilt and all ACP tests passed with 11 GiB free. Earlier
 all-feature host checks and focused provider/AgentLoop tests also passed during
 implementation. `/tmp` is a
 14 GiB quota filesystem; mixing default and all-feature artifact graphs filled
@@ -102,6 +101,12 @@ live-model cost. Strict workspace/all-target/all-feature Clippy initially
 rejected one test-only field reassignment after `Default`; the test now uses a
 direct struct initializer and the unchanged runtime candidate passes with
 `-D warnings`.
+
+After structured controls were added, strict Clippy also rejected the local
+projection helper's large `ProviderError` result. The helper now returns a
+small adapter-owned `HostedToolSettingsError`; full typed provider errors remain
+at the wire/transport boundary. The repaired tree passes strict workspace
+Clippy and the complete workspace all-feature test suite.
 
 ## Deviations and unresolved items
 

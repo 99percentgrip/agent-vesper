@@ -13,7 +13,7 @@ mod wire;
 
 pub use catalog::{DEFAULT_MODEL, XaiCatalog};
 pub use discovery::AvailableModels;
-pub use factory::{XaiFactory, hosted_tool_selections};
+pub use factory::{HostedToolSettingsError, XaiFactory, hosted_tool_selections};
 pub use transport::XaiSession;
 
 #[cfg(test)]

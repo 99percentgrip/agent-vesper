@@ -13,6 +13,18 @@ pub struct XaiFactory {
     #[cfg(feature = "integration-test-harness")]
     pub(crate) test_route: Option<String>,
 }
+
+/// Invalid or internally unrepresentable xAI hosted-tool settings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HostedToolSettingsError;
+
+impl std::fmt::Display for HostedToolSettingsError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("invalid or incomplete xAI hosted-tool settings")
+    }
+}
+
+impl std::error::Error for HostedToolSettingsError {}
 impl Default for XaiFactory {
     fn default() -> Self {
         Self {
@@ -617,9 +629,9 @@ fn hosted_tools() -> Vec<HostedToolDescriptor> {
 /// are absent and incomplete enabled tools fail before provider dispatch.
 pub fn hosted_tool_selections(
     configuration: &ProviderConfiguration,
-) -> Result<Vec<HostedToolSelection>, ProviderError> {
+) -> Result<Vec<HostedToolSelection>, HostedToolSettingsError> {
     if configuration.provider_id != provider_id() {
-        return Err(invalid_hosted_settings());
+        return Err(HostedToolSettingsError);
     }
     let values = &configuration.values.values;
     let enabled =
@@ -651,7 +663,7 @@ pub fn hosted_tool_selections(
             .and_then(serde_json::Value::as_i64)
             .unwrap_or(10);
         map.insert("xai:max-results", serde_json::json!(maximum))
-            .map_err(|_| invalid_hosted_settings())?;
+            .map_err(|_| HostedToolSettingsError)?;
         selections.push(configured_selection("collections-search", map));
     }
     if enabled("xai:hosted-remote-mcp") {
@@ -663,7 +675,7 @@ pub fn hosted_tool_selections(
         ] {
             if let Some(value) = nonempty_text(values, key) {
                 map.insert(key, serde_json::json!(value))
-                    .map_err(|_| invalid_hosted_settings())?;
+                    .map_err(|_| HostedToolSettingsError)?;
             }
         }
         insert_csv(&mut map, values, "xai:allowed-tools")?;
@@ -684,7 +696,7 @@ fn insert_csv(
     target: &mut ExtensionMap,
     values: &ExtensionMap,
     key: &str,
-) -> Result<(), ProviderError> {
+) -> Result<(), HostedToolSettingsError> {
     let Some(raw) = nonempty_text(values, key) else {
         return Ok(());
     };
@@ -694,11 +706,11 @@ fn insert_csv(
         .filter(|value| !value.is_empty())
         .collect();
     if parsed.is_empty() {
-        return Err(invalid_hosted_settings());
+        return Err(HostedToolSettingsError);
     }
     target
         .insert(key, serde_json::json!(parsed))
-        .map_err(|_| invalid_hosted_settings())
+        .map_err(|_| HostedToolSettingsError)
 }
 
 fn configured_selection(tool_id: &str, values: ExtensionMap) -> HostedToolSelection {
@@ -712,13 +724,6 @@ fn configured_selection(tool_id: &str, values: ExtensionMap) -> HostedToolSelect
     }
 }
 
-fn invalid_hosted_settings() -> ProviderError {
-    error(
-        "Invalid or incomplete xAI hosted-tool settings",
-        vesper_domain::ErrorCategory::InvalidRequest,
-        false,
-    )
-}
 impl ModelCatalog for XaiFactory {
     fn models<'a>(
         &'a self,
