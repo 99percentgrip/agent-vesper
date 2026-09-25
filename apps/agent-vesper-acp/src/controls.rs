@@ -583,6 +583,24 @@ pub(crate) fn multi_provider_control_surface_with_openai(
                     "xai:hosted-code-execution",
                     "Remote xAI execution; distinct from Vesper run_command.",
                 ),
+                (
+                    "xai_attachments",
+                    "xAI Attachment Search",
+                    "xai:hosted-attachment-search",
+                    "Uses only file IDs or public URLs configured with provider commands.",
+                ),
+                (
+                    "xai_collections",
+                    "xAI Collections Search",
+                    "xai:hosted-collections-search",
+                    "Uses only explicitly configured xAI collection IDs.",
+                ),
+                (
+                    "xai_remote_mcp",
+                    "xAI Remote MCP",
+                    "xai:hosted-remote-mcp",
+                    "Lets xAI connect to one explicitly configured HTTPS MCP endpoint; separate from Vesper MCP.",
+                ),
             ] {
                 controls.push(AcpSessionControl {
                     id: id.into(),
@@ -739,6 +757,9 @@ pub(crate) fn multi_provider_control_surface_with_openai(
                         "xai_web" => "xai:hosted-web-search",
                         "xai_x" => "xai:hosted-x-search",
                         "xai_code" => "xai:hosted-code-execution",
+                        "xai_attachments" => "xai:hosted-attachment-search",
+                        "xai_collections" => "xai:hosted-collections-search",
+                        "xai_remote_mcp" => "xai:hosted-remote-mcp",
                         _ => return None,
                     };
                     if option_id == "model" && !apply_xai.contains(value) {
@@ -922,6 +943,17 @@ pub(crate) fn apply_provider_selection(
                 "xai:hosted-web-search",
                 "xai:hosted-x-search",
                 "xai:hosted-code-execution",
+                "xai:hosted-attachment-search",
+                "xai:hosted-collections-search",
+                "xai:hosted-remote-mcp",
+                "xai:file-ids",
+                "xai:file-urls",
+                "xai:collection-ids",
+                "xai:max-results",
+                "xai:server-url",
+                "xai:server-label",
+                "xai:server-description",
+                "xai:allowed-tools",
             ] {
                 if let Some(value) = configuration.values.values.get(key) {
                     next.values.values.insert(key, value.clone()).ok()?;
@@ -1326,6 +1358,9 @@ mod tests {
             "xai_web",
             "xai_x",
             "xai_code",
+            "xai_attachments",
+            "xai_collections",
+            "xai_remote_mcp",
         ] {
             assert!(surface.control(id).is_some(), "missing xAI control {id}");
         }

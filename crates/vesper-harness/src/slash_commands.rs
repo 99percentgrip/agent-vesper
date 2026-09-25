@@ -43,6 +43,8 @@ pub enum SlashCommandOutcome {
 /// Host-applied session override requested by a provider-facing command.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SessionOverrides {
+    /// Provider-owned control values keyed by namespaced descriptor ID.
+    pub provider_configuration: std::collections::BTreeMap<String, serde_json::Value>,
     /// Requested model id (`zai:model`).
     pub model: Option<String>,
     /// Requested endpoint plan (`zai:endpoint-plan`): coding/standard/bigmodel.

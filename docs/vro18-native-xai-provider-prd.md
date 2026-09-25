@@ -2350,3 +2350,15 @@ bounded Global/API-key compaction endpoint and an explicit WebSocket transport
 whose pre-dispatch fallback cannot replay sent or visible work. The targeted
 AgentLoop and xAI suites are green. Host controls, composition, live acceptance
 and exact-commit release remain PR-7/PR-8 work.
+
+## 46. PR-7 closeout — 2026-09-25
+
+PR-7 is closed at offline host-composition scope by
+[`foundation/xai-provider-pr7-execution.md`](foundation/xai-provider-pr7-execution.md).
+Both production hosts register the native adapter, project explicit auth and
+account-discovered model controls, preserve citations, and inherit the shared
+tool/voice/skill/memory/VRO/worker paths. A provider-neutral bounded text
+control closes the attachment/collection/Remote-MCP configuration gap; the xAI
+adapter remains the sole owner of hosted-tool projection and validation. Live
+Grok-account acceptance, optional paid API-key acceptance, exact-commit CI and
+release remain PR-8 work.

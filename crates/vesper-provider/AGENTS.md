@@ -60,6 +60,8 @@ continuation, fallback, and error contracts.
   selector) so the composition boundary can render them without taking a
   dependency on a concrete adapter crate. The trait is **not** a supertrait of
   `ProviderFactory`; providers without superpowers simply omit the impl.
+  Free-text controls use the shared 2,048-byte `Text` value; hosts use the
+  shared parser/JSON projection and adapters retain semantic validation.
 
 ## Verification
 

@@ -3,10 +3,11 @@
 ## VRO-18 xAI host composition (2026-09-25)
 
 - Execution: [`xai-provider-pr7-execution.md`](xai-provider-pr7-execution.md)
-- Verdict: PARTIAL. TUI/ACP registration, authentication projection, account
-  model refresh, controls, shared tool/voice/skill/VRO/memory/worker inheritance
-  and safe citation rendering pass focused offline checks. Generic structured
-  host entry for attachment/collection/Remote-MCP selections remains open.
+- Verdict: PR-7 PASS at offline scope. TUI/ACP registration, authentication
+  projection, account model refresh, bounded controls for all six hosted tools,
+  shared tool/voice/skill/VRO/memory/worker inheritance and safe citation
+  rendering pass affected host/provider suites. Live acceptance and exact-commit
+  release gates remain PR-8.
 
 ## VRO-18 PR-6 native compaction and WebSocket (2026-09-25)
 

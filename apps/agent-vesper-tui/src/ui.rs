@@ -2294,6 +2294,7 @@ fn format_superpower_value(value: &vesper_provider::SuperpowerValue) -> String {
         SuperpowerValue::Choice { value } => value.as_str().to_string(),
         SuperpowerValue::Flag { value } => value.to_string(),
         SuperpowerValue::Number { value } => value.to_string(),
+        SuperpowerValue::Text { value } => value.as_str().to_string(),
     }
 }
 

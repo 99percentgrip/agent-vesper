@@ -4131,9 +4131,7 @@ fn session_setting_candidates(
                 let Some(alias) = descriptor.command_alias.as_ref() else {
                     continue;
                 };
-                if standard_aliases.contains(&alias.as_str())
-                    || descriptor.allowed_values.is_empty()
-                {
+                if standard_aliases.contains(&alias.as_str()) {
                     continue;
                 }
                 let current = active_superpower_choice(state, surface, alias.as_str())
@@ -4283,6 +4281,7 @@ fn superpower_value_text(value: &SuperpowerValue) -> String {
         SuperpowerValue::Choice { value } => value.as_str().to_string(),
         SuperpowerValue::Flag { value } => value.to_string(),
         SuperpowerValue::Number { value } => value.to_string(),
+        SuperpowerValue::Text { value } => value.as_str().to_string(),
     }
 }
 
@@ -8552,6 +8551,21 @@ fn turn_configuration(
         return Ok(config);
     }
     if config.provider_id.as_str() == "xai" {
+        for descriptor in surface.descriptors() {
+            let value = state
+                .overrides
+                .get(descriptor.id.as_str(), Some(&descriptor.default_value))
+                .unwrap_or_else(|| descriptor.default_value.clone());
+            config
+                .provider_configuration
+                .values
+                .values
+                .insert(
+                    descriptor.id.as_str(),
+                    vesper_provider::superpower_value_json(&value),
+                )
+                .map_err(|_| "Invalid xAI setting")?;
+        }
         let model = active_superpower_choice(state, surface, "model")
             .unwrap_or_else(|| vesper_provider_xai::DEFAULT_MODEL.to_owned());
         let effort = active_superpower_choice(state, surface, "thinking")
@@ -8585,21 +8599,9 @@ fn turn_configuration(
         } else {
             vesper_agent::NativeCompactionPolicy::Disabled
         };
-        config.hosted_tools.clear();
-        for (alias, tool_id) in [
-            ("xai-web", "web-search"),
-            ("xai-x", "x-search"),
-            ("xai-code", "code-execution"),
-        ] {
-            if active_superpower_choice(state, surface, alias).as_deref() == Some("enabled") {
-                config
-                    .hosted_tools
-                    .push(vesper_provider::HostedToolSelection {
-                        tool_id: BoundedString::new(tool_id).map_err(|_| "Invalid hosted tool")?,
-                        configuration: None,
-                    });
-            }
-        }
+        config.hosted_tools =
+            vesper_provider_xai::hosted_tool_selections(&config.provider_configuration)
+                .map_err(|error| error.info.safe_message.as_str().to_owned())?;
         return Ok(config);
     }
     if config.provider_id.as_str() != "zai" {
@@ -8691,6 +8693,7 @@ fn active_superpower_choice(
         .get(descriptor.id.as_str(), Some(&descriptor.default_value))?;
     match value {
         SuperpowerValue::Choice { value } => Some(value.as_str().to_owned()),
+        SuperpowerValue::Text { value } => Some(value.as_str().to_owned()),
         SuperpowerValue::Flag { .. } | SuperpowerValue::Number { .. } => None,
     }
 }
@@ -15764,10 +15767,18 @@ mod tests {
         .unwrap();
         assert!(settings.iter().any(|(command, _)| command == "/transport"));
         assert!(settings.iter().any(|(command, _)| command == "/xai-web"));
+        assert!(
+            settings
+                .iter()
+                .any(|(command, _)| command == "/xai-mcp-url")
+        );
         for (alias, value) in [
             ("transport", "websocket"),
             ("compaction", "enabled"),
             ("xai-web", "enabled"),
+            ("xai-remote-mcp", "enabled"),
+            ("xai-mcp-url", "https://mcp.example.test/events"),
+            ("xai-mcp-label", "docs"),
         ] {
             let outcome = agent_vesper_tui::dispatch::dispatch(
                 &CommandIntent::parse(&format!("/{alias} {value}")),
@@ -15804,6 +15815,7 @@ mod tests {
             vesper_agent::NativeCompactionPolicy::PreferProvider
         );
         assert_eq!(projected.hosted_tools[0].tool_id.as_str(), "web-search");
+        assert_eq!(projected.hosted_tools[1].tool_id.as_str(), "remote-mcp");
     }
 
     #[test]

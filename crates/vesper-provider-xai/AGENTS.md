@@ -40,6 +40,9 @@ continuation state, and provider error mapping without changing the shared agent
   collection and Remote MCP configuration is bounded and non-secret; Remote
   MCP accepts HTTPS endpoints without embedded credentials. These tools never
   map to Vesper `run_command`, web or MCP execution.
+  Host controls persist adapter-namespaced values; `hosted_tool_selections`
+  alone projects them to request selections, and `wire` remains the final
+  fail-closed validator.
 - Secrets never enter errors, events, logs, or model-visible extensions.
 - No silent fallback between Grok-session and xAI API-key billing paths.
 - Host composition uses authenticated discovery before offering models. Memory

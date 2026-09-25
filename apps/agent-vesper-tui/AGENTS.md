@@ -1143,9 +1143,10 @@ work (ACP mid-turn-slash-grace parity; see `apps/agent-vesper-acp/AGENTS.md`).
   links under the workspace toolchain.
 - Native provider composition registers xAI alongside OpenAI, Z.ai and LM
   Studio. xAI browser/device login, authenticated model refresh, reasoning,
-  region, transport, compaction and simple hosted-tool choices derive from
-  provider descriptors/superpowers. Voice, tools, skills, VRO and workers use
-  the unchanged shared registry and AgentLoop.
+  region, transport, compaction and hosted-tool choices/structured values
+  derive from provider descriptors/superpowers. Free-text rows remain bounded
+  and use the normal Settings draft/Save/Discard flow. Voice, tools, skills,
+  VRO and workers use the unchanged shared registry and AgentLoop.
 
 ## Supply-chain note
 

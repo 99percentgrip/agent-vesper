@@ -408,6 +408,9 @@ into exactly one always-safe, argument-dependent, or interrupting class.
   the TUI. ACP exposes discovered xAI models and provider controls through
   session config selectors; explicit CLI browser/device/API-key auth uses the
   provider credential port and never writes protocol data to stdout.
+  Enumerated hosted-tool enablement uses footer selectors. Bounded structured
+  values that ACP selectors cannot represent use the active provider's
+  advertised session command aliases and remain adapter-validated.
 
 ## Child DOX Index
 

@@ -50,6 +50,11 @@ pub enum SuperpowerValue {
         /// Selected integer.
         value: i64,
     },
+    /// Free-form provider configuration text with a strict serialized bound.
+    Text {
+        /// Selected text. Providers remain responsible for semantic validation.
+        value: BoundedString<2048>,
+    },
 }
 
 /// Structural kind of a superpower, independent of its current value.
@@ -62,6 +67,8 @@ pub enum SuperpowerKind {
     Toggle,
     /// Bounded integer.
     Numeric,
+    /// Bounded free-form text validated by the provider policy/adapter.
+    Text,
 }
 
 /// Static description of one provider-native superpower.
@@ -103,6 +110,53 @@ pub struct SuperpowerDescriptor {
 pub trait ProviderSuperpowers: Send + Sync {
     /// Stable, ordered superpower descriptors.
     fn superpowers(&self) -> Vec<SuperpowerDescriptor>;
+}
+
+/// Parses a host-supplied control value according to its provider descriptor.
+///
+/// Hosts share this parser so terminal and protocol control surfaces enforce
+/// the same structural bounds before provider-owned semantic validation.
+pub fn parse_superpower_value(
+    descriptor: &SuperpowerDescriptor,
+    argument: &str,
+) -> Result<SuperpowerValue, String> {
+    match descriptor.kind {
+        SuperpowerKind::Choice => {
+            if !descriptor.allowed_values.is_empty()
+                && !descriptor.allowed_values.iter().any(|allowed| {
+                    matches!(allowed, SuperpowerValue::Choice { value } if value.as_str() == argument)
+                })
+            {
+                return Err(format!("value {argument:?} is not advertised by this provider"));
+            }
+            BoundedString::new(argument)
+                .map(|value| SuperpowerValue::Choice { value })
+                .map_err(|error| error.to_string())
+        }
+        SuperpowerKind::Toggle => match argument.to_ascii_lowercase().as_str() {
+            "on" | "true" | "1" | "yes" | "enabled" => Ok(SuperpowerValue::Flag { value: true }),
+            "off" | "false" | "0" | "no" | "disabled" => Ok(SuperpowerValue::Flag { value: false }),
+            _ => Err("toggle expects on/off, true/false, 1/0, yes/no, or enabled/disabled".into()),
+        },
+        SuperpowerKind::Numeric => argument
+            .parse::<i64>()
+            .map(|value| SuperpowerValue::Number { value })
+            .map_err(|_| format!("{argument:?} is not a valid integer")),
+        SuperpowerKind::Text => BoundedString::new(argument)
+            .map(|value| SuperpowerValue::Text { value })
+            .map_err(|error| error.to_string()),
+    }
+}
+
+/// Converts a validated provider control value to its configuration value.
+#[must_use]
+pub fn superpower_value_json(value: &SuperpowerValue) -> serde_json::Value {
+    match value {
+        SuperpowerValue::Choice { value } => serde_json::json!(value.as_str()),
+        SuperpowerValue::Text { value } => serde_json::json!(value.as_str()),
+        SuperpowerValue::Flag { value } => serde_json::json!(value),
+        SuperpowerValue::Number { value } => serde_json::json!(value),
+    }
 }
 
 /// A provider's policy governing its advertised superpowers: which candidate
@@ -325,6 +379,29 @@ mod tests {
     }
 
     #[test]
+    fn bounded_text_control_round_trips_and_rejects_oversized_input() {
+        let descriptor = SuperpowerDescriptor {
+            id: BoundedString::new("test:url").unwrap(),
+            provider_id: provider(),
+            display_name: BoundedString::new("URL").unwrap(),
+            kind: SuperpowerKind::Text,
+            scope: SuperpowerScope::Session,
+            default_value: SuperpowerValue::Text {
+                value: BoundedString::new("").unwrap(),
+            },
+            allowed_values: Vec::new(),
+            command_alias: Some(BoundedString::new("url").unwrap()),
+            help: None,
+        };
+        let value = parse_superpower_value(&descriptor, "https://example.test/mcp").unwrap();
+        assert_eq!(
+            superpower_value_json(&value),
+            serde_json::json!("https://example.test/mcp")
+        );
+        assert!(parse_superpower_value(&descriptor, &"x".repeat(2049)).is_err());
+    }
+
+    #[test]
     fn superpower_kind_serializes_kebab_case() {
         assert_eq!(
             serde_json::to_string(&SuperpowerKind::Choice).unwrap(),
@@ -337,6 +414,10 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&SuperpowerKind::Numeric).unwrap(),
             "\"numeric\""
+        );
+        assert_eq!(
+            serde_json::to_string(&SuperpowerKind::Text).unwrap(),
+            "\"text\""
         );
     }
 }

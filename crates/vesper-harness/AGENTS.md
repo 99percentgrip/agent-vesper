@@ -208,7 +208,9 @@ Z.ai and Playwright MCP server descriptors.
   model/plan labels, mode), `/help` renders the oracle fixture text
   byte-exactly, `/curator` runs deterministic curation against the memory
   store, provider-facing switches validate into a `SessionOverrides` payload
-  the host applies at its own provider boundary, and commands only a
+  the host applies at its own provider boundary. The payload may retain
+  bounded provider-namespaced configuration for descriptor-driven ACP
+  controls; it never interprets concrete provider semantics. Commands only a
   frontend can serve (conversation state, workflow turns, live provider
   quota) return `SlashCommandOutcome::Host` passthrough. The catalog and
   parser delegate to `vesper-domain::slash_commands`.

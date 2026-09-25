@@ -44,4 +44,5 @@ pub use stream::{
 pub use superpowers::{
     PermissiveSuperpowerPolicy, PlanChangeReaction, ProviderSuperpowers, SuperpowerDescriptor,
     SuperpowerKind, SuperpowerPolicy, SuperpowerScope, SuperpowerSideEffect, SuperpowerValue,
+    parse_superpower_value, superpower_value_json,
 };

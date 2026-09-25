@@ -191,6 +191,44 @@ fn hosted_tool_configuration_maps_exactly_and_fails_closed() {
 }
 
 #[test]
+fn hosted_tool_settings_project_all_structured_tools_and_fail_closed() {
+    let mut configuration = XaiFactory::default_configuration();
+    for (key, value) in [
+        ("xai:hosted-attachment-search", json!("enabled")),
+        ("xai:file-ids", json!("file_1, file_2")),
+        ("xai:file-urls", json!("https://example.test/report.pdf")),
+        ("xai:hosted-collections-search", json!("enabled")),
+        ("xai:collection-ids", json!("collection_1, collection_2")),
+        ("xai:max-results", json!(12)),
+        ("xai:hosted-remote-mcp", json!("enabled")),
+        ("xai:server-url", json!("https://mcp.example.test/events")),
+        ("xai:server-label", json!("docs")),
+        ("xai:allowed-tools", json!("search_docs,read_doc")),
+    ] {
+        configuration.values.values.insert(key, value).unwrap();
+    }
+    let selections = crate::hosted_tool_selections(&configuration).unwrap();
+    assert_eq!(
+        selections
+            .iter()
+            .map(|selection| selection.tool_id.as_str())
+            .collect::<Vec<_>>(),
+        ["attachment-search", "collections-search", "remote-mcp"]
+    );
+    let mut request = fixture_request();
+    request.hosted_tools = selections;
+    wire::request(&request, "high").expect("structured hosted settings must serialize");
+
+    configuration
+        .values
+        .values
+        .insert("xai:server-url", json!("http://not-secure.test"))
+        .unwrap();
+    request.hosted_tools = crate::hosted_tool_selections(&configuration).unwrap();
+    assert!(wire::request(&request, "high").is_err());
+}
+
+#[test]
 fn hosted_tool_results_and_all_citations_remain_provider_owned() {
     let mut decoder = wire::Decoder::new(&fixture_request());
     let events = decoder

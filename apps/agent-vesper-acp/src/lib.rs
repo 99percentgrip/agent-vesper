@@ -454,33 +454,16 @@ impl AcpHarnessEngine {
             vesper_agent::NativeCompactionPolicy::Disabled
         };
         config.hosted_tools.clear();
-        if config.provider_id.as_str() == "xai" {
-            for (key, tool_id) in [
-                ("xai:hosted-web-search", "web-search"),
-                ("xai:hosted-x-search", "x-search"),
-                ("xai:hosted-code-execution", "code-execution"),
-            ] {
-                if config
-                    .provider_configuration
-                    .values
-                    .values
-                    .get(key)
-                    .and_then(serde_json::Value::as_str)
-                    == Some("enabled")
-                    && let Ok(tool_id) = vesper_domain::BoundedString::new(tool_id)
-                {
-                    config
-                        .hosted_tools
-                        .push(vesper_provider::HostedToolSelection {
-                            tool_id,
-                            configuration: None,
-                        });
-                }
-            }
-        }
         {
             let overrides = self.overrides.lock().await;
             if let Some(session_overrides) = overrides.get(&request.session_id) {
+                for (key, value) in &session_overrides.provider_configuration {
+                    let _ = config
+                        .provider_configuration
+                        .values
+                        .values
+                        .insert(key, value.clone());
+                }
                 if let Some(cap) = session_overrides.max_tool_iterations {
                     config.max_tool_iterations = cap;
                 }
@@ -519,6 +502,17 @@ impl AcpHarnessEngine {
                     }
                 }
             }
+        }
+        if config.provider_id.as_str() == "xai" {
+            config.hosted_tools =
+                vesper_provider_xai::hosted_tool_selections(&config.provider_configuration)
+                    .unwrap_or_else(|_| {
+                        vec![vesper_provider::HostedToolSelection {
+                            tool_id: vesper_domain::BoundedString::new("invalid-hosted-settings")
+                                .expect("static"),
+                            configuration: None,
+                        }]
+                    });
         }
         config.context_window_tokens =
             self.context_window_for(&config.provider_id, &config.model.model_id);
@@ -1341,6 +1335,39 @@ impl AcpHarnessEngine {
                 None => (rest, ""),
             };
             let lowered = raw_name.to_ascii_lowercase();
+            // Provider-advertised commands outside the stable cross-host
+            // catalog are resolved generically. This gives ACP a native text
+            // control for bounded provider values that its enumerated footer
+            // picker cannot represent (for example URLs and ID lists).
+            if vesper_domain::parse_slash_command(trimmed).is_none() {
+                let active_provider = request
+                    .model
+                    .as_ref()
+                    .map(|model| model.provider_id.clone())
+                    .unwrap_or_else(|| self.config.provider_id.clone());
+                let descriptors = self.registry.superpowers(&active_provider).await;
+                if let Some(resolution) =
+                    resolve_provider_control_command(&descriptors, &lowered, raw_argument)
+                {
+                    let (descriptor, value) = match resolution {
+                        Ok(resolved) => resolved,
+                        Err(error) => return slash_result(error),
+                    };
+                    let mut overrides = self.overrides.lock().await;
+                    overrides
+                        .entry(request.session_id.clone())
+                        .or_default()
+                        .provider_configuration
+                        .insert(
+                            descriptor.id.as_str().to_owned(),
+                            vesper_provider::superpower_value_json(&value),
+                        );
+                    return slash_result(format!(
+                        "{} saved for this session.",
+                        descriptor.display_name.as_str()
+                    ));
+                }
+            }
             if lowered == "skills"
                 && (raw_argument == "settings" || raw_argument.starts_with("settings "))
             {
@@ -2213,6 +2240,42 @@ fn unknown_command_text(command: &str) -> String {
          /awareness, /metacognition, /deliberation, /repository, /meta-learning, \
          /skills, /profile, /curator, /sessions, /lineage, /goal, /subgoal, \
          /checkpoint, /rollback, /plugins, /version, /release, /ci, /mcp"
+    )
+}
+
+fn resolve_provider_control_command(
+    descriptors: &[vesper_provider::SuperpowerDescriptor],
+    command: &str,
+    argument: &str,
+) -> Option<
+    Result<
+        (
+            vesper_provider::SuperpowerDescriptor,
+            vesper_provider::SuperpowerValue,
+        ),
+        String,
+    >,
+> {
+    let descriptor = descriptors.iter().find(|descriptor| {
+        descriptor
+            .command_alias
+            .as_ref()
+            .is_some_and(|alias| alias.as_str() == command)
+    })?;
+    if argument.is_empty() {
+        return Some(Err(format!(
+            "Usage: /{} <value> — {}",
+            command,
+            descriptor
+                .help
+                .as_ref()
+                .map(|help| help.as_str())
+                .unwrap_or(descriptor.display_name.as_str())
+        )));
+    }
+    Some(
+        vesper_provider::parse_superpower_value(descriptor, argument)
+            .map(|value| (descriptor.clone(), value)),
     )
 }
 
@@ -3705,6 +3768,30 @@ mod tests {
         assert!(text.starts_with("Unknown command: /future-command\n"));
         assert!(text.contains("/max-iterations, /memory"));
         assert!(text.ends_with("/version, /release, /ci, /mcp"));
+    }
+
+    #[test]
+    fn provider_advertised_text_command_is_bounded_and_resolves_without_dispatch() {
+        let descriptors = vesper_provider::ProviderSuperpowers::superpowers(
+            &vesper_provider_xai::XaiFactory::default(),
+        );
+        let (descriptor, value) = resolve_provider_control_command(
+            &descriptors,
+            "xai-mcp-url",
+            "https://mcp.example.test/events",
+        )
+        .expect("advertised command")
+        .expect("valid bounded value");
+        assert_eq!(descriptor.id.as_str(), "xai:server-url");
+        assert_eq!(
+            vesper_provider::superpower_value_json(&value),
+            serde_json::json!("https://mcp.example.test/events")
+        );
+        assert!(
+            resolve_provider_control_command(&descriptors, "xai-mcp-url", &"x".repeat(2049),)
+                .unwrap()
+                .is_err()
+        );
     }
 
     #[test]

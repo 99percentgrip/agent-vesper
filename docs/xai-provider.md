@@ -40,10 +40,21 @@ context policy.
 
 Vesper file, shell, MCP, web, planning, skill, memory and worker tools continue
 through the shared local tool loop and permission system. xAI Web Search,
-X Search and Code Execution are separate, default-off provider-hosted controls.
-They run on xAI infrastructure and may add egress or provider charges. xAI Code
-Execution never substitutes for Vesper `run_command`, and xAI Remote MCP never
-inherits Vesper MCP enablement.
+X Search, Code Execution, Attachment Search, Collections Search, and Remote MCP
+are separate, default-off provider-hosted controls. They run on xAI
+infrastructure and may add egress or provider charges. Attachment Search uses
+only the configured file IDs/public HTTPS URLs; Collections Search uses only
+configured collection IDs. Remote MCP requires an explicit HTTPS URL and
+label. xAI Code Execution never substitutes for Vesper `run_command`, and xAI
+Remote MCP never inherits Vesper MCP enablement.
+
+TUI Settings lists the provider-owned configuration rows and keeps them in the
+normal draft until **Save changes**. ACP footer controls enable each hosted
+tool; bounded structured values use the active provider commands
+`/xai-file-ids`, `/xai-file-urls`, `/xai-collection-ids`,
+`/xai-max-results`, `/xai-mcp-url`, `/xai-mcp-label`,
+`/xai-mcp-description`, and `/xai-mcp-tools`. Lists are comma-separated.
+Incomplete or unsafe configurations fail before provider dispatch.
 
 Validated provider citations render in both hosts. Encrypted reasoning and
 native compaction items remain opaque and are never displayed as chain of

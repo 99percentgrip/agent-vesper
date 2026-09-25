@@ -42,6 +42,18 @@ impl XaiFactory {
         values
             .insert("xai:native-compaction", serde_json::json!("disabled"))
             .expect("static");
+        for key in [
+            "xai:hosted-web-search",
+            "xai:hosted-x-search",
+            "xai:hosted-code-execution",
+            "xai:hosted-attachment-search",
+            "xai:hosted-collections-search",
+            "xai:hosted-remote-mcp",
+        ] {
+            values
+                .insert(key, serde_json::json!("disabled"))
+                .expect("static");
+        }
         ProviderConfiguration {
             provider_id: provider_id(),
             values: VersionedExtensionEnvelope {
@@ -237,6 +249,81 @@ impl XaiFactory {
                     "Runs code remotely on xAI infrastructure; never substitutes for Vesper run_command.",
                 ),
             ),
+            choice(
+                "xai:hosted-attachment-search",
+                "xAI Attachment Search",
+                "xai-attachments",
+                "disabled",
+                vec!["disabled", "enabled"],
+                Some("Sends only the explicitly configured file IDs or public URLs to xAI."),
+            ),
+            text_control(
+                "xai:file-ids",
+                "Attachment file IDs",
+                "xai-file-ids",
+                Some("Comma-separated xAI file IDs; used only when Attachment Search is enabled."),
+            ),
+            text_control(
+                "xai:file-urls",
+                "Attachment public URLs",
+                "xai-file-urls",
+                Some("Comma-separated HTTPS URLs; used only when Attachment Search is enabled."),
+            ),
+            choice(
+                "xai:hosted-collections-search",
+                "xAI Collections Search",
+                "xai-collections",
+                "disabled",
+                vec!["disabled", "enabled"],
+                Some("Searches only the explicitly configured xAI collection IDs."),
+            ),
+            text_control(
+                "xai:collection-ids",
+                "Collection IDs",
+                "xai-collection-ids",
+                Some("Comma-separated xAI collection IDs; maximum 16."),
+            ),
+            numeric_control(
+                "xai:max-results",
+                "Collection result limit",
+                "xai-max-results",
+                10,
+                Some("Maximum provider search results, from 1 through 50."),
+            ),
+            choice(
+                "xai:hosted-remote-mcp",
+                "xAI Remote MCP",
+                "xai-remote-mcp",
+                "disabled",
+                vec!["disabled", "enabled"],
+                Some(
+                    "Allows xAI servers to connect to one configured HTTPS MCP endpoint; distinct from Vesper MCP.",
+                ),
+            ),
+            text_control(
+                "xai:server-url",
+                "Remote MCP HTTPS URL",
+                "xai-mcp-url",
+                Some("Explicit HTTPS endpoint used only when xAI Remote MCP is enabled."),
+            ),
+            text_control(
+                "xai:server-label",
+                "Remote MCP label",
+                "xai-mcp-label",
+                Some("Short routing label for the remote MCP server."),
+            ),
+            text_control(
+                "xai:server-description",
+                "Remote MCP description",
+                "xai-mcp-description",
+                Some("Optional non-secret description sent to xAI."),
+            ),
+            text_control(
+                "xai:allowed-tools",
+                "Remote MCP allowed tools",
+                "xai-mcp-tools",
+                Some("Comma-separated allowlist; empty means the provider endpoint's default."),
+            ),
         ]
     }
     #[cfg(feature = "integration-test-harness")]
@@ -291,6 +378,42 @@ fn choice(
                 value: BoundedString::new(value).expect("static"),
             })
             .collect(),
+        command_alias: Some(BoundedString::new(alias).expect("static")),
+        help: help.map(|value| BoundedString::new(value).expect("static")),
+    }
+}
+
+fn text_control(id: &str, name: &str, alias: &str, help: Option<&str>) -> SuperpowerDescriptor {
+    SuperpowerDescriptor {
+        id: BoundedString::new(id).expect("static"),
+        provider_id: provider_id(),
+        display_name: BoundedString::new(name).expect("static"),
+        kind: SuperpowerKind::Text,
+        scope: SuperpowerScope::Session,
+        default_value: SuperpowerValue::Text {
+            value: BoundedString::new("").expect("static"),
+        },
+        allowed_values: Vec::new(),
+        command_alias: Some(BoundedString::new(alias).expect("static")),
+        help: help.map(|value| BoundedString::new(value).expect("static")),
+    }
+}
+
+fn numeric_control(
+    id: &str,
+    name: &str,
+    alias: &str,
+    default: i64,
+    help: Option<&str>,
+) -> SuperpowerDescriptor {
+    SuperpowerDescriptor {
+        id: BoundedString::new(id).expect("static"),
+        provider_id: provider_id(),
+        display_name: BoundedString::new(name).expect("static"),
+        kind: SuperpowerKind::Numeric,
+        scope: SuperpowerScope::Session,
+        default_value: SuperpowerValue::Number { value: default },
+        allowed_values: Vec::new(),
         command_alias: Some(BoundedString::new(alias).expect("static")),
         help: help.map(|value| BoundedString::new(value).expect("static")),
     }
@@ -485,6 +608,116 @@ fn hosted_tools() -> Vec<HostedToolDescriptor> {
             ),
         ),
     ]
+}
+
+/// Projects adapter-owned hosted-tool settings into the generic request form.
+///
+/// Hosts persist provider controls, while this adapter owns the relationship
+/// between those controls and xAI's hosted-tool configuration. Disabled tools
+/// are absent and incomplete enabled tools fail before provider dispatch.
+pub fn hosted_tool_selections(
+    configuration: &ProviderConfiguration,
+) -> Result<Vec<HostedToolSelection>, ProviderError> {
+    if configuration.provider_id != provider_id() {
+        return Err(invalid_hosted_settings());
+    }
+    let values = &configuration.values.values;
+    let enabled =
+        |key: &str| values.get(key).and_then(serde_json::Value::as_str) == Some("enabled");
+    let mut selections = Vec::new();
+    for (key, tool_id) in [
+        ("xai:hosted-web-search", "web-search"),
+        ("xai:hosted-x-search", "x-search"),
+        ("xai:hosted-code-execution", "code-execution"),
+    ] {
+        if enabled(key) {
+            selections.push(HostedToolSelection {
+                tool_id: BoundedString::new(tool_id).expect("static"),
+                configuration: None,
+            });
+        }
+    }
+    if enabled("xai:hosted-attachment-search") {
+        let mut map = ExtensionMap::default();
+        insert_csv(&mut map, values, "xai:file-ids")?;
+        insert_csv(&mut map, values, "xai:file-urls")?;
+        selections.push(configured_selection("attachment-search", map));
+    }
+    if enabled("xai:hosted-collections-search") {
+        let mut map = ExtensionMap::default();
+        insert_csv(&mut map, values, "xai:collection-ids")?;
+        let maximum = values
+            .get("xai:max-results")
+            .and_then(serde_json::Value::as_i64)
+            .unwrap_or(10);
+        map.insert("xai:max-results", serde_json::json!(maximum))
+            .map_err(|_| invalid_hosted_settings())?;
+        selections.push(configured_selection("collections-search", map));
+    }
+    if enabled("xai:hosted-remote-mcp") {
+        let mut map = ExtensionMap::default();
+        for key in [
+            "xai:server-url",
+            "xai:server-label",
+            "xai:server-description",
+        ] {
+            if let Some(value) = nonempty_text(values, key) {
+                map.insert(key, serde_json::json!(value))
+                    .map_err(|_| invalid_hosted_settings())?;
+            }
+        }
+        insert_csv(&mut map, values, "xai:allowed-tools")?;
+        selections.push(configured_selection("remote-mcp", map));
+    }
+    Ok(selections)
+}
+
+fn nonempty_text<'a>(values: &'a ExtensionMap, key: &str) -> Option<&'a str> {
+    values
+        .get(key)
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+}
+
+fn insert_csv(
+    target: &mut ExtensionMap,
+    values: &ExtensionMap,
+    key: &str,
+) -> Result<(), ProviderError> {
+    let Some(raw) = nonempty_text(values, key) else {
+        return Ok(());
+    };
+    let parsed: Vec<&str> = raw
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .collect();
+    if parsed.is_empty() {
+        return Err(invalid_hosted_settings());
+    }
+    target
+        .insert(key, serde_json::json!(parsed))
+        .map_err(|_| invalid_hosted_settings())
+}
+
+fn configured_selection(tool_id: &str, values: ExtensionMap) -> HostedToolSelection {
+    HostedToolSelection {
+        tool_id: BoundedString::new(tool_id).expect("static"),
+        configuration: Some(VersionedExtensionEnvelope {
+            namespace: vesper_domain::ExtensionNamespace::new("provider.xai").expect("static"),
+            version: SchemaVersion::new(1).expect("static"),
+            values,
+        }),
+    }
+}
+
+fn invalid_hosted_settings() -> ProviderError {
+    error(
+        "Invalid or incomplete xAI hosted-tool settings",
+        vesper_domain::ErrorCategory::InvalidRequest,
+        false,
+    )
 }
 impl ModelCatalog for XaiFactory {
     fn models<'a>(

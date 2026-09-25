@@ -1,6 +1,6 @@
 # VRO-18 PR-7 host composition execution
 
-Status: **PARTIAL — core host composition passes; structured hosted-tool configuration remains open**
+Status: **PASS — offline host composition scope**
 Date: 2026-09-25
 
 ## Objective
@@ -23,6 +23,16 @@ Model, reasoning/multi-agent scale, region, HTTP/WebSocket, native-compaction,
 Web Search, X Search and remote Code Execution choices reach the shared
 `AgentLoopConfig`. Generic dynamic superpower aliases now appear in native
 Settings and persist with the existing draft Save/Discard contract.
+
+The provider-neutral superpower contract now includes a bounded 2,048-byte
+free-text value with one shared parser and configuration projection. This
+closes the prior structured-value gap without adding xAI controls to shared
+runtime code. TUI Settings exposes attachment IDs/URLs, collection IDs/result
+limit, and Remote MCP URL/label/description/tool allowlist. ACP exposes the
+three enablement switches in its footer controls and resolves the same
+provider-advertised bounded aliases as session commands. The xAI adapter's
+`hosted_tool_selections` function owns projection; its wire layer rejects
+missing, insecure, oversized, or malformed values before dispatch.
 
 `AgentLoopConfig.hosted_tools` is a default-empty provider-neutral selection
 list. The xAI host projection populates it; all local Vesper tools still come
@@ -56,10 +66,18 @@ remain hidden.
   OpenAI. The allowlist now admits `vesper-provider-xai` only for the two
   composition hosts; the adapter's existing process-runtime/frontend bans are
   unchanged.
+- The first structured hosted-tool projection regression failed because the
+  helper emitted a new envelope namespace while xAI wire validation accepts
+  the established versioned `provider.xai` namespace. Reusing the existing
+  envelope contract flipped the full attachment/collection/Remote-MCP case
+  green; an insecure Remote-MCP URL remains a red-path rejection.
 
 Focused green receipts include xAI control projection in both hosts, dynamic
-TUI command routing, descriptor login metadata, generic hosted-selection
-delivery through AgentLoop, and safe citation rendering.
+TUI/ACP command routing, descriptor login metadata, all six hosted selections,
+generic hosted-selection delivery through AgentLoop, and safe citation
+rendering. The affected all-feature package run passes 57 ACP library tests,
+285 TUI library tests, 161 TUI binary tests, 19 provider-contract tests and 40
+xAI adapter tests, plus the applicable integration and doc-test targets.
 
 ## Verification and environment
 
@@ -87,15 +105,16 @@ direct struct initializer and the unchanged runtime candidate passes with
 
 ## Deviations and unresolved items
 
-The generic hosted-tool contract and xAI adapter support attachment search,
-collections search and Remote MCP configurations, but neither host yet has a
-generic native structured-value editor for their IDs/URLs. They remain
-unselectable rather than accepting hand-edited or unsafe values. This keeps
-HOSTED TOOLS and PR-7 open. Real-account authentication/inference, optional
-paid API-key acceptance, exact-commit platform CI and release are PR-8 gates.
+ACP's standard session-control protocol represents enumerated choices but has
+no arbitrary bounded text field. ACP therefore uses provider-advertised
+session commands for structured values while its footer controls enable each
+remote capability. This is an explicit host-presentation difference; both
+routes persist the same provider configuration and reach the same adapter
+projection. Real-account authentication/inference, optional paid API-key
+acceptance, exact-commit platform CI and release remain PR-8 gates.
 
 ## Readiness effect
 
-The production composition and provider-neutral inheritance path are ready for
-the remaining structured hosted-tool UI repair and broad offline gates. VRO-18
-is not production-complete or release-ready.
+PR-7 is closed at offline scope. The production composition and
+provider-neutral inheritance path are ready for PR-8 live acceptance and
+exact-commit release gates. VRO-18 is not production-complete or release-ready.

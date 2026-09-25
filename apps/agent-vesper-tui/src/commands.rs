@@ -1750,6 +1750,7 @@ impl CommandRegistry {
                 SuperpowerValue::Choice { value } => value.as_str().to_string(),
                 SuperpowerValue::Flag { value } => value.to_string(),
                 SuperpowerValue::Number { value } => value.to_string(),
+                SuperpowerValue::Text { value } => value.as_str().to_string(),
             })
             .collect::<Vec<_>>()
             .join(", ")
@@ -2214,46 +2215,7 @@ fn superpower_value_for_argument(
     descriptor: &SuperpowerDescriptor,
     argument: &str,
 ) -> Result<SuperpowerValue, String> {
-    use vesper_provider::SuperpowerKind;
-    match descriptor.kind {
-        SuperpowerKind::Choice => {
-            if !descriptor.allowed_values.is_empty() {
-                let allowed = descriptor
-                    .allowed_values
-                    .iter()
-                    .filter_map(|value| match value {
-                        SuperpowerValue::Choice { value } => Some(value.as_str()),
-                        _ => None,
-                    })
-                    .any(|allowed| allowed == argument);
-                if !allowed {
-                    return Err(format!(
-                        "/{} does not allow {argument:?}.",
-                        descriptor
-                            .command_alias
-                            .as_ref()
-                            .map(|alias| alias.as_str())
-                            .unwrap_or(descriptor.id.as_str())
-                    ));
-                }
-            }
-            vesper_domain::BoundedString::new(argument)
-                .map(|value| SuperpowerValue::Choice { value })
-                .map_err(|error| error.to_string())
-        }
-        SuperpowerKind::Toggle => {
-            let parsed = match argument.to_ascii_lowercase().as_str() {
-                "on" | "true" | "1" | "yes" => true,
-                "off" | "false" | "0" | "no" => false,
-                _ => return Err("Toggle expects on/off, true/false, 1/0, or yes/no.".into()),
-            };
-            Ok(SuperpowerValue::Flag { value: parsed })
-        }
-        SuperpowerKind::Numeric => argument
-            .parse::<i64>()
-            .map(|value| SuperpowerValue::Number { value })
-            .map_err(|_| format!("{argument:?} is not a valid integer")),
-    }
+    vesper_provider::parse_superpower_value(descriptor, argument)
 }
 
 #[cfg(test)]
