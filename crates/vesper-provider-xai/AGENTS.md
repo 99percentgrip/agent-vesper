@@ -7,15 +7,16 @@ continuation state, and provider error mapping without changing the shared agent
 
 ## Ownership
 
-- `src/credentials.rs` owns Vesper-managed xAI credentials. It never reads Grok
-  Build or browser credential stores.
+- `src/auth.rs` and `src/credentials.rs` own fixed-origin browser/device Grok
+  authentication, signed-token validation, locked refresh/logout and explicit
+  billing-mode selection. They never read Grok Build or browser credentials.
 - `src/catalog.rs` owns evidence-backed model capabilities; `src/discovery.rs`
   intersects authenticated availability with exact models/current aliases and
   keeps unknown or endpoint-excluded identifiers non-executable.
 - `src/wire.rs` owns xAI Responses request/event translation.
 - `src/transport.rs` owns bounded HTTP/SSE dispatch and cancellation.
-- Grok-account session authentication and proxy transport remain a later VRO-18
-  phase and must stay isolated from API-key billing.
+- Grok-account inference/model discovery use the first-party session proxy and
+  stay isolated from API-key billing.
 
 ## Local Contracts
 

@@ -1,5 +1,13 @@
 # Foundation Evidence Index
 
+## VRO-18 PR-3 native Grok session authentication (2026-09-25)
+
+- Execution: [`xai-provider-pr3-execution.md`](xai-provider-pr3-execution.md)
+- Verdict: PR-3 PASS at offline loopback scope. Browser OIDC and device
+  authorization, refresh/logout, locked Vesper storage, subscription proxy
+  routing and strict session/API billing isolation pass 27 targeted tests. The
+  adapter remains unregistered; no live provider request occurred.
+
 ## VRO-18 PR-2 catalog and capability intersection (2026-09-25)
 
 - Execution: [`xai-provider-pr2-execution.md`](xai-provider-pr2-execution.md)

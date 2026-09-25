@@ -1,6 +1,9 @@
 // ProviderSession's shared error contract deliberately returns this DTO by value.
 #![allow(clippy::result_large_err)]
-use crate::{credentials::Credentials, error, wire};
+use crate::{
+    credentials::{AuthenticationMode, Credentials, DispatchAuth},
+    error, wire,
+};
 use futures_util::{StreamExt, stream};
 use std::{sync::Arc, time::Duration};
 use tokio::{sync::mpsc, time::Instant};
@@ -8,7 +11,6 @@ use vesper_domain::{
     ContentPart, ContentText, ErrorCategory, FinishOutcome, StreamInterruptionCause,
 };
 use vesper_provider::*;
-use vesper_security::SecretValue;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum XaiRegion {
@@ -30,6 +32,8 @@ pub struct XaiSession {
     pub(crate) region: XaiRegion,
     #[cfg(feature = "integration-test-harness")]
     pub(crate) test_route: Option<String>,
+    #[cfg(feature = "integration-test-harness")]
+    pub(crate) test_auth_mode: AuthenticationMode,
 }
 impl XaiSession {
     pub(crate) fn new(
@@ -57,6 +61,8 @@ impl XaiSession {
             region,
             #[cfg(feature = "integration-test-harness")]
             test_route: None,
+            #[cfg(feature = "integration-test-harness")]
+            test_auth_mode: AuthenticationMode::ApiKey,
         })
     }
     pub(crate) fn with_availability(
@@ -71,12 +77,24 @@ impl XaiSession {
         self.test_route = route;
         self
     }
-    pub(crate) async fn resolve_auth(&self) -> Result<SecretValue, CredentialError> {
+    #[cfg(feature = "integration-test-harness")]
+    pub(crate) fn with_test_auth_mode(mut self, mode: AuthenticationMode) -> Self {
+        self.test_auth_mode = mode;
+        self
+    }
+    pub(crate) async fn resolve_auth(
+        &self,
+        refresh: bool,
+        cancel: Arc<dyn CancellationSignal>,
+    ) -> Result<DispatchAuth, CredentialError> {
         #[cfg(feature = "integration-test-harness")]
         if self.test_route.is_some() {
-            return Ok(SecretValue::new("fixture-xai-key"));
+            return Ok(DispatchAuth {
+                mode: self.test_auth_mode,
+                bearer: vesper_security::SecretValue::new("fixture-xai-key"),
+            });
         }
-        self.credentials.load()
+        self.credentials.dispatch(cancel, refresh).await
     }
     pub(crate) fn validate_availability(
         &self,
@@ -103,7 +121,7 @@ impl XaiSession {
     async fn dispatch(
         &self,
         request: &ProviderRequest,
-        key: &SecretValue,
+        auth: &DispatchAuth,
         cancel: &dyn CancellationSignal,
     ) -> Result<reqwest::Response, ProviderError> {
         let fixture_route = {
@@ -118,19 +136,32 @@ impl XaiSession {
         };
         self.validate_availability(request.model.model_id.as_str(), fixture_route)?;
         let body = wire::request(request, &self.effort)?;
-        let endpoint = match self.region {
-            XaiRegion::Global => "https://api.x.ai/v1/responses",
-            XaiRegion::Us => "https://us.api.x.ai/v1/responses",
+        if auth.mode == AuthenticationMode::GrokSession && self.region != XaiRegion::Global {
+            return Err(error(
+                "Grok account sessions use the global Grok subscription endpoint; choose Global or explicitly switch to API-key billing",
+                ErrorCategory::InvalidRequest,
+                false,
+            ));
+        }
+        let endpoint = match (auth.mode, self.region) {
+            (AuthenticationMode::GrokSession, _) => "https://cli-chat-proxy.grok.com/v1/responses",
+            (AuthenticationMode::ApiKey, XaiRegion::Global) => "https://api.x.ai/v1/responses",
+            (AuthenticationMode::ApiKey, XaiRegion::Us) => "https://us.api.x.ai/v1/responses",
         };
         #[cfg(feature = "integration-test-harness")]
         let endpoint = self.test_route.as_deref().unwrap_or(endpoint);
-        let future = self
+        let mut builder = self
             .client
             .post(endpoint)
-            .bearer_auth(key.expose().as_str())
+            .bearer_auth(auth.bearer.expose().as_str())
             .header("Accept", "text/event-stream")
-            .json(&body)
-            .send();
+            .json(&body);
+        if auth.mode == AuthenticationMode::GrokSession {
+            builder = builder
+                .header("X-XAI-Token-Auth", "xai-grok-cli")
+                .header("x-grok-model-override", request.model.model_id.as_str());
+        }
+        let future = builder.send();
         tokio::pin!(future);
         let deadline = Instant::now() + Duration::from_secs(60);
         loop {
@@ -162,7 +193,13 @@ impl ProviderSession for XaiSession {
                     false,
                 ));
             }
-            Ok(ProviderUsage { authentication: Some("xAI API key (usage-based API billing)".into()), notice: Some("Account balance is unavailable through the verified inference protocol; per-response token usage remains available.".into()), ..Default::default() })
+            let authentication = match self.credentials.authentication_method() {
+                Ok(Some(method)) if method == "xai-grok-session" => {
+                    "Grok account / SuperGrok (account allowance)"
+                }
+                _ => "xAI API key (usage-based API billing)",
+            };
+            Ok(ProviderUsage { authentication: Some(authentication.into()), notice: Some("Account allowance/balance is unavailable through the verified protocol; per-response token usage remains available.".into()), ..Default::default() })
         })
     }
     fn auxiliary(&self) -> Option<&dyn AuxiliaryRequestPort> {
@@ -176,14 +213,29 @@ impl ProviderSession for XaiSession {
         Box::pin(async move {
             // Validate before credential resolution or network access.
             wire::request(&request, &self.effort)?;
-            let key = self.resolve_auth().await.map_err(|_| {
-                error(
-                    "xAI API-key authentication required; open Settings → Providers → xAI / Grok",
-                    ErrorCategory::Authentication,
-                    false,
-                )
-            })?;
-            let response = self.dispatch(&request, &key, cancel.as_ref()).await?;
+            let mut auth = self
+                .resolve_auth(false, cancel.clone())
+                .await
+                .map_err(|_| {
+                    error(
+                        "xAI authentication required; open Settings → Providers → xAI / Grok",
+                        ErrorCategory::Authentication,
+                        false,
+                    )
+                })?;
+            let mut response = self.dispatch(&request, &auth, cancel.as_ref()).await?;
+            if response.status() == reqwest::StatusCode::UNAUTHORIZED
+                && auth.mode == AuthenticationMode::GrokSession
+            {
+                auth = self.resolve_auth(true, cancel.clone()).await.map_err(|_| {
+                    error(
+                        "Grok session refresh failed; sign in again",
+                        ErrorCategory::Authentication,
+                        false,
+                    )
+                })?;
+                response = self.dispatch(&request, &auth, cancel.as_ref()).await?;
+            }
             if !response.status().is_success() {
                 return Err(crate::http_error::rejection(response, cancel.as_ref()).await);
             }

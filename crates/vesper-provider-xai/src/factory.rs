@@ -165,14 +165,28 @@ impl ProviderFactory for XaiFactory {
         ProviderDescriptor {
             provider_id: self.id.clone(),
             display_name: BoundedString::new("xAI / Grok").expect("static"),
-            authentication_methods: vec![AuthenticationMethodDescriptor {
-                method_id: BoundedString::new("xai-api-key").expect("static"),
-                display_name: BoundedString::new("xAI API key (usage-based API billing)")
+            authentication_methods: vec![
+                AuthenticationMethodDescriptor {
+                    method_id: BoundedString::new("xai-grok-session").expect("static"),
+                    display_name: BoundedString::new(
+                        "Grok account / SuperGrok (account allowance)",
+                    )
                     .expect("static"),
-                secret_reference_fields: vec![BoundedString::new("XAI_API_KEY").expect("static")],
-                external_runtime_owned: false,
-                key_url: Some(BoundedString::new("https://console.x.ai/").expect("static")),
-            }],
+                    secret_reference_fields: vec![],
+                    external_runtime_owned: false,
+                    key_url: Some(BoundedString::new("https://accounts.x.ai/").expect("static")),
+                },
+                AuthenticationMethodDescriptor {
+                    method_id: BoundedString::new("xai-api-key").expect("static"),
+                    display_name: BoundedString::new("xAI API key (usage-based API billing)")
+                        .expect("static"),
+                    secret_reference_fields: vec![
+                        BoundedString::new("XAI_API_KEY").expect("static"),
+                    ],
+                    external_runtime_owned: false,
+                    key_url: Some(BoundedString::new("https://console.x.ai/").expect("static")),
+                },
+            ],
             configuration: None,
             metadata: ExtensionMap::default(),
         }
@@ -233,7 +247,9 @@ impl ProviderFactory for XaiFactory {
             let session = XaiSession::new(self.credentials.clone(), effort.to_owned(), region)?
                 .with_availability(self.availability.clone());
             #[cfg(feature = "integration-test-harness")]
-            let session = session.with_test_route(self.test_route.clone());
+            let session = session
+                .with_test_route(self.test_route.clone())
+                .with_test_auth_mode(crate::credentials::AuthenticationMode::ApiKey);
             Ok(session)
         })
     }
@@ -262,9 +278,26 @@ impl ProviderCredentialPort for XaiFactory {
         self.credentials.present()
     }
     fn store_credential(&self, secret: &str) -> Result<(), CredentialError> {
-        self.credentials.store(secret)
+        self.credentials.store_api_key(secret)
     }
     fn authentication_method(&self) -> Result<Option<String>, CredentialError> {
-        Ok(self.credential_present()?.then(|| "xai-api-key".into()))
+        self.credentials.authentication_method()
+    }
+    fn device_login<'a>(
+        &'a self,
+        cancel: Arc<dyn CancellationSignal>,
+        on_challenge: Arc<dyn Fn(String, String) + Send + Sync>,
+    ) -> ProviderFuture<'a, Result<(), CredentialError>> {
+        Box::pin(async move { self.credentials.device_login(cancel, on_challenge).await })
+    }
+    fn browser_login<'a>(
+        &'a self,
+        cancel: Arc<dyn CancellationSignal>,
+        on_url: Arc<dyn Fn(String) + Send + Sync>,
+    ) -> ProviderFuture<'a, Result<(), CredentialError>> {
+        Box::pin(async move { self.credentials.browser_login(cancel, on_url).await })
+    }
+    fn logout(&self) -> Result<(), CredentialError> {
+        self.credentials.logout()
     }
 }

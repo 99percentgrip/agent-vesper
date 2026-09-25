@@ -50,13 +50,17 @@ fn fixture_request() -> ProviderRequest {
 }
 
 #[test]
-fn descriptor_remains_api_key_only_before_pr3() {
+fn descriptor_exposes_separate_session_and_api_billing_modes() {
     let descriptor = XaiFactory::default().descriptor();
     assert_eq!(descriptor.provider_id.as_str(), "xai");
     assert_eq!(descriptor.display_name.as_str(), "xAI / Grok");
-    assert_eq!(descriptor.authentication_methods.len(), 1);
+    assert_eq!(descriptor.authentication_methods.len(), 2);
     assert_eq!(
         descriptor.authentication_methods[0].method_id.as_str(),
+        "xai-grok-session"
+    );
+    assert_eq!(
+        descriptor.authentication_methods[1].method_id.as_str(),
         "xai-api-key"
     );
     assert!(!descriptor.authentication_methods[0].external_runtime_owned);
@@ -429,6 +433,60 @@ mod http {
         assert!(stream.next().await.is_none());
         server.await.unwrap();
     }
+
+    #[tokio::test]
+    async fn grok_session_proxy_headers_refresh_once_on_unauthorized_without_api_fallback() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}/responses", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let mut requests = Vec::new();
+            for attempt in 0..2 {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut bytes = Vec::new();
+                while !bytes.windows(4).any(|part| part == b"\r\n\r\n") {
+                    let mut buffer = [0; 4096];
+                    let count = socket.read(&mut buffer).await.unwrap();
+                    assert!(count > 0);
+                    bytes.extend_from_slice(&buffer[..count]);
+                }
+                let headers = String::from_utf8_lossy(&bytes).to_lowercase();
+                assert!(headers.contains("authorization: bearer fixture-xai-key"));
+                assert!(headers.contains("x-xai-token-auth: xai-grok-cli"));
+                assert!(headers.contains("x-grok-model-override: grok-4.7"));
+                requests.push(headers);
+                if attempt == 0 {
+                    socket.write_all(b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}").await.unwrap();
+                } else {
+                    let body = "data: {\"type\":\"response.completed\",\"response\":{}}\n\n";
+                    socket.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.unwrap();
+                }
+            }
+            requests.len()
+        });
+        let credentials = crate::credentials::Credentials::isolated(
+            tempfile::tempdir().unwrap().path().join("xai.json"),
+        );
+        let session = XaiSession::new(
+            credentials,
+            "high".into(),
+            crate::transport::XaiRegion::Global,
+        )
+        .unwrap()
+        .with_test_route(Some(endpoint))
+        .with_test_auth_mode(crate::credentials::AuthenticationMode::GrokSession);
+        let mut stream = session
+            .start(fixture_request(), Arc::new(Cancel(AtomicBool::new(false))))
+            .await
+            .unwrap();
+        assert!(matches!(
+            stream.next().await.unwrap().unwrap(),
+            ProviderStreamEvent::Completed {
+                finish: FinishOutcome::Stop,
+                ..
+            }
+        ));
+        assert_eq!(server.await.unwrap(), 2);
+    }
 }
 
 #[test]
@@ -436,8 +494,11 @@ fn isolated_credential_store_does_not_read_foreign_state() {
     let temp = tempfile::tempdir().unwrap();
     let credentials = crate::credentials::Credentials::isolated(temp.path().join("xai.json"));
     assert!(!credentials.present().unwrap());
-    credentials.store("fixture-key").unwrap();
-    assert_eq!(credentials.load().unwrap().expose().as_str(), "fixture-key");
+    credentials.store_api_key("fixture-key").unwrap();
+    assert_eq!(
+        credentials.authentication_method().unwrap().as_deref(),
+        Some("xai-api-key")
+    );
 }
 
 #[test]

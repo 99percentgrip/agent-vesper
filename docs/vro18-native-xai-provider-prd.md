@@ -2290,3 +2290,13 @@ remain non-executable. Model-specific reasoning, multi-agent semantics, the US
 endpoint set, image/function gates and the documented strict JSON Schema subset
 are enforced. The targeted suite is 20/20. No host registration or live request
 has occurred; PR-3 through PR-8 remain open.
+
+## 42. PR-3 closeout — 2026-09-25
+
+PR-3 is closed at offline loopback scope by
+[`foundation/xai-provider-pr3-execution.md`](foundation/xai-provider-pr3-execution.md).
+Vesper now owns fixed-origin browser OIDC and device authorization, PKCE/state/
+nonce and signed-token validation, serialized credential refresh/logout,
+first-party subscription-proxy routing and strict session/API billing isolation.
+The targeted suite is 27/27. No host registration or live account request has
+occurred; PR-4 through PR-8 remain open.

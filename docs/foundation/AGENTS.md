@@ -10,6 +10,10 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 - `xai-provider-pr2-execution.md` owns VRO-18 PR-2 discovery/capability intersection, model reasoning, endpoint/alias and structured-schema evidence.
 
+- `xai-provider-pr3-execution.md` owns VRO-18 PR-3 browser/device Grok
+  authentication, refresh/logout, billing isolation and subscription-proxy
+  evidence.
+
 - `xai-provider-recon-execution.md` owns VRO-18 PR-0 execution evidence:
   current Vesper provider/host seam inventory, the pinned first-party Grok
   Build source audit, official xAI documentation snapshot, capability matrix,

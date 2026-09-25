@@ -20,9 +20,10 @@ continuation, fallback, and error contracts.
   returned stream.
 - Explicit unsupported controls fail during request validation before dispatch.
 - Credential ports optionally expose selected method identity, cancellable
-  device authorization, and local logout. Default implementations are inert;
-  only explicit host actions may persist credentials. Challenge callbacks
-  expose a verification URL/code, never OAuth tokens.
+  browser/device authorization, and local logout. Default implementations are
+  inert; only explicit host actions may persist credentials. Adapters own
+  callback validation and token persistence; challenge callbacks expose only
+  user-facing authorization URLs/codes, never OAuth tokens.
 - Auxiliary request intent includes bounded structured memory extraction.
 - `ProviderSession::query_usage` is an independent, read-only account query;
   its default explicitly reports unavailable account limits without inference.

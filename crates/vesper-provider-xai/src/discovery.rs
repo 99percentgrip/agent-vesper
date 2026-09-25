@@ -24,6 +24,7 @@ pub(crate) fn parse(
 ) -> Result<AvailableModels, ProviderError> {
     let rows = value
         .get("models")
+        .or_else(|| value.get("data"))
         .and_then(serde_json::Value::as_array)
         .ok_or_else(crate::wire::invalid)?;
     if rows.len() > 4096 {
@@ -37,6 +38,7 @@ pub(crate) fn parse(
     for row in rows {
         let id = row
             .get("id")
+            .or_else(|| row.get("model"))
             .and_then(serde_json::Value::as_str)
             .ok_or_else(crate::wire::invalid)?;
         if id.is_empty() || id.len() > 256 || !seen.insert(id) {
@@ -93,16 +95,35 @@ impl XaiSession {
         cancel: Arc<dyn CancellationSignal>,
     ) -> Result<AvailableModels, ProviderError> {
         let operation = async {
-            let key = self.resolve_auth().await.map_err(|_| {
-                error(
-                    "Configure an xAI API key before loading models",
-                    ErrorCategory::Authentication,
+            let auth = self
+                .resolve_auth(false, cancel.clone())
+                .await
+                .map_err(|_| {
+                    error(
+                        "Configure an xAI API key before loading models",
+                        ErrorCategory::Authentication,
+                        false,
+                    )
+                })?;
+            if auth.mode == crate::credentials::AuthenticationMode::GrokSession
+                && self.region != XaiRegion::Global
+            {
+                return Err(error(
+                    "Grok account model discovery uses the global subscription endpoint",
+                    ErrorCategory::InvalidRequest,
                     false,
-                )
-            })?;
-            let endpoint = match self.region {
-                XaiRegion::Global => "https://api.x.ai/v1/language-models",
-                XaiRegion::Us => "https://us.api.x.ai/v1/language-models",
+                ));
+            }
+            let endpoint = match (auth.mode, self.region) {
+                (crate::credentials::AuthenticationMode::GrokSession, _) => {
+                    "https://cli-chat-proxy.grok.com/v1/models"
+                }
+                (crate::credentials::AuthenticationMode::ApiKey, XaiRegion::Global) => {
+                    "https://api.x.ai/v1/language-models"
+                }
+                (crate::credentials::AuthenticationMode::ApiKey, XaiRegion::Us) => {
+                    "https://us.api.x.ai/v1/language-models"
+                }
             };
             let mut url = url::Url::parse(endpoint).expect("fixed URL");
             #[cfg(feature = "integration-test-harness")]
@@ -111,20 +132,21 @@ impl XaiSession {
                 url.set_path("/language-models");
                 url.set_query(None);
             }
-            let mut response = self
+            let mut builder = self
                 .client
                 .get(url)
-                .bearer_auth(key.expose().as_str())
-                .header("Accept", "application/json")
-                .send()
-                .await
-                .map_err(|_| {
-                    error(
-                        "xAI model discovery connection failed; reopen Settings to retry",
-                        ErrorCategory::Transport,
-                        false,
-                    )
-                })?;
+                .bearer_auth(auth.bearer.expose().as_str())
+                .header("Accept", "application/json");
+            if auth.mode == crate::credentials::AuthenticationMode::GrokSession {
+                builder = builder.header("X-XAI-Token-Auth", "xai-grok-cli");
+            }
+            let mut response = builder.send().await.map_err(|_| {
+                error(
+                    "xAI model discovery connection failed; reopen Settings to retry",
+                    ErrorCategory::Transport,
+                    false,
+                )
+            })?;
             if !response.status().is_success() {
                 return Err(crate::http_error::rejection(response, cancel.as_ref()).await);
             }

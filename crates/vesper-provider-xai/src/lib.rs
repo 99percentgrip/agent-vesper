@@ -2,6 +2,7 @@
 //! Native xAI adapter. API-key Responses transport is implemented directly;
 //! Grok-account authentication remains a separately gated VRO-18 phase.
 
+mod auth;
 mod catalog;
 mod credentials;
 mod discovery;

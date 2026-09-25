@@ -207,6 +207,16 @@ pub trait ProviderCredentialPort: Send + Sync {
     ) -> ProviderFuture<'a, Result<(), CredentialError>> {
         Box::pin(async { Err(CredentialError::Unavailable) })
     }
+    /// Optional native browser authorization. The callback receives only the
+    /// fixed-origin authorization URL; the adapter owns callback validation,
+    /// token exchange, and secure persistence.
+    fn browser_login<'a>(
+        &'a self,
+        _cancellation: Arc<dyn CancellationSignal>,
+        _on_authorization_url: Arc<dyn Fn(String) + Send + Sync>,
+    ) -> ProviderFuture<'a, Result<(), CredentialError>> {
+        Box::pin(async { Err(CredentialError::Unavailable) })
+    }
     /// Explicit local sign-out. Hosts perform blocking storage off UI threads.
     fn logout(&self) -> Result<(), CredentialError> {
         Err(CredentialError::Unavailable)
