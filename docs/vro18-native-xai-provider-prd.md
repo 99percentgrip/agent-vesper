@@ -2278,3 +2278,15 @@ This does not make xAI user-selectable. The crate is not registered in TUI or
 ACP, its static Grok 4.7 entry is fixture/configuration metadata rather than
 account availability, and no live request was made. PR-2 through PR-8 remain
 open under their original acceptance boundaries.
+
+
+## 41. PR-2 closeout — 2026-09-25
+
+PR-2 is closed at offline fixture scope by
+[`foundation/xai-provider-pr2-execution.md`](foundation/xai-provider-pr2-execution.md).
+Authenticated language-model discovery now intersects eight exact capability
+records and current aliases; unknown, retired and endpoint-excluded identifiers
+remain non-executable. Model-specific reasoning, multi-agent semantics, the US
+endpoint set, image/function gates and the documented strict JSON Schema subset
+are enforced. The targeted suite is 20/20. No host registration or live request
+has occurred; PR-3 through PR-8 remain open.

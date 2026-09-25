@@ -8,6 +8,8 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 - `xai-provider-pr1-execution.md` owns VRO-18 PR-1 red/green evidence for the native API-key Responses transport, bounded stream settlement, strict shared-tool serialization and explicit remaining host/live gates.
 
+- `xai-provider-pr2-execution.md` owns VRO-18 PR-2 discovery/capability intersection, model reasoning, endpoint/alias and structured-schema evidence.
+
 - `xai-provider-recon-execution.md` owns VRO-18 PR-0 execution evidence:
   current Vesper provider/host seam inventory, the pinned first-party Grok
   Build source audit, official xAI documentation snapshot, capability matrix,

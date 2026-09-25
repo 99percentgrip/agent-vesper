@@ -10,16 +10,33 @@ use vesper_domain::{
 use vesper_provider::*;
 use vesper_security::SecretValue;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum XaiRegion {
+    Global,
+    Us,
+}
+impl XaiRegion {
+    pub(crate) fn supports(self, model: &str) -> bool {
+        self == Self::Global || matches!(model, "grok-4.7" | "grok-4.6")
+    }
+}
+
 #[derive(Clone)]
 pub struct XaiSession {
     credentials: Credentials,
+    pub(crate) availability: Arc<std::sync::RwLock<Option<crate::AvailableModels>>>,
     pub(crate) client: reqwest::Client,
     effort: String,
+    pub(crate) region: XaiRegion,
     #[cfg(feature = "integration-test-harness")]
     pub(crate) test_route: Option<String>,
 }
 impl XaiSession {
-    pub(crate) fn new(credentials: Credentials, effort: String) -> Result<Self, ProviderError> {
+    pub(crate) fn new(
+        credentials: Credentials,
+        effort: String,
+        region: XaiRegion,
+    ) -> Result<Self, ProviderError> {
         let client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
             .connect_timeout(Duration::from_secs(10))
@@ -34,23 +51,54 @@ impl XaiSession {
             })?;
         Ok(Self {
             credentials,
+            availability: Default::default(),
             client,
             effort,
+            region,
             #[cfg(feature = "integration-test-harness")]
             test_route: None,
         })
+    }
+    pub(crate) fn with_availability(
+        mut self,
+        availability: Arc<std::sync::RwLock<Option<crate::AvailableModels>>>,
+    ) -> Self {
+        self.availability = availability;
+        self
     }
     #[cfg(feature = "integration-test-harness")]
     pub(crate) fn with_test_route(mut self, route: Option<String>) -> Self {
         self.test_route = route;
         self
     }
-    async fn resolve_auth(&self) -> Result<SecretValue, CredentialError> {
+    pub(crate) async fn resolve_auth(&self) -> Result<SecretValue, CredentialError> {
         #[cfg(feature = "integration-test-harness")]
         if self.test_route.is_some() {
             return Ok(SecretValue::new("fixture-xai-key"));
         }
         self.credentials.load()
+    }
+    pub(crate) fn validate_availability(
+        &self,
+        model: &str,
+        fixture_route: bool,
+    ) -> Result<(), ProviderError> {
+        if fixture_route {
+            return Ok(());
+        }
+        let available = self.availability.read().map_err(|_| wire::invalid())?;
+        if available
+            .as_ref()
+            .is_some_and(|models| models.contains(model))
+        {
+            Ok(())
+        } else {
+            Err(error(
+                "Selected xAI model is not in the current verified account model list; reopen Settings and choose an available model",
+                ErrorCategory::InvalidRequest,
+                false,
+            ))
+        }
     }
     async fn dispatch(
         &self,
@@ -58,8 +106,22 @@ impl XaiSession {
         key: &SecretValue,
         cancel: &dyn CancellationSignal,
     ) -> Result<reqwest::Response, ProviderError> {
+        let fixture_route = {
+            #[cfg(feature = "integration-test-harness")]
+            {
+                self.test_route.is_some()
+            }
+            #[cfg(not(feature = "integration-test-harness"))]
+            {
+                false
+            }
+        };
+        self.validate_availability(request.model.model_id.as_str(), fixture_route)?;
         let body = wire::request(request, &self.effort)?;
-        let endpoint = "https://api.x.ai/v1/responses";
+        let endpoint = match self.region {
+            XaiRegion::Global => "https://api.x.ai/v1/responses",
+            XaiRegion::Us => "https://us.api.x.ai/v1/responses",
+        };
         #[cfg(feature = "integration-test-harness")]
         let endpoint = self.test_route.as_deref().unwrap_or(endpoint);
         let future = self

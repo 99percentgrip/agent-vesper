@@ -1,5 +1,14 @@
 # Foundation Evidence Index
 
+## VRO-18 PR-2 catalog and capability intersection (2026-09-25)
+
+- Execution: [`xai-provider-pr2-execution.md`](xai-provider-pr2-execution.md)
+- Verdict: PR-2 PASS at offline fixture scope. Authenticated language-model
+  discovery intersects eight explicit capability records; unknown and retired
+  aliases remain non-executable; US endpoint, per-model reasoning, multi-agent
+  semantics, image/tool gates and the strict JSON Schema subset are enforced.
+  Targeted suite 20/20; hosts and live acceptance remain open.
+
 ## VRO-18 PR-1 native API-key Responses transport (2026-09-25)
 
 - Execution: [`xai-provider-pr1-execution.md`](xai-provider-pr1-execution.md)

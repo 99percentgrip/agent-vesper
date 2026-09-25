@@ -4,12 +4,14 @@
 
 mod catalog;
 mod credentials;
+mod discovery;
 mod factory;
 mod http_error;
 mod transport;
 mod wire;
 
-pub use catalog::{DEFAULT_MODEL, REASONING_LEVELS, XaiCatalog};
+pub use catalog::{DEFAULT_MODEL, XaiCatalog};
+pub use discovery::AvailableModels;
 pub use factory::XaiFactory;
 pub use transport::XaiSession;
 

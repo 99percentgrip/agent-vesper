@@ -9,8 +9,9 @@ continuation state, and provider error mapping without changing the shared agent
 
 - `src/credentials.rs` owns Vesper-managed xAI credentials. It never reads Grok
   Build or browser credential stores.
-- `src/catalog.rs` owns evidence-backed model capabilities; discovery establishes
-  availability and never invents capabilities.
+- `src/catalog.rs` owns evidence-backed model capabilities; `src/discovery.rs`
+  intersects authenticated availability with exact models/current aliases and
+  keeps unknown or endpoint-excluded identifiers non-executable.
 - `src/wire.rs` owns xAI Responses request/event translation.
 - `src/transport.rs` owns bounded HTTP/SSE dispatch and cancellation.
 - Grok-account session authentication and proxy transport remain a later VRO-18

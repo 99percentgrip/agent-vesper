@@ -50,7 +50,7 @@ fn fixture_request() -> ProviderRequest {
 }
 
 #[test]
-fn descriptor_is_native_api_key_only_in_pr1() {
+fn descriptor_remains_api_key_only_before_pr3() {
     let descriptor = XaiFactory::default().descriptor();
     assert_eq!(descriptor.provider_id.as_str(), "xai");
     assert_eq!(descriptor.display_name.as_str(), "xAI / Grok");
@@ -60,6 +60,79 @@ fn descriptor_is_native_api_key_only_in_pr1() {
         "xai-api-key"
     );
     assert!(!descriptor.authentication_methods[0].external_runtime_owned);
+}
+
+#[test]
+fn current_verified_language_model_families_are_explicit() {
+    let expected = [
+        "grok-4.7",
+        "grok-4.6",
+        "grok-4.5",
+        "grok-4.3",
+        "grok-4.20-0309-reasoning",
+        "grok-4.20-0309-non-reasoning",
+        "grok-4.20-multi-agent-0309",
+        "grok-build-0.1",
+    ];
+    let actual: Vec<_> = XaiCatalog::snapshot()
+        .models
+        .iter()
+        .map(|model| model.model.model_id.as_str().to_owned())
+        .collect();
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn reasoning_and_multi_agent_controls_follow_model_evidence() {
+    let mut request = fixture_request();
+    request.model.model_id = ModelId::new("grok-4.5").unwrap();
+    assert!(wire::request(&request, "xhigh").is_err());
+    assert!(wire::request(&request, "high").is_ok());
+
+    request.model.model_id = ModelId::new("grok-4.3").unwrap();
+    assert!(wire::request(&request, "none").is_ok());
+
+    request.model.model_id = ModelId::new("grok-4.20-0309-non-reasoning").unwrap();
+    assert!(wire::request(&request, "none").is_ok());
+    assert!(wire::request(&request, "high").is_err());
+
+    request.model.model_id = ModelId::new("grok-4.20-multi-agent-0309").unwrap();
+    assert!(wire::request(&request, "high").is_err());
+    request.tools.clear();
+    request.tool_choice = ToolChoiceIntent::None;
+    let body = wire::request(&request, "high").unwrap();
+    assert_eq!(body["reasoning"]["effort"], "high");
+    assert_eq!(
+        XaiCatalog::find("grok-4.20-multi-agent-0309")
+            .unwrap()
+            .metadata
+            .get("xai:reasoning-control-semantics")
+            .and_then(serde_json::Value::as_str),
+        Some("agent-count")
+    );
+}
+
+#[test]
+fn structured_output_accepts_verified_subset_and_rejects_ambiguous_schemas() {
+    let mut request = fixture_request();
+    request.structured_output = StructuredOutputIntent::JsonSchema(json!({
+        "type":"object",
+        "properties":{"item":{"$ref":"#/$defs/item"}},
+        "required":["item"],
+        "additionalProperties":false,
+        "$defs":{"item":{"type":"object","properties":{"name":{"type":"string","maxLength":128}},"required":["name"],"additionalProperties":false}}
+    }));
+    assert!(wire::request(&request, "high").is_ok());
+    for schema in [
+        json!({"type":"object","not":{"type":"string"}}),
+        json!({"type":"string","pattern":"(?=unsupported-lookahead)"}),
+        json!({"anyOf":[]}),
+        json!({"type":"array","items":[{"type":"string"}]}),
+        json!({"$ref":"#/$defs/loop","$defs":{"loop":{"$ref":"#/$defs/loop"}}}),
+    ] {
+        request.structured_output = StructuredOutputIntent::JsonSchema(schema);
+        assert!(wire::request(&request, "high").is_err());
+    }
 }
 
 #[test]
@@ -365,4 +438,24 @@ fn isolated_credential_store_does_not_read_foreign_state() {
     assert!(!credentials.present().unwrap());
     credentials.store("fixture-key").unwrap();
     assert_eq!(credentials.load().unwrap().expose().as_str(), "fixture-key");
+}
+
+#[test]
+fn undiscovered_or_unverified_models_fail_before_transport() {
+    let session = XaiSession::new(
+        crate::credentials::Credentials::isolated(
+            tempfile::tempdir().unwrap().path().join("xai.json"),
+        ),
+        "high".into(),
+        crate::transport::XaiRegion::Global,
+    )
+    .unwrap();
+    assert!(session.validate_availability("grok-4.7", false).is_err());
+    *session.availability.write().unwrap() = Some(AvailableModels {
+        models: vec![XaiCatalog::find("grok-4.7").unwrap()],
+        unverified: vec!["future-grok".into()],
+        endpoint_excluded: vec![],
+    });
+    assert!(session.validate_availability("grok-4.7", false).is_ok());
+    assert!(session.validate_availability("future-grok", false).is_err());
 }

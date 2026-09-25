@@ -1,7 +1,4 @@
-use crate::{
-    DEFAULT_MODEL, REASONING_LEVELS, XaiCatalog, XaiSession, credentials::Credentials, error,
-    provider_id,
-};
+use crate::{DEFAULT_MODEL, XaiCatalog, XaiSession, credentials::Credentials, error, provider_id};
 use std::sync::Arc;
 use vesper_domain::{
     BoundedString, ExtensionMap, ProviderId, SchemaVersion, VersionedExtensionEnvelope,
@@ -11,6 +8,7 @@ use vesper_provider::*;
 #[derive(Clone)]
 pub struct XaiFactory {
     id: ProviderId,
+    pub(crate) availability: Arc<std::sync::RwLock<Option<crate::AvailableModels>>>,
     pub(crate) credentials: Credentials,
     #[cfg(feature = "integration-test-harness")]
     pub(crate) test_route: Option<String>,
@@ -19,6 +17,7 @@ impl Default for XaiFactory {
     fn default() -> Self {
         Self {
             id: provider_id(),
+            availability: Default::default(),
             credentials: Credentials::default(),
             #[cfg(feature = "integration-test-harness")]
             test_route: None,
@@ -34,6 +33,9 @@ impl XaiFactory {
         values
             .insert("xai:reasoning-effort", serde_json::json!("high"))
             .expect("static");
+        values
+            .insert("xai:region", serde_json::json!("global"))
+            .expect("static");
         ProviderConfiguration {
             provider_id: provider_id(),
             values: VersionedExtensionEnvelope {
@@ -42,6 +44,61 @@ impl XaiFactory {
                 values,
             },
         }
+    }
+    pub fn superpowers_for(
+        &self,
+        available: &crate::AvailableModels,
+        model: &str,
+    ) -> Vec<SuperpowerDescriptor> {
+        let selected = if available.contains(model) {
+            model
+        } else {
+            available
+                .models
+                .first()
+                .map(|entry| entry.model.model_id.as_str())
+                .unwrap_or(DEFAULT_MODEL)
+        };
+        vec![
+            choice(
+                "xai:model",
+                "Model",
+                "model",
+                selected,
+                available
+                    .models
+                    .iter()
+                    .map(|entry| entry.model.model_id.as_str())
+                    .collect(),
+                None,
+            ),
+            choice(
+                "xai:reasoning",
+                if selected == "grok-4.20-multi-agent-0309" {
+                    "Multi-agent scale"
+                } else {
+                    "Reasoning effort"
+                },
+                "thinking",
+                XaiCatalog::default_effort(selected).unwrap_or("high"),
+                XaiCatalog::reasoning_levels(selected),
+                Some(if selected == "grok-4.20-multi-agent-0309" {
+                    "For this beta model, effort controls xAI-side agent count rather than thinking depth."
+                } else {
+                    "Reasoning choices verified for the selected xAI model."
+                }),
+            ),
+            choice(
+                "xai:region",
+                "API region",
+                "region",
+                "global",
+                vec!["global", "us"],
+                Some(
+                    "US regional processing currently limits model availability to Grok 4.7 and 4.6.",
+                ),
+            ),
+        ]
     }
     #[cfg(feature = "integration-test-harness")]
     #[allow(clippy::result_large_err)]
@@ -58,6 +115,45 @@ impl XaiFactory {
             test_route: Some(endpoint.to_owned()),
             ..Self::default()
         })
+    }
+}
+impl ProviderSuperpowers for XaiFactory {
+    fn superpowers(&self) -> Vec<SuperpowerDescriptor> {
+        self.superpowers_for(
+            &crate::AvailableModels {
+                models: XaiCatalog::snapshot().models,
+                ..Default::default()
+            },
+            DEFAULT_MODEL,
+        )
+    }
+}
+
+fn choice(
+    id: &str,
+    name: &str,
+    alias: &str,
+    default: &str,
+    values: Vec<&str>,
+    help: Option<&str>,
+) -> SuperpowerDescriptor {
+    SuperpowerDescriptor {
+        id: BoundedString::new(id).expect("static"),
+        provider_id: provider_id(),
+        display_name: BoundedString::new(name).expect("static"),
+        kind: SuperpowerKind::Choice,
+        scope: SuperpowerScope::Session,
+        default_value: SuperpowerValue::Choice {
+            value: BoundedString::new(default).expect("static"),
+        },
+        allowed_values: values
+            .into_iter()
+            .map(|value| SuperpowerValue::Choice {
+                value: BoundedString::new(value).expect("static"),
+            })
+            .collect(),
+        command_alias: Some(BoundedString::new(alias).expect("static")),
+        help: help.map(|value| BoundedString::new(value).expect("static")),
     }
 }
 impl ProviderFactory for XaiFactory {
@@ -106,9 +202,27 @@ impl ProviderFactory for XaiFactory {
                 .get("xai:reasoning-effort")
                 .and_then(serde_json::Value::as_str)
                 .unwrap_or("high");
+            let region = match config
+                .values
+                .values
+                .get("xai:region")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("global")
+            {
+                "global" => crate::transport::XaiRegion::Global,
+                "us" => crate::transport::XaiRegion::Us,
+                _ => {
+                    return Err(error(
+                        "Invalid xAI endpoint region",
+                        vesper_domain::ErrorCategory::InvalidRequest,
+                        false,
+                    ));
+                }
+            };
             if config.provider_id != self.id
                 || XaiCatalog::find(model).is_none()
-                || !REASONING_LEVELS.contains(&effort)
+                || !XaiCatalog::reasoning_levels(model).contains(&effort)
+                || !region.supports(model)
             {
                 return Err(error(
                     "Invalid xAI model or reasoning selection",
@@ -116,7 +230,8 @@ impl ProviderFactory for XaiFactory {
                     false,
                 ));
             }
-            let session = XaiSession::new(self.credentials.clone(), effort.to_owned())?;
+            let session = XaiSession::new(self.credentials.clone(), effort.to_owned(), region)?
+                .with_availability(self.availability.clone());
             #[cfg(feature = "integration-test-harness")]
             let session = session.with_test_route(self.test_route.clone());
             Ok(session)
@@ -128,7 +243,14 @@ impl ModelCatalog for XaiFactory {
         &'a self,
         cancel: Arc<dyn CancellationSignal>,
     ) -> ProviderFuture<'a, Result<ModelCatalogSnapshot, ProviderError>> {
-        XaiCatalog.models(cancel)
+        Box::pin(async move {
+            let available = self.available_models(cancel).await?;
+            Ok(ModelCatalogSnapshot {
+                models: available.models,
+                provenance: ModelCatalogProvenance::Discovered,
+                expires_at_unix_ms: None,
+            })
+        })
     }
 }
 impl ProviderCredentialPort for XaiFactory {

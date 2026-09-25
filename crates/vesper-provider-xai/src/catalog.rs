@@ -1,35 +1,157 @@
 use crate::{error, provider_id};
 use std::sync::Arc;
-use vesper_domain::{BoundedString, ModelId, QualifiedModelId, SafeMessage};
+use vesper_domain::{BoundedString, ExtensionMap, ModelId, QualifiedModelId, SafeMessage};
 use vesper_provider::*;
 
-/// PR-1's verified configuration model. Account discovery is added in PR-2.
 pub const DEFAULT_MODEL: &str = "grok-4.7";
-pub const REASONING_LEVELS: &[&str] = &["low", "medium", "high", "xhigh"];
+
+#[derive(Clone, Copy)]
+struct Spec {
+    id: &'static str,
+    name: &'static str,
+    context: u64,
+    efforts: &'static [&'static str],
+    default_effort: &'static str,
+    tools: bool,
+    batch: bool,
+    multi_agent: bool,
+    aliases: &'static [&'static str],
+}
+const MODELS: &[Spec] = &[
+    Spec {
+        id: "grok-4.7",
+        name: "Grok 4.7",
+        context: 500_000,
+        efforts: &["low", "medium", "high", "xhigh"],
+        default_effort: "high",
+        tools: true,
+        batch: true,
+        multi_agent: false,
+        aliases: &["grok-4.7-latest"],
+    },
+    Spec {
+        id: "grok-4.6",
+        name: "Grok 4.6",
+        context: 500_000,
+        efforts: &["low", "medium", "high", "xhigh"],
+        default_effort: "high",
+        tools: true,
+        batch: true,
+        multi_agent: false,
+        aliases: &["grok-4.6-latest"],
+    },
+    Spec {
+        id: "grok-4.5",
+        name: "Grok 4.5",
+        context: 500_000,
+        efforts: &["low", "medium", "high"],
+        default_effort: "high",
+        tools: true,
+        batch: true,
+        multi_agent: false,
+        aliases: &["grok-4.5-latest"],
+    },
+    Spec {
+        id: "grok-4.3",
+        name: "Grok 4.3",
+        context: 1_000_000,
+        efforts: &["none", "low", "medium", "high"],
+        default_effort: "low",
+        tools: true,
+        batch: true,
+        multi_agent: false,
+        aliases: &["grok-4.3-latest"],
+    },
+    Spec {
+        id: "grok-4.20-0309-reasoning",
+        name: "Grok 4.20 Reasoning",
+        context: 1_000_000,
+        efforts: &["high"],
+        default_effort: "high",
+        tools: true,
+        batch: true,
+        multi_agent: false,
+        aliases: &[
+            "grok-4.20",
+            "grok-4.20-reasoning",
+            "grok-4.20-reasoning-latest",
+        ],
+    },
+    Spec {
+        id: "grok-4.20-0309-non-reasoning",
+        name: "Grok 4.20 Non-Reasoning",
+        context: 1_000_000,
+        efforts: &["none"],
+        default_effort: "none",
+        tools: true,
+        batch: true,
+        multi_agent: false,
+        aliases: &["grok-4.20-non-reasoning", "grok-4.20-non-reasoning-latest"],
+    },
+    Spec {
+        id: "grok-4.20-multi-agent-0309",
+        name: "Grok 4.20 Multi-Agent Beta",
+        context: 1_000_000,
+        efforts: &["low", "medium", "high", "xhigh"],
+        default_effort: "high",
+        tools: false,
+        batch: true,
+        multi_agent: true,
+        aliases: &["grok-4.20-multi-agent", "grok-4.20-multi-agent-latest"],
+    },
+    Spec {
+        id: "grok-build-0.1",
+        name: "Grok Build 0.1",
+        context: 256_000,
+        efforts: &["high"],
+        default_effort: "high",
+        tools: true,
+        batch: false,
+        multi_agent: false,
+        aliases: &[],
+    },
+];
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct XaiCatalog;
-
 impl XaiCatalog {
     pub fn snapshot() -> ModelCatalogSnapshot {
         ModelCatalogSnapshot {
-            models: vec![descriptor()],
+            models: MODELS.iter().copied().map(descriptor).collect(),
             provenance: ModelCatalogProvenance::Static,
             expires_at_unix_ms: None,
         }
     }
     pub fn find(id: &str) -> Option<ModelDescriptor> {
-        (id == DEFAULT_MODEL).then(descriptor)
+        MODELS
+            .iter()
+            .copied()
+            .find(|spec| spec.id == id)
+            .map(descriptor)
+    }
+    pub fn resolve_current_alias(id: &str) -> Option<&'static str> {
+        MODELS
+            .iter()
+            .find(|spec| spec.id == id || spec.aliases.contains(&id))
+            .map(|spec| spec.id)
     }
     pub fn reasoning_levels(id: &str) -> Vec<&'static str> {
-        if id == DEFAULT_MODEL {
-            REASONING_LEVELS.to_vec()
-        } else {
-            Vec::new()
-        }
+        MODELS
+            .iter()
+            .find(|spec| spec.id == id)
+            .map(|spec| spec.efforts.to_vec())
+            .unwrap_or_default()
+    }
+    pub fn default_effort(id: &str) -> Option<&'static str> {
+        MODELS
+            .iter()
+            .find(|spec| spec.id == id)
+            .map(|spec| spec.default_effort)
+    }
+    pub fn supports_client_tools(id: &str) -> bool {
+        MODELS.iter().any(|spec| spec.id == id && spec.tools)
     }
 }
-
 impl ModelCatalog for XaiCatalog {
     fn models<'a>(
         &'a self,
@@ -48,7 +170,6 @@ impl ModelCatalog for XaiCatalog {
         })
     }
 }
-
 fn native<T>(details: T) -> SupportLevel<T> {
     SupportLevel::Native { details }
 }
@@ -57,22 +178,73 @@ fn unsupported<T>(reason: &str) -> SupportLevel<T> {
         reason: SafeMessage::new(reason).expect("static"),
     }
 }
-fn descriptor() -> ModelDescriptor {
+fn descriptor(spec: Spec) -> ModelDescriptor {
+    let mut metadata = ExtensionMap::default();
+    metadata
+        .insert(
+            "xai:default-reasoning-effort",
+            serde_json::json!(spec.default_effort),
+        )
+        .expect("static");
+    metadata
+        .insert("xai:aliases", serde_json::json!(spec.aliases))
+        .expect("static");
+    metadata
+        .insert("xai:batch", serde_json::json!(spec.batch))
+        .expect("static");
+    if spec.multi_agent {
+        metadata
+            .insert(
+                "xai:reasoning-control-semantics",
+                serde_json::json!("agent-count"),
+            )
+            .expect("static");
+        metadata
+            .insert("xai:beta", serde_json::json!(true))
+            .expect("static");
+    }
+    let tools = if spec.tools {
+        native(ToolCapability {
+            schema_dialect: "xai.responses.function".into(),
+            choice_modes: vec![
+                "auto".into(),
+                "none".into(),
+                "required".into(),
+                "named".into(),
+            ],
+            parallel: true,
+            streamed_arguments: true,
+        })
+    } else {
+        unsupported(
+            "xAI's dedicated multi-agent contract does not support client-side custom tools",
+        )
+    };
+    let tool_choice = if spec.tools {
+        native(ToolChoiceCapability {
+            automatic: true,
+            none: true,
+            required: true,
+            named: true,
+        })
+    } else {
+        unsupported("Client-side custom tools are unavailable for this multi-agent model")
+    };
     ModelDescriptor {
         model: QualifiedModelId {
             provider_id: provider_id(),
-            model_id: ModelId::new(DEFAULT_MODEL).expect("static"),
+            model_id: ModelId::new(spec.id).expect("static"),
         },
-        display_name: BoundedString::new("Grok 4.7").expect("static"),
-        metadata: Default::default(),
+        display_name: BoundedString::new(spec.name).expect("static"),
+        metadata,
         capabilities: ProviderCapabilities {
             limits: native(ModelLimits {
-                context_tokens: Some(500_000),
+                context_tokens: Some(spec.context),
                 output_tokens: None,
-                exact: false,
+                exact: true,
             }),
             reasoning: native(ReasoningCapability {
-                effort_levels: REASONING_LEVELS.iter().map(|v| (*v).into()).collect(),
+                effort_levels: spec.efforts.iter().map(|v| (*v).into()).collect(),
                 visible_modes: vec!["summary".into()],
             }),
             streamed_reasoning: native(StreamedReasoningCapability {
@@ -90,25 +262,18 @@ fn descriptor() -> ModelDescriptor {
                 inline_data: true,
             }),
             audio: unsupported("xAI reasoning models do not accept audio through this adapter"),
-            tools: native(ToolCapability {
-                schema_dialect: "xai.responses.function".into(),
-                choice_modes: vec![
-                    "auto".into(),
-                    "none".into(),
-                    "required".into(),
-                    "named".into(),
-                ],
-                parallel: true,
-                streamed_arguments: true,
-            }),
-            tool_choice: native(ToolChoiceCapability {
-                automatic: true,
-                none: true,
-                required: true,
-                named: true,
-            }),
-            parallel_tool_calls: native(()),
-            streamed_tool_arguments: native(()),
+            tools,
+            tool_choice,
+            parallel_tool_calls: if spec.tools {
+                native(())
+            } else {
+                unsupported("Client-side custom tools are unavailable")
+            },
+            streamed_tool_arguments: if spec.tools {
+                native(())
+            } else {
+                unsupported("Client-side custom tools are unavailable")
+            },
             prompt_caching: native(PromptCacheCapability {
                 controls: vec!["prompt_cache_key".into()],
                 reports_reads: true,
@@ -119,7 +284,7 @@ fn descriptor() -> ModelDescriptor {
                 json_schema: true,
                 grammars: vec![],
             }),
-            sampling: unsupported("Sampling controls are not exposed for this reasoning model"),
+            sampling: unsupported("Sampling controls are not exposed for these reasoning requests"),
             model_discovery: native(vec!["authenticated-account-models".into()]),
             authentication: native(AuthenticationCapability {
                 methods: vec!["xai-api-key".into()],

@@ -45,6 +45,9 @@ pub(crate) fn request(
         return Err(unsupported());
     }
     let model = request.model.model_id.as_str();
+    if !request.tools.is_empty() && !XaiCatalog::supports_client_tools(model) {
+        return Err(unsupported());
+    }
     let capabilities = XaiCatalog::find(model)
         .ok_or_else(unsupported)?
         .capabilities;
@@ -124,6 +127,7 @@ pub(crate) fn request(
     let mut names = BTreeSet::new();
     let mut tools = vec![];
     for tool in &request.tools {
+        validate_schema(&tool.input_schema)?;
         let name = tool_name(tool);
         if name.len() > 64
             || !name
@@ -155,6 +159,7 @@ pub(crate) fn request(
             body["text"] = json!({"format":{"type":"json_object"}})
         }
         StructuredOutputIntent::JsonSchema(schema) => {
+            validate_schema(schema)?;
             body["text"] = json!({"format":{"type":"json_schema","name":"vesper_output","strict":true,"schema":schema}})
         }
         _ => return Err(unsupported()),
@@ -163,6 +168,149 @@ pub(crate) fn request(
         return Err(unsupported());
     }
     Ok(body)
+}
+
+fn validate_schema(schema: &Value) -> Result<(), ProviderError> {
+    fn visit(
+        value: &Value,
+        root: &Value,
+        depth: usize,
+        nodes: &mut usize,
+        refs: &mut BTreeSet<String>,
+    ) -> Result<(), ProviderError> {
+        *nodes += 1;
+        if depth > 32 || *nodes > 2048 || !value.is_object() {
+            return Err(unsupported());
+        }
+        let object = value.as_object().ok_or_else(unsupported)?;
+        if object.keys().any(|key| {
+            matches!(
+                key.as_str(),
+                "not" | "if" | "then" | "else" | "contains" | "minContains" | "maxContains"
+            )
+        }) || object.contains_key("pattern")
+        {
+            return Err(unsupported());
+        }
+        for key in object.keys() {
+            if !matches!(
+                key.as_str(),
+                "$schema"
+                    | "$id"
+                    | "$anchor"
+                    | "title"
+                    | "description"
+                    | "default"
+                    | "examples"
+                    | "type"
+                    | "enum"
+                    | "const"
+                    | "properties"
+                    | "required"
+                    | "additionalProperties"
+                    | "items"
+                    | "prefixItems"
+                    | "anyOf"
+                    | "oneOf"
+                    | "allOf"
+                    | "$ref"
+                    | "$defs"
+                    | "format"
+                    | "minimum"
+                    | "maximum"
+                    | "exclusiveMinimum"
+                    | "exclusiveMaximum"
+                    | "minLength"
+                    | "maxLength"
+                    | "minItems"
+                    | "maxItems"
+                    | "minProperties"
+                    | "maxProperties"
+            ) {
+                return Err(unsupported());
+            }
+        }
+        if object
+            .get("enum")
+            .is_some_and(|v| v.as_array().is_none_or(Vec::is_empty))
+        {
+            return Err(unsupported());
+        }
+        for key in ["anyOf", "oneOf", "allOf"] {
+            if let Some(value) = object.get(key) {
+                let variants = value.as_array().ok_or_else(unsupported)?;
+                if variants.is_empty() || (key == "allOf" && variants.len() != 1) {
+                    return Err(unsupported());
+                }
+                for variant in variants {
+                    visit(variant, root, depth + 1, nodes, refs)?;
+                }
+            }
+        }
+        for key in ["properties", "$defs"] {
+            if let Some(values) = object.get(key) {
+                let values = values.as_object().ok_or_else(unsupported)?;
+                if key == "properties" && values.len() > 64 {
+                    return Err(unsupported());
+                }
+                for child in values.values() {
+                    visit(child, root, depth + 1, nodes, refs)?;
+                }
+            }
+        }
+        if let Some(items) = object.get("items") {
+            visit(items, root, depth + 1, nodes, refs)?;
+        }
+        if let Some(items) = object.get("prefixItems") {
+            for item in items.as_array().ok_or_else(unsupported)? {
+                visit(item, root, depth + 1, nodes, refs)?;
+            }
+        }
+        if object
+            .get("maxLength")
+            .and_then(Value::as_u64)
+            .is_some_and(|v| v > 2048)
+            || object
+                .get("maxItems")
+                .and_then(Value::as_u64)
+                .is_some_and(|v| v > 256)
+            || object
+                .get("maxProperties")
+                .and_then(Value::as_u64)
+                .is_some_and(|v| v > 64)
+        {
+            return Err(unsupported());
+        }
+        if let Some(format) = object.get("format").and_then(Value::as_str)
+            && ![
+                "date",
+                "time",
+                "date-time",
+                "email",
+                "uuid",
+                "ipv4",
+                "ipv6",
+                "uri",
+            ]
+            .contains(&format)
+        {
+            return Err(unsupported());
+        }
+        if let Some(reference) = object.get("$ref").and_then(Value::as_str) {
+            let name = reference.strip_prefix("#/$defs/").ok_or_else(unsupported)?;
+            if name.is_empty() || name.contains('/') || !refs.insert(reference.to_owned()) {
+                return Err(unsupported());
+            }
+            let target = root
+                .get("$defs")
+                .and_then(|defs| defs.get(name))
+                .ok_or_else(unsupported)?;
+            visit(target, root, depth + 1, nodes, refs)?;
+            refs.remove(reference);
+        }
+        Ok(())
+    }
+    visit(schema, schema, 0, &mut 0, &mut BTreeSet::new())
 }
 fn append_opaque(input: &mut Vec<Value>, opaque: &OpaqueContent) -> Result<(), ProviderError> {
     if opaque.provider_id != provider_id() {
