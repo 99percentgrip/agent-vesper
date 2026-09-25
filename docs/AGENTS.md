@@ -44,6 +44,10 @@ Own durable project documentation and evidence-backed engineering records.
   security, contribution, migration status, and full-harness parity evidence.
 - `openai-provider.md` owns native OpenAI Settings setup, authentication modes,
   model controls, account prerequisites, and explicit capability limitations.
+- `vro18-native-xai-provider-prd.md` owns VRO-18 native xAI reasoning-provider
+  requirements, phased acceptance, billing-path isolation, and adjacent-service
+  exclusions. `architecture/recon_xai_native_provider.md` and
+  `foundation/xai-provider-recon-execution.md` own its PR-0 evidence.
 - `web-tools.md` owns web-driver installation, immutable image identity,
   native Settings → Web tools and ACP `/web` activation, advanced opt-in
   configuration, operation bounds, and deployment troubleshooting.

@@ -6,6 +6,12 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `xai-provider-recon-execution.md` owns VRO-18 PR-0 execution evidence:
+  current Vesper provider/host seam inventory, the pinned first-party Grok
+  Build source audit, official xAI documentation snapshot, capability matrix,
+  corrected upstream contradictions, shared-contract gaps, and the bounded
+  implementation-readiness verdict.
+
 - `2026-09-24-critical-tool-output-stall-repair.md` owns the permanent shared
   command-output settlement repair evidence, provider/tool-surface
   reconnaissance, host-route tests, platform limits, and remaining live

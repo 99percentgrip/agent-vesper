@@ -40,6 +40,11 @@ Vesper terminology, feeding future feature PRDs (e.g. VRO-16 hive governance).
   commit) rather than docs/config only. The deviation is noted in the
   report and in `docs/foundation/voice-oracle-recon-execution.md`; it does
   not generalize to other missions.
+- VRO-18 explicitly requires the first-party xAI and Grok Build names, URLs,
+  documentation, and pinned production-source symbols in its evidence. That
+  user-authorized source audit is limited to
+  `recon_xai_native_provider.md` and its linked PR-0 execution report; it does
+  not relax the alias or source-ingestion rule for other reconnaissance.
 
 ## Work Guidance
 

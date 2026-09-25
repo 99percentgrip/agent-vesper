@@ -1,6 +1,16 @@
 # Migration Status
 
-Last updated: 2026-09-24
+Last updated: 2026-09-25
+
+VRO-18 native xAI provider is at **PR-0 COMPLETE; IMPLEMENTATION NOT
+STARTED**. Reconnaissance pinned first-party Grok Build source at
+`f0e3be1100ef5252488e3be8bb0e91cf68d8c305`, established separate public
+API-key and Grok-session contracts, corrected current reasoning/multi-agent
+capability conflicts, and identified shared registry/auth/hosted-tool gaps that
+must be closed without xAI branches in the AgentLoop. No live provider call or
+production edit occurred. Evidence:
+`docs/architecture/recon_xai_native_provider.md` and
+`docs/foundation/xai-provider-recon-execution.md`.
 
 VRO-17 voice-quality addendum (2026-09-24): the remaining short Kokoro
 hiccup is repaired at its measured owner. The real hygiene→worker path showed
@@ -37,6 +47,7 @@ publication remain before VRO-17 closes.
 | VRO-13 QM extraction (firewall, sandbox, scopes, daemon) | COMPLETE | `docs/qm-extraction-prd.md`; PR-1..PR-8 landed. Hard-denial `CommandFirewall` wired once into `RunCommand` (deny outranks every permission mode incl. Bypass); opt-in `vesper-sandbox` (Linux namespaces + feature-gated Docker) behind fail-closed capability gates; `WorkspaceScope` stamp-pinned identity with layered skills and deny-precedence firewall composition; exactly-once cron slot claims, single-writer `daemon.lock`, and the bounded watcher sweep with rate limits. Cross-feature end-to-end fixture: `crates/vesper-harness/tests/vro13_e2e.rs` (watcher fire → bounded turn → composed firewall → sandbox route → scope-keyed transcript; 5 tests, 6 under `--features docker`, both green) |
 | VRO-14 web oracle extraction | COMPLETE — v0.20.89 | Shared TUI/ACP contained pipe-CDP sessions, one-step render escalation, sitemap discovery and bounded fetch/crawl passed production acceptance. Exact-commit canonical/supply-chain, MSRV, five-target and dual-architecture image CI passed before tagging; five application bundles and both pinned driver archives are public. Registry PR #539 was updated in place and awaits upstream review. `docs/foundation/vro14-gap-audit.md` records evidence and implementation choices; `docs/web-tools.md` owns opt-in deployment. |
 | Additional production providers | IMPLEMENTED | LM Studio and native OpenAI are registered alongside Z.ai. OpenAI has API-key/subscription authentication, Responses streaming, tools, images, model/effort controls, and native memory extraction in both hosts; see `openai-provider-prd.md` for gates and explicit limits |
+| VRO-18 native xAI provider | PR-0 COMPLETE — IMPLEMENTATION NOT STARTED | Public API-key and first-party Grok-session paths are evidence-backed for fixture-first implementation. Dynamic availability must intersect verified capability metadata; billing modes never fall through. Shared browser-auth/catalog/host-default gaps precede production composition, and hosted tools/citations require neutral types. No xAI adapter is registered or advertised. |
 | Context compaction parity | IMPLEMENTED AND LOCALLY VERIFIED | ADR 0023: active-model token pressure at 60/75/85%, automatic compaction at 85% with response reserve, semantic `/compact [focus]`, immutable system prompts, complete recent tool transactions, secret-scrubbed untrusted summary input, auxiliary→main→deterministic fallback, transactional rollback/fail-closed overflow, ACP/TUI persistence, VRO/direct parity, full TUI display transcript retention, and persisted quality-regression telemetry |
 | Skill orchestration parity | IMPLEMENTED AND LOCALLY VERIFIED | ADR 0024: provider-neutral metadata discovery/ranking, policy/tool/platform/risk eligibility, automatic top-three composition, explicit `/skill` and bundles, transient bounded bodies, isolated-worker contexts, direct/VRO/ReAct and ACP/TUI parity, outcome feedback, and compaction-safe audit identity |
 | Model-assisted skill routing | IMPLEMENTED — OPT-IN PREVIEW / QUALITY HOLD | Settings → Skills enables bounded configured-provider selection in TUI and ACP; Standard remains default and source skills are preserved. The 205-case inspected live regression records 89/95 positive recall, 0/60 no-skill activations and 2/30 forbidden-sibling selections, including five provider fallbacks. See [implementation evidence](foundation/skill-routing-model-assistance-execution.md), [live evaluation](foundation/skill-routing-model-live-evaluation.md) and [release execution](foundation/v0.22.4-release-execution.md). This does not close the full routing-quality or pending score-floor gates. |

@@ -1,5 +1,17 @@
 # Foundation Evidence Index
 
+## VRO-18 native xAI provider reconnaissance (2026-09-25)
+
+- Requirements: [`../vro18-native-xai-provider-prd.md`](../vro18-native-xai-provider-prd.md)
+- Architecture reconnaissance: [`../architecture/recon_xai_native_provider.md`](../architecture/recon_xai_native_provider.md)
+- Execution report: [`xai-provider-recon-execution.md`](xai-provider-recon-execution.md)
+- Baseline: `c64e78f46065f1fbaae899ab9914f3d9b3f7023d`
+- First-party source pin: `xai-org/grok-build@f0e3be1100ef5252488e3be8bb0e91cf68d8c305`
+- Verdict: PR-0 PASS. Public API-key work may begin. First-party session
+  authentication/proxy evidence is sufficient to begin fixture-first PR-3 work,
+  while feature availability remains auth-path/model/endpoint intersected and
+  fail-closed. No production implementation or live provider call occurred.
+
 - [Critical tool-output stall permanent repair](2026-09-24-critical-tool-output-stall-repair.md) — reproduces the shared `run_command` pipe-backpressure defect red-first, replaces exit-before-read capture with concurrent bounded draining and owned-tree cleanup, verifies TUI/ACP recovery and Linux descendant settlement, and records provider-surface/protocol parity. Its pre-CI OPEN checkpoint is superseded by the five-target closeout below.
 - [Tool-output stall five-target platform verification](2026-09-25-tool-output-stall-platform-verification.md) — closes the Windows/macOS behavior gap at exact candidate `27a3f17b…`: all five native jobs and their dedicated nine-case settlement matrices pass in run `36036088105`. Windows fixture quoting/startup defects were repaired red→green. Provider correlation is **NOT EXECUTED — GLM live access unavailable**, retained as an explanatory limitation that does not block release of the classification-D repair.
 - [v0.23.6 critical executor-stability release](2026-09-25-v0.23.6-release-execution.md) — **CLOSED — RELEASED:** exact commit `1da9834…` passed canonical `36065369597`, MSRV `36065369716`, five-target `36065369608` and web-driver `36065369575`; release run `36069150695` published 16 assets whose seven sidecars and all GitHub API digests verified. Continuous ACP Registry PR #539 was updated in place to v0.23.6. No local installation was changed.
