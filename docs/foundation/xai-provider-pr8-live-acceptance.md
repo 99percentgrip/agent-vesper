@@ -131,14 +131,19 @@ on the final commit and obtain exact-commit CI before release.
   protocol. Vesper reports that limitation and does not estimate quota.
 - Public API-key live acceptance is optional under §30.2 and was not authorized
   by a separately billed credential.
-- Final exact-commit local gates, five-target CI and release publication remain
-  pending.
 - Temporary candidate five-target run `36135566479` exposed three release-gate
   defects outside the live provider path: a macOS playback fixture timing race,
   transient Linux `ExecutableFileBusy` during subprocess TTS fixture launch,
-  and Windows-only xAI fixture/backend timing assumptions. Each is repaired
+  and Windows-only xAI fixture/backend timing assumptions. Each was repaired
   with a focused regression or bounded fixture correction; the failed run is
-  red evidence only and a complete replacement matrix remains required.
+  retained as red evidence only.
+- The first version candidate then exposed a macOS Intel settlement-deadline
+  race in run `36139515810`. The shared-deadline repair is included in final
+  commit `bd49ce69f4e34a64822245e67bdeee2503e1ce4d`.
+- Exact-commit canonical `36148144754`, MSRV `36148144948`, five-target
+  `36148144714` and web-driver `36148145047` all passed before tagging.
+- Release run `36152583397` published v0.24.0 with 16 verified assets. ACP
+  Registry PR #539 was updated in place at head `de3d94f1…`.
 
 ## Readiness effect
 
@@ -147,4 +152,6 @@ shared tools, continuation, cancellation/recovery, image input, usage/status
 and logout/re-authentication, with three live-exposed production defects
 repaired red to green. The post-login trace contained only xAI's explicitly
 displayable `response.reasoning_summary_text.delta` channel; encrypted reasoning
-remained opaque. VRO-18 remains open until exact-candidate release gates complete.
+remained opaque. Exact-commit gates and publication subsequently passed; VRO-18
+is complete and released in v0.24.0. Paid API-key live acceptance remains the
+explicitly optional, unexecuted §30.2 case.

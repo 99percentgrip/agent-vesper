@@ -3,11 +3,12 @@
 ## VRO-18 v0.24.0 release (2026-09-25)
 
 - Execution: [`2026-09-25-v0.24.0-release-execution.md`](2026-09-25-v0.24.0-release-execution.md)
-- Verdict: **RELEASE GATES IN PROGRESS.** Candidate `26ec332…` passed local
-  canonical/MSRV/supply-chain gates and live SuperGrok acceptance. Temporary
-  exact-candidate five-target and web-driver workflows precede the final
-  version commit. Completion still requires exact-release-commit CI, tag,
-  asset/checksum verification and the continuous Registry PR #539 update.
+- Verdict: **COMPLETE — RELEASED.** Exact commit `bd49ce69…` passed canonical
+  `36148144754`, MSRV `36148144948`, five-target `36148144714` and web-driver
+  `36148145047` before tag `v0.24.0`. Release run `36152583397` published 16
+  assets; all seven checksum sidecars match server-computed archive digests,
+  the Linux x86_64 package reports 0.24.0, and Registry PR #539 was updated in
+  place at `de3d94f1…`. No local installation changed.
 
 ## VRO-18 PR-8 live SuperGrok acceptance (2026-09-25)
 
@@ -18,8 +19,8 @@
   ACP's xAI image capability projection, auth-mode control intersection and
   credential-sensitive test isolation. Session hosted tools remain explicitly
   unsupported/fail-closed; separately billed API-key live acceptance was not
-  run. Logout/device re-authentication and a post-login turn pass; exact-commit
-  release gates remain open.
+  run. Logout/device re-authentication and a post-login turn pass. The exact
+  v0.24.0 release gates and publication subsequently passed.
 
 ## VRO-18 xAI host composition (2026-09-25)
 

@@ -2,40 +2,25 @@
 
 Last updated: 2026-09-25
 
-VRO-18 native xAI provider is at **PR-1–PR-8 IMPLEMENTED; LIVE SUPERGROK ACCEPTANCE PASS / EXACT-COMMIT RELEASE GATES IN PROGRESS**. The dedicated
-`vesper-provider-xai` leaf now owns Vesper-managed API-key credentials, fixed
-Responses dispatch, strict shared-function serialization, bounded SSE decoding,
-cancellation, safe errors, usage normalization and opaque reasoning. Offline
-red/green evidence covers every completed adapter phase; architecture and strict
-Clippy passed through PR-6. The adapter is now registered in the isolated TUI
-and ACP candidate. Live SuperGrok evidence passes browser authentication,
-discovery, text, shared file/shell tools, continuation, cancellation/recovery,
-image input, usage/status and logout. It repaired mandatory session-proxy
-headers, ACP xAI image capability projection, auth-mode control intersection
-and credential-sensitive test isolation. Dynamic
-discovery/capability intersection now covers eight verified families,
-current aliases, US endpoint bounds, model-specific reasoning/multi-agent rules
-and strict schemas. Native browser/device Grok session auth, refresh/logout,
-billing isolation and subscription-proxy routing now pass offline loopback
-evidence. Explicit stored continuation, stable prompt-cache routing, citation
-retention, opaque reasoning and normalized usage now pass offline fixtures.
-Six applicable provider-hosted tools now have an explicit generic descriptor/
-selection contract and fail-closed Global/API-key mapping; generated media stays
-separately gated behind a future generic output port. Native compaction and
-WebSocket are implemented default-off. Grok-session hosted tools are explicitly
-unsupported/fail-closed after a controlled live rejection; Global/API-key
-hosted tools retain offline coverage. Logout/device re-authentication and a
-post-login turn pass. The v0.24.0 release commit still requires canonical, MSRV, five-target and web-driver success before tagging. Evidence:
-`docs/architecture/recon_xai_native_provider.md`,
-`docs/foundation/xai-provider-recon-execution.md`, and
-`docs/foundation/xai-provider-pr1-execution.md`,
-`docs/foundation/xai-provider-pr2-execution.md`, and
-`docs/foundation/xai-provider-pr3-execution.md`, and
-`docs/foundation/xai-provider-pr4-execution.md`, and
-`docs/foundation/xai-provider-pr5-execution.md`,
-`docs/foundation/xai-provider-pr6-execution.md`, and
-`docs/foundation/xai-provider-pr7-execution.md`, and
-`docs/foundation/xai-provider-pr8-live-acceptance.md`.
+VRO-18 native xAI provider is **COMPLETE — RELEASED IN v0.24.0**. The
+native `vesper-provider-xai` adapter ships in TUI and ACP with explicit
+Grok-account/SuperGrok and separately billed API-key modes, dynamic verified
+model discovery, model-specific reasoning, shared tools, structured/image input,
+streaming, cancellation, continuation, usage, citations, hosted-tool capability
+intersection, prompt-cache routing, native compaction and WebSocket support on
+verified paths. Live SuperGrok acceptance passed browser/device authentication,
+discovery, text, shared file/shell tools exactly once, continuation,
+cancellation/recovery, image input, usage/status, logout/re-authentication and a
+fresh turn. Session hosted tools, native compaction and WebSocket remain
+unsupported/fail-closed; live paid API-key acceptance was not run and is optional
+under §30.2. Release commit
+`bd49ce69f4e34a64822245e67bdeee2503e1ce4d` passed exact canonical
+`36148144754`, MSRV `36148144948`, five-target `36148144714` and web-driver
+`36148145047` before tag `v0.24.0`; release run `36152583397` published 16
+verified assets. Registry PR #539 was updated in place. No local installation
+changed. Evidence: `docs/architecture/recon_xai_native_provider.md`,
+`docs/foundation/xai-provider-recon-execution.md`, the PR-1 through PR-8
+execution reports, and `docs/foundation/2026-09-25-v0.24.0-release-execution.md`.
 
 VRO-17 voice-quality addendum (2026-09-24): the remaining short Kokoro
 hiccup is repaired at its measured owner. The real hygiene→worker path showed
@@ -72,7 +57,7 @@ publication remain before VRO-17 closes.
 | VRO-13 QM extraction (firewall, sandbox, scopes, daemon) | COMPLETE | `docs/qm-extraction-prd.md`; PR-1..PR-8 landed. Hard-denial `CommandFirewall` wired once into `RunCommand` (deny outranks every permission mode incl. Bypass); opt-in `vesper-sandbox` (Linux namespaces + feature-gated Docker) behind fail-closed capability gates; `WorkspaceScope` stamp-pinned identity with layered skills and deny-precedence firewall composition; exactly-once cron slot claims, single-writer `daemon.lock`, and the bounded watcher sweep with rate limits. Cross-feature end-to-end fixture: `crates/vesper-harness/tests/vro13_e2e.rs` (watcher fire → bounded turn → composed firewall → sandbox route → scope-keyed transcript; 5 tests, 6 under `--features docker`, both green) |
 | VRO-14 web oracle extraction | COMPLETE — v0.20.89 | Shared TUI/ACP contained pipe-CDP sessions, one-step render escalation, sitemap discovery and bounded fetch/crawl passed production acceptance. Exact-commit canonical/supply-chain, MSRV, five-target and dual-architecture image CI passed before tagging; five application bundles and both pinned driver archives are public. Registry PR #539 was updated in place and awaits upstream review. `docs/foundation/vro14-gap-audit.md` records evidence and implementation choices; `docs/web-tools.md` owns opt-in deployment. |
 | Additional production providers | IMPLEMENTED | LM Studio, native OpenAI and native xAI / Grok are registered alongside Z.ai. OpenAI and xAI each preserve explicit API-key versus account/subscription billing paths. See `openai-provider-prd.md` and `vro18-native-xai-provider-prd.md` for their evidence and limits. |
-| VRO-18 native xAI provider | PR-1–PR-8 IMPLEMENTED — LIVE SUPERGROK ACCEPTANCE PASS / EXACT-COMMIT RELEASE GATES IN PROGRESS | TUI and ACP register xAI and inherit shared tools/voice/skills/memory/VRO/workers without core xAI branches. Live SuperGrok discovery, text, shared tools, continuation, cancellation/recovery, image, usage/status and logout/device re-authentication pass. Session mode projects only verified model/reasoning controls; API region/transport/compaction/hosted tools remain Global API-key capabilities. The v0.24.0 exact-release-commit workflows, tag and publication remain open. |
+| VRO-18 native xAI provider | **COMPLETE — RELEASED IN v0.24.0** | TUI and ACP register xAI and inherit shared tools/voice/skills/memory/VRO/workers without core xAI branches. Live SuperGrok acceptance passed; session-only capability exclusions remain fail-closed. Exact commit `bd49ce69…` passed all four required workflows before tag/publication; release run `36152583397` published 16 verified assets and Registry PR #539 was updated in place. Paid API-key live acceptance was optional and not run. |
 | Context compaction parity | IMPLEMENTED AND LOCALLY VERIFIED | ADR 0023: active-model token pressure at 60/75/85%, automatic compaction at 85% with response reserve, semantic `/compact [focus]`, immutable system prompts, complete recent tool transactions, secret-scrubbed untrusted summary input, auxiliary→main→deterministic fallback, transactional rollback/fail-closed overflow, ACP/TUI persistence, VRO/direct parity, full TUI display transcript retention, and persisted quality-regression telemetry |
 | Skill orchestration parity | IMPLEMENTED AND LOCALLY VERIFIED | ADR 0024: provider-neutral metadata discovery/ranking, policy/tool/platform/risk eligibility, automatic top-three composition, explicit `/skill` and bundles, transient bounded bodies, isolated-worker contexts, direct/VRO/ReAct and ACP/TUI parity, outcome feedback, and compaction-safe audit identity |
 | Model-assisted skill routing | IMPLEMENTED — OPT-IN PREVIEW / QUALITY HOLD | Settings → Skills enables bounded configured-provider selection in TUI and ACP; Standard remains default and source skills are preserved. The 205-case inspected live regression records 89/95 positive recall, 0/60 no-skill activations and 2/30 forbidden-sibling selections, including five provider fallbacks. See [implementation evidence](foundation/skill-routing-model-assistance-execution.md), [live evaluation](foundation/skill-routing-model-live-evaluation.md) and [release execution](foundation/v0.22.4-release-execution.md). This does not close the full routing-quality or pending score-floor gates. |

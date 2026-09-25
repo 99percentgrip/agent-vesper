@@ -1,6 +1,6 @@
 # VRO-18 — Native xAI Provider for Agent Vesper
 
-**Status:** PR-1–PR-8 IMPLEMENTED; LIVE SUPERGROK ACCEPTANCE PASS — EXACT-COMMIT RELEASE GATES IN PROGRESS
+**Status:** COMPLETE — RELEASED IN v0.24.0
 **Date:** 2026-09-25
 **Target repository:** `99percentgrip/agent-vesper`
 **Baseline:** post-`v0.23.6` `main` (`c64e78f46065f1fbaae899ab9914f3d9b3f7023d`)
@@ -2222,24 +2222,24 @@ The quality bar is:
 xAI changes how xAI talks to Vesper.
 
 xAI does not change how Vesper is Vesper.
+```
 
 ## 39. Current implementation status — 2026-09-25
 
-PR-0 pinned and audited `xai-org/grok-build@f0e3be1100ef5252488e3be8bb0e91cf68d8c305`.
-PR-1 through PR-6 are closed at offline scope. The isolated PR-7 candidate now
-registers xAI in TUI and ACP, projects browser/device/API-key authentication,
-refreshes account-visible verified models, routes provider controls and hosted
-tool selections into the shared AgentLoop, renders citations safely in both
-hosts, and uses xAI through the existing voice, skill, VRO, memory and worker
-composition. Shared runtime/tool/voice code contains no xAI execution branch.
+PR-0 through PR-8 are closed. Native xAI is registered in TUI and ACP and uses
+the shared AgentLoop, tools, voice, skills, memory, VRO, workers and permissions
+without an xAI execution branch in shared runtime code. Live SuperGrok
+acceptance passed at the scope recorded in the PR-8 report. Paid API-key live
+acceptance was not run and remains optional under §30.2; its implementation is
+fixture-tested. Session-mode hosted tools, native compaction and WebSocket are
+unsupported/fail-closed, and adjacent xAI Voice/Imagine services remain separate
+future provider-neutral integrations.
 
-PR-8 remains open. No live xAI request has been made, no real Grok-account or
-API-key acceptance has passed, five-target exact-commit CI has not run, and no
-release is authorized. Configured attachment/collection/Remote-MCP host entry
-still needs a generic native structured-configuration surface before HOSTED
-TOOLS can be marked complete; the adapter wire support remains fail-closed and
-offline-tested meanwhile.
-```
+VRO-18 shipped in v0.24.0 at exact commit
+`bd49ce69f4e34a64822245e67bdeee2503e1ce4d`. All required exact-commit gates
+passed before tagging; release run `36152583397` published 16 verified assets.
+The final release ledger is
+[`foundation/2026-09-25-v0.24.0-release-execution.md`](foundation/2026-09-25-v0.24.0-release-execution.md).
 
 ---
 
@@ -2382,7 +2382,9 @@ silent billing fallback occurred. Logout, device re-authentication and a fresh
 post-login turn passed. Paid API-key live acceptance was not run and is optional
 under §30.2. The exact implementation candidate passed local canonical, MSRV,
 strict Clippy, architecture, naming, acceptance, RustSec and Cargo Deny gates.
-Its temporary-ref five-target and web-driver workflows are the final pre-release
-candidate checks; v0.24.0 still requires all four exact-release-commit workflows
-before tagging. Publication receipts belong to
+Final commit `bd49ce69f4e34a64822245e67bdeee2503e1ce4d` passed canonical
+`36148144754`, MSRV `36148144948`, five-target `36148144714` and web-driver
+`36148145047` before tag `v0.24.0`. Release run `36152583397` published 16
+verified assets and Registry PR #539 was updated in place. Publication receipts
+belong to
 [`foundation/2026-09-25-v0.24.0-release-execution.md`](foundation/2026-09-25-v0.24.0-release-execution.md).
