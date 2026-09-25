@@ -1141,6 +1141,11 @@ work (ACP mid-turn-slash-grace parity; see `apps/agent-vesper-acp/AGENTS.md`).
   gate, including the new `agent-vesper-tui → vesper-agent` edge).
 - Run `cargo build -p agent-vesper-tui --bins` to confirm the binary
   links under the workspace toolchain.
+- Native provider composition registers xAI alongside OpenAI, Z.ai and LM
+  Studio. xAI browser/device login, authenticated model refresh, reasoning,
+  region, transport, compaction and simple hosted-tool choices derive from
+  provider descriptors/superpowers. Voice, tools, skills, VRO and workers use
+  the unchanged shared registry and AgentLoop.
 
 ## Supply-chain note
 

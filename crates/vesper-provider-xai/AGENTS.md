@@ -42,6 +42,9 @@ continuation state, and provider error mapping without changing the shared agent
   map to Vesper `run_command`, web or MCP execution.
 - Secrets never enter errors, events, logs, or model-visible extensions.
 - No silent fallback between Grok-session and xAI API-key billing paths.
+- Host composition uses authenticated discovery before offering models. Memory
+  extraction uses the same native session and selected billing mode as the
+  active xAI provider; it never falls through to another credential class.
 
 ## Verification
 

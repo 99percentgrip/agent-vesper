@@ -633,6 +633,12 @@ the multi-turn, tool-executing layer above it.
   provider session state.
 - Permission denials and unknown/failed tools are fed back to the model as
   bounded `role: Tool` text so the turn can recover (mirrors the oracle).
+- `provider_output` is the shared safe projection for provider annotations.
+  Both hosts may render validated citations; every other provider-opaque item,
+  including encrypted reasoning and compaction state, remains hidden.
+- `AgentLoopConfig.hosted_tools` carries explicit provider-hosted selections
+  into ordinary turns. It is empty by default and stays distinct from the
+  Vesper client-function registry.
 - When adding a tool: add the executor in `tools.rs`, register it in
   `ToolRegistry::parity_default` when it is provider-neutral core behavior.
   Host-owned memory, checkpoint, MCP, plugin, worker, and automation tools

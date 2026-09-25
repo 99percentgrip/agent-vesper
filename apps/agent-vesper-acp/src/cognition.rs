@@ -457,6 +457,40 @@ impl vesper_cognition::ExtractionLlmPort for OpenAiExtractionAdapter {
     }
 }
 
+struct XaiExtractionAdapter;
+impl vesper_cognition::ExtractionLlmPort for XaiExtractionAdapter {
+    fn extract(
+        &self,
+        system: &str,
+        user: &str,
+    ) -> Result<String, vesper_cognition::CognitionError> {
+        let system = system.to_owned();
+        let user = user.to_owned();
+        std::thread::spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|_| ())?;
+            runtime
+                .block_on(vesper_provider_xai::XaiFactory::default().extract_memory(
+                    &system,
+                    &user,
+                    Arc::new(vesper_runtime::RuntimeCancellation::new()),
+                ))
+                .map_err(|_| ())
+        })
+        .join()
+        .map_err(|_| {
+            vesper_cognition::CognitionError::Extraction("Native xAI extraction unavailable".into())
+        })?
+        .map_err(|_| {
+            vesper_cognition::CognitionError::Extraction(
+                "Native xAI extraction failed; check authentication and account access".into(),
+            )
+        })
+    }
+}
+
 impl vesper_cognition::ExtractionLlmPort for NoOpExtractionAdapter {
     fn extract(
         &self,
@@ -759,6 +793,8 @@ impl CognitionBundle {
         let extractor: Arc<dyn vesper_cognition::ExtractionLlmPort> = if active_provider == "openai"
         {
             Arc::new(OpenAiExtractionAdapter)
+        } else if active_provider == "xai" {
+            Arc::new(XaiExtractionAdapter)
         } else if active_provider == "lmstudio" {
             lm_settings
                 .clone()

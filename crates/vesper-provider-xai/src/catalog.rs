@@ -148,6 +148,12 @@ impl XaiCatalog {
             .find(|spec| spec.id == id)
             .map(|spec| spec.default_effort)
     }
+    pub fn context_tokens(id: &str) -> Option<u64> {
+        MODELS
+            .iter()
+            .find(|spec| spec.id == id)
+            .map(|spec| spec.context)
+    }
     pub fn supports_client_tools(id: &str) -> bool {
         MODELS.iter().any(|spec| spec.id == id && spec.tools)
     }

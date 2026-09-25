@@ -47,6 +47,18 @@ pub struct AuthenticationMethodDescriptor {
     /// `None` when the method has no public key-management URL.
     #[serde(default)]
     pub key_url: Option<BoundedString<512>>,
+    /// Native interactive sign-in flows supported by this method. Hosts use
+    /// this metadata instead of provider-name branches.
+    #[serde(default)]
+    pub interactive_login: Vec<InteractiveLoginKind>,
+}
+
+/// Provider-owned interactive authentication flow advertised to hosts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum InteractiveLoginKind {
+    Browser,
+    DeviceCode,
 }
 
 /// Security/processing class for a provider-executed tool.

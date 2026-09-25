@@ -289,6 +289,7 @@ fn loop_config(
         },
         context_window_tokens: 131_072,
         native_compaction: vesper_agent::NativeCompactionPolicy::Disabled,
+        hosted_tools: Vec::new(),
         system_instructions: Vec::new(),
         workspace_roots: vec![vesper_domain::WorkspaceRoot {
             name: BoundedString::new("workspace").expect("bounded root name"),

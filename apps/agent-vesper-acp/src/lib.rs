@@ -103,6 +103,7 @@ where
             model: qualified_model,
             context_window_tokens: controls::glm_context_window(&profile.provider_configuration),
             native_compaction: vesper_agent::NativeCompactionPolicy::Disabled,
+            hosted_tools: Vec::new(),
             system_instructions: Vec::new(),
             workspace_roots: Vec::new(),
             max_tool_iterations: vesper_agent::DEFAULT_MAX_TOOL_ITERATIONS,
@@ -438,6 +439,44 @@ impl AcpHarnessEngine {
             // consistent (provider, model) pair.
             config.provider_id = session_model.provider_id.clone();
             config.model = session_model;
+        }
+        config.native_compaction = if config.provider_id.as_str() == "xai"
+            && config
+                .provider_configuration
+                .values
+                .values
+                .get("xai:native-compaction")
+                .and_then(serde_json::Value::as_str)
+                == Some("enabled")
+        {
+            vesper_agent::NativeCompactionPolicy::PreferProvider
+        } else {
+            vesper_agent::NativeCompactionPolicy::Disabled
+        };
+        config.hosted_tools.clear();
+        if config.provider_id.as_str() == "xai" {
+            for (key, tool_id) in [
+                ("xai:hosted-web-search", "web-search"),
+                ("xai:hosted-x-search", "x-search"),
+                ("xai:hosted-code-execution", "code-execution"),
+            ] {
+                if config
+                    .provider_configuration
+                    .values
+                    .values
+                    .get(key)
+                    .and_then(serde_json::Value::as_str)
+                    == Some("enabled")
+                    && let Ok(tool_id) = vesper_domain::BoundedString::new(tool_id)
+                {
+                    config
+                        .hosted_tools
+                        .push(vesper_provider::HostedToolSelection {
+                            tool_id,
+                            configuration: None,
+                        });
+                }
+            }
         }
         {
             let overrides = self.overrides.lock().await;
@@ -2417,14 +2456,21 @@ fn outcome_text(outcome: &vesper_agent::AgentTurnOutcome) -> String {
         vesper_agent::AgentTurnOutcome::Acceptance { report, .. } => report.render(),
         vesper_agent::AgentTurnOutcome::Completed {
             assistant_content, ..
-        } => assistant_content
-            .iter()
-            .filter_map(|part| match part {
-                ContentPart::Text(text) => Some(text.as_str()),
-                _ => None,
-            })
-            .collect::<Vec<_>>()
-            .join("\n"),
+        } => {
+            let mut output = assistant_content
+                .iter()
+                .filter_map(|part| match part {
+                    ContentPart::Text(text) => Some(text.as_str().to_owned()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            output.extend(
+                vesper_agent::render_provider_citations(assistant_content)
+                    .into_iter()
+                    .map(|citation| format!("Source: {citation}")),
+            );
+            output.join("\n")
+        }
         vesper_agent::AgentTurnOutcome::MaxIterationsReached { iterations, plan } => {
             if plan.is_some() {
                 format!(
@@ -2456,6 +2502,16 @@ fn interrupted_outcome_text(
         })
         .collect::<Vec<_>>()
         .join("\n");
+    let citations = vesper_agent::render_provider_citations(assistant_content)
+        .into_iter()
+        .map(|citation| format!("Source: {citation}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let partial = match (partial.is_empty(), citations.is_empty()) {
+        (false, false) => format!("{partial}\n{citations}"),
+        (true, false) => citations,
+        _ => partial,
+    };
     let reason = if tool_call_started {
         format!(
             "Provider stream interrupted ({cause:?}); automatic recovery was withheld because a tool call had started."
@@ -2507,6 +2563,13 @@ impl ProviderProfile {
                     vesper_provider_openai::OpenAiFactory::default_configuration(),
                 model: ModelId::new(vesper_provider_openai::DEFAULT_MODEL).map_err(|_| ())?,
                 endpoint: EndpointId::new("openai-responses").map_err(|_| ())?,
+            });
+        }
+        if provider.as_str() == "xai" {
+            return Ok(Self {
+                provider_configuration: vesper_provider_xai::XaiFactory::default_configuration(),
+                model: ModelId::new(vesper_provider_xai::DEFAULT_MODEL).map_err(|_| ())?,
+                endpoint: EndpointId::new("xai-responses").map_err(|_| ())?,
             });
         }
         if provider == &provider_id() {
@@ -2836,6 +2899,25 @@ pub async fn run_multi_provider(initial: &str) -> Result<(), ()> {
         .await
         .map_err(|_| ())?;
 
+    let xai = vesper_provider_xai::XaiFactory::default();
+    let xai_models =
+        if vesper_provider::ProviderCredentialPort::credential_present(&xai).unwrap_or(false) {
+            xai.available_models(Arc::new(vesper_runtime::RuntimeCancellation::new()))
+                .await
+                .unwrap_or_default()
+        } else {
+            vesper_provider_xai::AvailableModels::default()
+        };
+    providers
+        .register_with_all(
+            xai.clone(),
+            xai.clone(),
+            xai,
+            vesper_provider::PermissiveSuperpowerPolicy,
+        )
+        .await
+        .map_err(|_| ())?;
+
     // LM Studio (local/LAN): registered always so the picker lists it. One
     // factory handle is cloned into all three roles so they share the
     // native-catalog cache (PRD provider-capability-gating P5); the
@@ -2868,6 +2950,7 @@ pub async fn run_multi_provider(initial: &str) -> Result<(), ()> {
         "glm" | "zai" => ProviderId::new("zai").map_err(|_| ())?,
         "lmstudio" => ProviderId::new("lmstudio").map_err(|_| ())?,
         "openai" => vesper_provider_openai::provider_id(),
+        "xai" => vesper_provider_xai::provider_id(),
         #[cfg(feature = "integration-test-harness")]
         "synthetic" => vesper_provider_synthetic::provider_id(),
         _ => return Err(()),
@@ -2902,6 +2985,18 @@ pub async fn run_multi_provider(initial: &str) -> Result<(), ()> {
             .values
             .values
             .insert("openai:model", serde_json::json!(&profile.model))
+            .map_err(|_| ())?;
+    }
+    if initial_id.as_str() == "xai"
+        && !xai_models.contains(profile.model.as_str())
+        && let Some(first) = xai_models.models.first()
+    {
+        profile.model = first.model.model_id.clone();
+        profile
+            .provider_configuration
+            .values
+            .values
+            .insert("xai:model", serde_json::json!(&profile.model))
             .map_err(|_| ())?;
     }
     let qualified_model = runtime_model(&profile.model, &initial_id);
@@ -2985,6 +3080,7 @@ pub async fn run_multi_provider(initial: &str) -> Result<(), ()> {
                 &registered,
                 &lm_controls,
                 &openai_models,
+                &xai_models,
             )),
             additional_commands: host_parity_commands(),
         },
@@ -2999,6 +3095,7 @@ pub async fn run_multi_provider(initial: &str) -> Result<(), ()> {
                 &lm_controls,
             ),
             native_compaction: vesper_agent::NativeCompactionPolicy::Disabled,
+            hosted_tools: Vec::new(),
             system_instructions: Vec::new(),
             workspace_roots: Vec::new(),
             max_tool_iterations: vesper_agent::DEFAULT_MAX_TOOL_ITERATIONS,
@@ -3104,6 +3201,16 @@ fn context_window_catalog(
             entry.context_tokens(),
         );
     }
+    for entry in vesper_provider_xai::XaiCatalog::snapshot().models {
+        if let Some(context) =
+            vesper_provider_xai::XaiCatalog::context_tokens(entry.model.model_id.as_str())
+        {
+            windows.insert(
+                ("xai".to_owned(), entry.model.model_id.as_str().to_owned()),
+                context,
+            );
+        }
+    }
     for entry in lm_models {
         windows.insert(
             ("lmstudio".to_owned(), entry.id.clone()),
@@ -3132,7 +3239,7 @@ fn context_window_catalog(
 /// between them mid-session (TUI `/provider` parity).
 pub async fn boot(provider: &str) -> Result<(), ()> {
     match provider {
-        "glm" | "zai" | "lmstudio" | "openai" => run_multi_provider(provider).await,
+        "glm" | "zai" | "lmstudio" | "openai" | "xai" => run_multi_provider(provider).await,
         #[cfg(feature = "integration-test-harness")]
         "synthetic" => run_multi_provider(provider).await,
         _ => Err(()),
@@ -3165,6 +3272,36 @@ fn host_parity_commands() -> Vec<vesper_domain::SlashCommandDescriptor> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn acp_outcome_renders_citations_without_exposing_opaque_reasoning() {
+        let opaque = |kind: &str, value: serde_json::Value| {
+            ContentPart::ProviderOpaque(vesper_domain::OpaqueContent {
+                provider_id: vesper_provider_xai::provider_id(),
+                kind: kind.to_owned(),
+                data: vesper_domain::OpaqueProviderData::new(value).unwrap(),
+            })
+        };
+        let outcome = vesper_agent::AgentTurnOutcome::Completed {
+            assistant_content: vec![
+                ContentPart::Text(vesper_domain::ContentText::new("Answer").unwrap()),
+                opaque(
+                    "citation",
+                    serde_json::json!({"title":"xAI docs", "url":"https://docs.x.ai/"}),
+                ),
+                opaque(
+                    "reasoning.encrypted_content",
+                    serde_json::json!({"secret":"opaque-canary"}),
+                ),
+            ],
+            iterations: 1,
+            tool_results: vec![],
+            plan: None,
+        };
+        let rendered = outcome_text(&outcome);
+        assert!(rendered.contains("Source: xAI docs: https://docs.x.ai/"));
+        assert!(!rendered.contains("opaque-canary"));
+    }
 
     #[cfg(unix)]
     #[tokio::test]
@@ -3287,6 +3424,7 @@ mod tests {
             },
             context_window_tokens: 8192,
             native_compaction: vesper_agent::NativeCompactionPolicy::Disabled,
+            hosted_tools: Vec::new(),
             system_instructions: vec![],
             workspace_roots: vec![],
             max_tool_iterations: 1,

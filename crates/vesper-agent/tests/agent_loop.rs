@@ -221,6 +221,7 @@ fn config(provider_id: &ProviderId, max_iterations: u32) -> AgentLoopConfig {
         },
         context_window_tokens: 131_072,
         native_compaction: vesper_agent::NativeCompactionPolicy::Disabled,
+        hosted_tools: Vec::new(),
         system_instructions: Vec::new(),
         workspace_roots: Vec::new(),
         max_tool_iterations: max_iterations,
@@ -1072,6 +1073,7 @@ async fn loop_terminates_when_the_model_calls_no_tools() {
     ]);
     let provider_id = provider();
     let fake = FakeProviderSession::with_scripts([turn_done]);
+    let recorded = fake.clone();
     let registry = Arc::new(ProviderRegistry::new());
     registry
         .register(FakeFactory {
@@ -1081,11 +1083,14 @@ async fn loop_terminates_when_the_model_calls_no_tools() {
         .await
         .unwrap();
 
-    let agent = AgentLoop::new(
-        registry,
-        ToolRegistry::parity_default(),
-        config(&provider_id, 0),
-    );
+    let mut loop_config = config(&provider_id, 0);
+    loop_config
+        .hosted_tools
+        .push(vesper_provider::HostedToolSelection {
+            tool_id: BoundedString::new("fixture-remote-search").unwrap(),
+            configuration: None,
+        });
+    let agent = AgentLoop::new(registry, ToolRegistry::parity_default(), loop_config);
     let outcome = agent
         .run_prompt(
             user_message("hello"),
@@ -1106,6 +1111,11 @@ async fn loop_terminates_when_the_model_calls_no_tools() {
         }
         other => panic!("expected Completed, got {other:?}"),
     }
+    assert_eq!(recorded.requests()[0].hosted_tools.len(), 1);
+    assert_eq!(
+        recorded.requests()[0].hosted_tools[0].tool_id.as_str(),
+        "fixture-remote-search"
+    );
 }
 
 #[tokio::test]

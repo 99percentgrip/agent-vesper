@@ -61,6 +61,7 @@ impl GlmFactory {
                     BoundedString::new("https://z.ai/manage-apikey/apikey-list")
                         .expect("bounded key url"),
                 ),
+                interactive_login: vec![],
             }],
             hosted_tools: Vec::new(),
             configuration: Some(ProviderConfigContribution {

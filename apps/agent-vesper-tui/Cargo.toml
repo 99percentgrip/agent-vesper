@@ -36,6 +36,7 @@ tempfile.workspace = true
 libc.workspace = true
 fs2 = "=0.4.3"
 vesper-provider-openai = { path = "../../crates/vesper-provider-openai", version = "=0.23.6" }
+vesper-provider-xai = { path = "../../crates/vesper-provider-xai", version = "=0.23.6" }
 arboard.workspace = true
 base64.workspace = true
 crossterm.workspace = true

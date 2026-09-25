@@ -404,6 +404,10 @@ into exactly one always-safe, argument-dependent, or interrupting class.
 - Run `cargo test -p agent-vesper-acp --tests --all-features` for the complete
   real-process suite; every persistence vector must prove exact hash, file-set,
   length, and modification-time invariance.
+- Production composition registers and boots xAI through the same registry as
+  the TUI. ACP exposes discovered xAI models and provider controls through
+  session config selectors; explicit CLI browser/device/API-key auth uses the
+  provider credential port and never writes protocol data to stdout.
 
 ## Child DOX Index
 

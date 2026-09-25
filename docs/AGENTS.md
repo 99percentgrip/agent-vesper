@@ -48,7 +48,9 @@ Own durable project documentation and evidence-backed engineering records.
   requirements, phased acceptance, billing-path isolation, and adjacent-service
   exclusions. `architecture/recon_xai_native_provider.md` and
   `foundation/xai-provider-recon-execution.md` own its PR-0 evidence;
-  `foundation/xai-provider-pr1-execution.md` owns the offline API-key transport evidence.
+  `foundation/xai-provider-pr1-execution.md` through
+  `foundation/xai-provider-pr7-execution.md` own phased implementation and
+  current acceptance evidence. `xai-provider.md` is the bounded user guide.
 - `web-tools.md` owns web-driver installation, immutable image identity,
   native Settings → Web tools and ACP `/web` activation, advanced opt-in
   configuration, operation bounds, and deployment troubleshooting.

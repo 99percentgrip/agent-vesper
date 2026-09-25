@@ -356,6 +356,7 @@ fn config(root: &Path, id: &vesper_domain::ProviderId) -> vesper_agent::AgentLoo
         },
         context_window_tokens: 128_000,
         native_compaction: vesper_agent::NativeCompactionPolicy::Disabled,
+        hosted_tools: Vec::new(),
         system_instructions: vec![],
         workspace_roots: context(root).workspace_roots,
         max_tool_iterations: 16,

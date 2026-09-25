@@ -225,6 +225,7 @@ impl ProviderFactory for OpenAiFactory {
                     key_url: Some(
                         BoundedString::new("https://platform.openai.com/api-keys").expect("static"),
                     ),
+                    interactive_login: vec![],
                 },
                 AuthenticationMethodDescriptor {
                     method_id: BoundedString::new("openai-chatgpt").expect("static"),
@@ -235,6 +236,7 @@ impl ProviderFactory for OpenAiFactory {
                     key_url: Some(
                         BoundedString::new("https://auth.openai.com/codex/device").expect("static"),
                     ),
+                    interactive_login: vec![vesper_provider::InteractiveLoginKind::DeviceCode],
                 },
             ],
             hosted_tools: Vec::new(),

@@ -311,6 +311,9 @@ pub struct AgentLoopConfig {
     /// Explicit host policy for provider-native opaque compaction. Merely
     /// selecting a capable provider does not enable native compaction.
     pub native_compaction: crate::compaction::NativeCompactionPolicy,
+    /// Explicit provider-hosted tools selected by the host. These remain
+    /// separate from Vesper's client-side tool registry and permissions.
+    pub hosted_tools: Vec<vesper_provider::HostedToolSelection>,
     /// Ordered system instructions prepended to every turn.
     pub system_instructions: Vec<SystemInstruction>,
     /// Confined workspace roots; the first (primary) roots the tool executors.
@@ -1524,7 +1527,7 @@ impl AgentLoop {
             system_instructions: self.config.system_instructions.clone(),
             messages: messages.to_vec(),
             tools: tools.to_vec(),
-            hosted_tools: Vec::new(),
+            hosted_tools: self.config.hosted_tools.clone(),
             tool_choice: if tools.is_empty() {
                 ToolChoice::None
             } else {

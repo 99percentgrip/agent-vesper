@@ -113,6 +113,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 model: model.model,
                 context_window_tokens: capacity,
                 native_compaction: vesper_agent::NativeCompactionPolicy::Disabled,
+                hosted_tools: Vec::new(),
                 system_instructions: vec![],
                 workspace_roots: vec![],
                 max_tool_iterations: 1,

@@ -1,6 +1,6 @@
 # VRO-18 — Native xAI Provider for Agent Vesper
 
-**Status:** PR-0 RECONNAISSANCE COMPLETE — IMPLEMENTATION NOT STARTED
+**Status:** PR-1–PR-6 COMPLETE; PR-7 HOST COMPOSITION IMPLEMENTED — ACCEPTANCE/RELEASE OPEN
 **Date:** 2026-09-25
 **Target repository:** `99percentgrip/agent-vesper`
 **Baseline:** post-`v0.23.6` `main` (`c64e78f46065f1fbaae899ab9914f3d9b3f7023d`)
@@ -2222,6 +2222,23 @@ The quality bar is:
 xAI changes how xAI talks to Vesper.
 
 xAI does not change how Vesper is Vesper.
+
+## 39. Current implementation status — 2026-09-25
+
+PR-0 pinned and audited `xai-org/grok-build@f0e3be1100ef5252488e3be8bb0e91cf68d8c305`.
+PR-1 through PR-6 are closed at offline scope. The isolated PR-7 candidate now
+registers xAI in TUI and ACP, projects browser/device/API-key authentication,
+refreshes account-visible verified models, routes provider controls and hosted
+tool selections into the shared AgentLoop, renders citations safely in both
+hosts, and uses xAI through the existing voice, skill, VRO, memory and worker
+composition. Shared runtime/tool/voice code contains no xAI execution branch.
+
+PR-8 remains open. No live xAI request has been made, no real Grok-account or
+API-key acceptance has passed, five-target exact-commit CI has not run, and no
+release is authorized. Configured attachment/collection/Remote-MCP host entry
+still needs a generic native structured-configuration surface before HOSTED
+TOOLS can be marked complete; the adapter wire support remains fail-closed and
+offline-tested meanwhile.
 ```
 
 ---

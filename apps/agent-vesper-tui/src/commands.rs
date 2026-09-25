@@ -863,6 +863,20 @@ impl CommandRegistry {
                 // First gate: is this command part of the oracle surface at
                 // all? If not, it's a genuine unknown — not a deferred one.
                 if !self.contains(name) {
+                    if superpowers.iter().any(|descriptor| {
+                        descriptor.provider_id == *active_provider
+                            && descriptor
+                                .command_alias
+                                .as_ref()
+                                .is_some_and(|alias| alias.as_str() == name)
+                    }) {
+                        return self.resolve_superpower(
+                            name,
+                            argument,
+                            active_provider,
+                            superpowers,
+                        );
+                    }
                     return CommandOutcome::Error(format!("Unknown command: /{name}"));
                 }
                 self.resolve_known(name, argument, plan_state, active_provider, superpowers)

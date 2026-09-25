@@ -307,7 +307,7 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
         .map_err(|error| format!("invalid provider id: {error}"))?;
 
     let registry = Arc::new(vesper_runtime::ProviderRegistry::new());
-    let (lm_factory, openai_factory) = register_default_providers(&registry)
+    let (lm_factory, openai_factory, xai_factory) = register_default_providers(&registry)
         .await
         .map_err(|error| format!("provider registration failed: {error:?}"))?;
     if !registry.contains(&provider_id).await {
@@ -588,6 +588,7 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
     let result = drive_loop(
         resume_id.is_none(),
         &openai_factory,
+        &xai_factory,
         &provider_id,
         &registry,
         startup.auth.clone(),
@@ -816,6 +817,7 @@ async fn register_default_providers(
     (
         agent_vesper_tui::LmStudioFactory,
         vesper_provider_openai::OpenAiFactory,
+        vesper_provider_xai::XaiFactory,
     ),
     vesper_runtime::RuntimeError,
 > {
@@ -837,6 +839,20 @@ async fn register_default_providers(
     let glm_policy = vesper_provider_glm::GlmSuperpowerPolicy;
     registry
         .register_with_all(glm, glm_superpowers, glm_credentials, glm_policy)
+        .await?;
+    let xai = vesper_provider_xai::XaiFactory::default();
+    if vesper_provider::ProviderCredentialPort::credential_present(&xai).unwrap_or(false) {
+        let _ = xai
+            .available_models(Arc::new(vesper_runtime::RuntimeCancellation::new()))
+            .await;
+    }
+    registry
+        .register_with_all(
+            xai.clone(),
+            xai.clone(),
+            xai.clone(),
+            vesper_provider::PermissiveSuperpowerPolicy,
+        )
         .await?;
     #[cfg(test)]
     {
@@ -878,7 +894,7 @@ async fn register_default_providers(
         .await?;
     // The retained handle shares the factory's catalog cache, so the caller
     // can refresh it before querying the advertised surface (PRD P5).
-    Ok((factory, openai))
+    Ok((factory, openai, xai))
 }
 
 /// Mutable per-session state held across the event loop.
@@ -1336,6 +1352,7 @@ impl AgentProgressPort for SessionStatusPort {
 async fn drive_loop(
     show_landing: bool,
     openai_factory: &vesper_provider_openai::OpenAiFactory,
+    xai_factory: &vesper_provider_xai::XaiFactory,
     provider_id: &ProviderId,
     registry: &Arc<vesper_runtime::ProviderRegistry>,
     auth: Option<AuthProvider>,
@@ -1382,8 +1399,10 @@ async fn drive_loop(
 
     // Refresh only at an interaction boundary; never perform network I/O in rendering.
     let mut openai_controls = None;
+    let mut xai_controls = None;
     let mut openai_model_notice = String::new();
     let mut refresh_openai_models = provider_id.as_str() == "openai";
+    let mut refresh_xai_models = provider_id.as_str() == "xai";
     let mut was_in_settings = false;
     let mut landing_pending = show_landing;
     let mut settings_from_landing = false;
@@ -1449,11 +1468,54 @@ async fn drive_loop(
                 available.policy(),
             ));
         }
+        if provider_id.as_str() == "xai"
+            && (refresh_xai_models || (session.settings_menu_open && !was_in_settings))
+        {
+            refresh_xai_models = false;
+            terminal
+                .draw(|frame| {
+                    agent_vesper_tui::settings_menu::render_menu(
+                        frame,
+                        &["Loading xAI account models…".into()],
+                        0,
+                        "Settings · model",
+                        "",
+                        "",
+                        &session.state.preferences.theme,
+                    )
+                })
+                .map_err(|_| "Could not redraw xAI model loading status")?;
+            let available = match xai_factory
+                .available_models(Arc::new(vesper_runtime::RuntimeCancellation::new()))
+                .await
+            {
+                Ok(available) => available,
+                Err(error) => {
+                    session.state.status = Some(format!(
+                        "{}{}",
+                        error.info.safe_message.as_str(),
+                        error
+                            .http_status
+                            .map(|status| format!(" (HTTP {status})"))
+                            .unwrap_or_default()
+                    ));
+                    vesper_provider_xai::AvailableModels::default()
+                }
+            };
+            let selected = active_superpower_choice(&session.state, surface, "model")
+                .unwrap_or_else(|| vesper_provider_xai::DEFAULT_MODEL.to_owned());
+            xai_controls = Some(ProviderSuperpowerSurface::new(
+                provider_id.clone(),
+                xai_factory.superpowers_for(&available, &selected),
+            ));
+        }
         was_in_settings = session.settings_menu_open;
-        let surface = openai_controls
-            .as_ref()
-            .map(|(surface, _)| surface)
-            .unwrap_or(surface);
+        let surface = xai_controls.as_ref().unwrap_or_else(|| {
+            openai_controls
+                .as_ref()
+                .map(|(surface, _)| surface)
+                .unwrap_or(surface)
+        });
         let policy: &dyn vesper_provider::SuperpowerPolicy = openai_controls
             .as_ref()
             .map(|(_, policy)| policy as &dyn vesper_provider::SuperpowerPolicy)
@@ -1507,6 +1569,7 @@ async fn drive_loop(
                 )
                 .await;
                 refresh_openai_models = provider_id.as_str() == "openai";
+                refresh_xai_models = provider_id.as_str() == "xai";
                 session.state.status = Some(result.unwrap_or_else(|error| error));
             }
             session.settings_menu_open = false;
@@ -3215,7 +3278,8 @@ async fn native_authentication_menu(
                     height,
                 );
                 let mut lines = vec![
-                    "↑/↓ select · Enter/Space choose · S save · Esc cancel".to_owned(),
+                    "↑/↓ select · Enter/Space choose · S sign in · D device code · Esc cancel"
+                        .to_owned(),
                     String::new(),
                 ];
                 for (index, method) in methods.iter().enumerate() {
@@ -3282,29 +3346,80 @@ async fn native_authentication_menu(
                     "Signed out locally. Open provider authentication to sign in again.".into(),
                 );
             }
-            KeyCode::Enter | KeyCode::Char(' ' | 's' | 'S') => {
+            KeyCode::Enter | KeyCode::Char(' ' | 's' | 'S' | 'd' | 'D') => {
                 if !methods[chosen].secret_reference_fields.is_empty() {
                     return Ok(false);
+                }
+                use vesper_provider::InteractiveLoginKind;
+                let advertised = &methods[chosen].interactive_login;
+                let login_kind = if matches!(key.code, KeyCode::Char('d' | 'D')) {
+                    InteractiveLoginKind::DeviceCode
+                } else if advertised.contains(&InteractiveLoginKind::Browser) {
+                    InteractiveLoginKind::Browser
+                } else {
+                    InteractiveLoginKind::DeviceCode
+                };
+                if !advertised.contains(&login_kind) {
+                    notice = match login_kind {
+                        InteractiveLoginKind::Browser => {
+                            "Browser sign-in is unavailable for this authentication method.".into()
+                        }
+                        InteractiveLoginKind::DeviceCode => {
+                            "Device-code sign-in is unavailable for this authentication method."
+                                .into()
+                        }
+                    };
+                    continue;
                 }
                 let cancel = Arc::new(vesper_runtime::RuntimeCancellation::new());
                 let task_cancel = cancel.clone();
                 let task_port = port.clone();
-                let (tx, mut rx) = tokio::sync::mpsc::channel::<(String, String)>(1);
+                let (tx, mut rx) = tokio::sync::mpsc::channel::<(String, Option<String>)>(1);
                 let mut task = tokio::spawn(async move {
-                    task_port
-                        .device_login(
-                            task_cancel,
-                            Arc::new(move |url, code| {
-                                let _ = tx.try_send((url, code));
-                            }),
-                        )
-                        .await
+                    match login_kind {
+                        InteractiveLoginKind::Browser => {
+                            task_port
+                                .browser_login(
+                                    task_cancel,
+                                    Arc::new(move |url| {
+                                        let _ = tx.try_send((url, None));
+                                    }),
+                                )
+                                .await
+                        }
+                        InteractiveLoginKind::DeviceCode => {
+                            task_port
+                                .device_login(
+                                    task_cancel,
+                                    Arc::new(move |url, code| {
+                                        let _ = tx.try_send((url, Some(code)));
+                                    }),
+                                )
+                                .await
+                        }
+                    }
                 });
-                notice = "Requesting secure device sign-in… Esc cancels.".into();
+                notice = match login_kind {
+                    InteractiveLoginKind::Browser => {
+                        "Requesting secure browser sign-in… Esc cancels.".into()
+                    }
+                    InteractiveLoginKind::DeviceCode => {
+                        "Requesting secure device sign-in… Esc cancels.".into()
+                    }
+                };
                 loop {
                     if let Ok((url, code)) = rx.try_recv() {
-                        notice = format!(
-                            "Open {url}\nEnter one-time code: {code}\nOnly continue if you started this login. Esc cancels."
+                        notice = code.map_or_else(
+                            || {
+                                format!(
+                                    "Open {url}\nComplete sign-in in your browser.\nOnly continue if you started this login. Esc cancels."
+                                )
+                            },
+                            |code| {
+                                format!(
+                                    "Open {url}\nEnter one-time code: {code}\nOnly continue if you started this login. Esc cancels."
+                                )
+                            },
                         );
                     }
                     terminal
@@ -3338,7 +3453,7 @@ async fn native_authentication_menu(
                         match task.await {
                             Ok(Ok(())) => return Ok(true),
                             _ => {
-                                notice="Sign-in failed or expired. Check account device-login permissions and try again.".into();
+                                notice = "Sign-in failed, expired, or was denied. Check account permissions and try again.".into();
                                 break;
                             }
                         }
@@ -4003,6 +4118,30 @@ fn session_setting_candidates(
                         ),
                     ));
                 }
+            }
+            let standard_aliases = [
+                "plan",
+                "thinking",
+                "model",
+                "generation",
+                "auxiliary",
+                "mixture",
+            ];
+            for descriptor in surface.descriptors() {
+                let Some(alias) = descriptor.command_alias.as_ref() else {
+                    continue;
+                };
+                if standard_aliases.contains(&alias.as_str())
+                    || descriptor.allowed_values.is_empty()
+                {
+                    continue;
+                }
+                let current = active_superpower_choice(state, surface, alias.as_str())
+                    .unwrap_or_else(|| superpower_value_text(&descriptor.default_value));
+                provider_rows.push((
+                    format!("/{}", alias.as_str()),
+                    format!("{} · current {current}", descriptor.display_name.as_str()),
+                ));
             }
             settings.splice(0..0, provider_rows);
             settings
@@ -5970,6 +6109,7 @@ fn build_agent_config(provider_id: &ProviderId) -> Result<AgentLoopConfig, Strin
         },
         context_window_tokens: default_context_window_for_provider(provider_id)?,
         native_compaction: vesper_agent::NativeCompactionPolicy::Disabled,
+        hosted_tools: Vec::new(),
         // Project instructions are loaded at the composition boundary after
         // this pure provider/configuration projection is built.
         system_instructions: Vec::<SystemInstruction>::new(),
@@ -5993,6 +6133,7 @@ fn provider_configuration_for(provider_id: &ProviderId) -> Result<ProviderConfig
         // The GLM adapter registers under the stable `zai` identity.
         "zai" => Ok(vesper_provider_glm::GlmFactory::default_configuration()),
         "openai" => Ok(vesper_provider_openai::OpenAiFactory::default_configuration()),
+        "xai" => Ok(vesper_provider_xai::XaiFactory::default_configuration()),
         // The LM Studio local/LAN model server.
         "lmstudio" => Ok(agent_vesper_tui::LmStudioFactory::default_configuration()),
         // The deterministic in-process reference adapter.
@@ -6009,6 +6150,7 @@ fn model_id_for_provider(provider_id: &ProviderId) -> Result<ModelId, String> {
     let id = match provider_id.as_str() {
         "zai" => "glm-5.3",
         "openai" => vesper_provider_openai::DEFAULT_MODEL,
+        "xai" => vesper_provider_xai::DEFAULT_MODEL,
         "lmstudio" => "local-model",
         #[cfg(test)]
         "vesper-synthetic" => "synthetic-1",
@@ -6020,6 +6162,10 @@ fn model_id_for_provider(provider_id: &ProviderId) -> Result<ModelId, String> {
 fn default_context_window_for_provider(provider_id: &ProviderId) -> Result<u64, String> {
     match provider_id.as_str() {
         "openai" => Ok(vesper_provider_openai::OpenAiCatalog::context_tokens()),
+        "xai" => {
+            vesper_provider_xai::XaiCatalog::context_tokens(vesper_provider_xai::DEFAULT_MODEL)
+                .ok_or_else(|| "xAI catalog is missing its default model".to_owned())
+        }
         "zai" => vesper_provider_glm::GlmCatalog::entries()
             .iter()
             .find(|entry| entry.id() == "glm-5.3")
@@ -6050,6 +6196,9 @@ fn capability_index_for(
         // ProviderCapabilities (vision, tools, reasoning levels).
         "zai" => agent_vesper_tui::ModelCapabilityIndex::from_descriptors(
             vesper_provider_glm::GlmCatalog::snapshot().models,
+        ),
+        "xai" => agent_vesper_tui::ModelCapabilityIndex::from_descriptors(
+            vesper_provider_xai::XaiCatalog::snapshot().models,
         ),
         // LM Studio: the shared native-catalog cache (refreshed at startup,
         // PRD P5). No cache (unreachable server) ⇒ empty index ⇒ every
@@ -6082,6 +6231,7 @@ fn capability_advisor_for(
 fn default_endpoint_for_provider(provider_id: &ProviderId) -> Result<EndpointId, String> {
     let endpoint = match provider_id.as_str() {
         "openai" => "openai-responses",
+        "xai" => "xai-responses",
         "zai" => "zai-coding",
         "lmstudio" => "lmstudio-local",
         #[cfg(test)]
@@ -8401,6 +8551,57 @@ fn turn_configuration(
         }
         return Ok(config);
     }
+    if config.provider_id.as_str() == "xai" {
+        let model = active_superpower_choice(state, surface, "model")
+            .unwrap_or_else(|| vesper_provider_xai::DEFAULT_MODEL.to_owned());
+        let effort = active_superpower_choice(state, surface, "thinking")
+            .or_else(|| vesper_provider_xai::XaiCatalog::default_effort(&model).map(str::to_owned))
+            .ok_or("The selected xAI model has no verified reasoning control")?;
+        let region = active_superpower_choice(state, surface, "region")
+            .unwrap_or_else(|| "global".to_owned());
+        let transport = active_superpower_choice(state, surface, "transport")
+            .unwrap_or_else(|| "http".to_owned());
+        let compaction = active_superpower_choice(state, surface, "compaction")
+            .unwrap_or_else(|| "disabled".to_owned());
+        if !vesper_provider_xai::XaiCatalog::reasoning_levels(&model).contains(&effort.as_str()) {
+            return Err("The selected xAI model does not support that reasoning effort".into());
+        }
+        config.model.model_id = ModelId::new(&model).map_err(|_| "Invalid xAI model")?;
+        for (key, value) in [
+            ("xai:model", model),
+            ("xai:reasoning-effort", effort),
+            ("xai:region", region),
+            ("xai:transport", transport),
+        ] {
+            config
+                .provider_configuration
+                .values
+                .values
+                .insert(key, serde_json::json!(value))
+                .map_err(|_| "Invalid xAI setting")?;
+        }
+        config.native_compaction = if compaction == "enabled" {
+            vesper_agent::NativeCompactionPolicy::PreferProvider
+        } else {
+            vesper_agent::NativeCompactionPolicy::Disabled
+        };
+        config.hosted_tools.clear();
+        for (alias, tool_id) in [
+            ("xai-web", "web-search"),
+            ("xai-x", "x-search"),
+            ("xai-code", "code-execution"),
+        ] {
+            if active_superpower_choice(state, surface, alias).as_deref() == Some("enabled") {
+                config
+                    .hosted_tools
+                    .push(vesper_provider::HostedToolSelection {
+                        tool_id: BoundedString::new(tool_id).map_err(|_| "Invalid hosted tool")?,
+                        configuration: None,
+                    });
+            }
+        }
+        return Ok(config);
+    }
     if config.provider_id.as_str() != "zai" {
         if let Some(model) = active_superpower_choice(state, surface, "model") {
             config.model.model_id = ModelId::new(model).map_err(|_| "Invalid selected model")?;
@@ -8441,7 +8642,7 @@ fn session_context_window(
 ) -> Result<u64, String> {
     let model = active_superpower_choice(state, surface, "model")
         .unwrap_or_else(|| config.model.model_id.as_str().to_owned());
-    if !matches!(config.provider_id.as_str(), "zai" | "openai") {
+    if !matches!(config.provider_id.as_str(), "zai" | "openai" | "xai") {
         if let Some(window) = state.catalog_context_windows.get(&model) {
             return Ok(*window);
         }
@@ -8469,6 +8670,9 @@ fn active_model_context_window(config: &AgentLoopConfig, model: &str) -> Result<
             .ok_or_else(|| {
                 format!("active provider did not publish a context limit for `{model}`")
             }),
+        "xai" => vesper_provider_xai::XaiCatalog::context_tokens(model).ok_or_else(|| {
+            format!("active provider did not publish a context limit for `{model}`")
+        }),
         // LM Studio's discovered window is installed in the base config by
         // the composition path; zero is kept only in unit-only builders.
         _ if config.context_window_tokens > 0 => Ok(config.context_window_tokens),
@@ -9479,6 +9683,9 @@ fn apply_agent_event(event: AgentEvent, state: &mut SessionState) {
                         state.transcript.push(format!("assistant: {text}"));
                     }
                 }
+                for citation in vesper_agent::render_provider_citations(&assistant_content) {
+                    state.transcript.push(format!("source: {citation}"));
+                }
                 state.transcript.push(format!(
                     "agent: {iterations} turn(s), {} tool result(s)",
                     tool_results.len()
@@ -9522,6 +9729,9 @@ fn apply_agent_event(event: AgentEvent, state: &mut SessionState) {
                     if let ContentPart::Text(text) = part {
                         state.transcript.push(format!("assistant: {text}"));
                     }
+                }
+                for citation in vesper_agent::render_provider_citations(&assistant_content) {
+                    state.transcript.push(format!("source: {citation}"));
                 }
                 if let Some(body) = plan.as_deref() {
                     apply_task_plan(state, body);
@@ -10214,6 +10424,7 @@ impl CognitionBundle {
             vesper_provider_glm::resolve_credential(credential_source.as_ref()).is_ok();
         let extractor: Arc<dyn vesper_cognition::ExtractionLlmPort> = match active_provider {
             "openai" => Arc::new(OpenAiExtractionAdapter),
+            "xai" => Arc::new(XaiExtractionAdapter),
             "lmstudio" => LmStudioExtractionAdapter::from_persisted_settings()
                 .map(|adapter| {
                     let arc: Arc<dyn vesper_cognition::ExtractionLlmPort> = Arc::new(adapter);
@@ -10624,6 +10835,40 @@ impl vesper_cognition::ExtractionLlmPort for OpenAiExtractionAdapter {
         .map_err(|_| {
             vesper_cognition::CognitionError::Extraction(
                 "Native OpenAI extraction failed; check authentication and account access".into(),
+            )
+        })
+    }
+}
+
+struct XaiExtractionAdapter;
+impl vesper_cognition::ExtractionLlmPort for XaiExtractionAdapter {
+    fn extract(
+        &self,
+        system: &str,
+        user: &str,
+    ) -> Result<String, vesper_cognition::CognitionError> {
+        let system = system.to_owned();
+        let user = user.to_owned();
+        std::thread::spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|_| ())?;
+            runtime
+                .block_on(vesper_provider_xai::XaiFactory::default().extract_memory(
+                    &system,
+                    &user,
+                    Arc::new(vesper_runtime::RuntimeCancellation::new()),
+                ))
+                .map_err(|_| ())
+        })
+        .join()
+        .map_err(|_| {
+            vesper_cognition::CognitionError::Extraction("Native xAI extraction unavailable".into())
+        })?
+        .map_err(|_| {
+            vesper_cognition::CognitionError::Extraction(
+                "Native xAI extraction failed; check authentication and account access".into(),
             )
         })
     }
@@ -15491,6 +15736,115 @@ mod tests {
     }
 
     #[test]
+    fn xai_controls_reach_generic_turn_configuration() {
+        let available = vesper_provider_xai::AvailableModels {
+            models: vec![vesper_provider_xai::XaiCatalog::find("grok-4.7").unwrap()],
+            ..Default::default()
+        };
+        let factory = vesper_provider_xai::XaiFactory::default();
+        let surface = ProviderSuperpowerSurface::new(
+            vesper_provider_xai::provider_id(),
+            factory.superpowers_for(&available, "grok-4.7"),
+        );
+        let mut state = SessionState::default();
+        state.overrides = surface.defaults();
+        let commands = CommandRegistry::stage_11b();
+        let policy = vesper_provider::PermissiveSuperpowerPolicy;
+        let settings = session_setting_candidates(
+            "/settings",
+            &state,
+            &surface,
+            &policy,
+            &agent_vesper_tui::ModelCapabilityIndex::from_descriptors(vec![
+                vesper_provider_xai::XaiCatalog::find("grok-4.7").unwrap(),
+            ]),
+        )
+        .unwrap();
+        assert!(settings.iter().any(|(command, _)| command == "/transport"));
+        assert!(settings.iter().any(|(command, _)| command == "/xai-web"));
+        for (alias, value) in [
+            ("transport", "websocket"),
+            ("compaction", "enabled"),
+            ("xai-web", "enabled"),
+        ] {
+            let outcome = agent_vesper_tui::dispatch::dispatch(
+                &CommandIntent::parse(&format!("/{alias} {value}")),
+                &commands,
+                &surface,
+                &policy,
+                &vesper_provider_xai::provider_id(),
+                &mut state,
+            );
+            assert!(matches!(
+                outcome,
+                agent_vesper_tui::DispatchOutcome::Continue
+            ));
+        }
+        let base = AgentLoop::new(
+            Arc::new(vesper_runtime::ProviderRegistry::new()),
+            ToolRegistry::parity_default(),
+            build_agent_config(&vesper_provider_xai::provider_id()).unwrap(),
+        );
+        let projected = turn_configuration(&base, &state, &surface).unwrap();
+        assert_eq!(projected.provider_id.as_str(), "xai");
+        assert_eq!(projected.model.model_id.as_str(), "grok-4.7");
+        assert_eq!(
+            projected
+                .provider_configuration
+                .values
+                .values
+                .get("xai:transport")
+                .and_then(serde_json::Value::as_str),
+            Some("websocket")
+        );
+        assert_eq!(
+            projected.native_compaction,
+            vesper_agent::NativeCompactionPolicy::PreferProvider
+        );
+        assert_eq!(projected.hosted_tools[0].tool_id.as_str(), "web-search");
+    }
+
+    #[test]
+    fn provider_citations_render_without_exposing_other_opaque_state() {
+        let citation = ContentPart::ProviderOpaque(vesper_domain::OpaqueContent {
+            provider_id: vesper_provider_xai::provider_id(),
+            kind: "citation".into(),
+            data: vesper_domain::OpaqueProviderData::new(
+                serde_json::json!({"title":"xAI docs", "url":"https://docs.x.ai/"}),
+            )
+            .unwrap(),
+        });
+        let encrypted = ContentPart::ProviderOpaque(vesper_domain::OpaqueContent {
+            provider_id: vesper_provider_xai::provider_id(),
+            kind: "reasoning.encrypted_content".into(),
+            data: vesper_domain::OpaqueProviderData::new(
+                serde_json::json!({"secret":"opaque-canary"}),
+            )
+            .unwrap(),
+        });
+        let mut state = SessionState::default();
+        apply_agent_event(
+            AgentEvent::Completed {
+                outcome: AgentTurnOutcome::Completed {
+                    assistant_content: vec![citation, encrypted],
+                    iterations: 1,
+                    tool_results: vec![],
+                    plan: None,
+                },
+                history: vec![],
+            },
+            &mut state,
+        );
+        assert!(
+            state
+                .transcript
+                .iter()
+                .any(|line| line == "source: xAI docs: https://docs.x.ai/")
+        );
+        assert!(!state.transcript.join("\n").contains("opaque-canary"));
+    }
+
+    #[test]
     fn provider_switch_reuses_a_valid_stored_authentication() {
         assert!(!AuthenticationIntent::Startup.requires_screen(true));
         assert!(!AuthenticationIntent::ProviderSwitch.requires_screen(true));
@@ -16462,10 +16816,14 @@ mod tests {
     }
 
     #[test]
-    fn provider_configuration_resolves_for_glm_and_synthetic() {
+    fn provider_configuration_resolves_for_glm_xai_and_synthetic() {
         let zai = ProviderId::new("zai").unwrap();
         let cfg = provider_configuration_for(&zai).expect("zai configuration");
         assert_eq!(cfg.provider_id.as_str(), "zai");
+
+        let xai = ProviderId::new("xai").unwrap();
+        let cfg = provider_configuration_for(&xai).expect("xAI configuration");
+        assert_eq!(cfg.provider_id.as_str(), "xai");
 
         let synthetic = ProviderId::new("vesper-synthetic").unwrap();
         let cfg = provider_configuration_for(&synthetic).expect("synthetic configuration");

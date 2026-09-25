@@ -28,6 +28,9 @@ continuation, fallback, and error contracts.
   inert; only explicit host actions may persist credentials. Adapters own
   callback validation and token persistence; challenge callbacks expose only
   user-facing authorization URLs/codes, never OAuth tokens.
+- Authentication descriptors advertise their supported interactive login kinds.
+  Hosts select browser/device flows from this metadata and must not infer them
+  from a provider ID.
 - Auxiliary request intent includes bounded structured memory extraction.
 - `ProviderSession::query_usage` is an independent, read-only account query;
   its default explicitly reports unavailable account limits without inference.

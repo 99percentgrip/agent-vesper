@@ -42,7 +42,7 @@ fn save(root: &Path, choices: &SavedChoices) -> Result<(), String> {
         .map_err(|_| "Could not save Settings")?;
     Ok(())
 }
-fn ordinary(command: &str) -> bool {
+fn ordinary(command: &str, surface: &ProviderSuperpowerSurface) -> bool {
     matches!(
         command,
         "/permission"
@@ -55,13 +55,18 @@ fn ordinary(command: &str) -> bool {
             | "/auxiliary"
             | "/mixture"
             | "/reasoning"
-    )
+    ) || surface.by_alias(command.trim_start_matches('/')).is_some()
 }
-fn remember(choices: &mut SavedChoices, provider: &ProviderId, command: &str) {
+fn remember(
+    choices: &mut SavedChoices,
+    provider: &ProviderId,
+    surface: &ProviderSuperpowerSurface,
+    command: &str,
+) {
     let Some((name, _)) = command.split_once(' ') else {
         return;
     };
-    if !ordinary(name) {
+    if !ordinary(name, surface) {
         return;
     }
     let target = if matches!(name, "/permission" | "/mode" | "/theme") {
@@ -124,6 +129,39 @@ fn apply_saved(
                 provider,
                 state,
             );
+        }
+    }
+    if let Some(saved) = choices.providers.get(provider.as_str()) {
+        for descriptor in surface.descriptors() {
+            let Some(alias) = descriptor.command_alias.as_ref() else {
+                continue;
+            };
+            let name = format!("/{}", alias.as_str());
+            if matches!(
+                name.as_str(),
+                "/plan"
+                    | "/model"
+                    | "/thinking"
+                    | "/generation"
+                    | "/auxiliary"
+                    | "/mixture"
+                    | "/reasoning"
+            ) {
+                continue;
+            }
+            if let Some(command) = saved.get(&name) {
+                if command.split_whitespace().next() != Some(name.as_str()) || command.len() > 512 {
+                    return Err("Saved Settings contain an invalid provider choice".into());
+                }
+                let _ = dispatch(
+                    &CommandIntent::parse(command),
+                    commands,
+                    surface,
+                    policy,
+                    provider,
+                    state,
+                );
+            }
         }
     }
     Ok(())
@@ -449,18 +487,27 @@ pub(super) async fn open(
                     Some(0) => {
                         // Persist effective validated values, including adapter repairs
                         // made when a model change invalidated the previous reasoning choice.
-                        for name in [
-                            "/permission",
-                            "/mode",
-                            "/theme",
-                            "/plan",
-                            "/model",
-                            "/thinking",
-                            "/generation",
-                            "/auxiliary",
-                            "/mixture",
-                        ] {
-                            if let Some(value) = current_value(name, &draft, surface) {
+                        let mut names = vec![
+                            "/permission".to_owned(),
+                            "/mode".to_owned(),
+                            "/theme".to_owned(),
+                            "/plan".to_owned(),
+                            "/model".to_owned(),
+                            "/thinking".to_owned(),
+                            "/generation".to_owned(),
+                            "/auxiliary".to_owned(),
+                            "/mixture".to_owned(),
+                        ];
+                        names.extend(surface.descriptors().iter().filter_map(|descriptor| {
+                            descriptor
+                                .command_alias
+                                .as_ref()
+                                .map(|alias| format!("/{}", alias.as_str()))
+                        }));
+                        names.sort_unstable();
+                        names.dedup();
+                        for name in names {
+                            if let Some(value) = current_value(&name, &draft, surface) {
                                 let command = format!("{name} {value}");
                                 if command_palette_candidates(
                                     &format!("{name} "),
@@ -474,7 +521,7 @@ pub(super) async fn open(
                                 .iter()
                                 .any(|(candidate, _)| candidate == &command)
                                 {
-                                    remember(&mut choices, provider, &command);
+                                    remember(&mut choices, provider, surface, &command);
                                 }
                             }
                         }
@@ -607,7 +654,7 @@ pub(super) async fn open(
                     }
                 } else {
                     let name = command.split_whitespace().next().unwrap_or("");
-                    if ordinary(name) {
+                    if ordinary(name, surface) {
                         let _ = dispatch(
                             &CommandIntent::parse(command),
                             commands,
@@ -620,7 +667,7 @@ pub(super) async fn open(
                             .status
                             .clone()
                             .unwrap_or_else(|| "Choice staged; leave Settings to save.".into());
-                        remember(&mut choices, provider, command);
+                        remember(&mut choices, provider, surface, command);
                     }
                     menu = "/settings".into();
                     selected = 0;
@@ -1986,6 +2033,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let provider = ProviderId::new("zai").unwrap();
         let mut choices = SavedChoices::default();
+        let surface = super::super::tests::palette_surface();
         for command in [
             "/permission bypass",
             "/mode ask",
@@ -1995,7 +2043,7 @@ mod tests {
             "/auxiliary glm-4.7",
             "/mixture enabled",
         ] {
-            remember(&mut choices, &provider, command);
+            remember(&mut choices, &provider, &surface, command);
         }
         assert!(
             !root.path().join("settings.json").exists(),
@@ -2004,7 +2052,6 @@ mod tests {
         save(root.path(), &choices).unwrap();
         let choices = load(root.path()).unwrap();
         let mut state = SessionState::new();
-        let surface = super::super::tests::palette_surface();
         apply_saved(
             &choices,
             &mut state,

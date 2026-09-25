@@ -77,6 +77,18 @@ fn descriptor_exposes_separate_session_and_api_billing_modes() {
         "xai-api-key"
     );
     assert!(!descriptor.authentication_methods[0].external_runtime_owned);
+    assert_eq!(
+        descriptor.authentication_methods[0].interactive_login,
+        [
+            InteractiveLoginKind::Browser,
+            InteractiveLoginKind::DeviceCode
+        ]
+    );
+    assert!(
+        descriptor.authentication_methods[1]
+            .interactive_login
+            .is_empty()
+    );
 }
 
 #[test]

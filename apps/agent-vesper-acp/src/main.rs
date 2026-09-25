@@ -20,7 +20,7 @@ async fn main() -> ExitCode {
     if let Some(code) = handle_meta_flags() {
         return code;
     }
-    if let Some(code) = handle_openai_auth_flags().await {
+    if let Some(code) = handle_native_auth_flags().await {
         return code;
     }
     if let Some(code) = handle_auth_flags() {
@@ -108,7 +108,7 @@ fn print_help() {
     eprintln!();
     eprintln!("OPTIONS:");
     eprintln!(
-        "        --provider <glm|zai|lmstudio|openai> Initial provider (default: AGENT_VESPER_PROVIDER or glm)"
+        "        --provider <glm|zai|lmstudio|openai|xai> Initial provider (default: AGENT_VESPER_PROVIDER or glm)"
     );
     eprintln!(
         "                                          All adapters stay registered; switch via the footer Provider picker"
@@ -124,7 +124,7 @@ fn print_help() {
         "    LMSTUDIO_API_KEY                     LM Studio API key (optional; local servers usually need none)"
     );
     eprintln!(
-        "    AGENT_VESPER_PROVIDER                Default provider (glm|zai|lmstudio|openai)"
+        "    AGENT_VESPER_PROVIDER                Default provider (glm|zai|lmstudio|openai|xai)"
     );
     eprintln!(
         "    AGENT_VESPER_LOG                     Tracing filter (default: warn, stderr only)"
@@ -142,6 +142,9 @@ fn print_help() {
     eprintln!(
         "    --provider openai --logout             Sign out locally; disable environment-key fallback"
     );
+    eprintln!("    --provider xai --login                 Native Grok account browser sign-in");
+    eprintln!("    --provider xai --device-login          Native Grok account device-code sign-in");
+    eprintln!("    --provider xai --logout                Sign out of xAI locally");
     eprintln!(
         "    OPENAI_API_KEY                        Optional OpenAI API-key override in API mode"
     );
@@ -154,42 +157,69 @@ fn print_help() {
 /// Handles the explicit terminal authentication setup path. Credentials are
 /// accepted from the environment or one stdin line and are written only
 /// through the provider's atomic, user-private credential store.
-async fn handle_openai_auth_flags() -> Option<ExitCode> {
+async fn handle_native_auth_flags() -> Option<ExitCode> {
     use std::sync::Arc;
     use vesper_provider::ProviderCredentialPort;
     let provider = provider_from_argv().or_else(|| std::env::var("AGENT_VESPER_PROVIDER").ok());
-    if provider.as_deref() != Some("openai") {
-        return None;
-    }
+    let (label, api_key_env, port): (&str, &str, Arc<dyn ProviderCredentialPort>) =
+        match provider.as_deref() {
+            Some("openai") => (
+                "OpenAI",
+                "OPENAI_API_KEY",
+                Arc::new(vesper_provider_openai::OpenAiFactory::default()),
+            ),
+            Some("xai") => (
+                "xAI",
+                "XAI_API_KEY",
+                Arc::new(vesper_provider_xai::XaiFactory::default()),
+            ),
+            _ => return None,
+        };
     let args: Vec<String> = std::env::args().collect();
-    let factory = vesper_provider_openai::OpenAiFactory::default();
-    let result = if args.iter().any(|s| s == "--login") {
-        eprintln!("OpenAI ChatGPT subscription sign-in. No Codex installation is required.");
+    let result = if args.iter().any(|s| s == "--login" || s == "--device-login") {
         let cancel = Arc::new(vesper_runtime::RuntimeCancellation::new());
-        let login=factory.device_login(cancel.clone(),Arc::new(|url,code|eprintln!("Open {url}\nEnter one-time code: {code}\nOnly continue if you started this login. Ctrl+C cancels.")));
+        let login = if provider.as_deref() == Some("xai")
+            && !args.iter().any(|s| s == "--device-login")
+        {
+            eprintln!("xAI Grok account browser sign-in. No Grok Build installation is required.");
+            port.browser_login(
+                cancel.clone(),
+                Arc::new(|url| {
+                    eprintln!("Open {url}\nComplete sign-in in your browser. Ctrl+C cancels.")
+                }),
+            )
+        } else {
+            eprintln!("{label} subscription device sign-in.");
+            port.device_login(
+                cancel.clone(),
+                Arc::new(|url, code| {
+                    eprintln!("Open {url}\nEnter one-time code: {code}\nOnly continue if you started this login. Ctrl+C cancels.")
+                }),
+            )
+        };
         tokio::pin!(login);
         tokio::select! {result=&mut login=>result,_=tokio::signal::ctrl_c()=>{cancel.cancel();login.await}}
     } else if args.iter().any(|s| s == "--logout") {
-        tokio::task::spawn_blocking(move || factory.logout())
+        tokio::task::spawn_blocking(move || port.logout())
             .await
             .unwrap_or(Err(vesper_provider::CredentialError::Failed))
     } else if args.iter().any(|s| s == "--check-auth") {
-        let present = tokio::task::spawn_blocking(move || factory.credential_present()).await;
+        let present = tokio::task::spawn_blocking(move || port.credential_present()).await;
         return Some(if matches!(present, Ok(Ok(true))) {
-            eprintln!("OpenAI credentials are configured.");
+            eprintln!("{label} credentials are configured.");
             ExitCode::SUCCESS
         } else {
-            eprintln!("OpenAI credentials are not configured.");
+            eprintln!("{label} credentials are not configured.");
             ExitCode::FAILURE
         });
     } else if args.iter().any(|s| s == "--setup") {
-        match std::env::var("OPENAI_API_KEY") {
-            Ok(key) => tokio::task::spawn_blocking(move || factory.store_credential(&key))
+        match std::env::var(api_key_env) {
+            Ok(key) => tokio::task::spawn_blocking(move || port.store_credential(&key))
                 .await
                 .unwrap_or(Err(vesper_provider::CredentialError::Failed)),
             Err(_) => {
                 eprintln!(
-                    "Use TUI Settings → Providers → OpenAI for masked API-key entry, or supply OPENAI_API_KEY for this setup command."
+                    "Use TUI Settings → Providers → {label} for masked API-key entry, or supply {api_key_env} for this setup command."
                 );
                 Err(vesper_provider::CredentialError::Absent)
             }
@@ -199,12 +229,12 @@ async fn handle_openai_auth_flags() -> Option<ExitCode> {
     };
     Some(match result {
         Ok(()) => {
-            eprintln!("OpenAI authentication updated.");
+            eprintln!("{label} authentication updated.");
             ExitCode::SUCCESS
         }
         Err(_) => {
             eprintln!(
-                "OpenAI authentication failed or was cancelled. No API billing fallback was attempted."
+                "{label} authentication failed or was cancelled. No billing-mode fallback was attempted."
             );
             ExitCode::FAILURE
         }

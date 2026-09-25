@@ -39,6 +39,9 @@ impl XaiFactory {
         values
             .insert("xai:region", serde_json::json!("global"))
             .expect("static");
+        values
+            .insert("xai:native-compaction", serde_json::json!("disabled"))
+            .expect("static");
         ProviderConfiguration {
             provider_id: provider_id(),
             values: VersionedExtensionEnvelope {
@@ -46,6 +49,91 @@ impl XaiFactory {
                 version: SchemaVersion::new(1).expect("static"),
                 values,
             },
+        }
+    }
+    /// Bounded structured extraction for host-owned memory ports. This uses
+    /// the same selected xAI authentication/billing mode and native session as
+    /// ordinary turns; it never falls across the session/API-key boundary.
+    pub async fn extract_memory(
+        &self,
+        system: &str,
+        user: &str,
+        cancel: Arc<dyn CancellationSignal>,
+    ) -> Result<String, ProviderError> {
+        use vesper_domain::*;
+        let available = self.available_models(cancel.clone()).await?;
+        let model = available
+            .models
+            .iter()
+            .find(|entry| entry.model.model_id.as_str() == DEFAULT_MODEL)
+            .or_else(|| available.models.first())
+            .ok_or_else(|| {
+                error(
+                    "No verified xAI account model is available for memory extraction",
+                    ErrorCategory::InvalidRequest,
+                    false,
+                )
+            })?;
+        let mut configuration = Self::default_configuration();
+        configuration
+            .values
+            .values
+            .insert(
+                "xai:model",
+                serde_json::json!(model.model.model_id.as_str()),
+            )
+            .map_err(|_| crate::wire::invalid())?;
+        let session = self.create_session(&configuration, cancel.clone()).await?;
+        let request = ProviderRequest {
+            request_id: ProviderRequestId::new("memory-extraction").expect("static"),
+            provider_id: provider_id(),
+            model: QualifiedModelId {
+                provider_id: provider_id(),
+                model_id: model.model.model_id.clone(),
+            },
+            endpoint_id: None,
+            system_instructions: vec![SystemInstruction {
+                content: vec![ContentPart::Text(
+                    ContentText::new(system).map_err(|_| crate::wire::invalid())?,
+                )],
+                cache_stable: true,
+                extensions: Default::default(),
+            }],
+            messages: vec![ConversationMessage {
+                id: MessageId::new("memory-input").expect("static"),
+                role: MessageRole::User,
+                content: vec![ContentPart::Text(
+                    ContentText::new(user).map_err(|_| crate::wire::invalid())?,
+                )],
+                extensions: Default::default(),
+            }],
+            tools: vec![],
+            hosted_tools: vec![],
+            tool_choice: ToolChoiceIntent::None,
+            capabilities: vec![],
+            reasoning: None,
+            structured_output: StructuredOutputIntent::JsonObject,
+            sampling: None,
+            maximum_output_tokens: Some(4096),
+            continuation: None,
+            fallback_policy: FallbackPolicy::Strict,
+            provider_extensions: None,
+        };
+        let content = tokio::time::timeout(
+            std::time::Duration::from_secs(120),
+            session.execute_auxiliary(AuxiliaryRequestIntent::MemoryExtraction, request, cancel),
+        )
+        .await
+        .map_err(|_| {
+            error(
+                "xAI memory extraction timed out",
+                ErrorCategory::Transport,
+                false,
+            )
+        })??;
+        match content {
+            ContentPart::Text(text) => Ok(text.as_str().to_owned()),
+            _ => Err(crate::wire::invalid()),
         }
     }
     pub fn superpowers_for(
@@ -101,6 +189,54 @@ impl XaiFactory {
                     "US regional processing currently limits model availability to Grok 4.7 and 4.6.",
                 ),
             ),
+            choice(
+                "xai:transport",
+                "Responses transport",
+                "transport",
+                "http",
+                vec!["http", "websocket"],
+                Some(
+                    "WebSocket is an optional Global/API-key optimization; HTTP remains the correctness path.",
+                ),
+            ),
+            choice(
+                "xai:native-compaction",
+                "Native compaction",
+                "compaction",
+                "disabled",
+                vec!["disabled", "enabled"],
+                Some(
+                    "Explicitly allow xAI opaque compaction for unfocused context pressure; Vesper retains rollback and recent history.",
+                ),
+            ),
+            choice(
+                "xai:hosted-web-search",
+                "xAI Web Search",
+                "xai-web",
+                "disabled",
+                vec!["disabled", "enabled"],
+                Some(
+                    "Runs on xAI infrastructure with separate egress and possible charges; distinct from Vesper Web Tools.",
+                ),
+            ),
+            choice(
+                "xai:hosted-x-search",
+                "xAI X Search",
+                "xai-x",
+                "disabled",
+                vec!["disabled", "enabled"],
+                Some("Searches X on xAI infrastructure with separate egress and possible charges."),
+            ),
+            choice(
+                "xai:hosted-code-execution",
+                "xAI Code Execution",
+                "xai-code",
+                "disabled",
+                vec!["disabled", "enabled"],
+                Some(
+                    "Runs code remotely on xAI infrastructure; never substitutes for Vesper run_command.",
+                ),
+            ),
         ]
     }
     #[cfg(feature = "integration-test-harness")]
@@ -122,13 +258,13 @@ impl XaiFactory {
 }
 impl ProviderSuperpowers for XaiFactory {
     fn superpowers(&self) -> Vec<SuperpowerDescriptor> {
-        self.superpowers_for(
-            &crate::AvailableModels {
-                models: XaiCatalog::snapshot().models,
-                ..Default::default()
-            },
-            DEFAULT_MODEL,
-        )
+        let available = self
+            .availability
+            .read()
+            .ok()
+            .and_then(|snapshot| snapshot.clone())
+            .unwrap_or_default();
+        self.superpowers_for(&available, DEFAULT_MODEL)
     }
 }
 
@@ -178,6 +314,10 @@ impl ProviderFactory for XaiFactory {
                     secret_reference_fields: vec![],
                     external_runtime_owned: false,
                     key_url: Some(BoundedString::new("https://accounts.x.ai/").expect("static")),
+                    interactive_login: vec![
+                        vesper_provider::InteractiveLoginKind::Browser,
+                        vesper_provider::InteractiveLoginKind::DeviceCode,
+                    ],
                 },
                 AuthenticationMethodDescriptor {
                     method_id: BoundedString::new("xai-api-key").expect("static"),
@@ -188,6 +328,7 @@ impl ProviderFactory for XaiFactory {
                     ],
                     external_runtime_owned: false,
                     key_url: Some(BoundedString::new("https://console.x.ai/").expect("static")),
+                    interactive_login: vec![],
                 },
             ],
             hosted_tools: hosted_tools(),

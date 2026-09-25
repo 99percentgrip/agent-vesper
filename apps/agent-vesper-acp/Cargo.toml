@@ -18,6 +18,7 @@ bridge = ["vesper-harness/bridge"]
 
 [dependencies]
 vesper-provider-openai = { path = "../../crates/vesper-provider-openai", version = "=0.23.6" }
+vesper-provider-xai = { path = "../../crates/vesper-provider-xai", version = "=0.23.6" }
 base64.workspace = true
 futures-util.workspace = true
 reqwest.workspace = true

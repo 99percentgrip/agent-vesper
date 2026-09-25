@@ -382,6 +382,7 @@ pub(crate) fn multi_provider_control_surface(
         &vesper_provider_openai::AvailableModels::unavailable(
             vesper_provider_openai::auth::AuthenticationMode::ChatGpt,
         ),
+        &vesper_provider_xai::AvailableModels::default(),
     )
 }
 
@@ -390,9 +391,12 @@ pub(crate) fn multi_provider_control_surface_with_openai(
     registered: &[(String, String, bool)],
     lm_models: &[LmStudioControlModel],
     openai: &vesper_provider_openai::AvailableModels,
+    xai: &vesper_provider_xai::AvailableModels,
 ) -> SessionControlSurface {
     let refresh_openai = openai.clone();
     let apply_openai = openai.clone();
+    let apply_xai = xai.clone();
+    let refresh_xai = xai.clone();
     let refresh_registered = registered.to_vec();
     let refresh_models = lm_models.to_vec();
     let mut controls = Vec::new();
@@ -471,6 +475,132 @@ pub(crate) fn multi_provider_control_surface_with_openai(
                     .collect(),
             });
         }
+        "xai" => {
+            let model = config_str(configuration, "xai:model")
+                .unwrap_or(vesper_provider_xai::DEFAULT_MODEL);
+            controls.push(AcpSessionControl {
+                id: "model".into(),
+                name: "Model".into(),
+                description: Some(
+                    "Models discovered for the selected xAI authentication and billing mode."
+                        .into(),
+                ),
+                category: AcpControlCategory::Model,
+                current_value: model.into(),
+                options: xai
+                    .models
+                    .iter()
+                    .map(|entry| AcpControlOption {
+                        value: entry.model.model_id.as_str().into(),
+                        name: entry.display_name.as_str().into(),
+                        description: None,
+                    })
+                    .collect(),
+            });
+            controls.push(AcpSessionControl {
+                id: "thought_level".into(),
+                name: if model == "grok-4.20-multi-agent-0309" {
+                    "Multi-agent scale"
+                } else {
+                    "Reasoning effort"
+                }
+                .into(),
+                description: Some("xAI model-specific reasoning control".into()),
+                category: AcpControlCategory::ThoughtLevel,
+                current_value: config_str(configuration, "xai:reasoning-effort")
+                    .unwrap_or("high")
+                    .into(),
+                options: vesper_provider_xai::XaiCatalog::reasoning_levels(model)
+                    .into_iter()
+                    .map(|value| AcpControlOption {
+                        value: value.into(),
+                        name: value.into(),
+                        description: None,
+                    })
+                    .collect(),
+            });
+            controls.push(AcpSessionControl {
+                id: "api_endpoint".into(),
+                name: "API region".into(),
+                description: Some(
+                    "US regional processing supports only the documented regional model set."
+                        .into(),
+                ),
+                category: AcpControlCategory::Other,
+                current_value: config_str(configuration, "xai:region")
+                    .unwrap_or("global")
+                    .into(),
+                options: [("global", "Global"), ("us", "US regional")]
+                    .into_iter()
+                    .map(|(value, name)| AcpControlOption {
+                        value: value.into(),
+                        name: name.into(),
+                        description: None,
+                    })
+                    .collect(),
+            });
+            controls.push(AcpSessionControl {
+                id: "transport".into(),
+                name: "Responses transport".into(),
+                description: Some("WebSocket is an optional Global/API-key optimization.".into()),
+                category: AcpControlCategory::Other,
+                current_value: config_str(configuration, "xai:transport")
+                    .unwrap_or("http")
+                    .into(),
+                options: [("http", "HTTP/SSE"), ("websocket", "WebSocket")]
+                    .into_iter()
+                    .map(|(value, name)| AcpControlOption {
+                        value: value.into(),
+                        name: name.into(),
+                        description: None,
+                    })
+                    .collect(),
+            });
+            controls.push(AcpSessionControl {
+                id: "native_compaction".into(),
+                name: "Native compaction".into(),
+                description: Some("Explicitly permits opaque xAI compaction; Vesper retains rollback and recent history.".into()),
+                category: AcpControlCategory::Other,
+                current_value: config_str(configuration, "xai:native-compaction").unwrap_or("disabled").into(),
+                options: [("disabled", "Disabled"), ("enabled", "Enabled")].into_iter().map(|(value,name)| AcpControlOption { value: value.into(), name: name.into(), description: None }).collect(),
+            });
+            for (id, name, key, description) in [
+                (
+                    "xai_web",
+                    "xAI Web Search",
+                    "xai:hosted-web-search",
+                    "xAI-hosted web search; separate egress and possible charges.",
+                ),
+                (
+                    "xai_x",
+                    "xAI X Search",
+                    "xai:hosted-x-search",
+                    "xAI-hosted X search; separate egress and possible charges.",
+                ),
+                (
+                    "xai_code",
+                    "xAI Code Execution",
+                    "xai:hosted-code-execution",
+                    "Remote xAI execution; distinct from Vesper run_command.",
+                ),
+            ] {
+                controls.push(AcpSessionControl {
+                    id: id.into(),
+                    name: name.into(),
+                    description: Some(description.into()),
+                    category: AcpControlCategory::Other,
+                    current_value: config_str(configuration, key).unwrap_or("disabled").into(),
+                    options: [("disabled", "Disabled"), ("enabled", "Enabled")]
+                        .into_iter()
+                        .map(|(value, name)| AcpControlOption {
+                            value: value.into(),
+                            name: name.into(),
+                            description: None,
+                        })
+                        .collect(),
+                });
+            }
+        }
         // GLM acting: today's full oracle-parity control set.
         "zai" => {
             let glm = glm_control_surface(configuration);
@@ -526,6 +656,9 @@ pub(crate) fn multi_provider_control_surface_with_openai(
             if active_provider_of(configuration) == "openai" {
                 return config_str(configuration, "openai:model").map(str::to_owned);
             }
+            if active_provider_of(configuration) == "xai" {
+                return config_str(configuration, "xai:model").map(str::to_owned);
+            }
             if active_provider_of(configuration) == "lmstudio" {
                 return config_str(configuration, "lmstudio:model").map(str::to_owned);
             }
@@ -540,6 +673,7 @@ pub(crate) fn multi_provider_control_surface_with_openai(
         .with_current_resolver("thought_level", |configuration| {
             let key = match active_provider_of(configuration) {
                 "openai" => "openai:reasoning-mode",
+                "xai" => "xai:reasoning-effort",
                 "zai" => "zai:reasoning-mode",
                 _ => return None,
             };
@@ -591,6 +725,49 @@ pub(crate) fn multi_provider_control_surface_with_openai(
                     };
                     Some(AppliedSelection {
                         model: Some(model),
+                        configuration: next,
+                    })
+                }
+                "xai" => {
+                    let mut next = configuration.clone();
+                    let key = match option_id {
+                        "model" => "xai:model",
+                        "thought_level" => "xai:reasoning-effort",
+                        "api_endpoint" => "xai:region",
+                        "transport" => "xai:transport",
+                        "native_compaction" => "xai:native-compaction",
+                        "xai_web" => "xai:hosted-web-search",
+                        "xai_x" => "xai:hosted-x-search",
+                        "xai_code" => "xai:hosted-code-execution",
+                        _ => return None,
+                    };
+                    if option_id == "model" && !apply_xai.contains(value) {
+                        return None;
+                    }
+                    next.values
+                        .values
+                        .insert(key, serde_json::json!(value))
+                        .ok()?;
+                    let model = config_str(&next, "xai:model")
+                        .unwrap_or(vesper_provider_xai::DEFAULT_MODEL)
+                        .to_owned();
+                    let effort = config_str(&next, "xai:reasoning-effort")
+                        .unwrap_or("high")
+                        .to_owned();
+                    if !vesper_provider_xai::XaiCatalog::reasoning_levels(&model)
+                        .contains(&effort.as_str())
+                    {
+                        let fallback = vesper_provider_xai::XaiCatalog::default_effort(&model)?;
+                        next.values
+                            .values
+                            .insert("xai:reasoning-effort", serde_json::json!(fallback))
+                            .ok()?;
+                    }
+                    Some(AppliedSelection {
+                        model: Some(QualifiedModelId {
+                            provider_id: vesper_provider_xai::provider_id(),
+                            model_id: ModelId::new(model).ok()?,
+                        }),
                         configuration: next,
                     })
                 }
@@ -658,6 +835,7 @@ pub(crate) fn multi_provider_control_surface_with_openai(
             &refresh_registered,
             &refresh_models,
             &refresh_openai,
+            &refresh_xai,
         )
     })
 }
@@ -675,6 +853,12 @@ pub(crate) fn multi_provider_context_window(
             config_str(configuration, "openai:model")
                 .unwrap_or(vesper_provider_openai::DEFAULT_MODEL),
         );
+    }
+    if active_provider_of(configuration) == "xai" {
+        return vesper_provider_xai::XaiCatalog::context_tokens(
+            config_str(configuration, "xai:model").unwrap_or(vesper_provider_xai::DEFAULT_MODEL),
+        )
+        .unwrap_or(8_192);
     }
     if active_provider_of(configuration) == "lmstudio" {
         let acting = config_str(configuration, "lmstudio:model")
@@ -723,6 +907,34 @@ pub(crate) fn apply_provider_selection(
                 model: Some(QualifiedModelId {
                     provider_id: vesper_provider_openai::provider_id(),
                     model_id: model,
+                }),
+                configuration: next,
+            })
+        }
+        "xai" => {
+            let mut next = vesper_provider_xai::XaiFactory::default_configuration();
+            for key in [
+                "xai:model",
+                "xai:reasoning-effort",
+                "xai:region",
+                "xai:transport",
+                "xai:native-compaction",
+                "xai:hosted-web-search",
+                "xai:hosted-x-search",
+                "xai:hosted-code-execution",
+            ] {
+                if let Some(value) = configuration.values.values.get(key) {
+                    next.values.values.insert(key, value.clone()).ok()?;
+                }
+            }
+            next.values
+                .values
+                .insert(ACTIVE_PROVIDER_KEY, serde_json::json!("xai"))
+                .ok()?;
+            Some(AppliedSelection {
+                model: Some(QualifiedModelId {
+                    provider_id: vesper_provider_xai::provider_id(),
+                    model_id: ModelId::new(vesper_provider_xai::DEFAULT_MODEL).ok()?,
                 }),
                 configuration: next,
             })
@@ -1066,6 +1278,7 @@ mod tests {
             &[("openai".into(), "OpenAI".into(), true)],
             &[],
             &available,
+            &vesper_provider_xai::AvailableModels::default(),
         );
         let switched = surface.apply(&configuration, "model", "gpt-5.5").unwrap();
         assert_eq!(
@@ -1077,11 +1290,56 @@ mod tests {
             &[("openai".into(), "OpenAI".into(), true)],
             &[],
             &available,
+            &vesper_provider_xai::AvailableModels::default(),
         );
         assert!(
             surface
                 .apply(&switched.configuration, "thought_level", "max")
                 .is_none()
+        );
+    }
+
+    #[test]
+    fn xai_surface_exposes_only_discovered_models_and_projects_remote_controls() {
+        let available = vesper_provider_xai::AvailableModels {
+            models: vec![vesper_provider_xai::XaiCatalog::find("grok-4.7").unwrap()],
+            ..Default::default()
+        };
+        let configuration = vesper_provider_xai::XaiFactory::default_configuration();
+        let surface = multi_provider_control_surface_with_openai(
+            &configuration,
+            &[("xai".into(), "xAI / Grok".into(), true)],
+            &[],
+            &vesper_provider_openai::AvailableModels::unavailable(
+                vesper_provider_openai::auth::AuthenticationMode::ApiKey,
+            ),
+            &available,
+        );
+        let models = surface.control("model").unwrap();
+        assert_eq!(models.options.len(), 1);
+        assert_eq!(models.options[0].value, "grok-4.7");
+        for id in [
+            "thought_level",
+            "api_endpoint",
+            "transport",
+            "native_compaction",
+            "xai_web",
+            "xai_x",
+            "xai_code",
+        ] {
+            assert!(surface.control(id).is_some(), "missing xAI control {id}");
+        }
+        let enabled = surface.apply(&configuration, "xai_web", "enabled").unwrap();
+        assert_eq!(
+            config_str(&enabled.configuration, "xai:hosted-web-search"),
+            Some("enabled")
+        );
+        let websocket = surface
+            .apply(&enabled.configuration, "transport", "websocket")
+            .unwrap();
+        assert_eq!(
+            config_str(&websocket.configuration, "xai:transport"),
+            Some("websocket")
         );
     }
 

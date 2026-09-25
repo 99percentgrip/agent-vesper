@@ -28,6 +28,7 @@ pub mod executor;
 pub mod permission;
 pub mod planning;
 pub mod project_context;
+pub mod provider_output;
 pub mod providers;
 pub mod references;
 pub mod registry;
@@ -54,6 +55,7 @@ pub use permission::{
     check_tool_permission,
 };
 pub use project_context::{MAX_PROJECT_CONTEXT_BYTES, project_instructions};
+pub use provider_output::render_provider_citations;
 pub use references::{
     MAX_FOLDER_FILES, MAX_REFERENCE_BYTES, MAX_REFERENCE_FILE_BYTES, MAX_REFERENCES,
     ReferenceError, expand_references,

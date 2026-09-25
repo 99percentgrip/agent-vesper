@@ -114,7 +114,10 @@ pub struct StartupView {
 /// method or no secret-reference field.
 #[must_use]
 pub fn auth_provider_from_descriptor(descriptor: &ProviderDescriptor) -> Option<AuthProvider> {
-    let method = descriptor.authentication_methods.first()?;
+    let method = descriptor
+        .authentication_methods
+        .iter()
+        .find(|method| !method.secret_reference_fields.is_empty())?;
     let environment_variable = method.secret_reference_fields.first()?;
     Some(AuthProvider {
         id: descriptor.provider_id.as_str().to_owned(),
@@ -284,6 +287,7 @@ mod tests {
                 key_url: Some(
                     BoundedString::new("https://z.ai/manage-apikey/apikey-list").unwrap(),
                 ),
+                interactive_login: vec![],
             }],
             hosted_tools: Vec::new(),
             configuration: None,

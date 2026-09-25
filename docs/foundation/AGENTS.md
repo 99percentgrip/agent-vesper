@@ -13,6 +13,10 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 - `xai-provider-pr3-execution.md` owns VRO-18 PR-3 browser/device Grok
   authentication, refresh/logout, billing isolation and subscription-proxy
   evidence.
+- `xai-provider-pr4-execution.md` through `xai-provider-pr6-execution.md` own
+  continuation/usage/citations, provider-hosted tools, native compaction and
+  WebSocket offline evidence. `xai-provider-pr7-execution.md` owns current
+  TUI/ACP composition, inheritance and remaining host/live gates.
 
 - `xai-provider-recon-execution.md` owns VRO-18 PR-0 execution evidence:
   current Vesper provider/host seam inventory, the pinned first-party Grok
