@@ -1,5 +1,5 @@
 use super::*;
-use serde_json::{Value, json};
+use serde_json::json;
 use vesper_domain::*;
 use vesper_provider::*;
 
@@ -240,6 +240,7 @@ fn malformed_or_incomplete_tool_call_fails_closed() {
 fn usage_and_terminal_are_normalized_once() {
     let mut decoder = wire::Decoder::new(&fixture_request());
     let events = decoder.event(json!({"type":"response.completed","response":{"usage":{"input_tokens":10,"output_tokens":5,"total_tokens":15,"input_tokens_details":{"cached_tokens":3},"output_tokens_details":{"reasoning_tokens":2}}}})).unwrap();
+    assert_eq!(events.len(), 2, "one usage event and one terminal event");
     let ProviderStreamEvent::Usage(usage) = &events[0] else {
         panic!()
     };
@@ -259,10 +260,88 @@ fn usage_and_terminal_are_normalized_once() {
     );
 }
 
+#[test]
+fn native_continuation_and_prompt_cache_are_explicit_and_bounded() {
+    let mut request = fixture_request();
+    let mut state = ExtensionMap::default();
+    state
+        .insert("xai:previous-response-id", json!("resp_previous"))
+        .unwrap();
+    request.continuation = Some(ContinuationContext {
+        strategy: ContinuationStrategy::NativeContinuation {
+            state: VersionedExtensionEnvelope {
+                namespace: ExtensionNamespace::new("provider.xai").unwrap(),
+                version: SchemaVersion::new(1).unwrap(),
+                values: state,
+            },
+        },
+        provider_maximum: Some(64),
+        harness_maximum: 64,
+        visible_count: 1,
+        reason: ContinuationReason::ProviderCursor,
+        metadata: ExtensionMap::default(),
+    });
+    let mut values = ExtensionMap::default();
+    values
+        .insert("xai:prompt-cache-key", json!("conversation-018"))
+        .unwrap();
+    values.insert("xai:store", json!(true)).unwrap();
+    request.provider_extensions = Some(VersionedExtensionEnvelope {
+        namespace: ExtensionNamespace::new("provider.xai").unwrap(),
+        version: SchemaVersion::new(1).unwrap(),
+        values,
+    });
+
+    let body = wire::request(&request, "high").unwrap();
+    assert_eq!(body["previous_response_id"], "resp_previous");
+    assert_eq!(body["prompt_cache_key"], "conversation-018");
+    assert_eq!(body["store"], true);
+
+    let envelope = request.provider_extensions.as_mut().unwrap();
+    envelope
+        .values
+        .insert("xai:prompt-cache-key", json!("contains a space"))
+        .unwrap();
+    assert!(wire::request(&request, "high").is_err());
+}
+
+#[test]
+fn citations_are_preserved_as_bounded_provider_owned_content() {
+    let mut decoder = wire::Decoder::new(&fixture_request());
+    let events = decoder
+        .event(json!({
+            "type":"response.output_text.annotation.added",
+            "output_index":0,
+            "annotation_index":0,
+            "annotation":{
+                "type":"url_citation",
+                "url":"https://docs.x.ai/developers/tools/citations",
+                "title":"xAI citations",
+                "start_index":10,
+                "end_index":22
+            }
+        }))
+        .unwrap();
+    let ProviderStreamEvent::ContentDelta {
+        part: ContentPart::ProviderOpaque(citation),
+        ..
+    } = &events[0]
+    else {
+        panic!("citation was not preserved")
+    };
+    assert_eq!(citation.provider_id, provider_id());
+    assert_eq!(citation.kind, "citation");
+    assert_eq!(
+        citation.data.expose()["url"],
+        "https://docs.x.ai/developers/tools/citations"
+    );
+}
+
 #[cfg(feature = "integration-test-harness")]
 mod http {
     use super::*;
     use futures_util::StreamExt;
+    use serde_json::Value;
     use std::sync::{
         Arc,
         atomic::{AtomicBool, Ordering},

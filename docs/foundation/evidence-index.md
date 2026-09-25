@@ -1,5 +1,15 @@
 # Foundation Evidence Index
 
+## VRO-18 PR-4 tools, continuation, usage and citations (2026-09-25)
+
+- Execution: [`xai-provider-pr4-execution.md`](xai-provider-pr4-execution.md)
+- Verdict: PR-4 PASS at offline fixture scope. Shared function identities and
+  tool results round-trip through the normal AgentLoop; explicit stored
+  Responses continuation, bounded prompt-cache routing, opaque reasoning,
+  normalized usage and structured citation retention pass 29 tests. The
+  adapter remains unregistered; hosted tools, compaction/WebSocket, hosts,
+  live acceptance and release remain open.
+
 ## VRO-18 PR-3 native Grok session authentication (2026-09-25)
 
 - Execution: [`xai-provider-pr3-execution.md`](xai-provider-pr3-execution.md)

@@ -25,6 +25,11 @@ continuation state, and provider error mapping without changing the shared agent
   exist only behind `integration-test-harness`.
 - xAI function calls execute through the shared Vesper tool loop.
 - Opaque encrypted reasoning may be preserved but never interpreted or exposed.
+- Stored Responses continuation and prompt-cache routing are explicit,
+  bounded `provider.xai` controls; continuation never silently enables remote
+  retention.
+- Provider citations remain distinct from Vesper web-tool events and are not
+  replayed as provider input.
 - Secrets never enter errors, events, logs, or model-visible extensions.
 - No silent fallback between Grok-session and xAI API-key billing paths.
 

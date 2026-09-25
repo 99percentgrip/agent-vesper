@@ -2300,3 +2300,13 @@ nonce and signed-token validation, serialized credential refresh/logout,
 first-party subscription-proxy routing and strict session/API billing isolation.
 The targeted suite is 27/27. No host registration or live account request has
 occurred; PR-4 through PR-8 remain open.
+
+## 43. PR-4 closeout — 2026-09-25
+
+PR-4 is closed at offline fixture scope by
+[`foundation/xai-provider-pr4-execution.md`](foundation/xai-provider-pr4-execution.md).
+The adapter now maps explicit stored Responses continuation, stable bounded
+prompt-cache routing and citation annotations while retaining the existing
+shared-tool call/result path, opaque encrypted reasoning and normalized usage.
+The targeted all-feature suite is 29/29. No host registration or live request
+has occurred; PR-5 through PR-8 remain open.

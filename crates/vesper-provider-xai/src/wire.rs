@@ -32,10 +32,7 @@ pub(crate) fn request(
     {
         return Err(unsupported());
     }
-    if request.continuation.is_some()
-        || request.sampling.is_some()
-        || request.provider_extensions.is_some()
-    {
+    if request.sampling.is_some() {
         return Err(unsupported());
     }
     if request
@@ -149,7 +146,14 @@ pub(crate) fn request(
         }
         _ => return Err(unsupported()),
     };
-    let mut body = json!({"model":model,"instructions":instructions.join("\n\n"),"input":input,"tools":tools,"tool_choice":choice,"parallel_tool_calls":true,"store":false,"stream":true,"include":["reasoning.encrypted_content"],"reasoning":{"effort":effort,"summary":"auto"}});
+    let controls = request_controls(request)?;
+    let mut body = json!({"model":model,"instructions":instructions.join("\n\n"),"input":input,"tools":tools,"tool_choice":choice,"parallel_tool_calls":true,"store":controls.store,"stream":true,"include":["reasoning.encrypted_content"],"reasoning":{"effort":effort,"summary":"auto"}});
+    if let Some(previous) = controls.previous_response_id {
+        body["previous_response_id"] = json!(previous);
+    }
+    if let Some(cache_key) = controls.prompt_cache_key {
+        body["prompt_cache_key"] = json!(cache_key);
+    }
     if let Some(max) = request.maximum_output_tokens {
         body["max_output_tokens"] = json!(max);
     }
@@ -168,6 +172,77 @@ pub(crate) fn request(
         return Err(unsupported());
     }
     Ok(body)
+}
+
+#[derive(Default)]
+struct RequestControls {
+    previous_response_id: Option<String>,
+    prompt_cache_key: Option<String>,
+    store: bool,
+}
+
+fn request_controls(request: &ProviderRequest) -> Result<RequestControls, ProviderError> {
+    let mut controls = RequestControls::default();
+    if let Some(continuation) = &request.continuation {
+        if !continuation.may_continue() {
+            return Err(unsupported());
+        }
+        let state = match &continuation.strategy {
+            ContinuationStrategy::NativeContinuation { state }
+            | ContinuationStrategy::ProviderCursor { cursor: state } => state,
+            _ => return Err(unsupported()),
+        };
+        validate_envelope(state)?;
+        let id = state
+            .values
+            .get("xai:previous-response-id")
+            .and_then(Value::as_str)
+            .filter(|value| valid_routing_value(value, 256))
+            .ok_or_else(unsupported)?;
+        if state
+            .values
+            .iter()
+            .any(|(key, _)| key != "xai:previous-response-id")
+        {
+            return Err(unsupported());
+        }
+        controls.previous_response_id = Some(id.to_owned());
+    }
+    if let Some(extension) = &request.provider_extensions {
+        validate_envelope(extension)?;
+        for (key, value) in extension.values.iter() {
+            match key {
+                "xai:prompt-cache-key" => {
+                    let value = value
+                        .as_str()
+                        .filter(|value| valid_routing_value(value, 128))
+                        .ok_or_else(unsupported)?;
+                    controls.prompt_cache_key = Some(value.to_owned());
+                }
+                "xai:store" => controls.store = value.as_bool().ok_or_else(unsupported)?,
+                _ => return Err(unsupported()),
+            }
+        }
+    }
+    if controls.previous_response_id.is_some() && !controls.store {
+        return Err(unsupported());
+    }
+    Ok(controls)
+}
+
+fn validate_envelope(envelope: &VersionedExtensionEnvelope) -> Result<(), ProviderError> {
+    if envelope.namespace.as_str() != "provider.xai" || envelope.version.get() != 1 {
+        return Err(unsupported());
+    }
+    Ok(())
+}
+
+fn valid_routing_value(value: &str, maximum: usize) -> bool {
+    !value.is_empty()
+        && value.len() <= maximum
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"._:-".contains(&byte))
 }
 
 fn validate_schema(schema: &Value) -> Result<(), ProviderError> {
@@ -322,6 +397,7 @@ fn append_opaque(input: &mut Vec<Value>, opaque: &OpaqueContent) -> Result<(), P
         {
             input.push(opaque.data.expose().clone())
         }
+        "citation" => {}
         _ => return Err(unsupported()),
     }
     Ok(())
@@ -412,6 +488,47 @@ impl Decoder {
                     text: ContentText::new(delta).map_err(|_| invalid())?,
                     kind: ReasoningKind::Summary,
                     retention: self.retention,
+                });
+            }
+            "response.output_text.annotation.added" => {
+                let annotation = value.get("annotation").ok_or_else(invalid)?;
+                let url = annotation
+                    .get("url")
+                    .and_then(Value::as_str)
+                    .ok_or_else(invalid)?;
+                let parsed = url::Url::parse(url).map_err(|_| invalid())?;
+                if !matches!(parsed.scheme(), "https" | "http") || url.len() > 8192 {
+                    return Err(invalid());
+                }
+                if annotation
+                    .get("title")
+                    .and_then(Value::as_str)
+                    .is_some_and(|title| title.len() > 4096 || title.chars().any(char::is_control))
+                {
+                    return Err(invalid());
+                }
+                let start = annotation.get("start_index").and_then(Value::as_u64);
+                let end = annotation.get("end_index").and_then(Value::as_u64);
+                if matches!((start, end), (Some(start), Some(end)) if start > end)
+                    || start.is_some() != end.is_some()
+                {
+                    return Err(invalid());
+                }
+                events.push(ProviderStreamEvent::ContentDelta {
+                    stream_id: BoundedString::new(format!(
+                        "citation-{}-{}",
+                        index()?,
+                        value
+                            .get("annotation_index")
+                            .and_then(Value::as_u64)
+                            .unwrap_or(0)
+                    ))
+                    .map_err(|_| invalid())?,
+                    part: ContentPart::ProviderOpaque(OpaqueContent {
+                        provider_id: provider_id(),
+                        kind: "citation".into(),
+                        data: OpaqueProviderData::new(annotation.clone()).map_err(|_| invalid())?,
+                    }),
                 });
             }
             "response.output_item.added" if value["item"]["type"] == "function_call" => {
@@ -566,7 +683,6 @@ impl Decoder {
             | "response.content_part.added"
             | "response.content_part.done"
             | "response.output_text.done"
-            | "response.output_text.annotation.added"
             | "response.refusal.done"
             | "response.function_call_arguments.done"
             | "response.reasoning_summary_part.added"

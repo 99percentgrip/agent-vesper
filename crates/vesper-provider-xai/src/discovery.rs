@@ -125,13 +125,16 @@ impl XaiSession {
                     "https://us.api.x.ai/v1/language-models"
                 }
             };
-            let mut url = url::Url::parse(endpoint).expect("fixed URL");
+            let url = url::Url::parse(endpoint).expect("fixed URL");
             #[cfg(feature = "integration-test-harness")]
-            if let Some(route) = &self.test_route {
-                url = url::Url::parse(route).map_err(|_| crate::wire::invalid())?;
-                url.set_path("/language-models");
-                url.set_query(None);
-            }
+            let url = if let Some(route) = &self.test_route {
+                let mut test_url = url::Url::parse(route).map_err(|_| crate::wire::invalid())?;
+                test_url.set_path("/language-models");
+                test_url.set_query(None);
+                test_url
+            } else {
+                url
+            };
             let mut builder = self
                 .client
                 .get(url)
