@@ -51,6 +51,11 @@ remain hidden.
   choice controls now resolve, render and persist provider-neutrally.
 - Citations were dropped by text-only final-output rendering. Shared citation
   projection tests prove citation visibility and encrypted-state secrecy.
+- The first repository architecture run rejected both host dependencies on the
+  new adapter because the explicit dependency allowlist still stopped at
+  OpenAI. The allowlist now admits `vesper-provider-xai` only for the two
+  composition hosts; the adapter's existing process-runtime/frontend bans are
+  unchanged.
 
 Focused green receipts include xAI control projection in both hosts, dynamic
 TUI command routing, descriptor login metadata, generic hosted-selection
@@ -71,6 +76,11 @@ the isolated target twice. Only `/tmp/agent-vesper-vro18/target` and later the
 dedicated `/tmp/agent-vesper-vro18-target` were cleaned with `cargo clean` after
 process checks. Source, the original checkout, user state, models and installed
 Agent Vesper were untouched.
+
+The repository-owned architecture gate passes for 31 packages after the
+allowlist repair, the naming guard passes with all 36 existing hits frozen, and
+`cargo xtask acceptance` passes all 23 exact cases in 152,320 ms with zero
+live-model cost.
 
 ## Deviations and unresolved items
 

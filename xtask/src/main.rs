@@ -1594,6 +1594,7 @@ fn allowed_dependencies() -> BTreeMap<&'static str, BTreeSet<&'static str>> {
             "agent-vesper-acp",
             BTreeSet::from([
                 "vesper-provider-openai",
+                "vesper-provider-xai",
                 "vesper-acp",
                 "vesper-agent",
                 "vesper-cognition",
@@ -1617,6 +1618,7 @@ fn allowed_dependencies() -> BTreeMap<&'static str, BTreeSet<&'static str>> {
             "agent-vesper-tui",
             BTreeSet::from([
                 "vesper-provider-openai",
+                "vesper-provider-xai",
                 "vesper-agent",
                 "vesper-auth",
                 "vesper-checkpoints",
