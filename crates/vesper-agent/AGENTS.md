@@ -49,7 +49,12 @@ the multi-turn, tool-executing layer above it.
   instructions stay outside replaceable history. `AgentLoop` automatically
   compacts at 85% including a response reserve and routes summarization through
   auxiliary → main → deterministic evidence fallback; an irreducible suffix
-  fails before ordinary provider dispatch. Compaction retains bounded prior
+  fails before ordinary provider dispatch. Hosts may explicitly prefer the
+  provider-neutral native-compaction port for unfocused compaction; the port
+  receives only the replaceable prefix, commits atomically as opaque provider
+  state plus the untouched recent suffix, marks semantic quality unmeasured,
+  and falls back before commit. Focused `/compact` stays on the inspectable
+  semantic path. Compaction retains bounded prior
   `vesper:skills` identities as audit metadata marked `reactivate: false`;
   skill bodies never enter summaries and later turns rerun ADR 0024 routing.
 - `src/vro/scope.rs` — scoped workspace identity, layers, skills, firewall,

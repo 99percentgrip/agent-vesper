@@ -76,6 +76,7 @@ tempfile = { version = "3", default-features = false }
 thiserror = { version = "=2.0.19" }
 tokio = { version = "=1.52.0", default-features = false, features = ["io-std", "macros", "rt", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-util = { version = "=0.7.17", default-features = false, features = ["compat", "rt"] }
+tokio-tungstenite = { version = "=0.28.0", default-features = false, features = ["connect", "rustls-tls-native-roots"] }
 tracing = { version = "=0.1.44", default-features = false, features = ["std"] }
 tracing-subscriber = { version = "=0.3.22", default-features = false, features = ["ansi", "env-filter", "fmt", "smallvec", "tracing-log"] }
 url = { version = "=2.5.8", default-features = false, features = ["std"] }

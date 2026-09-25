@@ -3,8 +3,8 @@ use std::{future::Future, pin::Pin, sync::Arc};
 use futures_core::Stream;
 use serde::{Deserialize, Serialize};
 use vesper_domain::{
-    BoundedString, EndpointId, ExtensionMap, ProviderId, QualifiedModelId,
-    VersionedExtensionEnvelope,
+    BoundedString, ConversationMessage, EndpointId, ExtensionMap, NormalizedUsage, OpaqueContent,
+    ProviderId, QualifiedModelId, SystemInstruction, VersionedExtensionEnvelope,
 };
 
 use crate::{
@@ -160,6 +160,30 @@ pub struct ModelCatalogSnapshot {
     pub expires_at_unix_ms: Option<u64>,
 }
 
+/// Full provider-neutral context offered to an optional native compactor.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NativeCompactionRequest {
+    /// Provider owning the compaction capability.
+    pub provider_id: ProviderId,
+    /// Model used for compaction.
+    pub model: QualifiedModelId,
+    /// Immutable system instructions.
+    pub system_instructions: Vec<SystemInstruction>,
+    /// Ordered conversation context to compact.
+    pub messages: Vec<ConversationMessage>,
+}
+
+/// Opaque native compaction result; core never interprets provider state.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NativeCompactionResult {
+    /// Provider-owned compaction item to preserve byte-for-byte.
+    pub item: OpaqueContent,
+    /// Usage attributable to the compaction operation.
+    pub usage: NormalizedUsage,
+    /// Provider-reported folded message count, when available.
+    pub dropped_message_count: Option<u64>,
+}
+
 /// Model discovery/listing port.
 pub trait ModelCatalog: Send + Sync {
     /// Returns models with provenance handled by the adapter.
@@ -279,12 +303,28 @@ pub trait ProviderSession: Send + Sync {
         None
     }
 
+    /// Optional provider-native opaque compaction. Vesper policy decides when
+    /// to call it; advertising the port does not enable it automatically.
+    fn native_compaction(&self) -> Option<&dyn NativeCompactionPort> {
+        None
+    }
+
     /// Starts one ordered response stream.
     fn start<'a>(
         &'a self,
         request: ProviderRequest,
         cancellation: Arc<dyn CancellationSignal>,
     ) -> ProviderFuture<'a, Result<ProviderEventStream, ProviderError>>;
+}
+
+/// Optional provider-native opaque compaction operation.
+pub trait NativeCompactionPort: Send + Sync {
+    /// Compacts one complete input transaction without mutating caller state.
+    fn compact_native<'a>(
+        &'a self,
+        request: NativeCompactionRequest,
+        cancellation: Arc<dyn CancellationSignal>,
+    ) -> ProviderFuture<'a, Result<NativeCompactionResult, ProviderError>>;
 }
 
 /// Optional bounded auxiliary request port, separate from streaming turns.

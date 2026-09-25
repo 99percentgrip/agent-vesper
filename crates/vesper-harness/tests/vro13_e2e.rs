@@ -288,6 +288,7 @@ fn loop_config(
             model_id: ModelId::new("fixture-model").expect("valid model id"),
         },
         context_window_tokens: 131_072,
+        native_compaction: vesper_agent::NativeCompactionPolicy::Disabled,
         system_instructions: Vec::new(),
         workspace_roots: vec![vesper_domain::WorkspaceRoot {
             name: BoundedString::new("workspace").expect("bounded root name"),

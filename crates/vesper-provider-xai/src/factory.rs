@@ -34,6 +34,9 @@ impl XaiFactory {
             .insert("xai:reasoning-effort", serde_json::json!("high"))
             .expect("static");
         values
+            .insert("xai:transport", serde_json::json!("http"))
+            .expect("static");
+        values
             .insert("xai:region", serde_json::json!("global"))
             .expect("static");
         ProviderConfiguration {
@@ -234,6 +237,23 @@ impl ProviderFactory for XaiFactory {
                     ));
                 }
             };
+            let transport = match config
+                .values
+                .values
+                .get("xai:transport")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("http")
+            {
+                "http" => crate::transport::XaiTransport::Http,
+                "websocket" => crate::transport::XaiTransport::WebSocket,
+                _ => {
+                    return Err(error(
+                        "Invalid xAI transport selection",
+                        vesper_domain::ErrorCategory::InvalidRequest,
+                        false,
+                    ));
+                }
+            };
             if config.provider_id != self.id
                 || XaiCatalog::find(model).is_none()
                 || !XaiCatalog::reasoning_levels(model).contains(&effort)
@@ -246,7 +266,8 @@ impl ProviderFactory for XaiFactory {
                 ));
             }
             let session = XaiSession::new(self.credentials.clone(), effort.to_owned(), region)?
-                .with_availability(self.availability.clone());
+                .with_availability(self.availability.clone())
+                .with_transport(transport);
             #[cfg(feature = "integration-test-harness")]
             let session = session
                 .with_test_route(self.test_route.clone())

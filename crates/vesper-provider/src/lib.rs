@@ -26,9 +26,9 @@ pub use model_capability::{
 pub use ports::{
     AuthenticationMethodDescriptor, AuxiliaryRequestPort, CancellationSignal, CredentialError,
     EndpointConfiguration, HostedToolDescriptor, HostedToolEgressClass, ModelCatalog,
-    ModelCatalogProvenance, ModelCatalogSnapshot, ModelDescriptor, ProviderConfiguration,
-    ProviderCredentialPort, ProviderDescriptor, ProviderEventStream, ProviderFactory,
-    ProviderFuture, ProviderSession,
+    ModelCatalogProvenance, ModelCatalogSnapshot, ModelDescriptor, NativeCompactionPort,
+    NativeCompactionRequest, NativeCompactionResult, ProviderConfiguration, ProviderCredentialPort,
+    ProviderDescriptor, ProviderEventStream, ProviderFactory, ProviderFuture, ProviderSession,
 };
 pub use request::{
     AuxiliaryRequestIntent, ContinuationContext, ContinuationReason, ContinuationStrategy,

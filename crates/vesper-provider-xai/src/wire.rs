@@ -26,6 +26,21 @@ pub(crate) fn request(
     request: &ProviderRequest,
     default_effort: &str,
 ) -> Result<Value, ProviderError> {
+    request_inner(request, default_effort, false)
+}
+
+pub(crate) fn request_websocket(
+    request: &ProviderRequest,
+    default_effort: &str,
+) -> Result<Value, ProviderError> {
+    request_inner(request, default_effort, true)
+}
+
+fn request_inner(
+    request: &ProviderRequest,
+    default_effort: &str,
+    websocket: bool,
+) -> Result<Value, ProviderError> {
     if request.provider_id != provider_id()
         || request.model.provider_id != provider_id()
         || XaiCatalog::find(request.model.model_id.as_str()).is_none()
@@ -147,13 +162,18 @@ pub(crate) fn request(
         }
         _ => return Err(unsupported()),
     };
-    let controls = request_controls(request)?;
+    let controls = request_controls(request, websocket)?;
     let mut body = json!({"model":model,"instructions":instructions.join("\n\n"),"input":input,"tools":tools,"tool_choice":choice,"parallel_tool_calls":true,"store":controls.store,"stream":true,"include":["reasoning.encrypted_content","web_search_call.action.sources","code_interpreter_call.outputs","file_search_call.results"],"reasoning":{"effort":effort,"summary":"auto"}});
     if let Some(previous) = controls.previous_response_id {
         body["previous_response_id"] = json!(previous);
     }
     if let Some(cache_key) = controls.prompt_cache_key {
         body["prompt_cache_key"] = json!(cache_key);
+    }
+    if websocket {
+        body.as_object_mut()
+            .expect("request body is an object")
+            .remove("stream");
     }
     if let Some(max) = request.maximum_output_tokens {
         body["max_output_tokens"] = json!(max);
@@ -173,6 +193,61 @@ pub(crate) fn request(
         return Err(unsupported());
     }
     Ok(body)
+}
+
+pub(crate) fn compaction_request(
+    request: &NativeCompactionRequest,
+) -> Result<Value, ProviderError> {
+    if request.provider_id != provider_id()
+        || request.model.provider_id != provider_id()
+        || XaiCatalog::find(request.model.model_id.as_str()).is_none()
+    {
+        return Err(unsupported());
+    }
+    let effort =
+        XaiCatalog::default_effort(request.model.model_id.as_str()).ok_or_else(unsupported)?;
+    let ordinary = ProviderRequest {
+        request_id: ProviderRequestId::new("xai-native-compaction").expect("static"),
+        provider_id: request.provider_id.clone(),
+        model: request.model.clone(),
+        endpoint_id: None,
+        system_instructions: Vec::new(),
+        messages: request.messages.clone(),
+        tools: Vec::new(),
+        hosted_tools: Vec::new(),
+        tool_choice: ToolChoiceIntent::None,
+        capabilities: Vec::new(),
+        reasoning: None,
+        structured_output: StructuredOutputIntent::None,
+        sampling: None,
+        maximum_output_tokens: None,
+        continuation: None,
+        fallback_policy: FallbackPolicy::Strict,
+        provider_extensions: None,
+    };
+    let mut body = self::request(&ordinary, effort)?;
+    let mut input = Vec::new();
+    for instruction in &request.system_instructions {
+        for part in &instruction.content {
+            let ContentPart::Text(text) = part else {
+                return Err(unsupported());
+            };
+            input.push(
+                json!({"role":"system","content":[{"type":"input_text","text":text.as_str()}]}),
+            );
+        }
+    }
+    input.extend(
+        body.get_mut("input")
+            .and_then(Value::as_array_mut)
+            .map(std::mem::take)
+            .ok_or_else(invalid)?,
+    );
+    let compact = json!({"model":request.model.model_id.as_str(),"input":input});
+    if compact.to_string().len() > 32 * MAX_EVENT {
+        return Err(unsupported());
+    }
+    Ok(compact)
 }
 
 fn append_hosted_tools(
@@ -351,7 +426,10 @@ struct RequestControls {
     store: bool,
 }
 
-fn request_controls(request: &ProviderRequest) -> Result<RequestControls, ProviderError> {
+fn request_controls(
+    request: &ProviderRequest,
+    websocket: bool,
+) -> Result<RequestControls, ProviderError> {
     let mut controls = RequestControls::default();
     if let Some(continuation) = &request.continuation {
         if !continuation.may_continue() {
@@ -394,7 +472,7 @@ fn request_controls(request: &ProviderRequest) -> Result<RequestControls, Provid
             }
         }
     }
-    if controls.previous_response_id.is_some() && !controls.store {
+    if controls.previous_response_id.is_some() && !controls.store && !websocket {
         return Err(unsupported());
     }
     Ok(controls)
@@ -568,6 +646,11 @@ fn append_opaque(input: &mut Vec<Value>, opaque: &OpaqueContent) -> Result<(), P
             input.push(opaque.data.expose().clone())
         }
         "citation" | "hosted-tool-result" => {}
+        "compaction"
+            if opaque.data.expose().get("type").and_then(Value::as_str) == Some("compaction") =>
+        {
+            input.push(opaque.data.expose().clone())
+        }
         _ => return Err(unsupported()),
     }
     Ok(())

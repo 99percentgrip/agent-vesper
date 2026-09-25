@@ -48,6 +48,10 @@ continuation, fallback, and error contracts.
   `AuxiliaryRequestPort` for bounded tool-free inference such as compaction.
   Sessions without one return `None`; callers retain a main-model or
   deterministic fallback and never assume auxiliary support.
+- `ProviderSession::native_compaction` optionally exposes bounded opaque
+  provider compaction. Advertising the port never activates it; the shared
+  agent policy opts in explicitly, retains transaction ownership, and may
+  fall back before commit. Core preserves the provider item without parsing.
 - The [`ProviderSuperpowers`] trait and [`SuperpowerDescriptor`] advertise
   provider-native controls (effort dial, interleaved-thinking flag, model
   selector) so the composition boundary can render them without taking a

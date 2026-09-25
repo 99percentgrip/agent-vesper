@@ -443,6 +443,34 @@ fn native_continuation_and_prompt_cache_are_explicit_and_bounded() {
 }
 
 #[test]
+fn websocket_continuation_can_remain_zero_retention() {
+    let mut request = fixture_request();
+    let mut state = ExtensionMap::default();
+    state
+        .insert("xai:previous-response-id", json!("resp_socket"))
+        .unwrap();
+    request.continuation = Some(ContinuationContext {
+        strategy: ContinuationStrategy::NativeContinuation {
+            state: VersionedExtensionEnvelope {
+                namespace: ExtensionNamespace::new("provider.xai").unwrap(),
+                version: SchemaVersion::new(1).unwrap(),
+                values: state,
+            },
+        },
+        provider_maximum: Some(64),
+        harness_maximum: 64,
+        visible_count: 1,
+        reason: ContinuationReason::ProviderCursor,
+        metadata: ExtensionMap::default(),
+    });
+    assert!(wire::request(&request, "high").is_err());
+    let body = wire::request_websocket(&request, "high").unwrap();
+    assert_eq!(body["previous_response_id"], "resp_socket");
+    assert_eq!(body["store"], false);
+    assert!(body.get("stream").is_none());
+}
+
+#[test]
 fn citations_are_preserved_as_bounded_provider_owned_content() {
     let mut decoder = wire::Decoder::new(&fixture_request());
     let events = decoder
@@ -477,7 +505,7 @@ fn citations_are_preserved_as_bounded_provider_owned_content() {
 #[cfg(feature = "integration-test-harness")]
 mod http {
     use super::*;
-    use futures_util::StreamExt;
+    use futures_util::{SinkExt, StreamExt};
     use std::sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -486,6 +514,26 @@ mod http {
         io::{AsyncReadExt, AsyncWriteExt},
         net::TcpListener,
     };
+    use tokio_tungstenite::tungstenite::Message;
+
+    #[allow(clippy::result_large_err)]
+    fn authenticate_websocket(
+        request: &tokio_tungstenite::tungstenite::handshake::server::Request,
+        response: tokio_tungstenite::tungstenite::handshake::server::Response,
+    ) -> Result<
+        tokio_tungstenite::tungstenite::handshake::server::Response,
+        tokio_tungstenite::tungstenite::handshake::server::ErrorResponse,
+    > {
+        assert_eq!(
+            request
+                .headers()
+                .get("authorization")
+                .and_then(|value| value.to_str().ok()),
+            Some("Bearer fixture-xai-key")
+        );
+        Ok(response)
+    }
+
     struct Cancel(AtomicBool);
     impl CancellationSignal for Cancel {
         fn is_cancelled(&self) -> bool {
@@ -591,6 +639,266 @@ mod http {
             Ok(_) => panic!("session mode accepted a hosted tool"),
         };
         assert_eq!(error.info.category, ErrorCategory::UnsupportedCapability);
+    }
+
+    #[tokio::test]
+    async fn native_compaction_round_trips_opaque_item_without_mutation() {
+        let opaque = json!({"type":"compaction","id":"cmp_1","encrypted_content":"opaque-compaction-canary"});
+        let body = json!({
+            "id":"cmp_1",
+            "object":"response.compaction",
+            "model":DEFAULT_MODEL,
+            "output":[opaque.clone()],
+            "usage":{"input_tokens":120,"output_tokens":20,"total_tokens":140,"dropped_message_count":4,"input_tokens_details":{"cached_tokens":10},"output_tokens_details":{"reasoning_tokens":3}}
+        }).to_string();
+        let (session, server) = fixture_server(body).await;
+        let request = fixture_request();
+        let result = session
+            .native_compaction()
+            .unwrap()
+            .compact_native(
+                NativeCompactionRequest {
+                    provider_id: provider_id(),
+                    model: request.model.clone(),
+                    system_instructions: request.system_instructions.clone(),
+                    messages: request.messages.clone(),
+                },
+                Arc::new(Cancel(AtomicBool::new(false))),
+            )
+            .await
+            .unwrap();
+        assert_eq!(result.item.data.expose(), &opaque);
+        assert_eq!(result.dropped_message_count, Some(4));
+        assert_eq!(result.usage.cached_input.value, Some(10));
+        assert!(!format!("{result:?}").contains("opaque-compaction-canary"));
+
+        let sent = server.await.unwrap();
+        assert_eq!(sent["model"], DEFAULT_MODEL);
+        assert!(sent.get("stream").is_none());
+
+        let mut followup = fixture_request();
+        followup.messages.insert(
+            0,
+            ConversationMessage {
+                id: MessageId::new("compact-prefix").unwrap(),
+                role: MessageRole::Assistant,
+                content: vec![ContentPart::ProviderOpaque(result.item)],
+                extensions: ExtensionMap::default(),
+            },
+        );
+        let followup = wire::request(&followup, "high").unwrap();
+        assert_eq!(followup["input"][0], opaque);
+    }
+
+    #[tokio::test]
+    async fn websocket_uses_same_decoder_and_settles_once() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}/responses", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut websocket = tokio_tungstenite::accept_hdr_async(socket, authenticate_websocket)
+                .await
+                .unwrap();
+            let request = websocket.next().await.unwrap().unwrap();
+            let Message::Text(request) = request else {
+                panic!("expected text request")
+            };
+            let request: Value = serde_json::from_str(request.as_str()).unwrap();
+            for event in [
+                json!({"type":"response.created","response":{"id":"resp_ws"}}),
+                json!({"type":"response.output_text.delta","output_index":0,"delta":"socket"}),
+                json!({"type":"response.completed","response":{}}),
+            ] {
+                websocket
+                    .send(Message::Text(event.to_string().into()))
+                    .await
+                    .unwrap();
+            }
+            request
+        });
+        let factory = XaiFactory::for_loopback(&endpoint).unwrap();
+        let mut config = XaiFactory::default_configuration();
+        config
+            .values
+            .values
+            .insert("xai:transport", json!("websocket"))
+            .unwrap();
+        let session = factory
+            .create_session(&config, Arc::new(Cancel(AtomicBool::new(false))))
+            .await
+            .unwrap();
+        let mut stream = session
+            .start(fixture_request(), Arc::new(Cancel(AtomicBool::new(false))))
+            .await
+            .unwrap();
+        let mut text = String::new();
+        let mut terminals = 0;
+        while let Some(event) = stream.next().await {
+            match event.unwrap() {
+                ProviderStreamEvent::ContentDelta {
+                    part: ContentPart::Text(delta),
+                    ..
+                } => text.push_str(delta.as_str()),
+                ProviderStreamEvent::Completed { .. } => terminals += 1,
+                _ => {}
+            }
+        }
+        assert_eq!(text, "socket");
+        assert_eq!(terminals, 1);
+        let sent = server.await.unwrap();
+        assert_eq!(sent["type"], "response.create");
+        assert!(sent.get("stream").is_none());
+    }
+
+    #[tokio::test]
+    async fn websocket_cancellation_closes_connection_and_settles() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}/responses", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut websocket = tokio_tungstenite::accept_async(socket).await.unwrap();
+            let _ = websocket.next().await.unwrap().unwrap();
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        });
+        let factory = XaiFactory::for_loopback(&endpoint).unwrap();
+        let mut config = XaiFactory::default_configuration();
+        config
+            .values
+            .values
+            .insert("xai:transport", json!("websocket"))
+            .unwrap();
+        let session = factory
+            .create_session(&config, Arc::new(Cancel(AtomicBool::new(false))))
+            .await
+            .unwrap();
+        let cancel = Arc::new(Cancel(AtomicBool::new(false)));
+        let mut stream = session
+            .start(fixture_request(), cancel.clone())
+            .await
+            .unwrap();
+        cancel.0.store(true, Ordering::SeqCst);
+        let event = tokio::time::timeout(std::time::Duration::from_secs(1), stream.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert!(matches!(
+            event,
+            ProviderStreamEvent::Completed {
+                finish: FinishOutcome::Cancelled,
+                ..
+            }
+        ));
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn websocket_disconnect_after_visible_output_is_not_replayed() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}/responses", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut websocket = tokio_tungstenite::accept_async(socket).await.unwrap();
+            let _ = websocket.next().await.unwrap().unwrap();
+            websocket
+                .send(Message::Text(
+                    json!({"type":"response.output_text.delta","output_index":0,"delta":"visible"})
+                        .to_string()
+                        .into(),
+                ))
+                .await
+                .unwrap();
+            websocket.close(None).await.unwrap();
+        });
+        let factory = XaiFactory::for_loopback(&endpoint).unwrap();
+        let mut config = XaiFactory::default_configuration();
+        config
+            .values
+            .values
+            .insert("xai:transport", json!("websocket"))
+            .unwrap();
+        let session = factory
+            .create_session(&config, Arc::new(Cancel(AtomicBool::new(false))))
+            .await
+            .unwrap();
+        let mut stream = session
+            .start(fixture_request(), Arc::new(Cancel(AtomicBool::new(false))))
+            .await
+            .unwrap();
+        assert!(matches!(
+            stream.next().await.unwrap().unwrap(),
+            ProviderStreamEvent::ContentDelta { .. }
+        ));
+        assert!(matches!(
+            stream.next().await.unwrap().unwrap(),
+            ProviderStreamEvent::Completed {
+                finish: FinishOutcome::StreamInterrupted {
+                    cause: StreamInterruptionCause::Transport,
+                    ..
+                },
+                ..
+            }
+        ));
+        assert!(stream.next().await.is_none());
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn websocket_handshake_failure_falls_back_to_http_before_dispatch() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}/responses", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut first = [0; 4096];
+            let count = socket.read(&mut first).await.unwrap();
+            assert!(
+                std::str::from_utf8(&first[..count])
+                    .unwrap()
+                    .contains("Upgrade: websocket")
+            );
+            socket
+                .write_all(
+                    b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                )
+                .await
+                .unwrap();
+            drop(socket);
+
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut second = [0; 8192];
+            let count = socket.read(&mut second).await.unwrap();
+            let request = std::str::from_utf8(&second[..count]).unwrap();
+            assert!(request.starts_with("POST /responses HTTP/1.1"));
+            let body = "data: {\"type\":\"response.output_text.delta\",\"output_index\":0,\"delta\":\"fallback\"}\n\ndata: {\"type\":\"response.completed\",\"response\":{}}\n\n";
+            socket.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.unwrap();
+        });
+        let factory = XaiFactory::for_loopback(&endpoint).unwrap();
+        let mut config = XaiFactory::default_configuration();
+        config
+            .values
+            .values
+            .insert("xai:transport", json!("websocket"))
+            .unwrap();
+        let session = factory
+            .create_session(&config, Arc::new(Cancel(AtomicBool::new(false))))
+            .await
+            .unwrap();
+        let mut stream = session
+            .start(fixture_request(), Arc::new(Cancel(AtomicBool::new(false))))
+            .await
+            .unwrap();
+        let mut text = String::new();
+        while let Some(event) = stream.next().await {
+            if let ProviderStreamEvent::ContentDelta {
+                part: ContentPart::Text(delta),
+                ..
+            } = event.unwrap()
+            {
+                text.push_str(delta.as_str());
+            }
+        }
+        assert_eq!(text, "fallback");
+        server.await.unwrap();
     }
     #[tokio::test]
     async fn cancellation_after_headers_settles_without_replay() {

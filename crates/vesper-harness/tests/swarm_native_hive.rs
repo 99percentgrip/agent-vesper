@@ -360,6 +360,7 @@ async fn run_hive(
                 model_id: ModelId::new("fixture").unwrap(),
             },
             context_window_tokens: if compaction { 5_000 } else { 131_072 },
+            native_compaction: vesper_agent::NativeCompactionPolicy::Disabled,
             system_instructions: Vec::new(),
             workspace_roots: vec![WorkspaceRoot {
                 name: BoundedString::new("worker").unwrap(),

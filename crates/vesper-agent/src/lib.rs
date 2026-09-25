@@ -42,8 +42,8 @@ pub use agent_loop::{
 };
 pub use compaction::{
     AUTO_COMPACT_PERCENT, CONTEXT_PRESSURE_THRESHOLDS, CompactionCommit, CompactionError,
-    CompactionReason, CompactionReport, ContextPressure, RESPONSE_RESERVE_TOKENS,
-    estimate_context_tokens,
+    CompactionReason, CompactionReport, ContextPressure, NativeCompactionPolicy,
+    RESPONSE_RESERVE_TOKENS, estimate_context_tokens,
 };
 pub use executor::{
     HostedTool, ToolContext, ToolError, ToolExecutor, ToolFuture, ToolResult, ToolService,

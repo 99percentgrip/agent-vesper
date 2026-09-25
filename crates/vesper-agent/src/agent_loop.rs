@@ -308,6 +308,9 @@ pub struct AgentLoopConfig {
     /// provider catalog; zero disables automatic compaction only for legacy
     /// test compositions that have not supplied model metadata.
     pub context_window_tokens: u64,
+    /// Explicit host policy for provider-native opaque compaction. Merely
+    /// selecting a capable provider does not enable native compaction.
+    pub native_compaction: crate::compaction::NativeCompactionPolicy,
     /// Ordered system instructions prepended to every turn.
     pub system_instructions: Vec<SystemInstruction>,
     /// Confined workspace roots; the first (primary) roots the tool executors.
@@ -1339,6 +1342,41 @@ impl AgentLoop {
             focus,
         )
         .map_err(AgentLoopError::Compaction)?;
+        if focus.is_none()
+            && self.config.native_compaction
+                == crate::compaction::NativeCompactionPolicy::PreferProvider
+            && let Some(native) = session.native_compaction()
+        {
+            let request = vesper_provider::NativeCompactionRequest {
+                provider_id: self.config.provider_id.clone(),
+                model: self.config.model.clone(),
+                system_instructions: self.config.system_instructions.clone(),
+                messages: draft.native_source(),
+            };
+            match native
+                .compact_native(request, Arc::clone(&cancellation))
+                .await
+            {
+                Ok(result) => {
+                    if result.item.provider_id != self.config.provider_id {
+                        return Err(AgentLoopError::Compaction(
+                            crate::compaction::CompactionError::InvalidSummary,
+                        ));
+                    }
+                    if let Ok(commit) = draft
+                        .clone()
+                        .commit_native(result.item, &self.config.system_instructions)
+                        && self.compaction_fits(&commit)
+                    {
+                        return Ok(commit);
+                    }
+                }
+                Err(error) if error.info.category == vesper_domain::ErrorCategory::Cancellation => {
+                    return Err(AgentLoopError::ProviderTurn(error));
+                }
+                Err(_) => {}
+            }
+        }
         let prompt = draft.prompt();
         let request = self.build_compaction_request(prompt);
         let summary = if let Some(auxiliary) = session.auxiliary() {
@@ -1373,14 +1411,21 @@ impl AgentLoop {
                     .map_err(AgentLoopError::Compaction)?
             }
         };
-        if self.config.context_window_tokens > 0 {
+        if !self.compaction_fits(&commit) {
             let reserve = RESPONSE_RESERVE_TOKENS.min(capacity.saturating_div(10).max(256));
             let used = commit.report.after_tokens.saturating_add(reserve);
-            if used > capacity {
-                return Err(AgentLoopError::ContextWindowExhausted { used, capacity });
-            }
+            return Err(AgentLoopError::ContextWindowExhausted { used, capacity });
         }
         Ok(commit)
+    }
+
+    fn compaction_fits(&self, commit: &CompactionCommit) -> bool {
+        if self.config.context_window_tokens == 0 {
+            return true;
+        }
+        let capacity = self.config.context_window_tokens.max(1);
+        let reserve = RESPONSE_RESERVE_TOKENS.min(capacity.saturating_div(10).max(256));
+        commit.report.after_tokens.saturating_add(reserve) <= capacity
     }
 
     async fn summarize_with_main(

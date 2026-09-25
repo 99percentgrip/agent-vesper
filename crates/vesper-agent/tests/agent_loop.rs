@@ -22,8 +22,10 @@ use vesper_domain::{
 };
 use vesper_provider::{
     CancellationSignal, CapabilityContext, CatalogCapabilityAdvisor, MediaCapability,
-    ModelCapabilityIndex, ModelDescriptor, ProviderCapabilities, ProviderConfiguration,
-    ProviderError, ProviderFactory, ProviderFuture, ProviderStreamEvent, SupportLevel,
+    ModelCapabilityIndex, ModelDescriptor, NativeCompactionPort, NativeCompactionRequest,
+    NativeCompactionResult, ProviderCapabilities, ProviderConfiguration, ProviderError,
+    ProviderEventStream, ProviderFactory, ProviderFuture, ProviderRequest, ProviderSession,
+    ProviderStreamEvent, SupportLevel,
 };
 use vesper_runtime::ProviderRegistry;
 use vesper_testkit::{FakeProviderSession, ScriptedProviderResponse};
@@ -47,6 +49,80 @@ impl AgentProgressPort for RecordingProgressPort {
 
 impl ProviderFactory for FakeFactory {
     type Session = FakeProviderSession;
+
+    fn provider_id(&self) -> &ProviderId {
+        &self.id
+    }
+
+    fn create_session<'a>(
+        &'a self,
+        _config: &'a ProviderConfiguration,
+        _cancellation: Arc<dyn CancellationSignal>,
+    ) -> ProviderFuture<'a, Result<Self::Session, ProviderError>> {
+        let session = self.session.clone();
+        Box::pin(async move { Ok(session) })
+    }
+}
+
+#[derive(Clone, Default)]
+struct NativeSession {
+    compacted: Arc<Mutex<Vec<NativeCompactionRequest>>>,
+}
+
+impl NativeCompactionPort for NativeSession {
+    fn compact_native<'a>(
+        &'a self,
+        request: NativeCompactionRequest,
+        _cancellation: Arc<dyn CancellationSignal>,
+    ) -> ProviderFuture<'a, Result<NativeCompactionResult, ProviderError>> {
+        self.compacted.lock().unwrap().push(request);
+        Box::pin(async {
+            Ok(NativeCompactionResult {
+                item: vesper_domain::OpaqueContent {
+                    provider_id: provider(),
+                    kind: "compaction".into(),
+                    data: vesper_domain::OpaqueProviderData::new(json!({
+                        "type": "compaction",
+                        "encrypted_content": "provider-owned"
+                    }))
+                    .unwrap(),
+                },
+                usage: vesper_domain::NormalizedUsage::unavailable(
+                    vesper_domain::UsageMode::Cumulative,
+                ),
+                dropped_message_count: Some(4),
+            })
+        })
+    }
+}
+
+impl ProviderSession for NativeSession {
+    fn native_compaction(&self) -> Option<&dyn NativeCompactionPort> {
+        Some(self)
+    }
+
+    fn start<'a>(
+        &'a self,
+        _request: ProviderRequest,
+        _cancellation: Arc<dyn CancellationSignal>,
+    ) -> ProviderFuture<'a, Result<ProviderEventStream, ProviderError>> {
+        Box::pin(async {
+            Ok(Box::pin(futures_util::stream::iter(vec![
+                Ok(content_delta("completed from native context")),
+                Ok(completed(FinishOutcome::Stop)),
+            ])) as ProviderEventStream)
+        })
+    }
+}
+
+#[derive(Clone)]
+struct NativeFactory {
+    id: ProviderId,
+    session: NativeSession,
+}
+
+impl ProviderFactory for NativeFactory {
+    type Session = NativeSession;
 
     fn provider_id(&self) -> &ProviderId {
         &self.id
@@ -144,6 +220,7 @@ fn config(provider_id: &ProviderId, max_iterations: u32) -> AgentLoopConfig {
             model_id: vesper_domain::ModelId::new("fixture-model").unwrap(),
         },
         context_window_tokens: 131_072,
+        native_compaction: vesper_agent::NativeCompactionPolicy::Disabled,
         system_instructions: Vec::new(),
         workspace_roots: Vec::new(),
         max_tool_iterations: max_iterations,
@@ -232,6 +309,56 @@ async fn pressure_compacts_before_dispatch_and_emits_a_report() {
             .iter()
             .any(|event| matches!(event, AgentProgressEvent::CompactionCompleted { .. }))
     );
+}
+
+#[tokio::test]
+async fn opted_in_native_compaction_replaces_prefix_without_auxiliary_turn() {
+    let provider_id = provider();
+    let native = NativeSession::default();
+    let recorded = native.compacted.clone();
+    let registry = Arc::new(ProviderRegistry::new());
+    registry
+        .register(NativeFactory {
+            id: provider_id.clone(),
+            session: native,
+        })
+        .await
+        .unwrap();
+    let mut loop_config = config(&provider_id, 10);
+    loop_config.context_window_tokens = 5_000;
+    loop_config.native_compaction = vesper_agent::NativeCompactionPolicy::PreferProvider;
+    let agent = AgentLoop::new(registry, ToolRegistry::parity_default(), loop_config);
+    let history = (0..8)
+        .map(|index| {
+            indexed_message(
+                index,
+                if index % 2 == 0 {
+                    MessageRole::User
+                } else {
+                    MessageRole::Assistant
+                },
+                &format!("goal implementation {}", "x".repeat(2_000)),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let (outcome, compacted) = agent
+        .run_prompt_with_history(
+            history,
+            SessionOperatingMode::Code,
+            SessionPermissionMode::Ask,
+        )
+        .await
+        .expect("native compaction should settle and preserve headroom");
+
+    assert!(matches!(outcome, AgentTurnOutcome::Completed { .. }));
+    assert_eq!(recorded.lock().unwrap().len(), 1);
+    assert_eq!(recorded.lock().unwrap()[0].messages.len(), 4);
+    assert!(compacted[0].id.as_str().starts_with("native-compaction-"));
+    assert!(matches!(
+        compacted[0].content.as_slice(),
+        [ContentPart::ProviderOpaque(_)]
+    ));
 }
 
 #[tokio::test]

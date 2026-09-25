@@ -12,7 +12,7 @@ use std::{borrow::Cow, collections::BTreeMap};
 use serde::{Deserialize, Serialize};
 use vesper_domain::{
     ContentPart, ContentText, ConversationMessage, ExtensionMap, MessageId, MessageRole,
-    SystemInstruction,
+    OpaqueContent, SystemInstruction,
 };
 
 use crate::vro::SecretScrubber;
@@ -40,6 +40,21 @@ const SKILL_SELECTION_EXTENSION: &str = "vesper:skills";
 pub enum CompactionReason {
     Automatic,
     Manual,
+}
+
+/// Host-selected policy for provider-native opaque compaction.
+///
+/// Advertising a native port never enables it by itself. Hosts must opt in,
+/// and focused manual compaction continues to use Vesper's semantic path.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum NativeCompactionPolicy {
+    /// Always use Vesper's inspectable semantic compaction.
+    #[default]
+    Disabled,
+    /// Prefer a provider-native compactor and fall back transactionally when
+    /// it is absent or fails before a replacement history is committed.
+    PreferProvider,
 }
 
 /// Conservative context estimate used before a provider request.
@@ -72,6 +87,13 @@ pub struct CompactionReport {
     /// coverage compared with the preceding persisted summary.
     #[serde(default)]
     pub quality_declined: bool,
+    /// True only when Vesper could inspect the compacted representation and
+    /// measure deterministic evidence coverage.
+    #[serde(default = "default_true")]
+    pub quality_measured: bool,
+    /// True when the replacement is provider-owned opaque continuation state.
+    #[serde(default)]
+    pub native_opaque: bool,
 }
 
 /// A validated candidate that has not yet changed caller-owned history.
@@ -209,6 +231,85 @@ pub fn prepare_compaction(
 }
 
 impl CompactionDraft {
+    /// Complete prefix eligible for native compaction. The recent suffix is
+    /// retained locally and is never duplicated in the provider result.
+    #[must_use]
+    pub fn native_source(&self) -> Vec<ConversationMessage> {
+        let prefix_len = self.original.len().saturating_sub(self.recent.len());
+        self.original[..prefix_len].to_vec()
+    }
+
+    /// Atomically constructs a history from provider-owned opaque state plus
+    /// the untouched recent suffix. Core records that semantic quality could
+    /// not be inspected rather than inventing an evidence score.
+    pub fn commit_native(
+        self,
+        item: OpaqueContent,
+        system_instructions: &[SystemInstruction],
+    ) -> Result<CompactionCommit, CompactionError> {
+        if item.provider_id.as_str().is_empty() {
+            return Err(CompactionError::InvalidSummary);
+        }
+        let suffix = self
+            .covered_ids
+            .last()
+            .map_or("empty", String::as_str)
+            .chars()
+            .filter(char::is_ascii_alphanumeric)
+            .take(48)
+            .collect::<String>();
+        let mut compacted = ConversationMessage {
+            id: MessageId::new(format!("native-compaction-{suffix}"))
+                .map_err(|_| CompactionError::InvalidSummary)?,
+            role: MessageRole::Assistant,
+            content: vec![ContentPart::ProviderOpaque(item)],
+            extensions: ExtensionMap::default(),
+        };
+        let mut history = Vec::with_capacity(self.recent.len() + 1);
+        history.push(compacted.clone());
+        history.extend(self.recent);
+        if !tool_transactions_are_complete(&history) {
+            return Err(CompactionError::InvalidSummary);
+        }
+        let after_tokens = estimate_context_tokens(system_instructions, &history);
+        compacted
+            .extensions
+            .insert(
+                COMPACTION_EXTENSION,
+                serde_json::json!({
+                    "version": 2,
+                    "covered": self.covered_ids,
+                    "reason": self.reason,
+                    "focus": self.focus,
+                    "before_tokens": self.before_tokens,
+                    "after_tokens": after_tokens,
+                    "capacity_tokens": self.capacity_tokens,
+                    "quality_measured": false,
+                    "native_opaque": true,
+                }),
+            )
+            .map_err(|_| CompactionError::InvalidSummary)?;
+        history[0] = compacted;
+        Ok(CompactionCommit {
+            report: CompactionReport {
+                reason: self.reason,
+                focus: self.focus,
+                before_tokens: self.before_tokens,
+                after_tokens,
+                capacity_tokens: self.capacity_tokens,
+                dropped_messages: self.original.len().saturating_sub(history.len()),
+                retained_messages: history.len(),
+                covered_message_ids: self.covered_ids,
+                quality_basis_points: 0,
+                quality_history: self.quality_history,
+                quality_declined: false,
+                quality_measured: false,
+                native_opaque: true,
+            },
+            history,
+        })
+    }
+
     /// Provider-facing summarization prompt. Source history is explicitly
     /// delimited as untrusted data and already secret-scrubbed.
     #[must_use]
@@ -294,6 +395,8 @@ impl CompactionDraft {
             quality_basis_points,
             quality_history: quality_history.clone(),
             quality_declined,
+            quality_measured: true,
+            native_opaque: false,
         };
         summary_message
             .extensions
@@ -335,6 +438,10 @@ impl CompactionDraft {
     pub fn original(&self) -> &[ConversationMessage] {
         &self.original
     }
+}
+
+const fn default_true() -> bool {
+    true
 }
 
 fn prior_quality_history(messages: &[ConversationMessage]) -> Vec<u16> {
@@ -677,7 +784,10 @@ fn evidence_coverage(evidence: &BTreeMap<&'static str, Vec<String>>, summary: &s
 #[cfg(test)]
 mod tests {
     use super::*;
-    use vesper_domain::{ToolCall, ToolCallId, ToolId, ToolResult, ToolResultId, ToolResultStatus};
+    use vesper_domain::{
+        OpaqueProviderData, ProviderId, ToolCall, ToolCallId, ToolId, ToolResult, ToolResultId,
+        ToolResultStatus,
+    };
 
     fn message(index: usize, role: MessageRole, text: &str) -> ConversationMessage {
         ConversationMessage {
@@ -859,5 +969,34 @@ mod tests {
             prepare_compaction(&[], &messages, 8_192, CompactionReason::Manual, None).unwrap();
         assert!(draft.deterministic_summary().chars().count() <= draft.summary_char_limit);
         assert!(draft.source.chars().count() <= 8_192 * 7 / 4);
+    }
+
+    #[test]
+    fn native_compaction_replaces_only_prefix_and_marks_quality_unmeasured() {
+        let messages = (0..8)
+            .map(|index| message(index, MessageRole::User, "preserve this history"))
+            .collect::<Vec<_>>();
+        let draft =
+            prepare_compaction(&[], &messages, 100_000, CompactionReason::Automatic, None).unwrap();
+        assert_eq!(draft.native_source(), messages[..4]);
+        let opaque = OpaqueContent {
+            provider_id: ProviderId::new("fixture").unwrap(),
+            kind: "compaction".into(),
+            data: OpaqueProviderData::new(serde_json::json!({
+                "type": "compaction",
+                "encrypted_content": "opaque-byte-exact-value"
+            }))
+            .unwrap(),
+        };
+        let commit = draft.commit_native(opaque.clone(), &[]).unwrap();
+        assert_eq!(commit.history.len(), 5);
+        assert_eq!(
+            commit.history[0].content,
+            vec![ContentPart::ProviderOpaque(opaque)]
+        );
+        assert_eq!(commit.history[1..], messages[4..]);
+        assert!(commit.report.native_opaque);
+        assert!(!commit.report.quality_measured);
+        assert_eq!(commit.report.quality_basis_points, 0);
     }
 }

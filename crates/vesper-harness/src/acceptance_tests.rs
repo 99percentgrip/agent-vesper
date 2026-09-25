@@ -355,6 +355,7 @@ fn config(root: &Path, id: &vesper_domain::ProviderId) -> vesper_agent::AgentLoo
             model_id: vesper_domain::ModelId::new("fixture").unwrap(),
         },
         context_window_tokens: 128_000,
+        native_compaction: vesper_agent::NativeCompactionPolicy::Disabled,
         system_instructions: vec![],
         workspace_roots: context(root).workspace_roots,
         max_tool_iterations: 16,

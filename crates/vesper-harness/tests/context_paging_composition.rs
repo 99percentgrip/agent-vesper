@@ -289,6 +289,7 @@ fn loop_config(provider_id: &ProviderId) -> AgentLoopConfig {
             model_id: vesper_domain::ModelId::new("fixture-model").unwrap(),
         },
         context_window_tokens: 131_072,
+        native_compaction: vesper_agent::NativeCompactionPolicy::Disabled,
         system_instructions: Vec::new(),
         workspace_roots: Vec::new(),
         max_tool_iterations: 10,

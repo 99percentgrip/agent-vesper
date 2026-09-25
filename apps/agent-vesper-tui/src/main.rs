@@ -5969,6 +5969,7 @@ fn build_agent_config(provider_id: &ProviderId) -> Result<AgentLoopConfig, Strin
             model_id: model_id_for_provider(provider_id)?,
         },
         context_window_tokens: default_context_window_for_provider(provider_id)?,
+        native_compaction: vesper_agent::NativeCompactionPolicy::Disabled,
         // Project instructions are loaded at the composition boundary after
         // this pure provider/configuration projection is built.
         system_instructions: Vec::<SystemInstruction>::new(),

@@ -1,5 +1,14 @@
 # Foundation Evidence Index
 
+## VRO-18 PR-6 native compaction and WebSocket (2026-09-25)
+
+- Execution: [`xai-provider-pr6-execution.md`](xai-provider-pr6-execution.md)
+- Verdict: PR-6 PASS at offline transport and shared-policy scope. Explicit,
+  default-off provider-native compaction atomically replaces only the older
+  prefix, preserves opaque state, and records quality as unmeasured. xAI
+  Global/API-key WebSocket shares HTTP semantics and never replays after
+  dispatch; targeted AgentLoop and xAI suites pass. Host controls remain PR-7.
+
 ## VRO-18 PR-5 provider-hosted tools (2026-09-25)
 
 - Execution: [`xai-provider-pr5-execution.md`](xai-provider-pr5-execution.md)

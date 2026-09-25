@@ -1057,6 +1057,7 @@ mod selected_model_wire_tests {
                 model_id: ModelId::new("picked-model").unwrap(),
             },
             context_window_tokens: 8192,
+            native_compaction: vesper_agent::NativeCompactionPolicy::Disabled,
             system_instructions: vec![],
             workspace_roots: vec![],
             max_tool_iterations: 2,

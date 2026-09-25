@@ -2322,3 +2322,14 @@ only after explicit opt-in and only on the verified Global/API-key path.
 Provider-hosted image generation is excluded until a provider-neutral generated
 media output/asset port exists, as required by §22.2. Host controls remain PR-7;
 PR-6 through PR-8 remain open.
+
+## 45. PR-6 closeout — 2026-09-25
+
+PR-6 is closed at offline transport and shared-policy scope by
+[`foundation/xai-provider-pr6-execution.md`](foundation/xai-provider-pr6-execution.md).
+The provider-neutral AgentLoop now has an explicit, default-off native
+compaction policy and transactional opaque-prefix commit. xAI implements the
+bounded Global/API-key compaction endpoint and an explicit WebSocket transport
+whose pre-dispatch fallback cannot replay sent or visible work. The targeted
+AgentLoop and xAI suites are green. Host controls, composition, live acceptance
+and exact-commit release remain PR-7/PR-8 work.
