@@ -30,6 +30,8 @@ use vesper_policy::firewall::RuleDecision;
 
 /// Maximum bytes of tool output retained (prevents unbounded model context).
 const MAX_OUTPUT_BYTES: usize = 65_536;
+/// Total post-signal budget for leader reaping and pipe EOF observation.
+const COMMAND_SETTLEMENT_BUDGET: Duration = Duration::from_millis(2_500);
 /// Maximum changed/context lines carried to interactive hosts for one edit.
 const MAX_CHANGE_PREVIEW_LINES: usize = 64;
 /// Maximum display width of a single preview line before an ellipsis.
@@ -1048,9 +1050,13 @@ fn run_bounded(
         Err(error) if process_group_already_absent(&error) => true,
         Err(_) => false,
     };
+    // Reaping and pipe draining happen concurrently, so they share one total
+    // settlement deadline. A separate short leader deadline made truthful
+    // cleanup depend on runner scheduling even when the pipes settled within
+    // the existing overall 2.5-second budget.
+    let settlement_deadline = Instant::now() + COMMAND_SETTLEMENT_BUDGET;
     let mut final_status = status;
-    let reap_deadline = Instant::now() + Duration::from_millis(500);
-    while final_status.is_none() && Instant::now() < reap_deadline {
+    while final_status.is_none() && Instant::now() < settlement_deadline {
         match child.inner().try_wait() {
             Ok(Some(observed)) => final_status = Some(observed),
             Ok(None) => std::thread::sleep(Duration::from_millis(10)),
@@ -1058,9 +1064,8 @@ fn run_bounded(
         }
     }
     let leader_reaped = final_status.is_some();
-    let capture_deadline = Instant::now() + Duration::from_secs(2);
-    let stdout = receive_capture(&stdout, capture_deadline);
-    let stderr = receive_capture(&stderr, capture_deadline);
+    let stdout = receive_capture(&stdout, settlement_deadline);
+    let stderr = receive_capture(&stderr, settlement_deadline);
     let pipes_settled = stdout.is_some() && stderr.is_some();
     #[cfg(windows)]
     let tree_settled = cleanup_verified || (reason.is_none() && pipes_settled);

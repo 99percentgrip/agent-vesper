@@ -263,7 +263,10 @@ async fn timeout_preserves_partial_output_and_cleans_descendants() {
         .to_string();
     assert!(started.elapsed() < Duration::from_secs(4));
     assert!(error.contains("command timed out"));
-    assert!(error.contains("cleanup=verified"));
+    assert!(
+        error.contains("cleanup=verified"),
+        "cancellation did not verify cleanup: {error}"
+    );
     assert!(error.contains("partial"));
     assert!(error.contains("stdout=") || error.contains("output truncated"));
     assert_marker_absent_after_cleanup(&root.path().join("descendant.marker")).await;

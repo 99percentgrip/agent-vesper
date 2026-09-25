@@ -658,6 +658,9 @@ the multi-turn, tool-executing layer above it.
   retention boundary, the historical 71,443-byte workload, timeout,
   cancellation, dropped callers, nonzero exit, descendant-held pipes,
   delayed-marker descendant cleanup, and post-failure recovery.
+- Post-signal leader reaping and stdout/stderr EOF observation share one bounded
+  settlement deadline; do not split that budget into scheduling-sensitive
+  platform phases.
 
 - Run `cargo test -p vesper-agent`.
 - Run `cargo xtask verify` (fmt + clippy + workspace tests + architecture).
