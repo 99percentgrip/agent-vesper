@@ -72,7 +72,9 @@ types, and deterministic in-memory fakes.
   canonical PCM out via the `VoiceTts` port; never plays audio, never
   creates files (stdout → memory), never treats process exit as
   playback. System-engine route is an optional user-installed baseline
-  (no bundling; licenses recorded in the PR-2 execution report).
+  (no bundling; licenses recorded in the PR-2 execution report). Spawning a
+  newly published executable retries only the transient `ExecutableFileBusy`
+  classification twice with a 50 ms delay; other failures remain immediate.
 - The crate must never depend on runtime, agent, harness, or provider
   adapters. Hosts translate existing runtime/provider events into the
   voice-owned `HostEvent` vocabulary at their composition boundary; the

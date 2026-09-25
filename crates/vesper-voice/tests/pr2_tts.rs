@@ -176,6 +176,42 @@ fn synthesis_returns_canonical_pcm_from_streaming_wav() {
 }
 
 #[test]
+#[cfg(target_os = "linux")]
+fn transient_executable_busy_is_retried_before_unavailable() {
+    let dir = std::env::temp_dir().join(format!("vesper-voice-pr2-busy-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let executable = fixture_engine(&dir, FixtureKind::Ok);
+    // Linux returns ETXTBSY while an executable remains open for writing.
+    // Release the exact fixture after the first bounded spawn attempt.
+    let writer = std::fs::OpenOptions::new()
+        .write(true)
+        .open(&executable)
+        .unwrap();
+    let release = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(25));
+        drop(writer);
+    });
+    let tts = SubprocessTts::new(
+        SubprocessTtsConfig {
+            executable,
+            voice: "en".into(),
+            deadline: Duration::from_secs(10),
+            max_output_bytes: 2 * 1024 * 1024,
+            max_text_bytes: 8192,
+        },
+        executor(),
+    )
+    .unwrap();
+    let cancel = VoiceCancel::new();
+    let voice = profile(&tts);
+    let result = block_on(tts.synthesize("busy retry", &voice, &cancel));
+    release.join().unwrap();
+    if let Err(error) = result {
+        panic!("transient ETXTBSY must settle: {error:?}");
+    }
+}
+
+#[test]
 #[cfg(unix)]
 fn nonzero_exit_is_inference_failure() {
     let tts = tts_with(FixtureKind::NonZeroExit);
@@ -196,10 +232,11 @@ fn malformed_output_is_invalid_input() {
     let tts = tts_with(FixtureKind::Malformed);
     let cancel = VoiceCancel::new();
     let voice = profile(&tts);
-    assert!(matches!(
-        block_on(tts.synthesize("x", &voice, &cancel)),
-        Err(vesper_voice::VoiceError::InvalidInput(_))
-    ));
+    match block_on(tts.synthesize("x", &voice, &cancel)) {
+        Err(vesper_voice::VoiceError::InvalidInput(_)) => {}
+        Err(other) => panic!("expected invalid input, got {other:?}"),
+        Ok(_) => panic!("expected invalid input, got a stream"),
+    }
 }
 
 #[test]
@@ -208,10 +245,11 @@ fn odd_trailing_byte_is_truncation() {
     let tts = tts_with(FixtureKind::Truncated);
     let cancel = VoiceCancel::new();
     let voice = profile(&tts);
-    assert!(matches!(
-        block_on(tts.synthesize("x", &voice, &cancel)),
-        Err(vesper_voice::VoiceError::Truncated)
-    ));
+    match block_on(tts.synthesize("x", &voice, &cancel)) {
+        Err(vesper_voice::VoiceError::Truncated) => {}
+        Err(other) => panic!("expected truncation, got {other:?}"),
+        Ok(_) => panic!("expected truncation, got a stream"),
+    }
 }
 
 #[test]
@@ -220,10 +258,11 @@ fn oversized_output_is_resource_exhausted() {
     let tts = tts_with(FixtureKind::Oversized);
     let cancel = VoiceCancel::new();
     let voice = profile(&tts);
-    assert!(matches!(
-        block_on(tts.synthesize("x", &voice, &cancel)),
-        Err(vesper_voice::VoiceError::ResourceExhausted(_))
-    ));
+    match block_on(tts.synthesize("x", &voice, &cancel)) {
+        Err(vesper_voice::VoiceError::ResourceExhausted(_)) => {}
+        Err(other) => panic!("expected resource exhaustion, got {other:?}"),
+        Ok(_) => panic!("expected resource exhaustion, got a stream"),
+    }
 }
 
 #[test]

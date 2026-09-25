@@ -42,7 +42,43 @@ pub(crate) struct Credentials {
     lock_path: PathBuf,
     lock: Arc<Mutex<()>>,
     #[cfg(test)]
-    test_store: Option<vesper_auth::PrivateFileCredentialStore>,
+    test_store: Option<TestCredentialStore>,
+}
+
+#[cfg(test)]
+#[derive(Clone)]
+struct TestCredentialStore {
+    path: PathBuf,
+    value: Arc<std::sync::Mutex<Option<Zeroizing<String>>>>,
+}
+
+#[cfg(test)]
+impl TestCredentialStore {
+    fn new(path: PathBuf) -> Self {
+        Self {
+            path,
+            value: Arc::new(std::sync::Mutex::new(None)),
+        }
+    }
+
+    fn load(&self) -> Result<Option<SecretValue>, CredentialError> {
+        let value = self
+            .value
+            .lock()
+            .map_err(|_| CredentialError::Unavailable)?;
+        Ok(value
+            .as_ref()
+            .map(|secret| SecretValue::new(secret.as_str())))
+    }
+
+    fn store(&self, secret: &str) -> Result<(), CredentialError> {
+        let mut value = self
+            .value
+            .lock()
+            .map_err(|_| CredentialError::Unavailable)?;
+        *value = Some(Zeroizing::new(secret.to_owned()));
+        Ok(())
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -105,7 +141,7 @@ impl Credentials {
     fn lock_path(&self) -> PathBuf {
         #[cfg(test)]
         if let Some(store) = &self.test_store {
-            return store.path().with_extension("lock");
+            return store.path.with_extension("lock");
         }
         self.lock_path.clone()
     }
@@ -172,7 +208,7 @@ impl Credentials {
     fn read(&self) -> Result<Stored, CredentialError> {
         #[cfg(test)]
         if let Some(store) = &self.test_store {
-            return decode(store.load(ID).map_err(|_| CredentialError::Unavailable)?);
+            return decode(store.load()?);
         }
         decode(
             self.store
@@ -186,9 +222,7 @@ impl Credentials {
             Zeroizing::new(serde_json::to_string(&value.0).map_err(|_| CredentialError::Failed)?);
         #[cfg(test)]
         if let Some(store) = &self.test_store {
-            store
-                .store(ID, &encoded)
-                .map_err(|_| CredentialError::Unavailable)?;
+            store.store(&encoded)?;
             return Ok(());
         }
         self.store
@@ -318,7 +352,7 @@ impl Credentials {
     #[cfg(test)]
     pub(crate) fn isolated(path: PathBuf) -> Self {
         Self {
-            test_store: Some(vesper_auth::PrivateFileCredentialStore::new(path.clone())),
+            test_store: Some(TestCredentialStore::new(path.clone())),
             lock_path: path.with_extension("lock"),
             lock: Arc::new(Mutex::new(())),
             ..Self::default()

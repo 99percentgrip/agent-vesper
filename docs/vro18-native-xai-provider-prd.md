@@ -1,6 +1,6 @@
 # VRO-18 — Native xAI Provider for Agent Vesper
 
-**Status:** PR-1–PR-6 COMPLETE; PR-7 HOST COMPOSITION IMPLEMENTED — ACCEPTANCE/RELEASE OPEN
+**Status:** PR-1–PR-8 IMPLEMENTED; LIVE SUPERGROK ACCEPTANCE PASS — EXACT-COMMIT RELEASE GATES IN PROGRESS
 **Date:** 2026-09-25
 **Target repository:** `99percentgrip/agent-vesper`
 **Baseline:** post-`v0.23.6` `main` (`c64e78f46065f1fbaae899ab9914f3d9b3f7023d`)
@@ -2363,7 +2363,7 @@ adapter remains the sole owner of hosted-tool projection and validation. Live
 Grok-account acceptance, optional paid API-key acceptance, exact-commit CI and
 release remain PR-8 work.
 
-## 47. PR-8 live-acceptance checkpoint — 2026-09-25
+## 47. PR-8 live acceptance and release preparation — 2026-09-25
 
 The live SuperGrok execution is recorded in
 [`foundation/xai-provider-pr8-live-acceptance.md`](foundation/xai-provider-pr8-live-acceptance.md).
@@ -2380,5 +2380,9 @@ Grok-session therefore exposes only verified model/reasoning controls; region,
 WebSocket, native compaction and hosted tools stay Global/API-key-only. No
 silent billing fallback occurred. Logout, device re-authentication and a fresh
 post-login turn passed. Paid API-key live acceptance was not run and is optional
-under §30.2. Exact-commit release gates remain open, so VRO-18 is not yet
-complete or released.
+under §30.2. The exact implementation candidate passed local canonical, MSRV,
+strict Clippy, architecture, naming, acceptance, RustSec and Cargo Deny gates.
+Its temporary-ref five-target and web-driver workflows are the final pre-release
+candidate checks; v0.24.0 still requires all four exact-release-commit workflows
+before tagging. Publication receipts belong to
+[`foundation/2026-09-25-v0.24.0-release-execution.md`](foundation/2026-09-25-v0.24.0-release-execution.md).

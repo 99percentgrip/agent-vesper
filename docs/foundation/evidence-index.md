@@ -1,5 +1,14 @@
 # Foundation Evidence Index
 
+## VRO-18 v0.24.0 release (2026-09-25)
+
+- Execution: [`2026-09-25-v0.24.0-release-execution.md`](2026-09-25-v0.24.0-release-execution.md)
+- Verdict: **RELEASE GATES IN PROGRESS.** Candidate `26ec332…` passed local
+  canonical/MSRV/supply-chain gates and live SuperGrok acceptance. Temporary
+  exact-candidate five-target and web-driver workflows precede the final
+  version commit. Completion still requires exact-release-commit CI, tag,
+  asset/checksum verification and the continuous Registry PR #539 update.
+
 ## VRO-18 PR-8 live SuperGrok acceptance (2026-09-25)
 
 - Execution: [`xai-provider-pr8-live-acceptance.md`](xai-provider-pr8-live-acceptance.md)

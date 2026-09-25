@@ -1,7 +1,7 @@
 # xAI / Grok provider
 
 The native xAI adapter is under VRO-18 acceptance and is not part of the
-released v0.23.6 build. This page describes the current candidate behavior.
+released v0.24.0 build.
 
 ## Authentication and billing
 

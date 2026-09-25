@@ -127,14 +127,34 @@ impl EngineChild {
             // Own process group so cleanup signals exactly this child.
             command.process_group(0);
         }
-        let mut child = command.spawn().map_err(|error| VoiceError::Unavailable {
-            provider: provider.clone(),
-            reason: BoundedString::new(format!(
-                "speech engine unavailable ({}): install prerequisite",
-                error.kind()
-            ))
-            .unwrap_or_else(|_| BoundedString::new("engine unavailable").unwrap()),
-        })?;
+        // A just-published executable can briefly return ETXTBSY while the
+        // filesystem releases its writer. This is transient availability,
+        // not a missing engine. Retry only that exact OS classification with
+        // a small bound; every other spawn error remains immediate and
+        // truthful.
+        let mut spawn_retries = 0;
+        let mut child = loop {
+            match command.spawn() {
+                Ok(child) => break child,
+                Err(error)
+                    if error.kind() == std::io::ErrorKind::ExecutableFileBusy
+                        && spawn_retries < 2 =>
+                {
+                    spawn_retries += 1;
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+                Err(error) => {
+                    return Err(VoiceError::Unavailable {
+                        provider: provider.clone(),
+                        reason: BoundedString::new(format!(
+                            "speech engine unavailable ({}): install prerequisite",
+                            error.kind()
+                        ))
+                        .unwrap_or_else(|_| BoundedString::new("engine unavailable").unwrap()),
+                    });
+                }
+            }
+        };
         let stdin: Option<ChildStdin> = child.stdin.take();
         let stdout = child.stdout.take().ok_or_else(|| VoiceError::Unavailable {
             provider: provider.clone(),

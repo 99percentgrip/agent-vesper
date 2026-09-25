@@ -175,14 +175,15 @@ When the user requests a durable behavior change, record it here or in the relev
   migration gates.
 - Never advertise invented providers, models, API plans, reasoning modes, or
   UI controls. Provider-specific values come from the owning real adapter and
-  the frozen oracle; production registers Z.ai, LM Studio, and native OpenAI.
+  its evidence sources; production registers Z.ai, LM Studio, native OpenAI,
+  and native xAI / Grok.
 - Z.ai model metadata has one production source of truth in
   `vesper-provider-glm`; ACP and TUI must derive their model lists, limits, and
   capability gates from that catalog. Undocumented model-list endpoints or
   identifier-only discovery must not infer vision, reasoning, plan, or limit
   capabilities.
 - “Multi-provider” means the provider-neutral registry/runtime architecture
-  plus the real registered adapters. Z.ai, LM Studio, and OpenAI are the
+  plus the real registered adapters. Z.ai, LM Studio, OpenAI, and xAI are the
   registered adapters; no additional provider may be claimed before it has
   authentication, catalog, transport, fixtures, and CI evidence.
 - A feature may be called impossible or excluded only after checking the

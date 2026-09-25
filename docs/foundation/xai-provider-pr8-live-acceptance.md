@@ -133,6 +133,12 @@ on the final commit and obtain exact-commit CI before release.
   by a separately billed credential.
 - Final exact-commit local gates, five-target CI and release publication remain
   pending.
+- Temporary candidate five-target run `36135566479` exposed three release-gate
+  defects outside the live provider path: a macOS playback fixture timing race,
+  transient Linux `ExecutableFileBusy` during subprocess TTS fixture launch,
+  and Windows-only xAI fixture/backend timing assumptions. Each is repaired
+  with a focused regression or bounded fixture correction; the failed run is
+  red evidence only and a complete replacement matrix remains required.
 
 ## Readiness effect
 

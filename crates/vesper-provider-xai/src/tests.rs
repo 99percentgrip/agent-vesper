@@ -995,7 +995,7 @@ mod http {
             .start(fixture_request(), Arc::new(Cancel(AtomicBool::new(false))))
             .await
             .unwrap();
-        let event = tokio::time::timeout(std::time::Duration::from_secs(1), stream.next())
+        let event = tokio::time::timeout(std::time::Duration::from_secs(5), stream.next())
             .await
             .unwrap()
             .unwrap()

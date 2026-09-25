@@ -118,7 +118,9 @@ sys.exit(0)
 "#
         }
         PlayerScript::ReadsThenExits(bytes) => &format!(
-            r#"import sys, time
+            r#"import os, sys, time
+with open(r"{pid_file}", "w") as marker:
+    marker.write(str(os.getpid()))
 remaining = {bytes}
 while remaining > 0:
     d = sys.stdin.buffer.read(min(4096, remaining))
@@ -126,7 +128,8 @@ while remaining > 0:
     remaining -= len(d)
     time.sleep(len(d) / 32000.0)
 sys.exit(0)
-"#
+"#,
+            pid_file = root.join(format!("{name}.pid")).display(),
         ),
     };
     let python = std::process::Command::new("python3")
@@ -136,6 +139,35 @@ sys.exit(0)
         .expect("locate python3");
     let interpreter = String::from_utf8_lossy(&python.stdout).trim().to_owned();
     write_player(root, name, &format!("#!{interpreter}\n{body}"))
+}
+
+/// Waits for the fixture child to be absent or a zombie, which means the
+/// owner-side `try_wait` will observe its exit. A fixed sleep was racy under
+/// loaded macOS runners and could close stdin before the short consumer had
+/// actually exited, changing the condition the test intended to exercise.
+fn wait_for_fixture_exit(pid_file: &Path) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let pid = loop {
+        if let Ok(text) = std::fs::read_to_string(pid_file)
+            && let Ok(pid) = text.parse::<u32>()
+        {
+            break pid;
+        }
+        assert!(Instant::now() < deadline, "fixture did not publish its pid");
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    loop {
+        let status = std::process::Command::new("ps")
+            .args(["-o", "state=", "-p", &pid.to_string()])
+            .output()
+            .expect("inspect fixture process state");
+        let state = String::from_utf8_lossy(&status.stdout);
+        if !status.status.success() || state.trim().is_empty() || state.trim().starts_with('Z') {
+            return;
+        }
+        assert!(Instant::now() < deadline, "short consumer did not exit");
+        std::thread::sleep(Duration::from_millis(10));
+    }
 }
 
 fn temp_root(tag: &str) -> PathBuf {
@@ -377,6 +409,7 @@ fn early_successful_exit_with_outstanding_bytes_is_a_failure() {
 #[test]
 fn short_consumer_cannot_yield_a_drained_receipt() {
     let root = temp_root("short");
+    let pid_file = root.join("short.pid");
     let owner = PlaybackOwner::new(
         player(
             &root,
@@ -387,9 +420,9 @@ fn short_consumer_cannot_yield_a_drained_receipt() {
     );
     owner.begin_stream().expect("begin");
     let _ = owner.push_pcm(&piece_pcm());
-    // Let the short consumer finish its prefix and EXIT (bounded wait; it
-    // consumed half a piece at the canonical rate, ~0.75 s).
-    std::thread::sleep(Duration::from_millis(1400));
+    // Observe the exact process state instead of assuming a loaded runner
+    // schedules Python within a fixed 1.4 s window.
+    wait_for_fixture_exit(&pid_file);
     if matches!(owner.end_stream(), Ok(PlaybackReceipt::Drained)) {
         panic!("a short consumer must not certify completion of all bytes");
     }
