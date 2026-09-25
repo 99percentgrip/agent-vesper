@@ -84,13 +84,20 @@ means model/catalog/endpoint evidence is required. `UNKNOWN` fails closed.
 | Vesper function tools | CONDITIONAL by model | CONDITIONAL by model | CONDITIONAL by model/backend | CONDITIONAL by model/backend |
 | structured output | CONDITIONAL by model/schema | CONDITIONAL by model/schema | UNKNOWN until proxy fixture | UNKNOWN until proxy fixture |
 | image input | CONDITIONAL by model | CONDITIONAL by model | UNKNOWN until proxy fixture | UNKNOWN until proxy fixture |
-| hosted tools/citations | YES, explicit opt-in | YES; outside region guarantee | CONDITIONAL by proxy catalog | CONDITIONAL by proxy catalog |
+| hosted tools/citations | YES, explicit opt-in | YES; outside region guarantee | UNKNOWN; live proxy rejection, fail closed | UNKNOWN; live proxy rejection, fail closed |
 | encrypted reasoning | CONDITIONAL, Responses | CONDITIONAL, Responses | CONDITIONAL on Responses backend | CONDITIONAL on Responses backend |
 | prompt-cache routing | YES | YES | YES, conversation header | YES, conversation header |
 | native compaction | YES, Responses | YES, Responses | UNKNOWN | UNKNOWN |
 | Responses WebSocket | YES | YES | UNKNOWN | UNKNOWN |
 | token/tool usage | YES | YES | CONDITIONAL by backend | CONDITIONAL by backend |
 | account quota | no verified balance endpoint | no verified balance endpoint | tier only; allowance unavailable | tier only; allowance unavailable |
+
+The PR-8 live run refined the session transport evidence: successful proxy
+inference requires the pinned first-party authenticate-response, protocol
+version, client identity/mode, model-override, and per-turn correlation headers
+in addition to bearer and token-auth. A controlled Grok-session hosted Web
+Search attempt was rejected by the proxy, so hosted tools remain unavailable
+in session mode instead of inheriting public API capability.
 
 ### Current model corrections
 

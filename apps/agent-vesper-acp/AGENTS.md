@@ -408,9 +408,17 @@ into exactly one always-safe, argument-dependent, or interrupting class.
   the TUI. ACP exposes discovered xAI models and provider controls through
   session config selectors; explicit CLI browser/device/API-key auth uses the
   provider credential port and never writes protocol data to stdout.
+  Capability checks use the adapter-owned xAI catalog at the composition
+  boundary, including image eligibility. Controls intersect the authenticated
+  billing mode: Grok-session omits API-key-only region, WebSocket, compaction,
+  and hosted-tool selectors.
   Enumerated hosted-tool enablement uses footer selectors. Bounded structured
   values that ACP selectors cannot represent use the active provider's
   advertised session command aliases and remain adapter-validated.
+- All-feature process tests stay offline even when the developer keyring holds
+  a real xAI credential. The integration harness discovers xAI models only
+  when xAI is the explicitly selected initial provider; normal production
+  composition retains authenticated discovery for provider switching.
 
 ## Child DOX Index
 

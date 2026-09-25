@@ -1,5 +1,17 @@
 # Foundation Evidence Index
 
+## VRO-18 PR-8 live SuperGrok acceptance (2026-09-25)
+
+- Execution: [`xai-provider-pr8-live-acceptance.md`](xai-provider-pr8-live-acceptance.md)
+- Verdict: live Grok-session discovery, text, shared `read_file`/`run_command`,
+  continuation, bounded cancellation/recovery, image input, usage/status and
+  logout pass. Live evidence repaired missing mandatory session-proxy headers,
+  ACP's xAI image capability projection, auth-mode control intersection and
+  credential-sensitive test isolation. Session hosted tools remain explicitly
+  unsupported/fail-closed; separately billed API-key live acceptance was not
+  run. Logout/device re-authentication and a post-login turn pass; exact-commit
+  release gates remain open.
+
 ## VRO-18 xAI host composition (2026-09-25)
 
 - Execution: [`xai-provider-pr7-execution.md`](xai-provider-pr7-execution.md)

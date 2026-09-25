@@ -9,6 +9,8 @@ pub struct AvailableModels {
     pub models: Vec<ModelDescriptor>,
     pub unverified: Vec<String>,
     pub endpoint_excluded: Vec<String>,
+    /// Selected non-secret billing/authentication mode for capability projection.
+    pub authentication_method: Option<String>,
 }
 impl AvailableModels {
     pub fn contains(&self, id: &str) -> bool {
@@ -59,6 +61,7 @@ pub(crate) fn parse(
         models,
         unverified,
         endpoint_excluded,
+        authentication_method: None,
     })
 }
 impl XaiFactory {
@@ -160,10 +163,18 @@ impl XaiSession {
                 }
                 bytes.extend_from_slice(&chunk);
             }
-            parse(
+            let mut available = parse(
                 &serde_json::from_slice(&bytes).map_err(|_| crate::wire::invalid())?,
                 self.region,
-            )
+            )?;
+            available.authentication_method = Some(
+                match auth.mode {
+                    crate::credentials::AuthenticationMode::GrokSession => "xai-grok-session",
+                    crate::credentials::AuthenticationMode::ApiKey => "xai-api-key",
+                }
+                .to_owned(),
+            );
+            Ok(available)
         };
         tokio::select! {biased;
             _=async{while !cancel.is_cancelled(){tokio::time::sleep(Duration::from_millis(25)).await;}}=>Err(error("xAI model discovery cancelled",ErrorCategory::Cancellation,false)),

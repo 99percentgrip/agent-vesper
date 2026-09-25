@@ -519,96 +519,19 @@ pub(crate) fn multi_provider_control_surface_with_openai(
                     })
                     .collect(),
             });
-            controls.push(AcpSessionControl {
-                id: "api_endpoint".into(),
-                name: "API region".into(),
-                description: Some(
-                    "US regional processing supports only the documented regional model set."
-                        .into(),
-                ),
-                category: AcpControlCategory::Other,
-                current_value: config_str(configuration, "xai:region")
-                    .unwrap_or("global")
-                    .into(),
-                options: [("global", "Global"), ("us", "US regional")]
-                    .into_iter()
-                    .map(|(value, name)| AcpControlOption {
-                        value: value.into(),
-                        name: name.into(),
-                        description: None,
-                    })
-                    .collect(),
-            });
-            controls.push(AcpSessionControl {
-                id: "transport".into(),
-                name: "Responses transport".into(),
-                description: Some("WebSocket is an optional Global/API-key optimization.".into()),
-                category: AcpControlCategory::Other,
-                current_value: config_str(configuration, "xai:transport")
-                    .unwrap_or("http")
-                    .into(),
-                options: [("http", "HTTP/SSE"), ("websocket", "WebSocket")]
-                    .into_iter()
-                    .map(|(value, name)| AcpControlOption {
-                        value: value.into(),
-                        name: name.into(),
-                        description: None,
-                    })
-                    .collect(),
-            });
-            controls.push(AcpSessionControl {
-                id: "native_compaction".into(),
-                name: "Native compaction".into(),
-                description: Some("Explicitly permits opaque xAI compaction; Vesper retains rollback and recent history.".into()),
-                category: AcpControlCategory::Other,
-                current_value: config_str(configuration, "xai:native-compaction").unwrap_or("disabled").into(),
-                options: [("disabled", "Disabled"), ("enabled", "Enabled")].into_iter().map(|(value,name)| AcpControlOption { value: value.into(), name: name.into(), description: None }).collect(),
-            });
-            for (id, name, key, description) in [
-                (
-                    "xai_web",
-                    "xAI Web Search",
-                    "xai:hosted-web-search",
-                    "xAI-hosted web search; separate egress and possible charges.",
-                ),
-                (
-                    "xai_x",
-                    "xAI X Search",
-                    "xai:hosted-x-search",
-                    "xAI-hosted X search; separate egress and possible charges.",
-                ),
-                (
-                    "xai_code",
-                    "xAI Code Execution",
-                    "xai:hosted-code-execution",
-                    "Remote xAI execution; distinct from Vesper run_command.",
-                ),
-                (
-                    "xai_attachments",
-                    "xAI Attachment Search",
-                    "xai:hosted-attachment-search",
-                    "Uses only file IDs or public URLs configured with provider commands.",
-                ),
-                (
-                    "xai_collections",
-                    "xAI Collections Search",
-                    "xai:hosted-collections-search",
-                    "Uses only explicitly configured xAI collection IDs.",
-                ),
-                (
-                    "xai_remote_mcp",
-                    "xAI Remote MCP",
-                    "xai:hosted-remote-mcp",
-                    "Lets xAI connect to one explicitly configured HTTPS MCP endpoint; separate from Vesper MCP.",
-                ),
-            ] {
+            if xai.authentication_method.as_deref() == Some("xai-api-key") {
                 controls.push(AcpSessionControl {
-                    id: id.into(),
-                    name: name.into(),
-                    description: Some(description.into()),
+                    id: "api_endpoint".into(),
+                    name: "API region".into(),
+                    description: Some(
+                        "US regional processing supports only the documented regional model set."
+                            .into(),
+                    ),
                     category: AcpControlCategory::Other,
-                    current_value: config_str(configuration, key).unwrap_or("disabled").into(),
-                    options: [("disabled", "Disabled"), ("enabled", "Enabled")]
+                    current_value: config_str(configuration, "xai:region")
+                        .unwrap_or("global")
+                        .into(),
+                    options: [("global", "Global"), ("us", "US regional")]
                         .into_iter()
                         .map(|(value, name)| AcpControlOption {
                             value: value.into(),
@@ -617,6 +540,87 @@ pub(crate) fn multi_provider_control_surface_with_openai(
                         })
                         .collect(),
                 });
+                controls.push(AcpSessionControl {
+                    id: "transport".into(),
+                    name: "Responses transport".into(),
+                    description: Some(
+                        "WebSocket is an optional Global/API-key optimization.".into(),
+                    ),
+                    category: AcpControlCategory::Other,
+                    current_value: config_str(configuration, "xai:transport")
+                        .unwrap_or("http")
+                        .into(),
+                    options: [("http", "HTTP/SSE"), ("websocket", "WebSocket")]
+                        .into_iter()
+                        .map(|(value, name)| AcpControlOption {
+                            value: value.into(),
+                            name: name.into(),
+                            description: None,
+                        })
+                        .collect(),
+                });
+                controls.push(AcpSessionControl {
+                id: "native_compaction".into(),
+                name: "Native compaction".into(),
+                description: Some("Explicitly permits opaque xAI compaction; Vesper retains rollback and recent history.".into()),
+                category: AcpControlCategory::Other,
+                current_value: config_str(configuration, "xai:native-compaction").unwrap_or("disabled").into(),
+                options: [("disabled", "Disabled"), ("enabled", "Enabled")].into_iter().map(|(value,name)| AcpControlOption { value: value.into(), name: name.into(), description: None }).collect(),
+            });
+                for (id, name, key, description) in [
+                    (
+                        "xai_web",
+                        "xAI Web Search",
+                        "xai:hosted-web-search",
+                        "xAI-hosted web search; separate egress and possible charges.",
+                    ),
+                    (
+                        "xai_x",
+                        "xAI X Search",
+                        "xai:hosted-x-search",
+                        "xAI-hosted X search; separate egress and possible charges.",
+                    ),
+                    (
+                        "xai_code",
+                        "xAI Code Execution",
+                        "xai:hosted-code-execution",
+                        "Remote xAI execution; distinct from Vesper run_command.",
+                    ),
+                    (
+                        "xai_attachments",
+                        "xAI Attachment Search",
+                        "xai:hosted-attachment-search",
+                        "Uses only file IDs or public URLs configured with provider commands.",
+                    ),
+                    (
+                        "xai_collections",
+                        "xAI Collections Search",
+                        "xai:hosted-collections-search",
+                        "Uses only explicitly configured xAI collection IDs.",
+                    ),
+                    (
+                        "xai_remote_mcp",
+                        "xAI Remote MCP",
+                        "xai:hosted-remote-mcp",
+                        "Lets xAI connect to one explicitly configured HTTPS MCP endpoint; separate from Vesper MCP.",
+                    ),
+                ] {
+                    controls.push(AcpSessionControl {
+                        id: id.into(),
+                        name: name.into(),
+                        description: Some(description.into()),
+                        category: AcpControlCategory::Other,
+                        current_value: config_str(configuration, key).unwrap_or("disabled").into(),
+                        options: [("disabled", "Disabled"), ("enabled", "Enabled")]
+                            .into_iter()
+                            .map(|(value, name)| AcpControlOption {
+                                value: value.into(),
+                                name: name.into(),
+                                description: None,
+                            })
+                            .collect(),
+                    });
+                }
             }
         }
         // GLM acting: today's full oracle-parity control set.
@@ -1335,6 +1339,7 @@ mod tests {
     fn xai_surface_exposes_only_discovered_models_and_projects_remote_controls() {
         let available = vesper_provider_xai::AvailableModels {
             models: vec![vesper_provider_xai::XaiCatalog::find("grok-4.7").unwrap()],
+            authentication_method: Some("xai-api-key".into()),
             ..Default::default()
         };
         let configuration = vesper_provider_xai::XaiFactory::default_configuration();
@@ -1376,6 +1381,26 @@ mod tests {
             config_str(&websocket.configuration, "xai:transport"),
             Some("websocket")
         );
+    }
+
+    #[test]
+    fn grok_session_surface_omits_api_billed_and_unverified_controls() {
+        let available = vesper_provider_xai::AvailableModels {
+            models: vec![vesper_provider_xai::XaiCatalog::find("grok-4.7").unwrap()],
+            authentication_method: Some("xai-grok-session".into()),
+            ..Default::default()
+        };
+        let surface = multi_provider_control_surface_with_openai(
+            &vesper_provider_xai::XaiFactory::default_configuration(),
+            &[("xai".into(), "xAI / Grok".into(), true)],
+            &[],
+            &vesper_provider_openai::AvailableModels::unavailable(
+                vesper_provider_openai::auth::AuthenticationMode::ApiKey,
+            ),
+            &available,
+        );
+        let ids: Vec<_> = surface.all().map(|control| control.id.as_str()).collect();
+        assert_eq!(ids, ["provider", "model", "thought_level"]);
     }
 
     #[test]

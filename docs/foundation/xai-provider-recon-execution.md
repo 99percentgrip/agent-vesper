@@ -93,6 +93,15 @@ This closes the PRD stop rule. It does not make every public Responses feature
 available to session mode. Each session model/backend feature remains gated by
 the proxy catalog, static evidence, and fixtures.
 
+The later live PR-8 run made the abbreviated header description above
+operationally precise. The proxy rejects inference unless Vesper also sends
+the pinned Grok Build protocol's `x-authenticateresponse`,
+`x-grok-client-version`, truthful client identifier/mode, and per-turn
+conversation/request/session/agent correlation headers. That live red result
+and the repaired regression are owned by the PR-8 execution report; they
+supersede any reading that bearer, token-auth, and model override alone were a
+complete request contract.
+
 ### Corrections to planning input
 
 - Current reasoning documentation does not advertise distinct `xhigh` for Grok

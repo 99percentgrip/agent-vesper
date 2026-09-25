@@ -36,6 +36,12 @@ transport; WebSocket is an explicit Global/API-key optimization. Native xAI
 compaction is default-off and remains governed by Vesper's transactional
 context policy.
 
+Grok-account mode exposes the model and reasoning controls verified on the
+subscription proxy. API region, WebSocket, native compaction and xAI-hosted
+tool toggles are omitted because the current session protocol has not verified
+those public-API capabilities. Vesper does not silently move such work to
+separately billed API-key transport.
+
 ## Tools, citations, and privacy
 
 Vesper file, shell, MCP, web, planning, skill, memory and worker tools continue
@@ -47,6 +53,10 @@ only the configured file IDs/public HTTPS URLs; Collections Search uses only
 configured collection IDs. Remote MCP requires an explicit HTTPS URL and
 label. xAI Code Execution never substitutes for Vesper `run_command`, and xAI
 Remote MCP never inherits Vesper MCP enablement.
+
+These xAI-hosted controls are currently available only in Global API-key mode.
+They are not advertised for Grok-account/SuperGrok sessions after the verified
+session proxy rejected a controlled hosted-tool request.
 
 TUI Settings lists the provider-owned configuration rows and keeps them in the
 normal draft until **Save changes**. ACP footer controls enable each hosted
@@ -69,6 +79,7 @@ answer. The xAI speech and Imagine APIs are separate future integrations.
 Offline loopback coverage exists for both authentication contracts, discovery,
 Responses and subscription transports, streaming, tools, structured output,
 images, continuation, caching, hosted tools, compaction, WebSocket and both
-hosts. Real-account Grok-session acceptance and optional paid API-key acceptance
-remain user-operated gates. No release claim is made until exact-commit,
-five-target and live gates are complete.
+hosts. Real-account SuperGrok acceptance now covers discovery, text, shared
+tools, continuation, cancellation/recovery, image input, usage/status and
+logout/re-authentication. Optional paid API-key acceptance was not run. No
+release claim is made until exact-commit five-target gates are complete.

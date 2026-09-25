@@ -2362,3 +2362,23 @@ control closes the attachment/collection/Remote-MCP configuration gap; the xAI
 adapter remains the sole owner of hosted-tool projection and validation. Live
 Grok-account acceptance, optional paid API-key acceptance, exact-commit CI and
 release remain PR-8 work.
+
+## 47. PR-8 live-acceptance checkpoint — 2026-09-25
+
+The live SuperGrok execution is recorded in
+[`foundation/xai-provider-pr8-live-acceptance.md`](foundation/xai-provider-pr8-live-acceptance.md).
+Grok-session browser authentication and discovery passed. After a red live
+transport result exposed missing mandatory first-party proxy headers, the
+repaired route passed text streaming, shared `read_file` and `run_command`
+transactions exactly once, multi-turn continuation, bounded cancellation and
+same-session recovery, a 64×64 image, usage/status and logout. ACP's previously
+empty xAI capability index and auth-blind API-only controls were also repaired
+with focused regressions.
+
+The subscription proxy rejected a controlled xAI-hosted Web Search request.
+Grok-session therefore exposes only verified model/reasoning controls; region,
+WebSocket, native compaction and hosted tools stay Global/API-key-only. No
+silent billing fallback occurred. Logout, device re-authentication and a fresh
+post-login turn passed. Paid API-key live acceptance was not run and is optional
+under §30.2. Exact-commit release gates remain open, so VRO-18 is not yet
+complete or released.

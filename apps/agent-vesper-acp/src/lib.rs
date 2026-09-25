@@ -1166,15 +1166,9 @@ impl AcpHarnessEngine {
         let capability_advisor: Arc<dyn vesper_provider::CapabilityAdvisor> =
             if config.provider_id.as_str() == "zai" {
                 Arc::new(vesper_provider_glm::GlmCapabilityAdvisor)
-            } else if config.provider_id.as_str() == "openai" {
-                Arc::new(vesper_provider::CatalogCapabilityAdvisor::new(
-                    vesper_provider::ModelCapabilityIndex::from_descriptors(
-                        vesper_provider_openai::OpenAiCatalog::snapshot().models,
-                    ),
-                ))
             } else {
                 Arc::new(vesper_provider::CatalogCapabilityAdvisor::new(
-                    vesper_provider::ModelCapabilityIndex::empty(),
+                    capability_index_for_provider(&config.provider_id),
                 ))
             };
         let pressure_state = self.pressure_state(&request.session_id).await;
@@ -2963,14 +2957,23 @@ pub async fn run_multi_provider(initial: &str) -> Result<(), ()> {
         .map_err(|_| ())?;
 
     let xai = vesper_provider_xai::XaiFactory::default();
-    let xai_models =
-        if vesper_provider::ProviderCredentialPort::credential_present(&xai).unwrap_or(false) {
-            xai.available_models(Arc::new(vesper_runtime::RuntimeCancellation::new()))
-                .await
-                .unwrap_or_default()
-        } else {
-            vesper_provider_xai::AvailableModels::default()
-        };
+    // All-feature process tests must remain offline even when the developer's
+    // OS keyring contains a real xAI session. The selected xAI host still
+    // performs real discovery, while normal production builds preserve eager
+    // authenticated discovery for provider switching.
+    #[cfg(feature = "integration-test-harness")]
+    let allow_xai_discovery = initial == "xai";
+    #[cfg(not(feature = "integration-test-harness"))]
+    let allow_xai_discovery = true;
+    let xai_models = if allow_xai_discovery
+        && vesper_provider::ProviderCredentialPort::credential_present(&xai).unwrap_or(false)
+    {
+        xai.available_models(Arc::new(vesper_runtime::RuntimeCancellation::new()))
+            .await
+            .unwrap_or_default()
+    } else {
+        vesper_provider_xai::AvailableModels::default()
+    };
     providers
         .register_with_all(
             xai.clone(),
@@ -3315,6 +3318,23 @@ fn selected_provider_token() -> String {
     std::env::var("AGENT_VESPER_PROVIDER").unwrap_or_else(|_| String::from("glm"))
 }
 
+/// Builds the active adapter's static capability index at the ACP composition
+/// boundary. Provider-specific catalog ownership stays here; capability checks
+/// inside the agent loop remain provider-neutral and fail closed.
+fn capability_index_for_provider(
+    provider_id: &vesper_domain::ProviderId,
+) -> vesper_provider::ModelCapabilityIndex {
+    match provider_id.as_str() {
+        "openai" => vesper_provider::ModelCapabilityIndex::from_descriptors(
+            vesper_provider_openai::OpenAiCatalog::snapshot().models,
+        ),
+        "xai" => vesper_provider::ModelCapabilityIndex::from_descriptors(
+            vesper_provider_xai::XaiCatalog::snapshot().models,
+        ),
+        _ => vesper_provider::ModelCapabilityIndex::empty(),
+    }
+}
+
 fn host_parity_commands() -> Vec<vesper_domain::SlashCommandDescriptor> {
     let commands = vesper_domain::HOST_PARITY_SLASH_COMMANDS.to_vec();
     #[cfg(feature = "swarm")]
@@ -3335,6 +3355,13 @@ fn host_parity_commands() -> Vec<vesper_domain::SlashCommandDescriptor> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn xai_composition_uses_the_adapter_catalog_for_image_capability() {
+        let index = capability_index_for_provider(&vesper_provider_xai::provider_id());
+        assert!(index.is_known("grok-4.7"));
+        assert!(index.accepts_image("grok-4.7", "image/png").is_ok());
+    }
 
     #[test]
     fn acp_outcome_renders_citations_without_exposing_opaque_reasoning() {

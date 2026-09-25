@@ -1051,6 +1051,14 @@ mod http {
                 let headers = String::from_utf8_lossy(&bytes).to_lowercase();
                 assert!(headers.contains("authorization: bearer fixture-xai-key"));
                 assert!(headers.contains("x-xai-token-auth: xai-grok-cli"));
+                assert!(headers.contains("x-authenticateresponse: authenticate-response"));
+                assert!(headers.contains("x-grok-client-version: 1.0.41"));
+                assert!(headers.contains("x-grok-client-identifier: agent-vesper"));
+                assert!(headers.contains("x-grok-client-mode: interactive"));
+                assert!(headers.contains("x-grok-conv-id: fixture"));
+                assert!(headers.contains("x-grok-req-id: fixture"));
+                assert!(headers.contains("x-grok-session-id: fixture"));
+                assert!(headers.contains("x-grok-agent-id: agent-vesper"));
                 assert!(headers.contains("x-grok-model-override: grok-4.7"));
                 requests.push(headers);
                 if attempt == 0 {
@@ -1115,6 +1123,7 @@ fn undiscovered_or_unverified_models_fail_before_transport() {
         models: vec![XaiCatalog::find("grok-4.7").unwrap()],
         unverified: vec!["future-grok".into()],
         endpoint_excluded: vec![],
+        authentication_method: Some("xai-api-key".into()),
     });
     assert!(session.validate_availability("grok-4.7", false).is_ok());
     assert!(session.validate_availability("future-grok", false).is_err());

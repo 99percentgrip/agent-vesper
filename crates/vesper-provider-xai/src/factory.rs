@@ -363,7 +363,13 @@ impl ProviderSuperpowers for XaiFactory {
             .ok()
             .and_then(|snapshot| snapshot.clone())
             .unwrap_or_default();
-        self.superpowers_for(&available, DEFAULT_MODEL)
+        let mut descriptors = self.superpowers_for(&available, DEFAULT_MODEL);
+        if available.authentication_method.as_deref() == Some("xai-grok-session") {
+            descriptors.retain(|descriptor| {
+                matches!(descriptor.id.as_str(), "xai:model" | "xai:reasoning")
+            });
+        }
+        descriptors
     }
 }
 

@@ -36,6 +36,12 @@ pub(crate) enum XaiTransport {
 
 type XaiWebSocket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
+// The subscription proxy version-gates clients against the first-party Grok
+// Build protocol revision pinned by VRO-18 reconnaissance. This is a protocol
+// compatibility version, while the User-Agent and client identifier continue
+// to identify Agent Vesper truthfully.
+const GROK_SESSION_PROTOCOL_VERSION: &str = "1.0.41";
+
 #[derive(Clone)]
 pub struct XaiSession {
     credentials: Credentials,
@@ -187,8 +193,23 @@ impl XaiSession {
             .header("Accept", "text/event-stream")
             .json(&body);
         if auth.mode == AuthenticationMode::GrokSession {
+            let request_id = request.request_id.as_str();
+            let conversation_id = request
+                .provider_extensions
+                .as_ref()
+                .and_then(|extension| extension.values.get("xai:prompt-cache-key"))
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or(request_id);
             builder = builder
                 .header("X-XAI-Token-Auth", "xai-grok-cli")
+                .header("x-authenticateresponse", "authenticate-response")
+                .header("x-grok-client-version", GROK_SESSION_PROTOCOL_VERSION)
+                .header("x-grok-client-identifier", "agent-vesper")
+                .header("x-grok-client-mode", "interactive")
+                .header("x-grok-conv-id", conversation_id)
+                .header("x-grok-req-id", request_id)
+                .header("x-grok-session-id", conversation_id)
+                .header("x-grok-agent-id", "agent-vesper")
                 .header("x-grok-model-override", request.model.model_id.as_str());
         }
         let future = builder.send();

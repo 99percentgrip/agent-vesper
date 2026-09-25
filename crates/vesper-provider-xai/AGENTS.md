@@ -45,6 +45,15 @@ continuation state, and provider error mapping without changing the shared agent
   fail-closed validator.
 - Secrets never enter errors, events, logs, or model-visible extensions.
 - No silent fallback between Grok-session and xAI API-key billing paths.
+- Grok-session inference sends the pinned first-party proxy protocol headers:
+  token-auth, authenticate-response, protocol version, truthful Vesper client
+  identity/mode, model override, and bounded request/conversation/session/agent
+  correlation. Changing the pinned protocol version requires renewed upstream
+  source evidence plus a loopback header regression.
+- Authentication mode constrains projected capabilities. Grok-session hosts
+  expose only capabilities verified on the session proxy; API-region,
+  WebSocket, native compaction, and provider-hosted tools remain API-key-only
+  until separate first-party and live evidence establishes session support.
 - Host composition uses authenticated discovery before offering models. Memory
   extraction uses the same native session and selected billing mode as the
   active xAI provider; it never falls through to another credential class.
