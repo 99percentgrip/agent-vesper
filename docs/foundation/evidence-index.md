@@ -1,5 +1,16 @@
 # Foundation Evidence Index
 
+## VRO-18 PR-5 provider-hosted tools (2026-09-25)
+
+- Execution: [`xai-provider-pr5-execution.md`](xai-provider-pr5-execution.md)
+- Verdict: PR-5 PASS at offline adapter scope. New provider-neutral hosted-tool
+  descriptors/selections keep xAI remote search, code, files, collections and
+  Remote MCP separate from Vesper functions. Six applicable tools map only
+  after explicit selection in verified Global/API-key mode; unsafe/unknown
+  configuration and other auth/region intersections fail closed. Generated
+  media stays excluded pending a generic media-output port. Host controls are
+  PR-7; no live provider charge occurred.
+
 ## VRO-18 PR-4 tools, continuation, usage and citations (2026-09-25)
 
 - Execution: [`xai-provider-pr4-execution.md`](xai-provider-pr4-execution.md)

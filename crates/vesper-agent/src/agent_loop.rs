@@ -1443,6 +1443,7 @@ impl AgentLoop {
                 extensions: ExtensionMap::default(),
             }],
             tools: Vec::new(),
+            hosted_tools: Vec::new(),
             tool_choice: ToolChoice::None,
             capabilities: Vec::new(),
             reasoning: None,
@@ -1478,6 +1479,7 @@ impl AgentLoop {
             system_instructions: self.config.system_instructions.clone(),
             messages: messages.to_vec(),
             tools: tools.to_vec(),
+            hosted_tools: Vec::new(),
             tool_choice: if tools.is_empty() {
                 ToolChoice::None
             } else {

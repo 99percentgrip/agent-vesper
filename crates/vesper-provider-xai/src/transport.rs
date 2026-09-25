@@ -136,6 +136,15 @@ impl XaiSession {
         };
         self.validate_availability(request.model.model_id.as_str(), fixture_route)?;
         let body = wire::request(request, &self.effort)?;
+        if !request.hosted_tools.is_empty()
+            && (auth.mode != AuthenticationMode::ApiKey || self.region != XaiRegion::Global)
+        {
+            return Err(error(
+                "xAI provider-hosted tools are verified only for Global API-key mode",
+                ErrorCategory::UnsupportedCapability,
+                false,
+            ));
+        }
         if auth.mode == AuthenticationMode::GrokSession && self.region != XaiRegion::Global {
             return Err(error(
                 "Grok account sessions use the global Grok subscription endpoint; choose Global or explicitly switch to API-key billing",
@@ -257,6 +266,7 @@ impl AuxiliaryRequestPort for XaiSession {
     ) -> ProviderFuture<'a, Result<ContentPart, ProviderError>> {
         Box::pin(async move {
             request.tools.clear();
+            request.hosted_tools.clear();
             request.tool_choice = vesper_domain::ToolChoiceIntent::None;
             let mut stream = self.start(request, cancel).await?;
             let mut text = String::new();

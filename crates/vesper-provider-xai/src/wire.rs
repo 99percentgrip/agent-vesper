@@ -137,6 +137,7 @@ pub(crate) fn request(
         }
         tools.push(json!({"type":"function","name":name,"description":tool.description,"parameters":tool.input_schema,"strict":true}));
     }
+    append_hosted_tools(&mut tools, &mut input, &request.hosted_tools)?;
     let choice = match &request.tool_choice {
         ToolChoiceIntent::Auto => json!("auto"),
         ToolChoiceIntent::None => json!("none"),
@@ -147,7 +148,7 @@ pub(crate) fn request(
         _ => return Err(unsupported()),
     };
     let controls = request_controls(request)?;
-    let mut body = json!({"model":model,"instructions":instructions.join("\n\n"),"input":input,"tools":tools,"tool_choice":choice,"parallel_tool_calls":true,"store":controls.store,"stream":true,"include":["reasoning.encrypted_content"],"reasoning":{"effort":effort,"summary":"auto"}});
+    let mut body = json!({"model":model,"instructions":instructions.join("\n\n"),"input":input,"tools":tools,"tool_choice":choice,"parallel_tool_calls":true,"store":controls.store,"stream":true,"include":["reasoning.encrypted_content","web_search_call.action.sources","code_interpreter_call.outputs","file_search_call.results"],"reasoning":{"effort":effort,"summary":"auto"}});
     if let Some(previous) = controls.previous_response_id {
         body["previous_response_id"] = json!(previous);
     }
@@ -172,6 +173,175 @@ pub(crate) fn request(
         return Err(unsupported());
     }
     Ok(body)
+}
+
+fn append_hosted_tools(
+    tools: &mut Vec<Value>,
+    input: &mut Vec<Value>,
+    selections: &[HostedToolSelection],
+) -> Result<(), ProviderError> {
+    let mut ids = BTreeSet::new();
+    for selection in selections {
+        if !ids.insert(selection.tool_id.as_str()) {
+            return Err(unsupported());
+        }
+        let config = selection.configuration.as_ref();
+        if let Some(config) = config {
+            validate_envelope(config)?;
+        }
+        let values = config.map(|value| &value.values);
+        match selection.tool_id.as_str() {
+            "web-search" | "x-search" | "code-execution" => {
+                if values.is_some_and(|values| !values.is_empty()) {
+                    return Err(unsupported());
+                }
+                let kind = match selection.tool_id.as_str() {
+                    "web-search" => "web_search",
+                    "x-search" => "x_search",
+                    "code-execution" => "code_interpreter",
+                    _ => unreachable!(),
+                };
+                tools.push(json!({"type":kind}));
+            }
+            "attachment-search" => {
+                let values = values.ok_or_else(unsupported)?;
+                if values
+                    .iter()
+                    .any(|(key, _)| !matches!(key, "xai:file-ids" | "xai:file-urls"))
+                {
+                    return Err(unsupported());
+                }
+                let mut content = Vec::new();
+                append_file_references(&mut content, values, "xai:file-ids", "file_id")?;
+                append_file_references(&mut content, values, "xai:file-urls", "file_url")?;
+                if content.is_empty() || content.len() > 16 {
+                    return Err(unsupported());
+                }
+                input.push(json!({"role":"user","content":content}));
+            }
+            "collections-search" => {
+                let values = values.ok_or_else(unsupported)?;
+                if values
+                    .iter()
+                    .any(|(key, _)| !matches!(key, "xai:collection-ids" | "xai:max-results"))
+                {
+                    return Err(unsupported());
+                }
+                let collection_ids = bounded_strings(values, "xai:collection-ids", 16, 256)?;
+                if collection_ids.is_empty() {
+                    return Err(unsupported());
+                }
+                let max = match values.get("xai:max-results") {
+                    Some(value) => value.as_u64().ok_or_else(unsupported)?,
+                    None => 10,
+                };
+                if !(1..=50).contains(&max) {
+                    return Err(unsupported());
+                }
+                tools.push(json!({"type":"file_search","vector_store_ids":collection_ids,"max_num_results":max}));
+            }
+            "remote-mcp" => {
+                let values = values.ok_or_else(unsupported)?;
+                if values.iter().any(|(key, _)| {
+                    !matches!(
+                        key,
+                        "xai:server-url"
+                            | "xai:server-label"
+                            | "xai:server-description"
+                            | "xai:allowed-tools"
+                    )
+                }) {
+                    return Err(unsupported());
+                }
+                let server_url = values
+                    .get("xai:server-url")
+                    .and_then(Value::as_str)
+                    .ok_or_else(unsupported)?;
+                let parsed = url::Url::parse(server_url).map_err(|_| unsupported())?;
+                if parsed.scheme() != "https"
+                    || server_url.len() > 2048
+                    || parsed.username() != ""
+                    || parsed.password().is_some()
+                {
+                    return Err(unsupported());
+                }
+                let label = values
+                    .get("xai:server-label")
+                    .and_then(Value::as_str)
+                    .filter(|value| valid_routing_value(value, 64))
+                    .ok_or_else(unsupported)?;
+                let mut tool = json!({"type":"mcp","server_url":server_url,"server_label":label});
+                if let Some(description) =
+                    values.get("xai:server-description").and_then(Value::as_str)
+                {
+                    if description.len() > 1024 || description.chars().any(char::is_control) {
+                        return Err(unsupported());
+                    }
+                    tool["server_description"] = json!(description);
+                }
+                if values.get("xai:allowed-tools").is_some() {
+                    tool["allowed_tools"] =
+                        json!(bounded_strings(values, "xai:allowed-tools", 64, 128)?);
+                }
+                tools.push(tool);
+            }
+            _ => return Err(unsupported()),
+        }
+    }
+    Ok(())
+}
+
+fn bounded_strings(
+    values: &ExtensionMap,
+    key: &str,
+    maximum_items: usize,
+    maximum_bytes: usize,
+) -> Result<Vec<String>, ProviderError> {
+    let array = values
+        .get(key)
+        .and_then(Value::as_array)
+        .ok_or_else(unsupported)?;
+    if array.len() > maximum_items {
+        return Err(unsupported());
+    }
+    array
+        .iter()
+        .map(|value| {
+            value
+                .as_str()
+                .filter(|value| valid_routing_value(value, maximum_bytes))
+                .map(str::to_owned)
+                .ok_or_else(unsupported)
+        })
+        .collect()
+}
+
+fn append_file_references(
+    content: &mut Vec<Value>,
+    values: &ExtensionMap,
+    key: &str,
+    wire_key: &str,
+) -> Result<(), ProviderError> {
+    let Some(array) = values.get(key) else {
+        return Ok(());
+    };
+    let array = array.as_array().ok_or_else(unsupported)?;
+    for item in array {
+        let value = item.as_str().ok_or_else(unsupported)?;
+        if wire_key == "file_url" {
+            let parsed = url::Url::parse(value).map_err(|_| unsupported())?;
+            if parsed.scheme() != "https" || value.len() > 8192 {
+                return Err(unsupported());
+            }
+        } else if !valid_routing_value(value, 256) {
+            return Err(unsupported());
+        }
+        let mut item = serde_json::Map::new();
+        item.insert("type".into(), json!("input_file"));
+        item.insert(wire_key.into(), json!(value));
+        content.push(Value::Object(item));
+    }
+    Ok(())
 }
 
 #[derive(Default)]
@@ -397,7 +567,7 @@ fn append_opaque(input: &mut Vec<Value>, opaque: &OpaqueContent) -> Result<(), P
         {
             input.push(opaque.data.expose().clone())
         }
-        "citation" => {}
+        "citation" | "hosted-tool-result" => {}
         _ => return Err(unsupported()),
     }
     Ok(())
@@ -635,6 +805,22 @@ impl Decoder {
                         })
                     }
                     Some("message") => {}
+                    Some(
+                        "web_search_call"
+                        | "x_search_call"
+                        | "code_interpreter_call"
+                        | "file_search_call"
+                        | "mcp_call"
+                        | "image_generation_call",
+                    ) => events.push(ProviderStreamEvent::ContentDelta {
+                        stream_id: BoundedString::new(format!("hosted-tool-{}", index()?))
+                            .map_err(|_| invalid())?,
+                        part: ContentPart::ProviderOpaque(OpaqueContent {
+                            provider_id: provider_id(),
+                            kind: "hosted-tool-result".into(),
+                            data: OpaqueProviderData::new(item.clone()).map_err(|_| invalid())?,
+                        }),
+                    }),
                     _ => {}
                 }
             }
@@ -655,6 +841,32 @@ impl Decoder {
                     result.cached_input = measure(&usage["input_tokens_details"]["cached_tokens"]);
                     result.reasoning = measure(&usage["output_tokens_details"]["reasoning_tokens"]);
                     events.push(ProviderStreamEvent::Usage(result));
+                }
+                if let Some(citations) =
+                    value["response"].get("citations").and_then(Value::as_array)
+                {
+                    if citations.len() > 256 {
+                        return Err(invalid());
+                    }
+                    for (citation_index, citation) in citations.iter().enumerate() {
+                        let url = citation.as_str().ok_or_else(invalid)?;
+                        let parsed = url::Url::parse(url).map_err(|_| invalid())?;
+                        if !matches!(parsed.scheme(), "http" | "https") || url.len() > 8192 {
+                            return Err(invalid());
+                        }
+                        events.push(ProviderStreamEvent::ContentDelta {
+                            stream_id: BoundedString::new(format!("citation-all-{citation_index}"))
+                                .map_err(|_| invalid())?,
+                            part: ContentPart::ProviderOpaque(OpaqueContent {
+                                provider_id: provider_id(),
+                                kind: "citation".into(),
+                                data: OpaqueProviderData::new(
+                                    json!({"type":"source_url","url":url}),
+                                )
+                                .map_err(|_| invalid())?,
+                            }),
+                        });
+                    }
                 }
                 let finish = if kind == "response.incomplete" {
                     match value["response"]["incomplete_details"]["reason"].as_str() {

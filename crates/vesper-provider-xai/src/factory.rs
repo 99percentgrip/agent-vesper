@@ -187,6 +187,7 @@ impl ProviderFactory for XaiFactory {
                     key_url: Some(BoundedString::new("https://console.x.ai/").expect("static")),
                 },
             ],
+            hosted_tools: hosted_tools(),
             configuration: None,
             metadata: ExtensionMap::default(),
         }
@@ -253,6 +254,75 @@ impl ProviderFactory for XaiFactory {
             Ok(session)
         })
     }
+}
+
+fn hosted_tools() -> Vec<HostedToolDescriptor> {
+    let tool = |id, name, description, egress_class, separately_billed, configuration_schema| {
+        HostedToolDescriptor {
+            tool_id: BoundedString::new(id).expect("static"),
+            display_name: BoundedString::new(name).expect("static"),
+            description: BoundedString::new(description).expect("static"),
+            egress_class,
+            separately_billed,
+            configuration_schema,
+        }
+    };
+    vec![
+        tool(
+            "web-search",
+            "xAI Web Search",
+            "Runs web search on xAI infrastructure; separate provider egress and charges may apply.",
+            HostedToolEgressClass::RemoteSearch,
+            true,
+            None,
+        ),
+        tool(
+            "x-search",
+            "xAI X Search",
+            "Searches X on xAI infrastructure; separate provider egress and charges may apply.",
+            HostedToolEgressClass::RemoteSearch,
+            true,
+            None,
+        ),
+        tool(
+            "code-execution",
+            "xAI Code Execution",
+            "Runs Python on xAI infrastructure; it is separate from Vesper run_command.",
+            HostedToolEgressClass::RemoteExecution,
+            true,
+            None,
+        ),
+        tool(
+            "attachment-search",
+            "xAI Attachment Search",
+            "Sends explicitly selected file IDs or public URLs to xAI for provider-side document search.",
+            HostedToolEgressClass::ProviderStorage,
+            true,
+            Some(
+                serde_json::json!({"type":"object","properties":{"xai:file-ids":{"type":"array","items":{"type":"string"}},"xai:file-urls":{"type":"array","items":{"type":"string","format":"uri"}}},"additionalProperties":false}),
+            ),
+        ),
+        tool(
+            "collections-search",
+            "xAI Collections Search",
+            "Searches explicitly selected xAI collections on provider infrastructure.",
+            HostedToolEgressClass::ProviderStorage,
+            true,
+            Some(
+                serde_json::json!({"type":"object","properties":{"xai:collection-ids":{"type":"array","minItems":1,"maxItems":16,"items":{"type":"string"}},"xai:max-results":{"type":"integer","minimum":1,"maximum":50}},"required":["xai:collection-ids"],"additionalProperties":false}),
+            ),
+        ),
+        tool(
+            "remote-mcp",
+            "xAI Remote MCP",
+            "Allows xAI servers to connect to one explicitly selected HTTPS MCP endpoint; it is separate from Vesper MCP.",
+            HostedToolEgressClass::RemoteMcp,
+            false,
+            Some(
+                serde_json::json!({"type":"object","properties":{"xai:server-url":{"type":"string","format":"uri"},"xai:server-label":{"type":"string"},"xai:server-description":{"type":"string"},"xai:allowed-tools":{"type":"array","items":{"type":"string"}}},"required":["xai:server-url","xai:server-label"],"additionalProperties":false}),
+            ),
+        ),
+    ]
 }
 impl ModelCatalog for XaiFactory {
     fn models<'a>(

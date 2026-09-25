@@ -2310,3 +2310,15 @@ prompt-cache routing and citation annotations while retaining the existing
 shared-tool call/result path, opaque encrypted reasoning and normalized usage.
 The targeted all-feature suite is 29/29. No host registration or live request
 has occurred; PR-5 through PR-8 remain open.
+
+## 44. PR-5 closeout — 2026-09-25
+
+PR-5 is closed at offline adapter scope by
+[`foundation/xai-provider-pr5-execution.md`](foundation/xai-provider-pr5-execution.md).
+A provider-neutral hosted-tool descriptor/selection contract now separates xAI
+server execution from Vesper functions. Web Search, X Search, Code Execution,
+attachment search, Collections Search and unauthenticated HTTPS Remote MCP map
+only after explicit opt-in and only on the verified Global/API-key path.
+Provider-hosted image generation is excluded until a provider-neutral generated
+media output/asset port exists, as required by §22.2. Host controls remain PR-7;
+PR-6 through PR-8 remain open.

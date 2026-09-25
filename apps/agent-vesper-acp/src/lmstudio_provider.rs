@@ -187,6 +187,7 @@ impl ProviderFactory for LmStudioFactory {
                 external_runtime_owned: false,
                 key_url: None,
             }],
+            hosted_tools: Vec::new(),
             configuration: None,
             metadata: ExtensionMap::default(),
         }
@@ -208,6 +209,9 @@ impl ProviderSession for LmStudioSession {
         let config = self.config.clone();
         let model = request.model.model_id.as_str().to_owned();
         Box::pin(async move {
+            if !request.hosted_tools.is_empty() {
+                return Err(err("provider-hosted tools are not supported by LM Studio"));
+            }
             let messages = provider_request_to_chat_messages(&request);
             let chat_req = build_chat_request(&config, &model, &messages);
 

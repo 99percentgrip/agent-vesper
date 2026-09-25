@@ -49,6 +49,39 @@ pub struct AuthenticationMethodDescriptor {
     pub key_url: Option<BoundedString<512>>,
 }
 
+/// Security/processing class for a provider-executed tool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum HostedToolEgressClass {
+    /// Provider searches public remote sources.
+    RemoteSearch,
+    /// Provider executes code on provider infrastructure.
+    RemoteExecution,
+    /// Provider accesses provider-hosted files or collections.
+    ProviderStorage,
+    /// Provider connects to a user-selected remote MCP server.
+    RemoteMcp,
+    /// Provider generates media on provider infrastructure.
+    MediaGeneration,
+}
+
+/// Provider-hosted tool advertised separately from Vesper client functions.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HostedToolDescriptor {
+    /// Stable provider-owned tool ID.
+    pub tool_id: BoundedString<128>,
+    /// Safe display name.
+    pub display_name: BoundedString<256>,
+    /// Safe explanation shown before opt-in.
+    pub description: BoundedString<1024>,
+    /// Where execution/data processing occurs.
+    pub egress_class: HostedToolEgressClass,
+    /// Whether use can carry provider-specific charges beyond ordinary tokens.
+    pub separately_billed: bool,
+    /// Optional non-secret adapter-owned configuration schema.
+    pub configuration_schema: Option<serde_json::Value>,
+}
+
 /// Stable provider descriptor independent of a configured session.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProviderDescriptor {
@@ -58,6 +91,9 @@ pub struct ProviderDescriptor {
     pub display_name: BoundedString<256>,
     /// Authentication methods.
     pub authentication_methods: Vec<AuthenticationMethodDescriptor>,
+    /// Explicitly opt-in provider-executed tools. These are not Vesper tools.
+    #[serde(default)]
+    pub hosted_tools: Vec<HostedToolDescriptor>,
     /// Configuration schema contribution.
     pub configuration: Option<ProviderConfigContribution>,
     /// Safe provider metadata.
@@ -159,6 +195,7 @@ pub trait ProviderFactory: Send + Sync {
             display_name: BoundedString::new(self.provider_id().as_str().to_owned())
                 .expect("provider id fits the display-name bound"),
             authentication_methods: Vec::new(),
+            hosted_tools: Vec::new(),
             configuration: None,
             metadata: ExtensionMap::default(),
         }

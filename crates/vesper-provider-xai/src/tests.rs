@@ -1,5 +1,5 @@
 use super::*;
-use serde_json::json;
+use serde_json::{Value, json};
 use vesper_domain::*;
 use vesper_provider::*;
 
@@ -37,6 +37,7 @@ fn fixture_request() -> ProviderRequest {
             extensions: Default::default(),
             defer_loading: false,
         }],
+        hosted_tools: Vec::new(),
         tool_choice: ToolChoiceIntent::Auto,
         capabilities: vec![],
         reasoning: None,
@@ -46,6 +47,18 @@ fn fixture_request() -> ProviderRequest {
         continuation: None,
         fallback_policy: FallbackPolicy::Strict,
         provider_extensions: None,
+    }
+}
+
+fn hosted_configuration(values: &[(&str, Value)]) -> VersionedExtensionEnvelope {
+    let mut map = ExtensionMap::default();
+    for (key, value) in values {
+        map.insert(*key, value.clone()).unwrap();
+    }
+    VersionedExtensionEnvelope {
+        namespace: ExtensionNamespace::new("provider.xai").unwrap(),
+        version: SchemaVersion::new(1).unwrap(),
+        values: map,
     }
 }
 
@@ -64,6 +77,130 @@ fn descriptor_exposes_separate_session_and_api_billing_modes() {
         "xai-api-key"
     );
     assert!(!descriptor.authentication_methods[0].external_runtime_owned);
+}
+
+#[test]
+fn hosted_tools_are_explicit_and_distinct_from_vesper_functions() {
+    let descriptor = XaiFactory::default().descriptor();
+    let ids: Vec<_> = descriptor
+        .hosted_tools
+        .iter()
+        .map(|tool| tool.tool_id.as_str())
+        .collect();
+    assert_eq!(
+        ids,
+        [
+            "web-search",
+            "x-search",
+            "code-execution",
+            "attachment-search",
+            "collections-search",
+            "remote-mcp",
+        ]
+    );
+    assert!(
+        descriptor
+            .hosted_tools
+            .iter()
+            .filter(|tool| tool.tool_id.as_str() != "remote-mcp")
+            .all(|tool| tool.separately_billed)
+    );
+    assert!(
+        !descriptor
+            .hosted_tools
+            .iter()
+            .find(|tool| tool.tool_id.as_str() == "remote-mcp")
+            .unwrap()
+            .separately_billed
+    );
+
+    let mut request = fixture_request();
+    request.hosted_tools = vec![
+        HostedToolSelection {
+            tool_id: BoundedString::new("web-search").unwrap(),
+            configuration: None,
+        },
+        HostedToolSelection {
+            tool_id: BoundedString::new("code-execution").unwrap(),
+            configuration: None,
+        },
+    ];
+    let body = wire::request(&request, "high").unwrap();
+    assert_eq!(body["tools"][1]["type"], "web_search");
+    assert_eq!(body["tools"][2]["type"], "code_interpreter");
+    assert_eq!(body["tools"][0]["type"], "function");
+}
+
+#[test]
+fn hosted_tool_configuration_maps_exactly_and_fails_closed() {
+    let mut request = fixture_request();
+    request.hosted_tools = vec![
+        HostedToolSelection {
+            tool_id: BoundedString::new("attachment-search").unwrap(),
+            configuration: Some(hosted_configuration(&[
+                ("xai:file-ids", json!(["file_1"])),
+                ("xai:file-urls", json!(["https://example.test/report.pdf"])),
+            ])),
+        },
+        HostedToolSelection {
+            tool_id: BoundedString::new("collections-search").unwrap(),
+            configuration: Some(hosted_configuration(&[
+                ("xai:collection-ids", json!(["collection_1"])),
+                ("xai:max-results", json!(7)),
+            ])),
+        },
+        HostedToolSelection {
+            tool_id: BoundedString::new("remote-mcp").unwrap(),
+            configuration: Some(hosted_configuration(&[
+                ("xai:server-url", json!("https://mcp.example.test/events")),
+                ("xai:server-label", json!("docs")),
+                ("xai:allowed-tools", json!(["search_docs"])),
+            ])),
+        },
+    ];
+    let body = wire::request(&request, "high").unwrap();
+    assert_eq!(body["input"][1]["content"][0]["file_id"], "file_1");
+    assert_eq!(
+        body["input"][1]["content"][1]["file_url"],
+        "https://example.test/report.pdf"
+    );
+    assert_eq!(body["tools"][1]["type"], "file_search");
+    assert_eq!(body["tools"][1]["max_num_results"], 7);
+    assert_eq!(body["tools"][2]["type"], "mcp");
+    assert_eq!(body["tools"][2]["allowed_tools"][0], "search_docs");
+
+    request.hosted_tools[2].configuration = Some(hosted_configuration(&[
+        ("xai:server-url", json!("http://insecure.example.test")),
+        ("xai:server-label", json!("docs")),
+    ]));
+    assert!(wire::request(&request, "high").is_err());
+    request.hosted_tools.push(request.hosted_tools[0].clone());
+    assert!(wire::request(&request, "high").is_err());
+}
+
+#[test]
+fn hosted_tool_results_and_all_citations_remain_provider_owned() {
+    let mut decoder = wire::Decoder::new(&fixture_request());
+    let events = decoder
+        .event(json!({"type":"response.output_item.done","output_index":0,"item":{"type":"web_search_call","id":"search_1","status":"completed","action":{"sources":[{"url":"https://x.ai/news"}]}}}))
+        .unwrap();
+    assert!(matches!(
+        &events[0],
+        ProviderStreamEvent::ContentDelta {
+            part: ContentPart::ProviderOpaque(OpaqueContent { kind, .. }),
+            ..
+        } if kind == "hosted-tool-result"
+    ));
+    let terminal = decoder
+        .event(json!({"type":"response.completed","response":{"citations":["https://x.ai/news"]}}))
+        .unwrap();
+    assert!(terminal.iter().any(|event| matches!(
+        event,
+        ProviderStreamEvent::ContentDelta {
+            part: ContentPart::ProviderOpaque(OpaqueContent { kind, .. }),
+            ..
+        } if kind == "citation"
+    )));
 }
 
 #[test]
@@ -341,7 +478,6 @@ fn citations_are_preserved_as_bounded_provider_owned_content() {
 mod http {
     use super::*;
     use futures_util::StreamExt;
-    use serde_json::Value;
     use std::sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -429,6 +565,32 @@ mod http {
         assert_eq!(text, "Hello 世界");
         assert_eq!(terminals, 1);
         assert_eq!(server.await.unwrap()["model"], DEFAULT_MODEL);
+    }
+
+    #[tokio::test]
+    async fn hosted_tools_fail_closed_outside_global_api_key_mode() {
+        let factory = XaiFactory::for_loopback("http://127.0.0.1:9/responses").unwrap();
+        let session = factory
+            .create_session(
+                &XaiFactory::default_configuration(),
+                Arc::new(Cancel(AtomicBool::new(false))),
+            )
+            .await
+            .unwrap()
+            .with_test_auth_mode(crate::credentials::AuthenticationMode::GrokSession);
+        let mut request = fixture_request();
+        request.hosted_tools.push(HostedToolSelection {
+            tool_id: BoundedString::new("web-search").unwrap(),
+            configuration: None,
+        });
+        let error = match session
+            .start(request, Arc::new(Cancel(AtomicBool::new(false))))
+            .await
+        {
+            Err(error) => error,
+            Ok(_) => panic!("session mode accepted a hosted tool"),
+        };
+        assert_eq!(error.info.category, ErrorCategory::UnsupportedCapability);
     }
     #[tokio::test]
     async fn cancellation_after_headers_settles_without_replay() {

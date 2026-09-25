@@ -38,6 +38,7 @@ pub(crate) fn fixture_request() -> ProviderRequest {
             extensions: Default::default(),
             defer_loading: false,
         }],
+        hosted_tools: Vec::new(),
         tool_choice: ToolChoiceIntent::Auto,
         capabilities: vec![],
         reasoning: None,

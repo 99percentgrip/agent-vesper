@@ -285,6 +285,7 @@ mod tests {
                     BoundedString::new("https://z.ai/manage-apikey/apikey-list").unwrap(),
                 ),
             }],
+            hosted_tools: Vec::new(),
             configuration: None,
             metadata: Default::default(),
         };
@@ -299,6 +300,7 @@ mod tests {
             provider_id: ProviderId::new("bare").unwrap(),
             display_name: BoundedString::new("Bare").unwrap(),
             authentication_methods: Vec::new(),
+            hosted_tools: Vec::new(),
             configuration: None,
             metadata: Default::default(),
         };

@@ -281,6 +281,7 @@ fn request(with_tools: bool) -> ProviderRequest {
         system_instructions: Vec::new(),
         messages: Vec::new(),
         tools,
+        hosted_tools: Vec::new(),
         tool_choice: if with_tools {
             ToolChoiceIntent::Auto
         } else {

@@ -1399,6 +1399,7 @@ async fn run_turn(input: TurnInput) -> Result<SessionTurnResult, RuntimeError> {
         system_instructions: input.defaults.system_instructions,
         messages: input.snapshot.history,
         tools: Vec::new(),
+        hosted_tools: Vec::new(),
         tool_choice: ToolChoiceIntent::None,
         capabilities: Vec::new(),
         reasoning: input

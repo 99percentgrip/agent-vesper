@@ -25,14 +25,16 @@ pub use model_capability::{
 };
 pub use ports::{
     AuthenticationMethodDescriptor, AuxiliaryRequestPort, CancellationSignal, CredentialError,
-    EndpointConfiguration, ModelCatalog, ModelCatalogProvenance, ModelCatalogSnapshot,
-    ModelDescriptor, ProviderConfiguration, ProviderCredentialPort, ProviderDescriptor,
-    ProviderEventStream, ProviderFactory, ProviderFuture, ProviderSession,
+    EndpointConfiguration, HostedToolDescriptor, HostedToolEgressClass, ModelCatalog,
+    ModelCatalogProvenance, ModelCatalogSnapshot, ModelDescriptor, ProviderConfiguration,
+    ProviderCredentialPort, ProviderDescriptor, ProviderEventStream, ProviderFactory,
+    ProviderFuture, ProviderSession,
 };
 pub use request::{
     AuxiliaryRequestIntent, ContinuationContext, ContinuationReason, ContinuationStrategy,
-    FallbackDecision, FallbackPolicy, ProviderConfigContribution, ProviderRequest, ReasoningIntent,
-    RequestValidationError, SamplingIntent, StructuredOutputIntent, ToolChoice,
+    FallbackDecision, FallbackPolicy, HostedToolSelection, ProviderConfigContribution,
+    ProviderRequest, ReasoningIntent, RequestValidationError, SamplingIntent,
+    StructuredOutputIntent, ToolChoice,
 };
 pub use stream::{
     ProviderStreamContract, ProviderStreamContractError, ProviderStreamEvent, QuotaUpdate,

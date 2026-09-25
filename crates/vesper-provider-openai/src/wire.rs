@@ -33,7 +33,8 @@ pub(crate) fn request(
     {
         return Err(unsupported());
     }
-    if request.continuation.is_some()
+    if !request.hosted_tools.is_empty()
+        || request.continuation.is_some()
         || request.sampling.is_some()
         || request.provider_extensions.is_some()
     {

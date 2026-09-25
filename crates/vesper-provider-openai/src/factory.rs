@@ -136,6 +136,7 @@ impl OpenAiFactory {
                 extensions: Default::default(),
             }],
             tools: vec![],
+            hosted_tools: Vec::new(),
             tool_choice: ToolChoiceIntent::None,
             capabilities: vec![],
             reasoning: None,
@@ -236,6 +237,7 @@ impl ProviderFactory for OpenAiFactory {
                     ),
                 },
             ],
+            hosted_tools: Vec::new(),
             configuration: None,
             metadata: ExtensionMap::default(),
         }

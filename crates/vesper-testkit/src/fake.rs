@@ -339,6 +339,7 @@ mod tests {
             system_instructions: Vec::new(),
             messages: Vec::new(),
             tools: Vec::new(),
+            hosted_tools: Vec::new(),
             tool_choice: ToolChoiceIntent::None,
             capabilities: Vec::new(),
             reasoning: None,

@@ -25,6 +25,7 @@ pub fn descriptor() -> ProviderDescriptor {
         provider_id: provider_id(),
         display_name: BoundedString::new("Vesper Synthetic").expect("bounded display name"),
         authentication_methods: Vec::new(),
+        hosted_tools: Vec::new(),
         configuration: Some(configuration_contribution()),
         metadata: ExtensionMap::default(),
     }

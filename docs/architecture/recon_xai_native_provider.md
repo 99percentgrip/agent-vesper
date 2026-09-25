@@ -152,7 +152,8 @@ Three composition problems must be addressed generically:
    explicit generic auth-method selection operation. Add the smallest neutral
    operation rather than an xAI host callback.
 
-Provider-hosted tools and citations require new neutral types before PR-5.
+PR-5 resolved the hosted-tool gap with shared descriptor/selection types;
+citations remain bounded provider-owned content until PR-7 host rendering.
 They must remain distinct from Vesper local tools and local MCP.
 
 Voice, skill routing, VRO, compaction policy, memory, and swarm workers already

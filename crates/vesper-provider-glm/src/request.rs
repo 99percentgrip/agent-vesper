@@ -39,6 +39,11 @@ pub fn serialize_request(
             "request belongs to another provider",
         ));
     }
+    if !request.hosted_tools.is_empty() {
+        return Err(GlmAdapterError::UnsupportedRequest(
+            "provider-hosted tools are not supported by the GLM adapter",
+        ));
+    }
     if request.model.model_id != config.model {
         return Err(GlmAdapterError::Configuration(
             "request model differs from provider session model",
@@ -616,6 +621,7 @@ mod tests {
                 extensions: Default::default(),
             }],
             tools: Vec::new(),
+            hosted_tools: Vec::new(),
             tool_choice: ToolChoiceIntent::None,
             capabilities: vec![
                 CapabilityRequest {

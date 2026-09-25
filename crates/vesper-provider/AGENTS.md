@@ -19,6 +19,10 @@ continuation, fallback, and error contracts.
 - Provider cancellation views are owned and remain usable for the lifetime of a
   returned stream.
 - Explicit unsupported controls fail during request validation before dispatch.
+- Provider-hosted tools use the shared descriptor/selection contract and remain
+  distinct from client-side Vesper functions. They require explicit selection,
+  declare egress/billing class, carry only bounded non-secret configuration,
+  and unsupported adapters fail closed rather than dropping them.
 - Credential ports optionally expose selected method identity, cancellable
   browser/device authorization, and local logout. Default implementations are
   inert; only explicit host actions may persist credentials. Adapters own

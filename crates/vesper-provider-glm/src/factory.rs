@@ -62,6 +62,7 @@ impl GlmFactory {
                         .expect("bounded key url"),
                 ),
             }],
+            hosted_tools: Vec::new(),
             configuration: Some(ProviderConfigContribution {
                 provider_id: provider_id(),
                 schema_version: 1,

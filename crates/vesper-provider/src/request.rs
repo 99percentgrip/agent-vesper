@@ -13,6 +13,15 @@ use crate::{CapabilityResolution, ProviderCapabilities};
 /// Tool selection intent. Adapters map this to their dialect.
 pub type ToolChoice = ToolChoiceIntent;
 
+/// Explicit selection of one provider-hosted tool.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HostedToolSelection {
+    /// Stable ID from the provider descriptor.
+    pub tool_id: BoundedString<128>,
+    /// Optional non-secret provider-owned configuration.
+    pub configuration: Option<VersionedExtensionEnvelope>,
+}
+
 /// Purpose of a bounded auxiliary request through the same provider abstraction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -172,6 +181,9 @@ pub struct ProviderRequest {
     pub messages: Vec<ConversationMessage>,
     /// Normalized tools.
     pub tools: Vec<ToolDefinition>,
+    /// Provider-executed tools enabled explicitly by the user/session.
+    #[serde(default)]
+    pub hosted_tools: Vec<HostedToolSelection>,
     /// Tool choice.
     pub tool_choice: ToolChoice,
     /// Capability intents validated before dispatch.
@@ -403,6 +415,7 @@ mod tests {
             system_instructions: Vec::new(),
             messages: Vec::new(),
             tools: Vec::new(),
+            hosted_tools: Vec::new(),
             tool_choice: ToolChoice::None,
             capabilities: vec![CapabilityRequest {
                 capability: CapabilityId::new("provider:structured-output").unwrap(),
