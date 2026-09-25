@@ -80,7 +80,10 @@ Agent Vesper were untouched.
 The repository-owned architecture gate passes for 31 packages after the
 allowlist repair, the naming guard passes with all 36 existing hits frozen, and
 `cargo xtask acceptance` passes all 23 exact cases in 152,320 ms with zero
-live-model cost.
+live-model cost. Strict workspace/all-target/all-feature Clippy initially
+rejected one test-only field reassignment after `Default`; the test now uses a
+direct struct initializer and the unchanged runtime candidate passes with
+`-D warnings`.
 
 ## Deviations and unresolved items
 

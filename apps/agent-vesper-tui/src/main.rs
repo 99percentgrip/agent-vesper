@@ -15746,8 +15746,10 @@ mod tests {
             vesper_provider_xai::provider_id(),
             factory.superpowers_for(&available, "grok-4.7"),
         );
-        let mut state = SessionState::default();
-        state.overrides = surface.defaults();
+        let mut state = SessionState {
+            overrides: surface.defaults(),
+            ..SessionState::default()
+        };
         let commands = CommandRegistry::stage_11b();
         let policy = vesper_provider::PermissiveSuperpowerPolicy;
         let settings = session_setting_candidates(
