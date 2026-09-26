@@ -2,9 +2,8 @@
 
 The native xAI adapter first shipped in v0.24.0. Major Audit 1 found an ordinary
 Grok-session first-turn configuration defect and a browser-link UX defect in
-that release. Both repairs passed live TUI/ACP acceptance and are included in
-the v0.24.1 corrective release candidate. Audit 2 and Audit 3 remain open future
-audit work.
+that release. Both repairs passed live TUI/ACP acceptance and are released in
+v0.24.1. Audit 2 and Audit 3 remain open future audit work.
 
 ## Authentication and billing
 
@@ -92,10 +91,11 @@ answer. The xAI speech and Imagine APIs are separate future integrations.
 Offline loopback coverage exists for the protocol contracts, discovery,
 Responses and subscription transports, streaming, tools, structured output,
 images, continuation, caching, hosted tools, compaction, WebSocket and both
-hosts. The current Audit 1 candidate passes live browser and device login,
+hosts. The accepted Audit 1 candidate passed live browser and device login,
 post-browser TUI/ACP text, `read_file` exactly once, `run_command` exactly once,
 logout and browser reauthentication. The earlier `Missing or invalid
 client_id` observation is an **INVALID TEST — manually copied URL was truncated
-at terminal wrapping**. The v0.24.1 corrective release remains exact-commit
-gated. Optional paid API-key acceptance was not run. See
+at terminal wrapping**. The v0.24.1 corrective release passed exact-commit
+verification and asset publication. Optional paid API-key acceptance was not
+run. See
 [`foundation/vro18-audit1-completeness-and-capability-truth.md`](foundation/vro18-audit1-completeness-and-capability-truth.md).

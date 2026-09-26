@@ -1,6 +1,6 @@
 # VRO-18 — Native xAI Provider for Agent Vesper
 
-**Status:** AUDIT 1 REPAIRED — v0.24.1 CORRECTIVE RELEASE GATED; AUDIT 2 AND AUDIT 3 OPEN
+**Status:** AUDIT 1 REPAIRS RELEASED — v0.24.1; AUDIT 2 AND AUDIT 3 OPEN
 **Date:** 2026-09-25
 **Target repository:** `99percentgrip/agent-vesper`
 **Baseline:** post-`v0.23.6` `main` (`c64e78f46065f1fbaae899ab9914f3d9b3f7023d`)
@@ -2391,7 +2391,7 @@ verified assets and Registry PR #539 was updated in place. Publication receipts
 belong to
 [`foundation/2026-09-25-v0.24.0-release-execution.md`](foundation/2026-09-25-v0.24.0-release-execution.md).
 
-## 48. Major Audit 1 — 2026-09-26 (OPEN)
+## 48. Major Audit 1 — 2026-09-26 (REPAIRED — RELEASED IN v0.24.1)
 
 [`foundation/vro18-audit1-completeness-and-capability-truth.md`](foundation/vro18-audit1-completeness-and-capability-truth.md)
 supersedes the unconditional current completion label while preserving v0.24.0
@@ -2426,10 +2426,9 @@ the public native-client field contract; the repaired TUI launches and copies
 the complete structured URL without reconstructing rendered text. Live browser
 and device login, Vesper-owned credential storage, post-auth TUI/ACP turns,
 logout and browser reauthentication pass. R3 and dual authentication are
-therefore functionally accepted on the repaired candidate. VRO-18 remains OPEN
-and not ready for Audit 2 only because this work unit's no-push constraint
-prevented the required candidate five-target and native-host workflow runs. No
-push, tag, release or installation occurred.
+therefore functionally accepted. The repaired source subsequently passed the
+required exact-commit canonical, MSRV, five-target and native-host workflows and
+was published as v0.24.1. Alex's local installation was not changed.
 
 ## 49. Audit 1 corrective patch release — v0.24.1
 
@@ -2442,5 +2441,7 @@ fallback and no Grok Build runtime dependency.
 
 The exact-commit release ledger is
 [`foundation/2026-09-26-v0.24.1-vro18-audit1-corrective-release.md`](foundation/2026-09-26-v0.24.1-vro18-audit1-corrective-release.md).
-Audit 2 and Audit 3 remain explicitly open future audit work and do not block
-shipping the accepted Audit 1 repairs.
+Release commit `2af108040e874fc87a5776df15f910687c7f81e8` passed all required
+workflows before annotated tag `v0.24.1`; release run `36223955910` published 16
+verified assets and ACP Registry PR #539 was updated in place. Audit 2 and Audit
+3 remain explicitly open future audit work.

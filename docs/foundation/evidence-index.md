@@ -3,17 +3,19 @@
 ## VRO-18 Audit 1 corrective release v0.24.1 (2026-09-26)
 
 - Execution: [`2026-09-26-v0.24.1-vro18-audit1-corrective-release.md`](2026-09-26-v0.24.1-vro18-audit1-corrective-release.md)
-- Current verdict: **EXACT-COMMIT RELEASE GATED.** Alex accepted the recorded
+- Current verdict: **AUDIT 1 REPAIRS RELEASED.** Alex accepted the recorded
   browser/device, TUI/ACP, exactly-once tool, logout/reauthentication and billing
-  isolation evidence for the Audit 1 candidate. The v0.24.1 commit carries the
-  same production repairs plus version/release metadata and must pass fresh
-  canonical, MSRV, five-target and web-driver/native-host push workflows before
-  tagging. Audit 2 and Audit 3 remain open. No local installation is changed.
+  isolation evidence. Release commit `2af108040e874fc87a5776df15f910687c7f81e8`
+  passed canonical `36222063768`, MSRV `36222063783`, five-target `36222063763`
+  and web-driver/native-host `36222063847` before annotated tag `v0.24.1`.
+  Release run `36223955910` published 16 verified assets, and Registry PR #539
+  was updated in place. Audit 2 and Audit 3 remain open. No local installation
+  was changed.
 
 ## VRO-18 Major Audit 1 (2026-09-26)
 
 - Execution: [`vro18-audit1-completeness-and-capability-truth.md`](vro18-audit1-completeness-and-capability-truth.md)
-- Verdict: **REPAIRED — CORRECTIVE RELEASE IN PROGRESS.** The exact installed TUI is proven
+- Verdict: **REPAIRED — RELEASED IN v0.24.1.** The exact installed TUI is proven
   byte-identical to the published v0.24.0 Linux x86_64 artifact and reproduced
   the ordinary Grok-session rejection on the original state. The exact rejected
   component was stale API-key-only `attachment-search` without its required
@@ -24,9 +26,9 @@
   reauthentication. The earlier copied-link failure is explicitly invalid: the
   terminal-wrapped URL was truncated before it reached the browser. Narrow-TUI
   action coverage proves open/copy preserve the complete structured URL. Audit
-  1 repairs are accepted and now proceed through v0.24.1 exact-commit release
-  gates. Codex and Vesper OpenAI remain separate PASS rows. Audit 2 and Audit 3
-  remain open future work.
+  1 repairs are accepted and released through the exact-commit receipts above.
+  Codex and Vesper OpenAI remain separate PASS rows. Audit 2 and Audit 3 remain
+  open future work.
 
 ## VRO-18 v0.24.0 release (2026-09-25)
 
