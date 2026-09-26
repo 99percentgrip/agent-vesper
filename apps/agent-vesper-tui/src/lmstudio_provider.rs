@@ -413,6 +413,7 @@ fn capabilities_from_native(entry: &serde_json::Value) -> ProviderCapabilities {
                     // own reported ability.
                     media_types: vec!["image/png".into(), "image/jpeg".into(), "image/webp".into()],
                     maximum_items: None,
+                    maximum_bytes_per_item: None,
                     references: false,
                     inline_data: true,
                 },

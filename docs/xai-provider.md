@@ -1,15 +1,20 @@
 # xAI / Grok provider
 
-The native xAI adapter is under VRO-18 acceptance and is not part of the
-released v0.24.0 build.
+The native xAI adapter first shipped in v0.24.0. Major Audit 1 found an ordinary
+Grok-session first-turn configuration defect and a browser-link UX defect in
+that release. Both repairs passed live TUI/ACP acceptance and are included in
+the v0.24.1 corrective release candidate. Audit 2 and Audit 3 remain open future
+audit work.
 
 ## Authentication and billing
 
 Open **Settings → Providers → xAI / Grok** and choose one mode:
 
 - **Grok account / SuperGrok** uses the signed-in account's available
-  Grok/Grok Build allowance. Browser sign-in is the default; press `D` on the
-  authentication screen for the device-code flow on a headless machine.
+  Grok/Grok Build allowance. Browser sign-in is the normal path: Vesper opens
+  the complete authorization URL, receives the loopback callback and stores its
+  own refreshable credential. The modal can copy the exact complete link, and
+  device-code sign-in remains the fallback.
 - **xAI API key** uses separately billed xAI API credits. The TUI provides
   masked entry; headless ACP setup accepts `XAI_API_KEY` with
   `agent-vesper-acp --provider xai --setup`.
@@ -18,9 +23,10 @@ Vesper stores these credential classes separately. Authentication failure in
 one mode never causes a request through the other. Vesper does not read
 `~/.grok/auth.json` and does not install or launch Grok Build.
 
-ACP also supports `--provider xai --login`, `--device-login`, `--logout`, and
-`--check-auth`. Authentication messages use stderr so ACP stdout remains pure
-JSON-RPC.
+ACP supports `--provider xai --login`, `--device-login`, `--logout`, and
+`--check-auth`. Both login routes store the same Vesper-owned Grok-session
+credential used by TUI and ACP. Authentication messages use stderr so ACP
+stdout remains pure JSON-RPC.
 
 ## Models and controls
 
@@ -29,6 +35,13 @@ intersects them with its verified xAI capability index. Unknown models remain
 unselectable until their capabilities are verified. Model-specific reasoning
 choices appear in Settings; the multi-agent beta labels its control as xAI-side
 multi-agent scale.
+
+Current verified image input is JPEG/JPG or PNG, at most 20 MiB per image. xAI
+documents no image-count limit, so Vesper does not invent one. Grok 4.3 and 4.5
+documentation currently conflicts about `xhigh`; Vesper fails closed rather
+than presenting a distinct control whose semantics are not verified. Grok 4.5
+therefore tops out at `high` because xAI's general reasoning guide says its
+`xhigh` value is treated as `high`.
 
 API-key mode can select Global or US regional processing. The regional route
 restricts models to the documented regional set. HTTP/SSE is the correctness
@@ -76,10 +89,13 @@ answer. The xAI speech and Imagine APIs are separate future integrations.
 
 ## Current acceptance boundary
 
-Offline loopback coverage exists for both authentication contracts, discovery,
+Offline loopback coverage exists for the protocol contracts, discovery,
 Responses and subscription transports, streaming, tools, structured output,
 images, continuation, caching, hosted tools, compaction, WebSocket and both
-hosts. Real-account SuperGrok acceptance now covers discovery, text, shared
-tools, continuation, cancellation/recovery, image input, usage/status and
-logout/re-authentication. Optional paid API-key acceptance was not run. No
-release claim is made until exact-commit five-target gates are complete.
+hosts. The current Audit 1 candidate passes live browser and device login,
+post-browser TUI/ACP text, `read_file` exactly once, `run_command` exactly once,
+logout and browser reauthentication. The earlier `Missing or invalid
+client_id` observation is an **INVALID TEST — manually copied URL was truncated
+at terminal wrapping**. The v0.24.1 corrective release remains exact-commit
+gated. Optional paid API-key acceptance was not run. See
+[`foundation/vro18-audit1-completeness-and-capability-truth.md`](foundation/vro18-audit1-completeness-and-capability-truth.md).

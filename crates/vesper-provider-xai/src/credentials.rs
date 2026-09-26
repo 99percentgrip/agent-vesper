@@ -423,6 +423,51 @@ mod tests {
         }).await;
     }
 
+    #[tokio::test]
+    async fn failed_interactive_login_preserves_signed_out_billing_barrier() {
+        let temp = tempfile::tempdir().unwrap();
+        let credentials = Credentials::isolated(temp.path().join("credentials.json"));
+        credentials.write(json!({"mode":"signed-out"})).unwrap();
+        SecretScope::empty()
+            .with("XAI_API_KEY", SecretValue::new("environment-key"))
+            .install(async {
+                for failure in [
+                    crate::auth::AuthError::Denied,
+                    crate::auth::AuthError::Protocol,
+                ] {
+                    assert!(matches!(
+                        credentials
+                            .login_with(Arc::new(Never), std::future::ready(Err(failure)))
+                            .await,
+                        Err(CredentialError::Failed)
+                    ));
+                    assert_eq!(credentials.authentication_method().unwrap(), None);
+                    assert!(matches!(
+                        credentials.dispatch(Arc::new(Never), false).await,
+                        Err(CredentialError::Absent)
+                    ));
+                }
+            })
+            .await;
+    }
+
+    #[tokio::test]
+    async fn explicit_api_key_mode_never_resolves_a_grok_session() {
+        let temp = tempfile::tempdir().unwrap();
+        let credentials = Credentials::isolated(temp.path().join("credentials.json"));
+        credentials
+            .write(json!({"mode":"grok-session","access_token":"session","refresh_token":"refresh","expires_at_unix":u64::MAX}))
+            .unwrap();
+        let copy = credentials.clone();
+        tokio::task::spawn_blocking(move || copy.store_api_key("selected-api-key"))
+            .await
+            .unwrap()
+            .unwrap();
+        let auth = credentials.dispatch(Arc::new(Never), false).await.unwrap();
+        assert_eq!(auth.mode, AuthenticationMode::ApiKey);
+        assert_eq!(auth.bearer.expose().as_str(), "selected-api-key");
+    }
+
     struct Never;
     impl CancellationSignal for Never {
         fn is_cancelled(&self) -> bool {

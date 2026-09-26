@@ -7,6 +7,13 @@ continuation, fallback, and error contracts.
 
 ## Local Contracts
 
+- `ProviderRequest::cache_routing_key` is a bounded, non-secret conversation
+  identity. Providers may use it for cache affinity; they must ignore it when
+  unsupported and must never derive it from prompt content, paths or secrets.
+- `MediaCapability::maximum_bytes_per_item` is the provider-neutral preflight
+  bound for materialized media. Hosts and adapters fail before dispatch when a
+  known payload exceeds it; `None` means unknown, not unlimited.
+
 - This crate implements no concrete provider and depends only on `vesper-domain`.
 - SDK, HTTP, process-runtime, authentication, and core-loop types are prohibited.
 - Capability fallback is typed and observable.

@@ -1412,6 +1412,7 @@ async fn run_turn(input: TurnInput) -> Result<SessionTurnResult, RuntimeError> {
         maximum_output_tokens: input.defaults.maximum_output_tokens,
         continuation: None,
         fallback_policy: FallbackPolicy::Strict,
+        cache_routing_key: None,
         provider_extensions: None,
     };
     let mut stream = provider_session

@@ -19,10 +19,10 @@ use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
 
 use futures_util::StreamExt;
 use vesper_domain::{
-    CapabilityId, CapabilityRequest, ContentPart, ContentText, ConversationMessage, ExtensionMap,
-    FeatureRequirement, FinishOutcome, MessageId, MessageRole, ProviderId, ProviderRequestId,
-    QualifiedModelId, SessionOperatingMode, SessionPermissionMode, SystemInstruction, ToolCall,
-    ToolDefinition, ToolExecutionClass, ToolResultId, WorkspaceRoot,
+    BoundedString, CapabilityId, CapabilityRequest, ContentPart, ContentText, ConversationMessage,
+    ExtensionMap, FeatureRequirement, FinishOutcome, MessageId, MessageRole, ProviderId,
+    ProviderRequestId, QualifiedModelId, SessionOperatingMode, SessionPermissionMode,
+    SystemInstruction, ToolCall, ToolDefinition, ToolExecutionClass, ToolResultId, WorkspaceRoot,
 };
 use vesper_provider::{
     AuxiliaryRequestIntent, CancellationSignal, CapabilityAdvisor, CapabilityContext,
@@ -449,6 +449,7 @@ pub trait AgentHistoryPort: Send + Sync {
 pub struct AgentLoop {
     text_only_response_bound: Option<usize>,
     maximum_output_tokens: Option<u64>,
+    cache_routing_key: BoundedString<128>,
     registry: Arc<ProviderRegistry>,
     tools: ToolRegistry,
     config: AgentLoopConfig,
@@ -474,6 +475,11 @@ impl AgentLoop {
         Self {
             text_only_response_bound: None,
             maximum_output_tokens: None,
+            cache_routing_key: BoundedString::new(format!(
+                "vesper-conversation-{}",
+                uuid::Uuid::new_v4()
+            ))
+            .expect("UUID cache-routing identity is bounded"),
             registry,
             tools,
             config,
@@ -1505,6 +1511,7 @@ impl AgentLoop {
             ),
             continuation: None,
             fallback_policy: FallbackPolicy::Strict,
+            cache_routing_key: Some(self.cache_routing_key.clone()),
             provider_extensions: None,
         }
     }
@@ -1556,6 +1563,7 @@ impl AgentLoop {
             maximum_output_tokens: self.maximum_output_tokens,
             continuation: None,
             fallback_policy: FallbackPolicy::Strict,
+            cache_routing_key: Some(self.cache_routing_key.clone()),
             provider_extensions: None,
         }
     }

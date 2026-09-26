@@ -298,6 +298,7 @@ fn request(with_tools: bool) -> ProviderRequest {
         maximum_output_tokens: None,
         continuation: None,
         fallback_policy: FallbackPolicy::Strict,
+        cache_routing_key: None,
         provider_extensions: None,
     }
 }

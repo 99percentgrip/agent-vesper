@@ -440,7 +440,18 @@ impl AcpHarnessEngine {
             config.provider_id = session_model.provider_id.clone();
             config.model = session_model;
         }
-        config.native_compaction = if config.provider_id.as_str() == "xai"
+        let xai_api_key_mode = if config.provider_id.as_str() == "xai" {
+            self.registry
+                .authentication_method(&config.provider_id)
+                .await
+                .ok()
+                .flatten()
+                .as_deref()
+                == Some("xai-api-key")
+        } else {
+            false
+        };
+        config.native_compaction = if xai_api_key_mode
             && config
                 .provider_configuration
                 .values
@@ -503,7 +514,7 @@ impl AcpHarnessEngine {
                 }
             }
         }
-        if config.provider_id.as_str() == "xai" {
+        if config.provider_id.as_str() == "xai" && xai_api_key_mode {
             config.hosted_tools =
                 vesper_provider_xai::hosted_tool_selections(&config.provider_configuration)
                     .unwrap_or_else(|_| {
@@ -2623,8 +2634,21 @@ impl ProviderProfile {
             });
         }
         if provider.as_str() == "xai" {
+            let provider_configuration = vesper_provider_xai::XaiFactory::default_configuration();
+            #[cfg(feature = "integration-test-harness")]
+            let provider_configuration = {
+                let mut provider_configuration = provider_configuration;
+                if std::env::var_os("AGENT_VESPER_XAI_TEST_STALE_HOSTED").is_some() {
+                    provider_configuration
+                        .values
+                        .values
+                        .insert("xai:hosted-web-search", serde_json::json!("enabled"))
+                        .map_err(|_| ())?;
+                }
+                provider_configuration
+            };
             return Ok(Self {
-                provider_configuration: vesper_provider_xai::XaiFactory::default_configuration(),
+                provider_configuration,
                 model: ModelId::new(vesper_provider_xai::DEFAULT_MODEL).map_err(|_| ())?,
                 endpoint: EndpointId::new("xai-responses").map_err(|_| ())?,
             });
@@ -2957,6 +2981,17 @@ pub async fn run_multi_provider(initial: &str) -> Result<(), ()> {
         .map_err(|_| ())?;
 
     let xai = vesper_provider_xai::XaiFactory::default();
+    #[cfg(feature = "integration-test-harness")]
+    let xai = if let Ok(url) = std::env::var("AGENT_VESPER_XAI_TEST_URL") {
+        if std::env::var("AGENT_VESPER_XAI_TEST_MODE").as_deref() == Ok("grok-session") {
+            vesper_provider_xai::XaiFactory::for_loopback_grok_session(&url)
+        } else {
+            vesper_provider_xai::XaiFactory::for_loopback(&url)
+        }
+        .map_err(|_| ())?
+    } else {
+        xai
+    };
     // All-feature process tests must remain offline even when the developer's
     // OS keyring contains a real xAI session. The selected xAI host still
     // performs real discovery, while normal production builds preserve eager

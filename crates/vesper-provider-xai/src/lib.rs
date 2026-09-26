@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
-//! Native xAI adapter. API-key Responses transport is implemented directly;
-//! Grok-account authentication remains a separately gated VRO-18 phase.
+//! Native xAI adapter with explicit, isolated API-key Responses and
+//! Grok-account session/proxy authentication paths.
 
 mod auth;
 mod catalog;
@@ -11,7 +11,7 @@ mod http_error;
 mod transport;
 mod wire;
 
-pub use catalog::{DEFAULT_MODEL, XaiCatalog};
+pub use catalog::{CatalogIdentity, DEFAULT_MODEL, XaiCatalog};
 pub use discovery::AvailableModels;
 pub use factory::{HostedToolSettingsError, XaiFactory, hosted_tool_selections};
 pub use transport::XaiSession;

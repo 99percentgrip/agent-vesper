@@ -1,14 +1,44 @@
 # Foundation Evidence Index
 
+## VRO-18 Audit 1 corrective release v0.24.1 (2026-09-26)
+
+- Execution: [`2026-09-26-v0.24.1-vro18-audit1-corrective-release.md`](2026-09-26-v0.24.1-vro18-audit1-corrective-release.md)
+- Current verdict: **EXACT-COMMIT RELEASE GATED.** Alex accepted the recorded
+  browser/device, TUI/ACP, exactly-once tool, logout/reauthentication and billing
+  isolation evidence for the Audit 1 candidate. The v0.24.1 commit carries the
+  same production repairs plus version/release metadata and must pass fresh
+  canonical, MSRV, five-target and web-driver/native-host push workflows before
+  tagging. Audit 2 and Audit 3 remain open. No local installation is changed.
+
+## VRO-18 Major Audit 1 (2026-09-26)
+
+- Execution: [`vro18-audit1-completeness-and-capability-truth.md`](vro18-audit1-completeness-and-capability-truth.md)
+- Verdict: **REPAIRED — CORRECTIVE RELEASE IN PROGRESS.** The exact installed TUI is proven
+  byte-identical to the published v0.24.0 Linux x86_64 artifact and reproduced
+  the ordinary Grok-session rejection on the original state. The exact rejected
+  component was stale API-key-only `attachment-search` without its required
+  file reference. The repaired release-profile candidate passes live TUI and
+  ACP `hello`; `read_file` and `run_command` each execute exactly once. Browser
+  and device authentication independently pass issuance, user approval,
+  Vesper-owned credential storage, post-auth turns, logout and browser
+  reauthentication. The earlier copied-link failure is explicitly invalid: the
+  terminal-wrapped URL was truncated before it reached the browser. Narrow-TUI
+  action coverage proves open/copy preserve the complete structured URL. Audit
+  1 repairs are accepted and now proceed through v0.24.1 exact-commit release
+  gates. Codex and Vesper OpenAI remain separate PASS rows. Audit 2 and Audit 3
+  remain open future work.
+
 ## VRO-18 v0.24.0 release (2026-09-25)
 
 - Execution: [`2026-09-25-v0.24.0-release-execution.md`](2026-09-25-v0.24.0-release-execution.md)
-- Verdict: **COMPLETE — RELEASED.** Exact commit `bd49ce69…` passed canonical
+- Historical verdict: **RELEASED.** Exact commit `bd49ce69…` passed canonical
   `36148144754`, MSRV `36148144948`, five-target `36148144714` and web-driver
   `36148145047` before tag `v0.24.0`. Release run `36152583397` published 16
   assets; all seven checksum sidecars match server-computed archive digests,
   the Linux x86_64 package reports 0.24.0, and Registry PR #539 was updated in
-  place at `de3d94f1…`. No local installation changed.
+  place at `de3d94f1…`. No local installation changed. Major Audit 1 later
+  reproduced F0 in this exact release artifact; the entry records publication,
+  not the current completeness verdict.
 
 ## VRO-18 PR-8 live SuperGrok acceptance (2026-09-25)
 

@@ -122,6 +122,10 @@ pub struct MediaCapability {
     pub media_types: Vec<String>,
     /// Maximum items per request.
     pub maximum_items: Option<u32>,
+    /// Maximum encoded media payload bytes per item when the provider
+    /// publishes an exact bound. `None` means the limit is unknown.
+    #[serde(default)]
+    pub maximum_bytes_per_item: Option<u64>,
     /// External references accepted.
     pub references: bool,
     /// Inline descriptors accepted.

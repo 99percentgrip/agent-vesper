@@ -508,6 +508,10 @@ the multi-turn, tool-executing layer above it.
 
 ## Local Contracts
 
+- One `AgentLoop` owns one random, bounded, non-secret cache-routing identity
+  and carries it across ordinary turns, tool continuations and provider-native
+  compaction requests. Providers that do not support cache affinity ignore it.
+
 - ADR 0028: `src/acceptance.rs` owns pure acceptance policy and `CompletionPort`. An
   enrolled objective retains authority outside model history. AgentLoop withholds
   provider prose, preserves complete tool transactions, feeds gaps into bounded repair

@@ -1,6 +1,7 @@
 // Keep the provider-neutral error shape at this protocol boundary.
 #![allow(clippy::result_large_err)]
 use crate::{XaiCatalog, error, provider_id};
+use base64::Engine as _;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 use vesper_domain::*;
@@ -14,12 +15,36 @@ pub(crate) fn invalid() -> ProviderError {
         false,
     )
 }
-fn unsupported() -> ProviderError {
-    error(
-        "xAI cannot satisfy this request control or content type",
-        ErrorCategory::UnsupportedCapability,
-        false,
-    )
+fn rejected(stage: &'static str, item: &str, reason: &'static str) -> ProviderError {
+    // `stage`, `item`, and `reason` are adapter-owned identifiers. Callers must
+    // never pass prompt text, arguments, paths, credentials, or raw schemas.
+    let item = item.chars().take(96).collect::<String>();
+    let message = format!("xAI request rejected before dispatch: {stage} `{item}` {reason}");
+    let mut diagnostics = RedactedDiagnostics::default();
+    diagnostics
+        .fields
+        .insert(
+            "xai:request-rejection",
+            json!({"stage": stage, "item": item}),
+        )
+        .expect("bounded adapter diagnostic");
+    ProviderError {
+        provider_id: provider_id(),
+        provider_code: None,
+        http_status: None,
+        continuation_possible: false,
+        info: ErrorInfo {
+            category: ErrorCategory::UnsupportedCapability,
+            retryability: Retryability::Never,
+            retry_after_ms: None,
+            visible_output_emitted: false,
+            safe_message: SafeMessage::new(message).expect("bounded adapter message"),
+            diagnostics,
+            provider_code: None,
+            causes: vec![],
+        },
+        metadata: Default::default(),
+    }
 }
 
 pub(crate) fn request(
@@ -45,30 +70,56 @@ fn request_inner(
         || request.model.provider_id != provider_id()
         || XaiCatalog::find(request.model.model_id.as_str()).is_none()
     {
-        return Err(unsupported());
+        return Err(rejected(
+            "provider-model",
+            "identity",
+            "is not a verified xAI model",
+        ));
     }
     if request.sampling.is_some() {
-        return Err(unsupported());
+        return Err(rejected(
+            "provider-extension",
+            "sampling",
+            "is not supported",
+        ));
     }
     if request
         .maximum_output_tokens
         .is_some_and(|n| n == 0 || n > 128_000)
     {
-        return Err(unsupported());
+        return Err(rejected(
+            "output-bound",
+            "maximum_output_tokens",
+            "is outside the supported range",
+        ));
     }
     let model = request.model.model_id.as_str();
     if !request.tools.is_empty() && !XaiCatalog::supports_client_tools(model) {
-        return Err(unsupported());
+        return Err(rejected(
+            "capability",
+            "client-tools",
+            "is unavailable for the selected model",
+        ));
     }
     let capabilities = XaiCatalog::find(model)
-        .ok_or_else(unsupported)?
+        .ok_or_else(|| {
+            rejected(
+                "provider-model",
+                "catalog",
+                "does not contain the selected model",
+            )
+        })?
         .capabilities;
     for intent in &request.capabilities {
         if matches!(
             capabilities.resolve(intent.capability.as_str(), intent.requirement, false),
             CapabilityResolution::Reject | CapabilityResolution::Fallback
         ) {
-            return Err(unsupported());
+            return Err(rejected(
+                "capability",
+                intent.capability.as_str(),
+                "is unavailable for the selected model",
+            ));
         }
     }
     let effort = request
@@ -78,7 +129,11 @@ fn request_inner(
         .map(|s| s.as_str())
         .unwrap_or(default_effort);
     if !XaiCatalog::reasoning_levels(model).contains(&effort) {
-        return Err(unsupported());
+        return Err(rejected(
+            "reasoning",
+            effort,
+            "is unavailable for the selected model",
+        ));
     }
     let mut instructions = Vec::new();
     for instruction in &request.system_instructions {
@@ -86,19 +141,28 @@ fn request_inner(
             if let ContentPart::Text(text) = part {
                 instructions.push(text.as_str());
             } else {
-                return Err(unsupported());
+                return Err(rejected(
+                    "system-content",
+                    "non-text",
+                    "is not mapped by the adapter",
+                ));
             }
         }
     }
     let mut input: Vec<Value> = vec![];
-    let mut image_count = 0;
     for message in &request.messages {
         let assistant = message.role == MessageRole::Assistant;
         let role = match message.role {
             MessageRole::User => "user",
             MessageRole::Assistant => "assistant",
             MessageRole::Tool => "user",
-            _ => return Err(unsupported()),
+            _ => {
+                return Err(rejected(
+                    "message-content",
+                    "role",
+                    "is not mapped by the adapter",
+                ));
+            }
         };
         // Never invent linkage for older imported tool text with no call ID.
         if message.role == MessageRole::Tool
@@ -107,19 +171,40 @@ fn request_inner(
                 .iter()
                 .any(|part| matches!(part, ContentPart::ToolResult(_)))
         {
-            return Err(unsupported());
+            return Err(rejected(
+                "message-content",
+                "tool-result-linkage",
+                "is incomplete",
+            ));
         }
         for part in &message.content {
             match part {
                 ContentPart::Text(_) if message.role == MessageRole::Tool => {},
                 ContentPart::Text(text)=>input.push(json!({"role":role,"content":[{"type":if assistant{"output_text"}else{"input_text"},"text":text.as_str()}]})),
                 ContentPart::Image(image)=>{
-                    image_count+=1;
-                    if assistant || image_count>50 || !["image/png","image/jpeg","image/webp"].contains(&image.media_type.as_str()){return Err(unsupported());}
-                    let MediaSource::Reference{reference}=&image.source else{return Err(unsupported());};
-                    let url=url::Url::parse(reference).map_err(|_|unsupported())?;
-                    if !["https","data"].contains(&url.scheme()) || reference.len()>8*MAX_EVENT {return Err(unsupported());}
-                    if url.scheme()=="data" && !reference.starts_with(&format!("data:{};base64,",image.media_type)){return Err(unsupported());}
+                    if assistant || !["image/png","image/jpeg"].contains(&image.media_type.as_str()) {
+                        return Err(rejected("message-content", "image", "uses an unsupported role or media type"));
+                    }
+                    let MediaSource::Reference{reference}=&image.source else{return Err(rejected("message-content", "image-source", "is not mapped by the adapter"));};
+                    let url=url::Url::parse(reference).map_err(|_|rejected("message-content", "image-reference", "is not a valid URL"))?;
+                    if !["https","data"].contains(&url.scheme())
+                        || (url.scheme() == "https" && reference.len() > 8192)
+                        || (url.scheme() == "data" && reference.len() > 28 * MAX_EVENT)
+                    {
+                        return Err(rejected("message-content", "image", "has an invalid or oversized reference"));
+                    }
+                    if url.scheme()=="data" {
+                        let prefix = format!("data:{};base64,", image.media_type);
+                        let encoded = reference.strip_prefix(&prefix).ok_or_else(|| {
+                            rejected("message-content", "image", "has an invalid data URI")
+                        })?;
+                        let decoded = base64::engine::general_purpose::STANDARD
+                            .decode(encoded)
+                            .map_err(|_| rejected("message-content", "image", "has invalid base64 data"))?;
+                        if decoded.len() > 20 * 1024 * 1024 {
+                            return Err(rejected("message-content", "image", "exceeds the 20 MiB provider limit"));
+                        }
+                    }
                     input.push(json!({"role":"user","content":[{"type":"input_image","image_url":reference}]}));
                 }
                 ContentPart::ToolCall(call)=>{
@@ -132,14 +217,14 @@ fn request_inner(
                 }
                 ContentPart::ProviderOpaque(opaque)=>append_opaque(&mut input,opaque)?,
                 ContentPart::EmbeddedContext(context) if !context.provider_visible=>{},
-                _=>return Err(unsupported()),
+                _=>return Err(rejected("message-content", "content-kind", "is not mapped by the adapter")),
             }
         }
     }
     let mut names = BTreeSet::new();
     let mut tools = vec![];
     for tool in &request.tools {
-        validate_schema(&tool.input_schema)?;
+        validate_schema(&tool.input_schema, tool_name(tool), "tool-schema")?;
         let name = tool_name(tool);
         if name.len() > 64
             || !name
@@ -148,7 +233,11 @@ fn request_inner(
             || !names.insert(name)
             || tools.len() >= 128
         {
-            return Err(unsupported());
+            return Err(rejected(
+                "tool-name-count",
+                name,
+                "has an invalid or duplicate provider-visible name",
+            ));
         }
         tools.push(json!({"type":"function","name":name,"description":tool.description,"parameters":tool.input_schema,"strict":true}));
     }
@@ -158,9 +247,15 @@ fn request_inner(
         ToolChoiceIntent::None => json!("none"),
         ToolChoiceIntent::Required if !tools.is_empty() => json!("required"),
         ToolChoiceIntent::Named(id) => {
-            json!({"type":"function","name":tool_name(request.tools.iter().find(|t|&t.id==id).ok_or_else(unsupported)?)})
+            json!({"type":"function","name":tool_name(request.tools.iter().find(|t|&t.id==id).ok_or_else(||rejected("capability", "named-tool-choice", "does not name an advertised tool"))?)})
         }
-        _ => return Err(unsupported()),
+        _ => {
+            return Err(rejected(
+                "capability",
+                "tool-choice",
+                "is incompatible with the advertised tools",
+            ));
+        }
     };
     let controls = request_controls(request, websocket)?;
     let mut body = json!({"model":model,"instructions":instructions.join("\n\n"),"input":input,"tools":tools,"tool_choice":choice,"parallel_tool_calls":true,"store":controls.store,"stream":true,"include":["reasoning.encrypted_content","web_search_call.action.sources","code_interpreter_call.outputs","file_search_call.results"],"reasoning":{"effort":effort,"summary":"auto"}});
@@ -184,13 +279,17 @@ fn request_inner(
             body["text"] = json!({"format":{"type":"json_object"}})
         }
         StructuredOutputIntent::JsonSchema(schema) => {
-            validate_schema(schema)?;
+            validate_schema(schema, "vesper_output", "structured-output")?;
             body["text"] = json!({"format":{"type":"json_schema","name":"vesper_output","strict":true,"schema":schema}})
         }
-        _ => return Err(unsupported()),
+        _ => return Err(rejected("structured-output", "format", "is not supported")),
     }
     if body.to_string().len() > 32 * MAX_EVENT {
-        return Err(unsupported());
+        return Err(rejected(
+            "request-size",
+            "serialized-request",
+            "exceeds the bounded request size",
+        ));
     }
     Ok(body)
 }
@@ -202,10 +301,14 @@ pub(crate) fn compaction_request(
         || request.model.provider_id != provider_id()
         || XaiCatalog::find(request.model.model_id.as_str()).is_none()
     {
-        return Err(unsupported());
+        return Err(rejected(
+            "compaction",
+            "provider-model",
+            "is not a verified xAI model",
+        ));
     }
-    let effort =
-        XaiCatalog::default_effort(request.model.model_id.as_str()).ok_or_else(unsupported)?;
+    let effort = XaiCatalog::default_effort(request.model.model_id.as_str())
+        .ok_or_else(|| rejected("compaction", "reasoning", "has no verified default"))?;
     let ordinary = ProviderRequest {
         request_id: ProviderRequestId::new("xai-native-compaction").expect("static"),
         provider_id: request.provider_id.clone(),
@@ -223,6 +326,7 @@ pub(crate) fn compaction_request(
         maximum_output_tokens: None,
         continuation: None,
         fallback_policy: FallbackPolicy::Strict,
+        cache_routing_key: None,
         provider_extensions: None,
     };
     let mut body = self::request(&ordinary, effort)?;
@@ -230,7 +334,7 @@ pub(crate) fn compaction_request(
     for instruction in &request.system_instructions {
         for part in &instruction.content {
             let ContentPart::Text(text) = part else {
-                return Err(unsupported());
+                return Err(rejected("compaction", "system-content", "must be text"));
             };
             input.push(
                 json!({"role":"system","content":[{"type":"input_text","text":text.as_str()}]}),
@@ -245,7 +349,11 @@ pub(crate) fn compaction_request(
     );
     let compact = json!({"model":request.model.model_id.as_str(),"input":input});
     if compact.to_string().len() > 32 * MAX_EVENT {
-        return Err(unsupported());
+        return Err(rejected(
+            "compaction",
+            "request-size",
+            "exceeds the bounded request size",
+        ));
     }
     Ok(compact)
 }
@@ -258,7 +366,11 @@ fn append_hosted_tools(
     let mut ids = BTreeSet::new();
     for selection in selections {
         if !ids.insert(selection.tool_id.as_str()) {
-            return Err(unsupported());
+            return Err(rejected(
+                "hosted-tool",
+                selection.tool_id.as_str(),
+                "is selected more than once",
+            ));
         }
         let config = selection.configuration.as_ref();
         if let Some(config) = config {
@@ -268,7 +380,11 @@ fn append_hosted_tools(
         match selection.tool_id.as_str() {
             "web-search" | "x-search" | "code-execution" => {
                 if values.is_some_and(|values| !values.is_empty()) {
-                    return Err(unsupported());
+                    return Err(rejected(
+                        "hosted-tool",
+                        selection.tool_id.as_str(),
+                        "does not accept configuration",
+                    ));
                 }
                 let kind = match selection.tool_id.as_str() {
                     "web-search" => "web_search",
@@ -279,44 +395,88 @@ fn append_hosted_tools(
                 tools.push(json!({"type":kind}));
             }
             "attachment-search" => {
-                let values = values.ok_or_else(unsupported)?;
+                let values = values.ok_or_else(|| {
+                    rejected(
+                        "hosted-tool",
+                        "attachment-search",
+                        "requires a file ID or HTTPS file URL",
+                    )
+                })?;
                 if values
                     .iter()
                     .any(|(key, _)| !matches!(key, "xai:file-ids" | "xai:file-urls"))
                 {
-                    return Err(unsupported());
+                    return Err(rejected(
+                        "hosted-tool",
+                        "attachment-search",
+                        "contains unsupported configuration",
+                    ));
                 }
                 let mut content = Vec::new();
                 append_file_references(&mut content, values, "xai:file-ids", "file_id")?;
                 append_file_references(&mut content, values, "xai:file-urls", "file_url")?;
                 if content.is_empty() || content.len() > 16 {
-                    return Err(unsupported());
+                    return Err(rejected(
+                        "hosted-tool",
+                        "attachment-search",
+                        "requires between one and sixteen file references",
+                    ));
                 }
                 input.push(json!({"role":"user","content":content}));
             }
             "collections-search" => {
-                let values = values.ok_or_else(unsupported)?;
+                let values = values.ok_or_else(|| {
+                    rejected(
+                        "hosted-tool",
+                        "collections-search",
+                        "requires a collection ID",
+                    )
+                })?;
                 if values
                     .iter()
                     .any(|(key, _)| !matches!(key, "xai:collection-ids" | "xai:max-results"))
                 {
-                    return Err(unsupported());
+                    return Err(rejected(
+                        "hosted-tool",
+                        "collections-search",
+                        "contains unsupported configuration",
+                    ));
                 }
                 let collection_ids = bounded_strings(values, "xai:collection-ids", 16, 256)?;
                 if collection_ids.is_empty() {
-                    return Err(unsupported());
+                    return Err(rejected(
+                        "hosted-tool",
+                        "collections-search",
+                        "requires at least one collection ID",
+                    ));
                 }
                 let max = match values.get("xai:max-results") {
-                    Some(value) => value.as_u64().ok_or_else(unsupported)?,
+                    Some(value) => value.as_u64().ok_or_else(|| {
+                        rejected(
+                            "hosted-tool",
+                            "collections-search",
+                            "has a non-numeric result limit",
+                        )
+                    })?,
                     None => 10,
                 };
                 if !(1..=50).contains(&max) {
-                    return Err(unsupported());
+                    return Err(rejected(
+                        "hosted-tool",
+                        "collections-search",
+                        "has an invalid result limit",
+                    ));
                 }
                 tools.push(json!({"type":"file_search","vector_store_ids":collection_ids,"max_num_results":max}));
             }
             "remote-mcp" => {
-                let values = values.ok_or_else(unsupported)?;
+                let values = values.ok_or_else(|| {
+                    rejected(
+                        "hosted-tool",
+                        "remote-mcp",
+                        "requires an HTTPS endpoint and label",
+                    )
+                })?;
                 if values.iter().any(|(key, _)| {
                     !matches!(
                         key,
@@ -326,31 +486,47 @@ fn append_hosted_tools(
                             | "xai:allowed-tools"
                     )
                 }) {
-                    return Err(unsupported());
+                    return Err(rejected(
+                        "hosted-tool",
+                        "remote-mcp",
+                        "contains unsupported configuration",
+                    ));
                 }
                 let server_url = values
                     .get("xai:server-url")
                     .and_then(Value::as_str)
-                    .ok_or_else(unsupported)?;
-                let parsed = url::Url::parse(server_url).map_err(|_| unsupported())?;
+                    .ok_or_else(|| {
+                        rejected("hosted-tool", "remote-mcp", "requires a string endpoint")
+                    })?;
+                let parsed = url::Url::parse(server_url).map_err(|_| {
+                    rejected("hosted-tool", "remote-mcp", "has an invalid endpoint")
+                })?;
                 if parsed.scheme() != "https"
                     || server_url.len() > 2048
                     || parsed.username() != ""
                     || parsed.password().is_some()
                 {
-                    return Err(unsupported());
+                    return Err(rejected(
+                        "hosted-tool",
+                        "remote-mcp",
+                        "requires a credential-free HTTPS endpoint",
+                    ));
                 }
                 let label = values
                     .get("xai:server-label")
                     .and_then(Value::as_str)
                     .filter(|value| valid_routing_value(value, 64))
-                    .ok_or_else(unsupported)?;
+                    .ok_or_else(|| rejected("hosted-tool", "remote-mcp", "has an invalid label"))?;
                 let mut tool = json!({"type":"mcp","server_url":server_url,"server_label":label});
                 if let Some(description) =
                     values.get("xai:server-description").and_then(Value::as_str)
                 {
                     if description.len() > 1024 || description.chars().any(char::is_control) {
-                        return Err(unsupported());
+                        return Err(rejected(
+                            "hosted-tool",
+                            "remote-mcp",
+                            "has an invalid description",
+                        ));
                     }
                     tool["server_description"] = json!(description);
                 }
@@ -360,7 +536,13 @@ fn append_hosted_tools(
                 }
                 tools.push(tool);
             }
-            _ => return Err(unsupported()),
+            _ => {
+                return Err(rejected(
+                    "hosted-tool",
+                    selection.tool_id.as_str(),
+                    "is not supported by the xAI adapter",
+                ));
+            }
         }
     }
     Ok(())
@@ -375,9 +557,9 @@ fn bounded_strings(
     let array = values
         .get(key)
         .and_then(Value::as_array)
-        .ok_or_else(unsupported)?;
+        .ok_or_else(|| rejected("hosted-tool", key, "requires a string array"))?;
     if array.len() > maximum_items {
-        return Err(unsupported());
+        return Err(rejected("hosted-tool", key, "contains too many values"));
     }
     array
         .iter()
@@ -386,7 +568,7 @@ fn bounded_strings(
                 .as_str()
                 .filter(|value| valid_routing_value(value, maximum_bytes))
                 .map(str::to_owned)
-                .ok_or_else(unsupported)
+                .ok_or_else(|| rejected("hosted-tool", key, "contains an invalid value"))
         })
         .collect()
 }
@@ -400,16 +582,25 @@ fn append_file_references(
     let Some(array) = values.get(key) else {
         return Ok(());
     };
-    let array = array.as_array().ok_or_else(unsupported)?;
+    let array = array
+        .as_array()
+        .ok_or_else(|| rejected("hosted-tool", key, "requires a string array"))?;
     for item in array {
-        let value = item.as_str().ok_or_else(unsupported)?;
+        let value = item
+            .as_str()
+            .ok_or_else(|| rejected("hosted-tool", key, "contains a non-string value"))?;
         if wire_key == "file_url" {
-            let parsed = url::Url::parse(value).map_err(|_| unsupported())?;
+            let parsed = url::Url::parse(value)
+                .map_err(|_| rejected("hosted-tool", key, "contains an invalid URL"))?;
             if parsed.scheme() != "https" || value.len() > 8192 {
-                return Err(unsupported());
+                return Err(rejected("hosted-tool", key, "requires bounded HTTPS URLs"));
             }
         } else if !valid_routing_value(value, 256) {
-            return Err(unsupported());
+            return Err(rejected(
+                "hosted-tool",
+                key,
+                "contains an invalid file identifier",
+            ));
         }
         let mut item = serde_json::Map::new();
         item.insert("type".into(), json!("input_file"));
@@ -430,15 +621,31 @@ fn request_controls(
     request: &ProviderRequest,
     websocket: bool,
 ) -> Result<RequestControls, ProviderError> {
-    let mut controls = RequestControls::default();
+    let mut controls = RequestControls {
+        prompt_cache_key: request
+            .cache_routing_key
+            .as_ref()
+            .map(|value| value.as_str().to_owned()),
+        ..RequestControls::default()
+    };
     if let Some(continuation) = &request.continuation {
         if !continuation.may_continue() {
-            return Err(unsupported());
+            return Err(rejected(
+                "continuation",
+                "bounds",
+                "does not permit another continuation",
+            ));
         }
         let state = match &continuation.strategy {
             ContinuationStrategy::NativeContinuation { state }
             | ContinuationStrategy::ProviderCursor { cursor: state } => state,
-            _ => return Err(unsupported()),
+            _ => {
+                return Err(rejected(
+                    "continuation",
+                    "strategy",
+                    "is not mapped by the adapter",
+                ));
+            }
         };
         validate_envelope(state)?;
         let id = state
@@ -446,13 +653,23 @@ fn request_controls(
             .get("xai:previous-response-id")
             .and_then(Value::as_str)
             .filter(|value| valid_routing_value(value, 256))
-            .ok_or_else(unsupported)?;
+            .ok_or_else(|| {
+                rejected(
+                    "continuation",
+                    "previous-response-id",
+                    "is missing or invalid",
+                )
+            })?;
         if state
             .values
             .iter()
             .any(|(key, _)| key != "xai:previous-response-id")
         {
-            return Err(unsupported());
+            return Err(rejected(
+                "continuation",
+                "state",
+                "contains unsupported fields",
+            ));
         }
         controls.previous_response_id = Some(id.to_owned());
     }
@@ -461,26 +678,51 @@ fn request_controls(
         for (key, value) in extension.values.iter() {
             match key {
                 "xai:prompt-cache-key" => {
+                    if controls.prompt_cache_key.is_some() {
+                        return Err(rejected(
+                            "provider-extension",
+                            "xai:prompt-cache-key",
+                            "duplicates provider-neutral cache routing",
+                        ));
+                    }
                     let value = value
                         .as_str()
                         .filter(|value| valid_routing_value(value, 128))
-                        .ok_or_else(unsupported)?;
+                        .ok_or_else(|| {
+                            rejected(
+                                "provider-extension",
+                                "xai:prompt-cache-key",
+                                "has an invalid value",
+                            )
+                        })?;
                     controls.prompt_cache_key = Some(value.to_owned());
                 }
-                "xai:store" => controls.store = value.as_bool().ok_or_else(unsupported)?,
-                _ => return Err(unsupported()),
+                "xai:store" => {
+                    controls.store = value.as_bool().ok_or_else(|| {
+                        rejected("provider-extension", "xai:store", "must be boolean")
+                    })?
+                }
+                _ => return Err(rejected("provider-extension", key, "is not recognized")),
             }
         }
     }
     if controls.previous_response_id.is_some() && !controls.store && !websocket {
-        return Err(unsupported());
+        return Err(rejected(
+            "continuation",
+            "store",
+            "must be enabled for HTTP response-ID continuation",
+        ));
     }
     Ok(controls)
 }
 
 fn validate_envelope(envelope: &VersionedExtensionEnvelope) -> Result<(), ProviderError> {
     if envelope.namespace.as_str() != "provider.xai" || envelope.version.get() != 1 {
-        return Err(unsupported());
+        return Err(rejected(
+            "provider-extension",
+            "envelope",
+            "has an invalid namespace or version",
+        ));
     }
     Ok(())
 }
@@ -493,27 +735,51 @@ fn valid_routing_value(value: &str, maximum: usize) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || b"._:-".contains(&byte))
 }
 
-fn validate_schema(schema: &Value) -> Result<(), ProviderError> {
+fn validate_schema(schema: &Value, item: &str, stage: &'static str) -> Result<(), ProviderError> {
     fn visit(
         value: &Value,
         root: &Value,
         depth: usize,
         nodes: &mut usize,
         refs: &mut BTreeSet<String>,
+        item: &str,
+        stage: &'static str,
     ) -> Result<(), ProviderError> {
         *nodes += 1;
         if depth > 32 || *nodes > 2048 || !value.is_object() {
-            return Err(unsupported());
+            return Err(rejected(stage, item, "exceeds schema shape limits"));
         }
-        let object = value.as_object().ok_or_else(unsupported)?;
-        if object.keys().any(|key| {
+        let object = value
+            .as_object()
+            .ok_or_else(|| rejected(stage, item, "is not an object schema"))?;
+        if let Some(keyword) = object.keys().find(|key| {
             matches!(
                 key.as_str(),
-                "not" | "if" | "then" | "else" | "contains" | "minContains" | "maxContains"
+                "not"
+                    | "if"
+                    | "then"
+                    | "else"
+                    | "contains"
+                    | "minContains"
+                    | "maxContains"
+                    | "pattern"
             )
-        }) || object.contains_key("pattern")
-        {
-            return Err(unsupported());
+        }) {
+            return Err(rejected(
+                stage,
+                item,
+                match keyword.as_str() {
+                    "pattern" => "uses unsupported keyword `pattern`",
+                    "not" => "uses unsupported keyword `not`",
+                    "if" => "uses unsupported keyword `if`",
+                    "then" => "uses unsupported keyword `then`",
+                    "else" => "uses unsupported keyword `else`",
+                    "contains" => "uses unsupported keyword `contains`",
+                    "minContains" => "uses unsupported keyword `minContains`",
+                    "maxContains" => "uses unsupported keyword `maxContains`",
+                    _ => "uses an unsupported keyword",
+                },
+            ));
         }
         for key in object.keys() {
             if !matches!(
@@ -550,43 +816,50 @@ fn validate_schema(schema: &Value) -> Result<(), ProviderError> {
                     | "minProperties"
                     | "maxProperties"
             ) {
-                return Err(unsupported());
+                return Err(rejected(stage, item, "uses an unsupported schema keyword"));
             }
         }
         if object
             .get("enum")
             .is_some_and(|v| v.as_array().is_none_or(Vec::is_empty))
         {
-            return Err(unsupported());
+            return Err(rejected(stage, item, "contains an empty enum"));
         }
         for key in ["anyOf", "oneOf", "allOf"] {
             if let Some(value) = object.get(key) {
-                let variants = value.as_array().ok_or_else(unsupported)?;
+                let variants = value
+                    .as_array()
+                    .ok_or_else(|| rejected(stage, item, "has malformed schema variants"))?;
                 if variants.is_empty() || (key == "allOf" && variants.len() != 1) {
-                    return Err(unsupported());
+                    return Err(rejected(stage, item, "has unsupported schema variants"));
                 }
                 for variant in variants {
-                    visit(variant, root, depth + 1, nodes, refs)?;
+                    visit(variant, root, depth + 1, nodes, refs, item, stage)?;
                 }
             }
         }
         for key in ["properties", "$defs"] {
             if let Some(values) = object.get(key) {
-                let values = values.as_object().ok_or_else(unsupported)?;
+                let values = values
+                    .as_object()
+                    .ok_or_else(|| rejected(stage, item, "has malformed schema properties"))?;
                 if key == "properties" && values.len() > 64 {
-                    return Err(unsupported());
+                    return Err(rejected(stage, item, "declares too many properties"));
                 }
                 for child in values.values() {
-                    visit(child, root, depth + 1, nodes, refs)?;
+                    visit(child, root, depth + 1, nodes, refs, item, stage)?;
                 }
             }
         }
         if let Some(items) = object.get("items") {
-            visit(items, root, depth + 1, nodes, refs)?;
+            visit(items, root, depth + 1, nodes, refs, item, stage)?;
         }
         if let Some(items) = object.get("prefixItems") {
-            for item in items.as_array().ok_or_else(unsupported)? {
-                visit(item, root, depth + 1, nodes, refs)?;
+            for child in items
+                .as_array()
+                .ok_or_else(|| rejected(stage, item, "has malformed tuple items"))?
+            {
+                visit(child, root, depth + 1, nodes, refs, item, stage)?;
             }
         }
         if object
@@ -602,7 +875,7 @@ fn validate_schema(schema: &Value) -> Result<(), ProviderError> {
                 .and_then(Value::as_u64)
                 .is_some_and(|v| v > 64)
         {
-            return Err(unsupported());
+            return Err(rejected(stage, item, "exceeds a bounded schema limit"));
         }
         if let Some(format) = object.get("format").and_then(Value::as_str)
             && ![
@@ -617,27 +890,37 @@ fn validate_schema(schema: &Value) -> Result<(), ProviderError> {
             ]
             .contains(&format)
         {
-            return Err(unsupported());
+            return Err(rejected(stage, item, "uses an unsupported string format"));
         }
         if let Some(reference) = object.get("$ref").and_then(Value::as_str) {
-            let name = reference.strip_prefix("#/$defs/").ok_or_else(unsupported)?;
+            let name = reference
+                .strip_prefix("#/$defs/")
+                .ok_or_else(|| rejected(stage, item, "uses an external schema reference"))?;
             if name.is_empty() || name.contains('/') || !refs.insert(reference.to_owned()) {
-                return Err(unsupported());
+                return Err(rejected(
+                    stage,
+                    item,
+                    "uses an invalid or cyclic schema reference",
+                ));
             }
             let target = root
                 .get("$defs")
                 .and_then(|defs| defs.get(name))
-                .ok_or_else(unsupported)?;
-            visit(target, root, depth + 1, nodes, refs)?;
+                .ok_or_else(|| rejected(stage, item, "references a missing schema definition"))?;
+            visit(target, root, depth + 1, nodes, refs, item, stage)?;
             refs.remove(reference);
         }
         Ok(())
     }
-    visit(schema, schema, 0, &mut 0, &mut BTreeSet::new())
+    visit(schema, schema, 0, &mut 0, &mut BTreeSet::new(), item, stage)
 }
 fn append_opaque(input: &mut Vec<Value>, opaque: &OpaqueContent) -> Result<(), ProviderError> {
     if opaque.provider_id != provider_id() {
-        return Err(unsupported());
+        return Err(rejected(
+            "continuation",
+            "opaque-provider",
+            "belongs to another provider",
+        ));
     }
     match opaque.kind.as_str() {
         "reasoning"
@@ -651,7 +934,13 @@ fn append_opaque(input: &mut Vec<Value>, opaque: &OpaqueContent) -> Result<(), P
         {
             input.push(opaque.data.expose().clone())
         }
-        _ => return Err(unsupported()),
+        _ => {
+            return Err(rejected(
+                "continuation",
+                opaque.kind.as_str(),
+                "is not mapped by the adapter",
+            ));
+        }
     }
     Ok(())
 }

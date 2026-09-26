@@ -6,6 +6,10 @@ Verify terminal interaction through the production TUI binary with isolated stat
 
 ## Ownership
 
+- `xai_plain_turn_pty.py` owns the real TUI-process Grok-session `hello` smoke:
+  full Code-mode registry, reasoning projection, stale-control suppression and
+  exactly one loopback transport dispatch without live quota.
+
 - `voice_speech_pipeline.rs` isolates PATH/HOME in a test subprocess and uses
   synthesis-only WAV/player fixtures without devices. It requires the second
   synthesis to overlap first-player drain, asserts the bounded two-unit

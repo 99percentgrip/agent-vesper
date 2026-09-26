@@ -7,9 +7,12 @@ continuation state, and provider error mapping without changing the shared agent
 
 ## Ownership
 
-- `src/auth.rs` and `src/credentials.rs` own fixed-origin browser/device Grok
-  authentication, signed-token validation, locked refresh/logout and explicit
-  billing-mode selection. They never read Grok Build or browser credentials.
+- `src/auth.rs` and `src/credentials.rs` own fixed-origin Grok browser and
+  device authentication, signed-token validation, locked refresh/logout and
+  explicit billing-mode selection. Browser login uses the current public native
+  client contract, a truthful `agent-vesper` referrer, loopback callback, PKCE,
+  state and nonce. The adapter never impersonates or launches Grok Build and
+  never reads Grok Build/browser credentials.
 - `src/catalog.rs` owns evidence-backed model capabilities; `src/discovery.rs`
   intersects authenticated availability with exact models/current aliases and
   keeps unknown or endpoint-excluded identifiers non-executable.
@@ -20,6 +23,17 @@ continuation state, and provider error mapping without changing the shared agent
   stay isolated from API-key billing.
 
 ## Local Contracts
+
+- Grok-session surfaces exclude Global/API-key-only hosted tools, native
+  compaction and WebSocket controls. Stale persisted values never cross that
+  authentication/billing boundary.
+- Pre-dispatch request rejections identify a bounded safe stage and item. They
+  never echo prompts, tool arguments, schemas, paths or credentials.
+- Current language-model images are JPEG/PNG with a 20 MiB per-item bound and
+  no invented item cap. Grok 4.3/4.5 `xhigh` remains fail-closed while official
+  model-detail and general-reasoning documentation conflict.
+- Catalog identities distinguish canonical, moving, fixed, retired redirect
+  and unknown future models; discovery alone never grants capability metadata.
 
 - Depend only on provider foundations plus HTTP/runtime utility crates.
 - Production endpoints are fixed, TLS-only, and redirect-free. Loopback routes

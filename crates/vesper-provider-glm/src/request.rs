@@ -660,6 +660,7 @@ mod tests {
             maximum_output_tokens: Some(1_024),
             continuation: None,
             fallback_policy: FallbackPolicy::Strict,
+            cache_routing_key: None,
             provider_extensions: None,
         }
     }

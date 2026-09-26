@@ -200,6 +200,10 @@ pub struct ProviderRequest {
     pub continuation: Option<ContinuationContext>,
     /// Global fallback policy.
     pub fallback_policy: FallbackPolicy,
+    /// Stable, non-secret conversation routing key for provider prompt caches.
+    /// Providers that do not expose explicit cache routing ignore this value.
+    #[serde(default)]
+    pub cache_routing_key: Option<BoundedString<128>>,
     /// Provider-specific versioned request values.
     pub provider_extensions: Option<VersionedExtensionEnvelope>,
 }
@@ -433,6 +437,7 @@ mod tests {
             maximum_output_tokens: None,
             continuation: None,
             fallback_policy,
+            cache_routing_key: None,
             provider_extensions: None,
         }
     }

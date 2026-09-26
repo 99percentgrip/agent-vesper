@@ -25,7 +25,7 @@ const MODELS: &[Spec] = &[
         efforts: &["low", "medium", "high", "xhigh"],
         default_effort: "high",
         tools: true,
-        batch: true,
+        batch: false,
         multi_agent: false,
         aliases: &["grok-4.7-latest"],
     },
@@ -36,7 +36,7 @@ const MODELS: &[Spec] = &[
         efforts: &["low", "medium", "high", "xhigh"],
         default_effort: "high",
         tools: true,
-        batch: true,
+        batch: false,
         multi_agent: false,
         aliases: &["grok-4.6-latest"],
     },
@@ -47,9 +47,9 @@ const MODELS: &[Spec] = &[
         efforts: &["low", "medium", "high"],
         default_effort: "high",
         tools: true,
-        batch: true,
+        batch: false,
         multi_agent: false,
-        aliases: &["grok-4.5-latest"],
+        aliases: &["grok-4.5-latest", "grok-build-latest"],
     },
     Spec {
         id: "grok-4.3",
@@ -75,6 +75,18 @@ const MODELS: &[Spec] = &[
             "grok-4.20",
             "grok-4.20-reasoning",
             "grok-4.20-reasoning-latest",
+            "grok-4.20-0309",
+            "grok-4.20-beta-0309-reasoning",
+            "grok-4.20-beta",
+            "grok-4.20-beta-0309",
+            "grok-4.20-beta-latest",
+            "grok-4.20-beta-latest-reasoning",
+            "grok-4.20-beta-reasoning",
+            "grok-4.20-experimental-beta-0304-reasoning",
+            "grok-4.20-experimental-beta-0304",
+            "grok-4.20-experimental-beta-reasoning-latest",
+            "grok-4.20-experimental-beta-latest",
+            "grok-4.20-reasoning-gv2",
         ],
     },
     Spec {
@@ -86,7 +98,16 @@ const MODELS: &[Spec] = &[
         tools: true,
         batch: true,
         multi_agent: false,
-        aliases: &["grok-4.20-non-reasoning", "grok-4.20-non-reasoning-latest"],
+        aliases: &[
+            "grok-4.20-non-reasoning",
+            "grok-4.20-non-reasoning-latest",
+            "grok-4.20-beta-non-reasoning",
+            "grok-4.20-beta-latest-non-reasoning",
+            "grok-4.20-experimental-beta-0304-non-reasoning",
+            "grok-4.20-experimental-beta-non-reasoning-latest",
+            "grok-4.20-beta-0309-non-reasoning",
+            "grok-4.20-non-reasoning-gv2",
+        ],
     },
     Spec {
         id: "grok-4.20-multi-agent-0309",
@@ -97,7 +118,14 @@ const MODELS: &[Spec] = &[
         tools: false,
         batch: true,
         multi_agent: true,
-        aliases: &["grok-4.20-multi-agent", "grok-4.20-multi-agent-latest"],
+        aliases: &[
+            "grok-4.20-multi-agent",
+            "grok-4.20-multi-agent-latest",
+            "grok-4.20-multi-agent-beta-latest",
+            "grok-4.20-multi-agent-experimental-beta-0304",
+            "grok-4.20-multi-agent-experimental-beta-latest",
+            "grok-4.20-multi-agent-beta-0309",
+        ],
     },
     Spec {
         id: "grok-build-0.1",
@@ -111,6 +139,27 @@ const MODELS: &[Spec] = &[
         aliases: &[],
     },
 ];
+
+const RETIRED_REDIRECTS: &[&str] = &[
+    "grok-4-1-fast-reasoning",
+    "grok-4-1-fast-non-reasoning",
+    "grok-4-fast-reasoning",
+    "grok-4-fast-non-reasoning",
+    "grok-4-0709",
+    "grok-code-fast-1",
+    "grok-code-fast",
+    "grok-code-fast-1-0825",
+    "grok-3",
+];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CatalogIdentity {
+    Canonical(&'static str),
+    MovingAlias(&'static str),
+    FixedAlias(&'static str),
+    RetiredRedirect,
+    Unknown,
+}
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct XaiCatalog;
@@ -130,10 +179,30 @@ impl XaiCatalog {
             .map(descriptor)
     }
     pub fn resolve_current_alias(id: &str) -> Option<&'static str> {
-        MODELS
+        match Self::classify_identity(id) {
+            CatalogIdentity::Canonical(id)
+            | CatalogIdentity::MovingAlias(id)
+            | CatalogIdentity::FixedAlias(id) => Some(id),
+            CatalogIdentity::RetiredRedirect | CatalogIdentity::Unknown => None,
+        }
+    }
+    pub fn classify_identity(id: &str) -> CatalogIdentity {
+        if RETIRED_REDIRECTS.contains(&id) {
+            return CatalogIdentity::RetiredRedirect;
+        }
+        let Some(spec) = MODELS
             .iter()
             .find(|spec| spec.id == id || spec.aliases.contains(&id))
-            .map(|spec| spec.id)
+        else {
+            return CatalogIdentity::Unknown;
+        };
+        if spec.id == id {
+            CatalogIdentity::Canonical(spec.id)
+        } else if id.contains("0309") || id.contains("0304") || id.ends_with("-gv2") {
+            CatalogIdentity::FixedAlias(spec.id)
+        } else {
+            CatalogIdentity::MovingAlias(spec.id)
+        }
     }
     pub fn reasoning_levels(id: &str) -> Vec<&'static str> {
         MODELS
@@ -209,6 +278,22 @@ fn descriptor(spec: Spec) -> ModelDescriptor {
             .insert("xai:beta", serde_json::json!(true))
             .expect("static");
     }
+    if spec.id == "grok-4.3" {
+        metadata
+            .insert(
+                "xai:reasoning-evidence-policy",
+                serde_json::json!("xhigh-withheld-general-guide-conflicts-with-model-detail"),
+            )
+            .expect("static");
+    }
+    if spec.id == "grok-4.5" {
+        metadata
+            .insert(
+                "xai:reasoning-evidence-policy",
+                serde_json::json!("xhigh-withheld-provider-aliases-to-high"),
+            )
+            .expect("static");
+    }
     let tools = if spec.tools {
         native(ToolCapability {
             schema_dialect: "xai.responses.function".into(),
@@ -262,8 +347,9 @@ fn descriptor(spec: Spec) -> ModelDescriptor {
                 opaque_records: true,
             }),
             vision: native(MediaCapability {
-                media_types: vec!["image/png".into(), "image/jpeg".into(), "image/webp".into()],
-                maximum_items: Some(50),
+                media_types: vec!["image/png".into(), "image/jpeg".into()],
+                maximum_items: None,
+                maximum_bytes_per_item: Some(20 * 1024 * 1024),
                 references: true,
                 inline_data: true,
             }),

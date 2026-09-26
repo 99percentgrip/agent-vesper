@@ -1,5 +1,5 @@
 //! Account-scoped API model discovery intersected with verified capabilities.
-use crate::{XaiCatalog, XaiFactory, XaiSession, error, transport::XaiRegion};
+use crate::{CatalogIdentity, XaiCatalog, XaiFactory, XaiSession, error, transport::XaiRegion};
 use std::{collections::BTreeSet, sync::Arc, time::Duration};
 use vesper_domain::ErrorCategory;
 use vesper_provider::*;
@@ -9,6 +9,9 @@ pub struct AvailableModels {
     pub models: Vec<ModelDescriptor>,
     pub unverified: Vec<String>,
     pub endpoint_excluded: Vec<String>,
+    /// Known retired identifiers that still redirect upstream. They remain
+    /// non-selectable because redirect semantics can change model/cost.
+    pub retired_redirects: Vec<String>,
     /// Selected non-secret billing/authentication mode for capability projection.
     pub authentication_method: Option<String>,
 }
@@ -37,6 +40,7 @@ pub(crate) fn parse(
     let mut models = Vec::new();
     let mut unverified = Vec::new();
     let mut endpoint_excluded = Vec::new();
+    let mut retired_redirects = Vec::new();
     for row in rows {
         let id = row
             .get("id")
@@ -46,13 +50,25 @@ pub(crate) fn parse(
         if id.is_empty() || id.len() > 256 || !seen.insert(id) {
             return Err(crate::wire::invalid());
         }
-        match XaiCatalog::resolve_current_alias(id) {
-            Some(canonical) if !canonical_seen.insert(canonical) => {}
-            Some(canonical) if region.supports(canonical) => {
+        match XaiCatalog::classify_identity(id) {
+            CatalogIdentity::Canonical(canonical)
+            | CatalogIdentity::MovingAlias(canonical)
+            | CatalogIdentity::FixedAlias(canonical)
+                if !canonical_seen.insert(canonical) => {}
+            CatalogIdentity::Canonical(canonical)
+            | CatalogIdentity::MovingAlias(canonical)
+            | CatalogIdentity::FixedAlias(canonical)
+                if region.supports(canonical) =>
+            {
                 models.push(XaiCatalog::find(canonical).expect("resolved catalog entry"))
             }
-            Some(canonical) => endpoint_excluded.push(canonical.to_owned()),
-            None => unverified.push(id.to_owned()),
+            CatalogIdentity::Canonical(canonical)
+            | CatalogIdentity::MovingAlias(canonical)
+            | CatalogIdentity::FixedAlias(canonical) => {
+                endpoint_excluded.push(canonical.to_owned())
+            }
+            CatalogIdentity::RetiredRedirect => retired_redirects.push(id.to_owned()),
+            CatalogIdentity::Unknown => unverified.push(id.to_owned()),
         }
     }
     let order = XaiCatalog::snapshot().models;
@@ -61,6 +77,7 @@ pub(crate) fn parse(
         models,
         unverified,
         endpoint_excluded,
+        retired_redirects,
         authentication_method: None,
     })
 }
@@ -82,7 +99,13 @@ impl XaiFactory {
             .map_err(|_| crate::wire::invalid())? = Some(AvailableModels::default());
         let session = XaiSession::new(self.credentials.clone(), "high".into(), region)?;
         #[cfg(feature = "integration-test-harness")]
-        let session = session.with_test_route(self.test_route.clone());
+        let session = session
+            .with_test_route(self.test_route.clone())
+            .with_test_auth_mode(if self.test_grok_session {
+                crate::credentials::AuthenticationMode::GrokSession
+            } else {
+                crate::credentials::AuthenticationMode::ApiKey
+            });
         let result = session.available_models(cancel).await;
         let snapshot = result.as_ref().cloned().unwrap_or_default();
         *self
@@ -229,15 +252,25 @@ mod tests {
         assert_eq!(result.endpoint_excluded, ["grok-4.5"]);
     }
     #[test]
-    fn moving_aliases_collapse_to_canonical_and_retired_aliases_stay_unverified() {
+    fn aliases_and_retired_redirects_are_classified_intentionally() {
         let result = parse(
-            &json!({"models":[{"id":"grok-4.7-latest"},{"id":"grok-4.7"},{"id":"grok-code-fast-1"}]}),
+            &json!({"models":[
+                {"id":"grok-4.7-latest"},
+                {"id":"grok-4.7"},
+                {"id":"grok-4.20-beta-0309-reasoning"},
+                {"id":"grok-build-latest"},
+                {"id":"grok-code-fast-1"},
+                {"id":"future-grok"}
+            ]}),
             XaiRegion::Global,
         )
         .unwrap();
-        assert_eq!(result.models.len(), 1);
+        assert_eq!(result.models.len(), 3);
         assert!(result.contains("grok-4.7"));
-        assert_eq!(result.unverified, ["grok-code-fast-1"]);
+        assert!(result.contains("grok-4.20-0309-reasoning"));
+        assert!(result.contains("grok-4.5"));
+        assert_eq!(result.retired_redirects, ["grok-code-fast-1"]);
+        assert_eq!(result.unverified, ["future-grok"]);
     }
 }
 

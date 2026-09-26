@@ -152,6 +152,7 @@ fn descriptor(id: &str, name: &str) -> ModelDescriptor {
                 native(MediaCapability {
                     media_types: vec!["image/png".into(), "image/jpeg".into(), "image/webp".into()],
                     maximum_items: Some(50),
+                    maximum_bytes_per_item: None,
                     references: true,
                     inline_data: true,
                 })

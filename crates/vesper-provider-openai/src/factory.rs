@@ -145,6 +145,7 @@ impl OpenAiFactory {
             maximum_output_tokens: Some(4096),
             continuation: None,
             fallback_policy: FallbackPolicy::Strict,
+            cache_routing_key: None,
             provider_extensions: None,
         };
         let content = tokio::time::timeout(

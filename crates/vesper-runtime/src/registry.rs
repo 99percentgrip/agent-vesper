@@ -294,6 +294,25 @@ impl ProviderRegistry {
             .and_then(|entry| entry.credentials.clone())
     }
 
+    /// Returns the selected non-secret authentication method for a provider.
+    /// Credential material remains adapter-owned; hosts use only this stable
+    /// method identity to suppress controls that belong to another billing path.
+    pub async fn authentication_method(
+        &self,
+        provider_id: &ProviderId,
+    ) -> Result<Option<String>, CredentialError> {
+        let port = self
+            .factories
+            .read()
+            .await
+            .get(provider_id)
+            .and_then(|entry| entry.credentials.clone())
+            .ok_or(CredentialError::Unavailable)?;
+        tokio::task::spawn_blocking(move || port.authentication_method())
+            .await
+            .map_err(|_| CredentialError::Failed)?
+    }
+
     /// Persists a credential for `provider_id`, routing through the provider's
     /// [`ProviderCredentialPort`]. Blocking credential I/O runs on a Tokio
     /// blocking thread.
@@ -670,6 +689,11 @@ mod tests {
                 .push(secret.to_owned());
             Ok(())
         }
+        fn authentication_method(
+            &self,
+        ) -> Result<Option<String>, vesper_provider::CredentialError> {
+            Ok(Some("fixture-auth".into()))
+        }
     }
 
     #[tokio::test]
@@ -697,6 +721,14 @@ mod tests {
 
         // No credential present -> hub would open.
         assert!(!registry.credential_present(&id).await.unwrap());
+        assert_eq!(
+            registry
+                .authentication_method(&id)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("fixture-auth")
+        );
         // Store routes to the port.
         registry
             .store_credential(&id, "secret-canary".to_owned())

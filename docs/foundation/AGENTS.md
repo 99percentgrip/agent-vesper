@@ -6,6 +6,17 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `vro18-audit1-completeness-and-capability-truth.md` owns the independent
+  post-v0.24.0 VRO-18 requirement/reachability audit, exact-artifact F0
+  reproduction, repaired source/test/live evidence, binary identities, safe
+  OAuth field comparison, invalid truncated-link correction, browser
+  URL-integrity repair, live browser/device matrices, separate Codex/Vesper
+  authentication-incident accounting and repaired Audit 1 verdict.
+
+- `2026-09-26-v0.24.1-vro18-audit1-corrective-release.md` owns the v0.24.1
+  exact-commit gate ledger, publication and asset verification, ACP Registry
+  PR update, no-install receipt, and explicit Audit 2/Audit 3-open boundary.
+
 - `xai-provider-pr1-execution.md` owns VRO-18 PR-1 red/green evidence for the native API-key Responses transport, bounded stream settlement, strict shared-tool serialization and explicit remaining host/live gates.
 
 - `xai-provider-pr2-execution.md` owns VRO-18 PR-2 discovery/capability intersection, model reasoning, endpoint/alias and structured-schema evidence.

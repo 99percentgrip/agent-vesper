@@ -50,6 +50,13 @@ Own durable project documentation and evidence-backed engineering records.
   `foundation/xai-provider-recon-execution.md` own its PR-0 evidence;
   `foundation/xai-provider-pr1-execution.md` through
   `foundation/xai-provider-pr7-execution.md` own phased implementation;
+  `foundation/vro18-audit1-completeness-and-capability-truth.md` owns the
+  independent post-v0.24.0 completeness/capability audit, F0 repair, invalid
+  truncated-link correction, browser URL-integrity repair, live browser/device
+  matrices and repaired Audit 1 acceptance boundary;
+  `foundation/2026-09-26-v0.24.1-vro18-audit1-corrective-release.md` owns the
+  exact-commit corrective release gates, publication/assets, Registry update,
+  and explicit Audit 2/Audit 3-open boundary;
   `foundation/xai-provider-pr8-live-acceptance.md` and
   `foundation/2026-09-25-v0.24.0-release-execution.md` own live and release
   acceptance. `xai-provider.md` is the bounded user guide.

@@ -1,11 +1,13 @@
-//! First-party xAI public-client OAuth/OIDC and RFC 8628 device authorization.
-//! Derived from xai-org/grok-build at f0e3be1100ef5252488e3be8bb0e91cf68d8c305.
+//! Native xAI public-client OAuth/OIDC and RFC 8628 device authorization.
+//! Protocol fields are derived from xai-org/grok-build at
+//! f0e3be1100ef5252488e3be8bb0e91cf68d8c305.
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header, jwk::JwkSet};
 use rand::RngCore;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use std::{collections::BTreeMap, sync::Arc, time::Duration};
+use std::collections::BTreeMap;
+use std::{sync::Arc, time::Duration};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use vesper_provider::CancellationSignal;
 use vesper_security::SecretValue;
@@ -19,6 +21,10 @@ pub(crate) const SCOPES: &[&str] = &[
     "offline_access",
     "grok-cli:access",
     "api:access",
+    "conversations:read",
+    "conversations:write",
+    "workspaces:read",
+    "workspaces:write",
 ];
 const DEVICE_GRANT: &str = "urn:ietf:params:oauth:grant-type:device_code";
 const MAX_BODY: usize = 1024 * 1024;
@@ -282,16 +288,19 @@ impl NativeAuthClient {
         let token = self
             .send(
                 cancel.as_ref(),
-                self.client.post(&discovery.token_endpoint).form(&[
-                    ("grant_type", "authorization_code"),
-                    (
-                        "code",
-                        values.get("code").ok_or(AuthError::Protocol)?.as_str(),
-                    ),
-                    ("redirect_uri", redirect.as_str()),
-                    ("client_id", CLIENT_ID),
-                    ("code_verifier", verifier.as_str()),
-                ]),
+                self.client
+                    .post(&discovery.token_endpoint)
+                    .header("x-grok-client-version", env!("CARGO_PKG_VERSION"))
+                    .form(&[
+                        ("grant_type", "authorization_code"),
+                        (
+                            "code",
+                            values.get("code").ok_or(AuthError::Protocol)?.as_str(),
+                        ),
+                        ("redirect_uri", redirect.as_str()),
+                        ("client_id", CLIENT_ID),
+                        ("code_verifier", verifier.as_str()),
+                    ]),
             )
             .await?;
         let wire: TokenResponse = decode_response(token).await?;
@@ -310,11 +319,14 @@ impl NativeAuthClient {
         let response = self
             .send(
                 cancel,
-                self.client.post(&discovery.token_endpoint).form(&[
-                    ("grant_type", "refresh_token"),
-                    ("refresh_token", refresh.expose().as_str()),
-                    ("client_id", CLIENT_ID),
-                ]),
+                self.client
+                    .post(&discovery.token_endpoint)
+                    .header("x-grok-client-version", env!("CARGO_PKG_VERSION"))
+                    .form(&[
+                        ("grant_type", "refresh_token"),
+                        ("refresh_token", refresh.expose().as_str()),
+                        ("client_id", CLIENT_ID),
+                    ]),
             )
             .await?;
         tokens(decode_response(response).await?, Some(refresh))
@@ -697,6 +709,11 @@ mod tests {
             }).await;
             assert!(request.contains("grant_type=authorization_code"));
             assert!(request.contains("code_verifier="));
+            assert!(
+                request
+                    .to_ascii_lowercase()
+                    .contains("x-grok-client-version:")
+            );
             let (socket, _) = listener.accept().await.unwrap();
             let jwks = format!(
                 r#"{{"keys":[{{"kty":"RSA","kid":"fixture-key","use":"sig","alg":"RS256","n":"{modulus}","e":"{exponent}"}}]}}"#
@@ -722,7 +739,33 @@ mod tests {
         });
         let authorization = url::Url::parse(&rx.await.unwrap()).unwrap();
         let query: BTreeMap<_, _> = authorization.query_pairs().into_owned().collect();
+        let expected_scope = SCOPES.join(" ");
+        assert_eq!(query.get("response_type").map(String::as_str), Some("code"));
+        assert_eq!(query.get("client_id").map(String::as_str), Some(CLIENT_ID));
+        assert_eq!(
+            query.get("scope").map(String::as_str),
+            Some(expected_scope.as_str())
+        );
+        assert_eq!(
+            query.get("code_challenge_method").map(String::as_str),
+            Some("S256")
+        );
+        assert!(
+            query
+                .get("code_challenge")
+                .is_some_and(|value| !value.is_empty())
+        );
+        assert!(query.get("state").is_some_and(|value| !value.is_empty()));
+        assert!(query.get("nonce").is_some_and(|value| !value.is_empty()));
+        assert_eq!(
+            query.get("referrer").map(String::as_str),
+            Some("agent-vesper")
+        );
         let redirect = url::Url::parse(query.get("redirect_uri").unwrap()).unwrap();
+        assert_eq!(redirect.scheme(), "http");
+        assert_eq!(redirect.host_str(), Some("127.0.0.1"));
+        assert_eq!(redirect.path(), "/callback");
+        assert!(redirect.port().is_some());
         let mut stream = tokio::net::TcpStream::connect((
             redirect.host_str().unwrap(),
             redirect.port().unwrap(),

@@ -46,6 +46,7 @@ fn fixture_request() -> ProviderRequest {
         maximum_output_tokens: Some(4096),
         continuation: None,
         fallback_policy: FallbackPolicy::Strict,
+        cache_routing_key: None,
         provider_extensions: None,
     }
 }
@@ -89,6 +90,74 @@ fn descriptor_exposes_separate_session_and_api_billing_modes() {
             .interactive_login
             .is_empty()
     );
+}
+
+#[test]
+fn catalog_metadata_matches_current_batch_reasoning_and_image_evidence() {
+    for id in ["grok-4.7", "grok-4.6", "grok-4.5"] {
+        let model = XaiCatalog::find(id).unwrap();
+        assert_eq!(model.metadata.get("xai:batch"), Some(&json!(false)), "{id}");
+    }
+    for id in [
+        "grok-4.3",
+        "grok-4.20-0309-reasoning",
+        "grok-4.20-0309-non-reasoning",
+        "grok-4.20-multi-agent-0309",
+    ] {
+        let model = XaiCatalog::find(id).unwrap();
+        assert_eq!(model.metadata.get("xai:batch"), Some(&json!(true)), "{id}");
+    }
+    assert_eq!(
+        XaiCatalog::reasoning_levels("grok-4.3"),
+        ["none", "low", "medium", "high"]
+    );
+    assert_eq!(
+        XaiCatalog::reasoning_levels("grok-4.5"),
+        ["low", "medium", "high"]
+    );
+    let model = XaiCatalog::find("grok-4.7").unwrap();
+    let SupportLevel::Native { details } = model.capabilities.vision else {
+        panic!("grok-4.7 vision must be native")
+    };
+    assert_eq!(details.media_types, ["image/png", "image/jpeg"]);
+    assert_eq!(details.maximum_items, None);
+    assert_eq!(details.maximum_bytes_per_item, Some(20 * 1024 * 1024));
+}
+
+#[test]
+fn image_wire_rejects_webp_and_payloads_over_twenty_mebibytes_before_dispatch() {
+    use base64::Engine as _;
+
+    let image_request = |media_type: &str, reference: String| {
+        let mut request = fixture_request();
+        request.messages[0].content = vec![ContentPart::Image(ImageDescriptor {
+            media_type: media_type.to_owned(),
+            source: MediaSource::Reference { reference },
+            alt_text: None,
+        })];
+        request
+    };
+    let webp = image_request("image/webp", "data:image/webp;base64,AA==".into());
+    let error = wire::request(&webp, "high").unwrap_err();
+    assert!(error.info.safe_message.as_str().contains("image"));
+
+    let encoded =
+        base64::engine::general_purpose::STANDARD.encode(vec![0_u8; 20 * 1024 * 1024 + 1]);
+    let oversized = image_request("image/png", format!("data:image/png;base64,{encoded}"));
+    let error = wire::request(&oversized, "high").unwrap_err();
+    assert!(error.info.safe_message.as_str().contains("20 MiB"));
+}
+
+#[test]
+fn multi_agent_client_tools_remain_fail_closed() {
+    let model = XaiCatalog::find("grok-4.20-multi-agent-0309").unwrap();
+    assert!(matches!(
+        model.capabilities.tools,
+        SupportLevel::Unsupported { .. }
+    ));
+    assert!(!XaiCatalog::supports_client_tools(
+        "grok-4.20-multi-agent-0309"
+    ));
 }
 
 #[test]
@@ -226,6 +295,37 @@ fn hosted_tool_settings_project_all_structured_tools_and_fail_closed() {
         .unwrap();
     request.hosted_tools = crate::hosted_tool_selections(&configuration).unwrap();
     assert!(wire::request(&request, "high").is_err());
+}
+
+#[test]
+fn incomplete_hosted_tool_settings_name_the_rejected_contract() {
+    let mut configuration = XaiFactory::default_configuration();
+    configuration
+        .values
+        .values
+        .insert("xai:hosted-attachment-search", json!("enabled"))
+        .unwrap();
+    let mut request = fixture_request();
+    request.hosted_tools = crate::hosted_tool_selections(&configuration).unwrap();
+
+    let error = wire::request(&request, "high").unwrap_err();
+    assert_eq!(
+        error
+            .info
+            .diagnostics
+            .fields
+            .get("xai:request-rejection")
+            .and_then(|value| value.get("stage"))
+            .and_then(serde_json::Value::as_str),
+        Some("hosted-tool")
+    );
+    assert!(
+        error
+            .info
+            .safe_message
+            .as_str()
+            .contains("attachment-search")
+    );
 }
 
 #[test]
@@ -408,6 +508,9 @@ fn tool_call_usage_and_opaque_reasoning_round_trip() {
     });
     let body = wire::request(&request, "high").unwrap();
     assert_eq!(body["input"][1], opaque);
+    assert_eq!(body["input"][2]["type"], "function_call");
+    assert_eq!(body["input"][2]["call_id"], "call_1");
+    assert_eq!(body["input"][2]["name"], "read_file");
     assert!(!format!("{request:?}").contains("opaque-canary"));
 }
 
@@ -468,10 +571,8 @@ fn native_continuation_and_prompt_cache_are_explicit_and_bounded() {
         reason: ContinuationReason::ProviderCursor,
         metadata: ExtensionMap::default(),
     });
+    request.cache_routing_key = Some(BoundedString::new("conversation-018").unwrap());
     let mut values = ExtensionMap::default();
-    values
-        .insert("xai:prompt-cache-key", json!("conversation-018"))
-        .unwrap();
     values.insert("xai:store", json!(true)).unwrap();
     request.provider_extensions = Some(VersionedExtensionEnvelope {
         namespace: ExtensionNamespace::new("provider.xai").unwrap(),
@@ -484,12 +585,11 @@ fn native_continuation_and_prompt_cache_are_explicit_and_bounded() {
     assert_eq!(body["prompt_cache_key"], "conversation-018");
     assert_eq!(body["store"], true);
 
-    let envelope = request.provider_extensions.as_mut().unwrap();
-    envelope
-        .values
-        .insert("xai:prompt-cache-key", json!("contains a space"))
-        .unwrap();
-    assert!(wire::request(&request, "high").is_err());
+    request.cache_routing_key = Some(BoundedString::new("contains a space").unwrap());
+    assert_eq!(
+        wire::request(&request, "high").unwrap()["prompt_cache_key"],
+        "contains a space"
+    );
 }
 
 #[test]
@@ -1122,6 +1222,7 @@ fn undiscovered_or_unverified_models_fail_before_transport() {
     *session.availability.write().unwrap() = Some(AvailableModels {
         models: vec![XaiCatalog::find("grok-4.7").unwrap()],
         unverified: vec!["future-grok".into()],
+        retired_redirects: vec![],
         endpoint_excluded: vec![],
         authentication_method: Some("xai-api-key".into()),
     });

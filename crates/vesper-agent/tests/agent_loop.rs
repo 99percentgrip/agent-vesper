@@ -67,6 +67,7 @@ impl ProviderFactory for FakeFactory {
 #[derive(Clone, Default)]
 struct NativeSession {
     compacted: Arc<Mutex<Vec<NativeCompactionRequest>>>,
+    fail_native: bool,
 }
 
 impl NativeCompactionPort for NativeSession {
@@ -76,6 +77,28 @@ impl NativeCompactionPort for NativeSession {
         _cancellation: Arc<dyn CancellationSignal>,
     ) -> ProviderFuture<'a, Result<NativeCompactionResult, ProviderError>> {
         self.compacted.lock().unwrap().push(request);
+        if self.fail_native {
+            return Box::pin(async {
+                Err(ProviderError {
+                    provider_id: provider(),
+                    provider_code: None,
+                    http_status: None,
+                    continuation_possible: false,
+                    info: vesper_domain::ErrorInfo {
+                        category: vesper_domain::ErrorCategory::Transport,
+                        retryability: vesper_domain::Retryability::Never,
+                        retry_after_ms: None,
+                        visible_output_emitted: false,
+                        safe_message: vesper_domain::SafeMessage::new("native compaction failed")
+                            .unwrap(),
+                        diagnostics: Default::default(),
+                        provider_code: None,
+                        causes: vec![],
+                    },
+                    metadata: Default::default(),
+                })
+            });
+        }
         Box::pin(async {
             Ok(NativeCompactionResult {
                 item: vesper_domain::OpaqueContent {
@@ -360,6 +383,55 @@ async fn opted_in_native_compaction_replaces_prefix_without_auxiliary_turn() {
         compacted[0].content.as_slice(),
         [ContentPart::ProviderOpaque(_)]
     ));
+}
+
+#[tokio::test]
+async fn native_compaction_failure_preserves_source_and_falls_back_transactionally() {
+    let provider_id = provider();
+    let native = NativeSession {
+        fail_native: true,
+        ..Default::default()
+    };
+    let registry = Arc::new(ProviderRegistry::new());
+    registry
+        .register(NativeFactory {
+            id: provider_id.clone(),
+            session: native,
+        })
+        .await
+        .unwrap();
+    let mut loop_config = config(&provider_id, 10);
+    loop_config.context_window_tokens = 5_000;
+    loop_config.native_compaction = vesper_agent::NativeCompactionPolicy::PreferProvider;
+    let agent = AgentLoop::new(registry, ToolRegistry::parity_default(), loop_config);
+    let history = (0..8)
+        .map(|index| {
+            indexed_message(
+                index,
+                if index % 2 == 0 {
+                    MessageRole::User
+                } else {
+                    MessageRole::Assistant
+                },
+                &format!("transactional source {}", "x".repeat(2_000)),
+            )
+        })
+        .collect::<Vec<_>>();
+    let source = history.clone();
+
+    let commit = agent.compact_history(history, None).await.unwrap();
+
+    assert_eq!(source.len(), 8);
+    assert!(source.iter().all(|message| !message.content.is_empty()));
+    assert!(commit.history.len() < source.len());
+    assert!(commit.history.iter().all(|message| {
+        !message.content.iter().any(|part| {
+            matches!(
+                part,
+                ContentPart::ProviderOpaque(opaque) if opaque.kind == "compaction"
+            )
+        })
+    }));
 }
 
 #[tokio::test]
@@ -980,6 +1052,7 @@ async fn loop_executes_a_tool_call_then_completes_on_the_next_turn() {
 
     let provider_id = provider();
     let fake = FakeProviderSession::with_scripts([turn_with_tool, turn_done]);
+    let recorded = fake.clone();
     let registry = Arc::new(ProviderRegistry::new());
     registry
         .register(FakeFactory {
@@ -1049,6 +1122,17 @@ async fn loop_executes_a_tool_call_then_completes_on_the_next_turn() {
         events.first(),
         Some(AgentProgressEvent::TurnStarted)
     ));
+    let requests = recorded.requests();
+    assert_eq!(requests.len(), 2);
+    let first_cache_key = requests[0]
+        .cache_routing_key
+        .as_ref()
+        .expect("ordinary turns carry a provider-neutral cache-routing key");
+    assert!(first_cache_key.as_str().starts_with("vesper-conversation-"));
+    assert_eq!(
+        requests[1].cache_routing_key.as_ref(),
+        Some(first_cache_key)
+    );
     assert!(events.iter().any(|event| matches!(
         event,
         AgentProgressEvent::ContentDelta { text } if text.as_str() == "Reading the file."

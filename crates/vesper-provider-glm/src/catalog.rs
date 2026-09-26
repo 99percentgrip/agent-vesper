@@ -264,6 +264,7 @@ fn descriptor(model: &GlmModelInfo) -> ModelDescriptor {
                 details: MediaCapability {
                     media_types: vec!["image/png".into(), "image/jpeg".into(), "image/webp".into()],
                     maximum_items: None,
+                    maximum_bytes_per_item: None,
                     references: true,
                     inline_data: true,
                 },

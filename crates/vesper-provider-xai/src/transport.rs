@@ -192,13 +192,22 @@ impl XaiSession {
             .bearer_auth(auth.bearer.expose().as_str())
             .header("Accept", "text/event-stream")
             .json(&body);
+        if let Some(conversation_id) = request.cache_routing_key.as_ref() {
+            builder = builder.header("x-grok-conv-id", conversation_id.as_str());
+        }
         if auth.mode == AuthenticationMode::GrokSession {
             let request_id = request.request_id.as_str();
             let conversation_id = request
-                .provider_extensions
+                .cache_routing_key
                 .as_ref()
-                .and_then(|extension| extension.values.get("xai:prompt-cache-key"))
-                .and_then(serde_json::Value::as_str)
+                .map(vesper_domain::BoundedString::as_str)
+                .or_else(|| {
+                    request
+                        .provider_extensions
+                        .as_ref()
+                        .and_then(|extension| extension.values.get("xai:prompt-cache-key"))
+                        .and_then(serde_json::Value::as_str)
+                })
                 .unwrap_or(request_id);
             builder = builder
                 .header("X-XAI-Token-Auth", "xai-grok-cli")

@@ -840,6 +840,13 @@ async fn register_default_providers(
     registry
         .register_with_all(glm, glm_superpowers, glm_credentials, glm_policy)
         .await?;
+    #[cfg(feature = "integration-test-harness")]
+    let xai = match std::env::var("AGENT_VESPER_XAI_TEST_URL") {
+        Ok(endpoint) => vesper_provider_xai::XaiFactory::for_loopback_grok_session(&endpoint)
+            .map_err(|_| vesper_runtime::RuntimeError::Provider)?,
+        Err(_) => vesper_provider_xai::XaiFactory::default(),
+    };
+    #[cfg(not(feature = "integration-test-harness"))]
     let xai = vesper_provider_xai::XaiFactory::default();
     if vesper_provider::ProviderCredentialPort::credential_present(&xai).unwrap_or(false) {
         let _ = xai
@@ -1086,6 +1093,7 @@ struct QueuedImage {
     descriptor: ImageDescriptor,
     path: std::path::PathBuf,
     encoded: String,
+    bytes: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -3238,6 +3246,114 @@ async fn edit_lmstudio_settings(
     }
 }
 
+#[derive(Clone, Debug)]
+struct BrowserSignInLink {
+    value: String,
+}
+
+impl BrowserSignInLink {
+    fn new(value: String) -> Result<Self, String> {
+        if value.contains(['\r', '\n']) {
+            return Err("Authentication service returned an invalid sign-in link".into());
+        }
+        let parsed = reqwest::Url::parse(&value)
+            .map_err(|_| "Authentication service returned an invalid sign-in link")?;
+        if parsed.scheme() != "https"
+            || parsed.host_str().is_none()
+            || !parsed.username().is_empty()
+            || parsed.password().is_some()
+            || parsed.fragment().is_some()
+        {
+            return Err("Authentication service returned an untrusted sign-in link".into());
+        }
+        Ok(Self { value })
+    }
+
+    fn as_str(&self) -> &str {
+        &self.value
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BrowserSignInControl {
+    Continue,
+    DeviceFallback,
+    Cancel,
+}
+
+fn handle_browser_sign_in_key<Open, Copy>(
+    code: KeyCode,
+    link: &BrowserSignInLink,
+    open: &mut Open,
+    copy: &mut Copy,
+    notice: &mut String,
+) -> BrowserSignInControl
+where
+    Open: FnMut(&str) -> Result<(), String>,
+    Copy: FnMut(&str) -> Result<(), String>,
+{
+    match code {
+        KeyCode::Enter => {
+            *notice = match open(link.as_str()) {
+                Ok(()) => "A browser sign-in page was opened.".into(),
+                Err(_) => "Browser could not be opened automatically.\nPress C to copy the complete sign-in link,\nor D to use device-code sign-in.".into(),
+            };
+            BrowserSignInControl::Continue
+        }
+        KeyCode::Char('c' | 'C') => {
+            *notice = match copy(link.as_str()) {
+                Ok(()) => "Complete sign-in link copied.".into(),
+                Err(error) => format!("Complete sign-in link could not be copied: {error}"),
+            };
+            BrowserSignInControl::Continue
+        }
+        KeyCode::Char('d' | 'D') => BrowserSignInControl::DeviceFallback,
+        KeyCode::Esc => BrowserSignInControl::Cancel,
+        _ => BrowserSignInControl::Continue,
+    }
+}
+
+fn render_browser_sign_in(frame: &mut ratatui::Frame<'_>, _link: &BrowserSignInLink, notice: &str) {
+    use ratatui::{
+        layout::Rect,
+        widgets::{Block, Borders, Clear, Paragraph, Wrap},
+    };
+    let area = frame.area();
+    let width = area.width.min(64);
+    let height = area.height.min(14);
+    let modal = Rect::new(
+        area.x + area.width.saturating_sub(width) / 2,
+        area.y + area.height.saturating_sub(height) / 2,
+        width,
+        height,
+    );
+    let text = format!(
+        "{notice}\n\nEnter  Open browser again\nC      Copy complete link\nD      Use device code\nEsc    Cancel"
+    );
+    frame.render_widget(Clear, modal);
+    frame.render_widget(
+        Paragraph::new(text)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(" Grok account / SuperGrok "),
+            )
+            .wrap(Wrap { trim: false }),
+        modal,
+    );
+}
+
+fn copy_browser_sign_in_url(url: &str) -> Result<(), String> {
+    let mut clipboard = arboard::Clipboard::new().map_err(|error| error.to_string())?;
+    clipboard
+        .set_text(url.to_owned())
+        .map_err(|error| error.to_string())
+}
+
+fn open_browser_sign_in_url(url: &str) -> Result<(), String> {
+    spawn_browser_detached(url).map_err(|error| error.to_string())
+}
+
 /// Registry-driven native authentication choices. `false` selects the
 /// existing masked API-key screen; `true` means device sign-in completed.
 async fn native_authentication_menu(
@@ -3371,7 +3487,7 @@ async fn native_authentication_menu(
                     };
                     continue;
                 }
-                let cancel = Arc::new(vesper_runtime::RuntimeCancellation::new());
+                let mut cancel = Arc::new(vesper_runtime::RuntimeCancellation::new());
                 let task_cancel = cancel.clone();
                 let task_port = port.clone();
                 let (tx, mut rx) = tokio::sync::mpsc::channel::<(String, Option<String>)>(1);
@@ -3407,23 +3523,40 @@ async fn native_authentication_menu(
                         "Requesting secure device sign-in… Esc cancels.".into()
                     }
                 };
+                let mut browser_link = None;
                 loop {
                     if let Ok((url, code)) = rx.try_recv() {
-                        notice = code.map_or_else(
-                            || {
-                                format!(
-                                    "Open {url}\nComplete sign-in in your browser.\nOnly continue if you started this login. Esc cancels."
-                                )
-                            },
-                            |code| {
-                                format!(
-                                    "Open {url}\nEnter one-time code: {code}\nOnly continue if you started this login. Esc cancels."
-                                )
-                            },
-                        );
+                        if let Some(code) = code {
+                            notice = match spawn_browser_detached(&url) {
+                                Ok(()) => format!(
+                                    "A device sign-in page was opened.\nEnter one-time code: {code}\nEsc cancels."
+                                ),
+                                Err(_) => format!(
+                                    "Open the device sign-in page shown by xAI.\nEnter one-time code: {code}\nEsc cancels."
+                                ),
+                            };
+                        } else {
+                            let link = BrowserSignInLink::new(url).inspect_err(|_| {
+                                cancel.cancel();
+                            })?;
+                            let mut open = open_browser_sign_in_url;
+                            let mut copy = copy_browser_sign_in_url;
+                            let _ = handle_browser_sign_in_key(
+                                KeyCode::Enter,
+                                &link,
+                                &mut open,
+                                &mut copy,
+                                &mut notice,
+                            );
+                            browser_link = Some(link);
+                        }
                     }
                     terminal
                         .draw(|frame| {
+                            if let Some(link) = browser_link.as_ref() {
+                                render_browser_sign_in(frame, link, &notice);
+                                return;
+                            }
                             let area = frame.area();
                             let width = area.width.min(88);
                             let height = area.height.min(15);
@@ -3464,10 +3597,58 @@ async fn native_authentication_menu(
                     })? && let Event::Key(key) = event::read().map_err(|_| {
                         cancel.cancel();
                         "Authentication input failed"
-                    })? && (key.code == KeyCode::Esc
-                        || key.code == KeyCode::Char('c')
-                            && key.modifiers.contains(KeyModifiers::CONTROL))
-                    {
+                    })? {
+                        if let Some(link) = browser_link.as_ref() {
+                            let mut open = open_browser_sign_in_url;
+                            let mut copy = copy_browser_sign_in_url;
+                            match handle_browser_sign_in_key(
+                                key.code,
+                                link,
+                                &mut open,
+                                &mut copy,
+                                &mut notice,
+                            ) {
+                                BrowserSignInControl::Continue => continue,
+                                BrowserSignInControl::Cancel => {}
+                                BrowserSignInControl::DeviceFallback => {
+                                    cancel.cancel();
+                                    if tokio::time::timeout(
+                                        std::time::Duration::from_secs(1),
+                                        &mut task,
+                                    )
+                                    .await
+                                    .is_err()
+                                    {
+                                        task.abort();
+                                    }
+                                    cancel = Arc::new(vesper_runtime::RuntimeCancellation::new());
+                                    let task_cancel = cancel.clone();
+                                    let task_port = port.clone();
+                                    let (new_tx, new_rx) =
+                                        tokio::sync::mpsc::channel::<(String, Option<String>)>(1);
+                                    rx = new_rx;
+                                    task = tokio::spawn(async move {
+                                        task_port
+                                            .device_login(
+                                                task_cancel,
+                                                Arc::new(move |url, code| {
+                                                    let _ = new_tx.try_send((url, Some(code)));
+                                                }),
+                                            )
+                                            .await
+                                    });
+                                    browser_link = None;
+                                    notice =
+                                        "Requesting secure device sign-in… Esc cancels.".into();
+                                    continue;
+                                }
+                            }
+                        } else if key.code != KeyCode::Esc
+                            && !(key.code == KeyCode::Char('c')
+                                && key.modifiers.contains(KeyModifiers::CONTROL))
+                        {
+                            continue;
+                        }
                         cancel.cancel();
                         if tokio::time::timeout(std::time::Duration::from_secs(1), &mut task)
                             .await
@@ -3950,7 +4131,7 @@ fn validate_queued_images(
 ) -> Result<(), String> {
     for image in pending {
         capabilities
-            .accepts_image(model, &image.descriptor.media_type)
+            .accepts_image_payload(model, &image.descriptor.media_type, Some(image.bytes))
             .map_err(|denial| format!("{} image(s) queued, but {denial}", pending.len()))?;
     }
     Ok(())
@@ -5826,6 +6007,13 @@ fn queue_image_bytes(
         return Err("normalized image must be between 1 byte and 3,000,000 bytes".into());
     }
     let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+    let padding = encoded
+        .as_bytes()
+        .iter()
+        .rev()
+        .take_while(|byte| **byte == b'=')
+        .count();
+    let byte_count = (encoded.len().div_ceil(4) * 3 - padding) as u64;
     let reference = format!("data:{media_type};base64,{encoded}");
     let queued = QueuedImage {
         descriptor: ImageDescriptor {
@@ -5840,6 +6028,7 @@ fn queue_image_bytes(
         },
         path: path.clone(),
         encoded,
+        bytes: byte_count,
     };
     session.pending_images.push(queued.clone());
     session.last_image = Some(queued);
@@ -6132,7 +6321,22 @@ fn provider_configuration_for(provider_id: &ProviderId) -> Result<ProviderConfig
         // The GLM adapter registers under the stable `zai` identity.
         "zai" => Ok(vesper_provider_glm::GlmFactory::default_configuration()),
         "openai" => Ok(vesper_provider_openai::OpenAiFactory::default_configuration()),
-        "xai" => Ok(vesper_provider_xai::XaiFactory::default_configuration()),
+        "xai" => {
+            let configuration = vesper_provider_xai::XaiFactory::default_configuration();
+            #[cfg(feature = "integration-test-harness")]
+            let configuration = {
+                let mut configuration = configuration;
+                if std::env::var_os("AGENT_VESPER_XAI_TEST_STALE_HOSTED").is_some() {
+                    configuration
+                        .values
+                        .values
+                        .insert("xai:hosted-attachment-search", serde_json::json!("enabled"))
+                        .map_err(|error| error.to_string())?;
+                }
+                configuration
+            };
+            Ok(configuration)
+        }
         // The LM Studio local/LAN model server.
         "lmstudio" => Ok(agent_vesper_tui::LmStudioFactory::default_configuration()),
         // The deterministic in-process reference adapter.
@@ -8599,9 +8803,15 @@ fn turn_configuration(
         } else {
             vesper_agent::NativeCompactionPolicy::Disabled
         };
-        config.hosted_tools =
+        config.hosted_tools = if surface.by_alias("xai-web").is_some() {
             vesper_provider_xai::hosted_tool_selections(&config.provider_configuration)
-                .map_err(|error| error.to_string())?;
+                .map_err(|error| error.to_string())?
+        } else {
+            // The selected Grok-session surface deliberately omits API-key
+            // hosted tools. Ignore stale saved API-only values so a hidden
+            // control cannot poison an ordinary account-billed turn.
+            Vec::new()
+        };
         return Ok(config);
     }
     if config.provider_id.as_str() != "zai" {
@@ -9067,8 +9277,8 @@ fn lens_opener_command(url: &str) -> std::process::Command {
     let mut command;
     #[cfg(windows)]
     {
-        command = std::process::Command::new("cmd");
-        command.args(["/C", "start", "", url]);
+        command = std::process::Command::new("explorer.exe");
+        command.arg(url);
     }
     #[cfg(not(windows))]
     {
@@ -15819,6 +16029,172 @@ mod tests {
     }
 
     #[test]
+    fn grok_session_turn_ignores_stale_api_only_hosted_tool_settings() {
+        let available = vesper_provider_xai::AvailableModels {
+            models: vec![vesper_provider_xai::XaiCatalog::find("grok-4.7").unwrap()],
+            authentication_method: Some("xai-grok-session".into()),
+            ..Default::default()
+        };
+        let factory = vesper_provider_xai::XaiFactory::default();
+        let surface = ProviderSuperpowerSurface::new(
+            vesper_provider_xai::provider_id(),
+            factory.superpowers_for(&available, "grok-4.7"),
+        );
+        assert!(surface.by_alias("xai-web").is_none());
+
+        let mut base_config = build_agent_config(&vesper_provider_xai::provider_id()).unwrap();
+        for key in [
+            "xai:hosted-web-search",
+            "xai:hosted-attachment-search",
+            "xai:hosted-collections-search",
+            "xai:hosted-remote-mcp",
+        ] {
+            base_config
+                .provider_configuration
+                .values
+                .values
+                .insert(key, serde_json::json!("enabled"))
+                .unwrap();
+        }
+        let base = AgentLoop::new(
+            Arc::new(vesper_runtime::ProviderRegistry::new()),
+            ToolRegistry::parity_default(),
+            base_config,
+        );
+        let projected = turn_configuration(&base, &SessionState::default(), &surface).unwrap();
+        assert!(projected.hosted_tools.is_empty());
+    }
+
+    #[cfg(feature = "integration-test-harness")]
+    #[tokio::test]
+    async fn xai_grok_session_plain_code_turn_reaches_loopback_with_full_registry() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}/responses", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut bytes = Vec::new();
+            let (start, length) = loop {
+                let mut buffer = [0; 8192];
+                let count = socket.read(&mut buffer).await.unwrap();
+                assert!(count > 0);
+                bytes.extend_from_slice(&buffer[..count]);
+                if let Some(index) = bytes.windows(4).position(|part| part == b"\r\n\r\n") {
+                    let headers = std::str::from_utf8(&bytes[..index]).unwrap();
+                    assert!(
+                        headers
+                            .to_ascii_lowercase()
+                            .contains("x-xai-token-auth: xai-grok-cli")
+                    );
+                    let length = headers
+                        .lines()
+                        .filter_map(|line| line.split_once(':'))
+                        .find(|(key, _)| key.eq_ignore_ascii_case("content-length"))
+                        .map(|(_, value)| value.trim().parse::<usize>().unwrap())
+                        .unwrap();
+                    break (index + 4, length);
+                }
+            };
+            while bytes.len() < start + length {
+                let mut buffer = [0; 8192];
+                let count = socket.read(&mut buffer).await.unwrap();
+                bytes.extend_from_slice(&buffer[..count]);
+            }
+            let request: serde_json::Value =
+                serde_json::from_slice(&bytes[start..start + length]).unwrap();
+            let response = "data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_f0\"}}\n\ndata: {\"type\":\"response.output_text.delta\",\"output_index\":0,\"delta\":\"hello\"}\n\ndata: {\"type\":\"response.completed\",\"response\":{}}\n\n";
+            socket
+                .write_all(
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{response}",
+                        response.len()
+                    )
+                    .as_bytes(),
+                )
+                .await
+                .unwrap();
+            request
+        });
+
+        let factory =
+            vesper_provider_xai::XaiFactory::for_loopback_grok_session(&endpoint).unwrap();
+        let registry = Arc::new(vesper_runtime::ProviderRegistry::new());
+        registry
+            .register_with_all(
+                factory.clone(),
+                factory.clone(),
+                factory,
+                vesper_provider::PermissiveSuperpowerPolicy,
+            )
+            .await
+            .unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let (url_tx, _url_rx) = mpsc::unbounded_channel();
+        let service = Arc::new(TuiToolService {
+            inner: Arc::new(vesper_harness::HarnessToolService::new(
+                Arc::new(vesper_harness::MemoryStores::open_at(
+                    temp.path().join("memory"),
+                    temp.path().join("global-memory"),
+                )),
+                temp.path().join("cron"),
+                temp.path().join("mcp"),
+                None,
+            )),
+            lens_review: Some(Arc::new(VesperLensPort::new())),
+            lens_url_tx: Some(url_tx),
+            interview_question_policy: InterviewQuestionPolicy::default(),
+        });
+        let tool_registry = vesper_harness::build_hosted_registry(service);
+        let advertised = tool_registry.definitions_for(SessionOperatingMode::Code);
+        let advertised_names = advertised
+            .iter()
+            .map(|tool| tool.harness_name.as_str().to_owned())
+            .collect::<std::collections::BTreeSet<_>>();
+        for required in [
+            "read_file",
+            "run_command",
+            "update_plan",
+            "request_human_input",
+        ] {
+            assert!(advertised_names.contains(required), "missing {required}");
+        }
+
+        let mut config = build_agent_config(&vesper_provider_xai::provider_id()).unwrap();
+        config
+            .provider_configuration
+            .values
+            .values
+            .insert("xai:hosted-attachment-search", serde_json::json!("enabled"))
+            .unwrap();
+        config.system_instructions = vec![
+            tool_enforcement_instruction(),
+            completion_reporting_instruction(),
+        ];
+        let loop_ = AgentLoop::new(registry, tool_registry, config);
+        let outcome = loop_
+            .run_prompt(
+                build_user_message("hello"),
+                SessionOperatingMode::Code,
+                SessionPermissionMode::Bypass,
+            )
+            .await
+            .unwrap();
+        assert!(outcome_text(&outcome).contains("hello"));
+        let body = server.await.unwrap();
+        let sent = body["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|tool| tool.get("name").and_then(serde_json::Value::as_str))
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(sent.len(), advertised_names.len());
+        for name in advertised_names {
+            assert!(sent.contains(name.as_str()), "xAI request omitted {name}");
+        }
+    }
+
+    #[test]
     fn provider_citations_render_without_exposing_other_opaque_state() {
         let citation = ContentPart::ProviderOpaque(vesper_domain::OpaqueContent {
             provider_id: vesper_provider_xai::provider_id(),
@@ -15903,33 +16279,38 @@ mod tests {
     #[cfg(feature = "voice-conversation")]
     #[test]
     fn f9_instruction_is_turn_scoped_and_survives_configuration_projection() {
-        let provider = ProviderId::new("zai").unwrap();
-        let base = Arc::new(AgentLoop::new(
-            Arc::new(vesper_runtime::ProviderRegistry::new()),
-            ToolRegistry::parity_default(),
-            build_agent_config(&provider).unwrap(),
-        ));
-        let original = base.configuration().system_instructions.len();
-        let voice = voice_turn_agent(&base);
-        let surface = ProviderSuperpowerSurface::new(provider, Vec::new());
-        let projected = turn_configuration(&voice, &SessionState::new(), &surface).unwrap();
-        assert_eq!(base.configuration().system_instructions.len(), original);
-        assert_eq!(projected.system_instructions.len(), original + 1);
-        let text = projected
-            .system_instructions
-            .last()
-            .unwrap()
-            .content
-            .iter()
-            .filter_map(|part| match part {
-                ContentPart::Text(text) => Some(text.as_str()),
-                _ => None,
-            })
-            .collect::<String>();
-        assert!(text.contains("not model tools"));
-        assert!(text.contains("Do not discover, invoke, install, or substitute"));
-        assert!(text.contains("also keeps the answer in chat"));
-        assert!(text.contains("Never claim audio played successfully"));
+        for provider in [
+            ProviderId::new("zai").unwrap(),
+            ProviderId::new("xai").unwrap(),
+        ] {
+            let base = Arc::new(AgentLoop::new(
+                Arc::new(vesper_runtime::ProviderRegistry::new()),
+                ToolRegistry::parity_default(),
+                build_agent_config(&provider).unwrap(),
+            ));
+            let original = base.configuration().system_instructions.len();
+            let voice = voice_turn_agent(&base);
+            let surface = ProviderSuperpowerSurface::new(provider.clone(), Vec::new());
+            let projected = turn_configuration(&voice, &SessionState::new(), &surface).unwrap();
+            assert_eq!(projected.provider_id, provider);
+            assert_eq!(base.configuration().system_instructions.len(), original);
+            assert_eq!(projected.system_instructions.len(), original + 1);
+            let text = projected
+                .system_instructions
+                .last()
+                .unwrap()
+                .content
+                .iter()
+                .filter_map(|part| match part {
+                    ContentPart::Text(text) => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect::<String>();
+            assert!(text.contains("not model tools"));
+            assert!(text.contains("Do not discover, invoke, install, or substitute"));
+            assert!(text.contains("also keeps the answer in chat"));
+            assert!(text.contains("Never claim audio played successfully"));
+        }
     }
 
     #[tokio::test]
@@ -16229,6 +16610,7 @@ mod tests {
             },
             path: std::path::PathBuf::from("image.png"),
             encoded: String::new(),
+            bytes: 1,
         }
     }
 
@@ -16389,6 +16771,15 @@ mod tests {
         let media = validate_queued_images(&caps, "glm-4.5v", &[queued_image("image/gif")])
             .expect_err("unlisted media type must deny");
         assert!(media.contains("image/gif"));
+
+        let xai = agent_vesper_tui::ModelCapabilityIndex::from_descriptors(
+            vesper_provider_xai::XaiCatalog::snapshot().models,
+        );
+        let mut oversized = queued_image("image/png");
+        oversized.bytes = 20 * 1024 * 1024 + 1;
+        let denial = validate_queued_images(&xai, "grok-4.7", &[oversized])
+            .expect_err("advertised per-image bound must reject before dispatch");
+        assert!(denial.contains("20971520 bytes"), "{denial}");
     }
 
     #[test]
@@ -19499,15 +19890,12 @@ mod tests {
         let program = cmd.get_program().to_string_lossy().to_string();
         #[cfg(windows)]
         {
-            assert_eq!(program, "cmd");
+            assert_eq!(program, "explorer.exe");
             let args: Vec<String> = cmd
                 .get_args()
                 .map(|a| a.to_string_lossy().to_string())
                 .collect();
-            assert_eq!(
-                args,
-                vec!["/C", "start", "", "http://127.0.0.1:1234/review/x"]
-            );
+            assert_eq!(args, vec!["http://127.0.0.1:1234/review/x"]);
         }
         #[cfg(target_os = "macos")]
         assert_eq!(program, "open");
@@ -20264,3 +20652,111 @@ mod voice_conversation_glue {
 }
 #[cfg(feature = "voice-conversation")]
 use voice_conversation_glue::ConversationPhase;
+#[test]
+fn narrow_auth_modal_preserves_complete_structured_url_for_open_and_copy() {
+    use ratatui::{Terminal, backend::TestBackend};
+
+    let url = "https://auth.x.ai/oauth2/auth?response_type=code&client_id=b1a00492-073a-47ea-816f-4c329264a828&redirect_uri=http%3A%2F%2F127.0.0.1%3A49152%2Fcallback&scope=openid+profile+email+offline_access+grok-cli%3Aaccess+api%3Aaccess&code_challenge=abcdefghijklmnopqrstuvwxyz0123456789-_ABCDEFGHIJKLMNOPQRSTUVWXYZ&code_challenge_method=S256&state=state-value&nonce=nonce-value&referrer=agent-vesper";
+    let link = BrowserSignInLink::new(url.to_owned()).unwrap();
+    let mut terminal = Terminal::new(TestBackend::new(24, 16)).unwrap();
+    terminal
+        .draw(|frame| {
+            use ratatui::widgets::{Paragraph, Wrap};
+            frame.render_widget(
+                Paragraph::new(link.as_str()).wrap(Wrap { trim: false }),
+                frame.area(),
+            );
+        })
+        .unwrap();
+    let occupied_rows = (0..16)
+        .filter(|y| {
+            (0..24).any(|x| {
+                terminal
+                    .backend()
+                    .buffer()
+                    .cell((x, *y))
+                    .is_some_and(|cell| cell.symbol() != " ")
+            })
+        })
+        .count();
+    assert!(occupied_rows > 8, "diagnostic URL did not visibly wrap");
+    terminal
+        .draw(|frame| render_browser_sign_in(frame, &link, "A browser sign-in page was opened."))
+        .unwrap();
+
+    let opened = std::cell::RefCell::new(Vec::new());
+    let copied = std::cell::RefCell::new(Vec::new());
+    let mut notice = String::new();
+    let open_result = handle_browser_sign_in_key(
+        KeyCode::Enter,
+        &link,
+        &mut |value| {
+            opened.borrow_mut().push(value.to_owned());
+            Ok(())
+        },
+        &mut |_| Ok(()),
+        &mut notice,
+    );
+    let copy_result = handle_browser_sign_in_key(
+        KeyCode::Char('c'),
+        &link,
+        &mut |_| Ok(()),
+        &mut |value| {
+            copied.borrow_mut().push(value.to_owned());
+            Ok(())
+        },
+        &mut notice,
+    );
+
+    assert_eq!(open_result, BrowserSignInControl::Continue);
+    assert_eq!(copy_result, BrowserSignInControl::Continue);
+    assert_eq!(opened.into_inner(), [url]);
+    assert_eq!(copied.into_inner(), [url]);
+    assert!(!url.contains(['\n', '\r']));
+    assert_eq!(notice, "Complete sign-in link copied.");
+
+    let failed_open = handle_browser_sign_in_key(
+        KeyCode::Enter,
+        &link,
+        &mut |_| Err("no browser".into()),
+        &mut |_| Ok(()),
+        &mut notice,
+    );
+    assert_eq!(failed_open, BrowserSignInControl::Continue);
+    assert_eq!(
+        notice,
+        "Browser could not be opened automatically.\nPress C to copy the complete sign-in link,\nor D to use device-code sign-in."
+    );
+    assert_eq!(
+        handle_browser_sign_in_key(
+            KeyCode::Char('d'),
+            &link,
+            &mut |_| Ok(()),
+            &mut |_| Ok(()),
+            &mut notice,
+        ),
+        BrowserSignInControl::DeviceFallback
+    );
+    assert!(BrowserSignInLink::new(format!("{url}\ntruncated")).is_err());
+
+    let parsed = reqwest::Url::parse(url).unwrap();
+    let fields = parsed
+        .query_pairs()
+        .into_owned()
+        .collect::<std::collections::BTreeMap<_, _>>();
+    assert_eq!(fields["response_type"], "code");
+    assert_eq!(fields["client_id"], "b1a00492-073a-47ea-816f-4c329264a828");
+    assert_eq!(fields["redirect_uri"], "http://127.0.0.1:49152/callback");
+    assert!(fields["scope"].contains("offline_access"));
+    assert!(!fields["code_challenge"].is_empty());
+    assert_eq!(fields["code_challenge_method"], "S256");
+    assert_eq!(fields["state"], "state-value");
+    assert_eq!(fields["nonce"], "nonce-value");
+    assert_eq!(fields["referrer"], "agent-vesper");
+
+    let command = lens_opener_command(link.as_str());
+    assert_eq!(
+        command.get_args().last().and_then(std::ffi::OsStr::to_str),
+        Some(url)
+    );
+}

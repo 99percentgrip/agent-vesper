@@ -8,6 +8,10 @@ provider turns, and acceptance of pure converted session state.
 
 ## Local Contracts
 
+- The registry may expose a provider's selected non-secret authentication
+  method through the credential port so generic hosts can intersect controls
+  with the active billing surface. Credential material remains adapter-owned.
+
 - May depend on `vesper-sessions` read-only repository, converted-state, and
   transactional writer ports, but not implement filesystem access itself.
 - Do not depend on ACP, GLM, frontends, persistence I/O, SQLite, or tool

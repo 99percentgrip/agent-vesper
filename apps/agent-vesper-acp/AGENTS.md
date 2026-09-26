@@ -29,6 +29,12 @@ transport, stderr-only tracing, and orderly shutdown.
 
 ## Local Contracts
 
+- Provider-owned controls are intersected with the selected non-secret
+  authentication method before runtime configuration. Stale API-key-only xAI
+  values cannot enter a Grok-session request.
+- The integration-only xAI loopback route exists solely for real ACP process
+  composition tests and is absent from normal builds.
+
 - MCP stdio ownership is per ACP session ID, retained across turn registry
   rebuilds and removed on clear-history or engine shutdown (ADR 0031).
   Identical configurations in distinct sessions never share browser state.
@@ -406,8 +412,11 @@ into exactly one always-safe, argument-dependent, or interrupting class.
   length, and modification-time invariance.
 - Production composition registers and boots xAI through the same registry as
   the TUI. ACP exposes discovered xAI models and provider controls through
-  session config selectors; explicit CLI browser/device/API-key auth uses the
-  provider credential port and never writes protocol data to stdout.
+  session config selectors; explicit CLI device/API-key auth uses the provider
+  credential port and never writes protocol data to stdout. `--provider xai
+  --login` performs the same native browser/loopback flow and stores the same
+  Grok-session credential class consumed by both hosts; device code remains the
+  fallback.
   Capability checks use the adapter-owned xAI catalog at the composition
   boundary, including image eligibility. Controls intersect the authenticated
   billing mode: Grok-session omits API-key-only region, WebSocket, compaction,

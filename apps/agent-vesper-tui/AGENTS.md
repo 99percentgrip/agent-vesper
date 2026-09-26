@@ -642,6 +642,12 @@ business logic.
 
 ## Local Contracts
 
+- Provider request controls are projected only from the active registry
+  superpower surface. Hidden controls from a previous authentication mode are
+  cleared before dispatch rather than sent as stale provider configuration.
+- `integration-test-harness` may redirect xAI to a loopback endpoint solely for
+  process-level composition tests; normal builds contain no such route.
+
 - MCP discovery, browser presets and deferred calls retain one conversation
   owner through direct/VRO/ReAct registries built by `build_hosted_registry`.
   Loading another transcript resets MCP before changing conversation identity;
@@ -1142,11 +1148,14 @@ work (ACP mid-turn-slash-grace parity; see `apps/agent-vesper-acp/AGENTS.md`).
 - Run `cargo build -p agent-vesper-tui --bins` to confirm the binary
   links under the workspace toolchain.
 - Native provider composition registers xAI alongside OpenAI, Z.ai and LM
-  Studio. xAI browser/device login, authenticated model refresh, reasoning,
-  region, transport, compaction and hosted-tool choices/structured values
-  derive from provider descriptors/superpowers. Free-text rows remain bounded
-  and use the normal Settings draft/Save/Discard flow. Voice, tools, skills,
-  VRO and workers use the unchanged shared registry and AgentLoop.
+  Studio. xAI browser login is the normal Grok-account path, with automatic
+  argument-based launch from the complete structured URL, exact-link copy and
+  device-code fallback; rendered wrapping never supplies the launch/copy
+  payload. Authenticated model refresh, reasoning, region, transport,
+  compaction and hosted-tool choices/structured values derive from provider
+  descriptors/superpowers. Free-text rows remain bounded and use the normal
+  Settings draft/Save/Discard flow. Voice, tools, skills, VRO and workers use
+  the unchanged shared registry and AgentLoop.
 
 ## Supply-chain note
 

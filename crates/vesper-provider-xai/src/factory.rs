@@ -12,6 +12,8 @@ pub struct XaiFactory {
     pub(crate) credentials: Credentials,
     #[cfg(feature = "integration-test-harness")]
     pub(crate) test_route: Option<String>,
+    #[cfg(feature = "integration-test-harness")]
+    pub(crate) test_grok_session: bool,
 }
 
 /// Invalid or internally unrepresentable xAI hosted-tool settings.
@@ -33,6 +35,8 @@ impl Default for XaiFactory {
             credentials: Credentials::default(),
             #[cfg(feature = "integration-test-harness")]
             test_route: None,
+            #[cfg(feature = "integration-test-harness")]
+            test_grok_session: false,
         }
     }
 }
@@ -141,6 +145,7 @@ impl XaiFactory {
             maximum_output_tokens: Some(4096),
             continuation: None,
             fallback_policy: FallbackPolicy::Strict,
+            cache_routing_key: None,
             provider_extensions: None,
         };
         let content = tokio::time::timeout(
@@ -174,7 +179,7 @@ impl XaiFactory {
                 .map(|entry| entry.model.model_id.as_str())
                 .unwrap_or(DEFAULT_MODEL)
         };
-        vec![
+        let mut descriptors = vec![
             choice(
                 "xai:model",
                 "Model",
@@ -336,7 +341,13 @@ impl XaiFactory {
                 "xai-mcp-tools",
                 Some("Comma-separated allowlist; empty means the provider endpoint's default."),
             ),
-        ]
+        ];
+        if available.authentication_method.as_deref() == Some("xai-grok-session") {
+            descriptors.retain(|descriptor| {
+                matches!(descriptor.id.as_str(), "xai:model" | "xai:reasoning")
+            });
+        }
+        descriptors
     }
     #[cfg(feature = "integration-test-harness")]
     #[allow(clippy::result_large_err)]
@@ -354,6 +365,17 @@ impl XaiFactory {
             ..Self::default()
         })
     }
+
+    /// Test-only loopback factory that exercises the Grok-session billing
+    /// route without reading user credentials or contacting xAI.
+    #[cfg(feature = "integration-test-harness")]
+    #[allow(clippy::result_large_err)]
+    pub fn for_loopback_grok_session(endpoint: &str) -> Result<Self, ProviderError> {
+        Ok(Self {
+            test_grok_session: true,
+            ..Self::for_loopback(endpoint)?
+        })
+    }
 }
 impl ProviderSuperpowers for XaiFactory {
     fn superpowers(&self) -> Vec<SuperpowerDescriptor> {
@@ -363,13 +385,7 @@ impl ProviderSuperpowers for XaiFactory {
             .ok()
             .and_then(|snapshot| snapshot.clone())
             .unwrap_or_default();
-        let mut descriptors = self.superpowers_for(&available, DEFAULT_MODEL);
-        if available.authentication_method.as_deref() == Some("xai-grok-session") {
-            descriptors.retain(|descriptor| {
-                matches!(descriptor.id.as_str(), "xai:model" | "xai:reasoning")
-            });
-        }
-        descriptors
+        self.superpowers_for(&available, DEFAULT_MODEL)
     }
 }
 
@@ -553,7 +569,11 @@ impl ProviderFactory for XaiFactory {
             #[cfg(feature = "integration-test-harness")]
             let session = session
                 .with_test_route(self.test_route.clone())
-                .with_test_auth_mode(crate::credentials::AuthenticationMode::ApiKey);
+                .with_test_auth_mode(if self.test_grok_session {
+                    crate::credentials::AuthenticationMode::GrokSession
+                } else {
+                    crate::credentials::AuthenticationMode::ApiKey
+                });
             Ok(session)
         })
     }
@@ -757,6 +777,17 @@ impl ProviderCredentialPort for XaiFactory {
         self.credentials.store_api_key(secret)
     }
     fn authentication_method(&self) -> Result<Option<String>, CredentialError> {
+        #[cfg(feature = "integration-test-harness")]
+        if self.test_route.is_some() {
+            return Ok(Some(
+                if self.test_grok_session {
+                    "xai-grok-session"
+                } else {
+                    "xai-api-key"
+                }
+                .to_owned(),
+            ));
+        }
         self.credentials.authentication_method()
     }
     fn device_login<'a>(

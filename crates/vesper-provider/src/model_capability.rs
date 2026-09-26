@@ -101,6 +101,17 @@ impl ModelCapabilityIndex {
 
     /// Fail-closed image support check.
     pub fn accepts_image(&self, model_id: &str, media_type: &str) -> Result<(), CapabilityDenial> {
+        self.accepts_image_payload(model_id, media_type, None)
+    }
+
+    /// Fail-closed image support check including an exact payload size when
+    /// the host has already materialized the image bytes.
+    pub fn accepts_image_payload(
+        &self,
+        model_id: &str,
+        media_type: &str,
+        bytes: Option<u64>,
+    ) -> Result<(), CapabilityDenial> {
         let descriptor = self.known(model_id)?;
         match &descriptor.capabilities.vision {
             SupportLevel::Native { details } | SupportLevel::Emulated { details, .. } => {
@@ -109,6 +120,13 @@ impl ModelCapabilityIndex {
                         "model `{model_id}` did not report accepted image types"
                     )))
                 } else if details.media_types.iter().any(|value| value == media_type) {
+                    if let (Some(bytes), Some(maximum)) = (bytes, details.maximum_bytes_per_item)
+                        && bytes > maximum
+                    {
+                        return Err(CapabilityDenial::new(format!(
+                            "model `{model_id}` accepts at most {maximum} bytes per image"
+                        )));
+                    }
                     Ok(())
                 } else {
                     Err(CapabilityDenial::new(format!(
@@ -393,6 +411,7 @@ mod tests {
             details: MediaCapability {
                 media_types: vec!["image/png".into()],
                 maximum_items: Some(8),
+                maximum_bytes_per_item: Some(1024),
                 references: false,
                 inline_data: true,
             },
@@ -445,6 +464,23 @@ mod tests {
         let requirement = requirement_for_messages(&[image_message()]).unwrap();
         assert!(matches!(requirement, ModelRequirement::VisionImage { .. }));
         assert!(requirement_for_messages(&[]).is_none());
+    }
+
+    #[test]
+    fn provider_neutral_image_gate_enforces_advertised_byte_limit() {
+        let index = ModelCapabilityIndex::from_descriptors(vec![model("vision", native_vision())]);
+        assert!(
+            index
+                .accepts_image_payload("vision", "image/png", Some(1024))
+                .is_ok()
+        );
+        assert!(
+            index
+                .accepts_image_payload("vision", "image/png", Some(1025))
+                .unwrap_err()
+                .reason()
+                .contains("1024 bytes")
+        );
     }
 
     #[test]

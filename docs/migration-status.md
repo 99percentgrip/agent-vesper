@@ -1,17 +1,41 @@
 # Migration Status
 
-Last updated: 2026-09-25
+Last updated: 2026-09-26
 
-VRO-18 native xAI provider is **COMPLETE — RELEASED IN v0.24.0**. The
+VRO-18 native xAI provider is **AUDIT 1 REPAIRED — v0.24.1 RELEASE GATED**. The
+exact installed TUI is byte-identical to the v0.24.0 Linux x86_64 artifact and
+reproduced the ordinary Grok-session failure on the original state: stale
+API-key-only `attachment-search` reached pre-dispatch validation without a file
+reference. The repaired release-profile candidate passes live TUI/ACP `hello`,
+`read_file` and `run_command` exactly once, billing isolation, browser login,
+device login, logout and browser reauthentication. The former browser failure
+was an **INVALID TEST — manually copied URL was truncated at terminal
+wrapping**. Current first-party source/discovery and live acceptance confirm the
+public native-client fields with truthful Vesper identity. Alex accepted the
+candidate identities recorded in the Audit 1 report. The corrective v0.24.1
+commit must still pass fresh exact-commit canonical, MSRV, five-target and
+web-driver/native-host workflows before tagging. Audit 2 and Audit 3 remain
+explicitly open future work. Evidence:
+`docs/foundation/vro18-audit1-completeness-and-capability-truth.md`.
+The later incident correction independently passed the exact published Vesper
+v0.24.0 binary on OpenAI with explicitly selected ChatGPT-subscription auth and
+a plain `hello`; Alex's fresh Codex 0.157.0 PASS separately supersedes the prior
+stale-process 401 with root cause unproven. Neither result changes the separate
+xAI findings, and Audit 2 has not begun.
+
+The historical v0.24.0 implementation and release record follows. The
 native `vesper-provider-xai` adapter ships in TUI and ACP with explicit
 Grok-account/SuperGrok and separately billed API-key modes, dynamic verified
 model discovery, model-specific reasoning, shared tools, structured/image input,
 streaming, cancellation, continuation, usage, citations, hosted-tool capability
 intersection, prompt-cache routing, native compaction and WebSocket support on
-verified paths. Live SuperGrok acceptance passed browser/device authentication,
+verified paths. The release report claimed live browser/device authentication,
 discovery, text, shared file/shell tools exactly once, continuation,
 cancellation/recovery, image input, usage/status, logout/re-authentication and a
-fresh turn. Session hosted tools, native compaction and WebSocket remain
+fresh turn. Audit 1 confirmed those browser behaviors only after repairing the
+link handoff UX; its original copied-link rejection did not test the complete
+URL. Device login and the repaired ordinary paths pass independently. Session hosted
+tools, native compaction and WebSocket remain
 unsupported/fail-closed; live paid API-key acceptance was not run and is optional
 under §30.2. Release commit
 `bd49ce69f4e34a64822245e67bdeee2503e1ce4d` passed exact canonical
@@ -57,7 +81,7 @@ publication remain before VRO-17 closes.
 | VRO-13 QM extraction (firewall, sandbox, scopes, daemon) | COMPLETE | `docs/qm-extraction-prd.md`; PR-1..PR-8 landed. Hard-denial `CommandFirewall` wired once into `RunCommand` (deny outranks every permission mode incl. Bypass); opt-in `vesper-sandbox` (Linux namespaces + feature-gated Docker) behind fail-closed capability gates; `WorkspaceScope` stamp-pinned identity with layered skills and deny-precedence firewall composition; exactly-once cron slot claims, single-writer `daemon.lock`, and the bounded watcher sweep with rate limits. Cross-feature end-to-end fixture: `crates/vesper-harness/tests/vro13_e2e.rs` (watcher fire → bounded turn → composed firewall → sandbox route → scope-keyed transcript; 5 tests, 6 under `--features docker`, both green) |
 | VRO-14 web oracle extraction | COMPLETE — v0.20.89 | Shared TUI/ACP contained pipe-CDP sessions, one-step render escalation, sitemap discovery and bounded fetch/crawl passed production acceptance. Exact-commit canonical/supply-chain, MSRV, five-target and dual-architecture image CI passed before tagging; five application bundles and both pinned driver archives are public. Registry PR #539 was updated in place and awaits upstream review. `docs/foundation/vro14-gap-audit.md` records evidence and implementation choices; `docs/web-tools.md` owns opt-in deployment. |
 | Additional production providers | IMPLEMENTED | LM Studio, native OpenAI and native xAI / Grok are registered alongside Z.ai. OpenAI and xAI each preserve explicit API-key versus account/subscription billing paths. See `openai-provider-prd.md` and `vro18-native-xai-provider-prd.md` for their evidence and limits. |
-| VRO-18 native xAI provider | **COMPLETE — RELEASED IN v0.24.0** | TUI and ACP register xAI and inherit shared tools/voice/skills/memory/VRO/workers without core xAI branches. Live SuperGrok acceptance passed; session-only capability exclusions remain fail-closed. Exact commit `bd49ce69…` passed all four required workflows before tag/publication; release run `36152583397` published 16 verified assets and Registry PR #539 was updated in place. Paid API-key live acceptance was optional and not run. |
+| VRO-18 native xAI provider | **AUDIT 1 REPAIRED — v0.24.1 RELEASE GATED; AUDIT 2/3 OPEN** | Ordinary-turn, browser/device login, post-browser TUI/ACP, exact-once file/shell tools, logout, reauthentication and billing isolation pass on Alex's accepted candidate. The corrective release requires fresh exact-commit workflows and publication verification. |
 | Context compaction parity | IMPLEMENTED AND LOCALLY VERIFIED | ADR 0023: active-model token pressure at 60/75/85%, automatic compaction at 85% with response reserve, semantic `/compact [focus]`, immutable system prompts, complete recent tool transactions, secret-scrubbed untrusted summary input, auxiliary→main→deterministic fallback, transactional rollback/fail-closed overflow, ACP/TUI persistence, VRO/direct parity, full TUI display transcript retention, and persisted quality-regression telemetry |
 | Skill orchestration parity | IMPLEMENTED AND LOCALLY VERIFIED | ADR 0024: provider-neutral metadata discovery/ranking, policy/tool/platform/risk eligibility, automatic top-three composition, explicit `/skill` and bundles, transient bounded bodies, isolated-worker contexts, direct/VRO/ReAct and ACP/TUI parity, outcome feedback, and compaction-safe audit identity |
 | Model-assisted skill routing | IMPLEMENTED — OPT-IN PREVIEW / QUALITY HOLD | Settings → Skills enables bounded configured-provider selection in TUI and ACP; Standard remains default and source skills are preserved. The 205-case inspected live regression records 89/95 positive recall, 0/60 no-skill activations and 2/30 forbidden-sibling selections, including five provider fallbacks. See [implementation evidence](foundation/skill-routing-model-assistance-execution.md), [live evaluation](foundation/skill-routing-model-live-evaluation.md) and [release execution](foundation/v0.22.4-release-execution.md). This does not close the full routing-quality or pending score-floor gates. |

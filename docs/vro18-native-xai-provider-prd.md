@@ -1,6 +1,6 @@
 # VRO-18 — Native xAI Provider for Agent Vesper
 
-**Status:** COMPLETE — RELEASED IN v0.24.0
+**Status:** AUDIT 1 REPAIRED — v0.24.1 CORRECTIVE RELEASE GATED; AUDIT 2 AND AUDIT 3 OPEN
 **Date:** 2026-09-25
 **Target repository:** `99percentgrip/agent-vesper`
 **Baseline:** post-`v0.23.6` `main` (`c64e78f46065f1fbaae899ab9914f3d9b3f7023d`)
@@ -2367,7 +2367,9 @@ release remain PR-8 work.
 
 The live SuperGrok execution is recorded in
 [`foundation/xai-provider-pr8-live-acceptance.md`](foundation/xai-provider-pr8-live-acceptance.md).
-Grok-session browser authentication and discovery passed. After a red live
+This PR-8 record reported that Grok-session browser authentication and
+discovery passed. Audit 1 §48 now contradicts the browser PASS; the statement is
+retained only as historical report context, not current evidence. After a red live
 transport result exposed missing mandatory first-party proxy headers, the
 repaired route passed text streaming, shared `read_file` and `run_command`
 transactions exactly once, multi-turn continuation, bounded cancellation and
@@ -2388,3 +2390,57 @@ Final commit `bd49ce69f4e34a64822245e67bdeee2503e1ce4d` passed canonical
 verified assets and Registry PR #539 was updated in place. Publication receipts
 belong to
 [`foundation/2026-09-25-v0.24.0-release-execution.md`](foundation/2026-09-25-v0.24.0-release-execution.md).
+
+## 48. Major Audit 1 — 2026-09-26 (OPEN)
+
+[`foundation/vro18-audit1-completeness-and-capability-truth.md`](foundation/vro18-audit1-completeness-and-capability-truth.md)
+supersedes the unconditional current completion label while preserving v0.24.0
+as historical release evidence. The exact released Linux x86_64 TUI reproduced
+Alex's ordinary-first-turn failure: stale API-key-only hosted-tool settings were
+projected into a Grok-session request and rejected during pre-authentication
+wire validation. The local repair intersects controls with the selected generic
+authentication surface in both hosts, retains the full Code tool registry and
+adds actionable safe rejection stages.
+
+The audit also corrected Batch, image and alias capability metadata, adopted a
+fail-closed policy for contradictory Grok 4.3/4.5 reasoning documentation, made
+prompt-cache routing reachable from the normal AgentLoop, and added native
+compaction rollback evidence. Focused suites, real TUI/ACP loopback processes,
+canonical local verification, strict Clippy, acceptance, supply-chain and Rust
+1.88 gates passed in the initial pass. The critical field-failure addendum then
+proved binary identity, repeated the released failure on the original state,
+and passed the repaired release-profile TUI/ACP live account turns, including
+exactly-once file/shell tools.
+
+The 2026-09-26 authentication incident correction keeps provider accounting
+separate. Alex's fresh Codex 0.157.0 ChatGPT-subscription `hello` passed and
+supersedes the prior stale-process 401 without proving its cause. The exact
+published Vesper v0.24.0 binary independently passed native `/usage` and a plain
+`hello` with explicitly selected ChatGPT-subscription authentication. Neither
+result reclassifies xAI F0 as credential contamination.
+
+The addendum corrects its earlier browser conclusion: **INVALID TEST — manually
+copied URL was truncated at terminal wrapping**. The browser never received the
+complete client ID or request. Current discovery and first-party source confirm
+the public native-client field contract; the repaired TUI launches and copies
+the complete structured URL without reconstructing rendered text. Live browser
+and device login, Vesper-owned credential storage, post-auth TUI/ACP turns,
+logout and browser reauthentication pass. R3 and dual authentication are
+therefore functionally accepted on the repaired candidate. VRO-18 remains OPEN
+and not ready for Audit 2 only because this work unit's no-push constraint
+prevented the required candidate five-target and native-host workflow runs. No
+push, tag, release or installation occurred.
+
+## 49. Audit 1 corrective patch release — v0.24.1
+
+Alex accepted the exact repaired candidate identities recorded in §48 and
+authorized an immediate corrective patch release without waiting for Audit 2 or
+Audit 3. The v0.24.1 release preserves the stale hosted-tool/authentication-mode
+intersection repair and the structured browser URL launch/copy repair, including
+browser/device authentication, refresh/logout, billing isolation, no API-key
+fallback and no Grok Build runtime dependency.
+
+The exact-commit release ledger is
+[`foundation/2026-09-26-v0.24.1-vro18-audit1-corrective-release.md`](foundation/2026-09-26-v0.24.1-vro18-audit1-corrective-release.md).
+Audit 2 and Audit 3 remain explicitly open future audit work and do not block
+shipping the accepted Audit 1 repairs.
