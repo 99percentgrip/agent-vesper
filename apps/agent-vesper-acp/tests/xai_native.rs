@@ -169,10 +169,7 @@ fn grok_session_run_command_executes_once() {
 
 #[cfg(windows)]
 fn append_marker_command(marker: &Path) -> String {
-    let path = marker.to_string_lossy().replace('\'', "''");
-    format!(
-        "powershell.exe -NoLogo -NoProfile -NonInteractive -Command \"[IO.File]::AppendAllText('{path}','x')\""
-    )
+    format!(r#"echo x>>"{}""#, marker.display())
 }
 
 #[cfg(not(windows))]
@@ -272,7 +269,8 @@ fn tool_round_trip(tool: &'static str) {
     assert_eq!(result["result"]["stopReason"], "end_turn", "{result}");
     server.join().unwrap();
     if tool == "run_command" {
-        assert_eq!(std::fs::read_to_string(marker).unwrap(), "x");
+        let marker = std::fs::read_to_string(marker).unwrap();
+        assert_eq!(marker.lines().collect::<Vec<_>>(), ["x"]);
     }
     process.finish();
 }
