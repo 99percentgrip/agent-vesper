@@ -169,7 +169,10 @@ fn grok_session_run_command_executes_once() {
 
 #[cfg(windows)]
 fn append_marker_command(marker: &Path) -> String {
-    format!(r#"<nul set /p "=x">>"{}""#, marker.display())
+    let path = marker.to_string_lossy().replace('\'', "''");
+    format!(
+        "powershell.exe -NoLogo -NoProfile -NonInteractive -Command \"[IO.File]::AppendAllText('{path}','x')\""
+    )
 }
 
 #[cfg(not(windows))]

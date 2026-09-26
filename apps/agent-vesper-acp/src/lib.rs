@@ -3486,8 +3486,24 @@ mod tests {
             vesper_domain::SessionPermissionMode::Bypass,
         );
         cancelled_context.cancellation = cancellation.clone();
-        let cancel_call = command("acp-cancel", "echo partial; while :; do printf c; done", 20);
+        let cancel_ready = root.path().join("acp-cancel-ready");
+        let cancel_call = command(
+            "acp-cancel",
+            &format!(
+                "printf partial; : > '{}'; while :; do printf c; done",
+                cancel_ready.display()
+            ),
+            20,
+        );
         let cancel_later = async {
+            let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+            while !cancel_ready.exists() && tokio::time::Instant::now() < deadline {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+            assert!(
+                cancel_ready.exists(),
+                "command did not reach cancellation barrier"
+            );
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
             cancellation.cancel();
         };
