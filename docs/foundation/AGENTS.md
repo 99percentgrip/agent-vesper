@@ -29,6 +29,9 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 - `xai-subscription-usage-execution.md` owns the Grok-session
   `GET /v1/billing?format=credits` usage correction, loopback/host proof, and
   the bounded live allowance comparison. It does not close Audit 2 or Audit 3.
+- `2026-09-27-v0.24.3-subscription-usage-release.md` owns the v0.24.3
+  exact-commit gate ledger, publication, asset verification, and the in-place
+  ACP Registry update. The release tag stays on the pre-closeout commit.
 - `xai-provider-pr4-execution.md` through `xai-provider-pr6-execution.md` own
   continuation/usage/citations, provider-hosted tools, native compaction and
   WebSocket offline evidence. `xai-provider-pr7-execution.md` owns current

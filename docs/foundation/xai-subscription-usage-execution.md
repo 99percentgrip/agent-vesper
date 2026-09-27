@@ -86,9 +86,9 @@ PASS. Alex confirmed the updated `/usage` screen works. That acceptance is
 not a new live login and does not freeze the account percentages or reset
 date as test constants.
 
-## Unresolved at packaging
+## Release
 
-- Release workflow IDs are recorded in the v0.24.3 closeout after the gates.
-- The installed app is not replaced by this packaging step.
-- Paid API live acceptance was not run.
-- Audit 2 and Audit 3 remain separate.
+Published as v0.24.3. The gate ledger is
+[`2026-09-27-v0.24.3-subscription-usage-release.md`](2026-09-27-v0.24.3-subscription-usage-release.md).
+Paid API live acceptance was not run. Audit 2 and Audit 3 remain separate.
+The installed app was not replaced.
