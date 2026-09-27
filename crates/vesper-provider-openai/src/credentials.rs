@@ -229,10 +229,116 @@ impl Credentials {
     }
     /// Explicitly selects API billing and stores the key in Vesper's vault.
     pub fn store_api_key(&self, key: &str) -> Result<(), CredentialError> {
+        self.store_method("openai-api-key", key)
+    }
+    pub(crate) fn store_method(&self, method_id: &str, key: &str) -> Result<(), CredentialError> {
+        if method_id != "openai-api-key" {
+            return Err(CredentialError::Unavailable);
+        }
         vesper_auth::validate_secret(key).map_err(|_| CredentialError::InvalidSecret)?;
         let _guard = self.lock.blocking_lock();
         let _process = self.process_lock()?;
-        self.write(json!({"mode":"api-key","api_key":key}))
+        let mut value = object(self.read()?.0.clone());
+        value["mode"] = json!("api-key");
+        value["api_key"] = json!(key);
+        self.write(value)
+    }
+    pub(crate) fn select_method(&self, method_id: &str) -> Result<(), CredentialError> {
+        let _guard = self.lock.blocking_lock();
+        let _process = self.process_lock()?;
+        let mut value = object(self.read()?.0.clone());
+        match method_id {
+            "openai-api-key" => {
+                if api_key(&value).is_none() {
+                    return Err(CredentialError::Absent);
+                }
+                value["mode"] = json!("api-key");
+            }
+            "openai-chatgpt" => {
+                tokens(&value)?;
+                value["mode"] = json!("chatgpt");
+            }
+            _ => return Err(CredentialError::Unavailable),
+        }
+        self.write(value)
+    }
+    pub(crate) fn clear_method(&self, method_id: &str) -> Result<(), CredentialError> {
+        let _guard = self.lock.blocking_lock();
+        let _process = self.process_lock()?;
+        let mut value = object(self.read()?.0.clone());
+        match method_id {
+            "openai-api-key" => {
+                value.as_object_mut().map(|map| map.remove("api_key"));
+                let environment =
+                    SecretScope::current("OPENAI_API_KEY")
+                        .ok()
+                        .is_some_and(|secret| {
+                            vesper_auth::validate_secret(secret.expose().as_str()).is_ok()
+                        });
+                if value.get("mode").and_then(Value::as_str) == Some("api-key") && !environment {
+                    value["mode"] = json!("signed-out");
+                }
+            }
+            "openai-chatgpt" => {
+                if let Some(map) = value.as_object_mut() {
+                    map.remove("access_token");
+                    map.remove("refresh_token");
+                    map.remove("id_token");
+                }
+                if value.get("mode").and_then(Value::as_str) == Some("chatgpt") {
+                    value["mode"] = json!("signed-out");
+                }
+            }
+            _ => return Err(CredentialError::Unavailable),
+        }
+        self.write(value)
+    }
+    pub(crate) fn inventory(
+        &self,
+    ) -> Result<vesper_provider::AuthenticationInventory, CredentialError> {
+        use vesper_provider::{AuthenticationMethodState, CredentialSource};
+        let value = self.read()?;
+        let stored_key = value
+            .get("api_key")
+            .and_then(Value::as_str)
+            .is_some_and(|key| vesper_auth::validate_secret(key).is_ok());
+        let environment_key = SecretScope::current("OPENAI_API_KEY")
+            .ok()
+            .is_some_and(|secret| vesper_auth::validate_secret(secret.expose().as_str()).is_ok());
+        let subscription = tokens(&value).is_ok();
+        let api_source = if environment_key {
+            CredentialSource::Environment
+        } else if stored_key {
+            CredentialSource::Stored
+        } else {
+            CredentialSource::Absent
+        };
+        let selected = match value.get("mode").and_then(Value::as_str) {
+            Some("chatgpt") if subscription => Some("openai-chatgpt".to_owned()),
+            Some("api-key") if api_source != CredentialSource::Absent => {
+                Some("openai-api-key".to_owned())
+            }
+            Some("signed-out") => None,
+            None if api_source != CredentialSource::Absent => Some("openai-api-key".to_owned()),
+            _ => None,
+        };
+        Ok(vesper_provider::AuthenticationInventory {
+            selected_method: selected,
+            methods: vec![
+                AuthenticationMethodState {
+                    method_id: "openai-api-key".into(),
+                    source: api_source,
+                },
+                AuthenticationMethodState {
+                    method_id: "openai-chatgpt".into(),
+                    source: if subscription {
+                        CredentialSource::Stored
+                    } else {
+                        CredentialSource::Absent
+                    },
+                },
+            ],
+        })
     }
     /// Writes a tombstone so an environment key cannot silently re-enable billing.
     pub fn logout(&self) -> Result<(), CredentialError> {
@@ -264,8 +370,13 @@ impl Credentials {
             return Err(CredentialError::Failed);
         }
         account(&result)?;
+        let existing = self.read()?;
+        let mut value = token_value(&result);
+        if let Some(key) = existing.get("api_key").cloned() {
+            value["api_key"] = key;
+        }
         let this = self.clone();
-        tokio::task::spawn_blocking(move || this.write(token_value(&result)))
+        tokio::task::spawn_blocking(move || this.write(value))
             .await
             .map_err(|_| CredentialError::Failed)?
     }
@@ -351,6 +462,9 @@ fn tokens(value: &Value) -> Result<SubscriptionTokens, CredentialError> {
 }
 fn token_value(tokens: &SubscriptionTokens) -> Value {
     json!({"mode":"chatgpt","access_token":tokens.access_token().expose().as_str(),"refresh_token":tokens.refresh_token().expose().as_str(),"id_token":tokens.id_token().expose().as_str()})
+}
+fn object(value: Value) -> Value {
+    if value.is_object() { value } else { json!({}) }
 }
 fn jwt(token: &SecretValue) -> Option<Value> {
     let exposed = token.expose();

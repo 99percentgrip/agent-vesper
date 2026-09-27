@@ -8,6 +8,8 @@
 //! touches HTTP.
 
 use std::sync::Arc;
+#[cfg(test)]
+use zeroize::Zeroizing;
 
 use futures_util;
 use futures_util::StreamExt;
@@ -75,7 +77,20 @@ pub struct LmStudioFactory {
     /// `GET /api/v1/models` schema; `superpowers()` reads it so advertised
     /// controls derive from live model data. `None` ⇒ fail-closed surface.
     catalog: std::sync::Arc<std::sync::RwLock<Option<ModelCatalogSnapshot>>>,
+    credentials: LmStudioCredentialBackend,
 }
+
+#[derive(Clone)]
+enum LmStudioCredentialBackend {
+    #[cfg(test)]
+    Memory(Arc<std::sync::Mutex<Option<Zeroizing<String>>>>),
+    #[cfg(not(test))]
+    Secure,
+}
+
+#[cfg_attr(test, allow(dead_code))]
+const LMSTUDIO_CREDENTIAL: vesper_auth::CredentialId =
+    vesper_auth::CredentialId::new("lmstudio", "api-key");
 
 impl LmStudioFactory {
     /// Creates a factory from persisted settings + the auto-discovered (or
@@ -91,6 +106,63 @@ impl LmStudioFactory {
                 .build()
                 .unwrap_or_default(),
             catalog: std::sync::Arc::new(std::sync::RwLock::new(None)),
+            credentials: {
+                #[cfg(test)]
+                {
+                    LmStudioCredentialBackend::Memory(Arc::new(std::sync::Mutex::new(None)))
+                }
+                #[cfg(not(test))]
+                {
+                    LmStudioCredentialBackend::Secure
+                }
+            },
+        }
+    }
+
+    fn load_api_key(&self) -> Option<String> {
+        if let Ok(key) = std::env::var("LMSTUDIO_API_KEY")
+            && vesper_auth::validate_secret(&key).is_ok()
+        {
+            return Some(key);
+        }
+        match &self.credentials {
+            #[cfg(test)]
+            LmStudioCredentialBackend::Memory(slot) => slot
+                .lock()
+                .ok()
+                .and_then(|guard| guard.as_ref().map(|secret| secret.to_string())),
+            #[cfg(not(test))]
+            LmStudioCredentialBackend::Secure => lmstudio_secure_store()
+                .load(LMSTUDIO_CREDENTIAL)
+                .ok()
+                .flatten()
+                .map(|secret| secret.expose().as_str().to_owned()),
+        }
+    }
+
+    fn credential_source(&self) -> vesper_provider::CredentialSource {
+        if std::env::var("LMSTUDIO_API_KEY")
+            .ok()
+            .is_some_and(|key| vesper_auth::validate_secret(&key).is_ok())
+        {
+            return vesper_provider::CredentialSource::Environment;
+        }
+        let stored = match &self.credentials {
+            #[cfg(test)]
+            LmStudioCredentialBackend::Memory(slot) => {
+                slot.lock().ok().is_some_and(|guard| guard.is_some())
+            }
+            #[cfg(not(test))]
+            LmStudioCredentialBackend::Secure => lmstudio_secure_store()
+                .load(LMSTUDIO_CREDENTIAL)
+                .ok()
+                .flatten()
+                .is_some(),
+        };
+        if stored {
+            vesper_provider::CredentialSource::Stored
+        } else {
+            vesper_provider::CredentialSource::Absent
         }
     }
 
@@ -115,6 +187,8 @@ impl LmStudioFactory {
             .get(&url);
         if let Some(key) = self.config.api_key.as_ref() {
             request = request.bearer_auth(key.secret());
+        } else if let Some(key) = self.load_api_key() {
+            request = request.bearer_auth(key);
         }
         let response = request
             .send()
@@ -168,12 +242,14 @@ impl ProviderFactory for LmStudioFactory {
         _config: &'a ProviderConfiguration,
         _cancellation: Arc<dyn CancellationSignal>,
     ) -> ProviderFuture<'a, Result<Self::Session, ProviderError>> {
-        Box::pin(async move {
-            Ok(LmStudioSession {
-                config: self.config.clone(),
-                client: self.client.clone(),
-            })
-        })
+        let mut config = self.config.clone();
+        if config.api_key.is_none()
+            && let Some(key) = self.load_api_key()
+        {
+            config = config.with_api_key(key);
+        }
+        let client = self.client.clone();
+        Box::pin(async move { Ok(LmStudioSession { config, client }) })
     }
 
     fn descriptor(&self) -> ProviderDescriptor {
@@ -189,6 +265,7 @@ impl ProviderFactory for LmStudioFactory {
                 external_runtime_owned: false,
                 key_url: None,
                 interactive_login: vec![],
+                optional: true,
             }],
             hosted_tools: Vec::new(),
             configuration: None,
@@ -614,14 +691,106 @@ impl ProviderCredentialPort for LmStudioFactory {
     fn credential_present(&self) -> Result<bool, CredentialError> {
         // LM Studio's API key is OPTIONAL — the server may run without auth.
         // Always report the credential as present so the TUI never blocks the
-        // user with an authentication screen. The optional key (from
-        // LMSTUDIO_API_KEY env var or the config) is injected per-request by
-        // the transport if it is set.
+        // user with an authentication screen. The optional key is still real.
         Ok(true)
     }
-    fn store_credential(&self, _secret: &str) -> Result<(), CredentialError> {
-        // No-op: LM Studio keys are env/config-only, not OS credential store.
-        Ok(())
+    fn authentication_method(&self) -> Result<Option<String>, CredentialError> {
+        Ok(
+            (self.credential_source() != vesper_provider::CredentialSource::Absent)
+                .then(|| "lmstudio-api-key".to_owned()),
+        )
+    }
+    fn store_credential(&self, secret: &str) -> Result<(), CredentialError> {
+        self.store_method_credential("lmstudio-api-key", secret)
+    }
+    fn store_method_credential(
+        &self,
+        method_id: &str,
+        secret: &str,
+    ) -> Result<(), CredentialError> {
+        if method_id != "lmstudio-api-key" {
+            return Err(CredentialError::Unavailable);
+        }
+        let secret =
+            vesper_auth::validate_secret(secret).map_err(|_| CredentialError::InvalidSecret)?;
+        match &self.credentials {
+            #[cfg(test)]
+            LmStudioCredentialBackend::Memory(slot) => {
+                *slot.lock().map_err(|_| CredentialError::Unavailable)? =
+                    Some(Zeroizing::new(secret.to_owned()));
+                Ok(())
+            }
+            #[cfg(not(test))]
+            LmStudioCredentialBackend::Secure => lmstudio_secure_store()
+                .store(LMSTUDIO_CREDENTIAL, secret)
+                .map(|_| ())
+                .map_err(map_lmstudio_store_error),
+        }
+    }
+    fn authentication_inventory(
+        &self,
+    ) -> Result<vesper_provider::AuthenticationInventory, CredentialError> {
+        let source = self.credential_source();
+        Ok(vesper_provider::AuthenticationInventory {
+            selected_method: (source != vesper_provider::CredentialSource::Absent)
+                .then(|| "lmstudio-api-key".to_owned()),
+            methods: vec![vesper_provider::AuthenticationMethodState {
+                method_id: "lmstudio-api-key".into(),
+                source,
+            }],
+        })
+    }
+    fn clear_stored_method(&self, method_id: &str) -> Result<(), CredentialError> {
+        if method_id != "lmstudio-api-key" {
+            return Err(CredentialError::Unavailable);
+        }
+        match &self.credentials {
+            #[cfg(test)]
+            LmStudioCredentialBackend::Memory(slot) => {
+                *slot.lock().map_err(|_| CredentialError::Unavailable)? = None;
+                Ok(())
+            }
+            #[cfg(not(test))]
+            LmStudioCredentialBackend::Secure => lmstudio_secure_store()
+                .remove(LMSTUDIO_CREDENTIAL)
+                .map_err(map_lmstudio_store_error),
+        }
+    }
+    fn logout(&self) -> Result<(), CredentialError> {
+        self.clear_stored_method("lmstudio-api-key")
+    }
+    fn removal_scope(&self) -> vesper_provider::CredentialRemovalScope {
+        vesper_provider::CredentialRemovalScope::EntireProvider
+    }
+}
+
+#[cfg(not(test))]
+fn lmstudio_secure_store() -> vesper_auth::SecureCredentialStore {
+    let path = std::env::var_os("AGENT_VESPER_LMSTUDIO_CREDENTIALS_PATH")
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("XDG_CONFIG_HOME").map(|path| {
+                std::path::PathBuf::from(path).join("agent-vesper/lmstudio-credentials.json")
+            })
+        })
+        .or_else(|| {
+            std::env::var_os("HOME")
+                .or_else(|| std::env::var_os("USERPROFILE"))
+                .map(|path| {
+                    std::path::PathBuf::from(path)
+                        .join(".config/agent-vesper/lmstudio-credentials.json")
+                })
+        })
+        .unwrap_or_else(|| std::path::PathBuf::from("agent-vesper-lmstudio-credentials.json"));
+    vesper_auth::SecureCredentialStore::new("agent-vesper", path)
+}
+
+#[cfg_attr(test, allow(dead_code))]
+fn map_lmstudio_store_error(error: vesper_auth::CredentialStoreError) -> CredentialError {
+    match error {
+        vesper_auth::CredentialStoreError::InvalidSecret => CredentialError::InvalidSecret,
+        vesper_auth::CredentialStoreError::Unavailable => CredentialError::Unavailable,
+        _ => CredentialError::Failed,
     }
 }
 
@@ -900,6 +1069,46 @@ mod tests {
         assert!(matches!(bare.capabilities.tools, SupportLevel::Unknown));
         assert!(matches!(bare.capabilities.reasoning, SupportLevel::Unknown));
         assert!(matches!(bare.capabilities.limits, SupportLevel::Unknown));
+    }
+
+    #[tokio::test]
+    async fn optional_api_key_persistence_is_real_and_reaches_session_creation() {
+        let factory = LmStudioFactory::new(
+            vesper_agent::providers::lmstudio::LmStudioConfig::new("http://127.0.0.1:9/v1")
+                .unwrap(),
+            "local-model",
+        );
+        assert_eq!(
+            factory.credential_source(),
+            vesper_provider::CredentialSource::Absent
+        );
+        assert!(matches!(
+            factory.store_credential("").unwrap_err(),
+            CredentialError::InvalidSecret
+        ));
+        factory.store_credential("synthetic-lm-key").unwrap();
+        assert_eq!(
+            factory.authentication_method().unwrap().as_deref(),
+            Some("lmstudio-api-key")
+        );
+        assert_eq!(factory.load_api_key().as_deref(), Some("synthetic-lm-key"));
+        let session = factory
+            .create_session(
+                &LmStudioFactory::default_configuration(),
+                std::sync::Arc::new(vesper_runtime::RuntimeCancellation::new()),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            session.config.api_key.as_ref().map(|key| key.secret()),
+            Some("synthetic-lm-key")
+        );
+        factory.logout().unwrap();
+        assert_eq!(factory.load_api_key(), None);
+        assert_eq!(
+            factory.authentication_inventory().unwrap().methods[0].source,
+            vesper_provider::CredentialSource::Absent
+        );
     }
 }
 

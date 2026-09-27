@@ -7,7 +7,7 @@ v0.24.1. Audit 2 and Audit 3 remain open future audit work.
 
 ## Authentication and billing
 
-Open **Settings → Providers → xAI / Grok** and choose one mode:
+Open **Settings → Providers**, highlight **xAI / Grok**, and choose **Manage authentication** (or press **M** on that row). Both modes stay visible without signing out:
 
 - **Grok account / SuperGrok** uses the signed-in account's available
   Grok/Grok Build allowance. Browser sign-in is the normal path: Vesper opens

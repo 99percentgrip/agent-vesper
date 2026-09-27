@@ -16,6 +16,8 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 - `2026-09-26-v0.24.1-vro18-audit1-corrective-release.md` owns the v0.24.1
   exact-commit gate ledger, publication and asset verification, ACP Registry
   PR update, no-install receipt, and explicit Audit 2/Audit 3-open boundary.
+- `vro18.1-settings-authentication-execution.md` owns the Settings → Providers
+  authentication implementation evidence. Audit 2 and Audit 3 remain separate.
 
 - `xai-provider-pr1-execution.md` owns VRO-18 PR-1 red/green evidence for the native API-key Responses transport, bounded stream settlement, strict shared-tool serialization and explicit remaining host/live gates.
 

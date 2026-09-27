@@ -312,6 +312,8 @@ pub(super) async fn open(
     let mut selected = 0;
     let mut notice =
         "Changes remain a draft until you leave Settings and choose Save changes.".to_string();
+    let mut auth_immediate = false;
+    let mut auth_method = None;
     loop {
         let surface = refreshed_catalog
             .as_ref()
@@ -468,13 +470,25 @@ pub(super) async fn open(
                 {
                     dirty |= bridge != initial_bridge;
                 }
+                if let Some(method) = auth_method.clone() {
+                    session.state.authentication_method_override = Some(method);
+                }
                 if !dirty {
-                    return Ok("Settings unchanged.".into());
+                    return Ok(if auth_immediate {
+                        "Authentication was saved immediately. Other Settings were unchanged."
+                            .into()
+                    } else {
+                        "Settings unchanged.".into()
+                    });
                 }
                 match choice(
                     terminal,
                     "Save changes?",
-                    "Your changes have not been saved.",
+                    if auth_immediate {
+                        "Authentication changes were saved immediately and will not be undone. Other Settings changes are still a draft."
+                    } else {
+                        "Your changes have not been saved."
+                    },
                     &[
                         "Save changes".into(),
                         "Discard changes".into(),
@@ -642,6 +656,8 @@ pub(super) async fn open(
                                 registry,
                                 provider,
                                 &draft.preferences.theme,
+                                &mut auth_immediate,
+                                &mut auth_method,
                             )
                             .await
                             .unwrap_or_else(|e| e);
@@ -683,9 +699,18 @@ async fn provider_settings(
     registry: &Arc<vesper_runtime::ProviderRegistry>,
     provider: &ProviderId,
     theme: &str,
+    auth_immediate: &mut bool,
+    auth_method: &mut Option<String>,
 ) -> Result<String, String> {
-    let Some(target) = open_provider_switcher(terminal, registry, provider, theme).await? else {
-        return Ok("Provider selection cancelled.".into());
+    let outcome = open_provider_switcher(terminal, registry, provider, theme).await?;
+    if outcome.authentication_committed {
+        *auth_immediate = true;
+        if outcome.committed_provider.as_deref() == Some(provider.as_str()) {
+            *auth_method = outcome.committed_method.clone();
+        }
+    }
+    let Some(target) = outcome.save_provider else {
+        return Ok(outcome.notice);
     };
     if target == "lmstudio" {
         let settings = load_lmstudio_settings();
@@ -706,6 +731,7 @@ async fn provider_settings(
             registry,
             auth,
             AuthenticationIntent::ProviderSwitch,
+            theme,
         )
         .await?;
     }

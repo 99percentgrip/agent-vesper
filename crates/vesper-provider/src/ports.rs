@@ -51,6 +51,11 @@ pub struct AuthenticationMethodDescriptor {
     /// this metadata instead of provider-name branches.
     #[serde(default)]
     pub interactive_login: Vec<InteractiveLoginKind>,
+    /// When true, a missing credential is a valid configuration. Hosts may say
+    /// that no authentication is required only for methods that advertise this.
+    /// An empty method list does not imply anonymous access.
+    #[serde(default)]
+    pub optional: bool,
 }
 
 /// Provider-owned interactive authentication flow advertised to hosts.
@@ -294,6 +299,85 @@ pub trait ProviderCredentialPort: Send + Sync {
     fn logout(&self) -> Result<(), CredentialError> {
         Err(CredentialError::Unavailable)
     }
+    /// Per-method presence without secret material. The default reports only
+    /// the selected method id and does not invent a source.
+    fn authentication_inventory(&self) -> Result<AuthenticationInventory, CredentialError> {
+        Ok(AuthenticationInventory {
+            selected_method: self.authentication_method()?,
+            methods: Vec::new(),
+        })
+    }
+    /// Selects an already available method without deleting another method's
+    /// stored credential. Returns [`CredentialError::Absent`] when that method
+    /// has nothing to select.
+    fn select_authentication_method(&self, _method_id: &str) -> Result<(), CredentialError> {
+        Err(CredentialError::Unavailable)
+    }
+    /// Stores a secret for one advertised method. The unscoped
+    /// [`Self::store_credential`] remains the single-method compatibility path.
+    fn store_method_credential(
+        &self,
+        method_id: &str,
+        secret: &str,
+    ) -> Result<(), CredentialError> {
+        let _ = (method_id, secret);
+        Err(CredentialError::Unavailable)
+    }
+    /// Removes one method's stored secret when the adapter can do that without
+    /// implying that an environment variable or another method was removed.
+    fn clear_stored_method(&self, _method_id: &str) -> Result<(), CredentialError> {
+        Err(CredentialError::Unavailable)
+    }
+    /// Exact destructive scope of [`Self::logout`]. Hosts must label this
+    /// instead of offering a narrower action the store cannot perform.
+    fn removal_scope(&self) -> CredentialRemovalScope {
+        CredentialRemovalScope::Unavailable
+    }
+}
+
+/// Where a non-secret credential status came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum CredentialSource {
+    /// This method has no usable credential.
+    Absent,
+    /// Vesper has a stored credential for this method.
+    Stored,
+    /// An environment variable supplies this method. Deleting stored records
+    /// does not remove or replace it.
+    Environment,
+    /// Local expiry evidence says this stored credential needs reauthentication.
+    /// This is not a remote verification result.
+    Expired,
+}
+
+/// One advertised method's local status. Never contains secret material.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AuthenticationMethodState {
+    /// Descriptor method id.
+    pub method_id: String,
+    /// Local source. A presence check is not remote verification.
+    pub source: CredentialSource,
+}
+
+/// Selected method plus the adapter's per-method local statuses.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AuthenticationInventory {
+    /// Method the next request will use, when one is selected.
+    pub selected_method: Option<String>,
+    /// Empty when the adapter did not report per-method state.
+    pub methods: Vec<AuthenticationMethodState>,
+}
+
+/// What a confirmed sign-out actually deletes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum CredentialRemovalScope {
+    /// The adapter cannot remove credentials.
+    Unavailable,
+    /// Removes every Vesper-stored credential for this provider only.
+    /// Environment variables and other providers stay untouched.
+    EntireProvider,
 }
 
 /// Scoped provider transport/session port.

@@ -91,6 +91,25 @@ fn credential_store() -> SecureCredentialStore {
     SecureCredentialStore::new("agent-vesper", credentials_path())
 }
 
+pub(crate) fn credential_sources() -> (bool, bool) {
+    let valid = |name| {
+        SecretScope::current(name)
+            .ok()
+            .is_some_and(|secret| vesper_auth::validate_secret(secret.expose().as_str()).is_ok())
+    };
+    let environment = valid("ZAI_API_KEY") || valid("Z_AI_API_KEY");
+    let stored = credential_store()
+        .load(ZAI_CREDENTIAL_ID)
+        .ok()
+        .flatten()
+        .is_some();
+    (environment, stored)
+}
+
+pub(crate) fn remove_stored_api_key() -> Result<(), AuthStoreError> {
+    credential_store().remove(ZAI_CREDENTIAL_ID)
+}
+
 /// Deterministic source for applications/tests that already hold secret-safe
 /// values. This type deliberately does not expose iteration or serialization.
 #[derive(Default)]

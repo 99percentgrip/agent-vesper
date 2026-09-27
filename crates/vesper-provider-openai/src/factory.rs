@@ -227,6 +227,7 @@ impl ProviderFactory for OpenAiFactory {
                         BoundedString::new("https://platform.openai.com/api-keys").expect("static"),
                     ),
                     interactive_login: vec![],
+                    optional: false,
                 },
                 AuthenticationMethodDescriptor {
                     method_id: BoundedString::new("openai-chatgpt").expect("static"),
@@ -238,6 +239,7 @@ impl ProviderFactory for OpenAiFactory {
                         BoundedString::new("https://auth.openai.com/codex/device").expect("static"),
                     ),
                     interactive_login: vec![vesper_provider::InteractiveLoginKind::DeviceCode],
+                    optional: false,
                 },
             ],
             hosted_tools: Vec::new(),
@@ -341,6 +343,30 @@ impl ProviderCredentialPort for OpenAiFactory {
             self.credentials.login(cancel, on_challenge).await?;
             self.invalidate_models()
         })
+    }
+    fn authentication_inventory(
+        &self,
+    ) -> Result<vesper_provider::AuthenticationInventory, CredentialError> {
+        self.credentials.inventory()
+    }
+    fn select_authentication_method(&self, method_id: &str) -> Result<(), CredentialError> {
+        self.credentials.select_method(method_id)?;
+        self.invalidate_models()
+    }
+    fn store_method_credential(
+        &self,
+        method_id: &str,
+        secret: &str,
+    ) -> Result<(), CredentialError> {
+        self.credentials.store_method(method_id, secret)?;
+        self.invalidate_models()
+    }
+    fn clear_stored_method(&self, method_id: &str) -> Result<(), CredentialError> {
+        self.credentials.clear_method(method_id)?;
+        self.invalidate_models()
+    }
+    fn removal_scope(&self) -> vesper_provider::CredentialRemovalScope {
+        vesper_provider::CredentialRemovalScope::EntireProvider
     }
 }
 impl ProviderSuperpowers for OpenAiFactory {

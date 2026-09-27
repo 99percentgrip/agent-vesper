@@ -5,14 +5,16 @@ bundles, launches, or reads credentials from Codex CLI or app-server.
 
 ## Activate in the TUI
 
-1. Open `/settings` → Providers → OpenAI, then Save.
-2. Choose API key (usage-based billing) or ChatGPT subscription, then Save.
-3. For API mode, enter the key in the masked authentication screen. For
-   subscription mode, open the displayed official verification page and enter
-   the one-time code. Only approve a login you initiated. Esc cancels.
-4. Save the provider preference and restart when prompted.
+1. Open `/settings` → Providers, highlight OpenAI, and choose **Manage authentication**
+   (or press **M**). Saving the provider is separate and does not hide the other method.
+2. Both choices stay visible: API key (usage-based billing) and ChatGPT subscription.
+3. For API mode, enter the key in the masked field and choose **Save and use API key**.
+   For subscription mode, use device-code sign-in and the official verification page.
+   Only approve a login you initiated. Esc cancels and keeps the previous credential.
+4. Authentication is saved immediately. Save the provider preference separately when
+   you want the next launch to use OpenAI, then restart when prompted.
 
-Use `/auth` to change authentication or sign out locally. Existing subscription
+`/auth` opens the same authentication panel for the active provider. Existing subscription
 credentials are never silently replaced by an environment API key. Explicitly
 selecting API mode enables API billing; `OPENAI_API_KEY` then overrides a stored
 API key. Local sign-out disables that fallback until another explicit sign-in.
@@ -82,8 +84,9 @@ countdowns. Missing windows remain unknown, never unlimited. Repeat `/usage`
 to refresh; it works independently of an active agent turn.
 
 Switching to another provider and back reuses the valid selected OpenAI
-credential. Use `/auth` only to rotate, replace, or sign out; provider
-selection itself does not start another device login.
+credential. Use Settings → Providers → Manage authentication, or `/auth`, to
+rotate, replace, or sign out. Provider selection itself does not start another
+device login. Managing an inactive provider does not change the active one.
 
 API-key mode does not have subscription windows. Its card identifies API billing
 and links to the project/organization limits page; it does not invent a credit

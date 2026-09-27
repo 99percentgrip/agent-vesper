@@ -39,13 +39,13 @@ use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use agent_vesper_tui::{
-    AuthHubAction, AuthHubState, AuthProvider, CommandIntent, CommandRegistry,
-    DEFAULT_INTERVIEW_QUESTION_LIMIT, DispatchOutcome, InterviewQuestionLimit, LmStudioHub,
-    LmStudioSettings, LmStudioSettingsAction, MAX_INTERVIEW_QUESTIONS, MediaOp, PermissionChoice,
-    PermissionModal, PlanPhase, ProviderSuperpowerSurface, SessionState, StartupRoute,
-    TerminalAction, ViewModel, apply_model_plan, apply_task_plan, dispatch, footer_action_at,
-    load_lmstudio_settings, query_startup_view, render_auth_hub, render_lmstudio_hub,
-    render_to_frame, save_lmstudio_settings, startup_route, ui_layout_metrics,
+    AuthProvider, CommandIntent, CommandRegistry, DEFAULT_INTERVIEW_QUESTION_LIMIT,
+    DispatchOutcome, InterviewQuestionLimit, LmStudioHub, LmStudioSettings, LmStudioSettingsAction,
+    MAX_INTERVIEW_QUESTIONS, MediaOp, PermissionChoice, PermissionModal, PlanPhase,
+    ProviderSuperpowerSurface, SessionState, StartupRoute, TerminalAction, ViewModel,
+    apply_model_plan, apply_task_plan, dispatch, footer_action_at, load_lmstudio_settings,
+    query_startup_view, render_lmstudio_hub, render_to_frame, save_lmstudio_settings,
+    startup_route, ui_layout_metrics,
 };
 use crossterm::{
     event::{
@@ -1401,6 +1401,7 @@ async fn drive_loop(
             registry,
             provider,
             AuthenticationIntent::Startup,
+            &session.state.preferences.theme,
         )
         .await?;
     }
@@ -2374,6 +2375,7 @@ async fn drive_loop(
                                 registry,
                                 provider,
                                 AuthenticationIntent::ExplicitReauth,
+                                &session.state.preferences.theme,
                             )
                             .await
                             {
@@ -2605,7 +2607,20 @@ async fn drive_loop(
                     )
                     .await
                     {
-                        Ok(Some(target)) => {
+                        Ok(outcome) => {
+                            if outcome.authentication_committed
+                                && outcome.committed_provider.as_deref()
+                                    == Some(provider_id.as_str())
+                            {
+                                session.state.authentication_method_override =
+                                    outcome.committed_method.clone();
+                                refresh_openai_models = provider_id.as_str() == "openai";
+                                refresh_xai_models = provider_id.as_str() == "xai";
+                            }
+                            let Some(target) = outcome.save_provider.clone() else {
+                                session.state.status = Some(outcome.notice);
+                                continue;
+                            };
                             // If switching TO LM Studio and the endpoint is the
                             // default (localhost:1234), prompt for the server URL
                             // before saving the preference — same flow as Hermes.
@@ -2673,6 +2688,7 @@ async fn drive_loop(
                                     registry,
                                     auth,
                                     AuthenticationIntent::ProviderSwitch,
+                                    &session.state.preferences.theme,
                                 )
                                 .await
                             {
@@ -2692,9 +2708,6 @@ async fn drive_loop(
                                         Some(format!("Provider was not saved: {error}"))
                                 }
                             }
-                        }
-                        Ok(None) => {
-                            session.state.status = Some("Provider selection cancelled.".into());
                         }
                         Err(error) => {
                             session.state.status = Some(format!("provider: {error}"));
@@ -2977,52 +2990,18 @@ async fn open_provider_switcher(
     registry: &vesper_runtime::ProviderRegistry,
     current: &ProviderId,
     theme: &str,
-) -> Result<Option<String>, String> {
-    use agent_vesper_tui::provider_hub::{ProviderHub, render};
-    let providers = registry.provider_ids().await;
-    if providers.is_empty() {
-        return Err("No providers are registered.".into());
-    }
-    let mut hub = ProviderHub::new(
-        providers.iter().map(|id| id.as_str().to_owned()).collect(),
-        current.as_str().to_owned(),
-    );
-    if let Some(saved) = hub
-        .providers
-        .iter()
-        .position(|id| id == &provider_name_from_env())
-    {
-        hub.chosen = saved;
-        hub.selected = saved;
-    }
-    loop {
-        terminal
-            .draw(|frame| render(frame, &hub, theme))
-            .map_err(|error| format!("provider settings redraw: {error}"))?;
-        let (code, clicked) =
-            settings_host::input(terminal, hub.providers.len() + 2, hub.selected)?;
-        if let Some(index) = clicked {
-            hub.selected = index;
-        }
-        match code {
-            KeyCode::Esc => return Ok(None),
-            KeyCode::Up => hub.selected = hub.selected.saturating_sub(1),
-            KeyCode::Down | KeyCode::Tab => {
-                hub.selected = (hub.selected + 1).min(hub.providers.len() + 1)
-            }
-            KeyCode::Char('s' | 'S') => return Ok(hub.choice().map(str::to_owned)),
-            KeyCode::Enter | KeyCode::Char(' ') => {
-                if hub.selected == hub.providers.len() + 1 {
-                    return Ok(None);
-                }
-                if hub.selected == hub.providers.len() {
-                    return Ok(hub.choice().map(str::to_owned));
-                }
-                hub.choose();
-            }
-            _ => {}
-        }
-    }
+) -> Result<agent_vesper_tui::ProviderSettingsOutcome, String> {
+    let mut events = agent_vesper_tui::LiveSettingsEvents::default();
+    let mut hooks = agent_vesper_tui::AuthUiHooks::default();
+    agent_vesper_tui::run_provider_settings(
+        terminal,
+        registry,
+        current.as_str(),
+        theme,
+        &mut events,
+        &mut hooks,
+    )
+    .await
 }
 
 async fn open_web_settings(
@@ -3246,426 +3225,6 @@ async fn edit_lmstudio_settings(
     }
 }
 
-#[derive(Clone, Debug)]
-struct BrowserSignInLink {
-    value: String,
-}
-
-impl BrowserSignInLink {
-    fn new(value: String) -> Result<Self, String> {
-        if value.contains(['\r', '\n']) {
-            return Err("Authentication service returned an invalid sign-in link".into());
-        }
-        let parsed = reqwest::Url::parse(&value)
-            .map_err(|_| "Authentication service returned an invalid sign-in link")?;
-        if parsed.scheme() != "https"
-            || parsed.host_str().is_none()
-            || !parsed.username().is_empty()
-            || parsed.password().is_some()
-            || parsed.fragment().is_some()
-        {
-            return Err("Authentication service returned an untrusted sign-in link".into());
-        }
-        Ok(Self { value })
-    }
-
-    fn as_str(&self) -> &str {
-        &self.value
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum BrowserSignInControl {
-    Continue,
-    DeviceFallback,
-    Cancel,
-}
-
-fn handle_browser_sign_in_key<Open, Copy>(
-    code: KeyCode,
-    link: &BrowserSignInLink,
-    open: &mut Open,
-    copy: &mut Copy,
-    notice: &mut String,
-) -> BrowserSignInControl
-where
-    Open: FnMut(&str) -> Result<(), String>,
-    Copy: FnMut(&str) -> Result<(), String>,
-{
-    match code {
-        KeyCode::Enter => {
-            *notice = match open(link.as_str()) {
-                Ok(()) => "A browser sign-in page was opened.".into(),
-                Err(_) => "Browser could not be opened automatically.\nPress C to copy the complete sign-in link,\nor D to use device-code sign-in.".into(),
-            };
-            BrowserSignInControl::Continue
-        }
-        KeyCode::Char('c' | 'C') => {
-            *notice = match copy(link.as_str()) {
-                Ok(()) => "Complete sign-in link copied.".into(),
-                Err(error) => format!("Complete sign-in link could not be copied: {error}"),
-            };
-            BrowserSignInControl::Continue
-        }
-        KeyCode::Char('d' | 'D') => BrowserSignInControl::DeviceFallback,
-        KeyCode::Esc => BrowserSignInControl::Cancel,
-        _ => BrowserSignInControl::Continue,
-    }
-}
-
-fn render_browser_sign_in(frame: &mut ratatui::Frame<'_>, _link: &BrowserSignInLink, notice: &str) {
-    use ratatui::{
-        layout::Rect,
-        widgets::{Block, Borders, Clear, Paragraph, Wrap},
-    };
-    let area = frame.area();
-    let width = area.width.min(64);
-    let height = area.height.min(14);
-    let modal = Rect::new(
-        area.x + area.width.saturating_sub(width) / 2,
-        area.y + area.height.saturating_sub(height) / 2,
-        width,
-        height,
-    );
-    let text = format!(
-        "{notice}\n\nEnter  Open browser again\nC      Copy complete link\nD      Use device code\nEsc    Cancel"
-    );
-    frame.render_widget(Clear, modal);
-    frame.render_widget(
-        Paragraph::new(text)
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title(" Grok account / SuperGrok "),
-            )
-            .wrap(Wrap { trim: false }),
-        modal,
-    );
-}
-
-fn copy_browser_sign_in_url(url: &str) -> Result<(), String> {
-    let mut clipboard = arboard::Clipboard::new().map_err(|error| error.to_string())?;
-    clipboard
-        .set_text(url.to_owned())
-        .map_err(|error| error.to_string())
-}
-
-fn open_browser_sign_in_url(url: &str) -> Result<(), String> {
-    spawn_browser_detached(url).map_err(|error| error.to_string())
-}
-
-/// Registry-driven native authentication choices. `false` selects the
-/// existing masked API-key screen; `true` means device sign-in completed.
-async fn native_authentication_menu(
-    terminal: &mut Terminal<Backend>,
-    registry: &vesper_runtime::ProviderRegistry,
-    descriptor: &vesper_provider::ProviderDescriptor,
-) -> Result<bool, String> {
-    use ratatui::{
-        layout::Rect,
-        widgets::{Block, Borders, Clear, Paragraph, Wrap},
-    };
-    let port = registry
-        .credential_port(&descriptor.provider_id)
-        .await
-        .ok_or("Provider authentication is unavailable")?;
-    let methods = &descriptor.authentication_methods;
-    let status_port = port.clone();
-    let current_method = tokio::task::spawn_blocking(move || status_port.authentication_method())
-        .await
-        .map_err(|_| "Authentication status unavailable")?
-        .map_err(|_| "Authentication status unavailable")?;
-    let mut chosen = methods
-        .iter()
-        .position(|method| Some(method.method_id.as_str()) == current_method.as_deref())
-        .unwrap_or(0);
-    let mut selected = chosen;
-    let mut notice = "Choose authentication, then Save. Esc cancels.".to_owned();
-    loop {
-        terminal
-            .draw(|frame| {
-                let area = frame.area();
-                let width = area.width.min(88);
-                let height = area.height.min(20);
-                let modal = Rect::new(
-                    area.x + area.width.saturating_sub(width) / 2,
-                    area.y + area.height.saturating_sub(height) / 2,
-                    width,
-                    height,
-                );
-                let mut lines = vec![
-                    "↑/↓ select · Enter/Space choose · S sign in · D device code · Esc cancel"
-                        .to_owned(),
-                    String::new(),
-                ];
-                for (index, method) in methods.iter().enumerate() {
-                    lines.push(format!(
-                        "{} {}{}",
-                        if selected == index { "›" } else { " " },
-                        method.display_name.as_str(),
-                        if chosen == index { " (selected)" } else { "" }
-                    ));
-                }
-                lines.push(format!(
-                    "{} Sign out locally",
-                    if selected == methods.len() {
-                        "›"
-                    } else {
-                        " "
-                    }
-                ));
-                lines.push(format!(
-                    "{} Save / sign in",
-                    if selected == methods.len() + 1 {
-                        "›"
-                    } else {
-                        " "
-                    }
-                ));
-                lines.push(String::new());
-                lines.push(notice.clone());
-                frame.render_widget(Clear, modal);
-                frame.render_widget(
-                    Paragraph::new(lines.join("\n"))
-                        .block(Block::default().borders(Borders::ALL).title(format!(
-                            " Settings › Providers › {} ",
-                            descriptor.display_name.as_str()
-                        )))
-                        .wrap(Wrap { trim: false }),
-                    modal,
-                );
-            })
-            .map_err(|_| "Authentication redraw failed")?;
-        let Event::Key(key) = event::read().map_err(|_| "Authentication input failed")? else {
-            continue;
-        };
-        if key.kind != KeyEventKind::Press {
-            continue;
-        }
-        match key.code {
-            KeyCode::Esc => {
-                return Err("Authentication cancelled; provider selection unchanged".into());
-            }
-            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                return Err("Authentication cancelled".into());
-            }
-            KeyCode::Up => selected = selected.saturating_sub(1),
-            KeyCode::Down => selected = (selected + 1).min(methods.len() + 1),
-            KeyCode::Enter | KeyCode::Char(' ') if selected < methods.len() => chosen = selected,
-            KeyCode::Enter | KeyCode::Char(' ') if selected == methods.len() => {
-                let port = port.clone();
-                tokio::task::spawn_blocking(move || port.logout())
-                    .await
-                    .map_err(|_| "Sign-out task failed")?
-                    .map_err(|_| "Secure sign-out failed")?;
-                return Err(
-                    "Signed out locally. Open provider authentication to sign in again.".into(),
-                );
-            }
-            KeyCode::Enter | KeyCode::Char(' ' | 's' | 'S' | 'd' | 'D') => {
-                if !methods[chosen].secret_reference_fields.is_empty() {
-                    return Ok(false);
-                }
-                use vesper_provider::InteractiveLoginKind;
-                let advertised = &methods[chosen].interactive_login;
-                let login_kind = if matches!(key.code, KeyCode::Char('d' | 'D')) {
-                    InteractiveLoginKind::DeviceCode
-                } else if advertised.contains(&InteractiveLoginKind::Browser) {
-                    InteractiveLoginKind::Browser
-                } else {
-                    InteractiveLoginKind::DeviceCode
-                };
-                if !advertised.contains(&login_kind) {
-                    notice = match login_kind {
-                        InteractiveLoginKind::Browser => {
-                            "Browser sign-in is unavailable for this authentication method.".into()
-                        }
-                        InteractiveLoginKind::DeviceCode => {
-                            "Device-code sign-in is unavailable for this authentication method."
-                                .into()
-                        }
-                    };
-                    continue;
-                }
-                let mut cancel = Arc::new(vesper_runtime::RuntimeCancellation::new());
-                let task_cancel = cancel.clone();
-                let task_port = port.clone();
-                let (tx, mut rx) = tokio::sync::mpsc::channel::<(String, Option<String>)>(1);
-                let mut task = tokio::spawn(async move {
-                    match login_kind {
-                        InteractiveLoginKind::Browser => {
-                            task_port
-                                .browser_login(
-                                    task_cancel,
-                                    Arc::new(move |url| {
-                                        let _ = tx.try_send((url, None));
-                                    }),
-                                )
-                                .await
-                        }
-                        InteractiveLoginKind::DeviceCode => {
-                            task_port
-                                .device_login(
-                                    task_cancel,
-                                    Arc::new(move |url, code| {
-                                        let _ = tx.try_send((url, Some(code)));
-                                    }),
-                                )
-                                .await
-                        }
-                    }
-                });
-                notice = match login_kind {
-                    InteractiveLoginKind::Browser => {
-                        "Requesting secure browser sign-in… Esc cancels.".into()
-                    }
-                    InteractiveLoginKind::DeviceCode => {
-                        "Requesting secure device sign-in… Esc cancels.".into()
-                    }
-                };
-                let mut browser_link = None;
-                loop {
-                    if let Ok((url, code)) = rx.try_recv() {
-                        if let Some(code) = code {
-                            notice = match spawn_browser_detached(&url) {
-                                Ok(()) => format!(
-                                    "A device sign-in page was opened.\nEnter one-time code: {code}\nEsc cancels."
-                                ),
-                                Err(_) => format!(
-                                    "Open the device sign-in page shown by xAI.\nEnter one-time code: {code}\nEsc cancels."
-                                ),
-                            };
-                        } else {
-                            let link = BrowserSignInLink::new(url).inspect_err(|_| {
-                                cancel.cancel();
-                            })?;
-                            let mut open = open_browser_sign_in_url;
-                            let mut copy = copy_browser_sign_in_url;
-                            let _ = handle_browser_sign_in_key(
-                                KeyCode::Enter,
-                                &link,
-                                &mut open,
-                                &mut copy,
-                                &mut notice,
-                            );
-                            browser_link = Some(link);
-                        }
-                    }
-                    terminal
-                        .draw(|frame| {
-                            if let Some(link) = browser_link.as_ref() {
-                                render_browser_sign_in(frame, link, &notice);
-                                return;
-                            }
-                            let area = frame.area();
-                            let width = area.width.min(88);
-                            let height = area.height.min(15);
-                            let modal = Rect::new(
-                                area.x + area.width.saturating_sub(width) / 2,
-                                area.y + area.height.saturating_sub(height) / 2,
-                                width,
-                                height,
-                            );
-                            frame.render_widget(Clear, modal);
-                            frame.render_widget(
-                                Paragraph::new(notice.as_str())
-                                    .block(
-                                        Block::default()
-                                            .borders(Borders::ALL)
-                                            .title(" Subscription sign-in "),
-                                    )
-                                    .wrap(Wrap { trim: false }),
-                                modal,
-                            );
-                        })
-                        .map_err(|_| {
-                            cancel.cancel();
-                            "Authentication redraw failed"
-                        })?;
-                    if task.is_finished() {
-                        match task.await {
-                            Ok(Ok(())) => return Ok(true),
-                            _ => {
-                                notice = "Sign-in failed, expired, or was denied. Check account permissions and try again.".into();
-                                break;
-                            }
-                        }
-                    }
-                    if event::poll(std::time::Duration::from_millis(50)).map_err(|_| {
-                        cancel.cancel();
-                        "Authentication input failed"
-                    })? && let Event::Key(key) = event::read().map_err(|_| {
-                        cancel.cancel();
-                        "Authentication input failed"
-                    })? {
-                        if let Some(link) = browser_link.as_ref() {
-                            let mut open = open_browser_sign_in_url;
-                            let mut copy = copy_browser_sign_in_url;
-                            match handle_browser_sign_in_key(
-                                key.code,
-                                link,
-                                &mut open,
-                                &mut copy,
-                                &mut notice,
-                            ) {
-                                BrowserSignInControl::Continue => continue,
-                                BrowserSignInControl::Cancel => {}
-                                BrowserSignInControl::DeviceFallback => {
-                                    cancel.cancel();
-                                    if tokio::time::timeout(
-                                        std::time::Duration::from_secs(1),
-                                        &mut task,
-                                    )
-                                    .await
-                                    .is_err()
-                                    {
-                                        task.abort();
-                                    }
-                                    cancel = Arc::new(vesper_runtime::RuntimeCancellation::new());
-                                    let task_cancel = cancel.clone();
-                                    let task_port = port.clone();
-                                    let (new_tx, new_rx) =
-                                        tokio::sync::mpsc::channel::<(String, Option<String>)>(1);
-                                    rx = new_rx;
-                                    task = tokio::spawn(async move {
-                                        task_port
-                                            .device_login(
-                                                task_cancel,
-                                                Arc::new(move |url, code| {
-                                                    let _ = new_tx.try_send((url, Some(code)));
-                                                }),
-                                            )
-                                            .await
-                                    });
-                                    browser_link = None;
-                                    notice =
-                                        "Requesting secure device sign-in… Esc cancels.".into();
-                                    continue;
-                                }
-                            }
-                        } else if key.code != KeyCode::Esc
-                            && !(key.code == KeyCode::Char('c')
-                                && key.modifiers.contains(KeyModifiers::CONTROL))
-                        {
-                            continue;
-                        }
-                        cancel.cancel();
-                        if tokio::time::timeout(std::time::Duration::from_secs(1), &mut task)
-                            .await
-                            .is_err()
-                        {
-                            task.abort();
-                        }
-                        return Err("Subscription sign-in cancelled".into());
-                    }
-                    tokio::task::yield_now().await;
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum AuthenticationIntent {
     Startup,
@@ -3684,6 +3243,7 @@ async fn ensure_provider_authenticated(
     registry: &vesper_runtime::ProviderRegistry,
     provider: AuthProvider,
     intent: AuthenticationIntent,
+    theme: &str,
 ) -> Result<(), String> {
     let provider_id = vesper_domain::ProviderId::new(provider.id.as_str())
         .map_err(|error| format!("invalid provider id {0}: {error}", provider.id))?;
@@ -3698,87 +3258,19 @@ async fn ensure_provider_authenticated(
     if !intent.requires_screen(credential_present) {
         return Ok(());
     }
-
-    if let Some(descriptor) = registry.descriptor(&provider_id).await
-        && descriptor.authentication_methods.len() > 1
-        && native_authentication_menu(terminal, registry, &descriptor).await?
-    {
-        return Ok(());
-    }
-
-    let mut hub = AuthHubState::new(vec![provider]).map_err(str::to_owned)?;
-    loop {
-        terminal
-            .draw(|frame| render_auth_hub(frame, &hub))
-            .map_err(|error| format!("authentication hub redraw failed: {error}"))?;
-        let event =
-            event::read().map_err(|error| format!("authentication input failed: {error}"))?;
-        let action = match event {
-            Event::Paste(value) => {
-                hub.paste(&value);
-                AuthHubAction::Continue
-            }
-            Event::Key(KeyEvent {
-                code,
-                modifiers,
-                kind: KeyEventKind::Press,
-                ..
-            }) => match code {
-                KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
-                    AuthHubAction::Quit
-                }
-                KeyCode::Up | KeyCode::Left => {
-                    hub.previous_provider();
-                    AuthHubAction::Continue
-                }
-                KeyCode::Down | KeyCode::Right | KeyCode::Tab => {
-                    hub.next_provider();
-                    AuthHubAction::Continue
-                }
-                KeyCode::Backspace => {
-                    hub.backspace();
-                    AuthHubAction::Continue
-                }
-                KeyCode::Esc => hub.cancel(),
-                KeyCode::Enter => hub.submit(),
-                KeyCode::Char(character)
-                    if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
-                {
-                    hub.insert(character);
-                    AuthHubAction::Continue
-                }
-                _ => AuthHubAction::Continue,
-            },
-            _ => AuthHubAction::Continue,
-        };
-        match action {
-            AuthHubAction::Continue => {}
-            AuthHubAction::Quit => {
-                return Err("authentication cancelled; a provider credential is required".into());
-            }
-            AuthHubAction::Save {
-                provider_id,
-                secret,
-            } => {
-                // Provider-routed save: dispatch by ProviderId through the
-                // registry; no hardcoded provider match arm.
-                let target = vesper_domain::ProviderId::new(provider_id.as_str())
-                    .map_err(|error| format!("invalid provider id: {error}"))?;
-                match registry
-                    .store_credential(&target, secret.as_str().to_owned())
-                    .await
-                {
-                    Ok(()) => {
-                        tracing::info!("provider credential saved via provider-routed store");
-                        return Ok(());
-                    }
-                    Err(error) => hub.save_failed(format!(
-                        "Secure save failed: {error:?}. Check your OS credential service."
-                    )),
-                }
-            }
-        }
-    }
+    let mut events = agent_vesper_tui::LiveSettingsEvents::default();
+    let mut hooks = agent_vesper_tui::AuthUiHooks::default();
+    agent_vesper_tui::run_authentication_panel(
+        terminal,
+        registry,
+        provider.id.as_str(),
+        theme,
+        &mut events,
+        &mut hooks,
+        false,
+    )
+    .await
+    .map(|_| ())
 }
 
 fn enter_raw_mode(enable_mouse: bool) -> io::Result<()> {
@@ -8803,14 +8295,17 @@ fn turn_configuration(
         } else {
             vesper_agent::NativeCompactionPolicy::Disabled
         };
-        config.hosted_tools = if surface.by_alias("xai-web").is_some() {
+        let grok_session = state.authentication_method_override.as_deref()
+            == Some("xai-grok-session")
+            || (state.authentication_method_override.is_none()
+                && surface.by_alias("xai-web").is_none());
+        config.hosted_tools = if grok_session {
+            // Grok-session turns ignore API-key hosted tools, including values
+            // saved before a Settings authentication change rebuilt nothing.
+            Vec::new()
+        } else {
             vesper_provider_xai::hosted_tool_selections(&config.provider_configuration)
                 .map_err(|error| error.to_string())?
-        } else {
-            // The selected Grok-session surface deliberately omits API-key
-            // hosted tools. Ignore stale saved API-only values so a hidden
-            // control cannot poison an ordinary account-billed turn.
-            Vec::new()
         };
         return Ok(config);
     }
@@ -20652,111 +20147,3 @@ mod voice_conversation_glue {
 }
 #[cfg(feature = "voice-conversation")]
 use voice_conversation_glue::ConversationPhase;
-#[test]
-fn narrow_auth_modal_preserves_complete_structured_url_for_open_and_copy() {
-    use ratatui::{Terminal, backend::TestBackend};
-
-    let url = "https://auth.x.ai/oauth2/auth?response_type=code&client_id=b1a00492-073a-47ea-816f-4c329264a828&redirect_uri=http%3A%2F%2F127.0.0.1%3A49152%2Fcallback&scope=openid+profile+email+offline_access+grok-cli%3Aaccess+api%3Aaccess&code_challenge=abcdefghijklmnopqrstuvwxyz0123456789-_ABCDEFGHIJKLMNOPQRSTUVWXYZ&code_challenge_method=S256&state=state-value&nonce=nonce-value&referrer=agent-vesper";
-    let link = BrowserSignInLink::new(url.to_owned()).unwrap();
-    let mut terminal = Terminal::new(TestBackend::new(24, 16)).unwrap();
-    terminal
-        .draw(|frame| {
-            use ratatui::widgets::{Paragraph, Wrap};
-            frame.render_widget(
-                Paragraph::new(link.as_str()).wrap(Wrap { trim: false }),
-                frame.area(),
-            );
-        })
-        .unwrap();
-    let occupied_rows = (0..16)
-        .filter(|y| {
-            (0..24).any(|x| {
-                terminal
-                    .backend()
-                    .buffer()
-                    .cell((x, *y))
-                    .is_some_and(|cell| cell.symbol() != " ")
-            })
-        })
-        .count();
-    assert!(occupied_rows > 8, "diagnostic URL did not visibly wrap");
-    terminal
-        .draw(|frame| render_browser_sign_in(frame, &link, "A browser sign-in page was opened."))
-        .unwrap();
-
-    let opened = std::cell::RefCell::new(Vec::new());
-    let copied = std::cell::RefCell::new(Vec::new());
-    let mut notice = String::new();
-    let open_result = handle_browser_sign_in_key(
-        KeyCode::Enter,
-        &link,
-        &mut |value| {
-            opened.borrow_mut().push(value.to_owned());
-            Ok(())
-        },
-        &mut |_| Ok(()),
-        &mut notice,
-    );
-    let copy_result = handle_browser_sign_in_key(
-        KeyCode::Char('c'),
-        &link,
-        &mut |_| Ok(()),
-        &mut |value| {
-            copied.borrow_mut().push(value.to_owned());
-            Ok(())
-        },
-        &mut notice,
-    );
-
-    assert_eq!(open_result, BrowserSignInControl::Continue);
-    assert_eq!(copy_result, BrowserSignInControl::Continue);
-    assert_eq!(opened.into_inner(), [url]);
-    assert_eq!(copied.into_inner(), [url]);
-    assert!(!url.contains(['\n', '\r']));
-    assert_eq!(notice, "Complete sign-in link copied.");
-
-    let failed_open = handle_browser_sign_in_key(
-        KeyCode::Enter,
-        &link,
-        &mut |_| Err("no browser".into()),
-        &mut |_| Ok(()),
-        &mut notice,
-    );
-    assert_eq!(failed_open, BrowserSignInControl::Continue);
-    assert_eq!(
-        notice,
-        "Browser could not be opened automatically.\nPress C to copy the complete sign-in link,\nor D to use device-code sign-in."
-    );
-    assert_eq!(
-        handle_browser_sign_in_key(
-            KeyCode::Char('d'),
-            &link,
-            &mut |_| Ok(()),
-            &mut |_| Ok(()),
-            &mut notice,
-        ),
-        BrowserSignInControl::DeviceFallback
-    );
-    assert!(BrowserSignInLink::new(format!("{url}\ntruncated")).is_err());
-
-    let parsed = reqwest::Url::parse(url).unwrap();
-    let fields = parsed
-        .query_pairs()
-        .into_owned()
-        .collect::<std::collections::BTreeMap<_, _>>();
-    assert_eq!(fields["response_type"], "code");
-    assert_eq!(fields["client_id"], "b1a00492-073a-47ea-816f-4c329264a828");
-    assert_eq!(fields["redirect_uri"], "http://127.0.0.1:49152/callback");
-    assert!(fields["scope"].contains("offline_access"));
-    assert!(!fields["code_challenge"].is_empty());
-    assert_eq!(fields["code_challenge_method"], "S256");
-    assert_eq!(fields["state"], "state-value");
-    assert_eq!(fields["nonce"], "nonce-value");
-    assert_eq!(fields["referrer"], "agent-vesper");
-
-    let command = lens_opener_command(link.as_str());
-    assert_eq!(
-        command.get_args().last().and_then(std::ffi::OsStr::to_str),
-        Some(url)
-    );
-}

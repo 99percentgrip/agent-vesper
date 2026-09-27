@@ -153,6 +153,12 @@ Verify terminal interaction through the production TUI binary with isolated stat
   an explicit missing engine override, structurally preventing package installation.
 
 - `settings_pty.py` owns the stdlib-only Linux/macOS Settings lifecycle smoke test.
+- `settings_auth_pty.py` drives the real TUI to Settings → Providers → Manage
+  authentication for xAI and OpenAI, with signed-out vaults so the OS keyring
+  is not read, and checks masked input plus Cancel back to the landing screen.
+  Its arrow path starts on xAI and presses Down once: the focused action must
+  stay `Manage authentication · xai` and Enter must open xAI, not the next
+  provider. M is checked separately and is not that proof.
 - `skill_routing_pty.py` reuses its isolated terminal driver for Skills draft,
   discard, keep-editing, save, restart, model-assistance opt-in and unchanged-library checks.
 - `update_*_fixture.sh` are immutable offline download/version fixtures for the

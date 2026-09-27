@@ -156,6 +156,21 @@ impl SecureCredentialStore {
             Err(CredentialStoreError::Unavailable)
         }
     }
+
+    /// Removes one credential from the native store and the fallback vault.
+    /// A missing entry is success. An entry that is still readable after a
+    /// failed native delete is reported as unavailable.
+    pub fn remove(&self, id: CredentialId) -> Result<(), CredentialStoreError> {
+        validate_identity(id)?;
+        let account = keyring_account(id);
+        if let Ok(entry) = Entry::new(self.service, &account)
+            && entry.delete_credential().is_err()
+            && entry.get_password().is_ok()
+        {
+            return Err(CredentialStoreError::Unavailable);
+        }
+        self.fallback.remove(id)
+    }
 }
 
 /// Path-explicit private store used for Unix fallback and deterministic tests.

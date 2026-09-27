@@ -247,7 +247,9 @@ transport, stderr-only tracing, and orderly shutdown.
 Settings → Providers is a terminal-specific presentation of the existing
 provider selection capability. ACP keeps its native `provider` configuration
 control and next-turn switching; it does not render TUI Save/Cancel modals or
-inherit the TUI's restart-only preference workflow.
+inherit the TUI's restart-only preference workflow. The TUI Manage
+authentication panel is also terminal-only. ACP keeps `--login`, `--setup`,
+and `--logout`, and both hosts read the same provider credential port.
 
 The opt-in web surface uses the shared harness web service and its contained
 fetch/render/browser runtime. No ACP-specific driver or network fallback

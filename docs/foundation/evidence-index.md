@@ -1,5 +1,15 @@
 # Foundation Evidence Index
 
+## VRO-18.1 Settings authentication (2026-09-26)
+
+- Requirements: [`../vro18-provider-authentication-settings-prd.md`](../vro18-provider-authentication-settings-prd.md)
+- Execution: [`vro18.1-settings-authentication-execution.md`](vro18.1-settings-authentication-execution.md)
+- Verdict: **IMPLEMENTED, USER ACCEPTANCE PENDING.** Settings → Providers can
+  open a descriptor-driven Authentication panel for every registered provider
+  without `/auth`. xAI and OpenAI can switch methods without deleting the other
+  stored credential. LM Studio optional-key saves are real. Audit 2 and Audit 3
+  were not run. No release tag and no installed-app change.
+
 ## VRO-18 Audit 1 corrective release v0.24.1 (2026-09-26)
 
 - Execution: [`2026-09-26-v0.24.1-vro18-audit1-corrective-release.md`](2026-09-26-v0.24.1-vro18-audit1-corrective-release.md)

@@ -475,6 +475,7 @@ impl ProviderFactory for XaiFactory {
                         vesper_provider::InteractiveLoginKind::Browser,
                         vesper_provider::InteractiveLoginKind::DeviceCode,
                     ],
+                    optional: false,
                 },
                 AuthenticationMethodDescriptor {
                     method_id: BoundedString::new("xai-api-key").expect("static"),
@@ -486,6 +487,7 @@ impl ProviderFactory for XaiFactory {
                     external_runtime_owned: false,
                     key_url: Some(BoundedString::new("https://console.x.ai/").expect("static")),
                     interactive_login: vec![],
+                    optional: false,
                 },
             ],
             hosted_tools: hosted_tools(),
@@ -806,5 +808,26 @@ impl ProviderCredentialPort for XaiFactory {
     }
     fn logout(&self) -> Result<(), CredentialError> {
         self.credentials.logout()
+    }
+    fn authentication_inventory(
+        &self,
+    ) -> Result<vesper_provider::AuthenticationInventory, CredentialError> {
+        self.credentials.inventory()
+    }
+    fn select_authentication_method(&self, method_id: &str) -> Result<(), CredentialError> {
+        self.credentials.select_method(method_id)
+    }
+    fn store_method_credential(
+        &self,
+        method_id: &str,
+        secret: &str,
+    ) -> Result<(), CredentialError> {
+        self.credentials.store_method(method_id, secret)
+    }
+    fn clear_stored_method(&self, method_id: &str) -> Result<(), CredentialError> {
+        self.credentials.clear_method(method_id)
+    }
+    fn removal_scope(&self) -> vesper_provider::CredentialRemovalScope {
+        vesper_provider::CredentialRemovalScope::EntireProvider
     }
 }

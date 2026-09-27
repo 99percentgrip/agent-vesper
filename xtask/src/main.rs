@@ -1597,6 +1597,7 @@ fn allowed_dependencies() -> BTreeMap<&'static str, BTreeSet<&'static str>> {
                 "vesper-provider-xai",
                 "vesper-acp",
                 "vesper-agent",
+                "vesper-auth",
                 "vesper-cognition",
                 "vesper-config",
                 "vesper-domain",

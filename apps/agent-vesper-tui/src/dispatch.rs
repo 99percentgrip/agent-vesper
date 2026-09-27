@@ -102,6 +102,9 @@ pub struct SessionState {
     /// the conversation, mirroring how the existing superpower overrides
     /// work.
     pub reasoning_mode_override: Option<vesper_domain::ReasoningMode>,
+    /// Authentication method committed from Settings for the running provider.
+    /// `None` keeps the startup surface's auth-mode intersection.
+    pub authentication_method_override: Option<String>,
     /// Live execution controls used by both the picker UI and every agent turn.
     pub controls: SessionControls,
     /// Pending runtime mode synchronization after `/permission` or `/mode`.
@@ -487,6 +490,7 @@ fn apply_outcome(
         pending_provider_switch,
         conversation_manual_scroll: _,
         permission_modal_focus: _,
+        authentication_method_override: _,
     } = state;
     match outcome {
         CommandOutcome::Acceptance(argument) => {

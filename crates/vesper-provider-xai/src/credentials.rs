@@ -238,8 +238,11 @@ impl Credentials {
                 Ok(Some("xai-grok-session".into()))
             }
             Some("api-key") => {
-                api_key(&value).ok_or(CredentialError::InvalidSecret)?;
-                Ok(Some("xai-api-key".into()))
+                if api_key(&value).is_some() || scoped_key().is_some() {
+                    Ok(Some("xai-api-key".into()))
+                } else {
+                    Err(CredentialError::InvalidSecret)
+                }
             }
             Some("signed-out") => Ok(None),
             None if scoped_key().is_some() => Ok(Some("xai-api-key".into())),
@@ -251,10 +254,119 @@ impl Credentials {
         Ok(self.authentication_method()?.is_some())
     }
     pub(crate) fn store_api_key(&self, secret: &str) -> Result<(), CredentialError> {
+        self.store_method("xai-api-key", secret)
+    }
+    pub(crate) fn store_method(
+        &self,
+        method_id: &str,
+        secret: &str,
+    ) -> Result<(), CredentialError> {
+        if method_id != "xai-api-key" {
+            return Err(CredentialError::Unavailable);
+        }
         vesper_auth::validate_secret(secret).map_err(|_| CredentialError::InvalidSecret)?;
         let _guard = self.lock.blocking_lock();
         let _process = self.process_lock()?;
-        self.write(json!({"mode":"api-key","api_key":secret}))
+        let mut value = object(self.read()?.0.clone());
+        value["mode"] = json!("api-key");
+        value["api_key"] = json!(secret);
+        self.write(value)
+    }
+    pub(crate) fn select_method(&self, method_id: &str) -> Result<(), CredentialError> {
+        let _guard = self.lock.blocking_lock();
+        let _process = self.process_lock()?;
+        let mut value = object(self.read()?.0.clone());
+        match method_id {
+            "xai-api-key" => {
+                if api_key(&value).is_none() && scoped_key().is_none() {
+                    return Err(CredentialError::Absent);
+                }
+                value["mode"] = json!("api-key");
+            }
+            "xai-grok-session" => {
+                session_tokens(&value)?;
+                value["mode"] = json!("grok-session");
+            }
+            _ => return Err(CredentialError::Unavailable),
+        }
+        self.write(value)
+    }
+    pub(crate) fn clear_method(&self, method_id: &str) -> Result<(), CredentialError> {
+        let _guard = self.lock.blocking_lock();
+        let _process = self.process_lock()?;
+        let mut value = object(self.read()?.0.clone());
+        match method_id {
+            "xai-api-key" => {
+                value.as_object_mut().map(|map| map.remove("api_key"));
+                if value.get("mode").and_then(Value::as_str) == Some("api-key")
+                    && scoped_key().is_none()
+                {
+                    value["mode"] = json!("signed-out");
+                }
+            }
+            "xai-grok-session" => {
+                if let Some(map) = value.as_object_mut() {
+                    map.remove("access_token");
+                    map.remove("refresh_token");
+                    map.remove("expires_at_unix");
+                }
+                if value.get("mode").and_then(Value::as_str) == Some("grok-session") {
+                    value["mode"] = json!("signed-out");
+                }
+            }
+            _ => return Err(CredentialError::Unavailable),
+        }
+        self.write(value)
+    }
+    pub(crate) fn inventory(
+        &self,
+    ) -> Result<vesper_provider::AuthenticationInventory, CredentialError> {
+        use vesper_provider::{AuthenticationMethodState, CredentialSource};
+        let value = self.read()?;
+        let stored_key = api_key(&value).is_some();
+        let environment_key = scoped_key().is_some();
+        let session = session_tokens(&value);
+        let session_source = match &session {
+            Ok(tokens) if tokens.expires_at_unix <= unix_now()? => CredentialSource::Expired,
+            Ok(_) => CredentialSource::Stored,
+            Err(_) => CredentialSource::Absent,
+        };
+        let api_source = if stored_key {
+            CredentialSource::Stored
+        } else if environment_key {
+            CredentialSource::Environment
+        } else {
+            CredentialSource::Absent
+        };
+        let selected = match value.get("mode").and_then(Value::as_str) {
+            Some("grok-session")
+                if matches!(
+                    session_source,
+                    CredentialSource::Stored | CredentialSource::Expired
+                ) =>
+            {
+                Some("xai-grok-session".to_owned())
+            }
+            Some("api-key") if api_source != CredentialSource::Absent => {
+                Some("xai-api-key".to_owned())
+            }
+            Some("signed-out") => None,
+            None if api_source != CredentialSource::Absent => Some("xai-api-key".to_owned()),
+            _ => None,
+        };
+        Ok(vesper_provider::AuthenticationInventory {
+            selected_method: selected,
+            methods: vec![
+                AuthenticationMethodState {
+                    method_id: "xai-grok-session".into(),
+                    source: session_source,
+                },
+                AuthenticationMethodState {
+                    method_id: "xai-api-key".into(),
+                    source: api_source,
+                },
+            ],
+        })
     }
     pub(crate) fn logout(&self) -> Result<(), CredentialError> {
         let _guard = self.lock.blocking_lock();
@@ -293,7 +405,8 @@ impl Credentials {
         if cancel.is_cancelled() {
             return Err(CredentialError::Failed);
         }
-        let value = token_value(&tokens);
+        let existing = self.read()?;
+        let value = merge_session(&existing.0, &tokens);
         let this = self.clone();
         tokio::task::spawn_blocking(move || this.write(value))
             .await
@@ -314,7 +427,9 @@ impl Credentials {
             Some("signed-out") => Err(CredentialError::Absent),
             Some("api-key") => Ok(DispatchAuth {
                 mode: AuthenticationMode::ApiKey,
-                bearer: api_key(&value).ok_or(CredentialError::InvalidSecret)?,
+                bearer: api_key(&value)
+                    .or_else(scoped_key)
+                    .ok_or(CredentialError::Absent)?,
             }),
             None => Ok(DispatchAuth {
                 mode: AuthenticationMode::ApiKey,
@@ -399,7 +514,24 @@ fn session_tokens(value: &Value) -> Result<SessionTokens, CredentialError> {
     })
 }
 fn token_value(tokens: &SessionTokens) -> Value {
-    json!({"mode":"grok-session","access_token":tokens.access.expose().as_str(),"refresh_token":tokens.refresh.expose().as_str(),"expires_at_unix":tokens.expires_at_unix})
+    merge_session(&Value::Null, tokens)
+}
+fn object(value: Value) -> Value {
+    if value.is_object() { value } else { json!({}) }
+}
+fn unix_now() -> Result<u64, CredentialError> {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .map_err(|_| CredentialError::Failed)
+}
+fn merge_session(existing: &Value, tokens: &SessionTokens) -> Value {
+    let mut value = object(existing.clone());
+    value["mode"] = json!("grok-session");
+    value["access_token"] = json!(tokens.access.expose().as_str());
+    value["refresh_token"] = json!(tokens.refresh.expose().as_str());
+    value["expires_at_unix"] = json!(tokens.expires_at_unix);
+    value
 }
 
 #[cfg(test)]
@@ -465,6 +597,22 @@ mod tests {
             .unwrap();
         let auth = credentials.dispatch(Arc::new(Never), false).await.unwrap();
         assert_eq!(auth.mode, AuthenticationMode::ApiKey);
+        assert_eq!(auth.bearer.expose().as_str(), "selected-api-key");
+        assert_eq!(credentials.read().unwrap()["access_token"], "session");
+        let copy = credentials.clone();
+        tokio::task::spawn_blocking(move || copy.select_method("xai-grok-session"))
+            .await
+            .unwrap()
+            .unwrap();
+        let auth = credentials.dispatch(Arc::new(Never), false).await.unwrap();
+        assert_eq!(auth.mode, AuthenticationMode::GrokSession);
+        assert_eq!(auth.bearer.expose().as_str(), "session");
+        let copy = credentials.clone();
+        tokio::task::spawn_blocking(move || copy.select_method("xai-api-key"))
+            .await
+            .unwrap()
+            .unwrap();
+        let auth = credentials.dispatch(Arc::new(Never), false).await.unwrap();
         assert_eq!(auth.bearer.expose().as_str(), "selected-api-key");
     }
 

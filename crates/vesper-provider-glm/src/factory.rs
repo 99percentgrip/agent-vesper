@@ -12,6 +12,7 @@ use vesper_provider::{
 
 use crate::{
     EnvironmentCredentialSource, GlmCatalog, GlmConfig, GlmCredentialSource, GlmSession,
+    auth::{credential_sources, remove_stored_api_key},
     error::{adapter_error, cancelled_error},
     provider_id, resolve_credential, store_api_key,
 };
@@ -62,6 +63,7 @@ impl GlmFactory {
                         .expect("bounded key url"),
                 ),
                 interactive_login: vec![],
+                optional: false,
             }],
             hosted_tools: Vec::new(),
             configuration: Some(ProviderConfigContribution {
@@ -181,17 +183,65 @@ impl vesper_provider::ProviderCredentialPort for GlmFactory {
     }
 
     fn store_credential(&self, secret: &str) -> Result<(), vesper_provider::CredentialError> {
+        self.store_method_credential("zai-api-key", secret)
+    }
+    fn store_method_credential(
+        &self,
+        method_id: &str,
+        secret: &str,
+    ) -> Result<(), vesper_provider::CredentialError> {
+        if method_id != "zai-api-key" {
+            return Err(vesper_provider::CredentialError::Unavailable);
+        }
         store_api_key(secret)
             .map(|_| ())
-            .map_err(|error| match error {
-                vesper_auth::CredentialStoreError::InvalidSecret => {
-                    vesper_provider::CredentialError::InvalidSecret
-                }
-                vesper_auth::CredentialStoreError::Unavailable => {
-                    vesper_provider::CredentialError::Unavailable
-                }
-                _ => vesper_provider::CredentialError::Failed,
-            })
+            .map_err(map_credential_store_error)
+    }
+    fn authentication_inventory(
+        &self,
+    ) -> Result<vesper_provider::AuthenticationInventory, vesper_provider::CredentialError> {
+        let (environment, stored) = credential_sources();
+        let source = if stored {
+            vesper_provider::CredentialSource::Stored
+        } else if environment {
+            vesper_provider::CredentialSource::Environment
+        } else {
+            vesper_provider::CredentialSource::Absent
+        };
+        Ok(vesper_provider::AuthenticationInventory {
+            selected_method: (source != vesper_provider::CredentialSource::Absent)
+                .then(|| "zai-api-key".to_owned()),
+            methods: vec![vesper_provider::AuthenticationMethodState {
+                method_id: "zai-api-key".into(),
+                source,
+            }],
+        })
+    }
+    fn clear_stored_method(&self, method_id: &str) -> Result<(), vesper_provider::CredentialError> {
+        if method_id != "zai-api-key" {
+            return Err(vesper_provider::CredentialError::Unavailable);
+        }
+        remove_stored_api_key().map_err(map_credential_store_error)
+    }
+    fn logout(&self) -> Result<(), vesper_provider::CredentialError> {
+        self.clear_stored_method("zai-api-key")
+    }
+    fn removal_scope(&self) -> vesper_provider::CredentialRemovalScope {
+        vesper_provider::CredentialRemovalScope::EntireProvider
+    }
+}
+
+fn map_credential_store_error(
+    error: vesper_auth::CredentialStoreError,
+) -> vesper_provider::CredentialError {
+    match error {
+        vesper_auth::CredentialStoreError::InvalidSecret => {
+            vesper_provider::CredentialError::InvalidSecret
+        }
+        vesper_auth::CredentialStoreError::Unavailable => {
+            vesper_provider::CredentialError::Unavailable
+        }
+        _ => vesper_provider::CredentialError::Failed,
     }
 }
 

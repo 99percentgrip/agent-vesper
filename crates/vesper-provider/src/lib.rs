@@ -24,12 +24,13 @@ pub use model_capability::{
     ModelCapabilityIndex, gate_messages, requirement_for_messages, suggestion_for_requirement,
 };
 pub use ports::{
-    AuthenticationMethodDescriptor, AuxiliaryRequestPort, CancellationSignal, CredentialError,
-    EndpointConfiguration, HostedToolDescriptor, HostedToolEgressClass, InteractiveLoginKind,
-    ModelCatalog, ModelCatalogProvenance, ModelCatalogSnapshot, ModelDescriptor,
-    NativeCompactionPort, NativeCompactionRequest, NativeCompactionResult, ProviderConfiguration,
-    ProviderCredentialPort, ProviderDescriptor, ProviderEventStream, ProviderFactory,
-    ProviderFuture, ProviderSession,
+    AuthenticationInventory, AuthenticationMethodDescriptor, AuthenticationMethodState,
+    AuxiliaryRequestPort, CancellationSignal, CredentialError, CredentialRemovalScope,
+    CredentialSource, EndpointConfiguration, HostedToolDescriptor, HostedToolEgressClass,
+    InteractiveLoginKind, ModelCatalog, ModelCatalogProvenance, ModelCatalogSnapshot,
+    ModelDescriptor, NativeCompactionPort, NativeCompactionRequest, NativeCompactionResult,
+    ProviderConfiguration, ProviderCredentialPort, ProviderDescriptor, ProviderEventStream,
+    ProviderFactory, ProviderFuture, ProviderSession,
 };
 pub use request::{
     AuxiliaryRequestIntent, ContinuationContext, ContinuationReason, ContinuationStrategy,

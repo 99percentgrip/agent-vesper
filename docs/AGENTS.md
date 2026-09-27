@@ -57,6 +57,9 @@ Own durable project documentation and evidence-backed engineering records.
   `foundation/2026-09-26-v0.24.1-vro18-audit1-corrective-release.md` owns the
   exact-commit corrective release gates, publication/assets, Registry update,
   and explicit Audit 2/Audit 3-open boundary;
+  `vro18-provider-authentication-settings-prd.md` owns the Settings
+  authentication route, and `foundation/vro18.1-settings-authentication-execution.md`
+  owns its implementation evidence;
   `foundation/xai-provider-pr8-live-acceptance.md` and
   `foundation/2026-09-25-v0.24.0-release-execution.md` own live and release
   acceptance. `xai-provider.md` is the bounded user guide.

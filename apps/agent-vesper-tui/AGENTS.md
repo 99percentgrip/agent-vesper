@@ -52,6 +52,12 @@ business logic.
   revalidated on restore; web/swarm/acceptance remain workspace-scoped. Model
   choices retain adapter metadata and an actionable catalog retry. Provider
   authentication/switch saves and driver import are separate explicit side effects.
+  Settings → Providers places Manage authentication directly under that provider.
+  Down from the provider reaches its own action; moving to another provider does
+  not retarget the previous action. M on the provider or its action opens the
+  same descriptor-driven panel. It does not change the active provider or the
+  Save draft. `/auth` and startup sign-in use
+  that same panel. Authentication commits immediately and is not undone by Discard.
   Mouse hit-testing uses the renderer's geometry. Start coding alone enters chat
   from the welcome screen; `/settings` returns to its existing conversation.
   `src/update_host.rs` installs only after a separate release/version confirmation,

@@ -31,6 +31,7 @@
 
 mod activity;
 pub mod auth_hub;
+pub mod auth_settings;
 pub mod capabilities;
 pub mod commands;
 pub mod dispatch;
@@ -66,6 +67,10 @@ pub mod voice_speech_worker;
 pub mod web_hub;
 pub use auth_hub::{
     AuthHubAction, AuthHubState, AuthProvider, StartupRoute, render_auth_hub, startup_route,
+};
+pub use auth_settings::{
+    AuthUiHooks, LiveSettingsEvents, ProviderSettingsOutcome, SettingsEvents,
+    run_authentication_panel, run_provider_settings,
 };
 pub use capabilities::{CapabilityDenial, ModelCapabilityIndex};
 pub use commands::{
@@ -288,6 +293,7 @@ mod tests {
                     BoundedString::new("https://z.ai/manage-apikey/apikey-list").unwrap(),
                 ),
                 interactive_login: vec![],
+                optional: false,
             }],
             hosted_tools: Vec::new(),
             configuration: None,
