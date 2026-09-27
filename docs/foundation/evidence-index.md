@@ -4,6 +4,7 @@
 
 - Requirements: [`../vro18-provider-authentication-settings-prd.md`](../vro18-provider-authentication-settings-prd.md)
 - Execution: [`vro18.1-settings-authentication-execution.md`](vro18.1-settings-authentication-execution.md)
+- Release: [`2026-09-27-v0.24.2-settings-authentication-release.md`](2026-09-27-v0.24.2-settings-authentication-release.md)
 - Verdict: **IMPLEMENTED, USER ACCEPTANCE PENDING.** Settings → Providers can
   open a descriptor-driven Authentication panel for every registered provider
   without `/auth`. xAI and OpenAI can switch methods without deleting the other
