@@ -660,6 +660,7 @@ mod http {
         Arc,
         atomic::{AtomicBool, Ordering},
     };
+    use std::time::Duration;
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
         net::TcpListener,
@@ -1194,6 +1195,249 @@ mod http {
         ));
         assert_eq!(server.await.unwrap(), 2);
     }
+
+    fn usage_session(endpoint: &str, mode: crate::credentials::AuthenticationMode) -> XaiSession {
+        XaiSession::new(
+            crate::credentials::Credentials::isolated(
+                tempfile::tempdir().unwrap().path().join("xai.json"),
+            ),
+            "high".into(),
+            crate::transport::XaiRegion::Global,
+        )
+        .unwrap()
+        .with_test_route(Some(endpoint.to_owned()))
+        .with_test_auth_mode(mode)
+    }
+
+    async fn read_headers(socket: &mut tokio::net::TcpStream) -> String {
+        let mut bytes = Vec::new();
+        while !bytes.windows(4).any(|part| part == b"\r\n\r\n") {
+            let mut buffer = [0; 4096];
+            let count = socket.read(&mut buffer).await.unwrap();
+            assert!(count > 0);
+            bytes.extend_from_slice(&buffer[..count]);
+        }
+        String::from_utf8_lossy(&bytes).to_ascii_lowercase()
+    }
+
+    async fn write_status(socket: &mut tokio::net::TcpStream, status: &str, body: &str) {
+        let _ = socket
+            .write_all(
+                format!(
+                    "HTTP/1.1 {status}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len()
+                )
+                .as_bytes(),
+            )
+            .await;
+    }
+
+    #[tokio::test]
+    async fn subscription_usage_lookup_switches_accounts_without_inference() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}/responses", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let mut seen = Vec::new();
+            for (user, percent) in [("account-a", "10"), ("account-b", "80")] {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let headers = read_headers(&mut socket).await;
+                assert!(headers.starts_with("get /user "));
+                assert!(headers.contains("x-xai-token-auth: xai-grok-cli"));
+                assert!(headers.contains("authorization: bearer fixture-xai-key"));
+                assert!(!headers.contains("x-userid"));
+                write_status(&mut socket, "200 OK", &format!(r#"{{"userId":"{user}"}}"#)).await;
+                seen.push(headers);
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let headers = read_headers(&mut socket).await;
+                assert!(headers.starts_with("get /billing?format=credits "));
+                assert!(headers.contains(&format!("x-userid: {user}")));
+                assert!(!headers.contains("post "));
+                write_status(
+                    &mut socket,
+                    "200 OK",
+                    &format!(
+                        r#"{{"subscriptionTier":"SuperGrok","config":{{"creditUsagePercent":{percent},"currentPeriod":{{"type":"USAGE_PERIOD_TYPE_WEEKLY","end":"2026-06-08T00:00:00Z"}},"prepaidBalance":{{"val":1250}},"productUsage":[{{"product":"PRODUCT_GROK_BUILD","usagePercent":4}}]}}}}"#
+                    ),
+                )
+                .await;
+                seen.push(user.to_owned());
+            }
+            seen
+        });
+        let session = usage_session(
+            &endpoint,
+            crate::credentials::AuthenticationMode::GrokSession,
+        );
+        let first = session
+            .query_usage(Arc::new(Cancel(AtomicBool::new(false))))
+            .await
+            .unwrap();
+        let second = session
+            .query_usage(Arc::new(Cancel(AtomicBool::new(false))))
+            .await
+            .unwrap();
+        assert_eq!(first.windows[0].used_percent, Some(10.0));
+        assert_eq!(second.windows[0].used_percent, Some(80.0));
+        assert_eq!(first.plan.as_deref(), Some("SuperGrok"));
+        assert_eq!(first.windows[1].detail.as_deref(), Some("$12.50"));
+        assert!(first.windows.iter().all(|window| window.limit.is_none()));
+        assert_eq!(server.await.unwrap().len(), 4);
+        let api = session.with_test_auth_mode(crate::credentials::AuthenticationMode::ApiKey);
+        let separated = api
+            .query_usage(Arc::new(Cancel(AtomicBool::new(false))))
+            .await
+            .unwrap();
+        assert!(separated.windows.is_empty());
+        assert!(separated.notice.unwrap().contains("billed separately"));
+    }
+
+    #[tokio::test]
+    async fn subscription_usage_reports_auth_rate_limit_and_malformed_without_api_fallback() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}/responses", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let mut paths = Vec::new();
+            for status in ["401 Unauthorized", "401 Unauthorized"] {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                paths.push(read_headers(&mut socket).await);
+                write_status(&mut socket, status, r#"{"error":"secret-canary"}"#).await;
+            }
+            let (mut socket, _) = listener.accept().await.unwrap();
+            paths.push(read_headers(&mut socket).await);
+            write_status(&mut socket, "200 OK", r#"{"userId":"account-a"}"#).await;
+            let (mut socket, _) = listener.accept().await.unwrap();
+            paths.push(read_headers(&mut socket).await);
+            write_status(&mut socket, "429 Too Many Requests", "{}").await;
+            let (mut socket, _) = listener.accept().await.unwrap();
+            paths.push(read_headers(&mut socket).await);
+            write_status(&mut socket, "200 OK", r#"{"userId":"account-a"}"#).await;
+            let (mut socket, _) = listener.accept().await.unwrap();
+            paths.push(read_headers(&mut socket).await);
+            write_status(
+                &mut socket,
+                "200 OK",
+                r#"{"config":{"creditUsagePercent":101}}"#,
+            )
+            .await;
+            paths
+        });
+        let session = usage_session(
+            &endpoint,
+            crate::credentials::AuthenticationMode::GrokSession,
+        );
+        let cancel = Arc::new(Cancel(AtomicBool::new(false)));
+        let expired = session.query_usage(cancel.clone()).await.unwrap_err();
+        assert_eq!(expired.info.category, ErrorCategory::Authentication);
+        assert!(!expired.to_string().contains("secret-canary"));
+        assert!(!expired.to_string().contains("account-a"));
+        let limited = session.query_usage(cancel.clone()).await.unwrap_err();
+        assert_eq!(limited.info.category, ErrorCategory::QuotaOrRate);
+        let malformed = session.query_usage(cancel).await.unwrap_err();
+        assert_eq!(malformed.info.category, ErrorCategory::MalformedProtocol);
+        let paths = server.await.unwrap();
+        assert!(paths.iter().all(|path| !path.contains("post ")));
+        assert_eq!(paths.len(), 6);
+    }
+
+    #[tokio::test]
+    async fn billing_failure_does_not_block_a_later_response() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}/responses", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let headers = read_headers(&mut socket).await;
+            assert!(headers.starts_with("get /user "));
+            write_status(&mut socket, "500 Internal Server Error", "{}").await;
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let request = read_headers(&mut socket).await;
+            assert!(request.starts_with("post /responses "));
+            let body = "data: {\"type\":\"response.completed\",\"response\":{}}\n\n";
+            let _ = socket
+                .write_all(
+                    format!(
+                        "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                        body.len()
+                    )
+                    .as_bytes(),
+                )
+                .await;
+        });
+        let session = usage_session(
+            &endpoint,
+            crate::credentials::AuthenticationMode::GrokSession,
+        );
+        let failure = session
+            .query_usage(Arc::new(Cancel(AtomicBool::new(false))))
+            .await
+            .unwrap_err();
+        assert_eq!(failure.info.category, ErrorCategory::Transport);
+        let mut stream = session
+            .start(fixture_request(), Arc::new(Cancel(AtomicBool::new(false))))
+            .await
+            .unwrap();
+        assert!(matches!(
+            stream.next().await.unwrap().unwrap(),
+            ProviderStreamEvent::Completed {
+                finish: FinishOutcome::Stop,
+                ..
+            }
+        ));
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn cancelled_usage_does_not_open_a_connection_and_api_mode_never_does() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}/responses", listener.local_addr().unwrap());
+        let session = usage_session(
+            &endpoint,
+            crate::credentials::AuthenticationMode::GrokSession,
+        );
+        let cancelled = session
+            .query_usage(Arc::new(Cancel(AtomicBool::new(true))))
+            .await
+            .unwrap_err();
+        assert_eq!(cancelled.info.category, ErrorCategory::Cancellation);
+        let api = session.with_test_auth_mode(crate::credentials::AuthenticationMode::ApiKey);
+        let usage = api
+            .query_usage(Arc::new(Cancel(AtomicBool::new(false))))
+            .await
+            .unwrap();
+        assert!(usage.notice.unwrap().contains("billed separately"));
+        let accepted = tokio::time::timeout(Duration::from_millis(200), listener.accept()).await;
+        assert!(accepted.is_err());
+    }
+}
+
+#[test]
+fn logout_and_authentication_changes_drop_account_bound_cache() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut factory = XaiFactory::default();
+    factory.credentials = crate::credentials::Credentials::isolated(temp.path().join("xai.json"));
+    ProviderCredentialPort::store_credential(&factory, "fixture-key").unwrap();
+    *factory.availability.write().unwrap() = Some(AvailableModels {
+        models: vec![XaiCatalog::find("grok-4.7").unwrap()],
+        unverified: vec![],
+        retired_redirects: vec![],
+        endpoint_excluded: vec![],
+        authentication_method: Some("xai-api-key".into()),
+    });
+    assert!(
+        ProviderCredentialPort::select_authentication_method(&factory, "xai-grok-session").is_err()
+    );
+    assert!(factory.availability.read().unwrap().is_some());
+    ProviderCredentialPort::select_authentication_method(&factory, "xai-api-key").unwrap();
+    assert!(factory.availability.read().unwrap().is_none());
+    *factory.availability.write().unwrap() = Some(AvailableModels {
+        models: vec![],
+        unverified: vec![],
+        retired_redirects: vec![],
+        endpoint_excluded: vec![],
+        authentication_method: None,
+    });
+    ProviderCredentialPort::logout(&factory).unwrap();
+    assert!(factory.availability.read().unwrap().is_none());
+    assert_eq!(factory.credentials.authentication_method().unwrap(), None);
 }
 
 #[test]
@@ -1228,4 +1472,45 @@ fn undiscovered_or_unverified_models_fail_before_transport() {
     });
     assert!(session.validate_availability("grok-4.7", false).is_ok());
     assert!(session.validate_availability("future-grok", false).is_err());
+}
+
+#[tokio::test]
+async fn probe_live_grok_subscription_usage_shape() {
+    if std::env::var("XAI_BILLING_PROBE").ok().as_deref() != Some("1") {
+        return;
+    }
+    struct Never;
+    impl CancellationSignal for Never {
+        fn is_cancelled(&self) -> bool {
+            false
+        }
+    }
+    let session = XaiSession::new(
+        crate::credentials::Credentials::default(),
+        "high".into(),
+        crate::transport::XaiRegion::Global,
+    )
+    .unwrap();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    match session.query_usage(std::sync::Arc::new(Never)).await {
+        Ok(usage) => {
+            let card = render_usage(
+                &UsageContext {
+                    provider: "xai",
+                    model: "grok-4.7",
+                    reasoning: "high",
+                    permission: "probe",
+                    context_used: 0,
+                    context_capacity: 1,
+                    now_unix_ms: now,
+                },
+                &usage,
+            );
+            eprintln!("PROBE_CARD_START\n{card}\nPROBE_CARD_END");
+        }
+        Err(error) => eprintln!("PROBE_ERROR {error}"),
+    }
 }

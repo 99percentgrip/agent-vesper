@@ -30,6 +30,7 @@ jobs:
           "$RUNNER_TEMP/voice-test-python/bin/pip" install --only-binary=:all: numpy==2.5.3
           "$RUNNER_TEMP/voice-test-python/bin/python" apps/agent-vesper-tui/tests/voice_chunks.py
           python3 apps/agent-vesper-tui/tests/voice_pty.py target/debug/agent-vesper-tui "$RUNNER_TEMP/voice-test-python/bin/python"
+          python3 apps/agent-vesper-tui/tests/xai_usage_pty.py target/debug/agent-vesper-tui
       - name: Verify documentation structure
         run: |
           sh -n scripts/install.sh scripts/uninstall.sh

@@ -9,6 +9,7 @@ mod discovery;
 mod factory;
 mod http_error;
 mod transport;
+mod usage;
 mod wire;
 
 pub use catalog::{CatalogIdentity, DEFAULT_MODEL, XaiCatalog};

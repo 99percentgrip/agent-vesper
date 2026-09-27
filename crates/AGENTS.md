@@ -113,7 +113,8 @@ test-only conformance support.
   auth/domain/provider/config/security, HTTP, and `fs2` credential-operation
   locks. Both hosts compose it without a Codex runtime dependency.
 - `vesper-provider-xai` owns native xAI authentication, catalog/discovery,
-  isolated API-key Responses and Grok-session proxy transports, and
+  isolated API-key Responses and Grok-session proxy transports,
+  passive Grok-session subscription usage, and
   stream/error translation;
   it may depend on auth/domain/provider/security and HTTP. API-key and
   Grok-account billing paths remain explicitly isolated.

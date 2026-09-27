@@ -366,6 +366,12 @@ impl XaiFactory {
         })
     }
 
+    fn invalidate_account_cache(&self) {
+        if let Ok(mut availability) = self.availability.write() {
+            *availability = None;
+        }
+    }
+
     /// Test-only loopback factory that exercises the Grok-session billing
     /// route without reading user credentials or contacting xAI.
     #[cfg(feature = "integration-test-harness")]
@@ -776,7 +782,9 @@ impl ProviderCredentialPort for XaiFactory {
         self.credentials.present()
     }
     fn store_credential(&self, secret: &str) -> Result<(), CredentialError> {
-        self.credentials.store_api_key(secret)
+        self.credentials.store_api_key(secret)?;
+        self.invalidate_account_cache();
+        Ok(())
     }
     fn authentication_method(&self) -> Result<Option<String>, CredentialError> {
         #[cfg(feature = "integration-test-harness")]
@@ -807,7 +815,9 @@ impl ProviderCredentialPort for XaiFactory {
         Box::pin(async move { self.credentials.browser_login(cancel, on_url).await })
     }
     fn logout(&self) -> Result<(), CredentialError> {
-        self.credentials.logout()
+        self.credentials.logout()?;
+        self.invalidate_account_cache();
+        Ok(())
     }
     fn authentication_inventory(
         &self,
@@ -815,17 +825,23 @@ impl ProviderCredentialPort for XaiFactory {
         self.credentials.inventory()
     }
     fn select_authentication_method(&self, method_id: &str) -> Result<(), CredentialError> {
-        self.credentials.select_method(method_id)
+        self.credentials.select_method(method_id)?;
+        self.invalidate_account_cache();
+        Ok(())
     }
     fn store_method_credential(
         &self,
         method_id: &str,
         secret: &str,
     ) -> Result<(), CredentialError> {
-        self.credentials.store_method(method_id, secret)
+        self.credentials.store_method(method_id, secret)?;
+        self.invalidate_account_cache();
+        Ok(())
     }
     fn clear_stored_method(&self, method_id: &str) -> Result<(), CredentialError> {
-        self.credentials.clear_method(method_id)
+        self.credentials.clear_method(method_id)?;
+        self.invalidate_account_cache();
+        Ok(())
     }
     fn removal_scope(&self) -> vesper_provider::CredentialRemovalScope {
         vesper_provider::CredentialRemovalScope::EntireProvider

@@ -63,6 +63,7 @@ fn window_meter_and_reset_are_present() {
             limit: Some(100),
             remaining: Some(69),
             resets_at_unix_ms: Some(1_797_223_600_000),
+            detail: None,
         }],
         None,
     );

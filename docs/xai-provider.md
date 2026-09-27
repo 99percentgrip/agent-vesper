@@ -27,6 +27,23 @@ ACP supports `--provider xai --login`, `--device-login`, `--logout`, and
 credential used by TUI and ACP. Authentication messages use stderr so ACP
 stdout remains pure JSON-RPC.
 
+## Usage
+
+`/usage` keeps three figures separate: estimated context, Grok subscription
+allowance, and xAI API billing.
+
+Grok account mode asks the session proxy for the signed-in user and then reads
+`GET /v1/billing?format=credits`. It shows the returned allowance percentage,
+the server-reported period reset, and any returned extra-credit balance or
+product breakdown. It prefers `creditUsagePercent` and `currentPeriod` over
+older monthly cent fields. Missing figures stay unknown; a returned zero is
+shown as zero. It does not invent token counts, message counts, or plan names.
+The lookup is one bounded request pair, not a polling loop. If the billing
+service fails, the panel says so and the next conversation still runs.
+
+API-key mode does not query subscription allowance. Its card says that API
+usage is billed separately. Per-response token counts still appear on each turn.
+
 ## Models and controls
 
 After authentication, Vesper discovers models visible to that account and

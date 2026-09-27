@@ -19,6 +19,11 @@ continuation state, and provider error mapping without changing the shared agent
 - `src/wire.rs` owns xAI Responses request/event translation.
 - `src/transport.rs` owns bounded HTTP/SSE and WebSocket dispatch,
   cancellation, and Global/API-key native compaction.
+- `src/usage.rs` owns Grok-session subscription allowance normalization.
+  `/usage` performs one bounded `GET /v1/user` plus
+  `GET /v1/billing?format=credits` on the session proxy. API-key mode never
+  calls that route. Percentage and current period win over legacy monthly
+  cents. Missing balances stay missing.
 - Grok-account inference/model discovery use the first-party session proxy and
   stay isolated from API-key billing.
 
@@ -59,6 +64,9 @@ continuation state, and provider error mapping without changing the shared agent
   fail-closed validator.
 - Secrets never enter errors, events, logs, or model-visible extensions.
 - No silent fallback between Grok-session and xAI API-key billing paths.
+- Subscription usage is read-only and on demand. A billing failure stays on
+  `/usage` and does not fail the next conversation turn. Logout, method
+  selection, and credential replacement drop the account-bound model cache.
 - Grok-session inference sends the pinned first-party proxy protocol headers:
   token-auth, authenticate-response, protocol version, truthful Vesper client
   identity/mode, model override, and bounded request/conversation/session/agent

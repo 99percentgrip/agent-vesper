@@ -1026,15 +1026,22 @@ Do not estimate account balance unless xAI exposes an authoritative endpoint Ves
 
 PR-0 must inspect the current first-party Grok Build source for the official session usage/quota surface.
 
-If a stable first-party endpoint/contract exists, implement it natively.
+The first-party session contract is `GET /v1/user` followed by
+`GET /v1/billing?format=credits` on `cli-chat-proxy.grok.com`, using the
+existing Grok-session bearer, `X-XAI-Token-Auth: xai-grok-cli`, and the user id
+returned by `/user`. Source evidence is `extensions/billing.rs` and
+`manager/enrichment.rs` in xai-org/grok-build, unchanged between pinned
+`f0e3be1100ef5252488e3be8bb0e91cf68d8c305` and refreshed
+`482711333c7195dc16a272777f86086d615e2afb`.
 
-If not, display:
+Vesper maps that response into `ProviderUsage`. `creditUsagePercent` and
+`currentPeriod` take priority over deprecated monthly cent fields. Extra usage
+credits and `productUsage` render only when present. API-key mode does not call
+this route and does not substitute an API key. There is no estimated quota when
+the service returns nothing.
 
-```text
-Subscription usage: unavailable through the verified session protocol
-```
-
-rather than fabricating a quota.
+The earlier "no quota endpoint" note is superseded for Grok-session allowance.
+It remains true that per-response token usage is not an account balance.
 
 ### 18.3 Billing warning
 

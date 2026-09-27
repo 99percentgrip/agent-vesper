@@ -1,5 +1,9 @@
 # VRO-18 PR-0 reconnaissance execution
 
+Historical PR-0 record. Later source evidence found
+`GET /v1/billing?format=credits`. v0.24.3 implements it; see
+[`xai-subscription-usage-execution.md`](xai-subscription-usage-execution.md).
+
 Status: **PASS — production implementation not started**
 Date: 2026-09-25
 

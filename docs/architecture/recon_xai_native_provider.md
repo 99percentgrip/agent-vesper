@@ -90,7 +90,7 @@ means model/catalog/endpoint evidence is required. `UNKNOWN` fails closed.
 | native compaction | YES, Responses | YES, Responses | UNKNOWN | UNKNOWN |
 | Responses WebSocket | YES | YES | UNKNOWN | UNKNOWN |
 | token/tool usage | YES | YES | CONDITIONAL by backend | CONDITIONAL by backend |
-| account quota | no verified balance endpoint | no verified balance endpoint | tier only; allowance unavailable | tier only; allowance unavailable |
+| account quota | no verified balance endpoint | no verified balance endpoint | `GET /v1/billing?format=credits` after `/v1/user`; missing values stay unknown | not a subscription allowance |
 
 The PR-8 live run refined the session transport evidence: successful proxy
 inference requires the pinned first-party authenticate-response, protocol

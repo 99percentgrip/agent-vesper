@@ -26,6 +26,9 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 - `xai-provider-pr3-execution.md` owns VRO-18 PR-3 browser/device Grok
   authentication, refresh/logout, billing isolation and subscription-proxy
   evidence.
+- `xai-subscription-usage-execution.md` owns the Grok-session
+  `GET /v1/billing?format=credits` usage correction, loopback/host proof, and
+  the bounded live allowance comparison. It does not close Audit 2 or Audit 3.
 - `xai-provider-pr4-execution.md` through `xai-provider-pr6-execution.md` own
   continuation/usage/citations, provider-hosted tools, native compaction and
   WebSocket offline evidence. `xai-provider-pr7-execution.md` owns current

@@ -1,5 +1,13 @@
 # Foundation Evidence Index
 
+## Grok subscription usage (2026-09-27)
+
+- Execution: [`xai-subscription-usage-execution.md`](xai-subscription-usage-execution.md)
+- Verdict: **USER ACCEPTANCE PASS.** Alex confirmed the updated `/usage`
+  screen. v0.24.3 packages the session billing lookup. API-key mode stays off
+  that route. Paid API live acceptance was not run. Audit 2 and Audit 3 stay
+  open. The installed app is not replaced by packaging.
+
 ## VRO-18.1 Settings authentication (2026-09-26)
 
 - Requirements: [`../vro18-provider-authentication-settings-prd.md`](../vro18-provider-authentication-settings-prd.md)

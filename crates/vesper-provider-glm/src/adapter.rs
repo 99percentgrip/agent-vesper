@@ -112,6 +112,7 @@ impl ProviderSession for GlmSession {
                         remaining: quota.remaining,
                         limit: quota.limit,
                         resets_at_unix_ms: quota.next_reset_ms,
+                        detail: None,
                     })
                     .collect(),
                 notice: None,

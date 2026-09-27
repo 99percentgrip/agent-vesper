@@ -2,7 +2,7 @@
 #![allow(clippy::result_large_err)]
 use crate::{
     credentials::{AuthenticationMode, Credentials, DispatchAuth},
-    error, wire,
+    error, usage, wire,
 };
 use futures_util::{SinkExt, StreamExt, stream};
 use std::{sync::Arc, time::Duration};
@@ -327,13 +327,70 @@ impl XaiSession {
             rx.recv().await.map(|event| (event, rx))
         })) as ProviderEventStream))
     }
-}
-impl ProviderSession for XaiSession {
-    fn query_usage<'a>(
-        &'a self,
-        cancel: Arc<dyn CancellationSignal>,
-    ) -> ProviderFuture<'a, Result<ProviderUsage, ProviderError>> {
-        Box::pin(async move {
+
+    fn usage_url(
+        &self,
+        production_path: &str,
+        test_path: &str,
+        query: Option<&str>,
+    ) -> Result<url::Url, ProviderError> {
+        let path = {
+            #[cfg(feature = "integration-test-harness")]
+            {
+                if self.test_route.is_some() {
+                    test_path
+                } else {
+                    production_path
+                }
+            }
+            #[cfg(not(feature = "integration-test-harness"))]
+            {
+                let _ = test_path;
+                production_path
+            }
+        };
+        let mut url = {
+            #[cfg(feature = "integration-test-harness")]
+            {
+                if let Some(route) = &self.test_route {
+                    url::Url::parse(route).map_err(|_| wire::invalid())?
+                } else {
+                    url::Url::parse("https://cli-chat-proxy.grok.com")
+                        .map_err(|_| wire::invalid())?
+                }
+            }
+            #[cfg(not(feature = "integration-test-harness"))]
+            {
+                url::Url::parse("https://cli-chat-proxy.grok.com").map_err(|_| wire::invalid())?
+            }
+        };
+        url.set_path(path);
+        url.set_query(query);
+        Ok(url)
+    }
+
+    async fn usage_get(
+        &self,
+        url: &url::Url,
+        auth: &DispatchAuth,
+        user_id: Option<&str>,
+        cancel: &dyn CancellationSignal,
+    ) -> Result<(reqwest::StatusCode, Vec<u8>), ProviderError> {
+        let mut builder = self
+            .client
+            .get(url.clone())
+            .bearer_auth(auth.bearer.expose().as_str())
+            .header("Accept", "application/json")
+            .header("X-XAI-Token-Auth", "xai-grok-cli")
+            .header("x-grok-client-version", GROK_SESSION_PROTOCOL_VERSION)
+            .header("x-grok-client-identifier", "agent-vesper")
+            .header("x-grok-client-mode", "interactive");
+        if let Some(user_id) = user_id {
+            builder = builder.header("x-userid", user_id);
+        }
+        let future = builder.send();
+        tokio::pin!(future);
+        let mut response = loop {
             if cancel.is_cancelled() {
                 return Err(error(
                     "xAI usage query cancelled",
@@ -341,14 +398,161 @@ impl ProviderSession for XaiSession {
                     false,
                 ));
             }
-            let authentication = match self.credentials.authentication_method() {
-                Ok(Some(method)) if method == "xai-grok-session" => {
-                    "Grok account / SuperGrok (account allowance)"
+            tokio::select! { biased;
+                _ = tokio::time::sleep(Duration::from_millis(25)) => {}
+                response = &mut future => break response.map_err(|_| error(
+                    "Grok usage connection failed",
+                    ErrorCategory::Transport,
+                    false,
+                ))?,
+            }
+        };
+        let status = response.status();
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response.chunk().await.map_err(|_| {
+            error(
+                "Grok usage response interrupted",
+                ErrorCategory::Transport,
+                false,
+            )
+        })? {
+            if bytes.len().saturating_add(chunk.len()) > 65_536 {
+                return Err(usage::usage_failure(
+                    "Grok usage response was malformed",
+                    None,
+                ));
+            }
+            bytes.extend_from_slice(&chunk);
+            if !status.is_success() && bytes.len() >= 4_096 {
+                break;
+            }
+        }
+        if status.is_success() {
+            Ok((status, bytes))
+        } else {
+            Ok((status, Vec::new()))
+        }
+    }
+
+    async fn fetch_subscription(
+        &self,
+        auth: &DispatchAuth,
+        cancel: &dyn CancellationSignal,
+    ) -> Result<ProviderUsage, ProviderError> {
+        let user_url = self.usage_url("/v1/user", "/user", None)?;
+        let (status, bytes) = self.usage_get(&user_url, auth, None, cancel).await?;
+        if status == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(usage::usage_failure(
+                "Grok usage session expired; sign in again",
+                Some(401),
+            ));
+        }
+        if !status.is_success() {
+            return Err(usage::usage_failure(
+                "Grok usage service is unavailable; conversation can continue",
+                Some(status.as_u16()),
+            ));
+        }
+        let identity: serde_json::Value = serde_json::from_slice(&bytes)
+            .map_err(|_| usage::usage_failure("Grok usage response was malformed", None))?;
+        let user_id = usage::user_id(&identity)?;
+        let billing_url = self.usage_url("/v1/billing", "/billing", Some("format=credits"))?;
+        let (status, bytes) = self
+            .usage_get(&billing_url, auth, Some(user_id.as_str()), cancel)
+            .await?;
+        if status == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(usage::usage_failure(
+                "Grok usage session expired; sign in again",
+                Some(401),
+            ));
+        }
+        if !status.is_success() {
+            return Err(usage::usage_failure(
+                "Grok usage service is unavailable; conversation can continue",
+                Some(status.as_u16()),
+            ));
+        }
+        let payload = serde_json::from_slice(&bytes)
+            .map_err(|_| usage::usage_failure("Grok usage response was malformed", None))?;
+        usage::parse_subscription_usage(&payload)
+    }
+
+    async fn query_subscription_usage(
+        &self,
+        cancel: Arc<dyn CancellationSignal>,
+    ) -> Result<ProviderUsage, ProviderError> {
+        if cancel.is_cancelled() {
+            return Err(error(
+                "xAI usage query cancelled",
+                ErrorCategory::Cancellation,
+                false,
+            ));
+        }
+        let mut auth = self
+            .resolve_auth(false, cancel.clone())
+            .await
+            .map_err(|_| {
+                error(
+                    "xAI usage authentication failed; sign in through Settings",
+                    ErrorCategory::Authentication,
+                    false,
+                )
+            })?;
+        if auth.mode == AuthenticationMode::ApiKey {
+            return Ok(usage::api_key_usage());
+        }
+        let operation = async {
+            let mut refreshed = false;
+            loop {
+                match self.fetch_subscription(&auth, cancel.as_ref()).await {
+                    Ok(usage) => return Ok(usage),
+                    Err(failure) if failure.http_status == Some(401) && !refreshed => {
+                        auth = self.resolve_auth(true, cancel.clone()).await.map_err(|_| {
+                            error(
+                                "Grok usage session expired; sign in again",
+                                ErrorCategory::Authentication,
+                                false,
+                            )
+                        })?;
+                        if auth.mode != AuthenticationMode::GrokSession {
+                            return Err(error(
+                                "Grok usage session expired; sign in again",
+                                ErrorCategory::Authentication,
+                                false,
+                            ));
+                        }
+                        refreshed = true;
+                    }
+                    Err(failure) => return Err(failure),
                 }
-                _ => "xAI API key (usage-based API billing)",
-            };
-            Ok(ProviderUsage { authentication: Some(authentication.into()), notice: Some("Account allowance/balance is unavailable through the verified protocol; per-response token usage remains available.".into()), ..Default::default() })
-        })
+            }
+        };
+        tokio::select! {
+            result = tokio::time::timeout(Duration::from_secs(15), operation) => {
+                result.map_err(|_| error(
+                    "Grok usage query timed out",
+                    ErrorCategory::Timeout,
+                    false,
+                ))?
+            }
+            _ = async {
+                while !cancel.is_cancelled() {
+                    tokio::time::sleep(Duration::from_millis(25)).await;
+                }
+            } => Err(error(
+                "xAI usage query cancelled",
+                ErrorCategory::Cancellation,
+                false,
+            )),
+        }
+    }
+}
+impl ProviderSession for XaiSession {
+    fn query_usage<'a>(
+        &'a self,
+        cancel: Arc<dyn CancellationSignal>,
+    ) -> ProviderFuture<'a, Result<ProviderUsage, ProviderError>> {
+        Box::pin(self.query_subscription_usage(cancel))
     }
     fn auxiliary(&self) -> Option<&dyn AuxiliaryRequestPort> {
         Some(self)

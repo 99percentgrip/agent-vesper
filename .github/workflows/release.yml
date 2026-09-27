@@ -238,7 +238,7 @@ jobs:
             gh release create "$RELEASE_TAG" \
               --repo "$GITHUB_REPOSITORY" \
               --title "Agent Vesper $RELEASE_TAG" \
-              --notes "Agent Vesper v0.24.2 adds Settings authentication for every registered provider. Settings, /auth, and startup sign-in share one descriptor-driven panel. Each provider row has its own Manage authentication action. xAI and OpenAI keep subscription and API-key choices, including browser and device sign-in where advertised, and a masked API-key field. Stored secrets for the unselected method are preserved. Logout removes only the selected Vesper-stored credential. Cancelling the provider screen does not change the active provider or unrelated Settings drafts. A saved authentication choice reaches the next request, and a Grok-session choice does not send stale API-only hosted tools. A held arrow key does not repeat menu movement. Audit 2 and Audit 3 remain open. Paid API live acceptance was not run." \
+              --notes "Agent Vesper v0.24.3 reports Grok subscription usage. xAI /usage now displays server-reported Grok/SuperGrok allowance, reset time, and available credit/product-usage details, separately from conversation context usage. API-key mode does not query that allowance. Audit 2 and Audit 3 remain open. Paid API live acceptance was not run." \
               --generate-notes
           fi
           gh release upload "$RELEASE_TAG" dist/* \

@@ -273,3 +273,82 @@ fn tool_round_trip(tool: &'static str) {
     }
     process.finish();
 }
+
+#[test]
+fn usage_queries_grok_billing_without_inference() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let mut process = spawn(&listener);
+    let server = thread::spawn(move || {
+        serve_models(&listener);
+        let mut paths = Vec::new();
+        for _ in 0..2 {
+            let (mut socket, _) = listener.accept().unwrap();
+            socket
+                .set_read_timeout(Some(Duration::from_secs(20)))
+                .unwrap();
+            let mut bytes = Vec::new();
+            while !bytes.windows(4).any(|part| part == b"\r\n\r\n") {
+                let mut buffer = [0; 4096];
+                let count = socket.read(&mut buffer).unwrap();
+                assert!(count > 0);
+                bytes.extend_from_slice(&buffer[..count]);
+            }
+            let headers = String::from_utf8_lossy(&bytes).to_ascii_lowercase();
+            assert!(headers.contains("authorization: bearer fixture-xai-key"));
+            assert!(headers.contains("x-xai-token-auth: xai-grok-cli"));
+            assert!(headers.contains("x-grok-client-identifier: agent-vesper"));
+            paths.push(headers.lines().next().unwrap_or_default().to_owned());
+            let body = if headers.starts_with("get /user ") {
+                r#"{"userId":"account-a"}"#.to_owned()
+            } else if headers.starts_with("get /billing?format=credits ") {
+                assert!(headers.contains("x-userid: account-a"));
+                r#"{"subscriptionTier":"SuperGrok","config":{"creditUsagePercent":10,"currentPeriod":{"type":"USAGE_PERIOD_TYPE_WEEKLY","end":"2026-06-08T00:00:00Z"},"prepaidBalance":{"val":1250},"productUsage":[{"product":"PRODUCT_GROK_BUILD","usagePercent":4}]}}"#.to_owned()
+            } else {
+                panic!("unexpected usage request: {headers}");
+            };
+            write!(
+                socket,
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                body.len()
+            )
+            .unwrap();
+        }
+        listener.set_nonblocking(true).unwrap();
+        std::thread::sleep(Duration::from_millis(200));
+        assert!(
+            listener.accept().is_err(),
+            "usage issued an inference request"
+        );
+        paths
+    });
+    let session = initialize(&mut process);
+    process.prompt(3, &session, "/usage", "usage-test");
+    assert!(process.response(3).get("error").is_none());
+    let text = process
+        .transcript()
+        .iter()
+        .filter_map(|value| value["params"]["update"]["content"]["text"].as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    for expected in [
+        "Xai · Usage",
+        "SuperGrok",
+        "Weekly allowance",
+        "90% left",
+        "Extra usage credits",
+        "$12.50",
+        "Grok Build",
+        "Context window:",
+    ] {
+        assert!(text.contains(expected), "missing {expected}: {text}");
+    }
+    assert!(!text.contains("account-a"), "{text}");
+    let paths = server.join().unwrap();
+    assert!(paths.iter().any(|path| path.starts_with("get /user ")));
+    assert!(
+        paths
+            .iter()
+            .any(|path| path.starts_with("get /billing?format=credits "))
+    );
+    process.finish();
+}

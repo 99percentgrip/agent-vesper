@@ -11,6 +11,9 @@ pub struct UsageWindow {
     pub limit: Option<u64>,
     pub remaining: Option<u64>,
     pub resets_at_unix_ms: Option<u64>,
+    /// Provider-authored non-secret detail, such as a returned credit balance.
+    /// Absence is not zero. Hosts display it only when the adapter set it.
+    pub detail: Option<String>,
 }
 
 /// Safe account metadata only: never credentials, raw headers, or JWTs.
@@ -94,17 +97,26 @@ pub fn render_usage(context: &UsageContext<'_>, usage: &ProviderUsage) -> String
                         })
                 })
             });
-        let value = percent
-            .map(|used| {
-                let left = 100.0 - used;
-                let filled = (left * 14.0 / 100.0).round() as usize;
-                format!(
-                    "[{}{}] {left:.0}% left",
-                    "█".repeat(filled),
-                    "░".repeat(14 - filled)
-                )
-            })
-            .unwrap_or_else(|| "remaining unknown".into());
+        let meter = percent.map(|used| {
+            let left = 100.0 - used;
+            let filled = (left * 14.0 / 100.0).round() as usize;
+            format!(
+                "[{}{}] {left:.0}% left",
+                "█".repeat(filled),
+                "░".repeat(14 - filled)
+            )
+        });
+        let detail = window
+            .detail
+            .as_deref()
+            .map(safe)
+            .filter(|text| !text.is_empty());
+        let value = match (meter, detail) {
+            (Some(meter), Some(detail)) => format!("{meter} · {detail}"),
+            (Some(meter), None) => meter,
+            (None, Some(detail)) => detail,
+            (None, None) => "remaining unknown".into(),
+        };
         let reset = window
             .resets_at_unix_ms
             .map(|at| {
@@ -114,8 +126,12 @@ pub fn render_usage(context: &UsageContext<'_>, usage: &ProviderUsage) -> String
                 )
             })
             .unwrap_or_default();
+        let quantitative = percent.is_some()
+            || window.used.is_some()
+            || window.limit.is_some()
+            || window.remaining.is_some();
         let label = safe(&window.label);
-        let label = if label.to_ascii_lowercase().contains("limit") {
+        let label = if !quantitative || label.to_ascii_lowercase().contains("limit") {
             label
         } else {
             format!("{label} limit")
@@ -245,6 +261,32 @@ mod tests {
         assert!(card.contains("remaining unknown"));
         assert!(!card.contains('\u{1b}'));
         assert!(!card.contains("+---"));
+    }
+
+    #[test]
+    fn returned_credit_balance_is_not_an_unknown_limit() {
+        let context = UsageContext {
+            provider: "xai",
+            model: "grok-4.7",
+            reasoning: "high",
+            permission: "ask",
+            context_used: 0,
+            context_capacity: 100,
+            now_unix_ms: 1_000,
+        };
+        let usage = ProviderUsage {
+            windows: vec![UsageWindow {
+                label: "Extra usage credits".into(),
+                detail: Some("$12.50".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let card = render_usage(&context, &usage);
+        assert!(card.contains("Extra usage credits:"));
+        assert!(card.contains("$12.50"));
+        assert!(!card.contains("remaining unknown"));
+        assert!(!card.contains("Extra usage credits limit"));
     }
 
     #[test]

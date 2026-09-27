@@ -1,5 +1,9 @@
 # VRO-18 PR-8 live acceptance and release execution
 
+Historical v0.24.0 record. Its "subscription allowance unavailable" finding
+was current then. v0.24.3 reports that allowance; see
+[`xai-subscription-usage-execution.md`](xai-subscription-usage-execution.md).
+
 ## Objective
 
 Validate the native xAI adapter against Alex's SuperGrok account, repair only
