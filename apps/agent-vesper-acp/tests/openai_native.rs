@@ -190,6 +190,7 @@ fn tool_round_trip_model(
         write_sse(
             &mut first,
             &sse(vec![
+                json!({"type":"response.metadata","metadata":{}}),
                 json!({"type":"response.created","response":{"id":"resp1"}}),
                 json!({"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","call_id":"call1","name":tool,"arguments":""}}),
                 json!({"type":"response.function_call_arguments.delta","output_index":0,"delta":args}),
@@ -229,7 +230,28 @@ fn tool_round_trip_model(
         write_sse(
             &mut second,
             &sse(vec![
-                json!({"type":"response.output_text.delta","output_index":0,"delta":"Native OpenAI completed."}),
+                json!({"type":"codex.response.metadata","metadata":{}}),
+                json!({"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":"bounded reasoning"}),
+                json!({"type":"response.output_text.delta","output_index":1,"delta":"Native OpenAI completed."}),
+                json!({"type":"response.completed","response":{}}),
+            ]),
+        );
+        drop(second);
+        let (mut third, _) = listener.accept().unwrap();
+        third
+            .set_read_timeout(Some(Duration::from_secs(20)))
+            .unwrap();
+        let wire = read_http_request(&mut third);
+        let body: Value = serde_json::from_str(wire.split_once("\r\n\r\n").unwrap().1).unwrap();
+        assert!(
+            body["input"]
+                .to_string()
+                .contains("Confirm next turn recovery")
+        );
+        write_sse(
+            &mut third,
+            &sse(vec![
+                json!({"type":"response.output_text.delta","output_index":0,"delta":"Recovered next turn."}),
                 json!({"type":"response.completed","response":{}}),
             ]),
         );
@@ -275,6 +297,14 @@ fn tool_round_trip_model(
         v["params"]["update"]["content"]["text"]
             .as_str()
             .is_some_and(|t| t.contains("Native OpenAI completed."))
+    }));
+    process.prompt(4, session, "Confirm next turn recovery", "openai-user2");
+    let result = process.response(4);
+    assert_eq!(result["result"]["stopReason"], "end_turn", "{result}");
+    assert!(process.transcript().iter().any(|v| {
+        v["params"]["update"]["content"]["text"]
+            .as_str()
+            .is_some_and(|t| t.contains("Recovered next turn."))
     }));
     server.join().unwrap();
     assert!(!root.join("denied.txt").exists());

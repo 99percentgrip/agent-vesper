@@ -53,6 +53,9 @@ transport, stderr-only tracing, and orderly shutdown.
   uses the shared domain parser and harness preferences. Reads create no workspace
   state; explicit saves affect later turns. Routing uses the same memory selector
   and workspace preferences as TUI, with native permission/mode restrictions.
+  `tests/skill_routing_controls.rs` also drives ordinary `use the … skills` prose
+  through the real ACP process, asserts one preserved provider submission, and
+  proves a later turn; explicit-invocation parsing remains owned by `vesper-memory`.
   TUI owns the interactive grouped draft; ACP exposes explicit text saves.
   `save model-assistance on|off` controls the same default-off provider selector;
   enabling selects Enhanced. The engine resolves it before direct/VRO dispatch,

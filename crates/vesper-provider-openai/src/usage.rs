@@ -9,7 +9,13 @@ pub(crate) fn parse_usage(value: &Value) -> Result<ProviderUsage, ProviderError>
     if !value.is_object()
         || !(value.get("rate_limit").is_some() || value.get("plan_type").is_some())
     {
-        return Err(crate::wire::invalid());
+        return Err(crate::wire::invalid_at(
+            "usage-schema",
+            None,
+            "rate_limit-or-plan_type",
+            Some(value.to_string().len()),
+            None,
+        ));
     }
     let mut usage = ProviderUsage {
         authentication: Some("ChatGPT subscription".into()),

@@ -163,6 +163,11 @@ Verify terminal interaction through the production TUI binary with isolated stat
   provider. M is checked separately and is not that proof.
 - `skill_routing_pty.py` reuses its isolated terminal driver for Skills draft,
   discard, keep-editing, save, restart, model-assistance opt-in and unchanged-library checks.
+- `skill_routing_submission_pty.py` sends a multiline bracketed paste through the
+  real TUI input/composer path to the integration-only xAI loopback transport,
+  asserts one preserved provider submission with no false explicit-skill failure,
+  then proves the same session accepts a later turn. It uses isolated state and
+  never contacts a public provider or modifies the installed application.
 - `update_*_fixture.sh` are immutable offline download/version fixtures for the
   Rust updater test, which runs the shipped installer only in temporary roots.
 - Rust rendering and configuration unit tests remain beside their source modules.

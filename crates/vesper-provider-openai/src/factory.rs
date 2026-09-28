@@ -110,7 +110,9 @@ impl OpenAiFactory {
                 "openai:model",
                 serde_json::json!(model.model.model_id.as_str()),
             )
-            .map_err(|_| crate::wire::invalid())?;
+            .map_err(|_| {
+                crate::wire::invalid_at("auxiliary-request", None, "configuration", None, None)
+            })?;
         let session = self.create_session(&configuration, cancel.clone()).await?;
         let request = ProviderRequest {
             request_id: ProviderRequestId::new("memory-extraction").expect("static"),
@@ -121,18 +123,32 @@ impl OpenAiFactory {
             },
             endpoint_id: None,
             system_instructions: vec![SystemInstruction {
-                content: vec![ContentPart::Text(
-                    ContentText::new(system).map_err(|_| crate::wire::invalid())?,
-                )],
+                content: vec![ContentPart::Text(ContentText::new(system).map_err(
+                    |_| {
+                        crate::wire::invalid_at(
+                            "auxiliary-request",
+                            None,
+                            "system",
+                            Some(system.len()),
+                            Some(crate::wire::MAX_EVENT),
+                        )
+                    },
+                )?)],
                 cache_stable: true,
                 extensions: Default::default(),
             }],
             messages: vec![ConversationMessage {
                 id: MessageId::new("memory-input").expect("static"),
                 role: MessageRole::User,
-                content: vec![ContentPart::Text(
-                    ContentText::new(user).map_err(|_| crate::wire::invalid())?,
-                )],
+                content: vec![ContentPart::Text(ContentText::new(user).map_err(|_| {
+                    crate::wire::invalid_at(
+                        "auxiliary-request",
+                        None,
+                        "user",
+                        Some(user.len()),
+                        Some(crate::wire::MAX_EVENT),
+                    )
+                })?)],
                 extensions: Default::default(),
             }],
             tools: vec![],
@@ -162,7 +178,13 @@ impl OpenAiFactory {
         })??;
         match content {
             ContentPart::Text(text) => Ok(text.as_str().to_owned()),
-            _ => Err(crate::wire::invalid()),
+            _ => Err(crate::wire::invalid_at(
+                "auxiliary-response",
+                None,
+                "content-part",
+                None,
+                None,
+            )),
         }
     }
     /// Loopback-only fixture route with synthetic credentials. Not available
@@ -173,13 +195,27 @@ impl OpenAiFactory {
         endpoint: &str,
         mode: crate::auth::AuthenticationMode,
     ) -> Result<Self, ProviderError> {
-        let url = url::Url::parse(endpoint).map_err(|_| crate::wire::invalid())?;
+        let url = url::Url::parse(endpoint).map_err(|_| {
+            crate::wire::invalid_at(
+                "fixture-route",
+                None,
+                "endpoint",
+                Some(endpoint.len()),
+                None,
+            )
+        })?;
         if url.scheme() != "http"
             || !matches!(url.host_str(), Some("127.0.0.1" | "[::1]"))
             || !url.username().is_empty()
             || url.password().is_some()
         {
-            return Err(crate::wire::invalid());
+            return Err(crate::wire::invalid_at(
+                "fixture-route",
+                None,
+                "endpoint-policy",
+                Some(endpoint.len()),
+                None,
+            ));
         }
         Ok(Self {
             test_route: Some((endpoint.to_owned(), mode)),

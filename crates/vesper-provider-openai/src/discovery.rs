@@ -50,9 +50,23 @@ fn parse(
     let rows = value
         .get(key)
         .and_then(serde_json::Value::as_array)
-        .ok_or_else(crate::wire::invalid)?;
+        .ok_or_else(|| {
+            crate::wire::invalid_at(
+                "discovery-schema",
+                None,
+                key,
+                Some(value.to_string().len()),
+                Some(4 * 1024 * 1024),
+            )
+        })?;
     if rows.len() > 4096 {
-        return Err(crate::wire::invalid());
+        return Err(crate::wire::invalid_at(
+            "discovery-schema",
+            None,
+            "model-rows",
+            Some(rows.len()),
+            Some(4096),
+        ));
     }
     let mut seen = BTreeSet::new();
     let mut models = Vec::new();
@@ -65,9 +79,23 @@ fn parse(
         let id = row
             .get(key)
             .and_then(serde_json::Value::as_str)
-            .ok_or_else(crate::wire::invalid)?;
+            .ok_or_else(|| {
+                crate::wire::invalid_at(
+                    "discovery-schema",
+                    None,
+                    key,
+                    Some(row.to_string().len()),
+                    Some(256),
+                )
+            })?;
         if id.len() > 256 || !seen.insert(id) {
-            return Err(crate::wire::invalid());
+            return Err(crate::wire::invalid_at(
+                "discovery-schema",
+                None,
+                key,
+                Some(id.len()),
+                Some(256),
+            ));
         }
         if mode == AuthenticationMode::ChatGpt
             && row.get("visibility").and_then(serde_json::Value::as_str) != Some("list")
@@ -94,11 +122,9 @@ impl OpenAiFactory {
     ) -> Result<AvailableModels, ProviderError> {
         // Invalidate before awaiting: cancellation by dropping this future must
         // not leave the previous account's choices authoritative.
-        *self
-            .availability
-            .write()
-            .map_err(|_| crate::wire::invalid())? =
-            Some(AvailableModels::unavailable(self.control_policy().mode));
+        *self.availability.write().map_err(|_| {
+            crate::wire::invalid_at("model-discovery", None, "availability-lock", None, None)
+        })? = Some(AvailableModels::unavailable(self.control_policy().mode));
         let session = OpenAiSession::new(self.credentials.clone(), "medium".into())?;
         #[cfg(feature = "integration-test-harness")]
         let session = session.with_test_route(self.test_route.clone());
@@ -107,10 +133,9 @@ impl OpenAiFactory {
             .as_ref()
             .cloned()
             .unwrap_or_else(|_| AvailableModels::unavailable(self.control_policy().mode));
-        *self
-            .availability
-            .write()
-            .map_err(|_| crate::wire::invalid())? = Some(snapshot);
+        *self.availability.write().map_err(|_| {
+            crate::wire::invalid_at("model-discovery", None, "availability-lock", None, None)
+        })? = Some(snapshot);
         result
     }
 }
@@ -137,7 +162,15 @@ impl OpenAiSession {
             let mut url = url::Url::parse(endpoint).expect("fixed URL");
             #[cfg(feature = "integration-test-harness")]
             if let Some((route, _)) = &self.test_route {
-                url = url::Url::parse(route).map_err(|_| crate::wire::invalid())?;
+                url = url::Url::parse(route).map_err(|_| {
+                    crate::wire::invalid_at(
+                        "model-discovery",
+                        None,
+                        "fixture-route",
+                        Some(route.len()),
+                        None,
+                    )
+                })?;
                 url.set_path("/models");
                 url.set_query(None);
             }
@@ -180,20 +213,46 @@ impl OpenAiSession {
                     return Err(crate::http_error::rejection(response, cancel.as_ref()).await);
                 }
                 let mut bytes = Vec::new();
-                while let Some(chunk) =
-                    response.chunk().await.map_err(|_| crate::wire::invalid())?
-                {
+                while let Some(chunk) = response.chunk().await.map_err(|_| {
+                    crate::wire::invalid_at(
+                        "discovery-body",
+                        None,
+                        "body-read",
+                        Some(bytes.len()),
+                        Some(4 * 1024 * 1024),
+                    )
+                })? {
                     if bytes.len().saturating_add(chunk.len()) > 4 * 1024 * 1024 {
-                        return Err(crate::wire::invalid());
+                        return Err(crate::wire::invalid_at(
+                            "discovery-body",
+                            None,
+                            "body",
+                            Some(bytes.len().saturating_add(chunk.len())),
+                            Some(4 * 1024 * 1024),
+                        ));
                     }
                     bytes.extend_from_slice(&chunk);
                 }
                 return parse(
-                    &serde_json::from_slice(&bytes).map_err(|_| crate::wire::invalid())?,
+                    &serde_json::from_slice(&bytes).map_err(|_| {
+                        crate::wire::invalid_at(
+                            "discovery-json",
+                            None,
+                            "body",
+                            Some(bytes.len()),
+                            Some(4 * 1024 * 1024),
+                        )
+                    })?,
                     auth.mode,
                 );
             }
-            Err(crate::wire::invalid())
+            Err(crate::wire::invalid_at(
+                "discovery-retry",
+                None,
+                "attempts",
+                Some(2),
+                Some(2),
+            ))
         };
         tokio::select! {
             biased;

@@ -52,8 +52,15 @@ These explicit `save` commands persist immediately for the project. The terminal
 ordinary Settings menus instead use the grouped save/discard prompt above.
 
 For a specific procedure, use `/skill <name> [task]` or
-`/skill bundle:<name> [task]`. An explicit request bypasses model-assisted relevance
-selection, but still follows permission, availability and loading checks.
+`/skill bundle:<name> [task]`. Text prompts also recognize the bounded forms
+`use skill <name>`, `with skill <name>`, and `use the <name> skill`. Matching is
+case-insensitive; `<name>` is one skill-identifier token of at most 64 ASCII
+letters/digits with internal hyphens (an underscore is accepted as a compatibility
+alias for a hyphen). In the natural-language form, `skill` must be the singular
+whole word in the same local construction. Ordinary sentences, paths, paragraphs,
+`skills`, `skillset`, and `skillful` do not become explicit requests. An explicit
+request bypasses model-assisted relevance selection, but still follows permission,
+availability and loading checks.
 
 ## What goes to the provider
 

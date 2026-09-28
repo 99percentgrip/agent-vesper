@@ -88,6 +88,13 @@ subsystem that backs the Tier C Phase 8 un-stubbed commands
   and 60,000 total; isolated bodies are never returned to the main context.
   Selection and bundle activation never grant tool or external-side-effect
   permission.
+- Explicit textual invocation uses one shared bounded parser for preliminary
+  detection and final orchestration. `use skill <name>`, `with skill <name>`, and
+  `use the <name> skill` accept one validated identifier token (case-insensitive,
+  `_` compatibility alias for `-`, at most 64 characters); the natural marker is
+  singular and whole-word in the same local construction. Parsing continues after
+  rejected prose so a later valid directive remains reachable. Paths, sentence/
+  paragraph/list spans, `skills`, `skillset`, and `skillful` remain ordinary text.
 - Dollar shorthand activates only a complete installed skill name, parsed before
   path normalization. Math, currency and unknown shell variables stay prompt text;
   explicit named requests still fail closed for missing or ineligible skills.

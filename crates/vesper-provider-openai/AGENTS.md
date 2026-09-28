@@ -37,6 +37,10 @@ Both hosts register one provider with API-key and subscription authentication.
   It never consumes reset credits or queries subscription limits with API keys.
 - `src/wire.rs` and `src/transport.rs` own Responses serialization, ordered
   bounded SSE, opaque reasoning, call/result identity, and interruption safety.
+  Subscription metadata events are informational; visible
+  `response.reasoning_text.delta` remains provider-visible reasoning. Protocol
+  rejections attach only stage, allowlisted event type, rejected field, observed
+  byte length and applicable bound—never rejected values or raw responses.
 - `src/http_error.rs` owns bounded HTTP rejection diagnostics shared by both
   authentication modes and hosts: at most 16 KiB and two seconds of body reading,
   cancellable, with exact code/parameter allowlists. Preserve HTTP status and

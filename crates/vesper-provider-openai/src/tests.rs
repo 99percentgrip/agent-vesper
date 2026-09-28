@@ -553,6 +553,70 @@ mod http {
         assert_eq!(terminal, 1);
         server.await.unwrap();
     }
+
+    #[tokio::test]
+    async fn subscription_metadata_and_reasoning_content_events_are_not_malformed() {
+        // Sanitized current upstream subscription shape. Metadata values are
+        // intentionally omitted: this regression needs only the documented
+        // event discriminants and must never retain account response data.
+        let body = concat!(
+            "data: {\"type\":\"response.metadata\",\"metadata\":{}}\n\n",
+            "data: {\"type\":\"codex.response.metadata\",\"metadata\":{}}\n\n",
+            "data: {\"type\":\"response.reasoning_text.delta\",\"output_index\":0,\"content_index\":0,\"delta\":\"bounded reasoning\"}\n\n",
+            "data: {\"type\":\"response.output_text.delta\",\"output_index\":1,\"delta\":\"ordinary answer\"}\n\n",
+            "data: {\"type\":\"response.completed\",\"response\":{}}\n\n",
+        )
+        .to_owned();
+        let (session, server) = session(body, auth::AuthenticationMode::ChatGpt).await;
+        let mut stream = session
+            .start(fixture_request(), Arc::new(Never))
+            .await
+            .unwrap();
+        let mut reasoning = String::new();
+        let mut text = String::new();
+        let mut terminal = None;
+        while let Some(event) = stream.next().await {
+            match event.unwrap() {
+                ProviderStreamEvent::ReasoningDelta { text: delta, .. } => {
+                    reasoning.push_str(delta.as_str());
+                }
+                ProviderStreamEvent::ContentDelta {
+                    part: ContentPart::Text(delta),
+                    ..
+                } => text.push_str(delta.as_str()),
+                ProviderStreamEvent::Completed { finish, .. } => terminal = Some(finish),
+                _ => {}
+            }
+        }
+        assert_eq!(reasoning, "bounded reasoning");
+        assert_eq!(text, "ordinary answer");
+        assert_eq!(terminal, Some(FinishOutcome::Stop));
+        server.await.unwrap();
+    }
+}
+
+#[test]
+fn malformed_event_diagnostics_are_bounded_and_secret_safe() {
+    let mut decoder = wire::Decoder::new(&fixture_request());
+    let canary = "DO_NOT_ECHO_PROTOCOL_SECRET";
+    let error = decoder
+        .event(json!({
+            "type": format!("response.{canary}"),
+            "payload": canary,
+        }))
+        .unwrap_err();
+    let diagnostic = error
+        .info
+        .diagnostics
+        .fields
+        .get("openai:protocol-rejection")
+        .unwrap();
+    assert_eq!(diagnostic["stage"], "responses-event");
+    assert_eq!(diagnostic["event_type"], "<unrecognized>");
+    assert_eq!(diagnostic["field"], "type");
+    assert!(diagnostic["observed_bytes"].as_u64().unwrap() > 0);
+    assert_eq!(diagnostic["bound"], wire::MAX_EVENT);
+    assert!(!format!("{error:?}").contains(canary));
 }
 
 #[test]

@@ -7,12 +7,71 @@ use vesper_domain::*;
 use vesper_provider::*;
 
 pub(crate) const MAX_EVENT: usize = 1_048_576;
-pub(crate) fn invalid() -> ProviderError {
-    error(
+const KNOWN_RESPONSE_EVENT_TYPES: &[&str] = &[
+    "codex.response.metadata",
+    "error",
+    "response.completed",
+    "response.content_part.added",
+    "response.content_part.done",
+    "response.created",
+    "response.failed",
+    "response.function_call_arguments.delta",
+    "response.function_call_arguments.done",
+    "response.in_progress",
+    "response.incomplete",
+    "response.metadata",
+    "response.output_item.added",
+    "response.output_item.done",
+    "response.output_text.annotation.added",
+    "response.output_text.delta",
+    "response.output_text.done",
+    "response.queued",
+    "response.reasoning_summary_part.added",
+    "response.reasoning_summary_part.done",
+    "response.reasoning_summary_text.delta",
+    "response.reasoning_summary_text.done",
+    "response.reasoning_text.delta",
+    "response.refusal.delta",
+    "response.refusal.done",
+    "responsesapi.websocket_timing",
+];
+pub(crate) fn invalid_at(
+    stage: &'static str,
+    event_type: Option<&str>,
+    field: &'static str,
+    observed_bytes: Option<usize>,
+    bound: Option<usize>,
+) -> ProviderError {
+    // Diagnostics contain only adapter-owned labels, a sanitized event
+    // discriminant, and sizes. Never attach the rejected value or response.
+    let event_type = event_type.map(|value| {
+        if KNOWN_RESPONSE_EVENT_TYPES.contains(&value) {
+            value.to_owned()
+        } else {
+            "<unrecognized>".to_owned()
+        }
+    });
+    let mut result = error(
         "OpenAI returned malformed or oversized Responses data",
         ErrorCategory::MalformedProtocol,
         false,
-    )
+    );
+    result
+        .info
+        .diagnostics
+        .fields
+        .insert(
+            "openai:protocol-rejection",
+            json!({
+                "stage": stage,
+                "event_type": event_type,
+                "field": field,
+                "observed_bytes": observed_bytes,
+                "bound": bound,
+            }),
+        )
+        .expect("bounded secret-safe protocol diagnostic");
+    result
 }
 fn unsupported() -> ProviderError {
     error(
@@ -236,20 +295,41 @@ impl Decoder {
         }
     }
     pub fn event(&mut self, value: Value) -> Result<Vec<ProviderStreamEvent>, ProviderError> {
+        let observed_bytes = value.to_string().len();
+        let raw_kind = value.get("type").and_then(Value::as_str);
         if self.terminal {
-            return Err(invalid());
+            return Err(invalid_at(
+                "responses-event",
+                raw_kind,
+                "event-after-terminal",
+                Some(observed_bytes),
+                Some(MAX_EVENT),
+            ));
         }
         let mut events = vec![];
-        let kind = value
-            .get("type")
-            .and_then(Value::as_str)
-            .ok_or_else(invalid)?;
+        let kind = raw_kind.ok_or_else(|| {
+            invalid_at(
+                "responses-event",
+                None,
+                "type",
+                Some(observed_bytes),
+                Some(MAX_EVENT),
+            )
+        })?;
         let index = || {
             value
                 .get("output_index")
                 .and_then(Value::as_u64)
                 .and_then(|n| u32::try_from(n).ok())
-                .ok_or_else(invalid)
+                .ok_or_else(|| {
+                    invalid_at(
+                        "responses-event",
+                        Some(kind),
+                        "output_index",
+                        Some(observed_bytes),
+                        Some(MAX_EVENT),
+                    )
+                })
         };
         match kind {
             "response.created" => events.push(ProviderStreamEvent::ResponseStarted {
@@ -257,41 +337,140 @@ impl Decoder {
                     .as_str()
                     .map(ProviderResponseId::new)
                     .transpose()
-                    .map_err(|_| invalid())?,
+                    .map_err(|_| {
+                        invalid_at(
+                            "responses-event",
+                            Some(kind),
+                            "response.id",
+                            Some(observed_bytes),
+                            Some(MAX_EVENT),
+                        )
+                    })?,
                 metadata: Default::default(),
             }),
             "response.output_text.delta" | "response.refusal.delta" => {
-                let delta = value["delta"].as_str().ok_or_else(invalid)?;
+                let delta = value["delta"].as_str().ok_or_else(|| {
+                    invalid_at(
+                        "responses-event",
+                        Some(kind),
+                        "delta",
+                        Some(observed_bytes),
+                        Some(MAX_EVENT),
+                    )
+                })?;
                 self.output_bytes = self.output_bytes.saturating_add(delta.len() as u64);
                 self.visible |= !delta.is_empty();
                 events.push(ProviderStreamEvent::ContentDelta {
-                    stream_id: BoundedString::new(format!("text-{}", index()?))
-                        .map_err(|_| invalid())?,
-                    part: ContentPart::Text(ContentText::new(delta).map_err(|_| invalid())?),
+                    stream_id: BoundedString::new(format!("text-{}", index()?)).map_err(|_| {
+                        invalid_at(
+                            "responses-event",
+                            Some(kind),
+                            "output_index",
+                            Some(observed_bytes),
+                            Some(MAX_EVENT),
+                        )
+                    })?,
+                    part: ContentPart::Text(ContentText::new(delta).map_err(|_| {
+                        invalid_at(
+                            "responses-event",
+                            Some(kind),
+                            "delta",
+                            Some(delta.len()),
+                            Some(MAX_EVENT),
+                        )
+                    })?),
                 });
             }
-            "response.reasoning_summary_text.delta" => {
-                let delta = value["delta"].as_str().ok_or_else(invalid)?;
+            "response.reasoning_summary_text.delta" | "response.reasoning_text.delta" => {
+                let delta = value["delta"].as_str().ok_or_else(|| {
+                    invalid_at(
+                        "responses-event",
+                        Some(kind),
+                        "delta",
+                        Some(observed_bytes),
+                        Some(MAX_EVENT),
+                    )
+                })?;
                 self.visible |= !delta.is_empty();
                 events.push(ProviderStreamEvent::ReasoningDelta {
-                    stream_id: BoundedString::new(format!("reasoning-{}", index()?))
-                        .map_err(|_| invalid())?,
-                    text: ContentText::new(delta).map_err(|_| invalid())?,
-                    kind: ReasoningKind::Summary,
+                    stream_id: BoundedString::new(format!("reasoning-{}", index()?)).map_err(
+                        |_| {
+                            invalid_at(
+                                "responses-event",
+                                Some(kind),
+                                "output_index",
+                                Some(observed_bytes),
+                                Some(MAX_EVENT),
+                            )
+                        },
+                    )?,
+                    text: ContentText::new(delta).map_err(|_| {
+                        invalid_at(
+                            "responses-event",
+                            Some(kind),
+                            "delta",
+                            Some(delta.len()),
+                            Some(MAX_EVENT),
+                        )
+                    })?,
+                    kind: if kind == "response.reasoning_text.delta" {
+                        ReasoningKind::ProviderVisible
+                    } else {
+                        ReasoningKind::Summary
+                    },
                     retention: self.retention,
                 });
             }
             "response.output_item.added" if value["item"]["type"] == "function_call" => {
                 self.tool_started = true;
                 if self.calls.len() >= 128 {
-                    return Err(invalid());
+                    return Err(invalid_at(
+                        "responses-event",
+                        Some(kind),
+                        "tool_call_count",
+                        Some(self.calls.len().saturating_add(1)),
+                        Some(128),
+                    ));
                 }
                 let item = &value["item"];
-                let id = ToolCallId::new(item["call_id"].as_str().ok_or_else(invalid)?)
-                    .map_err(|_| invalid())?;
-                let name = item["name"].as_str().ok_or_else(invalid)?.to_owned();
+                let raw_id = item["call_id"].as_str().ok_or_else(|| {
+                    invalid_at(
+                        "responses-event",
+                        Some(kind),
+                        "item.call_id",
+                        Some(observed_bytes),
+                        Some(MAX_EVENT),
+                    )
+                })?;
+                let id = ToolCallId::new(raw_id).map_err(|_| {
+                    invalid_at(
+                        "responses-event",
+                        Some(kind),
+                        "item.call_id",
+                        Some(raw_id.len()),
+                        Some(MAX_EVENT),
+                    )
+                })?;
+                let name = item["name"]
+                    .as_str()
+                    .ok_or_else(|| {
+                        invalid_at(
+                            "responses-event",
+                            Some(kind),
+                            "item.name",
+                            Some(observed_bytes),
+                            Some(MAX_EVENT),
+                        )
+                    })?
+                    .to_owned();
                 if !self.names.contains_key(&name) || self.calls.values().any(|c| c.id == id) {
-                    return Err(invalid());
+                    return Err(invalid_at(
+                        "responses-event",
+                        Some(kind),
+                        "item.identity",
+                        Some(observed_bytes),
+                        Some(MAX_EVENT),
+                    ));
                 }
                 let idx = index()?;
                 let args = item["arguments"].as_str().unwrap_or("").to_owned();
@@ -308,55 +487,155 @@ impl Decoder {
                     )
                     .is_some()
                 {
-                    return Err(invalid());
+                    return Err(invalid_at(
+                        "responses-event",
+                        Some(kind),
+                        "output_index",
+                        Some(observed_bytes),
+                        Some(MAX_EVENT),
+                    ));
                 }
                 events.push(ProviderStreamEvent::ToolCallStarted {
                     index: idx,
                     call_id: Some(id),
-                    name: Some(ProviderToolName::new(name).map_err(|_| invalid())?),
+                    name: Some(ProviderToolName::new(name).map_err(|_| {
+                        invalid_at(
+                            "responses-event",
+                            Some(kind),
+                            "item.name",
+                            Some(observed_bytes),
+                            Some(MAX_EVENT),
+                        )
+                    })?),
                 });
             }
             "response.function_call_arguments.delta" => {
                 self.tool_started = true;
                 let idx = index()?;
-                let call = self.calls.get_mut(&idx).ok_or_else(invalid)?;
-                let delta = value["delta"].as_str().ok_or_else(invalid)?;
+                let call = self.calls.get_mut(&idx).ok_or_else(|| {
+                    invalid_at(
+                        "responses-event",
+                        Some(kind),
+                        "output_index",
+                        Some(observed_bytes),
+                        Some(MAX_EVENT),
+                    )
+                })?;
+                let delta = value["delta"].as_str().ok_or_else(|| {
+                    invalid_at(
+                        "responses-event",
+                        Some(kind),
+                        "delta",
+                        Some(observed_bytes),
+                        Some(MAX_EVENT),
+                    )
+                })?;
                 if call.done || call.args.len().saturating_add(delta.len()) > MAX_EVENT {
-                    return Err(invalid());
+                    return Err(invalid_at(
+                        "responses-event",
+                        Some(kind),
+                        "delta",
+                        Some(call.args.len().saturating_add(delta.len())),
+                        Some(MAX_EVENT),
+                    ));
                 }
                 call.args.push_str(delta);
                 events.push(ProviderStreamEvent::ToolCallDelta {
                     index: idx,
                     id_fragment: None,
                     name_fragment: None,
-                    arguments_fragment: ContentText::new(delta).map_err(|_| invalid())?,
+                    arguments_fragment: ContentText::new(delta).map_err(|_| {
+                        invalid_at(
+                            "responses-event",
+                            Some(kind),
+                            "delta",
+                            Some(delta.len()),
+                            Some(MAX_EVENT),
+                        )
+                    })?,
                 });
             }
             "response.output_item.done" => {
                 let item = &value["item"];
                 match item["type"].as_str() {
                     Some("function_call") => {
-                        let call = self.calls.get_mut(&index()?).ok_or_else(invalid)?;
-                        let args = item["arguments"].as_str().ok_or_else(invalid)?;
+                        let call = self.calls.get_mut(&index()?).ok_or_else(|| {
+                            invalid_at(
+                                "responses-event",
+                                Some(kind),
+                                "output_index",
+                                Some(observed_bytes),
+                                Some(MAX_EVENT),
+                            )
+                        })?;
+                        let args = item["arguments"].as_str().ok_or_else(|| {
+                            invalid_at(
+                                "responses-event",
+                                Some(kind),
+                                "item.arguments",
+                                Some(observed_bytes),
+                                Some(MAX_EVENT),
+                            )
+                        })?;
                         if call.done
                             || item["call_id"].as_str() != Some(call.id.as_str())
                             || item["name"].as_str() != Some(&call.name)
                             || (!call.args.is_empty() && call.args != args)
                         {
-                            return Err(invalid());
+                            return Err(invalid_at(
+                                "responses-event",
+                                Some(kind),
+                                "item.identity",
+                                Some(observed_bytes),
+                                Some(MAX_EVENT),
+                            ));
                         }
-                        let arguments: Value = serde_json::from_str(args).map_err(|_| invalid())?;
+                        let arguments: Value = serde_json::from_str(args).map_err(|_| {
+                            invalid_at(
+                                "responses-event",
+                                Some(kind),
+                                "item.arguments",
+                                Some(args.len()),
+                                Some(MAX_EVENT),
+                            )
+                        })?;
                         if !arguments.is_object() {
-                            return Err(invalid());
+                            return Err(invalid_at(
+                                "responses-event",
+                                Some(kind),
+                                "item.arguments",
+                                Some(args.len()),
+                                Some(MAX_EVENT),
+                            ));
                         }
                         call.done = true;
                         let mut extensions = ExtensionMap::default();
                         extensions
                             .insert("openai:name", json!(call.name))
-                            .map_err(|_| invalid())?;
+                            .map_err(|_| {
+                                invalid_at(
+                                    "responses-event",
+                                    Some(kind),
+                                    "extensions",
+                                    Some(observed_bytes),
+                                    Some(MAX_EVENT),
+                                )
+                            })?;
                         events.push(ProviderStreamEvent::ToolCallCompleted(ToolCall {
                             id: call.id.clone(),
-                            tool_id: self.names.get(&call.name).ok_or_else(invalid)?.clone(),
+                            tool_id: self
+                                .names
+                                .get(&call.name)
+                                .ok_or_else(|| {
+                                    invalid_at(
+                                        "responses-event",
+                                        Some(kind),
+                                        "item.name",
+                                        Some(observed_bytes),
+                                        Some(MAX_EVENT),
+                                    )
+                                })?
+                                .clone(),
                             arguments,
                             extensions,
                         }));
@@ -369,8 +648,17 @@ impl Decoder {
                             && self.retention != ReasoningRetention::Disabled =>
                     {
                         events.push(ProviderStreamEvent::ContentDelta {
-                            stream_id: BoundedString::new(format!("opaque-{}", index()?))
-                                .map_err(|_| invalid())?,
+                            stream_id: BoundedString::new(format!("opaque-{}", index()?)).map_err(
+                                |_| {
+                                    invalid_at(
+                                        "responses-event",
+                                        Some(kind),
+                                        "output_index",
+                                        Some(observed_bytes),
+                                        Some(MAX_EVENT),
+                                    )
+                                },
+                            )?,
                             part: ContentPart::Reasoning(ReasoningBlock {
                                 kind: ReasoningKind::OpaqueContinuation,
                                 retention: self.retention,
@@ -378,8 +666,15 @@ impl Decoder {
                                 opaque: Some(OpaqueContent {
                                     provider_id: provider_id(),
                                     kind: "reasoning".into(),
-                                    data: OpaqueProviderData::new(item.clone())
-                                        .map_err(|_| invalid())?,
+                                    data: OpaqueProviderData::new(item.clone()).map_err(|_| {
+                                        invalid_at(
+                                            "responses-event",
+                                            Some(kind),
+                                            "item.encrypted_content",
+                                            Some(observed_bytes),
+                                            Some(MAX_EVENT),
+                                        )
+                                    })?,
                                 }),
                             }),
                         })
@@ -387,15 +682,28 @@ impl Decoder {
                     Some("message") => {
                         if let Some(phase) = item.get("phase").and_then(Value::as_str) {
                             if !["commentary", "final_answer"].contains(&phase) {
-                                return Err(invalid());
+                                return Err(invalid_at(
+                                    "responses-event",
+                                    Some(kind),
+                                    "item.phase",
+                                    Some(phase.len()),
+                                    Some(MAX_EVENT),
+                                ));
                             }
                             events.push(ProviderStreamEvent::ContentDelta {
                                 stream_id: BoundedString::new("phase").expect("static"),
                                 part: ContentPart::ProviderOpaque(OpaqueContent {
                                     provider_id: provider_id(),
                                     kind: "message-phase".into(),
-                                    data: OpaqueProviderData::new(json!(phase))
-                                        .map_err(|_| invalid())?,
+                                    data: OpaqueProviderData::new(json!(phase)).map_err(|_| {
+                                        invalid_at(
+                                            "responses-event",
+                                            Some(kind),
+                                            "item.phase",
+                                            Some(phase.len()),
+                                            Some(MAX_EVENT),
+                                        )
+                                    })?,
                                 }),
                             });
                         }
@@ -405,7 +713,13 @@ impl Decoder {
             }
             "response.completed" | "response.incomplete" => {
                 if self.calls.values().any(|c| !c.done) {
-                    return Err(invalid());
+                    return Err(invalid_at(
+                        "responses-event",
+                        Some(kind),
+                        "unfinished_tool_call",
+                        Some(self.calls.values().filter(|call| !call.done).count()),
+                        Some(self.calls.len()),
+                    ));
                 }
                 if let Some(usage) = value["response"].get("usage").filter(|v| v.is_object()) {
                     let mut result = NormalizedUsage::unavailable(UsageMode::Cumulative);
@@ -442,7 +756,9 @@ impl Decoder {
                 ));
             }
             // Documented informational events never contain an executable call.
-            "response.in_progress"
+            "codex.response.metadata"
+            | "response.metadata"
+            | "response.in_progress"
             | "response.queued"
             | "response.output_item.added"
             | "response.content_part.added"
@@ -453,8 +769,17 @@ impl Decoder {
             | "response.function_call_arguments.done"
             | "response.reasoning_summary_part.added"
             | "response.reasoning_summary_part.done"
-            | "response.reasoning_summary_text.done" => {}
-            _ => return Err(invalid()),
+            | "response.reasoning_summary_text.done"
+            | "responsesapi.websocket_timing" => {}
+            _ => {
+                return Err(invalid_at(
+                    "responses-event",
+                    Some(kind),
+                    "type",
+                    Some(observed_bytes),
+                    Some(MAX_EVENT),
+                ));
+            }
         }
         Ok(events)
     }

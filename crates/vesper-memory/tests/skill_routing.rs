@@ -65,6 +65,106 @@ fn explicit_textual_selection_routes_a_named_skill() {
     assert_eq!(matches.first().map(String::as_str), Some("xlsx"));
 }
 
+#[test]
+fn ordinary_use_the_prose_is_not_an_explicit_skill_request() {
+    let store = curated_store();
+    let env = QueryEnv::default();
+    let prompts = [
+        "Use the actual repository review links.\nExplain tools, permissions, skills and memory.",
+        // Labelled reconstruction from the retained TUI transcript/screenshot;
+        // the original 2,095-byte paste was not persisted after the routing failure.
+        "Use the actual repository review links. Run the necessary post-adoption checks.\n\nExplain tools, permissions, skills and memory.",
+        "Use the repository links first.\n\nThe skills list is reference material.",
+        "Use the repository links first.\r\n- Review the skillset documentation.",
+        "Use the repository links first. The implementation is skillful.",
+        "Use the repo/path skill only as an example.",
+        "Use the xlsx skills catalog entry as documentation.",
+        "Use the xlsx skillset entry as documentation.",
+        "Use the xlsx skillful example as documentation.",
+        "Use the résumé links first. Explain the Unicode skills list.",
+    ];
+    for prompt in prompts {
+        assert!(
+            !store.has_explicit_request(prompt, None),
+            "ordinary prose was classified as explicit: {prompt:?}"
+        );
+        let report = store.orchestrate(&env.query(prompt));
+        assert!(
+            report.explicit_error.is_none(),
+            "ordinary prose produced an explicit error: {:?}",
+            report.explicit_error
+        );
+    }
+}
+
+#[test]
+fn bounded_natural_language_invocation_scans_for_a_later_directive() {
+    let store = curated_store();
+    let env = QueryEnv::default();
+    let prompt = "Use the repository links first. Then use the XLSX skill to process the data.";
+    assert!(store.has_explicit_request(prompt, None));
+    let report = store.orchestrate(&env.query(prompt));
+    assert!(report.explicit_error.is_none());
+    assert_eq!(
+        report.selected_names().first().map(String::as_str),
+        Some("xlsx")
+    );
+    assert_eq!(
+        report.selected[0].candidate.reasons,
+        ["explicit user selection"]
+    );
+}
+
+#[test]
+fn bounded_explicit_diagnostics_preserve_unknown_and_punctuated_forms() {
+    let store = curated_store();
+    let env = QueryEnv::default();
+    for prompt in [
+        "Use the XLSX skill, please.",
+        "use skill xlsx: process the workbook",
+        "with skill xlsx (process the workbook)",
+    ] {
+        assert!(store.has_explicit_request(prompt, None), "{prompt}");
+        let report = store.orchestrate(&env.query(prompt));
+        assert!(report.explicit_error.is_none(), "{prompt}");
+        assert_eq!(
+            report.selected_names().first().map(String::as_str),
+            Some("xlsx")
+        );
+    }
+
+    let unknown = store.orchestrate(&env.query("Use the missing-fixture skill to continue."));
+    assert_eq!(
+        unknown.explicit_error.as_deref(),
+        Some("skill `missing-fixture` was not found")
+    );
+
+    let canary = "DO_NOT_ECHO_SECRET_CANARY";
+    let long_name = "a".repeat(65);
+    let malformed = format!("Use the {long_name} skill. {canary}");
+    assert!(!store.has_explicit_request(&malformed, None));
+    let report = store.orchestrate(&env.query(&malformed));
+    assert!(report.explicit_error.is_none());
+    assert!(
+        report
+            .rejected
+            .iter()
+            .all(|(name, reason)| !name.contains(canary) && !reason.contains(canary))
+    );
+
+    let near_limit = format!(
+        "Use the actual repository review links. {} Explain skills and memory.",
+        "ordinary context ".repeat(2_000)
+    );
+    assert!(!store.has_explicit_request(&near_limit, None));
+    assert!(
+        store
+            .orchestrate(&env.query(&near_limit))
+            .explicit_error
+            .is_none()
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Advanced context paging PR-2 (AC-2): two-level routing. See
 // `docs/advanced-context-paging-prd.md` §5 PR-2, §6 AC-2. Fixture-based

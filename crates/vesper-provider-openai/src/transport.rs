@@ -86,7 +86,9 @@ impl OpenAiSession {
         cancel: &dyn CancellationSignal,
     ) -> Result<reqwest::Response, ProviderError> {
         {
-            let availability = self.availability.read().map_err(|_| wire::invalid())?;
+            let availability = self.availability.read().map_err(|_| {
+                wire::invalid_at("dispatch-state", None, "availability-lock", None, None)
+            })?;
             if availability.as_ref().is_some_and(|available| {
                 available.mode != auth.mode || !available.contains(request.model.model_id.as_str())
             }) {
@@ -209,15 +211,34 @@ impl ProviderSession for OpenAiSession {
                         )
                     })? {
                         if bytes.len() + chunk.len() > 65_536 {
-                            return Err(crate::wire::invalid());
+                            return Err(crate::wire::invalid_at(
+                                "usage-body",
+                                None,
+                                "body",
+                                Some(bytes.len().saturating_add(chunk.len())),
+                                Some(65_536),
+                            ));
                         }
                         bytes.extend_from_slice(&chunk);
                     }
-                    let payload =
-                        serde_json::from_slice(&bytes).map_err(|_| crate::wire::invalid())?;
+                    let payload = serde_json::from_slice(&bytes).map_err(|_| {
+                        crate::wire::invalid_at(
+                            "usage-json",
+                            None,
+                            "body",
+                            Some(bytes.len()),
+                            Some(65_536),
+                        )
+                    })?;
                     return crate::usage::parse_usage(&payload);
                 }
-                Err(crate::wire::invalid())
+                Err(crate::wire::invalid_at(
+                    "usage-retry",
+                    None,
+                    "attempts",
+                    Some(2),
+                    Some(2),
+                ))
             };
             tokio::select! {
                 result = tokio::time::timeout(Duration::from_secs(30), operation) => result.map_err(|_| error("OpenAI usage query timed out", ErrorCategory::Transport, false))?,
@@ -299,7 +320,13 @@ impl AuxiliaryRequestPort for OpenAiSession {
                         ..
                     } => {
                         if text.len() + delta.as_str().len() > wire::MAX_EVENT {
-                            return Err(wire::invalid());
+                            return Err(wire::invalid_at(
+                                "auxiliary-aggregation",
+                                None,
+                                "text",
+                                Some(text.len().saturating_add(delta.as_str().len())),
+                                Some(wire::MAX_EVENT),
+                            ));
                         }
                         text.push_str(delta.as_str());
                     }
@@ -318,11 +345,24 @@ impl AuxiliaryRequestPort for OpenAiSession {
                 }
             }
             if !completed || text.is_empty() {
-                return Err(wire::invalid());
+                return Err(wire::invalid_at(
+                    "auxiliary-completion",
+                    None,
+                    if completed { "text" } else { "terminal-event" },
+                    Some(text.len()),
+                    Some(wire::MAX_EVENT),
+                ));
             }
-            Ok(ContentPart::Text(
-                ContentText::new(text).map_err(|_| wire::invalid())?,
-            ))
+            let observed_bytes = text.len();
+            Ok(ContentPart::Text(ContentText::new(text).map_err(|_| {
+                wire::invalid_at(
+                    "auxiliary-content",
+                    None,
+                    "text",
+                    Some(observed_bytes),
+                    Some(wire::MAX_EVENT),
+                )
+            })?))
         })
     }
 }
@@ -368,16 +408,18 @@ async fn drive(
             if byte != b'\n' {
                 buffer.push(byte);
                 if buffer.len() > wire::MAX_EVENT {
-                    let _ = send(
-                        &tx,
-                        Ok(decoder.finish(FinishOutcome::StreamInterrupted {
-                            cause: StreamInterruptionCause::Transport,
-                            tool_call_started: decoder.tool_started,
-                        })),
-                        deadline,
-                        cancel.as_ref(),
-                    )
-                    .await;
+                    let event = if decoder.visible || decoder.tool_started {
+                        Ok(decoder.finish(FinishOutcome::ProtocolError))
+                    } else {
+                        Err(wire::invalid_at(
+                            "responses-sse-line",
+                            None,
+                            "line",
+                            Some(buffer.len()),
+                            Some(wire::MAX_EVENT),
+                        ))
+                    };
+                    let _ = send(&tx, event, deadline, cancel.as_ref()).await;
                     return;
                 }
                 continue;
@@ -388,24 +430,35 @@ async fn drive(
             let line = match std::str::from_utf8(&buffer) {
                 Ok(line) => line,
                 Err(_) => {
-                    let _ = send(
-                        &tx,
-                        Ok(decoder.finish(FinishOutcome::StreamInterrupted {
-                            cause: StreamInterruptionCause::Transport,
-                            tool_call_started: decoder.tool_started,
-                        })),
-                        deadline,
-                        cancel.as_ref(),
-                    )
-                    .await;
+                    let event = if decoder.visible || decoder.tool_started {
+                        Ok(decoder.finish(FinishOutcome::ProtocolError))
+                    } else {
+                        Err(wire::invalid_at(
+                            "responses-sse-line",
+                            None,
+                            "utf8",
+                            Some(buffer.len()),
+                            Some(wire::MAX_EVENT),
+                        ))
+                    };
+                    let _ = send(&tx, event, deadline, cancel.as_ref()).await;
                     return;
                 }
             };
             if line.is_empty() && !data.is_empty() {
+                let observed_bytes = data.trim_end().len();
                 let value = serde_json::from_str(data.trim_end());
                 data.clear();
                 let events = value
-                    .map_err(|_| wire::invalid())
+                    .map_err(|_| {
+                        wire::invalid_at(
+                            "responses-sse-json",
+                            None,
+                            "data",
+                            Some(observed_bytes),
+                            Some(wire::MAX_EVENT),
+                        )
+                    })
                     .and_then(|v| decoder.event(v));
                 match events {
                     Ok(events) => {
@@ -448,13 +501,19 @@ async fn drive(
             } else if let Some(value) = line.strip_prefix("data:") {
                 let value = value.strip_prefix(' ').unwrap_or(value);
                 if data.len() + value.len() + 1 > wire::MAX_EVENT {
-                    let _ = send(
-                        &tx,
-                        Ok(decoder.finish(FinishOutcome::ProtocolError)),
-                        deadline,
-                        cancel.as_ref(),
-                    )
-                    .await;
+                    let observed_bytes = data.len().saturating_add(value.len()).saturating_add(1);
+                    let event = if decoder.visible || decoder.tool_started {
+                        Ok(decoder.finish(FinishOutcome::ProtocolError))
+                    } else {
+                        Err(wire::invalid_at(
+                            "responses-sse-data",
+                            None,
+                            "data",
+                            Some(observed_bytes),
+                            Some(wire::MAX_EVENT),
+                        ))
+                    };
+                    let _ = send(&tx, event, deadline, cancel.as_ref()).await;
                     return;
                 }
                 data.push_str(value);

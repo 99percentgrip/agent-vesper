@@ -415,7 +415,7 @@ impl SkillStore {
         let view = invocation_text(prompt);
         let normalized = normalized(&view);
         explicit.is_some()
-            || explicit_skill_from_prompt(&normalized).is_some()
+            || explicit_skill_from_prompt(&view).is_some()
             || explicit_bundle_name_from_prompt(&normalized).is_some()
             || dollar_skill_from_prompt(&view, &self.list()).is_some()
     }
@@ -521,7 +521,7 @@ impl SkillStore {
         let explicit = query
             .explicit_skill
             .map(normalized)
-            .or_else(|| explicit_skill_from_prompt(&invocation_prompt))
+            .or_else(|| explicit_skill_from_prompt(&invocation_text))
             .or_else(|| dollar_skill_from_prompt(&invocation_text, &summaries));
         let explicit_bundle = explicit_bundle_from_prompt(&invocation_prompt, &bundles);
         let bundle_members: BTreeSet<String> = explicit_bundle
@@ -1793,23 +1793,95 @@ fn affirmative_marker<'a>(prompt: &'a str, marker: &str) -> Option<&'a str> {
 }
 
 fn explicit_skill_from_prompt(prompt: &str) -> Option<String> {
+    // Parse the masked but otherwise original invocation view. In particular,
+    // do not normalize `/` into `-` before deciding whether a local token is a
+    // skill identifier: ordinary paths and prose must remain data.
+    let lower = prompt.to_ascii_lowercase();
     for marker in ["use skill ", "with skill "] {
-        if let Some(rest) = affirmative_marker(prompt, marker) {
-            let slug = first_slug(rest);
-            if !slug.is_empty() {
+        let mut offset = 0;
+        while let Some(rest) = next_affirmative_remainder(prompt, &lower, marker, &mut offset) {
+            if let Some((slug, _)) = explicit_identifier_prefix(rest) {
                 return Some(slug);
             }
         }
     }
-    if let Some(rest) = affirmative_marker(prompt, "use the ")
-        && let Some((name, _)) = rest.split_once(" skill")
-    {
-        let slug = normalized(name);
-        if !slug.is_empty() {
+
+    // The natural-language form is deliberately local:
+    // `use the <identifier> skill`. The identifier is one bounded token and
+    // `skill` is singular and whole-word. Keep scanning after malformed prose
+    // so an earlier `use the ...` sentence cannot hide a later real directive.
+    let mut offset = 0;
+    while let Some(rest) = next_affirmative_remainder(prompt, &lower, "use the ", &mut offset) {
+        let Some((slug, after_identifier)) = explicit_identifier_prefix(rest) else {
+            continue;
+        };
+        if !after_identifier.starts_with([' ', '\t']) {
+            continue;
+        }
+        let after_space = after_identifier.trim_start_matches([' ', '\t']);
+        let Some(after_marker) = after_space.get("skill".len()..) else {
+            continue;
+        };
+        if !after_space[.."skill".len()].eq_ignore_ascii_case("skill") {
+            continue;
+        }
+        let marker_continues = after_marker.chars().next().is_some_and(|character| {
+            character.is_alphanumeric() || character == '-' || character == '_'
+        });
+        if !marker_continues {
             return Some(slug);
         }
     }
     None
+}
+
+fn next_affirmative_remainder<'a>(
+    prompt: &'a str,
+    lower: &str,
+    marker: &str,
+    offset: &mut usize,
+) -> Option<&'a str> {
+    while let Some(relative) = lower[*offset..].find(marker) {
+        let index = *offset + relative;
+        let next = index + marker.len();
+        *offset = next;
+        let prefix = lower[..index].trim_end();
+        let boundary = index == 0
+            || !lower[..index]
+                .chars()
+                .next_back()
+                .is_some_and(char::is_alphanumeric);
+        let negated = ["not", "don't", "never", "without"]
+            .iter()
+            .any(|word| prefix.split_whitespace().next_back() == Some(*word));
+        if boundary && !negated {
+            return Some(&prompt[next..]);
+        }
+    }
+    None
+}
+
+fn explicit_identifier_prefix(value: &str) -> Option<(String, &str)> {
+    let mut end = 0;
+    for (index, character) in value.char_indices() {
+        if character.is_ascii_alphanumeric() || character == '-' || character == '_' {
+            end = index + character.len_utf8();
+        } else {
+            break;
+        }
+    }
+    if end == 0 || end > 64 {
+        return None;
+    }
+    let remainder = &value[end..];
+    if remainder.chars().next().is_some_and(|character| {
+        !character.is_whitespace() && !".,;:()[]{}<>\"'!?".contains(character)
+    }) {
+        return None;
+    }
+    let slug = normalized(&value[..end]);
+    crate::SkillSlug::new(&slug).ok()?;
+    Some((slug, remainder))
 }
 
 // Dollar signs also introduce math, currency and shell syntax. Only a complete
