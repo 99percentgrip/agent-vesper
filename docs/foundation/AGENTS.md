@@ -6,6 +6,10 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `2026-09-28-openai-skill-routing-repair.md` owns the interrupted-turn diagnosis,
+  red-to-green shared skill parser and native OpenAI subscription-event repair,
+  TUI/ACP production-path receipts, candidate identities and retained live/cross-platform gaps.
+
 - `vro18-audit1-completeness-and-capability-truth.md` owns the independent
   post-v0.24.0 VRO-18 requirement/reachability audit, exact-artifact F0
   reproduction, repaired source/test/live evidence, binary identities, safe

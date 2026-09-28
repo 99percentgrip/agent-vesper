@@ -22,6 +22,8 @@ not asserted by offline acceptance. User setup is in [the guide](openai-provider
 
 ## Evidence and architecture decision
 
+- [2026-09-28 malformed-Responses and shared skill-routing repair](foundation/2026-09-28-openai-skill-routing-repair.md) records the current subscription metadata/reasoning decoder fix, bounded secret-safe rejection diagnostics, both-host offline receipts, runnable candidate identities and the unexecuted live/cross-platform gaps.
+
 Official documentation inspected on 2026-09-08:
 
 - [Authentication](https://learn.chatgpt.com/docs/auth): Codex distinguishes

@@ -1,5 +1,12 @@
 # Foundation Evidence Index
 
+## OpenAI Responses and shared skill-routing repair (2026-09-28)
+
+- Execution: [`2026-09-28-openai-skill-routing-repair.md`](2026-09-28-openai-skill-routing-repair.md)
+- OpenAI requirements: [`../openai-provider-prd.md`](../openai-provider-prd.md)
+- Shared skill behavior: [`../skills.md`](../skills.md)
+- Verdict: **IMPLEMENTED AND OFFLINE-VERIFIED; LIVE INCIDENT PAYLOAD AND PUBLIC-PROVIDER REPLAY NOT AVAILABLE.** Commit `560b32cdf9c209283c620aaf259790c8f61e8177` repairs bounded explicit-skill parsing and current subscription metadata/reasoning event decoding. Shared parser, native adapter, TUI PTY, ACP process, architecture and complete `cargo xtask verify` gates pass. The exact unretained historical provider event and full original paste remain unprovable; no live call, release, installation change or VRO-19 work occurred.
+
 ## Grok subscription usage release v0.24.3 (2026-09-27)
 
 - Execution: [`xai-subscription-usage-execution.md`](xai-subscription-usage-execution.md)
