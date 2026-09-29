@@ -131,7 +131,9 @@ transport, stderr-only tracing, and orderly shutdown.
   `--provider openai --login`; ACP stdout never displays a device code.
 - LM Studio transport sends the active request model, so native model changes do
   not silently keep using the launch model. Its loopback wire test verifies the
-  request body through the real AgentLoop and adapter.
+  request body through the real AgentLoop and adapter; the fixture restores an
+  accepted socket to blocking mode before bounded reads because macOS may inherit
+  the listener's nonblocking state.
 - Memory extraction follows the launch provider. An OpenAI launch uses the
   native Responses auxiliary path without Z.ai/LM Studio credentials. The
   independent embedding configuration and local fallback stay unchanged.

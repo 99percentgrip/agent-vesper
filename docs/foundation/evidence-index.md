@@ -1,5 +1,18 @@
 # Foundation Evidence Index
 
+## Red main CI follow-up repair (2026-09-29)
+
+- Execution: [`2026-09-29-red-main-ci-repair.md`](2026-09-29-red-main-ci-repair.md)
+- Predecessor: [`2026-09-29-post-release-quality-check-investigation.md`](2026-09-29-post-release-quality-check-investigation.md)
+- Verdict: **IMPLEMENTED AND LOCALLY VERIFIED; EXACT-COMMIT GITHUB RECEIPTS ARE
+  REPORTED AT DELIVERY.** Run `36534993336` exposed two macOS Intel races after
+  the earlier all-green closeout: a Unix shell could fork after the first
+  process-group signal but before signal delivery, and the ACP LM Studio fixture
+  did not clear an inherited nonblocking flag on its accepted socket. The repair
+  re-signals the owned group until absence inside the existing settlement budget
+  and restores blocking mode before the fixture's bounded read. Assertions,
+  timeouts, cleanup checks, and request-body proof remain intact.
+
 ## Post-release quality-check repair (2026-09-29)
 
 - Investigation and repair: [`2026-09-29-post-release-quality-check-investigation.md`](2026-09-29-post-release-quality-check-investigation.md)

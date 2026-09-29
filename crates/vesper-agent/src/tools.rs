@@ -872,15 +872,6 @@ fn drain_pipe(
     receiver
 }
 
-fn receive_capture(
-    receiver: &mpsc::Receiver<CapturedPipe>,
-    deadline: Instant,
-) -> Option<CapturedPipe> {
-    receiver
-        .recv_timeout(deadline.saturating_duration_since(Instant::now()))
-        .ok()
-}
-
 fn process_group_already_absent(error: &std::io::Error) -> bool {
     if matches!(
         error.kind(),
@@ -1006,7 +997,7 @@ fn run_bounded(
         .group_spawn()
         .map_err(|e| ToolError::Failed(format!("spawn failed: {e}")))?;
     let retained_budget = Arc::new(AtomicUsize::new(MAX_OUTPUT_BYTES));
-    let stdout = drain_pipe(
+    let stdout_receiver = drain_pipe(
         child
             .inner()
             .stdout
@@ -1014,7 +1005,7 @@ fn run_bounded(
             .ok_or_else(|| ToolError::Failed("spawned command has no stdout pipe".into()))?,
         Arc::clone(&retained_budget),
     );
-    let stderr = drain_pipe(
+    let stderr_receiver = drain_pipe(
         child
             .inner()
             .stderr
@@ -1046,27 +1037,63 @@ fn run_bounded(
     // `GroupChild` owns a POSIX process group on Unix and a Job Object on
     // Windows. Killing that exact object remains valid after the shell leader
     // exits, unlike PID-tree discovery through `taskkill`.
-    let cleanup_verified = match child.kill() {
-        Ok(()) => true,
-        Err(error) if process_group_already_absent(&error) => true,
-        Err(_) => false,
-    };
-    // Reaping and pipe draining happen concurrently, so they share one total
-    // settlement deadline. A separate short leader deadline made truthful
-    // cleanup depend on runner scheduling even when the pipes settled within
-    // the existing overall 2.5-second budget.
+    let initial_cleanup = child.kill();
+    // Reaping, pipe draining, and Unix process-group teardown share one total
+    // settlement deadline. Re-signal a still-present Unix group until it is
+    // observed absent: a shell can fork between the first group signal and
+    // delivery, and that late child does not inherit the pending SIGKILL.
     let settlement_deadline = Instant::now() + COMMAND_SETTLEMENT_BUDGET;
     let mut final_status = status;
-    while final_status.is_none() && Instant::now() < settlement_deadline {
-        match child.inner().try_wait() {
-            Ok(Some(observed)) => final_status = Some(observed),
-            Ok(None) => std::thread::sleep(Duration::from_millis(10)),
-            Err(_) => break,
+    let mut stdout = None;
+    let mut stderr = None;
+    let mut settlement_failed = false;
+    #[cfg(not(windows))]
+    let mut cleanup_failed = initial_cleanup
+        .as_ref()
+        .is_err_and(|error| !process_group_already_absent(error));
+    #[cfg(windows)]
+    let cleanup_verified = initial_cleanup.is_ok()
+        || initial_cleanup
+            .as_ref()
+            .is_err_and(process_group_already_absent);
+    #[cfg(not(windows))]
+    let mut cleanup_verified = initial_cleanup
+        .as_ref()
+        .is_err_and(process_group_already_absent);
+
+    loop {
+        if final_status.is_none() {
+            match child.inner().try_wait() {
+                Ok(Some(observed)) => final_status = Some(observed),
+                Ok(None) => {}
+                Err(_) => settlement_failed = true,
+            }
         }
+        if stdout.is_none() {
+            stdout = stdout_receiver.try_recv().ok();
+        }
+        if stderr.is_none() {
+            stderr = stderr_receiver.try_recv().ok();
+        }
+
+        #[cfg(not(windows))]
+        if !cleanup_verified && !cleanup_failed {
+            match child.kill() {
+                Ok(()) => {}
+                Err(error) if process_group_already_absent(&error) => cleanup_verified = true,
+                Err(_) => cleanup_failed = true,
+            }
+        }
+
+        if (cleanup_verified && final_status.is_some() && stdout.is_some() && stderr.is_some())
+            || settlement_failed
+            || Instant::now() >= settlement_deadline
+        {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
     }
     let leader_reaped = final_status.is_some();
-    let stdout = receive_capture(&stdout, settlement_deadline);
-    let stderr = receive_capture(&stderr, settlement_deadline);
     let pipes_settled = stdout.is_some() && stderr.is_some();
     #[cfg(windows)]
     let tree_settled = cleanup_verified || (reason.is_none() && pipes_settled);

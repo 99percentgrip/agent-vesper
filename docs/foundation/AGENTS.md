@@ -6,6 +6,11 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `2026-09-29-red-main-ci-repair.md` owns the follow-up diagnosis and repair
+  for documentation-closeout run `36534993336`: Unix late-fork process-group
+  cleanup, macOS inherited nonblocking LM Studio fixture sockets, local stress
+  evidence, exact delivery-time GitHub receipts, and the unchanged release boundary.
+
 - `2026-09-29-post-release-quality-check-investigation.md` owns the
   post-v0.24.4 quality failure diagnosis, deterministic explicit-marker repair,
   Windows quote-safe correction, local verification, exact GitHub quality and
