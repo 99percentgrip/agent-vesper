@@ -17,9 +17,9 @@ Own durable project documentation and evidence-backed engineering records.
   managed-machine recovery, readiness checks and platform acceptance gates.
 - `Agent_Vesper_Release_Recovery_Controller_PRD.md` owns deterministic `/release`,
   CI recovery and post-release main-health requirements. Current implementation
-  status, controlled private-GitHub receipts, and explicitly unexecuted production
-  publication/five-target host evidence remain in section 37 and the linked
-  `foundation/` execution reports.
+  status, controlled private-GitHub receipts, five-target native host lifecycle
+  evidence, and the explicitly excluded/unexecuted production publication remain
+  in section 37 and the linked `foundation/` execution reports.
 
 - `README.md` is the documentation landing page, separating user guides from
   contributor references, specifications, and historical evidence.
@@ -90,9 +90,10 @@ Own durable project documentation and evidence-backed engineering records.
   retry policy, external-pause semantics, durable checkpoint, and TUI/ACP parity.
   `foundation/release-recovery-controller-pr1-pr3-execution.md` records the
   original bounded implementation; `foundation/release-recovery-controller-pr4-pr7-execution.md`
-  records the production executor, permission-aware repair/worktree promotion,
-  host parity, controlled private-GitHub acceptance and the remaining unexecuted
-  production-publication/five-target host evidence.
+  records the production executor and controlled GitHub checkpoint; and
+  `foundation/release-recovery-controller-final-completion.md` records the
+  process-tree repair, five-target lifecycle evidence and final non-publishing
+  audit.
 - Root PRD files (`*-prd.md`) own accepted phased requirement documents
   (e.g. `agent-vesper-reasoning-orchestrator-prd.md`,
   `provider-capability-gating-prd.md`, `qm-extraction-prd.md`,

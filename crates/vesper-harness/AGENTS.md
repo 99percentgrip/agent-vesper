@@ -28,9 +28,11 @@ Z.ai and Playwright MCP server descriptors.
   strongly supported deterministic source failures use one permission-aware
   AgentLoop turn in an isolated user-state worktree; promotion requires observed
   mutation and focused-command receipts, a non-empty diff and a clean controller
-  workspace before one fresh-SHA full-gate retry. Deterministic executor tests and
-  the controlled private GitHub fixture do not substitute for production release
-  publication or live five-target host cancellation/restart evidence.
+  workspace before one fresh-SHA full-gate retry. The native lifecycle regression
+  owns a real child/descendant group or Job Object, proves cancellation reaps it,
+  and starts a fresh process that reloads the same epoch/run/job identity; it runs
+  on all five target families. Deterministic executor tests and controlled private
+  GitHub fixtures do not substitute for production release publication.
 
 - `dependency_setup` owns explicit native dependency consent, local engine health,
   fixed Podman package plans, bounded credential-free progress, setup serialization

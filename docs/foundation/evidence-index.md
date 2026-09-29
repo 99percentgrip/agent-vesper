@@ -1,26 +1,28 @@
 # Foundation Evidence Index
 
-## Release Recovery Controller PR-1 through PR-7 continuation (2026-09-29)
+## Release Recovery Controller final completion (2026-09-29)
 
+- Final completion and full PRD audit: [`release-recovery-controller-final-completion.md`](release-recovery-controller-final-completion.md)
 - Initial execution: [`release-recovery-controller-pr1-pr3-execution.md`](release-recovery-controller-pr1-pr3-execution.md)
 - Hardening execution: [`release-recovery-controller-hardening-execution.md`](release-recovery-controller-hardening-execution.md)
 - PR-4 through PR-7 continuation: [`release-recovery-controller-pr4-pr7-execution.md`](release-recovery-controller-pr4-pr7-execution.md)
 - Owning PRD: [`../Agent_Vesper_Release_Recovery_Controller_PRD.md`](../Agent_Vesper_Release_Recovery_Controller_PRD.md)
-- Verdict: **PR-1 THROUGH PR-7 IMPLEMENTED AND VERIFIED WITHIN THE AUTHORIZED
-  NON-PUBLISHING SCOPE; PRODUCTION PUBLICATION AND LIVE FIVE-TARGET HOST
-  CANCELLATION/RESTART REMAIN NOT RUN.** RRC-issued typed tokens gate version,
-  commit, push, retry, tag and publication operations; deterministic source
-  failures use a permission-aware AgentLoop in an isolated worktree and require
-  observed mutation/focused-proof receipts before promotion and one fresh-SHA
-  retry. Outage admission requires present/all-green local gates and bounded
-  official status; production does not query community telemetry. TUI and ACP
-  delegate to the same `/release` and `/ci` semantics. `cargo xtask acceptance`
-  passes all 29 exact cases and `cargo xtask verify` passes. Four named controlled
-  workflow scenarios ran at exact commit
-  `e149b2e0f57ec9962ad56e217b1a5571b9fb1c23` in the preserved private audit
-  repository `99percentgrip/agent-vesper-rrc-acceptance`; it has zero tags and
-  zero releases. Agent Vesper `main`, tags, releases and production workflows
-  were not changed.
+- Verdict: **COMPLETE WITHIN THE AUTHORIZED NON-PUBLISHING SCOPE.** RRC-issued
+  typed tokens gate version, commit, push, retry, tag and publication operations;
+  deterministic source failures use a permission-aware AgentLoop in an isolated
+  epoch worktree and require observed mutation/focused-proof receipts before
+  fail-closed promotion and one fresh-SHA retry. The final audit found and repaired
+  direct-child-only cancellation, with a regression-first leak canary. `cargo
+  xtask acceptance` passes all 30 exact cases and `cargo xtask verify` passes.
+  Four controlled GitHub scenarios remain preserved at exact fixture commit
+  `e149b2e0f57ec9962ad56e217b1a5571b9fb1c23`. Native lifecycle run
+  `36594339290` passed Linux x86_64, Linux ARM64, macOS Intel, macOS Apple
+  Silicon and Windows x86_64 against exact candidate
+  `60eacc5c8ef53f4dba1b4eed7d274fa26ec95284`, proving descendant reaping and
+  fresh-process epoch/run/job reload. The private repository has zero tags and
+  zero releases. Production publication remained explicitly prohibited and was
+  not misreported as a pass; Agent Vesper `main`, tags, releases, registry and
+  installations were unchanged.
 
 ## Active agent supervision (2026-09-29 08:45Z)
 

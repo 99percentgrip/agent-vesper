@@ -150,6 +150,9 @@ platform assumptions on hosts unavailable locally.
 - `workflows/foundation-spikes.yml` — five-target disposable spike test matrix.
 - `workflows/release-recovery-acceptance.yml` — manually dispatched, non-publishing
   RRC fixture matrix with stable synthetic causal output and a secret canary.
+- `workflows/release-recovery-lifecycle-acceptance.yml` — manually dispatched,
+  read-only exact-SHA native five-target cancellation/restart matrix for the
+  authorized private acceptance repository.
 - `workflows/release.yml` — tag-triggered ACP+TUI archive packaging and GitHub
   Release publication for the registry and installers; archives also bundle
   the repo `skills/` seed library seeded by the installers into

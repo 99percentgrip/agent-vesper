@@ -17,8 +17,11 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 - `release-recovery-controller-pr4-pr7-execution.md` owns the production executor,
   permission-aware AgentLoop repair/worktree promotion, bounded official-status
   path, local cancellation, shared host controls, deterministic acceptance and
-  preserved controlled private-GitHub run/job/log receipts. It keeps production
-  publication and live five-target host cancellation/restart explicitly `NOT RUN`.
+  preserved controlled private-GitHub run/job/log receipts at the PR-7 checkpoint.
+- `release-recovery-controller-final-completion.md` owns the regression-first
+  process-tree repair, 30-case acceptance and complete verification receipts,
+  five-target native cancellation/restart run, full PRD audit, non-publishing
+  boundary and final RRC completion verdict.
 
 - `2026-09-29-active-agent-supervision-0845z.md` owns the read-only process,
   child-command, exact-commit workflow and implementation-state check showing

@@ -1074,9 +1074,11 @@ That behavior is the defect this PRD exists to eliminate.
 
 ## 37. Current Implementation Status
 
-**Status: PR-1 THROUGH PR-7 IMPLEMENTED AND VERIFIED WITHIN THE AUTHORIZED
-NON-PUBLISHING SCOPE. Production release publication and live five-target host
-cancellation remain unexecuted release-readiness evidence, not simulated passes.**
+**Status: COMPLETE WITHIN THE AUTHORIZED NON-PUBLISHING SCOPE. PR-1 THROUGH
+PR-7, CONTROLLED LIVE GITHUB ACCEPTANCE, AND FIVE-TARGET NATIVE HOST
+CANCELLATION/RESTART ACCEPTANCE ARE VERIFIED. Production release publication
+remains intentionally unexecuted and is not required by this non-publishing
+completion.**
 
 The shared implementation lives in
 `crates/vesper-harness/src/release_recovery.rs` and
@@ -1120,15 +1122,22 @@ and all five jobs passed in the focused-green case. The private repository has
 zero tags and zero releases. Agent Vesper `main`, tags, releases, registry state,
 credentials and production workflows were not changed.
 
-`cargo xtask acceptance` passes all 29 exact cases, including the six enrolled
-RRC/controller-route cases, and the complete `cargo xtask verify` pipeline passes.
-No production release was created solely to prove RRC. Consequently, the current
-production release workflow was not executed end to end and live five-target host
-cancellation/restart was not performed; those items remain `NOT RUN` and must be
-collected before a future release-readiness claim relies on them.
+`cargo xtask acceptance` passes all 30 exact cases, including the seven enrolled
+RRC/controller-route/lifecycle cases, and the complete `cargo xtask verify`
+pipeline passes. Native host cancellation/restart then passed on Linux x86_64,
+Linux ARM64, macOS Intel, macOS Apple Silicon and Windows x86_64 in private run
+`36594339290` against exact candidate
+`60eacc5c8ef53f4dba1b4eed7d274fa26ec95284`. The test cancels an actual
+parent/descendant tree, rejects a leaked descendant canary, starts a fresh host
+process and reloads the same persisted epoch plus run `7001` / job `8001`.
+
+No production release was created solely to prove RRC. The current production
+release workflow was therefore not executed end to end; this is the explicit
+non-publishing boundary, not a simulated pass or an RRC implementation gap.
 
 Execution evidence and exact verification receipts:
 
 - [`foundation/release-recovery-controller-pr1-pr3-execution.md`](foundation/release-recovery-controller-pr1-pr3-execution.md)
 - [`foundation/release-recovery-controller-hardening-execution.md`](foundation/release-recovery-controller-hardening-execution.md)
 - [`foundation/release-recovery-controller-pr4-pr7-execution.md`](foundation/release-recovery-controller-pr4-pr7-execution.md)
+- [`foundation/release-recovery-controller-final-completion.md`](foundation/release-recovery-controller-final-completion.md)
