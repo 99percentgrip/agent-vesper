@@ -6,6 +6,12 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `2026-09-29-post-release-quality-check-investigation.md` owns the
+  post-v0.24.4 quality failure diagnosis, deterministic explicit-marker repair,
+  Windows quote-safe correction, local verification, exact GitHub quality and
+  Windows receipts, unchanged release boundary, and remaining unrelated
+  five-target macOS timeout.
+
 - `2026-09-29-v0.24.4-combined-corrective-release.md` owns the pre-version
   A–D source-inclusion matrix, Alex's manual acceptance, exact-commit release
   gates, publication/assets, Registry update, no-install receipt, and retained
