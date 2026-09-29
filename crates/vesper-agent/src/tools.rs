@@ -1039,27 +1039,21 @@ fn run_bounded(
     // exits, unlike PID-tree discovery through `taskkill`.
     let initial_cleanup = child.kill();
     // Reaping, pipe draining, and Unix process-group teardown share one total
-    // settlement deadline. Re-signal a still-present Unix group until it is
-    // observed absent: a shell can fork between the first group signal and
-    // delivery, and that late child does not inherit the pending SIGKILL.
+    // settlement deadline. Re-signal the Unix group while settlement remains
+    // incomplete: a shell can fork between the first group signal and delivery,
+    // and that late child does not inherit the pending SIGKILL. Some Darwin
+    // zombies keep killpg successful until init reaps them, so leader reaping plus
+    // pipe EOF after the repeated signal is the executable-cleanup proof.
     let settlement_deadline = Instant::now() + COMMAND_SETTLEMENT_BUDGET;
     let mut final_status = status;
     let mut stdout = None;
     let mut stderr = None;
     let mut settlement_failed = false;
-    #[cfg(not(windows))]
-    let mut cleanup_failed = initial_cleanup
-        .as_ref()
-        .is_err_and(|error| !process_group_already_absent(error));
-    #[cfg(windows)]
-    let cleanup_verified = initial_cleanup.is_ok()
+    let mut cleanup_signal_accepted = initial_cleanup.is_ok()
         || initial_cleanup
             .as_ref()
             .is_err_and(process_group_already_absent);
-    #[cfg(not(windows))]
-    let mut cleanup_verified = initial_cleanup
-        .as_ref()
-        .is_err_and(process_group_already_absent);
+    let mut cleanup_failed = !cleanup_signal_accepted;
 
     loop {
         if final_status.is_none() {
@@ -1077,15 +1071,21 @@ fn run_bounded(
         }
 
         #[cfg(not(windows))]
-        if !cleanup_verified && !cleanup_failed {
+        if !cleanup_failed {
             match child.kill() {
-                Ok(()) => {}
-                Err(error) if process_group_already_absent(&error) => cleanup_verified = true,
+                Ok(()) => cleanup_signal_accepted = true,
+                Err(error) if process_group_already_absent(&error) => {
+                    cleanup_signal_accepted = true;
+                }
                 Err(_) => cleanup_failed = true,
             }
         }
 
-        if (cleanup_verified && final_status.is_some() && stdout.is_some() && stderr.is_some())
+        if (cleanup_signal_accepted
+            && !cleanup_failed
+            && final_status.is_some()
+            && stdout.is_some()
+            && stderr.is_some())
             || settlement_failed
             || Instant::now() >= settlement_deadline
         {
@@ -1093,6 +1093,7 @@ fn run_bounded(
         }
         std::thread::sleep(Duration::from_millis(10));
     }
+    let cleanup_verified = cleanup_signal_accepted && !cleanup_failed;
     let leader_reaped = final_status.is_some();
     let pipes_settled = stdout.is_some() && stderr.is_some();
     #[cfg(windows)]

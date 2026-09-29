@@ -9,8 +9,8 @@
   the earlier all-green closeout: a Unix shell could fork after the first
   process-group signal but before signal delivery, and the ACP LM Studio fixture
   did not clear an inherited nonblocking flag on its accepted socket. The repair
-  re-signals the owned group until absence inside the existing settlement budget
-  and restores blocking mode before the fixture's bounded read. Assertions,
+  re-signals the owned group while leader/pipe settlement remains incomplete and
+  restores blocking mode before the fixture's bounded read. Assertions,
   timeouts, cleanup checks, and request-body proof remain intact.
 
 ## Post-release quality-check repair (2026-09-29)

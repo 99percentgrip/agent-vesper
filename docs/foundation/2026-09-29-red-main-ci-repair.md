@@ -41,8 +41,10 @@ pending signal and can retain the pipes until it writes the marker.
 
 The repair keeps the existing 2.5-second settlement budget and strong marker
 assertion. During the same loop that reaps the leader and drains both pipes, it
-re-signals a still-present Unix process group until `ESRCH` proves that the
-owned group is absent. Unknown signal or wait errors remain fail-closed as
+re-signals the Unix process group while settlement remains incomplete. Verified
+cleanup requires an accepted signal, leader reaping, and both inherited pipes
+reaching EOF; this avoids mistaking Darwin's unreaped process-group zombies for
+live executable descendants. Unknown signal or wait errors remain fail-closed as
 `cleanup=uncertain`. Windows retains its Job Object path.
 
 ### Attempt 2: inherited nonblocking accepted socket on macOS
@@ -66,10 +68,26 @@ wire body contains `picked-model`, not the launch model.
 Attempt 3 was cancelled at Alex's direction before completion. It supplied no
 acceptance result and is preserved as cancelled, not passed.
 
+### First pushed repair: Darwin process-group zombies
+
+The first repair commit `af662eac572ba16763520c524dd131b1f9ddbe88`
+correctly re-signalled the group, but required `killpg` to return `ESRCH` before
+accepting settlement. Run `36543566821` showed that this criterion is not
+portable: both macOS architectures reaped the leader and drained its inherited
+pipes, yet Darwin continued accepting signals for the now non-executable group
+zombie until init reaped it. The ACP and TUI host settlement tests therefore
+returned `cleanup=uncertain` after the unchanged 2.5-second budget.
+
+The follow-up keeps repeated signalling until leader reaping and pipe EOF settle,
+then accepts cleanup when a group signal was accepted or the group was already
+absent and no signal or wait operation failed. It does not add a sleep, retry,
+timeout extension, ignore, or weaker test assertion.
+
 ## Files
 
-- `crates/vesper-agent/src/tools.rs` — verifies Unix process-group absence while
-  concurrently reaping and draining inside the existing settlement deadline.
+- `crates/vesper-agent/src/tools.rs` — repeatedly signals the Unix process group
+  while concurrently reaping and draining inside the existing settlement
+  deadline, without requiring Darwin group zombies to yield `ESRCH`.
 - `crates/vesper-agent/AGENTS.md` — records the durable Unix settlement contract.
 - `apps/agent-vesper-acp/src/lmstudio_provider.rs` — restores blocking mode on
   the accepted macOS fixture socket.
@@ -98,6 +116,15 @@ Os { code: 35, kind: WouldBlock, message: "Resource temporarily unavailable" }
 
 run 36534993336 attempt 3
 macos-intel job 109310766425: cancelled
+
+run 36543566821 on first repair commit af662ea
+macos-apple-silicon job 109324478181: failure
+acp_host_registry_settles_large_command_output_and_recovers:
+cleanup=uncertain after leader exit 0 and stdout/stderr EOF
+macos-intel job 109324478201: failure
+tui_host_registry_settles_large_command_output_and_recovers:
+cleanup=uncertain after leader exit 0 and stdout/stderr EOF
+linux-x86_64, linux-arm64, windows-x86_64: success
 ```
 
 ### Targeted local receipts
@@ -107,7 +134,13 @@ cargo test -p vesper-agent --test command_settlement
 9 passed; 0 failed
 
 cancellation_preserves_partial_output_and_next_command_runs
-12 consecutive targeted iterations: pass
+20 consecutive follow-up iterations: pass
+
+acp_host_registry_settles_large_command_output_and_recovers
+20 consecutive follow-up iterations: pass
+
+tui_host_registry_settles_large_command_output_and_recovers
+20 consecutive follow-up iterations: pass
 
 ACP selected_model_reaches_the_real_http_body_instead_of_launch_model
 100 consecutive targeted iterations: pass
@@ -143,8 +176,11 @@ another recursive full workflow cycle.
 - Two environment-dependent all-feature tests remained intentionally ignored by
   their existing contracts: they require a real container runtime and bundled
   immutable image. No ignore or assertion was added by this repair.
-- No retry, sleep, timeout increase, assertion removal, or test exclusion was
-  used to obtain a pass.
+- `cargo xtask verify` produced an untracked test lock at
+  `apps/agent-vesper-acp/.config/agent-vesper/xai-credentials.lock`; it was
+  removed before commit and did not touch user state.
+- No retry, added sleep, timeout increase, assertion removal, or test exclusion
+  was used to obtain a pass.
 
 ## Unresolved items
 

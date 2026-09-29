@@ -28,9 +28,10 @@ the multi-turn, tool-executing layer above it.
   and a bounded preview with its real starting source line only after the mutation
   succeeds. Shell nonzero exits and timeouts are failed tool results, including
   the sandbox timeout route; bounded diagnostics stay available to both hosts.
-  Unix command settlement re-signals the owned process group until absence is
-  observed inside the shared settlement deadline, closing the fork-after-first-
-  signal race without weakening descendant-cleanup proof.
+  Unix command settlement re-signals the owned process group while leader
+  reaping and pipe draining remain incomplete, closing the fork-after-first-
+  signal race without treating Darwin's unreaped zombies as executable children
+  or weakening descendant-cleanup proof.
 - `src/registry.rs` — `ToolRegistry`: name → executor routing plus mode- and
   provider-filtered production advertisement through `definitions_for_provider`.
   `definitions_for` remains provider-free for schema inspection and legacy tests.
