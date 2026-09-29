@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-29
 
-**Status:** REPAIRED; QUALITY CI GREEN; WINDOWS REGRESSION PROOF GREEN
+**Status:** REPAIRED; FINAL CLOSEOUT CI GREEN ON ALL REQUIRED WORKFLOW FAMILIES
 
 **Affected run:** `pull-request-validation` run `36516876750` on commit `7b04588216a28cf7b62b379b157640bc6b0872d7`
 
@@ -165,6 +165,24 @@ five-target Windows job 109271556643: success
 
 The overall five-target run `36526811071` was red only because unrelated macOS Intel test `vesper-mcp::session_tests::timeout_is_bounded_quarantined_and_never_replayed` timed out. Linux x86_64, Linux ARM64, macOS Apple Silicon, and Windows all passed; the repaired `xai_native` suite passed on macOS Intel before that unrelated MCP failure.
 
+### Final documentation-closeout exact-commit result
+
+The documentation closeout commit `78b459bcc026be0c981a45e848da27d365362b72` subsequently completed all four push workflow families successfully:
+
+```text
+pull-request-validation 36530351592: success
+msrv                   36530351579: success
+web-driver             36530351551: success
+five-target-foundation 36530351536: success
+  windows-x86_64:       success
+  linux-x86_64:         success
+  macos-intel:          success
+  linux-arm64:          success
+  macos-apple-silicon:  success
+```
+
+The successful macOS Intel rerun included the previously timing-sensitive MCP session test. This closes the exact-commit CI observation without rewriting the historical failure on code commit `96cdb48` or claiming a separately demonstrated MCP source correction.
+
 ## Finding
 
 The original quality failure was a real nondeterministic test-design defect: its relative side-effect target depended on agreement between the expected harness root and the runtime shell working directory. Naming the absolute target repaired that ambiguity. The first repair then exposed a separate Windows quoting defect, which the quote-free encoded command repaired. Current CI proves both the requested quality lane and the Windows regression lane green on the final code commit.
@@ -182,10 +200,10 @@ No production runtime, workflow, version, tag, release asset, registry manifest,
 ## Deviations and unresolved items
 
 - The Linux-hosted Windows cross-check was attempted but could not pass the `aws-lc-sys` build because that host lacks the MSVC cross compiler and NASM. The native Windows CI job supplied the authoritative compile-and-execute evidence and passed.
-- Overall five-target run `36526811071` remains red because of the unrelated macOS Intel MCP timeout identified above. This does not weaken or replace the successful Windows job or canonical quality workflow, but it is preserved as an unresolved exact-commit gate result.
+- Code-commit five-target run `36526811071` remains a historical red receipt because of the unrelated macOS Intel MCP startup timeout identified above. The documentation-closeout commit reran the same matrix successfully on all five targets; no MCP source correction is claimed from that later pass.
 - No retry, sleep, or weakened exactly-once assertion was added.
 - The pre-existing unrelated dirty and untracked workspace files were preserved.
 
 ## Readiness effect
 
-The requested `pull-request-validation / quality` failure is repaired: canonical workflow `36526811056` is green on final code commit `96cdb48`, and the Windows lane that caught the first repair's quoting defect is also green. The tagged v0.24.4 release remains unchanged. Full exact-commit five-target readiness is not claimed because of the separately recorded macOS Intel MCP timeout.
+The requested `pull-request-validation / quality` failure is repaired: canonical workflow `36526811056` is green on final code commit `96cdb48`, and the Windows lane that caught the first repair's quoting defect is also green. Documentation-closeout commit `78b459b` then passed pull-request validation, MSRV, web-driver, and every five-target foundation job. The tagged v0.24.4 release and Alex's local installation remain unchanged.

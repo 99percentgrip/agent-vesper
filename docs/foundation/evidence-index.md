@@ -4,16 +4,18 @@
 
 - Investigation and repair: [`2026-09-29-post-release-quality-check-investigation.md`](2026-09-29-post-release-quality-check-investigation.md)
 - Related release: [`2026-09-29-v0.24.4-combined-corrective-release.md`](2026-09-29-v0.24.4-combined-corrective-release.md)
-- Verdict: **REPAIRED; QUALITY AND WINDOWS REGRESSION LANES GREEN.** Canonical
-  run `36516876750` on documentation-only commit `7b04588` exposed an ambiguous
-  relative marker target. Commits `ef84295` and `96cdb48` pin the side effect to
-  the exact isolated-root path and encode the Windows PowerShell append script
-  so the `cmd /C` argument contains no fragile quotes. Exactly-once evidence was
-  not weakened with retries or sleeps. Final code commit `96cdb48` passed
-  `pull-request-validation` run `36526811056`, MSRV run `36526811116`, web-driver
-  run `36526811114`, and five-target Windows job `109271556643`. Overall
-  five-target run `36526811071` remains red solely for a separately recorded
-  macOS Intel MCP timeout; full exact-commit five-target readiness is not claimed.
+- Verdict: **REPAIRED; FINAL CLOSEOUT CI GREEN ON ALL REQUIRED WORKFLOW
+  FAMILIES.** Canonical run `36516876750` on documentation-only commit `7b04588`
+  exposed an ambiguous relative marker target. Commits `ef84295` and `96cdb48`
+  pin the side effect to the exact isolated-root path and encode the Windows
+  PowerShell append script so the `cmd /C` argument contains no fragile quotes.
+  Exactly-once evidence was not weakened with retries or sleeps. Final code
+  commit `96cdb48` passed `pull-request-validation` run `36526811056`, MSRV run
+  `36526811116`, web-driver run `36526811114`, and five-target Windows job
+  `109271556643`; its overall matrix retained an unrelated macOS Intel MCP
+  startup timeout. Documentation-closeout commit `78b459b` then passed
+  pull-request validation `36530351592`, MSRV `36530351579`, web-driver
+  `36530351551`, and all five jobs in foundation run `36530351536`.
 
 ## Combined corrective patch v0.24.4 (2026-09-29)
 
