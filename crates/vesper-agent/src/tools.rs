@@ -882,23 +882,17 @@ fn process_group_cleanup_complete_for(
     ) {
         return true;
     }
-    #[cfg(unix)]
-    {
-        // POSIX ESRCH: no process has the owned process-group identity.
-        if error.raw_os_error() == Some(3) {
-            return true;
-        }
-        // Darwin's killpg implementation keeps a zombie-only process group
-        // discoverable, excludes those zombies from its signal iteration, and
-        // consequently returns EPERM (1) because it found no signalable member.
-        // The group contains no executable process in that state.
-        darwin_zombie_groups_return_eperm && error.raw_os_error() == Some(1)
+    // POSIX ESRCH: no process has the owned process-group identity. Keeping the
+    // errno classifier platform-independent also lets every CI target exercise
+    // the Darwin state-machine regression with a synthetic error.
+    if error.raw_os_error() == Some(3) {
+        return true;
     }
-    #[cfg(not(unix))]
-    {
-        let _ = darwin_zombie_groups_return_eperm;
-        false
-    }
+    // Darwin's killpg implementation keeps a zombie-only process group
+    // discoverable, excludes those zombies from its signal iteration, and
+    // consequently returns EPERM (1) because it found no signalable member.
+    // The group contains no executable process in that state.
+    darwin_zombie_groups_return_eperm && error.raw_os_error() == Some(1)
 }
 
 fn process_group_cleanup_complete(error: &std::io::Error) -> bool {

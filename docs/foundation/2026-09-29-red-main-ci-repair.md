@@ -150,6 +150,12 @@ macos-intel job 109343880176: failure
 acp_host_registry_settles_large_command_output_and_recovers:
 exit_status=exit status: 0; cleanup=uncertain; stdout=7; stderr=0
 linux-x86_64, linux-arm64, windows-x86_64: success
+
+run 36554590290 on first root-cause commit 78ab2cf
+windows-x86_64 job 109360589636: failure
+synthetic Darwin errno regression was incorrectly compiled through the
+non-Unix production branch and asserted false; production Windows settlement
+and the host settlement tests passed before this unit-test-only failure
 ```
 
 ### Root-cause source receipt
@@ -211,7 +217,7 @@ workspace all-features tests: pass
 architecture: pass
 
 cargo xtask acceptance
-Acceptance regression gate: 23 exact cases passed in 6712 ms
+Acceptance regression gate: 23 exact cases passed in 6663 ms
 Offline fixture model cost: zero
 ```
 
@@ -229,6 +235,10 @@ another recursive full workflow cycle.
 - An attempted independent delegated review could not start because the configured
   OpenAI worker model was unavailable in the current account model list. No
   delegated assurance is claimed.
+- The first root-cause commit's synthetic Darwin classifier test was not portable
+  to Windows because the injected errno still passed through a compile-time Unix
+  branch. Run `36554590290` caught it; the classifier is now pure so every target
+  exercises the Darwin state machine while production enables it only on macOS.
 - The TUI fixture already restored blocking mode and required no source change.
 - Two environment-dependent all-feature tests remained intentionally ignored by
   their existing contracts: they require a real container runtime and bundled
