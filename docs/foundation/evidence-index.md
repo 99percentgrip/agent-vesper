@@ -4,14 +4,14 @@
 
 - Execution: [`2026-09-29-red-main-ci-repair.md`](2026-09-29-red-main-ci-repair.md)
 - Predecessor: [`2026-09-29-post-release-quality-check-investigation.md`](2026-09-29-post-release-quality-check-investigation.md)
-- Verdict: **IMPLEMENTED AND LOCALLY VERIFIED; EXACT-COMMIT GITHUB RECEIPTS ARE
-  REPORTED AT DELIVERY.** Run `36534993336` exposed two macOS Intel races after
-  the earlier all-green closeout: a Unix shell could fork after the first
-  process-group signal but before signal delivery, and the ACP LM Studio fixture
-  did not clear an inherited nonblocking flag on its accepted socket. The repair
-  re-signals the owned group while leader/pipe settlement remains incomplete and
-  restores blocking mode before the fixture's bounded read. Assertions,
-  timeouts, cleanup checks, and request-body proof remain intact.
+- Verdict: **ROOT-CAUSE CORRECTION IMPLEMENTED AND LOCALLY VERIFIED;
+  EXACT-COMMIT GITHUB GATES PENDING.** The first two pushed cleanup repairs
+  (`af662ea`, `d097bdf`) both failed ordinary successful-command settlement on
+  Apple Silicon and Intel macOS. Pinned XNU source proves why: a found process
+  group containing only excluded `SZOMB` members produces POSIX `EPERM`, not
+  `ESRCH`. The final correction classifies that Darwin terminal state, still
+  requires leader reaping plus both pipe EOFs, and stops before an unnecessary
+  final signal. The late-fork and LM Studio fixture repairs remain intact.
 
 ## Post-release quality-check repair (2026-09-29)
 

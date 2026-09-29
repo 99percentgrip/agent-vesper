@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-29
 
-**Status:** IMPLEMENTED AND LOCALLY VERIFIED; EXACT-COMMIT GITHUB RECEIPTS ARE REPORTED AT DELIVERY
+**Status:** ROOT-CAUSE CORRECTION IMPLEMENTED AND LOCALLY VERIFIED; EXACT-COMMIT GITHUB GATES PENDING
 
 **Affected workflow:** `five-target-foundation` run `36534993336` on documentation-closeout commit `0b5630d271965e7d9df3a0a09c116c7f8c44042e`
 
@@ -22,6 +22,11 @@ installation unchanged.
 - Downloaded failed-job logs with `gh run view ... --log-failed`.
 - Read the owned process-group implementation in `command-group` 5.0.1 and
   traced `RunCommand::run_bounded` settlement behavior.
+- Checked Apple's [XNU `killpg1` implementation](https://github.com/apple-oss-distributions/xnu/blob/f6217f891ac0bb64f3d375211650a4c1ff8ca1ea/bsd/kern/kern_sig.c#L1642-L1721)
+  at pinned commit `f6217f891ac0bb64f3d375211650a4c1ff8ca1ea`, including the zombie exclusion
+  at `bsd/kern/kern_sig.c:1647-1665,1702-1718`.
+- Added regression tests before the final correction and recorded their expected
+  compile failure against the pre-correction state.
 - Compared the ACP LM Studio fixture with the TUI fixture, which already cleared
   inherited nonblocking state on accepted sockets.
 - Ran targeted stress loops, the full command-settlement matrix, architecture,
@@ -68,26 +73,39 @@ wire body contains `picked-model`, not the launch model.
 Attempt 3 was cancelled at Alex's direction before completion. It supplied no
 acceptance result and is preserved as cancelled, not passed.
 
-### First pushed repair: Darwin process-group zombies
+### Two pushed repairs: wrong Darwin error-state model
 
 The first repair commit `af662eac572ba16763520c524dd131b1f9ddbe88`
-correctly re-signalled the group, but required `killpg` to return `ESRCH` before
-accepting settlement. Run `36543566821` showed that this criterion is not
-portable: both macOS architectures reaped the leader and drained its inherited
-pipes, yet Darwin continued accepting signals for the now non-executable group
-zombie until init reaped it. The ACP and TUI host settlement tests therefore
-returned `cleanup=uncertain` after the unchanged 2.5-second budget.
+re-signalled the group but required `killpg` to return `ESRCH` before accepting
+settlement. Run `36543566821` failed normal successful command settlement on both
+macOS architectures.
 
-The follow-up keeps repeated signalling until leader reaping and pipe EOF settle,
-then accepts cleanup when a group signal was accepted or the group was already
-absent and no signal or wait operation failed. It does not add a sleep, retry,
-timeout extension, ignore, or weaker test assertion.
+The second repair commit `d097bdfa531e442a14adc215616baa804a0d4047`
+correctly stopped requiring eventual `ESRCH` after one accepted signal, but still
+treated Darwin `EPERM` as an unknown cleanup failure. Run `36549489767` repeated
+the same ACP host failure on both macOS architectures.
+
+Pinned XNU source identifies the exact cause. `killpg1` finds the process group,
+but its group iterator excludes `SZOMB` members (`kern_sig.c:1709-1715`). With
+no signalable member counted, POSIX mode returns `EPERM`, not `ESRCH`
+(`kern_sig.c:1718`). Therefore an ordinary command whose group is retained only
+by a Darwin zombie was incorrectly classified as uncertain even after exit 0 and
+both inherited pipes reached EOF.
+
+The final correction classifies Darwin raw error 1 only as the platform's
+no-signalable-member terminal result. Verified settlement still requires the
+leader to be reaped and both inherited pipes to reach EOF. The loop checks that
+complete proof before issuing another signal, so a completed command is not
+invalidated by an unnecessary final `killpg`. Linux keeps the `ESRCH` rule;
+Windows keeps its Job Object path; every other signal/wait failure remains
+fail-closed. No sleep, timeout extension, retry, ignore, or weaker assertion was
+added.
 
 ## Files
 
-- `crates/vesper-agent/src/tools.rs` — repeatedly signals the Unix process group
-  while concurrently reaping and draining inside the existing settlement
-  deadline, without requiring Darwin group zombies to yield `ESRCH`.
+- `crates/vesper-agent/src/tools.rs` — classifies pinned Darwin `EPERM`
+  semantics, stops signalling once the complete proof exists, and adds pure
+  regression coverage while retaining the existing settlement deadline.
 - `crates/vesper-agent/AGENTS.md` — records the durable Unix settlement contract.
 - `apps/agent-vesper-acp/src/lmstudio_provider.rs` — restores blocking mode on
   the accepted macOS fixture socket.
@@ -125,6 +143,38 @@ macos-intel job 109324478201: failure
 tui_host_registry_settles_large_command_output_and_recovers:
 cleanup=uncertain after leader exit 0 and stdout/stderr EOF
 linux-x86_64, linux-arm64, windows-x86_64: success
+
+run 36549489767 on second repair commit d097bdf
+macos-apple-silicon job 109343880064: failure
+macos-intel job 109343880176: failure
+acp_host_registry_settles_large_command_output_and_recovers:
+exit_status=exit status: 0; cleanup=uncertain; stdout=7; stderr=0
+linux-x86_64, linux-arm64, windows-x86_64: success
+```
+
+### Root-cause source receipt
+
+```text
+Apple XNU f6217f891ac0bb64f3d375211650a4c1ff8ca1ea
+bsd/kern/kern_sig.c:1709-1715 excludes SZOMB from pgrp iteration
+bsd/kern/kern_sig.c:1718 returns EPERM when nfound == 0 in POSIX mode
+```
+
+### Regression-first receipt
+
+Before the correction, the two new unit tests failed to compile because the
+Darwin classification and settlement-order predicates did not exist:
+
+```text
+error[E0425]: cannot find function `process_group_cleanup_complete_for`
+error[E0425]: cannot find function `command_settlement_complete`
+```
+
+After the correction:
+
+```text
+darwin_zombie_only_group_error_is_a_completed_cleanup: 1 passed
+settled_command_does_not_require_another_group_signal: 1 passed
 ```
 
 ### Targeted local receipts
@@ -134,16 +184,16 @@ cargo test -p vesper-agent --test command_settlement
 9 passed; 0 failed
 
 cancellation_preserves_partial_output_and_next_command_runs
-20 consecutive follow-up iterations: pass
+30 consecutive final-correction iterations: pass
 
 acp_host_registry_settles_large_command_output_and_recovers
-20 consecutive follow-up iterations: pass
+20 consecutive final-correction iterations: pass
 
 tui_host_registry_settles_large_command_output_and_recovers
-20 consecutive follow-up iterations: pass
+20 consecutive final-correction iterations: pass
 
 ACP selected_model_reaches_the_real_http_body_instead_of_launch_model
-100 consecutive targeted iterations: pass
+100 consecutive final-correction iterations: pass
 
 cargo xtask architecture
 architecture boundaries validated for 31 packages
@@ -159,6 +209,10 @@ fmt: pass
 clippy: pass
 workspace all-features tests: pass
 architecture: pass
+
+cargo xtask acceptance
+Acceptance regression gate: 23 exact cases passed in 6712 ms
+Offline fixture model cost: zero
 ```
 
 GitHub's required push workflows run against the report-bearing repair commit.
@@ -169,9 +223,12 @@ another recursive full workflow cycle.
 ## Deviations
 
 - The macOS-specific failure cannot be reproduced authoritatively on the Linux
-  development host. The repair is grounded in the exact macOS errno and POSIX
-  socket/process semantics; the five-target GitHub matrix is the authoritative
+  development host. The repair is grounded in pinned XNU implementation evidence
+  and the exact CI failure; the five-target GitHub matrix is the authoritative
   macOS execution gate.
+- An attempted independent delegated review could not start because the configured
+  OpenAI worker model was unavailable in the current account model list. No
+  delegated assurance is claimed.
 - The TUI fixture already restored blocking mode and required no source change.
 - Two environment-dependent all-feature tests remained intentionally ignored by
   their existing contracts: they require a real container runtime and bundled

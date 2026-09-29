@@ -872,7 +872,10 @@ fn drain_pipe(
     receiver
 }
 
-fn process_group_already_absent(error: &std::io::Error) -> bool {
+fn process_group_cleanup_complete_for(
+    error: &std::io::Error,
+    darwin_zombie_groups_return_eperm: bool,
+) -> bool {
     if matches!(
         error.kind(),
         std::io::ErrorKind::InvalidInput | std::io::ErrorKind::NotFound
@@ -882,10 +885,34 @@ fn process_group_already_absent(error: &std::io::Error) -> bool {
     #[cfg(unix)]
     {
         // POSIX ESRCH: no process has the owned process-group identity.
-        error.raw_os_error() == Some(3)
+        if error.raw_os_error() == Some(3) {
+            return true;
+        }
+        // Darwin's killpg implementation keeps a zombie-only process group
+        // discoverable, excludes those zombies from its signal iteration, and
+        // consequently returns EPERM (1) because it found no signalable member.
+        // The group contains no executable process in that state.
+        darwin_zombie_groups_return_eperm && error.raw_os_error() == Some(1)
     }
     #[cfg(not(unix))]
-    false
+    {
+        let _ = darwin_zombie_groups_return_eperm;
+        false
+    }
+}
+
+fn process_group_cleanup_complete(error: &std::io::Error) -> bool {
+    process_group_cleanup_complete_for(error, cfg!(target_os = "macos"))
+}
+
+fn command_settlement_complete(
+    cleanup_signal_accepted: bool,
+    cleanup_failed: bool,
+    leader_reaped: bool,
+    stdout_settled: bool,
+    stderr_settled: bool,
+) -> bool {
+    cleanup_signal_accepted && !cleanup_failed && leader_reaped && stdout_settled && stderr_settled
 }
 
 fn render_command_output(stdout: &CapturedPipe, stderr: &CapturedPipe) -> String {
@@ -1052,7 +1079,7 @@ fn run_bounded(
     let mut cleanup_signal_accepted = initial_cleanup.is_ok()
         || initial_cleanup
             .as_ref()
-            .is_err_and(process_group_already_absent);
+            .is_err_and(process_group_cleanup_complete);
     let mut cleanup_failed = !cleanup_signal_accepted;
 
     loop {
@@ -1070,27 +1097,31 @@ fn run_bounded(
             stderr = stderr_receiver.try_recv().ok();
         }
 
-        #[cfg(not(windows))]
-        if !cleanup_failed {
-            match child.kill() {
-                Ok(()) => cleanup_signal_accepted = true,
-                Err(error) if process_group_already_absent(&error) => {
-                    cleanup_signal_accepted = true;
-                }
-                Err(_) => cleanup_failed = true,
-            }
-        }
-
-        if (cleanup_signal_accepted
-            && !cleanup_failed
-            && final_status.is_some()
-            && stdout.is_some()
-            && stderr.is_some())
+        // Do not invalidate a completed proof with one unnecessary final
+        // killpg. Darwin reports EPERM for zombie-only groups, and the command
+        // may reach leader-reaped + pipe-EOF between two settlement polls.
+        if command_settlement_complete(
+            cleanup_signal_accepted,
+            cleanup_failed,
+            final_status.is_some(),
+            stdout.is_some(),
+            stderr.is_some(),
+        ) || cleanup_failed
             || settlement_failed
             || Instant::now() >= settlement_deadline
         {
             break;
         }
+
+        #[cfg(not(windows))]
+        match child.kill() {
+            Ok(()) => cleanup_signal_accepted = true,
+            Err(error) if process_group_cleanup_complete(&error) => {
+                cleanup_signal_accepted = true;
+            }
+            Err(_) => cleanup_failed = true,
+        }
+
         std::thread::sleep(Duration::from_millis(10));
     }
     let cleanup_verified = cleanup_signal_accepted && !cleanup_failed;
@@ -1242,6 +1273,22 @@ mod change_preview_tests {
             captured.read_error.as_deref(),
             Some("injected reader failure")
         );
+    }
+
+    #[test]
+    fn darwin_zombie_only_group_error_is_a_completed_cleanup() {
+        let permission_denied = std::io::Error::from_raw_os_error(1);
+        assert!(process_group_cleanup_complete_for(&permission_denied, true));
+        assert!(!process_group_cleanup_complete_for(
+            &permission_denied,
+            false
+        ));
+    }
+
+    #[test]
+    fn settled_command_does_not_require_another_group_signal() {
+        assert!(command_settlement_complete(true, false, true, true, true));
+        assert!(!command_settlement_complete(true, false, true, true, false));
     }
 
     #[test]

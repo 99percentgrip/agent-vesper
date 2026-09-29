@@ -29,9 +29,10 @@ the multi-turn, tool-executing layer above it.
   succeeds. Shell nonzero exits and timeouts are failed tool results, including
   the sandbox timeout route; bounded diagnostics stay available to both hosts.
   Unix command settlement re-signals the owned process group while leader
-  reaping and pipe draining remain incomplete, closing the fork-after-first-
-  signal race without treating Darwin's unreaped zombies as executable children
-  or weakening descendant-cleanup proof.
+  reaping and pipe draining remain incomplete, then stops before an unnecessary
+  final signal. Darwin `killpg` `EPERM` is accepted only as its documented
+  no-signalable-member result; verified settlement still requires a reaped leader
+  and EOF on both inherited pipes. Other signal failures remain fail-closed.
 - `src/registry.rs` — `ToolRegistry`: name → executor routing plus mode- and
   provider-filtered production advertisement through `definitions_for_provider`.
   `definitions_for` remains provider-free for schema inspection and legacy tests.
