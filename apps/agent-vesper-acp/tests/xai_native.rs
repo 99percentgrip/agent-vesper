@@ -5,6 +5,7 @@ use serde_json::{Value, json};
 use std::{
     io::{Read, Write},
     net::TcpListener,
+    path::Path,
     thread,
     time::Duration,
 };
@@ -167,13 +168,24 @@ fn grok_session_run_command_executes_once() {
 }
 
 #[cfg(windows)]
-fn append_marker_command() -> &'static str {
-    "echo x>>command-marker.txt"
+fn append_marker_command(marker: &Path) -> String {
+    format!(r#"echo x>>"{}""#, marker.display())
 }
 
 #[cfg(not(windows))]
-fn append_marker_command() -> &'static str {
-    "printf x >> command-marker.txt"
+fn append_marker_command(marker: &Path) -> String {
+    let marker = marker.to_string_lossy().replace('\'', "'\"'\"'");
+    format!("printf x >> '{marker}'")
+}
+
+#[test]
+fn marker_command_targets_explicit_path() {
+    let marker = std::env::temp_dir().join("agent-vesper-explicit-command-marker.txt");
+    let command = append_marker_command(&marker);
+    assert!(
+        command.contains(marker.to_string_lossy().as_ref()),
+        "marker command must name its exact target: {command}"
+    );
 }
 
 fn tool_round_trip(tool: &'static str) {
@@ -186,7 +198,7 @@ fn tool_round_trip(tool: &'static str) {
     let arguments = if tool == "read_file" {
         json!({"path":input}).to_string()
     } else {
-        json!({"command":append_marker_command()}).to_string()
+        json!({"command":append_marker_command(&marker)}).to_string()
     };
     let expected = (tool == "read_file").then_some("xai-read-canary");
     let server = thread::spawn(move || {
