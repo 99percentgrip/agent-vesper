@@ -38,6 +38,9 @@ transport, stderr-only tracing, and orderly shutdown.
 - MCP stdio ownership is per ACP session ID, retained across turn registry
   rebuilds and removed on clear-history or engine shutdown (ADR 0031).
   Identical configurations in distinct sessions never share browser state.
+  Every turn filters hosted definitions against its resolved active provider;
+  the Z.ai credential bridge is injected through the harness closure seam so
+  this app does not add a forbidden direct `vesper-mcp` dependency.
   `mcp_owners_are_per_acp_session_and_reused_between_turns` verifies ownership.
 
 - ADR 0028/0029 `/acceptance` and `/settings acceptance on [PRD]|off` compose the shared
@@ -62,12 +65,19 @@ transport, stderr-only tracing, and orderly shutdown.
   registers cancellation during selection and emits bounded routing notices.
   The selector has no tools and does not persist selection prompts.
 
+- User cancellation returns ACP's protocol-native `Cancelled` stop reason
+  only when the session's host-owned cancellation token and a
+  cancellation-classified runtime terminal agree. Partial streamed output,
+  completed tool updates and returned working history remain intact for later
+  turns. A coincident timeout, provider failure or uncorroborated provider-side
+  cancellation remains a failure.
 - Contain no session, provider-wire, or ACP-mapping business logic.
 - Stdout is exclusively newline-delimited ACP JSON-RPC.
 - Tests use loopback endpoints and synthetic credentials only. The shared process
-  harness supplies an explicit signed-out OpenAI vault under its temporary root;
-  environment/HOME isolation alone does not isolate an OS credential manager.
-  Native OpenAI fixtures override transport with their synthetic loopback constructor.
+  harness supplies explicit signed-out OpenAI and xAI vault records under its
+  temporary root; environment/HOME isolation alone does not isolate an OS credential
+  manager. Native provider fixtures override transport with synthetic loopback
+  constructors. Process tests compare external config inventories before and after.
 - No provider child process or raw credential I/O is created by the ACP
   composition itself. The shared `vesper-harness` service may perform bounded
   workspace-scoped tool I/O and MCP/plugin subprocess work only after a model

@@ -235,10 +235,43 @@ jobs:
           RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
           if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            cat >release-notes.md <<'NOTES'
+          # Combined corrective patch
+
+          ## Skill routing
+
+          - Fixes false explicit-skill detection from ordinary prose.
+          - Preserves genuine explicit invocation, `/skill`, and automatic routing.
+
+          ## OpenAI Responses
+
+          - Supports current verified metadata and reasoning events.
+          - Preserves tool identity, partial output, opaque reasoning, interruption safety, and fail-closed protocol handling.
+
+          ## Z.ai MCP isolation
+
+          - Z.ai Search, Reader, and Vision remain available to provider `zai`; other providers no longer receive or execute those protected routes.
+          - Repairs the stored/scoped Z.ai credential resolver, keeps Search on `webSearchPrime`, and improves secret-safe MCP diagnostics.
+
+          ## Cancellation UX
+
+          - Expected user cancellation is shown as `Cancelled` rather than a generic `ProviderError`.
+          - Completed actions are not falsely presented as rolled back; genuine failures remain failures.
+
+          ## Acceptance
+
+          - Skill-routing live user acceptance: **PASS**.
+          - Original 2117-character regression prompt: **PASS**.
+          - Cancellation live user acceptance: **PASS**.
+          - Z.ai Search/Reader acceptance: **OFFLINE SYNTHETIC/LOOPBACK PASS**.
+          - Live Z.ai acceptance: **NOT RUN** — no active GLM Coding Plan. No live entitlement verification is claimed.
+
+          The exact raw historical OpenAI provider event was not retained, so the original incident cannot be proven byte-for-byte.
+          NOTES
             gh release create "$RELEASE_TAG" \
               --repo "$GITHUB_REPOSITORY" \
               --title "Agent Vesper $RELEASE_TAG" \
-              --notes "Agent Vesper v0.24.3 reports Grok subscription usage. xAI /usage now displays server-reported Grok/SuperGrok allowance, reset time, and available credit/product-usage details, separately from conversation context usage. API-key mode does not query that allowance. Audit 2 and Audit 3 remain open. Paid API live acceptance was not run." \
+              --notes-file release-notes.md \
               --generate-notes
           fi
           gh release upload "$RELEASE_TAG" dist/* \

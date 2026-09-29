@@ -32,6 +32,7 @@ fn context(root: &std::path::Path, cancellation: Arc<dyn CancellationSignal>) ->
         }],
         firewall: None,
         sandbox: None,
+        provider_id: vesper_domain::ProviderId::new("fixture").unwrap(),
         operating_mode: SessionOperatingMode::Code,
         permission_mode: SessionPermissionMode::Bypass,
         conversation: Vec::new(),

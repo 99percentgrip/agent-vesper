@@ -12,6 +12,8 @@ use std::sync::Mutex;
 use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
+use vesper_domain::{ProviderId, ToolProviderScope};
+use vesper_security::SecretValue;
 
 use crate::error::McpError;
 use crate::plugins::{append_line, read_all_jsonl};
@@ -27,6 +29,17 @@ pub const MAX_COMMAND_CHARS: usize = 1024;
 pub const MAX_SERVERS: usize = 100;
 /// Maximum bytes of a single JSON-RPC response we will read.
 pub const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
+
+/// On-demand secret resolver supplied by a composition boundary.
+///
+/// The MCP crate never knows a concrete provider or credential store. A host
+/// may bridge an adapter-owned credential source into this port; returned
+/// values remain redacted wrappers and are used only to construct the outbound
+/// authorization header or subprocess environment.
+pub trait McpCredentialResolver: Send + Sync {
+    /// Resolves one configured, non-secret credential reference.
+    fn resolve(&self, reference: &str) -> Option<SecretValue>;
+}
 
 /// Transport for an MCP server.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -61,6 +74,10 @@ pub struct McpServerConfig {
     /// Optional human-readable label.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
+    /// Active-provider eligibility for this trusted backend. Custom servers
+    /// default to provider-neutral; protected presets may be provider-scoped.
+    #[serde(default)]
+    pub provider_scope: ToolProviderScope,
     /// Creation timestamp.
     pub created_at: SystemTime,
 }
@@ -122,6 +139,9 @@ pub fn builtin_servers() -> Vec<McpServerConfig> {
             url: Some("https://api.z.ai/api/mcp/web_search_prime/mcp".into()),
             auth_env: Some("ZAI_API_KEY".into()),
             label: Some("Z.ai Web Search".into()),
+            provider_scope: ToolProviderScope::Provider(
+                ProviderId::new("zai").expect("static provider id"),
+            ),
             created_at: SystemTime::UNIX_EPOCH,
         },
         McpServerConfig {
@@ -132,6 +152,9 @@ pub fn builtin_servers() -> Vec<McpServerConfig> {
             url: Some("https://api.z.ai/api/mcp/web_reader/mcp".into()),
             auth_env: Some("ZAI_API_KEY".into()),
             label: Some("Z.ai Web Reader".into()),
+            provider_scope: ToolProviderScope::Provider(
+                ProviderId::new("zai").expect("static provider id"),
+            ),
             created_at: SystemTime::UNIX_EPOCH,
         },
         McpServerConfig {
@@ -142,6 +165,9 @@ pub fn builtin_servers() -> Vec<McpServerConfig> {
             url: None,
             auth_env: Some("ZAI_API_KEY".into()),
             label: Some("Z.ai Vision".into()),
+            provider_scope: ToolProviderScope::Provider(
+                ProviderId::new("zai").expect("static provider id"),
+            ),
             created_at: SystemTime::UNIX_EPOCH,
         },
         McpServerConfig {
@@ -157,6 +183,7 @@ pub fn builtin_servers() -> Vec<McpServerConfig> {
             url: None,
             auth_env: None,
             label: Some("Playwright Browser".into()),
+            provider_scope: ToolProviderScope::Any,
             created_at: SystemTime::UNIX_EPOCH,
         },
     ]
@@ -340,8 +367,15 @@ impl McpClient {
     /// handshake, and lists the advertised tools. Returns the tool
     /// descriptors.
     pub fn tools(config: &McpServerConfig) -> Result<Vec<McpToolDescriptor>, McpError> {
+        Self::tools_with_credentials(config, None)
+    }
+
+    pub(crate) fn tools_with_credentials(
+        config: &McpServerConfig,
+        credentials: Option<&dyn McpCredentialResolver>,
+    ) -> Result<Vec<McpToolDescriptor>, McpError> {
         if config.transport == McpTransport::Http {
-            return http_tools(config);
+            return http_tools(config, credentials);
         }
         let mut process = McpProcess::spawn(config)?;
         process.initialize()?;
@@ -382,6 +416,15 @@ impl McpClient {
         tool: &str,
         arguments: serde_json::Value,
     ) -> Result<serde_json::Value, McpError> {
+        Self::call_tool_with_credentials(config, tool, arguments, None)
+    }
+
+    pub(crate) fn call_tool_with_credentials(
+        config: &McpServerConfig,
+        tool: &str,
+        arguments: serde_json::Value,
+        credentials: Option<&dyn McpCredentialResolver>,
+    ) -> Result<serde_json::Value, McpError> {
         if tool.is_empty() || tool.len() > MAX_COMMAND_CHARS {
             return Err(McpError::BoundsViolated("tool name length"));
         }
@@ -399,14 +442,21 @@ impl McpClient {
                     "clientInfo": {"name": "agent-vesper-tui", "version": env!("CARGO_PKG_VERSION")}
                 }),
                 None,
+                credentials,
             )?;
-            http_notification(config, "notifications/initialized", session.as_deref())?;
+            http_notification(
+                config,
+                "notifications/initialized",
+                session.as_deref(),
+                credentials,
+            )?;
             return http_request_with_session(
                 config,
                 2,
                 "tools/call",
                 serde_json::json!({"name": tool, "arguments": arguments}),
                 session.as_deref(),
+                credentials,
             )?
             .0
             .get("result")
@@ -427,7 +477,10 @@ impl McpClient {
     }
 }
 
-fn http_tools(config: &McpServerConfig) -> Result<Vec<McpToolDescriptor>, McpError> {
+fn http_tools(
+    config: &McpServerConfig,
+    credentials: Option<&dyn McpCredentialResolver>,
+) -> Result<Vec<McpToolDescriptor>, McpError> {
     let (_, session) = http_request_with_session(
         config,
         1,
@@ -438,14 +491,21 @@ fn http_tools(config: &McpServerConfig) -> Result<Vec<McpToolDescriptor>, McpErr
             "clientInfo": {"name": "agent-vesper-tui", "version": env!("CARGO_PKG_VERSION")}
         }),
         None,
+        credentials,
     )?;
-    http_notification(config, "notifications/initialized", session.as_deref())?;
+    http_notification(
+        config,
+        "notifications/initialized",
+        session.as_deref(),
+        credentials,
+    )?;
     let response = http_request_with_session(
         config,
         2,
         "tools/list",
         serde_json::json!({}),
         session.as_deref(),
+        credentials,
     )?
     .0;
     let mut tools = Vec::new();
@@ -479,6 +539,7 @@ fn http_request_with_session(
     method: &str,
     params: serde_json::Value,
     session: Option<&str>,
+    credentials: Option<&dyn McpCredentialResolver>,
 ) -> Result<(serde_json::Value, Option<String>), McpError> {
     let url = config.url.as_deref().ok_or(McpError::Http("url missing"))?;
     let client = reqwest::blocking::Client::builder()
@@ -500,25 +561,15 @@ fn http_request_with_session(
     {
         request = request.header("Mcp-Name", name);
     }
-    if let Some(environment) = &config.auth_env {
-        let token = std::env::var(environment)
-            .or_else(|_| {
-                if environment == "ZAI_API_KEY" {
-                    std::env::var("Z_AI_API_KEY")
-                } else {
-                    Err(std::env::VarError::NotPresent)
-                }
-            })
-            .map_err(|_| McpError::Http("auth unavailable"))?;
-        if token.len() > 8 * 1024 {
+    if config.auth_env.is_some() {
+        let token = resolve_auth_token(config, credentials)?;
+        if token.expose().as_str().len() > 8 * 1024 {
             return Err(McpError::BoundsViolated("auth token size"));
         }
-        request = request.bearer_auth(token);
+        request = request.bearer_auth(token.expose().as_str());
     }
     let response = request.send().map_err(|_| McpError::Http("send"))?;
-    if !response.status().is_success() {
-        return Err(McpError::Http("non-success response"));
-    }
+    let status = response.status();
     let session_id = response
         .headers()
         .get("Mcp-Session-Id")
@@ -534,9 +585,16 @@ fn http_request_with_session(
     if bytes.len() > MAX_RESPONSE_BYTES {
         return Err(McpError::BoundsViolated("response size"));
     }
-    let value = decode_http_payload(&bytes, &content_type)?;
+    let decoded = decode_http_payload(&bytes, &content_type);
+    if !status.is_success() {
+        return Err(remote_response_error(
+            Some(status.as_u16()),
+            decoded.ok().as_ref(),
+        ));
+    }
+    let value = decoded?;
     if value.get("error").is_some() {
-        return Err(McpError::Http("remote error"));
+        return Err(remote_response_error(Some(status.as_u16()), Some(&value)));
     }
     Ok((value, session_id))
 }
@@ -545,6 +603,7 @@ fn http_notification(
     config: &McpServerConfig,
     method: &str,
     session: Option<&str>,
+    credentials: Option<&dyn McpCredentialResolver>,
 ) -> Result<(), McpError> {
     let url = config.url.as_deref().ok_or(McpError::Http("url missing"))?;
     let client = reqwest::blocking::Client::builder()
@@ -561,26 +620,73 @@ fn http_notification(
     if let Some(session) = session {
         request = request.header("Mcp-Session-Id", session);
     }
-    if let Some(environment) = &config.auth_env {
-        let token = std::env::var(environment)
-            .or_else(|_| {
-                if environment == "ZAI_API_KEY" {
-                    std::env::var("Z_AI_API_KEY")
-                } else {
-                    Err(std::env::VarError::NotPresent)
-                }
-            })
-            .map_err(|_| McpError::Http("auth unavailable"))?;
-        if token.len() > 8 * 1024 {
+    if config.auth_env.is_some() {
+        let token = resolve_auth_token(config, credentials)?;
+        if token.expose().as_str().len() > 8 * 1024 {
             return Err(McpError::BoundsViolated("auth token size"));
         }
-        request = request.bearer_auth(token);
+        request = request.bearer_auth(token.expose().as_str());
     }
     let response = request.send().map_err(|_| McpError::Http("send"))?;
     if !response.status().is_success() {
-        return Err(McpError::Http("notification failed"));
+        return Err(McpError::RemoteResponse {
+            http_status: Some(response.status().as_u16()),
+            jsonrpc_code: None,
+            category: safe_remote_category(Some(response.status().as_u16()), None),
+        });
     }
     Ok(())
+}
+
+fn resolve_auth_token(
+    config: &McpServerConfig,
+    credentials: Option<&dyn McpCredentialResolver>,
+) -> Result<SecretValue, McpError> {
+    let reference = config
+        .auth_env
+        .as_deref()
+        .ok_or(McpError::Http("auth reference missing"))?;
+    if let Some(secret) = credentials.and_then(|resolver| resolver.resolve(reference)) {
+        return Ok(secret);
+    }
+    std::env::var(reference)
+        .or_else(|_| {
+            if reference == "ZAI_API_KEY" {
+                std::env::var("Z_AI_API_KEY")
+            } else {
+                Err(std::env::VarError::NotPresent)
+            }
+        })
+        .map(SecretValue::new)
+        .map_err(|_| McpError::Http("auth unavailable"))
+}
+
+fn remote_response_error(http_status: Option<u16>, value: Option<&serde_json::Value>) -> McpError {
+    let error = value.and_then(|payload| payload.get("error"));
+    let jsonrpc_code = error
+        .and_then(|error| error.get("code"))
+        .and_then(serde_json::Value::as_i64);
+    McpError::RemoteResponse {
+        http_status,
+        jsonrpc_code,
+        category: safe_remote_category(http_status, jsonrpc_code),
+    }
+}
+
+fn safe_remote_category(http_status: Option<u16>, jsonrpc_code: Option<i64>) -> &'static str {
+    match http_status {
+        Some(401) => "authentication-rejected",
+        Some(403) => "authorization-or-entitlement-rejected",
+        Some(404) => "remote-service-not-found",
+        Some(408 | 504) => "remote-timeout",
+        Some(409) => "remote-conflict",
+        Some(429) => "remote-rate-limited",
+        Some(400..=499) => "remote-request-rejected",
+        Some(500..=599) => "remote-server-failure",
+        Some(_) => "remote-http-failure",
+        None if jsonrpc_code.is_some() => "remote-jsonrpc-failure",
+        None => "remote-response-failure",
+    }
 }
 
 fn decode_http_payload(bytes: &[u8], content_type: &str) -> Result<serde_json::Value, McpError> {
@@ -947,6 +1053,7 @@ mod tests {
                 url: None,
                 auth_env: None,
                 label: Some("Demo server".into()),
+                provider_scope: vesper_domain::ToolProviderScope::Any,
                 created_at: SystemTime::UNIX_EPOCH,
             })
             .unwrap();
@@ -970,6 +1077,7 @@ mod tests {
                 url: None,
                 auth_env: None,
                 label: None,
+                provider_scope: vesper_domain::ToolProviderScope::Any,
                 created_at: SystemTime::UNIX_EPOCH,
             })
             .unwrap();
@@ -991,6 +1099,7 @@ mod tests {
                 url: None,
                 auth_env: None,
                 label: None,
+                provider_scope: vesper_domain::ToolProviderScope::Any,
                 created_at: SystemTime::UNIX_EPOCH,
             })
             .unwrap_err();
@@ -1010,6 +1119,7 @@ mod tests {
                 url: None,
                 auth_env: None,
                 label: None,
+                provider_scope: vesper_domain::ToolProviderScope::Any,
                 created_at: SystemTime::UNIX_EPOCH,
             })
             .unwrap_err();
@@ -1035,6 +1145,7 @@ done
             url: None,
             auth_env: None,
             label: None,
+            provider_scope: vesper_domain::ToolProviderScope::Any,
             created_at: SystemTime::UNIX_EPOCH,
         };
         let tools = McpClient::tools(&config).unwrap();
@@ -1069,6 +1180,7 @@ done
                 url: None,
                 auth_env: None,
                 label: None,
+                provider_scope: vesper_domain::ToolProviderScope::Any,
                 created_at: SystemTime::UNIX_EPOCH,
             })
             .unwrap_err();

@@ -68,7 +68,7 @@ pub use tool::{
     CompletedToolArguments, DiffLine, DiffLineKind, DiffSummary, FileChangeOperation,
     FileChangePreview, FragmentedToolCallIdentity, HarnessToolName, ProviderToolName,
     StructuredLocation, ToolCall, ToolChoiceIntent, ToolDefinition, ToolExecutionClass,
-    ToolNameError, ToolResult, ToolResultStatus,
+    ToolNameError, ToolProviderScope, ToolResult, ToolResultStatus,
 };
 pub use usage::{
     EstimatedCost, NormalizedUsage, UsageArithmeticError, UsageMeasurement, UsageMode,

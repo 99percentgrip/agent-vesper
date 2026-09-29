@@ -2,6 +2,9 @@
 
 [← Documentation](README.md)
 
+The ordinary-prose false-positive correction ships in the
+[v0.24.4 combined corrective release](foundation/2026-09-29-v0.24.4-combined-corrective-release.md).
+
 Skills give Vesper procedures for particular kinds of work. Describe the task in
 ordinary language; you do not have to memorize skill names. The complete library
 stays available even when only a few skills are selected for a turn.

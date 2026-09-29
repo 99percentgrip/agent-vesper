@@ -1127,6 +1127,13 @@ enum AgentEvent {
     },
     /// The provider boundary classified an error.
     Failed(AgentLoopError),
+    /// Positive evidence joined the user-owned cancellation token with a
+    /// cancellation-classified runtime terminal. The boxed source retains the
+    /// complete structured outcome/diagnostic for detailed telemetry while
+    /// normal conversation rendering stays concise.
+    Cancelled {
+        source: Box<AgentEvent>,
+    },
     /// Auxiliary answer that must not enter the main provider history.
     SideQuestion {
         answer: String,
@@ -7687,7 +7694,11 @@ fn spawn_vro_react_turn(
                         Ok((outcome, history)) => { let _ = tx.send(AgentEvent::Completed { outcome, history }); }
                         Err(error) => { let _ = tx.send(AgentEvent::Failed(error)); }
                     }
-                } else { let _ = tx.send(AgentEvent::Failed(AgentLoopError::LoopDetected("ReAct cancelled".into()))); }
+                } else {
+                    let _ = tx.send(AgentEvent::Failed(AgentLoopError::Incomplete(
+                        vesper_domain::FinishOutcome::Cancelled,
+                    )));
+                }
                 return;
             }
         };
@@ -8498,6 +8509,97 @@ fn toggle_mobile_server(session: &mut TuiSession) {
     }
 }
 
+fn user_cancelled_terminal(event: &AgentEvent) -> bool {
+    match event {
+        AgentEvent::Completed {
+            outcome:
+                AgentTurnOutcome::Interrupted {
+                    cause: vesper_domain::StreamInterruptionCause::Cancelled,
+                    ..
+                },
+            ..
+        } => true,
+        AgentEvent::Completed {
+            outcome: AgentTurnOutcome::Acceptance { report, .. },
+            ..
+        } => report.gaps.iter().any(|gap| gap.subject == "cancellation"),
+        AgentEvent::Failed(AgentLoopError::ProviderTurn(error)) => {
+            error.info.category == vesper_domain::ErrorCategory::Cancellation
+        }
+        AgentEvent::Failed(AgentLoopError::Incomplete(vesper_domain::FinishOutcome::Cancelled)) => {
+            true
+        }
+        _ => false,
+    }
+}
+
+fn promote_user_cancellation(
+    event: AgentEvent,
+    cancellation: Option<&Arc<vesper_runtime::RuntimeCancellation>>,
+) -> AgentEvent {
+    if cancellation.is_some_and(|signal| signal.is_cancelled()) && user_cancelled_terminal(&event) {
+        AgentEvent::Cancelled {
+            source: Box::new(event),
+        }
+    } else {
+        event
+    }
+}
+
+fn cancellation_action_count(source: &AgentEvent) -> usize {
+    match source {
+        AgentEvent::Completed {
+            outcome:
+                AgentTurnOutcome::Interrupted { tool_results, .. }
+                | AgentTurnOutcome::Acceptance { tool_results, .. },
+            ..
+        } => tool_results.len(),
+        _ => 0,
+    }
+}
+
+fn cancellation_message(source: &AgentEvent) -> String {
+    if cancellation_action_count(source) > 0 {
+        "Turn cancelled by user. Completed actions were not rolled back.".into()
+    } else {
+        "Turn cancelled by user.".into()
+    }
+}
+
+fn underlying_agent_event(event: &AgentEvent) -> &AgentEvent {
+    match event {
+        AgentEvent::Cancelled { source } => source,
+        other => other,
+    }
+}
+
+fn cancellation_diagnostic(source: &AgentEvent) -> String {
+    match source {
+        AgentEvent::Failed(AgentLoopError::ProviderTurn(error)) => format!(
+            "Cancellation diagnostic: category={:?}; safe_message={}",
+            error.info.category, error.info.safe_message
+        ),
+        AgentEvent::Failed(AgentLoopError::Incomplete(outcome)) => {
+            format!("Cancellation diagnostic: terminal={outcome:?}")
+        }
+        AgentEvent::Completed {
+            outcome:
+                AgentTurnOutcome::Interrupted {
+                    cause,
+                    tool_call_started,
+                    iterations,
+                    tool_results,
+                    ..
+                },
+            ..
+        } => format!(
+            "Cancellation diagnostic: cause={cause:?}; tool_call_started={tool_call_started}; provider_turns={iterations}; completed_actions={}",
+            tool_results.len()
+        ),
+        _ => "Cancellation diagnostic: classified user cancellation".into(),
+    }
+}
+
 /// Drains a completed agent turn non-blockingly.
 ///
 /// Called at the top of every event-loop iteration. If the receiver is empty
@@ -8520,13 +8622,16 @@ fn drain_agent_event(session: &mut TuiSession) {
                 session.activity.push(text.clone());
                 session.live_trajectory.push(text);
             }
-            Ok(mut event) => {
+            Ok(event) => {
+                let mut event =
+                    promote_user_cancellation(event, session.turn_cancellation.as_ref());
                 session.agent_running = false;
                 // VRO-17 PR-4: runtime settlement reaches the voice
                 // session (distinct from message completion); a failed
                 // turn settles as Failed.
                 #[cfg(feature = "voice-conversation")]
                 if session.voice_conversation_host.is_some() {
+                    let terminal_event = underlying_agent_event(&event);
                     if let AgentEvent::Completed {
                         outcome:
                             AgentTurnOutcome::Completed {
@@ -8536,7 +8641,7 @@ fn drain_agent_event(session: &mut TuiSession) {
                                 assistant_content, ..
                             },
                         ..
-                    } = &event
+                    } = terminal_event
                     {
                         let text = assistant_content
                             .iter()
@@ -8554,6 +8659,9 @@ fn drain_agent_event(session: &mut TuiSession) {
                         surface_conversation_events(session, events);
                     }
                     let outcome = match &event {
+                        AgentEvent::Cancelled { .. } => {
+                            vesper_voice::events::AgentSettlement::Cancelled
+                        }
                         AgentEvent::Completed { .. } => {
                             vesper_voice::events::AgentSettlement::Completed
                         }
@@ -8582,11 +8690,17 @@ fn drain_agent_event(session: &mut TuiSession) {
                         }
                     }
                 }
-                if let AgentEvent::Completed { history, .. } = &event {
+                let terminal_event = underlying_agent_event(&event);
+                if let AgentEvent::Completed { history, .. } = terminal_event {
                     session.conversation = history.clone();
                     if let Err(error) = persist_tui_conversation(session) {
                         session.state.status = Some(format!("session persistence failed: {error}"));
                     }
+                }
+                if let AgentEvent::Cancelled { source } = &event {
+                    let diagnostic = cancellation_diagnostic(source);
+                    push_activity(session, diagnostic.clone());
+                    tracing::debug!(diagnostic = %diagnostic, "user-cancelled agent turn");
                 }
                 collapse_completed_commentary(&mut event, session);
                 build_completion_report(session, &event);
@@ -8929,6 +9043,15 @@ fn build_completion_report(session: &mut TuiSession, event: &AgentEvent) {
             },
             format!("Elapsed         {elapsed:.1}s"),
         ],
+        AgentEvent::Cancelled { source } => {
+            let completed_actions = cancellation_action_count(source);
+            vec![
+                "Cancelled".into(),
+                format!("Completed actions  {completed_actions}"),
+                "Rollback         Not performed".into(),
+                format!("Elapsed          {elapsed:.1}s"),
+            ]
+        }
         AgentEvent::Failed(error) => vec![
             "✗ Agent turn failed".into(),
             format!("Error           {error}"),
@@ -9165,6 +9288,17 @@ fn record_agent_event(session: &TuiSession, event: &AgentEvent) {
                 ],
             ),
         },
+        AgentEvent::Cancelled { source } => session.telemetry.record(
+            "turn.cancelled",
+            &session.session_id,
+            [
+                ("status", "cancelled".to_owned()),
+                (
+                    "completed_actions",
+                    cancellation_action_count(source).to_string(),
+                ),
+            ],
+        ),
         #[cfg(feature = "swarm")]
         AgentEvent::Swarm {
             success, cancelled, ..
@@ -9455,6 +9589,33 @@ fn apply_agent_event(event: AgentEvent, state: &mut SessionState) {
                 });
             }
         },
+        AgentEvent::Cancelled { source } => {
+            if let AgentEvent::Completed {
+                outcome:
+                    AgentTurnOutcome::Interrupted {
+                        assistant_content,
+                        plan,
+                        ..
+                    },
+                ..
+            } = source.as_ref()
+            {
+                for part in assistant_content {
+                    if let ContentPart::Text(text) = part {
+                        state.transcript.push(format!("assistant: {text}"));
+                    }
+                }
+                for citation in vesper_agent::render_provider_citations(assistant_content) {
+                    state.transcript.push(format!("source: {citation}"));
+                }
+                if let Some(body) = plan.as_deref() {
+                    apply_task_plan(state, body);
+                }
+            }
+            let message = cancellation_message(&source);
+            state.transcript.push(message.clone());
+            state.status = Some(message);
+        }
         AgentEvent::Failed(error) => {
             // Provider errors typically mean missing credentials or a network
             // failure; surface the message rather than wedging the UI.
@@ -11351,6 +11512,7 @@ fn request_human_review_definition() -> vesper_domain::ToolDefinition {
             "required": ["file_path"]
         }),
         execution_class: vesper_domain::ToolExecutionClass::ReadOnly,
+        provider_scope: vesper_domain::ToolProviderScope::Any,
         extensions: vesper_domain::ExtensionMap::default(),
         defer_loading: false,
     }
@@ -11410,6 +11572,7 @@ fn request_human_input_definition(limit: InterviewQuestionLimit) -> vesper_domai
             "required": ["questions"]
         }),
         execution_class: vesper_domain::ToolExecutionClass::ReadOnly,
+        provider_scope: vesper_domain::ToolProviderScope::Any,
         extensions: vesper_domain::ExtensionMap::default(),
         defer_loading: false,
     }
@@ -11432,6 +11595,17 @@ fn lens_url_callback(
             let _ = tx.send(url.to_string());
         }),
         None => Box::new(|_url: &str| {}),
+    }
+}
+
+struct ZaiMcpCredentialResolver;
+
+impl vesper_mcp::McpCredentialResolver for ZaiMcpCredentialResolver {
+    fn resolve(&self, reference: &str) -> Option<vesper_security::SecretValue> {
+        vesper_provider_glm::GlmCredentialSource::credential(
+            &vesper_provider_glm::EnvironmentCredentialSource,
+            reference,
+        )
     }
 }
 
@@ -11492,6 +11666,7 @@ impl TuiToolService {
                     plugin_root,
                     worker_factory,
                 )
+                .with_mcp_credential_resolver(Arc::new(ZaiMcpCredentialResolver))
                 .with_web_scope(vesper_harness::web_service::holder::shared())
                 .with_bridge(bridge_enabled_from_settings()),
             ),
@@ -14309,6 +14484,7 @@ fn drain_mcp_op(
                 url: None,
                 auth_env: None,
                 label: None,
+                provider_scope: vesper_domain::ToolProviderScope::Any,
                 created_at: std::time::SystemTime::UNIX_EPOCH,
             };
             match registry.add(config) {
@@ -15641,7 +15817,10 @@ mod tests {
             interview_question_policy: InterviewQuestionPolicy::default(),
         });
         let tool_registry = vesper_harness::build_hosted_registry(service);
-        let advertised = tool_registry.definitions_for(SessionOperatingMode::Code);
+        let advertised = tool_registry.definitions_for_provider(
+            SessionOperatingMode::Code,
+            &vesper_provider_xai::provider_id(),
+        );
         let advertised_names = advertised
             .iter()
             .map(|tool| tool.harness_name.as_str().to_owned())
@@ -15653,6 +15832,12 @@ mod tests {
             "request_human_input",
         ] {
             assert!(advertised_names.contains(required), "missing {required}");
+        }
+        for provider_scoped in ["web_search", "web_reader", "vision_analyze"] {
+            assert!(
+                !advertised_names.contains(provider_scoped),
+                "xAI must not receive provider-scoped tool {provider_scoped}"
+            );
         }
 
         let mut config = build_agent_config(&vesper_provider_xai::provider_id()).unwrap();
@@ -17345,6 +17530,235 @@ mod tests {
                 .contains("GenerationDeadline")
         );
         assert!(!state.task_plan.is_empty());
+    }
+
+    fn provider_error(category: vesper_domain::ErrorCategory) -> vesper_provider::ProviderError {
+        vesper_provider::ProviderError {
+            provider_id: ProviderId::new("test-provider").unwrap(),
+            provider_code: None,
+            http_status: None,
+            continuation_possible: false,
+            info: vesper_domain::ErrorInfo {
+                category,
+                retryability: vesper_domain::Retryability::Never,
+                retry_after_ms: None,
+                visible_output_emitted: false,
+                safe_message: vesper_domain::SafeMessage::new(match category {
+                    vesper_domain::ErrorCategory::Cancellation => "request cancelled",
+                    vesper_domain::ErrorCategory::Timeout => "request timed out",
+                    _ => "provider failed",
+                })
+                .unwrap(),
+                diagnostics: vesper_domain::RedactedDiagnostics::default(),
+                provider_code: None,
+                causes: Vec::new(),
+            },
+            metadata: vesper_domain::ExtensionMap::default(),
+        }
+    }
+
+    fn interrupted_cancel_event(
+        partial: &str,
+        tool_results: Vec<vesper_agent::ToolResult>,
+    ) -> AgentEvent {
+        AgentEvent::Completed {
+            outcome: AgentTurnOutcome::Interrupted {
+                assistant_content: if partial.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![ContentPart::Text(ContentText::new(partial).unwrap())]
+                },
+                cause: vesper_domain::StreamInterruptionCause::Cancelled,
+                tool_call_started: false,
+                iterations: 1,
+                tool_results,
+                plan: None,
+            },
+            history: Vec::new(),
+        }
+    }
+
+    fn drain_terminal_event(session: &mut TuiSession, event: AgentEvent, user_cancelled: bool) {
+        let cancellation = Arc::new(vesper_runtime::RuntimeCancellation::new());
+        if user_cancelled {
+            cancellation.cancel();
+        }
+        let (tx, rx) = mpsc::unbounded_channel();
+        tx.send(event).unwrap();
+        drop(tx);
+        session.turn_cancellation = Some(cancellation);
+        session.agent_rx = Some(rx);
+        session.agent_running = true;
+        session.turn_started = Some(std::time::Instant::now());
+        drain_agent_event(session);
+    }
+
+    #[test]
+    fn user_cancellation_before_visible_output_is_benign_and_distinct() {
+        let mut session = fresh_tui_session_for_trajectory_tests();
+        drain_terminal_event(&mut session, interrupted_cancel_event("", Vec::new()), true);
+
+        assert_eq!(
+            session.state.transcript.last().map(String::as_str),
+            Some("Turn cancelled by user.")
+        );
+        assert_eq!(
+            session.state.status.as_deref(),
+            Some("Turn cancelled by user.")
+        );
+        assert_eq!(
+            session.last_report.first().map(String::as_str),
+            Some("Cancelled")
+        );
+        assert!(!session.state.transcript.join("\n").contains("agent error:"));
+    }
+
+    #[test]
+    fn structured_provider_cancellation_requires_and_uses_user_token_evidence() {
+        let mut session = fresh_tui_session_for_trajectory_tests();
+        drain_terminal_event(
+            &mut session,
+            AgentEvent::Failed(AgentLoopError::ProviderTurn(provider_error(
+                vesper_domain::ErrorCategory::Cancellation,
+            ))),
+            true,
+        );
+
+        let transcript = session.state.transcript.join("\n");
+        assert_eq!(transcript, "Turn cancelled by user.");
+        assert!(!transcript.contains("ProviderError"));
+        assert!(
+            session
+                .activity
+                .iter()
+                .any(|line| line.contains("category=Cancellation"))
+        );
+        assert_eq!(
+            session.last_report.first().map(String::as_str),
+            Some("Cancelled")
+        );
+    }
+
+    #[test]
+    fn user_cancellation_preserves_partial_visible_output() {
+        let mut session = fresh_tui_session_for_trajectory_tests();
+        drain_terminal_event(
+            &mut session,
+            interrupted_cancel_event("partial answer", Vec::new()),
+            true,
+        );
+
+        let transcript = session.state.transcript.join("\n");
+        assert!(
+            transcript.contains("assistant: partial answer"),
+            "{transcript}"
+        );
+        assert!(
+            transcript.contains("Turn cancelled by user."),
+            "{transcript}"
+        );
+        assert!(
+            !transcript.contains("Provider stream interrupted"),
+            "{transcript}"
+        );
+    }
+
+    #[test]
+    fn user_cancellation_after_completed_action_disclaims_rollback() {
+        let mut session = fresh_tui_session_for_trajectory_tests();
+        drain_terminal_event(
+            &mut session,
+            interrupted_cancel_event(
+                "",
+                vec![vesper_agent::ToolResult::new("write completed").unwrap()],
+            ),
+            true,
+        );
+
+        assert_eq!(
+            session.state.transcript.last().map(String::as_str),
+            Some("Turn cancelled by user. Completed actions were not rolled back.")
+        );
+        assert!(
+            session
+                .last_report
+                .iter()
+                .any(|line| line == "Completed actions  1")
+        );
+    }
+
+    #[test]
+    fn provider_failure_and_timeout_never_become_user_cancellation() {
+        let mut failure = fresh_tui_session_for_trajectory_tests();
+        drain_terminal_event(
+            &mut failure,
+            AgentEvent::Failed(AgentLoopError::ProviderTurn(provider_error(
+                vesper_domain::ErrorCategory::Authentication,
+            ))),
+            false,
+        );
+        assert_eq!(
+            failure.last_report.first().map(String::as_str),
+            Some("✗ Agent turn failed")
+        );
+        assert!(failure.state.transcript.join("\n").contains("agent error:"));
+
+        let mut timeout = fresh_tui_session_for_trajectory_tests();
+        drain_terminal_event(
+            &mut timeout,
+            AgentEvent::Failed(AgentLoopError::ProviderTurn(provider_error(
+                vesper_domain::ErrorCategory::Timeout,
+            ))),
+            true,
+        );
+        assert_eq!(
+            timeout.last_report.first().map(String::as_str),
+            Some("✗ Agent turn failed")
+        );
+        assert!(
+            !timeout
+                .state
+                .transcript
+                .join("\n")
+                .contains("Turn cancelled by user.")
+        );
+    }
+
+    #[test]
+    fn next_turn_completes_normally_after_user_cancellation() {
+        let mut session = fresh_tui_session_for_trajectory_tests();
+        drain_terminal_event(&mut session, interrupted_cancel_event("", Vec::new()), true);
+        drain_terminal_event(
+            &mut session,
+            AgentEvent::Completed {
+                outcome: AgentTurnOutcome::Completed {
+                    assistant_content: vec![ContentPart::Text(
+                        ContentText::new("next turn succeeded").unwrap(),
+                    )],
+                    iterations: 1,
+                    tool_results: Vec::new(),
+                    plan: None,
+                },
+                history: Vec::new(),
+            },
+            false,
+        );
+
+        assert_eq!(
+            session.state.status.as_deref(),
+            Some("agent turn complete.")
+        );
+        assert!(
+            session
+                .state
+                .transcript
+                .join("\n")
+                .contains("next turn succeeded")
+        );
+        assert_eq!(
+            session.last_report.first().map(String::as_str),
+            Some("✓ Turn complete")
+        );
     }
 
     #[test]

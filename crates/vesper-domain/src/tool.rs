@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
-use crate::{BoundedString, ExtensionMap, ToolCallId, ToolId, ToolResultId};
+use crate::{BoundedString, ExtensionMap, ProviderId, ToolCallId, ToolId, ToolResultId};
 
 /// Invalid stable/provider-facing tool name.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -123,6 +123,32 @@ pub enum ToolExecutionClass {
     NestedWorkflow,
 }
 
+/// Provider eligibility attached to a client-side tool definition.
+///
+/// Shared registry and agent code compare the active [`ProviderId`] without
+/// naming any concrete provider. Composition-owned definitions decide whether
+/// a tool is universal or belongs to one provider-backed service.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(tag = "scope", content = "provider", rename_all = "kebab-case")]
+pub enum ToolProviderScope {
+    /// The tool is eligible with every active reasoning provider.
+    #[default]
+    Any,
+    /// The tool is eligible only while this provider is active.
+    Provider(ProviderId),
+}
+
+impl ToolProviderScope {
+    /// Whether this scope permits the active provider.
+    #[must_use]
+    pub fn allows(&self, active_provider: &ProviderId) -> bool {
+        match self {
+            Self::Any => true,
+            Self::Provider(provider) => provider == active_provider,
+        }
+    }
+}
+
 /// Provider-neutral tool definition. Adapters own schema-dialect conversion.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ToolDefinition {
@@ -138,6 +164,10 @@ pub struct ToolDefinition {
     pub input_schema: Value,
     /// Authority classification.
     pub execution_class: ToolExecutionClass,
+    /// Provider eligibility for advertisement, deferred injection, and
+    /// execution. Defaults to universal for serialized legacy definitions.
+    #[serde(default)]
+    pub provider_scope: ToolProviderScope,
     /// Namespaced extension metadata.
     #[serde(default)]
     pub extensions: ExtensionMap,

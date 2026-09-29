@@ -261,9 +261,13 @@ Z.ai and Playwright MCP server descriptors.
 - Provider-backed workers render ultimate iteration-cap outcomes explicitly;
   unfinished native-plan work is never reported as completed.
 - First-party MCP presets are not persisted and cannot be shadowed by custom
-  registry entries. Web and reader calls use the configured Z.ai API-key
-  environment; vision paths are workspace-confined; browser actions are an
-  explicit allowlist and never arbitrary JavaScript evaluation.
+  registry entries. Z.ai Search, Reader, and Vision definitions inherit the
+  protected preset's `zai` provider scope; both discovery and direct/gateway
+  execution repeat that eligibility check. Search uses the documented remote
+  name `webSearchPrime`. Web and reader calls resolve Z.ai credentials on
+  demand through the host's adapter-owned credential bridge, then retain the
+  legacy environment fallback; vision paths are workspace-confined; browser
+  actions are an explicit allowlist and never arbitrary JavaScript evaluation.
 - All output, source scans, batches, workflow depth, and worker actions remain
   bounded. When a provider-backed worker is supplied, the host starts a
   one-second polling scheduler that claims due cron jobs, executes them, and

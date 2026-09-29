@@ -51,12 +51,17 @@ unsigned plugin by any code path.
   `src/session_tests.rs` covers lifecycle/faults; `src/playwright_live_tests.rs`
   is an ignored opt-in real isolated-browser acceptance test.
 - **HTTP MCP transport is bounded and opt-in.** It uses a short timeout,
-  caps response bytes, and reads an optional bearer token from a named
-  environment variable; the secret is never persisted. Foundation tests use
-  no live provider endpoint.
+  caps response bytes, and resolves an optional bearer token on demand through
+  a composition-supplied secret port before the legacy named-environment
+  fallback; the secret is never persisted in MCP configuration. Numeric HTTP
+  status and JSON-RPC integer code plus a fixed local category are retained;
+  arbitrary upstream messages, bodies, headers, URLs, controls, and credentials
+  remain excluded.
+  Foundation tests use no live provider endpoint.
 - Protected first-party presets (`zai_search`, `zai_reader`, `zai_vision`, and
   `playwright`) are available to the harness without being persisted or
-  replaceable by custom registry entries. Streamable HTTP initialization,
+  replaceable by custom registry entries. Each preset carries explicit active-
+  provider eligibility; custom servers default to provider-neutral. Streamable HTTP initialization,
   session headers, notifications, and event-stream responses are handled
   within the bounded client. Playwright subprocesses receive a sanitized
   environment; vision receives `Z_AI_API_KEY` only when its configured auth

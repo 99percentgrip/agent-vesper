@@ -115,6 +115,7 @@ pub fn request_human_review_definition() -> vesper_domain::ToolDefinition {
             "required": ["file_path"]
         }),
         execution_class: vesper_domain::ToolExecutionClass::ReadOnly,
+        provider_scope: vesper_domain::ToolProviderScope::Any,
         extensions: vesper_domain::ExtensionMap::default(),
         defer_loading: false,
     }
@@ -168,6 +169,7 @@ pub fn request_human_input_definition(
             "required": ["questions"]
         }),
         execution_class: vesper_domain::ToolExecutionClass::ReadOnly,
+        provider_scope: vesper_domain::ToolProviderScope::Any,
         extensions: vesper_domain::ExtensionMap::default(),
         defer_loading: false,
     }

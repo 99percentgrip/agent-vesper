@@ -41,9 +41,23 @@ pub enum McpError {
     /// parseable JSON-RPC output.
     #[error("mcp subprocess failed: {0}")]
     Subprocess(&'static str),
-    /// An HTTP MCP request failed without exposing the endpoint or body.
+    /// An HTTP MCP transport stage failed without exposing the endpoint or body.
     #[error("mcp http request failed: {0}")]
     Http(&'static str),
+    /// A remote HTTP/JSON-RPC response failed. Only the numeric HTTP status,
+    /// JSON-RPC error code, and a fixed local category are retained; upstream
+    /// messages, headers, URLs, authorization values, and raw bodies are excluded.
+    #[error(
+        "mcp remote response failed: http_status={http_status:?} jsonrpc_code={jsonrpc_code:?} category={category}"
+    )]
+    RemoteResponse {
+        /// HTTP status when a response was received.
+        http_status: Option<u16>,
+        /// JSON-RPC error code when the bounded payload contained one.
+        jsonrpc_code: Option<i64>,
+        /// Fixed local diagnostic category; never copied from the upstream response.
+        category: &'static str,
+    },
     /// The plugin loader was asked to load an unsigned plugin in a
     /// `--release` build. This is the runtime mirror of the compile-time
     /// `#[cfg(debug_assertions)]` gate: even if a caller somehow reached

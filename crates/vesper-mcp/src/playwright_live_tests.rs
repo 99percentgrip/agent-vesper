@@ -80,6 +80,7 @@ fn real_playwright_navigation_snapshot_click_isolation_close() {
         url: None,
         auth_env: None,
         label: None,
+        provider_scope: vesper_domain::ToolProviderScope::Any,
         created_at: std::time::SystemTime::UNIX_EPOCH,
     };
     let a = McpSession::default();

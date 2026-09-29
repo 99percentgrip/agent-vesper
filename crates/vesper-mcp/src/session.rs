@@ -1,12 +1,14 @@
 //! In-memory, owner-scoped stdio connections. Never a process-global cache.
 use std::collections::BTreeMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 
 use crate::mcp::{MAX_COMMAND_CHARS, McpProcess};
-use crate::{McpClient, McpError, McpServerConfig, McpToolDescriptor, McpTransport};
+use crate::{
+    McpClient, McpCredentialResolver, McpError, McpServerConfig, McpToolDescriptor, McpTransport,
+};
 
 /// Maximum retained stdio connections in one host conversation.
 pub const MAX_SESSION_SERVERS: usize = 16;
@@ -24,6 +26,7 @@ struct Connection {
 pub struct McpSession {
     connections: Mutex<BTreeMap<String, Connection>>,
     timeout: Duration,
+    credentials: Option<Arc<dyn McpCredentialResolver>>,
 }
 
 impl Default for McpSession {
@@ -39,7 +42,22 @@ impl McpSession {
         Self {
             connections: Mutex::new(BTreeMap::new()),
             timeout: timeout.clamp(Duration::from_millis(1), Duration::from_secs(60)),
+            credentials: None,
         }
+    }
+
+    /// Attaches an on-demand adapter-owned credential resolver. Secrets are
+    /// resolved for each dispatch and are never retained in server config.
+    #[must_use]
+    pub fn with_credential_resolver(mut self, resolver: Arc<dyn McpCredentialResolver>) -> Self {
+        self.credentials = Some(resolver);
+        self
+    }
+
+    /// Clones the resolver authority, if any, for a new conversation owner.
+    #[must_use]
+    pub fn credential_resolver(&self) -> Option<Arc<dyn McpCredentialResolver>> {
+        self.credentials.clone()
     }
 
     /// Discovers tools without replacing an already-running stdio connection.
@@ -57,7 +75,7 @@ impl McpSession {
             if cancelled() {
                 return Err(McpError::Subprocess("cancelled before dispatch"));
             }
-            return McpClient::tools(config);
+            return McpClient::tools_with_credentials(config, self.credentials.as_deref());
         }
         let result = self.request(config, "tools/list", json!({}), cancelled)?;
         serde_json::from_value(
@@ -98,7 +116,12 @@ impl McpSession {
             return Err(McpError::Subprocess("cancelled before dispatch"));
         }
         if config.transport == McpTransport::Http {
-            return McpClient::call_tool(config, tool, arguments);
+            return McpClient::call_tool_with_credentials(
+                config,
+                tool,
+                arguments,
+                self.credentials.as_deref(),
+            );
         }
         self.request(
             config,

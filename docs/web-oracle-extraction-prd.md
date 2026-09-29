@@ -6,6 +6,9 @@ passed production acceptance and exact-commit release gates. Evidence and
 disclosed implementation choices are in `docs/foundation/vro14-gap-audit.md`;
 deployment instructions are in `docs/web-tools.md`. Original v1 non-goals remain.
 Implementation evidence lands under `docs/foundation/` per `docs/AGENTS.md`.
+The protected Z.ai MCP isolation/credential repair is included in the
+[v0.24.4 combined corrective release](foundation/2026-09-29-v0.24.4-combined-corrective-release.md);
+it does not alter Vesper's independent native web-tool contract.
 
 Reference upstream (the triad), explicitly authorized as trusted data and
 cloned locally:
@@ -159,6 +162,14 @@ processed summaries. The ReAct loop needs *raw, local, token-efficient*
 web content: full page text at bounded token cost, link graphs for site
 mapping, and multi-page crawls — all without shipping page bytes to a
 third party beyond the fetch itself.
+
+[The 2026-09-28 Z.ai MCP web-tools reconnaissance](foundation/2026-09-28-zai-mcp-web-tools-reconnaissance.md)
+records the separate legacy MCP wrappers' original defects. The subsequent
+[repair](foundation/2026-09-28-zai-mcp-web-tools-repair.md) scopes those protected
+Z.ai services to Z.ai reasoning turns and corrects their credential/transport
+path. The [finishing verification](foundation/2026-09-28-zai-mcp-web-tools-finishing.md)
+proves the final selective route and runnable candidates; it does not change
+this PRD's opt-in native web tools or substitute one backend for the other.
 
 ### 1.2 Architecture — a pure four-stage pipeline
 

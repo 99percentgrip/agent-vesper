@@ -765,6 +765,15 @@ Remote MCP
 
 These are **not the same thing** as Vesper's local/native tools.
 
+[The 2026-09-28 Z.ai MCP web-tools reconnaissance](foundation/2026-09-28-zai-mcp-web-tools-reconnaissance.md)
+confirms that the Z.ai MCP wrappers are separate from xAI-hosted Web Search, X
+Search, and Remote MCP. The subsequent
+[repair](foundation/2026-09-28-zai-mcp-web-tools-repair.md) removes those protected
+Z.ai definitions from xAI reasoning turns and adds fail-closed execution scope.
+The [finishing verification](foundation/2026-09-28-zai-mcp-web-tools-finishing.md)
+proves xAI denial before credentials/HTTP while preserving independent tools; it
+does not enable, disable, or substitute xAI-hosted tools.
+
 ### 11.1 Explicit opt-in
 
 Provider-hosted tools that cause extra egress, remote execution or additional charges must be disabled unless the user explicitly enables them.

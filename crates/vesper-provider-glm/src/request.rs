@@ -784,6 +784,7 @@ mod tests {
                 "properties": {"path": {"type": "string"}},
                 "required": ["path"]
             }),
+            provider_scope: Default::default(),
             execution_class: ToolExecutionClass::ReadOnly,
             extensions: Default::default(),
             defer_loading: false,
@@ -844,6 +845,7 @@ mod tests {
                     "properties": {"fixture": {"type": "string"}},
                     "required": ["fixture"]
                 }),
+                provider_scope: Default::default(),
                 execution_class: ToolExecutionClass::ReadOnly,
                 extensions: Default::default(),
                 defer_loading: false,
@@ -941,6 +943,7 @@ mod tests {
             provider_name: None,
             description: "Read one file".into(),
             input_schema: json!({"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}),
+            provider_scope: Default::default(),
             execution_class: ToolExecutionClass::ReadOnly,
             extensions: Default::default(),
             defer_loading: false,

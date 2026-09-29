@@ -562,6 +562,7 @@ pub fn stub_context(
     }
     ToolContext {
         workspace_roots: roots,
+        provider_id: vesper_domain::ProviderId::new("fixture").expect("static provider id"),
         operating_mode,
         permission_mode,
         conversation: Vec::new(),

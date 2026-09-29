@@ -594,6 +594,7 @@ impl HarnessToolService {
                     url: None,
                     auth_env: None,
                     label: None,
+                    provider_scope: vesper_domain::ToolProviderScope::Any,
                     created_at: std::time::SystemTime::UNIX_EPOCH,
                 };
                 let Ok(registry) = vesper_mcp::McpRegistry::open(&self.plugin_root) else {

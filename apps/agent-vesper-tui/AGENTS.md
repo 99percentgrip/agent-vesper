@@ -73,6 +73,14 @@ business logic.
   the package. This welcome/menu presentation is terminal-specific; ACP editors
   own their launch UI, so no shared capability or slash-command change is needed.
 
+- Intentional turn cancellation is promoted to the benign `Cancelled`
+  presentation only when the active host cancellation token and a
+  cancellation-classified agent terminal agree. Normal conversation uses
+  `Turn cancelled by user.` and disclaims rollback when completed actions
+  exist; Last Run says `Cancelled`. Partial assistant output, completed tool
+  telemetry, history and structured diagnostics remain available. Provider
+  errors, timeouts and uncorroborated provider-side cancellation stay failures.
+
 - Native Lens review/interview execution delegates to `vesper-harness::lens_tools`;
   TUI retains its live interview-limit policy, bordered UI and URL/browser-launch
   presentation. ACP uses the same feedback validation and native tool results.
@@ -656,6 +664,9 @@ business logic.
 
 - MCP discovery, browser presets and deferred calls retain one conversation
   owner through direct/VRO/ReAct registries built by `build_hosted_registry`.
+  Hosted advertisement and execution use the active provider identity; the TUI
+  composes the Z.ai adapter's credential source into the MCP resolver without
+  copying secrets into server configuration.
   Loading another transcript resets MCP before changing conversation identity;
   a busy owner refuses the switch. Exit drops the owner (ADR 0031).
   `mcp_tui_wrapped_registry_retains_the_session_gateway` checks wrapper wiring.

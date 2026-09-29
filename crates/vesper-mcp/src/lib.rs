@@ -49,11 +49,14 @@ pub use session::McpSession;
 mod session_tests;
 
 pub use error::McpError;
-pub use mcp::{McpClient, McpRegistry, McpServerConfig, McpToolDescriptor, McpTransport};
+pub use mcp::{
+    McpClient, McpCredentialResolver, McpRegistry, McpServerConfig, McpToolDescriptor, McpTransport,
+};
 pub use plugins::{
     MAX_PLUGIN_BYTES, MAX_PLUGIN_FILES, PluginLoader, PluginManifest, PluginRecord,
     PluginSignature, TrustedPublisher, TrustedPublishers,
 };
+pub use vesper_security::SecretValue;
 
 #[cfg(test)]
 mod playwright_live_tests;

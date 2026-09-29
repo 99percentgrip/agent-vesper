@@ -563,6 +563,7 @@ impl AgentLoop {
         };
         port.prepare(&ToolContext {
             workspace_roots: self.config.workspace_roots.clone(),
+            provider_id: self.config.provider_id.clone(),
             operating_mode: mode,
             permission_mode: permission,
             conversation: Vec::new(),
@@ -770,6 +771,7 @@ impl AgentLoop {
         if let Some(port) = self.completion_port.as_ref().filter(|port| port.active()) {
             let context = ToolContext {
                 workspace_roots: self.config.workspace_roots.clone(),
+                provider_id: self.config.provider_id.clone(),
                 operating_mode: mode,
                 permission_mode: permission,
                 conversation: messages.clone(),
@@ -812,7 +814,9 @@ impl AgentLoop {
                 }
             }
         }
-        let mut advertised_tools = self.tools.definitions_for(mode);
+        let mut advertised_tools = self
+            .tools
+            .definitions_for_provider(mode, &self.config.provider_id);
         let session = self
             .registry
             .create_session(
@@ -1131,6 +1135,7 @@ impl AgentLoop {
                 if let Some(port) = completion {
                     let context = ToolContext {
                         workspace_roots: self.config.workspace_roots.clone(),
+                        provider_id: self.config.provider_id.clone(),
                         operating_mode: mode,
                         permission_mode: permission,
                         conversation: messages.clone(),
@@ -1197,6 +1202,7 @@ impl AgentLoop {
 
             let context = ToolContext {
                 workspace_roots: self.config.workspace_roots.clone(),
+                provider_id: self.config.provider_id.clone(),
                 operating_mode: mode,
                 permission_mode: permission,
                 conversation: request_messages,
@@ -1285,7 +1291,7 @@ impl AgentLoop {
                 // schemas, splice them into the advertised pool so the next
                 // `build_request` iteration advertises them to the model.
                 if !injected.is_empty() {
-                    merge_injected_tools(&mut advertised_tools, injected);
+                    merge_injected_tools(&mut advertised_tools, injected, &self.config.provider_id);
                 }
                 let mut content = vec![ContentPart::ToolResult(vesper_domain::ToolResult {
                     id: ids.result(),
@@ -1601,6 +1607,12 @@ impl AgentLoop {
         let Some(definition) = definition else {
             return GateOutcome::text(format!("unknown tool: {}", call.tool_id));
         };
+        if !definition.provider_scope.allows(&context.provider_id) {
+            return GateOutcome::text(format!(
+                "tool error: tool `{}` is unavailable for active provider `{}`",
+                call.tool_id, context.provider_id
+            ));
+        }
         let execution_class = definition.execution_class;
         let decision = check_tool_permission(
             context.operating_mode,
@@ -1812,8 +1824,15 @@ impl GateOutcome {
 /// by `ToolId` or `harness_name`. A tool already present under either key is
 /// skipped so a discovery call that returns the same schema twice (or returns
 /// a schema the loop already advertises) cannot bloat the context window.
-fn merge_injected_tools(advertised: &mut Vec<ToolDefinition>, new_tools: Vec<ToolDefinition>) {
+fn merge_injected_tools(
+    advertised: &mut Vec<ToolDefinition>,
+    new_tools: Vec<ToolDefinition>,
+    provider_id: &ProviderId,
+) {
     for definition in new_tools {
+        if !definition.provider_scope.allows(provider_id) {
+            continue;
+        }
         let already_present = advertised.iter().any(|existing| {
             existing.id == definition.id || existing.harness_name == definition.harness_name
         });
@@ -2063,6 +2082,30 @@ mod tests {
         let note = tool_result_note(&long_error, false);
         assert!(note.chars().count() <= 72, "failure note bounded: {note}");
         assert!(note.ends_with('…'));
+    }
+
+    #[test]
+    fn deferred_injection_follows_the_turn_provider_and_restores_on_switch_back() {
+        let zai = ProviderId::new("zai").unwrap();
+        let xai = ProviderId::new("xai").unwrap();
+        let mut protected = crate::schema_definition(
+            "protected_fixture",
+            "fixture",
+            ToolExecutionClass::ReadOnly,
+            &[],
+        );
+        protected.provider_scope = vesper_domain::ToolProviderScope::Provider(zai.clone());
+
+        let mut advertised = Vec::new();
+        merge_injected_tools(&mut advertised, vec![protected.clone()], &xai);
+        assert!(advertised.is_empty(), "xai must not receive a zai schema");
+
+        merge_injected_tools(&mut advertised, vec![protected], &zai);
+        assert_eq!(
+            advertised.len(),
+            1,
+            "switching back to zai restores eligibility"
+        );
     }
 }
 

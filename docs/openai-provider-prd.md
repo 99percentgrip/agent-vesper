@@ -22,6 +22,7 @@ not asserted by offline acceptance. User setup is in [the guide](openai-provider
 
 ## Evidence and architecture decision
 
+- [v0.24.4 combined corrective release](foundation/2026-09-29-v0.24.4-combined-corrective-release.md) tracks the exact release source, gates, publication, assets, Registry update, manual acceptance, and retained historical-event limitation.
 - [2026-09-28 malformed-Responses and shared skill-routing repair](foundation/2026-09-28-openai-skill-routing-repair.md) records the current subscription metadata/reasoning decoder fix, bounded secret-safe rejection diagnostics, both-host offline receipts, runnable candidate identities and the unexecuted live/cross-platform gaps.
 
 Official documentation inspected on 2026-09-08:
@@ -155,6 +156,15 @@ Memory extraction follows the host's launch provider; ACP footer switching
 does not replace its already-open memory extractor. Restart with OpenAI to use
 native extraction. Legacy Z.ai MCP services retain their own credentials;
 native Vesper web tools remain provider-independent and opt-in.
+
+[The 2026-09-28 Z.ai MCP web-tools reconnaissance](foundation/2026-09-28-zai-mcp-web-tools-reconnaissance.md)
+traces the original exposure and defects. The subsequent
+[repair](foundation/2026-09-28-zai-mcp-web-tools-repair.md) scopes the protected
+Z.ai wrappers to Z.ai reasoning turns, bridges the existing Z.ai credential
+source, and leaves native Vesper web tools provider-independent and opt-in. The
+[finishing verification](foundation/2026-09-28-zai-mcp-web-tools-finishing.md)
+records final process isolation, diagnostics, and runnable candidates. It does
+not add OpenAI-hosted search or change this provider's credential path.
 
 Codex cloud tasks, hosted computer use, audio, and application-specific UX are
 not parity claims. Native Vesper file/shell/browser/memory/skill/worker features

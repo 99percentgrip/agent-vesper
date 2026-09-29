@@ -11,8 +11,8 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use vesper_domain::{
-    ContentPart, ContentText, ConversationMessage, FileChangePreview, SessionOperatingMode,
-    SessionPermissionMode, ToolCall, ToolDefinition, WorkspaceRoot,
+    ContentPart, ContentText, ConversationMessage, FileChangePreview, ProviderId,
+    SessionOperatingMode, SessionPermissionMode, ToolCall, ToolDefinition, WorkspaceRoot,
 };
 
 /// Maximum media parts one tool result may contribute to provider history.
@@ -46,6 +46,8 @@ pub struct ToolContext {
     /// the backend factory; the executor consults `vesper-security`'s
     /// fail-closed capability check before provisioning.
     pub sandbox: Option<Arc<SandboxRoute>>,
+    /// Active reasoning-provider identity used by provider-scoped tool gates.
+    pub provider_id: ProviderId,
     /// Active session operating mode (gates tool eligibility upstream).
     pub operating_mode: SessionOperatingMode,
     /// Active permission mode (gates destructive tools upstream).
@@ -64,6 +66,7 @@ impl std::fmt::Debug for ToolContext {
         formatter
             .debug_struct("ToolContext")
             .field("workspace_roots", &self.workspace_roots)
+            .field("provider_id", &self.provider_id)
             .field("operating_mode", &self.operating_mode)
             .field("permission_mode", &self.permission_mode)
             .field("conversation_messages", &self.conversation.len())
@@ -264,6 +267,7 @@ pub fn uncancellable_context(
     }
     ToolContext {
         workspace_roots: roots,
+        provider_id: ProviderId::new("fixture").expect("static provider id"),
         operating_mode,
         permission_mode,
         conversation: Vec::new(),
@@ -304,6 +308,7 @@ pub fn schema_definition(
             "required": required,
         }),
         execution_class: class,
+        provider_scope: vesper_domain::ToolProviderScope::Any,
         extensions: vesper_domain::ExtensionMap::default(),
         defer_loading: false,
     }

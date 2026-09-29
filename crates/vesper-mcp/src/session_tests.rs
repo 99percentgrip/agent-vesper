@@ -40,6 +40,7 @@ for line in sys.stdin:
     print(json.dumps({'jsonrpc':'2.0','id':r['id'],'result':result}), flush=True)
 "#.into()],
         url: None, auth_env: None, label: None,
+        provider_scope: vesper_domain::ToolProviderScope::Any,
         created_at: std::time::SystemTime::UNIX_EPOCH,
     }
 }

@@ -6,9 +6,28 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `2026-09-29-v0.24.4-combined-corrective-release.md` owns the pre-version
+  A–D source-inclusion matrix, Alex's manual acceptance, exact-commit release
+  gates, publication/assets, Registry update, no-install receipt, and retained
+  OpenAI/Z.ai limitations for the combined corrective patch.
+
 - `2026-09-28-openai-skill-routing-repair.md` owns the interrupted-turn diagnosis,
   red-to-green shared skill parser and native OpenAI subscription-event repair,
   TUI/ACP production-path receipts, candidate identities and retained live/cross-platform gaps.
+- `2026-09-29-user-cancellation-presentation-repair.md` owns the token-plus-terminal
+  cancellation classification, benign TUI/ACP presentation, partial/action retention,
+  red-to-green host receipts and fresh local TUI candidate identity.
+
+- `2026-09-28-zai-mcp-web-tools-reconnaissance.md` owns the investigation of
+  shared Z.ai Search/Reader MCP visibility and failures across providers: both-host
+  source trace, current documentation comparison, secret-safe credential evidence,
+  confirmed defects, unresolved remote evidence, and the original repair proposal.
+- `2026-09-28-zai-mcp-web-tools-repair.md` owns the initial implemented Z.ai-only
+  tool eligibility, stored/scoped credential bridge, Search call-name repair,
+  and its then-non-green ACP environmental receipt.
+- `2026-09-28-zai-mcp-web-tools-finishing.md` owns the isolated ACP process-suite
+  correction, fixed-category diagnostic hardening, final selective-isolation
+  receipts, runnable candidate identities, and still-open live/cross-platform gates.
 
 - `vro18-audit1-completeness-and-capability-truth.md` owns the independent
   post-v0.24.0 VRO-18 requirement/reachability audit, exact-artifact F0

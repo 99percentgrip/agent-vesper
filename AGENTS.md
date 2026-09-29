@@ -161,6 +161,8 @@ When the user requests a durable behavior change, record it here or in the relev
 - Commit/push/version and release work does not authorize replacing Alex's local
   installation. Leave native update testing to Alex unless he explicitly requests
   installation; do not run an installer merely to verify a release.
+- Future providers stay provider-neutral and follow the same path as the
+  current registered adapters. The contract is in Project Contracts below.
 
 ## Project Contracts
 
@@ -177,6 +179,10 @@ When the user requests a durable behavior change, record it here or in the relev
   UI controls. Provider-specific values come from the owning real adapter and
   its evidence sources; production registers Z.ai, LM Studio, native OpenAI,
   and native xAI / Grok.
+- Z.ai Coding Plan MCP integrations are scoped to Vesper's `zai` provider.
+  This is Vesper's provider-isolation rule, not a claimed vendor protocol
+  restriction. Provider ID `xai` means xAI / Grok and never grants Z.ai tools.
+  Preserve independent MCP servers, native web tools, and provider-owned search.
 - Z.ai model metadata has one production source of truth in
   `vesper-provider-glm`; ACP and TUI must derive their model lists, limits, and
   capability gates from that catalog. Undocumented model-list endpoints or
@@ -186,6 +192,14 @@ When the user requests a durable behavior change, record it here or in the relev
   plus the real registered adapters. Z.ai, LM Studio, OpenAI, and xAI are the
   registered adapters; no additional provider may be claimed before it has
   authentication, catalog, transport, fixtures, and CI evidence.
+- A future provider must use the same provider-neutral path as the current
+  registered adapters. Authentication, catalog, model/reasoning/plan controls,
+  transport, Settings, `/auth`, and startup sign-in come from that provider's
+  descriptor and ports (`ProviderCredentialPort`, catalog, and superpower
+  policy). The TUI and ACP must not grow a provider-name match arm or a direct
+  concrete-provider import to add it. Registering the adapter is what makes
+  the existing harness behavior apply. Missing behavior is a gap in the
+  adapter or the shared port, not a license for a one-provider shortcut.
 - A feature may be called impossible or excluded only after checking the
   frozen oracle and current primary documentation and recording concrete
   technical evidence. Missing dependencies must fail truthfully; placeholders
@@ -219,6 +233,13 @@ When the user requests a durable behavior change, record it here or in the relev
   output and session history. Automatic recovery is bounded and permitted
   only when no ambiguous tool-call fragment exists; neither host may replay a
   possibly side-effecting tool call.
+- A user-requested turn cancellation is benign only when the host-owned
+  cancellation token and a cancellation-classified runtime terminal agree.
+  TUI conversation and Last Run report `Cancelled`, preserve partial output
+  and completed actions without implying rollback, and retain structured
+  diagnostics outside normal chat. ACP uses its protocol-native cancelled
+  stop reason. Timeouts, provider-side aborts and all other failures remain
+  failures.
 - Context compaction is token-pressure driven against the active provider
   model's advertised window, transactional, and shared by direct, VRO, TUI,
   and ACP paths. It preserves system instructions and complete recent tool

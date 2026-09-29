@@ -108,6 +108,8 @@ fn tui_tool_failure(name: &str, error: impl std::fmt::Display) -> vesper_agent::
 /// dynamically-discovered MCP tools so the agent loop's gateway routing
 /// recognizes them. Format: `mcp__<server>__<tool>`.
 const MCP_GATEWAY_PREFIX: &str = "mcp__";
+/// Exact documented tool name advertised by the protected Search MCP.
+const ZAI_SEARCH_REMOTE_TOOL: &str = "webSearchPrime";
 
 /// Parses an `mcp__<server>__<tool>` gateway name into `(server, tool)`.
 /// Returns `None` when the name does not match the expected shape so the
@@ -122,6 +124,28 @@ fn parse_mcp_gateway_name(name: &str) -> Option<(&str, &str)> {
     Some((server, tool))
 }
 
+fn ensure_mcp_server_eligible(
+    server: &vesper_mcp::McpServerConfig,
+    provider_id: &vesper_domain::ProviderId,
+) -> Result<(), vesper_agent::ToolError> {
+    if server.provider_scope.allows(provider_id) {
+        Ok(())
+    } else {
+        Err(vesper_agent::ToolError::Failed(format!(
+            "MCP server `{}` is unavailable for active provider `{}`",
+            server.id, provider_id
+        )))
+    }
+}
+
+fn builtin_scope(server_id: &str) -> vesper_domain::ToolProviderScope {
+    vesper_mcp::mcp::builtin_servers()
+        .into_iter()
+        .find(|server| server.id == server_id)
+        .map(|server| server.provider_scope)
+        .unwrap_or_default()
+}
+
 /// Translates one advertised MCP tool descriptor into a provider-neutral
 /// [`ToolDefinition`] whose `harness_name` matches the gateway prefix so
 /// the agent loop can both advertise and execute it after a `mcp_list_tools`
@@ -133,6 +157,7 @@ fn parse_mcp_gateway_name(name: &str) -> Option<(&str, &str)> {
 /// discovery step.
 fn mcp_descriptor_to_tool_definition(
     server_id: &str,
+    provider_scope: vesper_domain::ToolProviderScope,
     descriptor: &vesper_mcp::McpToolDescriptor,
 ) -> vesper_domain::ToolDefinition {
     let harness_name_value = format!("mcp__{server_id}__{}", descriptor.name);
@@ -154,6 +179,7 @@ fn mcp_descriptor_to_tool_definition(
         description,
         input_schema,
         execution_class: vesper_domain::ToolExecutionClass::NestedWorkflow,
+        provider_scope,
         extensions: vesper_domain::ExtensionMap::default(),
         defer_loading: false,
     }
@@ -215,6 +241,7 @@ impl vesper_agent::ToolExecutor for McpGatewayExecutor {
         let plugin_root = self.plugin_root.clone();
         let mcp = self.mcp.clone();
         let cancellation = context.cancellation.clone();
+        let provider_id = context.provider_id.clone();
         Box::pin(async move {
             let (server, tool) = parse_mcp_gateway_name(&name).ok_or_else(|| {
                 vesper_agent::ToolError::Failed(format!(
@@ -229,6 +256,7 @@ impl vesper_agent::ToolExecutor for McpGatewayExecutor {
                 let server = registry.get_with_builtins(&server_owned).ok_or_else(|| {
                     vesper_agent::ToolError::Failed(format!("MCP server not found: {server_owned}"))
                 })?;
+                ensure_mcp_server_eligible(&server, &provider_id)?;
                 mcp.call_tool_cancellable(&server, &tool_owned, arguments, &|| {
                     cancellation.is_cancelled()
                 })
@@ -292,6 +320,7 @@ fn mcp_result(
 ) -> impl std::future::Future<Output = Result<vesper_agent::ToolResult, vesper_agent::ToolError>> + Send
 {
     let cancellation = context.cancellation.clone();
+    let provider_id = context.provider_id.clone();
     let registry_root = registry_root.to_path_buf();
     let error_name = name.to_owned();
     async move {
@@ -302,6 +331,7 @@ fn mcp_result(
             let server = registry.get_with_builtins(&server_id).ok_or_else(|| {
                 vesper_agent::ToolError::Failed(format!("MCP server not found: {server_id}"))
             })?;
+            ensure_mcp_server_eligible(&server, &provider_id)?;
             mcp.call_tool_cancellable(&server, &tool, arguments, &|| cancellation.is_cancelled())
                 .map_err(|error| tui_tool_failure(&task_error_name, error))
         })
@@ -375,7 +405,11 @@ async fn execute_extended_tui_tool(
                     reason: "mode must be `bm25` or `regex`".into(),
                 });
             }
-            let definitions = worker_service.definitions();
+            let definitions = worker_service
+                .definitions()
+                .into_iter()
+                .filter(|definition| definition.provider_scope.allows(&context.provider_id))
+                .collect::<Vec<_>>();
             let mut matches = if mode == "regex" {
                 if intent.chars().count() > 200 {
                     return Err(vesper_agent::ToolError::InvalidArguments {
@@ -463,7 +497,7 @@ async fn execute_extended_tui_tool(
                 name,
                 plugin_root,
                 "zai_search".into(),
-                "web_search_prime".into(),
+                ZAI_SEARCH_REMOTE_TOOL.into(),
                 serde_json::json!({"search_query": query}),
             )
             .await
@@ -566,6 +600,7 @@ async fn execute_extended_tui_tool(
         "mcp_search" => {
             let requested_server = optional_string("server");
             let cancellation = context.cancellation.clone();
+            let provider_id = context.provider_id.clone();
             let registry_root = plugin_root.to_path_buf();
             let descriptors = tokio::task::spawn_blocking(move || {
                 let registry = vesper_mcp::McpRegistry::open(&registry_root)
@@ -576,6 +611,18 @@ async fn execute_extended_tui_tool(
                         .as_deref()
                         .is_some_and(|requested| requested != server.id)
                     {
+                        continue;
+                    }
+                    if !server.provider_scope.allows(&provider_id) {
+                        if requested_server.is_some() {
+                            return Err(tui_tool_failure(
+                                "mcp_search",
+                                format!(
+                                    "MCP server `{}` is unavailable for active provider `{}`",
+                                    server.id, provider_id
+                                ),
+                            ));
+                        }
                         continue;
                     }
                     match mcp.tools_cancellable(&server, &|| cancellation.is_cancelled()) {
@@ -606,14 +653,18 @@ async fn execute_extended_tui_tool(
             let server_id = required_string("server")?;
             let server_id_for_injection = server_id.clone();
             let cancellation = context.cancellation.clone();
+            let provider_id = context.provider_id.clone();
             let registry_root = plugin_root.to_path_buf();
-            let descriptors = tokio::task::spawn_blocking(move || {
+            let (descriptors, provider_scope) = tokio::task::spawn_blocking(move || {
                 let registry = vesper_mcp::McpRegistry::open(&registry_root)
                     .map_err(|error| tui_tool_failure("mcp_list_tools", error))?;
                 let server = registry.get_with_builtins(&server_id).ok_or_else(|| {
                     vesper_agent::ToolError::Failed(format!("MCP server not found: {server_id}"))
                 })?;
+                ensure_mcp_server_eligible(&server, &provider_id)?;
+                let scope = server.provider_scope.clone();
                 mcp.tools_cancellable(&server, &|| cancellation.is_cancelled())
+                    .map(|tools| (tools, scope))
                     .map_err(|error| tui_tool_failure("mcp_list_tools", error))
             })
             .await
@@ -621,7 +672,11 @@ async fn execute_extended_tui_tool(
             let injected: Vec<vesper_domain::ToolDefinition> = descriptors
                 .iter()
                 .map(|descriptor| {
-                    mcp_descriptor_to_tool_definition(&server_id_for_injection, descriptor)
+                    mcp_descriptor_to_tool_definition(
+                        &server_id_for_injection,
+                        provider_scope.clone(),
+                        descriptor,
+                    )
                 })
                 .collect();
             let summary = format!(
@@ -648,6 +703,7 @@ async fn execute_extended_tui_tool(
                 });
             }
             let cancellation = context.cancellation.clone();
+            let provider_id = context.provider_id.clone();
             let registry_root = plugin_root.to_path_buf();
             let result = tokio::task::spawn_blocking(move || {
                 let registry = vesper_mcp::McpRegistry::open(&registry_root)
@@ -655,6 +711,7 @@ async fn execute_extended_tui_tool(
                 let server = registry.get_with_builtins(&server_id).ok_or_else(|| {
                     vesper_agent::ToolError::Failed(format!("MCP server not found: {server_id}"))
                 })?;
+                ensure_mcp_server_eligible(&server, &provider_id)?;
                 mcp.call_tool_cancellable(&server, &tool, arguments, &|| {
                     cancellation.is_cancelled()
                 })
@@ -2189,8 +2246,32 @@ mod tests {
             #[cfg(feature = "bridge")]
             bridge: None,
         };
-        let names = service
-            .definitions()
+        let definitions = service.definitions();
+        for name in ["web_search", "web_reader", "vision_analyze"] {
+            let definition = definitions
+                .iter()
+                .find(|definition| definition.harness_name.as_str() == name)
+                .expect("protected first-party tool definition");
+            assert_eq!(
+                definition.provider_scope,
+                builtin_scope(match name {
+                    "web_search" => "zai_search",
+                    "web_reader" => "zai_reader",
+                    _ => "zai_vision",
+                })
+            );
+            assert!(
+                definition
+                    .provider_scope
+                    .allows(&vesper_domain::ProviderId::new("zai").expect("provider id"))
+            );
+            assert!(
+                !definition
+                    .provider_scope
+                    .allows(&vesper_domain::ProviderId::new("openai").expect("provider id"))
+            );
+        }
+        let names = definitions
             .into_iter()
             .map(|definition| definition.harness_name.as_str().to_owned())
             .collect::<std::collections::BTreeSet<_>>();
@@ -2220,6 +2301,122 @@ mod tests {
         ] {
             assert!(names.contains(name), "missing shared hosted tool {name}");
         }
+    }
+
+    #[tokio::test]
+    async fn non_zai_direct_discovery_and_gateway_aliases_stop_before_credentials_or_http() {
+        use std::net::TcpListener;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use vesper_domain::{
+            BoundedString, ProviderId, SessionOperatingMode, SessionPermissionMode, ToolCall,
+            ToolCallId, ToolId, ToolProviderScope, WorkspaceRoot,
+        };
+
+        let root = tempfile::tempdir().unwrap();
+        let plugins = root.path().join("plugins");
+        std::fs::create_dir_all(&plugins).unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let address = listener.local_addr().unwrap();
+        vesper_mcp::McpRegistry::open(&plugins)
+            .unwrap()
+            .add(vesper_mcp::McpServerConfig {
+                id: "owned_fixture".into(),
+                transport: vesper_mcp::McpTransport::Http,
+                command: None,
+                args: Vec::new(),
+                url: Some(format!("http://{address}")),
+                auth_env: Some("ZAI_API_KEY".into()),
+                label: Some("display name is not authority".into()),
+                provider_scope: ToolProviderScope::Provider(ProviderId::new("zai").unwrap()),
+                created_at: std::time::SystemTime::UNIX_EPOCH,
+            })
+            .unwrap();
+
+        let resolutions = Arc::new(AtomicUsize::new(0));
+        let resolution_counter = resolutions.clone();
+        let service = HarnessToolService::new_with_checkpoint_gate(
+            Arc::new(MemoryStores {
+                memory: None,
+                skills: None,
+                profile: None,
+                awareness: None,
+            }),
+            root.path().join("cron"),
+            plugins,
+            None,
+            false,
+        )
+        .with_mcp_credential_resolver_fn(move |_| {
+            resolution_counter.fetch_add(1, Ordering::SeqCst);
+            Some(vesper_mcp::SecretValue::new("synthetic-zai-credential"))
+        });
+        let registry = Arc::new(service).build_default_registry();
+        let mut context = vesper_agent::executor::uncancellable_context(
+            vec![WorkspaceRoot {
+                name: BoundedString::new("fixture").unwrap(),
+                path: BoundedString::new(root.path().to_string_lossy()).unwrap(),
+                primary: true,
+            }],
+            SessionOperatingMode::Code,
+            SessionPermissionMode::Bypass,
+        );
+        context.provider_id = ProviderId::new("xai").unwrap();
+        let call = |id: &str, tool: &str, arguments: serde_json::Value| ToolCall {
+            id: ToolCallId::new(id).unwrap(),
+            tool_id: ToolId::new(tool).unwrap(),
+            arguments,
+            extensions: Default::default(),
+        };
+
+        for request in [
+            call("direct", "web_search", serde_json::json!({"query":"rust"})),
+            call(
+                "search",
+                "mcp_search",
+                serde_json::json!({"server":"owned_fixture"}),
+            ),
+            call(
+                "list",
+                "mcp_list_tools",
+                serde_json::json!({"server":"owned_fixture"}),
+            ),
+            call(
+                "call",
+                "mcp_call",
+                serde_json::json!({"server":"owned_fixture","tool":"webSearchPrime","arguments":{}}),
+            ),
+            call(
+                "alias",
+                "mcp__owned_fixture__webSearchPrime",
+                serde_json::json!({}),
+            ),
+        ] {
+            let error = registry.execute(&request, &context).await.unwrap_err();
+            assert!(
+                error
+                    .to_string()
+                    .contains("unavailable for active provider `xai`"),
+                "{} returned {error}",
+                request.tool_id
+            );
+        }
+        assert_eq!(resolutions.load(Ordering::SeqCst), 0);
+        assert!(matches!(
+            listener.accept(),
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock
+        ));
+
+        let names = registry
+            .definitions_for_provider(SessionOperatingMode::Code, &context.provider_id)
+            .into_iter()
+            .map(|definition| definition.harness_name.as_str().to_owned())
+            .collect::<std::collections::BTreeSet<_>>();
+        assert!(names.contains("browser_ui"));
+        assert!(names.contains("mcp_search"));
+        assert!(!names.contains("web_search"));
+        assert!(!names.contains("web_reader"));
+        assert!(!names.contains("vision_analyze"));
     }
 
     // ------------------- Phase 3: MCP gateway & translation -------------------
@@ -2261,7 +2458,11 @@ mod tests {
                 "required": ["url"],
             })),
         };
-        let definition = mcp_descriptor_to_tool_definition("playwright", &descriptor);
+        let definition = mcp_descriptor_to_tool_definition(
+            "playwright",
+            vesper_domain::ToolProviderScope::Any,
+            &descriptor,
+        );
         assert_eq!(
             definition.harness_name.as_str(),
             "mcp__playwright__navigate"
@@ -2292,7 +2493,11 @@ mod tests {
             description: None,
             input_schema: None,
         };
-        let definition = mcp_descriptor_to_tool_definition("echo", &descriptor);
+        let definition = mcp_descriptor_to_tool_definition(
+            "echo",
+            vesper_domain::ToolProviderScope::Any,
+            &descriptor,
+        );
         assert_eq!(definition.harness_name.as_str(), "mcp__echo__ping");
         assert!(
             definition.description.contains("echo"),
@@ -2677,6 +2882,39 @@ impl HarnessToolService {
         build_hosted_registry(self)
     }
 
+    /// Attaches the composition's adapter-owned, on-demand MCP credential
+    /// resolver. Existing environment-only behavior remains the default for
+    /// custom compositions that do not provide this bridge.
+    #[must_use]
+    pub fn with_mcp_credential_resolver(
+        mut self,
+        resolver: Arc<dyn vesper_mcp::McpCredentialResolver>,
+    ) -> Self {
+        self.mcp = Arc::new(vesper_mcp::McpSession::default().with_credential_resolver(resolver));
+        self
+    }
+
+    /// Attaches an on-demand resolver without exposing the MCP crate's trait
+    /// through an application dependency edge.
+    #[must_use]
+    pub fn with_mcp_credential_resolver_fn<F>(self, resolver: F) -> Self
+    where
+        F: Fn(&str) -> Option<vesper_mcp::SecretValue> + Send + Sync + 'static,
+    {
+        struct Resolver<F>(F);
+
+        impl<F> vesper_mcp::McpCredentialResolver for Resolver<F>
+        where
+            F: Fn(&str) -> Option<vesper_mcp::SecretValue> + Send + Sync,
+        {
+            fn resolve(&self, reference: &str) -> Option<vesper_mcp::SecretValue> {
+                (self.0)(reference)
+            }
+        }
+
+        self.with_mcp_credential_resolver(Arc::new(Resolver(resolver)))
+    }
+
     /// VRO-14 PR-5: attaches the opt-in `[web]` scope. Called by both
     /// hosts after reading `.agent-vesper/config.toml`; a `None`/disabled
     /// scope leaves the registry path byte-identical to the pre-web build
@@ -2825,7 +3063,11 @@ impl HarnessToolService {
     /// Clones composition ports with an explicitly conversation-owned MCP lifecycle.
     /// The clone does not start another cron scheduler or share browser state.
     pub fn fork_mcp_session(&self) -> Self {
-        let mcp = Arc::new(vesper_mcp::McpSession::default());
+        let mut mcp = vesper_mcp::McpSession::default();
+        if let Some(resolver) = self.mcp.credential_resolver() {
+            mcp = mcp.with_credential_resolver(resolver);
+        }
+        let mcp = Arc::new(mcp);
         Self {
             stores: self.stores.clone(),
             core: self.core.clone(),
@@ -2853,7 +3095,12 @@ impl HarnessToolService {
             plugin_loader: self.plugin_loader.clone(),
             trusted_publishers: self.trusted_publishers.clone(),
             plugin_root: self.plugin_root.clone(),
-            mcp: Arc::new(vesper_mcp::McpSession::default()),
+            mcp: Arc::new(match self.mcp.credential_resolver() {
+                Some(resolver) => {
+                    vesper_mcp::McpSession::default().with_credential_resolver(resolver)
+                }
+                None => vesper_mcp::McpSession::default(),
+            }),
             session_root: self.session_root.clone(),
             checkpoints_enabled: self.checkpoints_enabled,
             web: self.web.clone(),
@@ -3230,6 +3477,18 @@ impl vesper_agent::ToolService for HarnessToolService {
                 vesper_agent::schema_definition(name, description, class, properties)
             })
             .collect();
+        for (tool_name, server_id) in [
+            ("web_search", "zai_search"),
+            ("web_reader", "zai_reader"),
+            ("vision_analyze", "zai_vision"),
+        ] {
+            if let Some(definition) = definitions
+                .iter_mut()
+                .find(|definition| definition.harness_name.as_str() == tool_name)
+            {
+                definition.provider_scope = builtin_scope(server_id);
+            }
+        }
         if let Some(web) = &self.web {
             definitions.extend(crate::web_service::WebService::scoped_definitions(
                 web.scope(),

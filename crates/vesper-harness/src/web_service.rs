@@ -976,6 +976,7 @@ mod tests {
         }
         let context = ToolContext {
             workspace_roots: Vec::new(),
+            provider_id: vesper_domain::ProviderId::new("fixture").unwrap(),
             operating_mode: vesper_domain::SessionOperatingMode::Code,
             permission_mode: vesper_domain::SessionPermissionMode::Bypass,
             conversation: Vec::new(),
@@ -1170,6 +1171,7 @@ mod tests {
         }
         let context = ToolContext {
             workspace_roots: Vec::new(),
+            provider_id: vesper_domain::ProviderId::new("fixture").unwrap(),
             operating_mode: SessionOperatingMode::Code,
             permission_mode: SessionPermissionMode::Bypass,
             conversation: Vec::new(),
@@ -1391,6 +1393,7 @@ mod tests {
                 path: vesper_domain::BoundedString::new(root.path().to_string_lossy()).unwrap(),
                 primary: true,
             }],
+            provider_id: vesper_domain::ProviderId::new("fixture").unwrap(),
             operating_mode: SessionOperatingMode::Code,
             permission_mode: vesper_domain::SessionPermissionMode::Bypass,
             conversation: Vec::new(),
@@ -1465,6 +1468,7 @@ mod tests {
         }
         let context = ToolContext {
             workspace_roots: Vec::new(),
+            provider_id: vesper_domain::ProviderId::new("fixture").unwrap(),
             operating_mode: SessionOperatingMode::Code,
             permission_mode: vesper_domain::SessionPermissionMode::Bypass,
             conversation: Vec::new(),

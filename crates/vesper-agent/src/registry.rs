@@ -9,7 +9,9 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use vesper_domain::{SessionOperatingMode, ToolCall, ToolDefinition, ToolExecutionClass};
+use vesper_domain::{
+    ProviderId, SessionOperatingMode, ToolCall, ToolDefinition, ToolExecutionClass,
+};
 
 use crate::executor::{
     HostedTool, ToolError, ToolExecutor, ToolFuture, ToolResult, ToolService, harness_name,
@@ -209,9 +211,32 @@ impl ToolRegistry {
     /// provider-neutral deferred-loading seam.
     #[must_use]
     pub fn definitions_for(&self, mode: SessionOperatingMode) -> Vec<ToolDefinition> {
+        self.filtered_definitions(mode, None)
+    }
+
+    /// Returns definitions eligible for both the operating mode and active
+    /// provider. This is the production advertisement path; the provider-free
+    /// sibling remains for schema inspection and legacy tests only.
+    #[must_use]
+    pub fn definitions_for_provider(
+        &self,
+        mode: SessionOperatingMode,
+        provider_id: &ProviderId,
+    ) -> Vec<ToolDefinition> {
+        self.filtered_definitions(mode, Some(provider_id))
+    }
+
+    fn filtered_definitions(
+        &self,
+        mode: SessionOperatingMode,
+        provider_id: Option<&ProviderId>,
+    ) -> Vec<ToolDefinition> {
         self.entries
             .values()
             .filter(|entry| !entry.definition.defer_loading)
+            .filter(|entry| {
+                provider_id.is_none_or(|provider| entry.definition.provider_scope.allows(provider))
+            })
             .filter(|entry| match mode {
                 SessionOperatingMode::Code => true,
                 SessionOperatingMode::Plan => {
@@ -256,6 +281,15 @@ impl ToolRegistry {
         context: &'a crate::executor::ToolContext,
     ) -> ToolFuture<'a, Result<ToolResult, ToolError>> {
         if let Some(entry) = self.entries.get(call.tool_id.as_str()) {
+            if !entry.definition.provider_scope.allows(&context.provider_id) {
+                let name = call.tool_id.as_str().to_owned();
+                let provider = context.provider_id.as_str().to_owned();
+                return Box::pin(async move {
+                    Err(ToolError::Failed(format!(
+                        "tool `{name}` is unavailable for active provider `{provider}`"
+                    )))
+                });
+            }
             let executor = Arc::clone(&entry.executor);
             return Box::pin(async move { executor.execute(call, context).await });
         }

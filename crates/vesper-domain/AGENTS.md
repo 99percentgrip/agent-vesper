@@ -47,10 +47,11 @@ Orchestrator (VRO) Phase VRO-1 domain contracts.
   28-command subset.
 - `ToolDefinition.defer_loading` is the visibility axis for the Claude
   Code-style deferred-loading seam: when `true`, the tool stays registered for
-  execution but is excluded from the registry's `definitions_for(mode)`
-  advertisement. The field carries `#[serde(default)]` so existing serialized
-  definitions deserialize unchanged; only an explicit caller opts a tool into
-  deferred loading.
+  execution but is excluded from the registry's advertisement. `provider_scope`
+  is the separate provider-eligibility axis (`Any` or one `ProviderId`) and is
+  enforced at advertisement, deferred injection, and execution. Both fields
+  carry serde defaults so existing serialized definitions remain universal and
+  non-deferred unless an owning composition opts into tighter behavior.
 - `FileChangePreview` and its operation/line-kind DTOs are bounded,
   provider-neutral descriptions of a successful filesystem mutation. They
   carry display/absolute paths, complete addition/deletion totals, a bounded

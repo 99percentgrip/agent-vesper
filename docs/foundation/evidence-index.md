@@ -1,5 +1,48 @@
 # Foundation Evidence Index
 
+## Combined corrective patch v0.24.4 (2026-09-29)
+
+- Release execution: [`2026-09-29-v0.24.4-combined-corrective-release.md`](2026-09-29-v0.24.4-combined-corrective-release.md)
+- Included repairs: shared skill-routing parser, native OpenAI Responses event
+  compatibility, Z.ai MCP provider isolation/credential/diagnostic correction,
+  and positively corroborated user-cancellation presentation.
+- Current verdict: **PRE-RELEASE SOURCE INVENTORY COMPLETE; PUBLICATION
+  PENDING FINAL LOCAL AND EXACT-COMMIT GATES.** All four source groups and
+  their focused tests are present in the intended release source. Alex's
+  skill-routing and cancellation acceptance both passed. Z.ai Search/Reader
+  passed offline loopback acceptance; live Z.ai acceptance was not run because
+  no active GLM Coding Plan is available.
+
+## User-initiated cancellation presentation repair (2026-09-29)
+
+- Execution: [`2026-09-29-user-cancellation-presentation-repair.md`](2026-09-29-user-cancellation-presentation-repair.md)
+- Owning requirements: [`../output-visual-upgrade-prd.md`](../output-visual-upgrade-prd.md)
+- Verdict: **IMPLEMENTED AND LOCALLY VERIFIED; RELEASE PAUSED.** TUI cancellation now requires agreement between the host-owned token and a cancellation-classified terminal, renders concise `Cancelled` semantics without rollback claims, preserves partial output/completed actions/diagnostics, and leaves failures/timeouts as failures. ACP retains its native cancelled stop reason under the same corroboration rule. A fresh uninstalled v0.24.3 TUI candidate is recorded in the execution report; no live provider request or release action occurred.
+
+## Z.ai MCP provider-isolation finishing verification (2026-09-28)
+
+- Final verification: [`2026-09-28-zai-mcp-web-tools-finishing.md`](2026-09-28-zai-mcp-web-tools-finishing.md)
+- Initial repair: [`2026-09-28-zai-mcp-web-tools-repair.md`](2026-09-28-zai-mcp-web-tools-repair.md)
+- Verdict: **RUNNABLE OFFLINE-VERIFIED CANDIDATES BUILT; RELEASE PAUSED; LIVE Z.AI ACCEPTANCE NOT RUN.** The exact dirty source passes the complete ACP process suite after explicit xAI credential isolation, fixed-category MCP diagnostics discard arbitrary upstream text, both Z.ai Search and Reader pass loopback positive paths, and non-Z.ai direct/discovery/stale/gateway routes stop before credentials or HTTP. Candidate hashes and remaining platform/live gaps are recorded in the final verification report.
+
+## Z.ai MCP web-tools repair (2026-09-28)
+
+- Execution: [`2026-09-28-zai-mcp-web-tools-repair.md`](2026-09-28-zai-mcp-web-tools-repair.md)
+- Superseded process/diagnostic status: [`2026-09-28-zai-mcp-web-tools-finishing.md`](2026-09-28-zai-mcp-web-tools-finishing.md)
+- Investigation: [`2026-09-28-zai-mcp-web-tools-reconnaissance.md`](2026-09-28-zai-mcp-web-tools-reconnaissance.md)
+- Related requirements: [`../openai-provider-prd.md`](../openai-provider-prd.md),
+  [`../vro18-native-xai-provider-prd.md`](../vro18-native-xai-provider-prd.md),
+  and [`../web-oracle-extraction-prd.md`](../web-oracle-extraction-prd.md)
+- Historical verdict at initial delivery: **IMPLEMENTED AND OFFLINE-VERIFIED; LIVE Z.AI ACCEPTANCE NOT RUN.** Protected definitions were scoped and the main offline checks passed, but three ACP disk-invariance vectors were then non-green. The finishing report supersedes that environmental diagnosis: the app-local `.config/` was invariant, an isolated child config lock identified xAI credential discovery, explicit signed-out test credentials resolved it, and the complete process suite now passes. No live provider call, installation, version, release, or VRO-19 action occurred.
+
+## Z.ai MCP web-tools reconnaissance (2026-09-28)
+
+- Investigation: [`2026-09-28-zai-mcp-web-tools-reconnaissance.md`](2026-09-28-zai-mcp-web-tools-reconnaissance.md)
+- Related requirements: [`../openai-provider-prd.md`](../openai-provider-prd.md),
+  [`../vro18-native-xai-provider-prd.md`](../vro18-native-xai-provider-prd.md),
+  and [`../web-oracle-extraction-prd.md`](../web-oracle-extraction-prd.md)
+- Verdict: **INVESTIGATION COMPLETE; REPAIR NOT IMPLEMENTED.** The current TUI-host failure is local pre-HTTP credential resolution: native Z.ai authentication is configured, but the MCP transport reads only process environment variables. Current Z.ai docs also expose a masked Search-name mismatch (`webSearchPrime` documented versus `web_search_prime` called), while Reader's `webReader` matches. HTTP status and JSON-RPC error codes are discarded, so the older truncated failure cannot be labeled `401`, `403`, `429`, entitlement, or quota failure. No authenticated MCP call, production edit, credential change, release, installation change, or VRO-19 work occurred.
+
 ## OpenAI Responses and shared skill-routing repair (2026-09-28)
 
 - Execution: [`2026-09-28-openai-skill-routing-repair.md`](2026-09-28-openai-skill-routing-repair.md)

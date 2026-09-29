@@ -106,7 +106,10 @@ impl ProcessHarness {
         fs::write(
             &openai_fixture,
             serde_json::to_vec(&serde_json::json!({
-                "credentials": {"openai": {"native-auth": "{\"mode\":\"signed-out\"}"}}
+                "credentials": {
+                    "openai": {"native-auth": "{\"mode\":\"signed-out\"}"},
+                    "xai": {"native-auth": "{\"mode\":\"signed-out\"}"}
+                }
             }))
             .unwrap(),
         )
@@ -126,6 +129,7 @@ impl ProcessHarness {
             .env_clear()
             .env("HOME", &temp)
             .env("AGENT_VESPER_OPENAI_CREDENTIALS_PATH", &openai_fixture)
+            .env("AGENT_VESPER_XAI_CREDENTIALS_PATH", &openai_fixture)
             .env("XDG_CONFIG_HOME", temp.join("config"))
             .env("XDG_CACHE_HOME", temp.join("cache"))
             .env("XDG_DATA_HOME", temp.join("data"))

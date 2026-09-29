@@ -35,6 +35,7 @@ pub(crate) fn fixture_request() -> ProviderRequest {
             description: "Read a confined file".into(),
             input_schema: json!({"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}),
             execution_class: ToolExecutionClass::ReadOnly,
+            provider_scope: Default::default(),
             extensions: Default::default(),
             defer_loading: false,
         }],
@@ -100,6 +101,7 @@ fn complete_shared_tool_surface_serializes_identically_in_both_auth_modes() {
                 "required": ["fixture"]
             }),
             execution_class: ToolExecutionClass::ReadOnly,
+            provider_scope: Default::default(),
             extensions: Default::default(),
             defer_loading: false,
         })

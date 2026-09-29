@@ -127,6 +127,12 @@ where
                 Some(worker_factory),
                 checkpoint_gate().is_some(),
             )
+            .with_mcp_credential_resolver_fn(|reference| {
+                vesper_provider_glm::GlmCredentialSource::credential(
+                    &vesper_provider_glm::EnvironmentCredentialSource,
+                    reference,
+                )
+            })
             .with_web_scope(vesper_harness::web_service::holder::shared())
             .with_bridge(bridge_enabled_from_settings()),
         );
@@ -1012,13 +1018,13 @@ impl AcpHarnessEngine {
         {
             message.content.push(ContentPart::Text(extra));
         }
+        let config = self.turn_configuration(&request).await;
         let available_tools = self
             .tool_registry(&request)
-            .definitions_for(request.operating_mode)
+            .definitions_for_provider(request.operating_mode, &config.provider_id)
             .into_iter()
             .map(|definition| definition.harness_name.as_str().to_owned())
             .collect::<std::collections::BTreeSet<_>>();
-        let config = self.turn_configuration(&request).await;
         let mut skill_report = self.hosted.orchestrate_skills(
             &workspace_root_path(&request.workspace_roots),
             &text,
@@ -1224,15 +1230,29 @@ impl AcpHarnessEngine {
             .entry(request.session_id.clone())
             .or_default()
             .retain(|entry| !Arc::ptr_eq(entry, &cancellation));
-        if cancellation.is_cancelled() {
+        if confirms_user_cancellation(cancellation.is_cancelled(), &run_result) {
             self.hosted.record_skill_outcome(&selected_skills, false);
-            if let Ok((outcome @ vesper_agent::AgentTurnOutcome::Acceptance { .. }, history)) =
-                &run_result
-            {
-                let text = outcome_text(outcome);
-                if let Some(sink) = &request.event_sink {
-                    sink.event(vesper_acp::AcpEngineEvent::ContentDelta { text: text.clone() });
+            if let Ok((outcome, history)) = &run_result {
+                let mut history = history.clone();
+                if let Some(latest_user) = history
+                    .iter_mut()
+                    .rev()
+                    .find(|message| message.role == MessageRole::User)
+                {
+                    latest_user.content = original_content;
                 }
+                let text = if matches!(outcome, vesper_agent::AgentTurnOutcome::Acceptance { .. }) {
+                    let text = outcome_text(outcome);
+                    if let Some(sink) = &request.event_sink {
+                        sink.event(vesper_acp::AcpEngineEvent::ContentDelta { text: text.clone() });
+                    }
+                    text
+                } else {
+                    // Partial assistant/tool updates were already delivered through
+                    // the ACP event sink. The terminal response remains the
+                    // protocol-native Cancelled stop reason without duplication.
+                    String::new()
+                };
                 self.histories
                     .lock()
                     .await
@@ -1241,7 +1261,7 @@ impl AcpHarnessEngine {
                     text,
                     cancelled: true,
                     persist_turn: true,
-                    history_replacement: Some(history.clone()),
+                    history_replacement: Some(history),
                 });
             }
 
@@ -1991,6 +2011,40 @@ impl AcpHarnessEngine {
             .lock()
             .ok()
             .and_then(|plans| plans.get(session_id).cloned())
+    }
+}
+
+fn confirms_user_cancellation(
+    cancellation_requested: bool,
+    result: &Result<
+        (
+            vesper_agent::AgentTurnOutcome,
+            Vec<vesper_domain::ConversationMessage>,
+        ),
+        vesper_agent::AgentLoopError,
+    >,
+) -> bool {
+    if !cancellation_requested {
+        return false;
+    }
+    match result {
+        Ok((vesper_agent::AgentTurnOutcome::Acceptance { report, .. }, _)) => {
+            report.gaps.iter().any(|gap| gap.subject == "cancellation")
+        }
+        Ok((
+            vesper_agent::AgentTurnOutcome::Interrupted {
+                cause: vesper_domain::StreamInterruptionCause::Cancelled,
+                ..
+            },
+            _,
+        )) => true,
+        Err(vesper_agent::AgentLoopError::ProviderTurn(error)) => {
+            error.info.category == vesper_domain::ErrorCategory::Cancellation
+        }
+        Err(vesper_agent::AgentLoopError::Incomplete(vesper_domain::FinishOutcome::Cancelled)) => {
+            true
+        }
+        _ => false,
     }
 }
 
@@ -3220,6 +3274,12 @@ pub async fn run_multi_provider(initial: &str) -> Result<(), ()> {
                 Some(worker_factory),
                 checkpoint_gate().is_some(),
             )
+            .with_mcp_credential_resolver_fn(|reference| {
+                vesper_provider_glm::GlmCredentialSource::credential(
+                    &vesper_provider_glm::EnvironmentCredentialSource,
+                    reference,
+                )
+            })
             .with_web_scope(vesper_harness::web_service::holder::shared()),
         );
         let engine = Arc::new(AcpHarnessEngine::new(
@@ -3652,6 +3712,75 @@ mod tests {
         );
     }
 
+    fn classified_provider_error(
+        category: vesper_domain::ErrorCategory,
+    ) -> vesper_provider::ProviderError {
+        vesper_provider::ProviderError {
+            provider_id: ProviderId::new("test-provider").unwrap(),
+            provider_code: None,
+            http_status: None,
+            continuation_possible: false,
+            info: vesper_domain::ErrorInfo {
+                category,
+                retryability: vesper_domain::Retryability::Never,
+                retry_after_ms: None,
+                visible_output_emitted: false,
+                safe_message: vesper_domain::SafeMessage::new("classified test error").unwrap(),
+                diagnostics: vesper_domain::RedactedDiagnostics::default(),
+                provider_code: None,
+                causes: Vec::new(),
+            },
+            metadata: vesper_domain::ExtensionMap::default(),
+        }
+    }
+
+    #[test]
+    fn acp_cancellation_requires_both_user_token_and_cancelled_terminal() {
+        let cancellation_error = Err(vesper_agent::AgentLoopError::ProviderTurn(
+            classified_provider_error(vesper_domain::ErrorCategory::Cancellation),
+        ));
+        assert!(confirms_user_cancellation(true, &cancellation_error));
+        assert!(!confirms_user_cancellation(false, &cancellation_error));
+
+        let timeout_error = Err(vesper_agent::AgentLoopError::ProviderTurn(
+            classified_provider_error(vesper_domain::ErrorCategory::Timeout),
+        ));
+        assert!(!confirms_user_cancellation(true, &timeout_error));
+
+        let provider_failure = Err(vesper_agent::AgentLoopError::ProviderTurn(
+            classified_provider_error(vesper_domain::ErrorCategory::Authentication),
+        ));
+        assert!(!confirms_user_cancellation(false, &provider_failure));
+    }
+
+    #[test]
+    fn acp_cancelled_interruption_retains_partial_history_for_the_next_turn() {
+        let assistant = ConversationMessage {
+            id: vesper_domain::MessageId::new("cancelled-partial").unwrap(),
+            role: MessageRole::Assistant,
+            content: vec![ContentPart::Text(
+                vesper_domain::ContentText::new("partial answer").unwrap(),
+            )],
+            extensions: vesper_domain::ExtensionMap::default(),
+        };
+        let history = vec![assistant];
+        let result = Ok((
+            vesper_agent::AgentTurnOutcome::Interrupted {
+                assistant_content: history[0].content.clone(),
+                cause: vesper_domain::StreamInterruptionCause::Cancelled,
+                tool_call_started: false,
+                iterations: 1,
+                tool_results: vec![vesper_agent::ToolResult::new("completed action").unwrap()],
+                plan: None,
+            },
+            history.clone(),
+        ));
+
+        assert!(confirms_user_cancellation(true, &result));
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].role, MessageRole::Assistant);
+    }
+
     #[test]
     fn interrupted_outcome_preserves_partial_text_and_safe_cause() {
         let outcome = vesper_agent::AgentTurnOutcome::Interrupted {
@@ -3995,6 +4124,7 @@ mod tests {
         );
         let context = vesper_agent::ToolContext {
             workspace_roots: Vec::new(),
+            provider_id: vesper_domain::ProviderId::new("fixture").unwrap(),
             operating_mode: vesper_domain::SessionOperatingMode::Code,
             permission_mode: vesper_domain::SessionPermissionMode::Ask,
             conversation: Vec::new(),

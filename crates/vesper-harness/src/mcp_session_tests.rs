@@ -44,7 +44,9 @@ for line in sys.stdin:
         if name == 'browser_click': state += '#clicked'
         result = {'url':state, 'isError':name == 'failure'}
     print(json.dumps({'jsonrpc':'2.0','id':r['id'],'result':result}), flush=True)
-"#.into()], url:None, auth_env:None, label:None, created_at:std::time::SystemTime::UNIX_EPOCH,
+"#.into()], url:None, auth_env:None, label:None,
+        provider_scope: vesper_domain::ToolProviderScope::Any,
+        created_at:std::time::SystemTime::UNIX_EPOCH,
     }).unwrap();
     let context = vesper_agent::executor::uncancellable_context(
         vec![vesper_domain::WorkspaceRoot {

@@ -3,6 +3,8 @@
 Owner: native TUI presentation; shared tool execution owns factual outcomes.
 Directive: Alex's 2026-09-13 old/new output and report screenshots.
 Status and exact evidence: [execution report](foundation/output-visual-upgrade-execution.md).
+The positively corroborated cancellation correction is included in the
+[v0.24.4 combined corrective release](foundation/2026-09-29-v0.24.4-combined-corrective-release.md).
 
 ## Required behavior
 
@@ -15,6 +17,7 @@ Status and exact evidence: [execution report](foundation/output-visual-upgrade-e
 | V5 | Reports have one consistent left edge, hanging list indents and readable emphasis, code and links. Tables align at wide widths and preserve labeled values when narrow. | Report wrapping and malformed-table tests; frames at 40/80/120 columns. |
 | V6 | Selected themes, scrolling, URL hit-testing and accessibility remain functional; source text, Unicode and streaming partial Markdown remain readable. | Six-theme frame matrix; existing streaming, scrolling, hyperlink and tiny-size tests; accessibility projection. |
 | V7 | Shared output/outcome behavior reaches ACP and TUI; terminal rendering remains host-owned. | AgentLoop real-shell test, ACP event mapping and TUI direct/ReAct mapping tests. |
+| V8 | A positively corroborated user cancellation renders as concise `Cancelled`, preserves partial output and completed actions without claiming rollback, and keeps diagnostics out of normal chat. Provider failures, timeouts and uncorroborated aborts remain failures; ACP uses its native cancelled stop reason. | Focused TUI before/after-output/action/next-turn tests and ACP classification/history tests; [repair evidence](foundation/2026-09-29-user-cancellation-presentation-repair.md). |
 
 ## Constraints and delivery
 

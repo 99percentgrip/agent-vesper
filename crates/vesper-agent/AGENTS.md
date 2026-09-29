@@ -28,12 +28,12 @@ the multi-turn, tool-executing layer above it.
   and a bounded preview with its real starting source line only after the mutation
   succeeds. Shell nonzero exits and timeouts are failed tool results, including
   the sandbox timeout route; bounded diagnostics stay available to both hosts.
-- `src/registry.rs` — `ToolRegistry`: name → executor routing + mode-filtered
-  `definitions_for`. As of the deferred-loading Phase 1, `definitions_for`
-  also excludes any `ToolDefinition` whose `defer_loading` is `true` — those
-  tools remain registered for execution but are hidden from the initial
-  advertisement so the model does not see them until they are surfaced on
-  demand. `restricted_to` creates a worker execution allowlist, removing
+- `src/registry.rs` — `ToolRegistry`: name → executor routing plus mode- and
+  provider-filtered production advertisement through `definitions_for_provider`.
+  `definitions_for` remains provider-free for schema inspection and legacy tests.
+  Deferred definitions stay hidden until injected; provider-ineligible definitions
+  are rejected again at execution so forged/stale calls cannot bypass advertising.
+  `restricted_to` creates a worker execution allowlist, removing
   unnamed registrations and all prefix gateways; it never mutates the source
   registry. This host-neutral primitive does not change either host unless
   explicitly composed for a restricted worker.
@@ -565,11 +565,12 @@ the multi-turn, tool-executing layer above it.
   runs; `ReadOnly` tools always pass, `Mutating`/`Shell`/`Process`/
   `NestedWorkflow` require `Code` mode, `Bypass`, or a host-approved `Ask`
   decision. `Ask` without a `PermissionPort` fails closed.
-- The advertised tool pool starts as `definitions_for(mode)` (which itself
-  excludes `defer_loading == true` tools) and is **mutable** across turns.
-  When an executor returns `ToolResult.injected_tools`, the loop merges those
-  schemas into the advertised pool, deduplicating by `ToolId` or
-  `harness_name`, so the next iteration advertises them. This is the
+- The advertised tool pool starts as `definitions_for_provider(mode,
+  provider_id)` (which excludes deferred and provider-ineligible tools) and is
+  **mutable** across turns. When an executor returns
+  `ToolResult.injected_tools`, the loop rejects scopes ineligible for the active
+  provider before deduplicating by `ToolId` or `harness_name`; execution repeats
+  the same provider-scope gate. This is the
   provider-neutral deferred-loading seam — the loop never re-references
   the registry between turns, so injected schemas live only inside the
   per-turn advertised list (Phase 2 does not register them for execution;
