@@ -6,9 +6,12 @@
 - Included repairs: shared skill-routing parser, native OpenAI Responses event
   compatibility, Z.ai MCP provider isolation/credential/diagnostic correction,
   and positively corroborated user-cancellation presentation.
-- Current verdict: **PRE-RELEASE SOURCE INVENTORY COMPLETE; PUBLICATION
-  PENDING FINAL LOCAL AND EXACT-COMMIT GATES.** All four source groups and
-  their focused tests are present in the intended release source. Alex's
+- Current verdict: **RELEASED; EXACT-COMMIT GATES, FIVE TARGETS, ASSETS,
+  AND ACP REGISTRY UPDATE VERIFIED.** Release commit
+  `d22113528362706fa1672051dcb9385c82c22d8d`, annotated tag `v0.24.4`,
+  all four prerequisite workflows, all five target jobs, release workflow
+  `36515073932`, 16 published assets, every checksum, package contents, and the
+  in-place PR #539 update are recorded in the execution report. Alex's
   skill-routing and cancellation acceptance both passed. Z.ai Search/Reader
   passed offline loopback acceptance; live Z.ai acceptance was not run because
   no active GLM Coding Plan is available.
