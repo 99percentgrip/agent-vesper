@@ -140,7 +140,13 @@ business logic.
   env var (surfaced as a screen hint) — moving it to the OS credential store is
   the security follow-up.
 - `src/commands.rs` — slash-command parsing, registry, and resolution
-  against the active provider's superpowers. Tier C Phase 7 (ADR 0010): the
+  against the active provider's superpowers. `/release` resolves to a typed
+  shared RRC operation (start/status/resume/cancel/evidence/retry), never a
+  free-form AgentLoop workflow. If the controller admits a bounded isolated
+  repair, the TUI supplies its ordinary approval port; controller state never
+  bypasses permission. `/ci` appends the same persisted RRC status shown by ACP.
+  The terminal owns presentation only.
+  Tier C Phase 7 (ADR 0010): the
   registry now covers the complete Python oracle surface plus Vesper-native
   commands (102 entries, or 103 with `swarm`, including `/export last`). The
   `ORACLE_COMMAND_SURFACE` const table is the single source of truth for the

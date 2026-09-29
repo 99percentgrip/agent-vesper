@@ -6,6 +6,24 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `release-recovery-controller-pr1-pr3-execution.md` owns the first RRC
+  implementation receipt: typed/persisted core, GitHub evidence port and CLI
+  adapter, retry/outage guards, shared TUI/ACP commands, local verification,
+  and the explicit PR-4 through PR-7 acceptance gaps.
+- `release-recovery-controller-hardening-execution.md` owns the policy-core
+  hardening receipt: required-gate completeness, typed directives/events, exact
+  retry and repair budgets, last-green comparison, pause/reopen and AC-23
+  regression, plus the native/live gaps that were open at that checkpoint.
+- `release-recovery-controller-pr4-pr7-execution.md` owns the production executor,
+  permission-aware AgentLoop repair/worktree promotion, bounded official-status
+  path, local cancellation, shared host controls, deterministic acceptance and
+  preserved controlled private-GitHub run/job/log receipts. It keeps production
+  publication and live five-target host cancellation/restart explicitly `NOT RUN`.
+
+- `2026-09-29-active-agent-supervision-0845z.md` owns the read-only process,
+  child-command, exact-commit workflow and implementation-state check showing
+  that the separate TUI was actively waiting on CI rather than stalled.
+
 - `2026-09-29-post-release-quality-check-investigation.md` owns the
   post-v0.24.4 quality failure diagnosis, deterministic explicit-marker repair,
   Windows quote-safe correction, local verification, exact GitHub quality and
@@ -34,6 +52,25 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 - `2026-09-28-zai-mcp-web-tools-finishing.md` owns the isolated ACP process-suite
   correction, fixed-category diagnostic hardening, final selective-isolation
   receipts, runnable candidate identities, and still-open live/cross-platform gates.
+
+- `vro19-prd-review.md` owns the read-only review of revision 1 of the external
+  provisional Google Gemini/Antigravity PRD: source verification, policy and
+  delegated-agent architecture blockers, acceptance/traceability gaps,
+  platform-count correction and the not-ready adoption verdict.
+- `vro19-prd-v2-review.md` owns the read-only follow-up review of revision 2: its
+  major design corrections and the package, G2 setup, mutation-ledger and
+  current-status gaps identified before adoption.
+- `vro19-prd-v3-package-review.md` owns revision 3 package and adoption validation:
+  member/checksum/link/ledger consistency, closure of the revision 2 findings,
+  and the documentation/offline-scope adoption verdict.
+- `vro19-adoption-g0-architecture-execution.md` owns the authorized repository
+  adoption receipt, current primary-source G0 decision, proposed-but-unapproved
+  native-versus-delegated architecture comparison, and the no-runtime/no-login
+  boundary. The adopted requirements and current decision records live under
+  `../vro19/`; these reports do not register a provider or authorize Google access.
+- `vro19-hold-decision.md` owns Alex's decision that VRO-19 and VRO-19B are on
+  hold and reference-only, with no further research, PRD revision, implementation,
+  live acceptance or API-only substitute until he explicitly resumes the initiative.
 
 - `vro18-audit1-completeness-and-capability-truth.md` owns the independent
   post-v0.24.0 VRO-18 requirement/reachability audit, exact-artifact F0

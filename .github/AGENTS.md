@@ -15,6 +15,14 @@ platform assumptions on hosts unavailable locally.
 - Keep the five release-target families explicit in the matrix: linux-x86_64,
   linux-arm64, macos-intel, macos-apple-silicon, windows-x86_64.
 - Validation workflows must not call live providers or require credentials.
+  `release-recovery-acceptance.yml` is a manually dispatched, read-only controlled
+  fixture for deterministic complete-matrix red, repeated-fingerprint, focused-green
+  and post-publication-main-red evidence. `release-recovery-lifecycle-acceptance.yml`
+  is the manually dispatched, read-only five-native-runner gate for an exact SHA in
+  the authorized private acceptance repository; it proves RRC process-tree
+  cancellation and persisted restart identity without publication authority. These
+  fixtures must never replace production exact-commit release gates or intentionally
+  break Agent Vesper `main`.
   The tag-triggered `release.yml` workflow is the sole publishing workflow and
   may publish only compiled, checksummed release archives and exact-commit
   tested browser image archives; it must not make
@@ -63,7 +71,10 @@ platform assumptions on hosts unavailable locally.
   matrix also runs `vesper-agent`'s shared `command_settlement` behavior on
   every target family so Windows/macOS output draining, timeout/cancellation,
   descendant cleanup, caller-drop cleanup and recovery cannot pass by
-  cross-compilation or an empty platform-filtered test binary.
+  cross-compilation or an empty platform-filtered test binary. The explicit
+  RRC host-lifecycle case must likewise run on every family and prove local
+  cancellation reaps a real descendant plus a fresh process reloads the same
+  persisted epoch/run/job identity.
   The
   Linux sandbox step is stall-proofed in layers: it skips `apt` entirely when
   the runner image already ships `bwrap`; when it must install it REWRITES
@@ -137,6 +148,8 @@ platform assumptions on hosts unavailable locally.
 - `workflows/platform-foundation.yml` — five-target production-foundation and
   eligible spike matrix.
 - `workflows/foundation-spikes.yml` — five-target disposable spike test matrix.
+- `workflows/release-recovery-acceptance.yml` — manually dispatched, non-publishing
+  RRC fixture matrix with stable synthetic causal output and a secret canary.
 - `workflows/release.yml` — tag-triggered ACP+TUI archive packaging and GitHub
   Release publication for the registry and installers; archives also bundle
   the repo `skills/` seed library seeded by the installers into

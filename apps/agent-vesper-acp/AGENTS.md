@@ -52,6 +52,13 @@ transport, stderr-only tracing, and orderly shutdown.
   create no evidence state; `tests/acceptance_controls.rs` checks the real isolated ACP
   process.
 
+- `/release patch|minor|major|status|resume|cancel|evidence|retry` delegates to
+  the shared harness Release Recovery Controller and answers without ordinary
+  provider dispatch. If the controller admits a bounded repair, ACP supplies its
+  normal client-backed permission port to the isolated repair AgentLoop; missing
+  client permission support fails closed. `/ci` includes the same persisted
+  controller status as TUI; ACP never keeps a host-private release lifecycle.
+
 - `/skills settings status|save mode standard|enhanced|save enable|disable <skill>`
   uses the shared domain parser and harness preferences. Reads create no workspace
   state; explicit saves affect later turns. Routing uses the same memory selector
@@ -220,13 +227,13 @@ transport, stderr-only tracing, and orderly shutdown.
   history and plan maps (`/clear-plan` republishes an empty plan update);
   `/usage` queries the registered session's neutral read-only account port and
   renders the same clean aligned status panel as TUI, with explicit unknown limits
-  when unavailable; `/diff` and `/release`
-  replace the prompt with the TUI's workflow text and drive one real agent
-  turn. Slash turns report `persist_turn == false` and never enter
+  when unavailable; `/diff` replaces the prompt with the TUI's workflow text
+  and drives one real agent turn; `/release` executes through the shared
+  persisted `vesper-harness` release controller and returns its status without
+  provider dispatch. Slash turns report `persist_turn == false` and never enter
   conversation history as slash text. `/compact [focus]` is the additional
   stateful exception: it installs and persists the validated semantic history
-  replacement; `/diff` and `/release` workflow turns persist like ordinary
-  prompts. The ADR 0024 `/skill <name|bundle:name> [task]` extension replaces
+  replacement; `/diff` workflow turns persist like ordinary prompts. The ADR 0024 `/skill <name|bundle:name> [task]` extension replaces
   the slash text with a real workflow prompt and uses the same `vesper-memory`
   router as the TUI across direct and VRO paths. Automatic routing also runs
   on every ordinary prompt. Bodies are transient, selected identities are

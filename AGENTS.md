@@ -219,6 +219,12 @@ When the user requests a durable behavior change, record it here or in the relev
   web-driver image acceptance workflows
   for that commit, then create its immutable release tag. Never tag first and
   use the release matrix to discover platform failures.
+- Release and CI recovery progression is owned by the provider-neutral Release
+  Recovery Controller in `vesper-harness`, not a free-form `/release` prompt.
+  Wait for complete exact-SHA matrices, capture and fingerprint first causal
+  failures, require focused proof plus a relevant state change, and enforce the
+  persisted retry budget. A published release remains distinct from later red
+  `main`; external outage claims require official and repository-side evidence.
 - TUI↔ACP host parity is bidirectional: any host-agnostic capability or
   behavior change shipped in either host (cognitive memory, reasoning
   orchestration, streaming/finalization, tool/system-prompt behavior, or

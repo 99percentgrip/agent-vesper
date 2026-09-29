@@ -1,0 +1,73 @@
+name: rrc-controlled-acceptance
+run-name: rrc-${{ inputs.scenario }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: "Deterministic RRC acceptance scenario"
+        required: true
+        type: choice
+        options:
+          - complete-matrix-red
+          - focused-repair-green
+          - same-fingerprint-red
+          - post-release-main-red
+      causal_signature:
+        description: "Stable synthetic causal signature"
+        required: false
+        default: "rrc_fixture_assertion_42"
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  RRC_SCENARIO: ${{ inputs.scenario }}
+  RRC_CAUSAL_SIGNATURE: ${{ inputs.causal_signature }}
+
+jobs:
+  matrix:
+    name: fixture-${{ matrix.lane }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        lane:
+          - linux-x86_64
+          - linux-arm64
+          - macos-intel
+          - macos-apple-silicon
+          - windows-x86_64
+    steps:
+      - name: Keep non-failing lanes active after the deterministic early failure
+        if: matrix.lane != 'macos-intel'
+        shell: bash
+        run: sleep 30
+      - name: Emit deterministic first causal failure with synthetic secret canary
+        if: >-
+          matrix.lane == 'macos-intel' &&
+          (inputs.scenario == 'complete-matrix-red' ||
+           inputs.scenario == 'same-fingerprint-red' ||
+           inputs.scenario == 'post-release-main-red')
+        shell: bash
+        env:
+          SYNTHETIC_TOKEN: github_pat_RRCACCEPTANCE000000000000000000
+        run: |
+          echo "authorization: Bearer ${SYNTHETIC_TOKEN}"
+          echo "thread 'rrc_fixture' panicked at tests/rrc_fixture.rs:42: ${RRC_CAUSAL_SIGNATURE}" >&2
+          echo "Error: Process completed with exit code 1" >&2
+          exit 1
+      - name: Focused repair proof
+        if: inputs.scenario == 'focused-repair-green'
+        shell: bash
+        run: |
+          test "${RRC_CAUSAL_SIGNATURE}" = "rrc_fixture_assertion_42"
+          echo "focused fixture proof passed"
+      - name: Green lane
+        if: >-
+          matrix.lane == 'macos-intel' &&
+          inputs.scenario == 'focused-repair-green'
+        shell: bash
+        run: echo "repaired deterministic fixture is green"

@@ -40,6 +40,8 @@ pub mod bridge_service;
 pub mod bridge_settings;
 pub mod dependency_setup;
 pub mod lens_tools;
+pub mod release_executor;
+pub mod release_recovery;
 pub mod sandbox_backend;
 pub mod scope_holder;
 pub mod skill_model_selector;
@@ -2705,6 +2707,7 @@ impl MemoryStores {
 pub struct WorkerFactory {
     registry: Arc<vesper_runtime::ProviderRegistry>,
     config: vesper_agent::AgentLoopConfig,
+    permission: Arc<dyn vesper_agent::PermissionPort>,
     /// Optional host progress sink for harness-internal sub-work (e.g.
     /// acceptance reviewer agents). Bounded `Status` lines only; never
     /// tool payloads. Absent in tests and composition paths that do not
@@ -2721,8 +2724,20 @@ impl WorkerFactory {
         Self {
             registry,
             config,
+            permission: Arc::new(vesper_agent::DenyPermissionPort),
             progress: None,
         }
+    }
+
+    /// Uses the host's ordinary permission port for bounded internal coding
+    /// turns. Requirements and controller state never grant permission.
+    #[must_use]
+    pub fn with_permission_port(
+        mut self,
+        permission: Arc<dyn vesper_agent::PermissionPort>,
+    ) -> Self {
+        self.permission = permission;
+        self
     }
 
     /// Attaches a host progress sink so harness-internal work is visible
@@ -2735,6 +2750,39 @@ impl WorkerFactory {
 
     pub(crate) fn progress(&self) -> Option<Arc<dyn vesper_agent::AgentProgressPort>> {
         self.progress.clone()
+    }
+
+    pub(crate) async fn run_coding_turn_in_workspace(
+        &self,
+        workspace: PathBuf,
+        prompt: String,
+        cancellation: Arc<vesper_runtime::RuntimeCancellation>,
+    ) -> Result<(AgentTurnOutcome, Vec<ConversationMessage>), String> {
+        let mut config = self.config.clone();
+        config.workspace_roots = vec![WorkspaceRoot {
+            name: BoundedString::new("release-repair").expect("static workspace name"),
+            path: BoundedString::new(workspace.display().to_string())
+                .map_err(|error| error.to_string())?,
+            primary: true,
+        }];
+        let mut worker = AgentLoop::new(
+            self.registry.clone(),
+            ToolRegistry::parity_default(),
+            config,
+        )
+        .with_permission_port(self.permission.clone());
+        if let Some(progress) = self.progress.clone() {
+            worker = worker.with_progress_port(progress);
+        }
+        worker
+            .run_prompt_with_history_with_cancellation(
+                vec![build_user_message(&prompt)],
+                SessionOperatingMode::Code,
+                SessionPermissionMode::Ask,
+                cancellation,
+            )
+            .await
+            .map_err(|error| error.to_string())
     }
 }
 

@@ -13,6 +13,10 @@ architecture, MSRV, and source-oracle checks.
   `acceptance-mutations` copies source to a temporary workspace and requires two
   deliberate evaluator defects to fail their named assertion tests; a compile failure is
   not a mutation kill. Build artifacts stay under `target/acceptance-mutations`.
+  The fixed acceptance set also executes the RRC partial-matrix, verified-repair,
+  pause/resume, immutable-publication, production-orchestrator, native host
+  cancellation/restart process-lifecycle, and TUI-controller routing cases;
+  deleting or renaming any case fails the gate.
 
 - `xtask` may depend on `vesper-testkit`; production crates may not depend on it.
 - Commands must not call providers or mutate source/user state.

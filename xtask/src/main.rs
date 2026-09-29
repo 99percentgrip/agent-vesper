@@ -2089,6 +2089,41 @@ fn acceptance_verify() -> Result<(), String> {
             &["--lib"],
             "acceptance::tests::saved_activation_restores_unverified_scope_and_cannot_disable_an_active_contract",
         ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_recovery::tests::partial_matrix_blocks_retry",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_recovery::tests::verified_repair_is_the_only_path_to_one_full_gate_retry",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_recovery::tests::paused_epoch_reopens_with_exact_identity_and_resumes_through_remote_refresh",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_recovery::tests::green_release_then_red_closeout_keeps_publication_immutable",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_executor::tests::production_orchestrator_reaches_publication_only_through_settled_gates",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_executor::tests::release_worker_cancel_restart_process_acceptance",
+        ),
+        (
+            "agent-vesper-tui",
+            &["--lib"],
+            "commands::tests::release_routes_to_the_controller_instead_of_a_model_workflow",
+        ),
     ];
     let started = std::time::Instant::now();
     for (package, target, name) in cases {

@@ -131,6 +131,12 @@ jobs:
         env:
           RUSTC_WRAPPER: ${{ steps.sccache_check.outputs.sccache_ready == 'true' && 'sccache' || '' }}
         run: cargo test --manifest-path spikes/process-sandbox/Cargo.toml --test process_conformance
+      - name: Run Release Recovery host lifecycle acceptance
+        shell: bash
+        timeout-minutes: 5
+        env:
+          RUSTC_WRAPPER: ${{ steps.sccache_check.outputs.sccache_ready == 'true' && 'sccache' || '' }}
+        run: cargo test -p vesper-harness release_executor::tests::release_worker_cancel_restart_process_acceptance -- --exact --test-threads=1 --nocapture
       - name: Run Linux sandbox conformance
         if: matrix.platform_spike == 'linux'
         shell: bash

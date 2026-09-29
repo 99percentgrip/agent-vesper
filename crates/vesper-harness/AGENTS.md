@@ -12,6 +12,26 @@ Z.ai and Playwright MCP server descriptors.
 
 ## Ownership
 
+- `release_recovery` owns the provider-neutral Release Recovery Controller:
+  typed lifecycle, controller directives/settled-evidence reducer and immutable
+  failure evidence; the repository's four exact-SHA pre-release gates; first-causal
+  log extraction/redaction, stable fingerprints, last-green comparison,
+  retry/focused-proof/diagnostic budgets, outage admission, stagnation limits,
+  bounded atomic user-state checkpoints, structured GitHub Actions access, and
+  the shared `/release`/`/ci` projection. Resume refreshes exact-SHA GitHub state
+  before progression. GitHub write operations require an unforgeable controller
+  admission token; adapters, providers and hosts do not decide retry policy.
+  `release_executor` runs the repository's existing local gates, version/commit/
+  push/tag/publication path, bounded official GitHub-status check, persisted
+  background progression and cancellable local subprocesses. Missing or failed
+  local-gate evidence cannot support external-outage classification. Proven or
+  strongly supported deterministic source failures use one permission-aware
+  AgentLoop turn in an isolated user-state worktree; promotion requires observed
+  mutation and focused-command receipts, a non-empty diff and a clean controller
+  workspace before one fresh-SHA full-gate retry. Deterministic executor tests and
+  the controlled private GitHub fixture do not substitute for production release
+  publication or live five-target host cancellation/restart evidence.
+
 - `dependency_setup` owns explicit native dependency consent, local engine health,
   fixed Podman package plans, bounded credential-free progress, setup serialization
   with `fs2`, user-wide runtime preferences and managed VM intent/recovery. It is

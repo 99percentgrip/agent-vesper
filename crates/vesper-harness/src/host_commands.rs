@@ -86,7 +86,18 @@ impl HarnessToolService {
             }
             "ci" => {
                 let status = vesper_checkpoints::CiStatusReader::status();
-                format!("ci: {}", status.output)
+                let mut body = format!("ci: {}", status.output);
+                if let Some(release) =
+                    crate::release_recovery::release_status_for_workspace(workspace_root)
+                {
+                    body.push_str("\n\n");
+                    body.push_str(&release);
+                }
+                body
+            }
+            "release" => {
+                crate::release_recovery::release_command_for_workspace(workspace_root, argument)
+                    .unwrap_or_else(|error| format!("release: {error}"))
             }
             "plugins" => self.plugins_command(argument),
             "mcp" => self.mcp_command(argument),

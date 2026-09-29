@@ -129,7 +129,7 @@ pub const ORACLE_SLASH_COMMANDS: [SlashCommandDescriptor; 28] = [
     },
     SlashCommandDescriptor {
         name: "release",
-        description: "Cut a release: /release patch|minor|major — bumps version, verifies, commits, tags, pushes",
+        description: "Control a release: /release patch|minor|major|status|resume|evidence|retry|cancel",
     },
     SlashCommandDescriptor {
         name: "ci",
