@@ -169,7 +169,44 @@ fn grok_session_run_command_executes_once() {
 
 #[cfg(windows)]
 fn append_marker_command(marker: &Path) -> String {
-    format!(r#"echo x>>"{}""#, marker.display())
+    // `cmd.exe` does not use Windows' normal argv parsing rules. Passing an
+    // absolute path in a quoted `/C` argument therefore lets Rust's argv
+    // escaping alter the quotes before cmd sees them. Keep the cmd argument
+    // quote-free and let PowerShell decode its script from UTF-16LE base64.
+    let path = marker.to_string_lossy().replace('\'', "''");
+    let script = format!("[IO.File]::AppendAllText('{path}','x')");
+    format!(
+        "powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand {}",
+        base64_encode_utf16le(&script)
+    )
+}
+
+#[cfg(windows)]
+fn base64_encode_utf16le(value: &str) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let bytes = value
+        .encode_utf16()
+        .flat_map(u16::to_le_bytes)
+        .collect::<Vec<_>>();
+    let mut encoded = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let word = u32::from(chunk[0]) << 16
+            | u32::from(chunk.get(1).copied().unwrap_or_default()) << 8
+            | u32::from(chunk.get(2).copied().unwrap_or_default());
+        encoded.push(ALPHABET[((word >> 18) & 0x3f) as usize] as char);
+        encoded.push(ALPHABET[((word >> 12) & 0x3f) as usize] as char);
+        encoded.push(if chunk.len() > 1 {
+            ALPHABET[((word >> 6) & 0x3f) as usize] as char
+        } else {
+            '='
+        });
+        encoded.push(if chunk.len() > 2 {
+            ALPHABET[(word & 0x3f) as usize] as char
+        } else {
+            '='
+        });
+    }
+    encoded
 }
 
 #[cfg(not(windows))]
@@ -182,8 +219,15 @@ fn append_marker_command(marker: &Path) -> String {
 fn marker_command_targets_explicit_path() {
     let marker = std::env::temp_dir().join("agent-vesper-explicit-command-marker.txt");
     let command = append_marker_command(&marker);
+    #[cfg(windows)]
+    let expected_target = base64_encode_utf16le(&format!(
+        "[IO.File]::AppendAllText('{}','x')",
+        marker.to_string_lossy().replace('\'', "''")
+    ));
+    #[cfg(not(windows))]
+    let expected_target = marker.to_string_lossy().into_owned();
     assert!(
-        command.contains(marker.to_string_lossy().as_ref()),
+        command.contains(&expected_target),
         "marker command must name its exact target: {command}"
     );
 }
