@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-29
 
-**Status:** ROOT-CAUSE CORRECTION IMPLEMENTED AND LOCALLY VERIFIED; EXACT-COMMIT GITHUB GATES PENDING
+**Status:** COMPLETE — ROOT-CAUSE CORRECTION VERIFIED BY ALL REQUIRED EXACT-COMMIT GITHUB GATES
 
 **Affected workflow:** `five-target-foundation` run `36534993336` on documentation-closeout commit `0b5630d271965e7d9df3a0a09c116c7f8c44042e`
 
@@ -31,6 +31,10 @@ installation unchanged.
   inherited nonblocking state on accepted sockets.
 - Ran targeted stress loops, the full command-settlement matrix, architecture,
   clippy, the all-feature workspace suite, and canonical `cargo xtask verify`.
+- Isolated a later Intel-only voice fixture timeout by comparing exact source
+  hashes with v0.24.4, checking prior/current five-target jobs, and repeatedly
+  running the focused all-feature test locally before changing its test-only
+  settlement allowance.
 
 ## Diagnosis
 
@@ -106,6 +110,10 @@ added.
 - `crates/vesper-agent/src/tools.rs` — classifies pinned Darwin `EPERM`
   semantics, stops signalling once the complete proof exists, and adds pure
   regression coverage while retaining the existing settlement deadline.
+- `apps/agent-vesper-tui/tests/voice_speech_pipeline.rs` — widens only the
+  non-preemptible fixture-settlement allowance from 12 to 30 seconds after an
+  unrelated Intel runner timeout; the separate sub-second Stop assertion and
+  all production behavior remain unchanged.
 - `crates/vesper-agent/AGENTS.md` — records the durable Unix settlement contract.
 - `apps/agent-vesper-acp/src/lmstudio_provider.rs` — restores blocking mode on
   the accepted macOS fixture socket.
@@ -221,10 +229,79 @@ Acceptance regression gate: 23 exact cases passed in 6663 ms
 Offline fixture model cost: zero
 ```
 
-GitHub's required push workflows run against the report-bearing repair commit.
-Their exact run and job receipts are intentionally reported in the delivery
-summary rather than creating a second evidence-only commit that would trigger
-another recursive full workflow cycle.
+### Unrelated voice-test isolation receipt
+
+Five-target run `36556396423` failed only the Intel job after the Darwin
+settlement and dedicated conformance steps had passed. The failure was the
+unchanged voice fixture's test-only 12-second settlement allowance:
+
+```text
+macos-intel job 109366467814
+synthesis_overlaps_playback_and_stop_discards_lookahead: FAILED
+fresh turn segment must settle
+finished in 12.91s
+macos-apple-silicon job 109366467669: success
+```
+
+The production worker and fixture were byte-identical to v0.24.4, whose Intel
+jobs had passed, and the immediately preceding root-cause commit's Intel job
+also passed:
+
+```text
+voice_speech_pipeline.rs sha256:
+7b0d01d0ed4320191df6344819a551b4939ddecd4a595247a6e20dbb562a0623
+voice_speech_worker.rs sha256:
+c2fc582c6f4c611cebe01b58df8feb322537b2fb3ce599d217517ed448b7a591
+run 36510375836 macos-intel: success
+run 36516876732 macos-intel: success
+run 36530351536 macos-intel: success
+run 36554590290 macos-intel: success
+```
+
+Focused Linux verification before and after widening only that fixture wait:
+
+```text
+cargo test -p agent-vesper-tui --features voice-conversation --test \
+  voice_speech_pipeline -- \
+  synthesis_overlaps_playback_and_stop_discards_lookahead --exact --nocapture
+5 consecutive iterations: pass
+
+cargo test -p agent-vesper-tui --all-features \
+  --test voice_speech_pipeline -- --nocapture
+2 passed; 0 failed; finished in 4.84s
+
+cargo fmt --all --check
+exit 0
+
+git diff --check
+exit 0
+```
+
+### Final exact-commit GitHub receipts
+
+All required push workflows completed successfully on
+`ba9e5d163f8ffd9f19033732e390b5f8805f6994`:
+
+```text
+five-target-foundation run 36560929733: success
+macos-intel job 109381340464: success
+macos-apple-silicon job 109381340623: success
+linux-arm64 job 109381340652: success
+windows-x86_64 job 109381340766: success
+linux-x86_64 job 109381340975: success
+
+pull-request-validation run 36560929631: success
+quality job 109381339974: success
+supply-chain job 109381340262: success
+
+msrv run 36560929790: success
+rust-1-88 job 109381340557: success
+
+web-driver run 36560930827: success
+Native namespace Hive job 109381343706: success
+Contained browser linux-aarch64 job 109381344167: success
+Contained browser linux-x86_64 job 109381344217: success
+```
 
 ## Deviations
 
@@ -246,20 +323,24 @@ another recursive full workflow cycle.
 - `cargo xtask verify` produced an untracked test lock at
   `apps/agent-vesper-acp/.config/agent-vesper/xai-credentials.lock`; it was
   removed before commit and did not touch user state.
-- No retry, added sleep, timeout increase, assertion removal, or test exclusion
-  was used to obtain a pass.
+- No production retry, sleep, timeout, assertion, cleanup proof, or test
+  exclusion was weakened. The unrelated voice fixture's bounded wait increased
+  from 12 to 30 seconds only after source-identity, historical matrix, current
+  Apple Silicon, and repeated focused-local evidence isolated runner scheduling;
+  its independent `<1s` Stop responsiveness assertion is unchanged.
 
 ## Unresolved items
 
-- No implementation item remains open locally.
-- Cross-platform readiness depends on the required GitHub workflows for the
-  pushed repair commit; delivery must preserve any failure rather than claim
-  green prematurely.
+- No implementation or required verification item remains open for this repair.
+- The independent delegated-review attempt remains unavailable as recorded
+  above; no delegated assurance is claimed or needed for the completed gates.
 
 ## Readiness effect
 
-The two concrete races exposed by run `36534993336` are repaired locally while
-retaining the original cleanup and wire-body guarantees. The v0.24.4 release,
-tag, assets, registry state, credentials, and Alex's local installation are
-unchanged. Final `main` readiness is determined by the report-bearing commit's
-required GitHub workflow results reported at delivery.
+The two concrete races exposed by run `36534993336` are repaired while retaining
+the original cleanup and wire-body guarantees. Commit
+`ba9e5d163f8ffd9f19033732e390b5f8805f6994` passed every required workflow,
+including both macOS architectures, Windows, both Linux architectures, MSRV,
+quality, supply-chain, and contained web-driver acceptance. `main` is restored
+to green. The v0.24.4 release, tag, assets, registry state, credentials, and
+Alex's local installation remain unchanged.

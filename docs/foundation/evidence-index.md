@@ -4,14 +4,16 @@
 
 - Execution: [`2026-09-29-red-main-ci-repair.md`](2026-09-29-red-main-ci-repair.md)
 - Predecessor: [`2026-09-29-post-release-quality-check-investigation.md`](2026-09-29-post-release-quality-check-investigation.md)
-- Verdict: **ROOT-CAUSE CORRECTION IMPLEMENTED AND LOCALLY VERIFIED;
-  EXACT-COMMIT GITHUB GATES PENDING.** The first two pushed cleanup repairs
-  (`af662ea`, `d097bdf`) both failed ordinary successful-command settlement on
-  Apple Silicon and Intel macOS. Pinned XNU source proves why: a found process
-  group containing only excluded `SZOMB` members produces POSIX `EPERM`, not
-  `ESRCH`. The final correction classifies that Darwin terminal state, still
-  requires leader reaping plus both pipe EOFs, and stops before an unnecessary
-  final signal. The late-fork and LM Studio fixture repairs remain intact.
+- Verdict: **COMPLETE; ALL REQUIRED EXACT-COMMIT GITHUB GATES GREEN.** The
+  first two pushed cleanup repairs (`af662ea`, `d097bdf`) both failed ordinary
+  successful-command settlement on Apple Silicon and Intel macOS. Pinned XNU
+  source proves why: a found process group containing only excluded `SZOMB`
+  members produces POSIX `EPERM`, not `ESRCH`. Commit `ba9e5d1` classifies that
+  Darwin terminal state while still requiring leader reaping plus both pipe
+  EOFs, and stops before an unnecessary final signal. Five-target run
+  `36560929733` passed all five jobs; PR validation `36560929631`, MSRV
+  `36560929790`, and contained web-driver run `36560930827` also passed. The
+  late-fork and LM Studio fixture repairs remain intact.
 
 ## Post-release quality-check repair (2026-09-29)
 
