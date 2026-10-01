@@ -143,9 +143,12 @@ Own durable project documentation and evidence-backed engineering records.
   persisted-epoch reconciliation, obsolete-evidence archival, bounded ambiguity
   handling, enrolled acceptance cases and the fresh non-publishing TUI candidate;
   `foundation/release-objective-provenance.json`
-  is the versioned current completed-objective binding consumed by RRC; and
+  is the versioned current completed-objective binding consumed by RRC;
   `foundation/2026-09-30-autonomous-rrc-prerelease-candidate.md` records the
-  earlier non-publishing TUI/ACP candidate build for Alex-operated acceptance.
+  earlier non-publishing TUI/ACP candidate build for Alex-operated acceptance; and
+  `foundation/2026-10-01-rrc-provenance-ambiguity-repair.md` records canonical
+  final-source binding, equivalent-candidate collapse, the real retained-worktree
+  probe, governed final gates and the current `0.24.4` replacement TUI.
 - Root PRD files (`*-prd.md`) own accepted phased requirement documents
   (e.g. `agent-vesper-reasoning-orchestrator-prd.md`,
   `provider-capability-gating-prd.md`, `qm-extraction-prd.md`,
