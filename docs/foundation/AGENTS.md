@@ -6,6 +6,11 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `2026-09-29-red-main-ci-repair.md` owns the follow-up diagnosis and repair
+  for documentation-closeout run `36534993336`: Unix late-fork process-group
+  cleanup, macOS inherited nonblocking LM Studio fixture sockets, local stress
+  evidence, exact delivery-time GitHub receipts, and the unchanged release boundary.
+
 - `2026-09-30-rrc-progress-milestones.md` owns the persisted typed RRC phase,
   local/remote gate counts and bounded sequence-numbered milestone projection for
   TUI chat/RUN and ACP status, its regression receipts and explicit no-release boundary.

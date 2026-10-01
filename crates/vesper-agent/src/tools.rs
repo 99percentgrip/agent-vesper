@@ -872,29 +872,41 @@ fn drain_pipe(
     receiver
 }
 
-fn receive_capture(
-    receiver: &mpsc::Receiver<CapturedPipe>,
-    deadline: Instant,
-) -> Option<CapturedPipe> {
-    receiver
-        .recv_timeout(deadline.saturating_duration_since(Instant::now()))
-        .ok()
-}
-
-fn process_group_already_absent(error: &std::io::Error) -> bool {
+fn process_group_cleanup_complete_for(
+    error: &std::io::Error,
+    darwin_zombie_groups_return_eperm: bool,
+) -> bool {
     if matches!(
         error.kind(),
         std::io::ErrorKind::InvalidInput | std::io::ErrorKind::NotFound
     ) {
         return true;
     }
-    #[cfg(unix)]
-    {
-        // POSIX ESRCH: no process has the owned process-group identity.
-        error.raw_os_error() == Some(3)
+    // POSIX ESRCH: no process has the owned process-group identity. Keeping the
+    // errno classifier platform-independent also lets every CI target exercise
+    // the Darwin state-machine regression with a synthetic error.
+    if error.raw_os_error() == Some(3) {
+        return true;
     }
-    #[cfg(not(unix))]
-    false
+    // Darwin's killpg implementation keeps a zombie-only process group
+    // discoverable, excludes those zombies from its signal iteration, and
+    // consequently returns EPERM (1) because it found no signalable member.
+    // The group contains no executable process in that state.
+    darwin_zombie_groups_return_eperm && error.raw_os_error() == Some(1)
+}
+
+fn process_group_cleanup_complete(error: &std::io::Error) -> bool {
+    process_group_cleanup_complete_for(error, cfg!(target_os = "macos"))
+}
+
+fn command_settlement_complete(
+    cleanup_signal_accepted: bool,
+    cleanup_failed: bool,
+    leader_reaped: bool,
+    stdout_settled: bool,
+    stderr_settled: bool,
+) -> bool {
+    cleanup_signal_accepted && !cleanup_failed && leader_reaped && stdout_settled && stderr_settled
 }
 
 fn render_command_output(stdout: &CapturedPipe, stderr: &CapturedPipe) -> String {
@@ -1006,7 +1018,7 @@ fn run_bounded(
         .group_spawn()
         .map_err(|e| ToolError::Failed(format!("spawn failed: {e}")))?;
     let retained_budget = Arc::new(AtomicUsize::new(MAX_OUTPUT_BYTES));
-    let stdout = drain_pipe(
+    let stdout_receiver = drain_pipe(
         child
             .inner()
             .stdout
@@ -1014,7 +1026,7 @@ fn run_bounded(
             .ok_or_else(|| ToolError::Failed("spawned command has no stdout pipe".into()))?,
         Arc::clone(&retained_budget),
     );
-    let stderr = drain_pipe(
+    let stderr_receiver = drain_pipe(
         child
             .inner()
             .stderr
@@ -1046,27 +1058,68 @@ fn run_bounded(
     // `GroupChild` owns a POSIX process group on Unix and a Job Object on
     // Windows. Killing that exact object remains valid after the shell leader
     // exits, unlike PID-tree discovery through `taskkill`.
-    let cleanup_verified = match child.kill() {
-        Ok(()) => true,
-        Err(error) if process_group_already_absent(&error) => true,
-        Err(_) => false,
-    };
-    // Reaping and pipe draining happen concurrently, so they share one total
-    // settlement deadline. A separate short leader deadline made truthful
-    // cleanup depend on runner scheduling even when the pipes settled within
-    // the existing overall 2.5-second budget.
+    let initial_cleanup = child.kill();
+    // Reaping, pipe draining, and Unix process-group teardown share one total
+    // settlement deadline. Re-signal the Unix group while settlement remains
+    // incomplete: a shell can fork between the first group signal and delivery,
+    // and that late child does not inherit the pending SIGKILL. Some Darwin
+    // zombies keep killpg successful until init reaps them, so leader reaping plus
+    // pipe EOF after the repeated signal is the executable-cleanup proof.
     let settlement_deadline = Instant::now() + COMMAND_SETTLEMENT_BUDGET;
     let mut final_status = status;
-    while final_status.is_none() && Instant::now() < settlement_deadline {
-        match child.inner().try_wait() {
-            Ok(Some(observed)) => final_status = Some(observed),
-            Ok(None) => std::thread::sleep(Duration::from_millis(10)),
-            Err(_) => break,
+    let mut stdout = None;
+    let mut stderr = None;
+    let mut settlement_failed = false;
+    let mut cleanup_signal_accepted = initial_cleanup.is_ok()
+        || initial_cleanup
+            .as_ref()
+            .is_err_and(process_group_cleanup_complete);
+    let mut cleanup_failed = !cleanup_signal_accepted;
+
+    loop {
+        if final_status.is_none() {
+            match child.inner().try_wait() {
+                Ok(Some(observed)) => final_status = Some(observed),
+                Ok(None) => {}
+                Err(_) => settlement_failed = true,
+            }
         }
+        if stdout.is_none() {
+            stdout = stdout_receiver.try_recv().ok();
+        }
+        if stderr.is_none() {
+            stderr = stderr_receiver.try_recv().ok();
+        }
+
+        // Do not invalidate a completed proof with one unnecessary final
+        // killpg. Darwin reports EPERM for zombie-only groups, and the command
+        // may reach leader-reaped + pipe-EOF between two settlement polls.
+        if command_settlement_complete(
+            cleanup_signal_accepted,
+            cleanup_failed,
+            final_status.is_some(),
+            stdout.is_some(),
+            stderr.is_some(),
+        ) || cleanup_failed
+            || settlement_failed
+            || Instant::now() >= settlement_deadline
+        {
+            break;
+        }
+
+        #[cfg(not(windows))]
+        match child.kill() {
+            Ok(()) => cleanup_signal_accepted = true,
+            Err(error) if process_group_cleanup_complete(&error) => {
+                cleanup_signal_accepted = true;
+            }
+            Err(_) => cleanup_failed = true,
+        }
+
+        std::thread::sleep(Duration::from_millis(10));
     }
+    let cleanup_verified = cleanup_signal_accepted && !cleanup_failed;
     let leader_reaped = final_status.is_some();
-    let stdout = receive_capture(&stdout, settlement_deadline);
-    let stderr = receive_capture(&stderr, settlement_deadline);
     let pipes_settled = stdout.is_some() && stderr.is_some();
     #[cfg(windows)]
     let tree_settled = cleanup_verified || (reason.is_none() && pipes_settled);
@@ -1214,6 +1267,22 @@ mod change_preview_tests {
             captured.read_error.as_deref(),
             Some("injected reader failure")
         );
+    }
+
+    #[test]
+    fn darwin_zombie_only_group_error_is_a_completed_cleanup() {
+        let permission_denied = std::io::Error::from_raw_os_error(1);
+        assert!(process_group_cleanup_complete_for(&permission_denied, true));
+        assert!(!process_group_cleanup_complete_for(
+            &permission_denied,
+            false
+        ));
+    }
+
+    #[test]
+    fn settled_command_does_not_require_another_group_signal() {
+        assert!(command_settlement_complete(true, false, true, true, true));
+        assert!(!command_settlement_complete(true, false, true, true, false));
     }
 
     #[test]

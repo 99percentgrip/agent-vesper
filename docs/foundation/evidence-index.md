@@ -1,5 +1,18 @@
 # Foundation Evidence Index
 
+## Red main CI follow-up repair (2026-09-29)
+
+- Execution: [`2026-09-29-red-main-ci-repair.md`](2026-09-29-red-main-ci-repair.md)
+- Predecessor: [`2026-09-29-post-release-quality-check-investigation.md`](2026-09-29-post-release-quality-check-investigation.md)
+- Verdict: **ROOT-CAUSE CORRECTION IMPLEMENTED AND LOCALLY VERIFIED;
+  EXACT-COMMIT GITHUB GATES PENDING.** The first two pushed cleanup repairs
+  (`af662ea`, `d097bdf`) both failed ordinary successful-command settlement on
+  Apple Silicon and Intel macOS. Pinned XNU source proves why: a found process
+  group containing only excluded `SZOMB` members produces POSIX `EPERM`, not
+  `ESRCH`. The final correction classifies that Darwin terminal state, still
+  requires leader reaping plus both pipe EOFs, and stops before an unnecessary
+  final signal. The late-fork and LM Studio fixture repairs remain intact.
+
 ## OpenAI Responses live prerelease candidate (2026-09-30)
 
 - Execution report: [`2026-09-30-openai-responses-live-prerelease-candidate.md`](2026-09-30-openai-responses-live-prerelease-candidate.md)

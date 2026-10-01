@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-29
 
-**Status:** REPAIRED; FINAL CLOSEOUT CI GREEN ON ALL REQUIRED WORKFLOW FAMILIES
+**Status:** INITIAL REPAIR VERIFIED; LATER CI RACES OWNED BY FOLLOW-UP REPORT
 
 **Affected run:** `pull-request-validation` run `36516876750` on commit `7b04588216a28cf7b62b379b157640bc6b0872d7`
 
@@ -206,4 +206,4 @@ No production runtime, workflow, version, tag, release asset, registry manifest,
 
 ## Readiness effect
 
-The requested `pull-request-validation / quality` failure is repaired: canonical workflow `36526811056` is green on final code commit `96cdb48`, and the Windows lane that caught the first repair's quoting defect is also green. Documentation-closeout commit `78b459b` then passed pull-request validation, MSRV, web-driver, and every five-target foundation job. The tagged v0.24.4 release and Alex's local installation remain unchanged.
+The requested `pull-request-validation / quality` failure is repaired: canonical workflow `36526811056` is green on final code commit `96cdb48`, and the Windows lane that caught the first repair's quoting defect is also green. Documentation-closeout commit `78b459b` then passed pull-request validation, MSRV, web-driver, and every five-target foundation job. A later evidence-only commit triggered run `36534993336`, which exposed separate Unix process-group and macOS socket-inheritance races; their diagnosis and repair are owned by [`2026-09-29-red-main-ci-repair.md`](2026-09-29-red-main-ci-repair.md). The tagged v0.24.4 release and Alex's local installation remain unchanged.
