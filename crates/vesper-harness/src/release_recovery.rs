@@ -3865,13 +3865,46 @@ fn active_objective_description(record: &ReleaseRecoveryRecord) -> String {
     )
 }
 
+fn source_version_transition(source: &ReleaseSourceChoice, bump: &str) -> Option<String> {
+    let manifest = fs::read_to_string(source.source_workspace.join("Cargo.toml")).ok()?;
+    let mut workspace_package = false;
+    let mut before = None;
+    for line in manifest.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            workspace_package = trimmed == "[workspace.package]";
+        } else if workspace_package && trimmed.starts_with("version = ") {
+            before = trimmed.split('"').nth(1).map(str::to_owned);
+            break;
+        }
+    }
+    let before = before?;
+    let parts = before
+        .split('.')
+        .map(str::parse::<u64>)
+        .collect::<Result<Vec<_>, _>>()
+        .ok()?;
+    let [major, minor, patch] = parts.as_slice() else {
+        return None;
+    };
+    let after = match bump {
+        "patch" => format!("{major}.{minor}.{}", patch.checked_add(1)?),
+        "minor" => format!("{major}.{}.0", minor.checked_add(1)?),
+        "major" => format!("{}.0.0", major.checked_add(1)?),
+        _ => return None,
+    };
+    Some(format!("{before} -> {after}"))
+}
+
 fn current_objective_description(source: &ReleaseSourceChoice, bump: &str) -> String {
     let label = source
         .objective_label
         .as_deref()
         .unwrap_or("the current completed implementation");
+    let transition =
+        source_version_transition(source, bump).unwrap_or_else(|| format!("next {bump}"));
     bounded(
-        redact_secrets(&format!("next {bump} release for {label}")),
+        redact_secrets(&format!("{transition} release for {label}")),
         240,
     )
 }
@@ -4791,7 +4824,7 @@ mod tests {
         .unwrap();
         fs::write(
             primary.join("Cargo.toml"),
-            "[workspace]\nmembers = [\"xtask\"]\nresolver = \"2\"\n",
+            "[workspace]\nmembers = [\"xtask\"]\nresolver = \"2\"\n\n[workspace.package]\nversion = \"0.24.4\"\n",
         )
         .unwrap();
         fs::write(
@@ -5119,7 +5152,7 @@ mod tests {
                     },
                 ];
                 worker_ledger.save(&record).unwrap();
-                crate::release_executor::spawn_release_worker_at_root(
+                crate::release_executor::spawn_release_worker_at_root_with_permissive_policy(
                     workspace,
                     repository,
                     repo_identity,
@@ -5287,7 +5320,7 @@ mod tests {
         assert!(!message.contains("DiagnosingLocalFailure"));
         assert!(message.contains("0.23.9 -> 0.24.0"));
         assert!(message.contains("Historical unrelated release"));
-        assert!(message.contains("next patch release"));
+        assert!(message.contains("0.24.4 -> 0.24.5"));
         assert!(message.contains("RRC autonomy repair"));
         assert_eq!(fs::read(ledger.path()).unwrap(), persisted);
     }
@@ -5320,6 +5353,7 @@ mod tests {
         assert!(message.contains("RRC autonomy repair"));
         assert!(message.contains("a candidate pushed to GitHub"));
         assert!(message.contains("Corrected v0.24.4 prerelease integration"));
+        assert!(message.contains("0.24.4 -> 0.24.5"));
         assert!(!message.contains("epoch"));
         assert!(!message.contains(&canonical_head));
         assert!(!message.contains("refs/heads"));

@@ -59,25 +59,30 @@ pub fn enable_permissive_resource_governor_for_process_tests() {
     PROCESS_TEST_PERMISSIVE_RESOURCE_POLICY.store(true, Ordering::Release);
 }
 
+#[cfg(any(test, feature = "test-support"))]
+fn permissive_resource_policy() -> ResourcePolicy {
+    ResourcePolicy {
+        fixed_reserve_bytes: 0,
+        reserve_fraction_numerator: 0,
+        reserve_fraction_denominator: 1,
+        normal_headroom_min_bytes: 0,
+        normal_headroom_fraction_numerator: 0,
+        normal_headroom_fraction_denominator: 1,
+        estimated_rustc_bytes: 1,
+        max_cargo_jobs: 1,
+        pressure_swap_percent: 100,
+        critical_swap_percent: 100,
+        disk_reserve_min_bytes: 0,
+        disk_reserve_fraction_numerator: 0,
+        disk_reserve_fraction_denominator: 1,
+        expected_gate_growth_bytes: 0,
+    }
+}
+
 fn resource_policy_for_worker() -> ResourcePolicy {
     #[cfg(feature = "test-support")]
     if PROCESS_TEST_PERMISSIVE_RESOURCE_POLICY.load(Ordering::Acquire) {
-        return ResourcePolicy {
-            fixed_reserve_bytes: 0,
-            reserve_fraction_numerator: 0,
-            reserve_fraction_denominator: 1,
-            normal_headroom_min_bytes: 0,
-            normal_headroom_fraction_numerator: 0,
-            normal_headroom_fraction_denominator: 1,
-            estimated_rustc_bytes: 1,
-            max_cargo_jobs: 1,
-            pressure_swap_percent: 100,
-            critical_swap_percent: 100,
-            disk_reserve_min_bytes: 0,
-            disk_reserve_fraction_numerator: 0,
-            disk_reserve_fraction_denominator: 1,
-            expected_gate_growth_bytes: 0,
-        };
+        return permissive_resource_policy();
     }
     ResourcePolicy::default()
 }
@@ -1534,6 +1539,45 @@ pub(crate) fn spawn_release_worker_at_root(
     repair_factory: Option<crate::WorkerFactory>,
     root: PathBuf,
 ) -> Result<ReleaseWorkerRegistration, RrcError> {
+    spawn_release_worker_at_root_with_policy(
+        workspace,
+        repository,
+        repo_identity,
+        repair_factory,
+        root,
+        resource_policy_for_worker(),
+    )
+}
+
+// The lifecycle fixture proves worker ownership and real child progression,
+// not live resource admission. Dedicated governor tests keep the production
+// thresholds covered without making this test depend on workstation pressure.
+#[cfg(test)]
+pub(crate) fn spawn_release_worker_at_root_with_permissive_policy(
+    workspace: PathBuf,
+    repository: String,
+    repo_identity: String,
+    repair_factory: Option<crate::WorkerFactory>,
+    root: PathBuf,
+) -> Result<ReleaseWorkerRegistration, RrcError> {
+    spawn_release_worker_at_root_with_policy(
+        workspace,
+        repository,
+        repo_identity,
+        repair_factory,
+        root,
+        permissive_resource_policy(),
+    )
+}
+
+fn spawn_release_worker_at_root_with_policy(
+    workspace: PathBuf,
+    repository: String,
+    repo_identity: String,
+    repair_factory: Option<crate::WorkerFactory>,
+    root: PathBuf,
+    resource_policy: ResourcePolicy,
+) -> Result<ReleaseWorkerRegistration, RrcError> {
     let ledger = ReleaseLedger::open(root.clone(), &repo_identity)?;
     let mut record = ledger.load()?.ok_or_else(|| {
         RrcError::Invalid("release checkpoint disappeared before worker spawn".into())
@@ -1546,7 +1590,7 @@ pub(crate) fn spawn_release_worker_at_root(
     // compiled artifacts isolated between workspaces.
     let resource_root = root.join("host-resources");
     let resource_governor = HostResourceGovernor::new(
-        resource_policy_for_worker(),
+        resource_policy,
         resource_root.join("scheduler"),
         resource_root
             .join("targets")

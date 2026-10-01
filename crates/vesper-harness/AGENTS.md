@@ -423,6 +423,10 @@ Z.ai and Playwright MCP server descriptors.
   reference and trigger Linux ETXTBSY even when the writing thread closed its file.
   Never rewrite a just-executed inode or add production retries to mask this fixture
   race.
+- The registered-controller lifecycle fixture injects a test-only permissive
+  resource policy directly so live workstation pressure cannot replace its
+  worker-ownership assertions with a governor deferral. Dedicated constrained-host
+  and resumable-deferral tests retain production resource-policy coverage.
 - Run `cargo test -p vesper-harness`.
 - Run `cargo test -p vesper-harness --test vro13_e2e` (VRO-13 PR-8
   cross-feature fixture: watcher fire → bounded turn → composed

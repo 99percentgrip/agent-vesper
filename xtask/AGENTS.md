@@ -24,7 +24,9 @@ architecture, MSRV, and source-oracle checks.
   Cargo-policy inheritance, and TUI-controller routing cases. The lifecycle and renderer
   cases also require live gate elapsed/activity updates, child turnover, completed-gate
   advancement, bounded output retention and exclusion of
-  contradictory idle labels.
+  contradictory idle labels. The registered-controller lifecycle case injects its
+  test-only resource policy directly; live pressure behavior remains owned by the
+  separate governor acceptance cases.
   The Unix real-PTY case runs the actual TUI and a noisy registered child, rejecting
   inherited stdout/stderr, raw terminal controls, writes outside RUN, premature Ready,
   and stale telemetry after settlement. Deleting or renaming any case fails the gate.
