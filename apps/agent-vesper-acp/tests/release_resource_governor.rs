@@ -6,7 +6,7 @@
 //! query `/release status`, proving that the production RRC path both exports
 //! the live snapshot and inherits the governor's bounded Cargo environment.
 
-#![cfg(all(unix, feature = "integration-test-harness"))]
+#![cfg(all(target_os = "linux", feature = "integration-test-harness"))]
 #![allow(dead_code)]
 
 mod support;

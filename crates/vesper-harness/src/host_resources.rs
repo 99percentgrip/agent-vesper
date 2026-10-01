@@ -77,9 +77,9 @@ pub struct ResourcePolicy {
     pub disk_reserve_fraction_numerator: u64,
     pub disk_reserve_fraction_denominator: u64,
     pub expected_gate_growth_bytes: u64,
-    /// Test policies may retain real process telemetry while disabling its
-    /// admission threshold. Production defaults always enforce the threshold.
-    pub process_tree_risk_enabled: bool,
+    /// Integration-test policies may retain real telemetry while disabling
+    /// host-pressure admission thresholds. Production defaults always enforce them.
+    pub admission_pressure_enabled: bool,
 }
 
 impl Default for ResourcePolicy {
@@ -111,7 +111,7 @@ impl Default for ResourcePolicy {
             disk_reserve_fraction_numerator: 1,
             disk_reserve_fraction_denominator: 10,
             expected_gate_growth_bytes: 30 * GIB,
-            process_tree_risk_enabled: true,
+            admission_pressure_enabled: true,
         }
     }
 }
@@ -803,7 +803,12 @@ fn classify_pressure(
     let zram_pressure = zram_used >= effective.saturating_mul(20) / 100
         || (zram_limit > 0 && zram_used >= zram_limit.saturating_mul(75) / 100);
 
-    let (pressure, reason) = if available < reserve {
+    let (pressure, reason) = if !policy.admission_pressure_enabled {
+        (
+            ResourcePressure::Normal,
+            "host-pressure admission is disabled by the integration-test policy",
+        )
+    } else if available < reserve {
         (
             ResourcePressure::Critical,
             "MemAvailable is below the configured reserve",
@@ -823,10 +828,7 @@ fn classify_pressure(
             ResourcePressure::Critical,
             "zram physical backing is at a critical bound",
         )
-    } else if policy.process_tree_risk_enabled
-        && process.rss_bytes >= effective / 2
-        && effective > 0
-    {
+    } else if process.rss_bytes >= effective / 2 && effective > 0 {
         (
             ResourcePressure::Critical,
             "the RRC-owned process tree consumes at least half of effective memory",
@@ -853,8 +855,7 @@ fn classify_pressure(
             ResourcePressure::Pressure,
             "zram physical backing is above its safe bound",
         )
-    } else if policy.process_tree_risk_enabled
-        && process.rss_bytes > required_gate_headroom
+    } else if process.rss_bytes > required_gate_headroom
         && available < normal_floor.saturating_add(process.rss_bytes / 2)
     {
         (
@@ -1503,6 +1504,40 @@ mod tests {
 
         assert_eq!(telemetry.pressure, ResourcePressure::Critical);
         assert!(telemetry.pressure_reason.contains("RRC-owned process tree"));
+    }
+
+    #[test]
+    fn integration_policy_can_ignore_live_host_pressure_without_hiding_telemetry() {
+        let temp = tempfile::tempdir().unwrap();
+        let policy = ResourcePolicy {
+            admission_pressure_enabled: false,
+            ..ResourcePolicy::default()
+        };
+        let governor = HostResourceGovernor::new(
+            policy,
+            temp.path().join("locks"),
+            temp.path().join("target"),
+        )
+        .unwrap();
+        let mut constrained = capacity(1, 99, 4);
+        constrained.linux.memory_psi_full_avg10_bps = Some(u32::MAX);
+        constrained.linux.swap_growth_bytes_per_minute = Some(u64::MAX);
+        let process = ProcessTreeUsage {
+            rss_bytes: 20 * GIB,
+            process_count: 9,
+            rustc_count: 2,
+        };
+
+        let telemetry = governor.telemetry_from(constrained, process, disk(100 * GIB));
+
+        assert_eq!(telemetry.pressure, ResourcePressure::Normal);
+        assert_eq!(telemetry.process_tree_rss_bytes, 20 * GIB);
+        assert_eq!(telemetry.memory_psi_full_avg10_bps, Some(u32::MAX));
+        assert!(
+            telemetry
+                .pressure_reason
+                .contains("integration-test policy")
+        );
     }
 
     #[test]

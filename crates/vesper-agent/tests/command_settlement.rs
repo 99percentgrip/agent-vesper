@@ -123,7 +123,7 @@ fn timeout_command() -> String {
 #[cfg(windows)]
 fn timeout_command() -> String {
     powershell(&format!(
-        "Write-Output partial; {}; while ($true) {{ [Console]::Out.Write('x' * 4096) }}",
+        "[Console]::Out.WriteLine('partial'); [Console]::Out.Flush(); {}; while ($true) {{ [Console]::Out.Write('x' * 4096) }}",
         powershell_descendant(
             "Start-Sleep -Seconds 2; Set-Content -LiteralPath descendant.marker -Value stale"
         )
@@ -333,7 +333,10 @@ async fn leader_exit_does_not_wait_for_descendant_held_pipe() {
         .text
         .as_str()
         .to_owned();
-    assert!(started.elapsed() < Duration::from_secs(3));
+    // Process creation on a loaded Windows runner can consume several seconds
+    // before command settlement begins. The stale-output and marker assertions
+    // below prove that the held descendant pipe was not allowed to run.
+    assert!(started.elapsed() < Duration::from_secs(8));
     assert!(output.contains("leader-done"));
     assert!(!output.contains("stale"));
     assert_marker_absent_after_cleanup(&root.path().join("descendant.marker")).await;

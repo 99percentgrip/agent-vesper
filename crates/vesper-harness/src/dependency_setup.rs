@@ -7,6 +7,7 @@ use tokio::process::Command;
 
 const MACHINE: &str = "agent-vesper";
 const MAX_OUTPUT: u64 = 64 * 1024;
+const LOCAL_RUNTIME_HEALTH_TIMEOUT_SECS: u64 = 15;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -174,11 +175,11 @@ async fn health(engine: &Engine) -> Result<(), String> {
     let mut command = engine.command();
     command.args(["info", "--format", "{{.OSType}}"]);
     // Docker exposes OSType; Podman's Host.OS is the corresponding field.
-    let mut result = run(command, 5).await;
+    let mut result = run(command, LOCAL_RUNTIME_HEALTH_TIMEOUT_SECS).await;
     if result.is_err() && is_podman(&engine.binary) {
         let mut command = engine.command();
         command.args(["info", "--format", "{{.Host.OS}}"]);
-        result = run(command, 5).await;
+        result = run(command, LOCAL_RUNTIME_HEALTH_TIMEOUT_SECS).await;
     }
     if result?.trim_ascii() != b"linux" {
         return Err("The runtime must provide Linux containers.".into());

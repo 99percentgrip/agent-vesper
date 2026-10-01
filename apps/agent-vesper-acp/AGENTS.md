@@ -75,12 +75,13 @@ transport, stderr-only tracing, and orderly shutdown.
   owned-process, Cargo/test-budget and target-cache pressure/action values; it also
   renders the same persisted sequence-numbered `ReleaseProgress` phase, gate/job
   counts and recent milestones as TUI. ACP never infers resource health or progress
-  from a checkpoint timestamp, elapsed time or start acknowledgement. The Unix
+  from a checkpoint timestamp, elapsed time or start acknowledgement. The Linux
   `release_resource_governor` process regression drives real ACP `/release patch` and
   `/release status` against a controlled temporary Cargo command. It proves the
   controller snapshot and all version-check/gate Cargo paths carry the resource policy
-  without provider dispatch; the integration-only driver changes only admission policy,
-  never the Linux telemetry backend.
+  without provider dispatch; its integration-only policy keeps live telemetry while
+  disabling host-pressure admission thresholds. Non-Linux governor discovery remains
+  deliberately unavailable and is covered by the separate five-target lifecycle gates.
 
 - `/skills settings status|save mode standard|enhanced|save enable|disable <skill>`
   uses the shared domain parser and harness preferences. Reads create no workspace

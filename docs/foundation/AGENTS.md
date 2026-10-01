@@ -6,11 +6,12 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
-- `2026-10-01-v0.24.5-rrc-autonomy-and-ci-repair.md` owns the immutable failed
-  v0.24.5 candidate evidence, active missing/partial matrix polling, responsive
-  remote cancellation, transactional complete-matrix multi-family repair, all four
-  observed hosted failure-family corrections, complete local gates, and the still-
-  pending fresh exact-SHA/publication receipts.
+- `2026-10-01-v0.24.5-rrc-autonomy-and-ci-repair.md` owns both immutable failed
+  v0.24.5 candidate matrices, active missing/partial polling, responsive remote
+  cancellation, transactional complete-matrix multi-family repair, both rounds of
+  hosted failure-family corrections, complete local canonical/MSRV/runtime gates,
+  and the still-pending fresh exact-SHA hosted receipts. Tagging and publication are
+  explicitly outside this work unit.
 
 - `2026-10-01-rrc-resource-defer-zram-repair.md` owns the current-risk Linux
   pressure and zram physical-backing correction, persisted typed resource defer,
