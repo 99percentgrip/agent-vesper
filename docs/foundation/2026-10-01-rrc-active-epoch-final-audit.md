@@ -60,6 +60,13 @@ cargo fmt --all -- --check
 cargo clippy -p vesper-harness --all-targets --all-features -- -D warnings
 cargo xtask acceptance
 cargo xtask verify
+
+# Later user-requested build-only continuation, admitted by the unchanged
+# Host Resource Governor after workstation pressure returned to Normal.
+VESPER_GOVERNOR_STATE_ROOT=<external-evidence>/governor-state \
+  <external-governor-runner> <external-evidence>/cargo-build-all-locked-20261001T102118Z.json \
+  expensive <corrected-worktree> -- \
+  env CARGO_TARGET_DIR=<external-final-build-target> cargo build --all --locked
 ```
 
 ## Files
@@ -202,6 +209,90 @@ running: cargo test --workspace --all-features
 cargo xtask verify: exit 0
 ```
 
+### Governed locked all-workspace build
+
+Alex later requested one build of the exact corrected work and explicitly kept
+the full acceptance suite out of this continuation. Before admission, the source
+was clean at:
+
+```text
+commit: f7de86858f89810065e5a3cacd7fad5703eaeeb9
+subject: docs(release): preserve final audit deviations
+tree: 59a44b24883b9907b11804e19f2b8d8b2c0476bd
+workspace version: 0.24.4
+rejected 3.3.1 commit is ancestor: no
+status porcelain entries: 0
+```
+
+The unchanged governor initially refused the expensive gate because swap usage
+was above its 25% threshold. The initial receipt and 25 timed retries all
+reported `pressure`; no Cargo child started. The observed swap use moved from
+`3227684352` bytes to `3174670336` bytes but did not recover through passive
+waiting. After Alex authorized a one-time swap recycle, the agent-side attempt
+failed safely with `sudo: a password is required`. Alex performed the privileged
+operation in his own terminal. Because `swapon -a` did not recreate the
+generator-owned zram device, the build remained paused while Alex restored it
+with:
+
+```sh
+sudo systemctl start systemd-zram-setup@zram0.service
+```
+
+The pre-build receipt then showed the original swap service restored and normal
+admission:
+
+```text
+/dev/zram0: 8589930496 bytes total, 0 bytes used, priority 100
+systemd-zram-setup@zram0.service: active
+RAM available: 17.8 GiB
+Pressure: Normal
+Action: verification admitted within the RRC resource budget
+```
+
+Exactly one requested locked all-workspace build ran with its target and
+receipts outside the worktree. It passed:
+
+```text
+BUILD_START_UTC=20261001T102118Z
+BUILD_EXIT=0
+BUILD_END_UTC=20261001T102400Z
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 2m 41s
+```
+
+The resource receipt independently records:
+
+```text
+gate_cost: expensive
+admitted: true
+exit_code: 0
+stopped_for_critical_pressure: false
+observations: 650
+min_memory_available_bytes: 18417094656
+max_process_tree_rss_bytes: 128819200
+max_swap_used_bytes: 1220325376
+min_disk_available_bytes: 273147060224
+pressure_events: ["normal"]
+```
+
+Durable external receipts:
+
+```text
+/home/Alex/Projects/agent-vesper-release-prep-evidence/20261001-active-epoch-fixed-candidate/cargo-build-all-locked-20261001T102118Z.json
+sha256: 4c3d3139b5b0203208ed3b21567af4da5ed3b23b0975c2f1c6cb4cce0070e87c
+
+/home/Alex/Projects/agent-vesper-release-prep-evidence/20261001-active-epoch-fixed-candidate/cargo-build-all-locked-20261001T102118Z.log
+sha256: 0f982dc05134f06a1f27b5415ef8dc9de962bc1f42832bea4af2931015e35c10
+
+/home/Alex/Projects/agent-vesper-release-prep-evidence/20261001-active-epoch-fixed-candidate/final-closeout-20261001T102552Z.txt
+```
+
+Post-build closeout found the corrected source still clean, workspace version
+still `0.24.4`, the rejected `3.3.1` commit still outside ancestry, the live RRC
+ledger still byte-identical at SHA-256
+`35af7a158b39225e89c5d57b14ec0dd0068afbef66791120e8a9a227c675899d`, and
+zram active. The primary checkout remained the separate dirty checkout and was
+only observed read-only. No candidate artifact was staged or installed.
+
 ## Invariant audit
 
 - Natural-language admission resolves the canonical corrected `v0.24.4` source.
@@ -235,6 +326,14 @@ cargo xtask verify: exit 0
    check for every link and provenance path added by this audit passed
    (`ADDED_REPORT_LINKS_OK`; `PROVENANCE_REPORTS_OK count=5`). No unrelated
    historical index entry was rewritten to make this audit appear green.
+5. The requested build was delayed by truthful Host Resource Governor pressure.
+   Twenty-six pressure receipts were retained. Restoring swap required explicit
+   OS approval in Alex's terminal because this session had no passwordless sudo;
+   the zram generator service was then explicitly restarted before admission.
+6. The build-only continuation did not rerun `cargo xtask acceptance` or
+   `cargo xtask verify`, as Alex explicitly prohibited the full acceptance suite.
+   Their earlier final-audit receipts remain the scope-appropriate behavioral
+   evidence; the new receipt proves only the requested locked workspace build.
 
 ## Unresolved items
 
@@ -244,6 +343,8 @@ cargo xtask verify: exit 0
   tag, GitHub Release, assets, Registry update and publication remain unexecuted.
 - Local Linux verification does not substitute for those future exact-SHA release
   gates or a user-operated installed-candidate acceptance.
+- The new build is a local Linux development-profile workspace build, not a
+  release-profile candidate, cross-platform matrix or publication artifact.
 
 ## Readiness effect
 
@@ -253,4 +354,5 @@ the obsolete local historical epoch, and asks one human-readable question only
 for genuinely unrelated or irreversible work. When it must ask, both known
 version transitions are explicit. Acceptance is deterministic with respect to
 lifecycle ownership while production resource safety remains unchanged. This is
-release-controller readiness evidence, not authorization or evidence of a release.
+release-controller readiness evidence plus a successful governed locked workspace
+build, not authorization or evidence of a release.

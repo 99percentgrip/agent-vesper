@@ -1167,7 +1167,10 @@ canonical historical-epoch supersession, cgroup-ancestor, constrained-memory,
 constrained-disk, resumable-resource-defer, ACP controller-status and
 every-Cargo-path inheritance cases. The ACP process
 case is Linux-local only; the current verification rerun includes `cargo xtask
-verify`, but does not claim macOS/Windows governor acceptance.
+verify`, but does not claim macOS/Windows governor acceptance. A later
+build-only continuation from clean canonical commit `f7de8685` passed one
+governor-admitted `cargo build --all --locked`; it did not rerun acceptance,
+create a release-profile candidate or perform any remote/release action.
 Native host cancellation/restart then passed on Linux x86_64,
 Linux ARM64, macOS Intel, macOS Apple Silicon and Windows x86_64 in private run
 `36594339290` against exact candidate
