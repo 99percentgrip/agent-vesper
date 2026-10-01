@@ -6,6 +6,11 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `2026-09-21-tool-output-stall-bug-and-recovery.md` owns the historical
+  recurring pipe-backpressure incidents, identity-pinned operational recoveries,
+  and original acceptance requirements. Its current heading records the later
+  provider-neutral repair and v0.23.6 release; do not restore superseded OPEN text.
+
 - `2026-09-29-red-main-ci-repair.md` owns the follow-up diagnosis and repair
   for documentation-closeout run `36534993336`: Unix late-fork process-group
   cleanup, macOS inherited nonblocking LM Studio fixture sockets, local stress

@@ -1,5 +1,14 @@
 # Foundation Evidence Index
 
+## Restored historical tool-output stall record
+
+- Historical incident and recovery record: [`2026-09-21-tool-output-stall-bug-and-recovery.md`](2026-09-21-tool-output-stall-bug-and-recovery.md)
+- Current status: **CLOSED — RELEASED IN v0.23.6.** The restored index route points
+  to the current report, which preserves the original incidents and acceptance box
+  while linking the later permanent repair, five-target verification, and release.
+  Stale OPEN wording and links to absent planning records from the older restoration
+  branch were intentionally not reintroduced.
+
 ## Red main CI follow-up repair (2026-09-29)
 
 - Execution: [`2026-09-29-red-main-ci-repair.md`](2026-09-29-red-main-ci-repair.md)
