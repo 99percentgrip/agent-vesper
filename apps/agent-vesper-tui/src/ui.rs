@@ -210,6 +210,9 @@ pub struct BackgroundTaskState {
     /// Shared RRC progress/milestone projection, persisted by the controller
     /// and used by ACP as well as this terminal renderer.
     pub progress: vesper_harness::release_recovery::ReleaseProgress,
+    /// True while the typed RRC state is passively waiting for host pressure
+    /// to clear. The worker remains active even though no gate child is alive.
+    pub resource_deferred: bool,
     /// Observed by the RRC-owned Host Resource Governor; this is not a
     /// provider quota or a renderer-side inference.
     pub resource_telemetry: Option<vesper_harness::host_resources::ResourceTelemetry>,
@@ -600,7 +603,13 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
     let phase = model.plan.phase();
     let phase_style = banner_style_for_phase(phase);
     let model_name = superpower_value_for(model, "model").unwrap_or_else(|| "provider".into());
-    let state = if model.agent_running || model.background_task.is_some() {
+    let state = if model
+        .background_task
+        .as_ref()
+        .is_some_and(|task| task.resource_deferred)
+    {
+        "DEFERRED"
+    } else if model.agent_running || model.background_task.is_some() {
         "RUNNING"
     } else {
         "READY"
@@ -947,8 +956,13 @@ fn run_status_line(model: &ViewModel, show_sidebar: bool, palette: ThemePalette)
         ]);
     }
     if let Some(task) = model.background_task.as_ref() {
+        let marker = if task.resource_deferred {
+            "◌ "
+        } else {
+            "● "
+        };
         return Line::from(vec![
-            Span::styled("● ", Style::default().fg(palette.warning)),
+            Span::styled(marker, Style::default().fg(palette.warning)),
             Span::styled(task.detail.clone(), Style::default().fg(palette.text)),
         ]);
     }
@@ -1775,7 +1789,13 @@ fn render_screen_reader(frame: &mut Frame<'_>, model: &ViewModel) {
             Constraint::Length(2),
         ])
         .split(area);
-    let state = if model.agent_running || model.background_task.is_some() {
+    let state = if model
+        .background_task
+        .as_ref()
+        .is_some_and(|task| task.resource_deferred)
+    {
+        "DEFERRED FOR HOST RESOURCES"
+    } else if model.agent_running || model.background_task.is_some() {
         "WORKING"
     } else {
         "READY"
@@ -1975,10 +1995,22 @@ fn render_sidebar(
 
     let run_width = usize::from(chunks[2].width);
     let run_lines = if let Some(task) = model.background_task.as_ref() {
+        let task_label = if task.resource_deferred {
+            format!("{} · Resource deferred", task.label)
+        } else {
+            task.label.clone()
+        };
         let mut lines = vec![Line::from(vec![
-            Span::styled("● ", Style::default().fg(palette.warning)),
+            Span::styled(
+                if task.resource_deferred {
+                    "◌ "
+                } else {
+                    "● "
+                },
+                Style::default().fg(palette.warning),
+            ),
             Span::raw(truncate_with_ellipsis(
-                &task.label,
+                &task_label,
                 run_width.saturating_sub(2),
             )),
         ])];
@@ -2100,10 +2132,10 @@ fn render_sidebar(
             lines.push(telemetry_row(
                 "Headroom",
                 &format!(
-                    "{} above reserve; need {} RAM / swap < {}%",
+                    "{} above reserve · gate need {} · admit at {} available",
                     format_telemetry_bytes(resources.memory_headroom_bytes()),
+                    format_telemetry_bytes(resources.required_gate_headroom_bytes),
                     format_telemetry_bytes(resources.normal_admission_available_bytes),
-                    resources.pressure_swap_percent,
                 ),
                 run_width,
                 palette,
@@ -2122,13 +2154,55 @@ fn render_sidebar(
             lines.push(telemetry_row(
                 "Swap",
                 &format!(
-                    "{} / {} used",
+                    "{} used · {} free · {}% logical",
                     format_telemetry_bytes(
                         resources
                             .swap_total_bytes
                             .saturating_sub(resources.swap_free_bytes),
                     ),
-                    format_telemetry_bytes(resources.swap_total_bytes),
+                    format_telemetry_bytes(resources.swap_free_bytes),
+                    resources.swap_used_percent,
+                ),
+                run_width,
+                palette,
+            ));
+            lines.push(telemetry_row(
+                "Swap trend",
+                &resources.swap_growth_bytes_per_minute.map_or_else(
+                    || "collecting baseline".into(),
+                    |growth| format!("{}/min growth", format_telemetry_bytes(growth)),
+                ),
+                run_width,
+                palette,
+            ));
+            lines.push(telemetry_row(
+                "Memory PSI",
+                &match (
+                    resources.memory_psi_some_avg10_bps,
+                    resources.memory_psi_full_avg10_bps,
+                ) {
+                    (Some(some), Some(full)) => format!(
+                        "some {:.2}% · full {:.2}% avg10",
+                        f64::from(some) / 100.0,
+                        f64::from(full) / 100.0,
+                    ),
+                    _ => "unavailable".into(),
+                },
+                run_width,
+                palette,
+            ));
+            lines.push(telemetry_row(
+                "zram",
+                &resources.zram_physical_used_bytes.map_or_else(
+                    || "not active / unavailable".into(),
+                    |physical| {
+                        format!(
+                            "{} physical · {} compressed · {} logical",
+                            format_telemetry_bytes(physical),
+                            format_telemetry_bytes(resources.zram_compressed_bytes.unwrap_or(0)),
+                            format_telemetry_bytes(resources.zram_logical_used_bytes.unwrap_or(0)),
+                        )
+                    },
                 ),
                 run_width,
                 palette,
@@ -3602,6 +3676,46 @@ mod tests {
             quiet.contains('…'),
             "narrow telemetry must truncate cleanly: {quiet}"
         );
+
+        let task = model.background_task.as_mut().unwrap();
+        task.resource_deferred = true;
+        task.detail = "Resource deferred · waiting for host pressure to clear".into();
+        task.current_child = None;
+        task.gate_elapsed_secs = None;
+        task.process_alive = false;
+        terminal
+            .draw(|frame| render_to_frame(frame, &model))
+            .expect("resource-deferred release render");
+        let deferred = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(deferred.contains("DEFERRED"), "{deferred}");
+        assert!(deferred.contains("Resource deferred"), "{deferred}");
+        assert!(!deferred.contains("No active tasks"), "{deferred}");
+        assert!(!deferred.contains("READY"), "{deferred}");
+        assert!(!deferred.contains("Ready"), "{deferred}");
+
+        model.preferences.screen_reader = true;
+        terminal
+            .draw(|frame| render_to_frame(frame, &model))
+            .expect("screen-reader resource-deferred release render");
+        let accessible = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(
+            accessible.contains("DEFERRED FOR HOST RESOURCES"),
+            "{accessible}"
+        );
+        assert!(!accessible.contains("READY"), "{accessible}");
+        assert!(!accessible.contains("Ready"), "{accessible}");
     }
 
     #[test]

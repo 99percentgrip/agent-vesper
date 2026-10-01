@@ -25,15 +25,19 @@ use crate::release_recovery::{
     EXTERNAL_HEALTH_BUDGET, ExternalHealthEvidence, ExternalHealthVerdict, GhCliEvidenceAdapter,
     GitHubEvidencePort, LocalGateRecord, ReleaseControllerEvent, ReleaseLedger,
     ReleaseMutationAdmission, ReleaseMutationKind, ReleaseProgress, ReleaseRecoveryRecord,
-    ReleaseRecoveryState, RelevantStateChange, RelevantStateChangeKind, RrcError, SettlementState,
-    admit_release_mutation, apply_controller_event, classify_external_health, default_release_root,
-    redact_secrets, refresh_remote_evidence,
+    ReleaseRecoveryState, RelevantStateChange, RelevantStateChangeKind, ResourceDeferredRecord,
+    RrcError, SettlementState, admit_release_mutation, apply_controller_event,
+    classify_external_health, default_release_root, redact_secrets, refresh_remote_evidence,
 };
 
 const MAX_COMMAND_OUTPUT: usize = 4096;
 const MAX_TELEMETRY_LINES: usize = 8;
 const MAX_TELEMETRY_LINE_CHARS: usize = 240;
 const OFFICIAL_STATUS_URL: &str = "https://www.githubstatus.com/api/v2/summary.json";
+const RESOURCE_WATCH_NORMAL_CONFIRMATIONS: u8 = 3;
+const RESOURCE_WATCH_INITIAL_INTERVAL: Duration = Duration::from_secs(5);
+const RESOURCE_WATCH_BACKOFF_INTERVAL: Duration = Duration::from_secs(15);
+const RESOURCE_WATCH_MAX_INTERVAL: Duration = Duration::from_secs(30);
 
 struct ActiveReleaseWorker {
     cancelled: Arc<AtomicBool>,
@@ -70,8 +74,11 @@ fn permissive_resource_policy() -> ResourcePolicy {
         normal_headroom_fraction_denominator: 1,
         estimated_rustc_bytes: 1,
         max_cargo_jobs: 1,
-        pressure_swap_percent: 100,
-        critical_swap_percent: 100,
+        pressure_swap_growth_bytes_per_minute: u64::MAX,
+        critical_swap_growth_bytes_per_minute: u64::MAX,
+        pressure_psi_some_avg10_bps: u32::MAX,
+        pressure_psi_full_avg10_bps: u32::MAX,
+        critical_psi_full_avg10_bps: u32::MAX,
         disk_reserve_min_bytes: 0,
         disk_reserve_fraction_numerator: 0,
         disk_reserve_fraction_denominator: 1,
@@ -106,6 +113,7 @@ struct ReleaseWorkerActivity {
     failure_fingerprint: Option<String>,
     recent_output: VecDeque<String>,
     progress: ReleaseProgress,
+    resource_deferred: bool,
     resource_telemetry: Option<ResourceTelemetry>,
 }
 
@@ -133,6 +141,9 @@ pub struct ReleaseWorkerSnapshot {
     /// Persisted, typed milestones from the release ledger. Both hosts use
     /// this same sequence for their chat/RUN projection.
     pub progress: ReleaseProgress,
+    /// The persisted controller state is resource-deferred. This remains true
+    /// while a passive watch is waiting for pressure to clear.
+    pub resource_deferred: bool,
     /// Live host/process/disk observation from the controller-owned governor.
     pub resource_telemetry: Option<ResourceTelemetry>,
 }
@@ -298,6 +309,10 @@ pub struct PublicationReceipt {
 }
 
 pub trait ReleaseExecutionPort: Send + Sync {
+    fn latest_resource_telemetry(&self) -> Option<ResourceTelemetry> {
+        None
+    }
+
     fn prepare_version_bump(
         &self,
         bump: &str,
@@ -549,6 +564,31 @@ impl NativeReleaseExecutor {
         }
     }
 
+    fn reevaluate_expensive_resources(&self) -> Result<(bool, ResourceTelemetry), RrcError> {
+        let governor = self.resource_governor.as_ref().ok_or_else(|| {
+            RrcError::Invalid("resource watch requires the Host Resource Governor".into())
+        })?;
+        match governor.preflight(GateCost::Expensive) {
+            Ok(admission) => {
+                let telemetry = admission.telemetry.clone();
+                self.note_resource_telemetry(telemetry.clone());
+                // The passive watch never retains the expensive lease. The
+                // real gate must win a fresh admission after recovery.
+                drop(admission);
+                Ok((true, telemetry))
+            }
+            Err(error) => {
+                let telemetry = error.telemetry().cloned().ok_or_else(|| {
+                    RrcError::ResourceConstrained(format!(
+                        "resource watch could not obtain telemetry: {error}"
+                    ))
+                })?;
+                self.note_resource_telemetry(telemetry.clone());
+                Ok((false, telemetry))
+            }
+        }
+    }
+
     fn checked_with_admitted_resources(
         &self,
         program: &str,
@@ -587,6 +627,13 @@ impl NativeReleaseExecutor {
 }
 
 impl ReleaseExecutionPort for NativeReleaseExecutor {
+    fn latest_resource_telemetry(&self) -> Option<ResourceTelemetry> {
+        self.activity
+            .as_ref()
+            .and_then(|activity| activity.lock().ok())
+            .and_then(|activity| activity.resource_telemetry.clone())
+    }
+
     fn prepare_version_bump(
         &self,
         bump: &str,
@@ -1288,19 +1335,55 @@ pub fn advance_release(
                         ledger.save(record)?;
                     }
                     Err(RrcError::ResourceConstrained(detail)) => {
-                        // A safety defer is not evidence of a source or gate
-                        // failure. Keep the same exact local-verification
-                        // epoch resumable, release any running marker, and
-                        // never spend a repair/retry budget diagnosing RAM.
+                        // A safety defer is a typed active state, never source
+                        // evidence. Keep completed gates settled, preserve the
+                        // pending gate, and spend no repair/retry budget.
                         record.mutation.local_gates[index].state = SettlementState::NotStarted;
                         record.mutation.local_gates[index].evidence_ref =
                             Some("local:resource-deferred".into());
-                        record.note_progress_milestone(format!(
-                            "Paused before {}: Host Resource Governor deferred unsafe local work",
-                            gate.name
-                        ));
+                        let mut telemetry =
+                            executor.latest_resource_telemetry().unwrap_or_default();
+                        if telemetry.action == "resource telemetry not sampled" {
+                            telemetry.pressure = ResourcePressure::Pressure;
+                            telemetry.pressure_reason =
+                                "resource governor deferred admission".into();
+                            telemetry.action.clone_from(&detail);
+                        }
+                        let now = Utc::now();
+                        record.resource_deferred = Some(ResourceDeferredRecord {
+                            gate_name: gate.name.clone(),
+                            deferred_at: now,
+                            last_observed_at: now,
+                            telemetry,
+                            consecutive_normal_observations: 0,
+                            unchanged_observations: 0,
+                            next_check_seconds: RESOURCE_WATCH_INITIAL_INTERVAL.as_secs(),
+                        });
+                        let commit =
+                            record.active_commit().map(str::to_owned).ok_or_else(|| {
+                                RrcError::Invalid("resource defer has no active commit".into())
+                            })?;
+                        let completed = record
+                            .mutation
+                            .local_gates
+                            .iter()
+                            .take(index)
+                            .rev()
+                            .find(|row| row.state == SettlementState::Succeeded)
+                            .map(|row| row.name.as_str())
+                            .unwrap_or("Previous local gate");
+                        record.transition(
+                            ReleaseRecoveryState::ResourceDeferred,
+                            &commit,
+                            format!(
+                                "Release paused safely — host resource pressure. {completed} passed; {} is waiting.",
+                                gate.name
+                            ),
+                            vec!["local:resource-deferred".into()],
+                            None,
+                        )?;
                         ledger.save(record)?;
-                        return Err(RrcError::ResourceConstrained(detail));
+                        return Ok(());
                     }
                     Err(error) => {
                         record.mutation.local_gates[index].state = SettlementState::Failed;
@@ -1620,7 +1703,12 @@ fn spawn_release_worker_at_root_with_policy(
             .map(|failure| failure.fingerprint.0.clone()),
         recent_output: VecDeque::new(),
         progress: record.progress.clone(),
-        resource_telemetry: resource_governor.snapshot(None).ok(),
+        resource_deferred: record.state == ReleaseRecoveryState::ResourceDeferred,
+        resource_telemetry: record
+            .resource_deferred
+            .as_ref()
+            .map(|deferred| deferred.telemetry.clone())
+            .or_else(|| resource_governor.snapshot(None).ok()),
     }));
     let (start_tx, start_rx) = std::sync::mpsc::sync_channel::<()>(0);
     let worker_identity = repo_identity.clone();
@@ -1700,6 +1788,110 @@ fn spawn_release_worker_at_root_with_policy(
     })
 }
 
+fn resource_watch_interval(unchanged_observations: u8) -> Duration {
+    if unchanged_observations >= 10 {
+        RESOURCE_WATCH_MAX_INTERVAL
+    } else if unchanged_observations >= 3 {
+        RESOURCE_WATCH_BACKOFF_INTERVAL
+    } else {
+        RESOURCE_WATCH_INITIAL_INTERVAL
+    }
+}
+
+fn apply_resource_watch_observation(
+    record: &mut ReleaseRecoveryRecord,
+    telemetry: ResourceTelemetry,
+    safely_admissible: bool,
+) -> Result<bool, RrcError> {
+    if record.state != ReleaseRecoveryState::ResourceDeferred {
+        return Err(RrcError::Invalid(
+            "resource watch observation requires ResourceDeferred state".into(),
+        ));
+    }
+    let prior_pressure = record
+        .resource_deferred
+        .as_ref()
+        .map(|deferred| deferred.telemetry.pressure)
+        .ok_or_else(|| RrcError::Invalid("ResourceDeferred detail is missing".into()))?;
+    let recovered = {
+        let deferred = record
+            .resource_deferred
+            .as_mut()
+            .expect("checked ResourceDeferred detail");
+        deferred.last_observed_at = Utc::now();
+        deferred.unchanged_observations = if telemetry.pressure == prior_pressure {
+            deferred.unchanged_observations.saturating_add(1)
+        } else {
+            0
+        };
+        deferred.consecutive_normal_observations =
+            if safely_admissible && telemetry.pressure == ResourcePressure::Normal {
+                deferred.consecutive_normal_observations.saturating_add(1)
+            } else {
+                0
+            };
+        deferred.next_check_seconds =
+            resource_watch_interval(deferred.unchanged_observations).as_secs();
+        deferred.telemetry = telemetry;
+        deferred.consecutive_normal_observations >= RESOURCE_WATCH_NORMAL_CONFIRMATIONS
+    };
+    if !recovered {
+        record.refresh_progress();
+        return Ok(false);
+    }
+
+    let gate = record
+        .resource_deferred
+        .as_ref()
+        .map(|deferred| deferred.gate_name.clone())
+        .unwrap_or_else(|| "next local gate".into());
+    let commit = record
+        .active_commit()
+        .map(str::to_owned)
+        .ok_or_else(|| RrcError::Invalid("resource recovery has no active commit".into()))?;
+    record.transition(
+        ReleaseRecoveryState::LocalVerification,
+        &commit,
+        format!("Host capacity recovered — continuing {gate}."),
+        vec!["local:resource-recovered".into()],
+        None,
+    )?;
+    record.resource_deferred = None;
+    Ok(true)
+}
+
+fn watch_resource_deferred(
+    record: &mut ReleaseRecoveryRecord,
+    ledger: &ReleaseLedger,
+    executor: &NativeReleaseExecutor,
+    cancelled: &Arc<AtomicBool>,
+    activity: &Arc<Mutex<ReleaseWorkerActivity>>,
+) -> Result<(), RrcError> {
+    loop {
+        let delay = record
+            .resource_deferred
+            .as_ref()
+            .map(|deferred| Duration::from_secs(deferred.next_check_seconds.max(1)))
+            .unwrap_or(RESOURCE_WATCH_INITIAL_INTERVAL);
+        let deadline = Instant::now() + delay;
+        while Instant::now() < deadline {
+            if cancelled.load(Ordering::Acquire) {
+                return Err(RrcError::Invalid(
+                    "release recovery was cancelled by the user".into(),
+                ));
+            }
+            thread::sleep(Duration::from_millis(100));
+        }
+        let (safe, telemetry) = executor.reevaluate_expensive_resources()?;
+        let recovered = apply_resource_watch_observation(record, telemetry, safe)?;
+        ledger.save(record)?;
+        update_release_activity(activity, record);
+        if recovered {
+            return Ok(());
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)] // background-worker composition owns distinct state, ports and cancellation.
 fn run_release_worker(
     workspace: &Path,
@@ -1723,6 +1915,10 @@ fn run_release_worker(
             return Ok(());
         };
         update_release_activity(activity, &record);
+        if record.state == ReleaseRecoveryState::ResourceDeferred {
+            watch_resource_deferred(&mut record, &ledger, &executor, &cancelled, activity)?;
+            update_release_activity(activity, &record);
+        }
         let before = record.state;
         advance_release(
             &mut record,
@@ -1826,7 +2022,18 @@ fn update_release_activity(
             .mutation
             .local_gates
             .iter()
-            .find(|gate| gate.state == SettlementState::Running);
+            .find(|gate| gate.state == SettlementState::Running)
+            .or_else(|| {
+                (record.state == ReleaseRecoveryState::ResourceDeferred)
+                    .then(|| {
+                        record
+                            .mutation
+                            .local_gates
+                            .iter()
+                            .find(|gate| gate.state == SettlementState::NotStarted)
+                    })
+                    .flatten()
+            });
         let changed = activity.detail != detail
             || activity.completed_gates != completed
             || activity.current_gate.as_deref() != active_gate.map(|gate| gate.name.as_str());
@@ -1851,8 +2058,15 @@ fn update_release_activity(
             .last()
             .map(|failure| failure.fingerprint.0.clone());
         activity.progress = progress_view.progress.clone();
+        activity.resource_deferred = record.state == ReleaseRecoveryState::ResourceDeferred;
+        if let Some(deferred) = record.resource_deferred.as_ref() {
+            activity.resource_telemetry = Some(deferred.telemetry.clone());
+        }
         if let Some(gate) = active_gate {
-            if activity.current_gate.as_deref() != Some(gate.name.as_str()) {
+            if record.state == ReleaseRecoveryState::ResourceDeferred {
+                activity.gate_started_at = None;
+                activity.current_child = None;
+            } else if activity.current_gate.as_deref() != Some(gate.name.as_str()) {
                 activity.gate_started_at = Some(Instant::now());
             }
             activity.current_gate = Some(gate.name.clone());
@@ -1870,9 +2084,9 @@ fn update_release_activity(
 }
 
 fn persist_worker_failure(root: &Path, repo_identity: &str, error: &RrcError) {
-    // A governor defer deliberately leaves the epoch in LocalVerification so
-    // that a later `/release resume` re-samples the host. Do not transform a
-    // workstation-safety condition into a source-repair diagnosis.
+    // Resource deferral is persisted and normally watched inside the active
+    // worker. If a governor-side discovery error escapes that loop, never
+    // transform the workstation-safety condition into source-failure evidence.
     if matches!(error, RrcError::ResourceConstrained(_)) {
         return;
     }
@@ -1936,6 +2150,7 @@ pub fn active_release_worker(repo_identity: &str) -> Option<ReleaseWorkerSnapsho
         recent_output: activity.recent_output.iter().cloned().collect(),
         process_alive: activity.current_child.is_some(),
         progress: activity.progress.clone(),
+        resource_deferred: activity.resource_deferred,
         resource_telemetry: activity.resource_telemetry.clone(),
     })
 }
@@ -2067,6 +2282,7 @@ pub fn spawn_terminal_ownership_probe(
         failure_fingerprint: None,
         recent_output: VecDeque::new(),
         progress: ReleaseProgress::default(),
+        resource_deferred: false,
         resource_telemetry: None,
     }));
     let workspace = workspace.canonicalize()?;
@@ -2774,6 +2990,7 @@ mod tests {
             failure_fingerprint: None,
             recent_output: VecDeque::new(),
             progress: ReleaseProgress::default(),
+            resource_deferred: false,
             resource_telemetry: None,
         };
         for index in 0..32 {
@@ -2842,6 +3059,7 @@ mod tests {
                 }],
                 ..ReleaseProgress::default()
             },
+            resource_deferred: false,
             resource_telemetry: None,
         }));
 
@@ -3304,8 +3522,8 @@ mod tests {
 
     #[test]
     fn resource_governor_defer_keeps_local_epoch_resumable_without_source_failure() {
-        struct ResourceDeferred;
-        impl ReleaseExecutionPort for ResourceDeferred {
+        struct ResourceDeferred<'a>(&'a std::sync::atomic::AtomicUsize);
+        impl ReleaseExecutionPort for ResourceDeferred<'_> {
             fn prepare_version_bump(
                 &self,
                 bump: &str,
@@ -3314,6 +3532,7 @@ mod tests {
                 FakeRelease.prepare_version_bump(bump, admission)
             }
             fn run_local_gate(&self, _gate: &LocalGateRecord) -> Result<String, RrcError> {
+                self.0.fetch_add(1, Ordering::Relaxed);
                 Err(RrcError::ResourceConstrained(
                     "critical memory pressure in constrained acceptance fixture".into(),
                 ))
@@ -3369,6 +3588,8 @@ mod tests {
         )
         .expect("start record");
         ledger.save(&record).expect("save initial record");
+        let gate_spawns = std::sync::atomic::AtomicUsize::new(0);
+        let executor = ResourceDeferred(&gate_spawns);
 
         // Version preparation is a separate controller step. The following
         // local gate must defer, not classify a source failure.
@@ -3378,7 +3599,7 @@ mod tests {
                 workspace: temp.path(),
                 repository: "owner/repo",
                 ledger: &ledger,
-                executor: &ResourceDeferred,
+                executor: &executor,
                 github: &GreenGithub,
                 health: &Healthy,
                 repair_factory: None,
@@ -3386,23 +3607,24 @@ mod tests {
             },
         )
         .expect("version preparation");
-        let error = advance_release(
+        let budget_before = record.retry_budget.clone();
+        let milestones_before_defer = record.progress.milestones.len();
+        advance_release(
             &mut record,
             ReleaseAdvanceContext {
                 workspace: temp.path(),
                 repository: "owner/repo",
                 ledger: &ledger,
-                executor: &ResourceDeferred,
+                executor: &executor,
                 github: &GreenGithub,
                 health: &Healthy,
                 repair_factory: None,
                 cancelled: Arc::new(AtomicBool::new(false)),
             },
         )
-        .expect_err("constrained host must defer the expensive gate");
+        .expect("constrained host must enter a typed deferred state");
 
-        assert!(matches!(error, RrcError::ResourceConstrained(_)));
-        assert_eq!(record.state, ReleaseRecoveryState::LocalVerification);
+        assert_eq!(record.state, ReleaseRecoveryState::ResourceDeferred);
         let gate = record
             .mutation
             .local_gates
@@ -3417,13 +3639,94 @@ mod tests {
             record.failures.is_empty(),
             "RAM pressure is not source evidence"
         );
+        assert_eq!(record.retry_budget, budget_before);
+        assert_eq!(
+            record.progress.milestones.len(),
+            milestones_before_defer + 2,
+            "the gate-start event and one defer event must be recorded"
+        );
+        assert_eq!(
+            record
+                .progress
+                .milestones
+                .iter()
+                .filter(|milestone| milestone.summary.contains("Release paused safely"))
+                .count(),
+            1,
+            "resource admission must emit exactly one defer milestone"
+        );
+        assert!(record.resource_deferred.is_some());
+        assert!(matches!(
+            crate::release_recovery::next_directive(&record, 0),
+            crate::release_recovery::ReleaseDirective::WatchResourcePressure { after }
+                if after == RESOURCE_WATCH_INITIAL_INTERVAL
+        ));
         assert_eq!(
             ledger
                 .load()
                 .expect("load deferred record")
                 .expect("record")
                 .state,
-            ReleaseRecoveryState::LocalVerification
+            ReleaseRecoveryState::ResourceDeferred
+        );
+
+        let defer_milestones = record.progress.milestones.len();
+        let mut pressure = ResourceTelemetry {
+            pressure: ResourcePressure::Pressure,
+            pressure_reason: "fixture pressure remains".into(),
+            ..ResourceTelemetry::default()
+        };
+        for _ in 0..4 {
+            assert!(
+                !apply_resource_watch_observation(&mut record, pressure.clone(), false)
+                    .expect("unchanged pressure observation"),
+                "unchanged pressure must stay deferred"
+            );
+        }
+        assert_eq!(record.state, ReleaseRecoveryState::ResourceDeferred);
+        assert_eq!(record.retry_budget, budget_before);
+        assert_eq!(
+            gate_spawns.load(Ordering::Relaxed),
+            1,
+            "unchanged pressure observations must not respawn the expensive gate"
+        );
+        assert_eq!(
+            record.progress.milestones.len(),
+            defer_milestones,
+            "passive polling must not emit milestone spam"
+        );
+        assert_eq!(
+            record
+                .resource_deferred
+                .as_ref()
+                .expect("deferred detail")
+                .next_check_seconds,
+            RESOURCE_WATCH_BACKOFF_INTERVAL.as_secs()
+        );
+
+        pressure.pressure = ResourcePressure::Normal;
+        pressure.pressure_reason = "fixture pressure cleared".into();
+        for confirmation in 1..=RESOURCE_WATCH_NORMAL_CONFIRMATIONS {
+            let recovered = apply_resource_watch_observation(&mut record, pressure.clone(), true)
+                .expect("normal confirmation");
+            assert_eq!(
+                recovered,
+                confirmation == RESOURCE_WATCH_NORMAL_CONFIRMATIONS,
+                "only the final bounded normal confirmation may continue"
+            );
+        }
+        assert_eq!(record.state, ReleaseRecoveryState::LocalVerification);
+        assert!(record.resource_deferred.is_none());
+        assert_eq!(record.retry_budget, budget_before);
+        assert_eq!(record.progress.milestones.len(), defer_milestones + 1);
+        assert!(
+            record
+                .progress
+                .milestones
+                .last()
+                .expect("recovery milestone")
+                .summary
+                .contains("Host capacity recovered")
         );
     }
 }

@@ -16,6 +16,8 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use crate::host_resources::ResourceTelemetry;
+
 pub const SCHEMA_VERSION: u32 = 1;
 pub const NORMAL_POLL_INTERVAL: Duration = Duration::from_secs(20);
 pub const UNCHANGED_POLL_INTERVAL: Duration = Duration::from_secs(120);
@@ -119,6 +121,7 @@ pub enum ReleaseRecoveryState {
     Idle,
     Preparing,
     LocalVerification,
+    ResourceDeferred,
     DiagnosingLocalFailure,
     CandidateReady,
     RemoteGateRunning,
@@ -541,6 +544,20 @@ pub struct LocalGateRecord {
     pub evidence_ref: Option<String>,
 }
 
+/// Persisted passive-watch state for a release whose next local gate is
+/// withheld by current host risk. This is not source-failure evidence and does
+/// not consume any retry or repair budget.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResourceDeferredRecord {
+    pub gate_name: String,
+    pub deferred_at: DateTime<Utc>,
+    pub last_observed_at: DateTime<Utc>,
+    pub telemetry: ResourceTelemetry,
+    pub consecutive_normal_observations: u8,
+    pub unchanged_observations: u8,
+    pub next_check_seconds: u64,
+}
+
 /// Immutable provenance and settled side-effect state for the production
 /// release path. A state is recorded only after the native adapter has
 /// independently observed the corresponding repository/GitHub fact.
@@ -728,6 +745,8 @@ pub struct ReleaseRecoveryRecord {
     pub retry_budget: RetryBudget,
     pub external_block: Option<ExternalBlockRecord>,
     #[serde(default)]
+    pub resource_deferred: Option<ResourceDeferredRecord>,
+    #[serde(default)]
     pub mutation: ReleaseMutationRecord,
     /// Bounded host-neutral progress projection. Backward-compatible ledger
     /// loads derive an empty default and refresh it before the next save.
@@ -759,6 +778,7 @@ impl ReleaseRecoveryRecord {
             state_changes: Vec::new(),
             retry_budget: RetryBudget::default(),
             external_block: None,
+            resource_deferred: None,
             mutation: ReleaseMutationRecord::default(),
             progress: ReleaseProgress::default(),
             transitions: Vec::new(),
@@ -785,14 +805,18 @@ impl ReleaseRecoveryRecord {
             .iter()
             .find(|gate| gate.state == SettlementState::Running)
             .or_else(|| {
-                (self.state == ReleaseRecoveryState::LocalVerification)
-                    .then(|| {
-                        self.mutation
-                            .local_gates
-                            .iter()
-                            .find(|gate| gate.state == SettlementState::NotStarted)
-                    })
-                    .flatten()
+                matches!(
+                    self.state,
+                    ReleaseRecoveryState::LocalVerification
+                        | ReleaseRecoveryState::ResourceDeferred
+                )
+                .then(|| {
+                    self.mutation
+                        .local_gates
+                        .iter()
+                        .find(|gate| gate.state == SettlementState::NotStarted)
+                })
+                .flatten()
             })
             .map(|gate| gate.name.clone());
         let total_remote_jobs = self.required_gates.iter().map(|gate| gate.jobs.len()).sum();
@@ -807,6 +831,7 @@ impl ReleaseRecoveryRecord {
                 ReleaseProgressPhase::Preparing
             }
             ReleaseRecoveryState::LocalVerification => ReleaseProgressPhase::LocalVerification,
+            ReleaseRecoveryState::ResourceDeferred => ReleaseProgressPhase::Paused,
             ReleaseRecoveryState::CandidateReady
             | ReleaseRecoveryState::RemoteGateRunning
             | ReleaseRecoveryState::WaitingForMatrix
@@ -843,6 +868,17 @@ impl ReleaseRecoveryRecord {
                 ),
                 None => "Preparing version and local verification".into(),
             },
+            ReleaseRecoveryState::ResourceDeferred => {
+                let gate = self
+                    .resource_deferred
+                    .as_ref()
+                    .map(|deferred| deferred.gate_name.as_str())
+                    .unwrap_or("next local gate");
+                format!(
+                    "Paused — resource pressure · Local verification {completed_local_gates}/{} · {gate} waiting",
+                    self.mutation.local_gates.len()
+                )
+            }
             ReleaseRecoveryState::CandidateReady => {
                 "Local verification passed; pushing the exact candidate".into()
             }
@@ -1744,6 +1780,7 @@ pub struct ExternalHealthEvidence {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReleaseDirective {
     RunLocalVerification,
+    WatchResourcePressure { after: Duration },
     DiagnoseLocalFailure,
     DispatchRequiredGates,
     RefreshMatrix { after: Duration },
@@ -1764,6 +1801,14 @@ pub fn next_directive(record: &ReleaseRecoveryRecord, unchanged_polls: u8) -> Re
     use ReleaseRecoveryState as S;
     match record.state {
         S::LocalVerification => ReleaseDirective::RunLocalVerification,
+        S::ResourceDeferred => ReleaseDirective::WatchResourcePressure {
+            after: Duration::from_secs(
+                record
+                    .resource_deferred
+                    .as_ref()
+                    .map_or(5, |deferred| deferred.next_check_seconds.max(1)),
+            ),
+        },
         S::DiagnosingLocalFailure => ReleaseDirective::DiagnoseLocalFailure,
         S::CandidateReady => ReleaseDirective::DispatchRequiredGates,
         S::RemoteGateRunning | S::WaitingForMatrix => ReleaseDirective::RefreshMatrix {
@@ -2200,8 +2245,9 @@ pub fn legal_transition(from: ReleaseRecoveryState, to: ReleaseRecoveryState) ->
             | (S::Preparing, S::LocalVerification)
             | (
                 S::LocalVerification,
-                S::DiagnosingLocalFailure | S::CandidateReady
+                S::ResourceDeferred | S::DiagnosingLocalFailure | S::CandidateReady
             )
+            | (S::ResourceDeferred, S::LocalVerification)
             | (
                 S::DiagnosingLocalFailure,
                 S::LocalVerification | S::Escalated

@@ -221,6 +221,7 @@ fn text_host_run_status_uses_the_same_persisted_progress_snapshot() {
         recent_output: Vec::new(),
         process_alive: true,
         progress: record.progress.clone(),
+        resource_deferred: false,
         resource_telemetry: None,
     });
     assert!(

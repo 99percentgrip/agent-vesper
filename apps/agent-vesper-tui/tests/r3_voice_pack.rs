@@ -13,7 +13,7 @@
 #![allow(unsafe_code)]
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use agent_vesper_tui::voice_conversation::{ConversationHost, EngineSelection};
 use vesper_domain::ProviderId;
@@ -63,28 +63,29 @@ fn engine_selection_defaults_to_system_engine() {
     );
 }
 
+/// Serializes process-global environment mutation within this test binary.
+static ENV_LOCK: Mutex<()> = Mutex::new(());
+
 /// Redirects the managed pack root to an isolated directory for the
-/// duration of one test (env mutation is process-global; tests in this
-/// binary that touch the pack root run single-threaded by name via the
-/// harness `--test-threads` default on disjoint fixtures, and every
-/// redirect is restored on drop to avoid cross-test bleed).
+/// duration of one test. The guard holds [`ENV_LOCK`] until after the
+/// original value is restored so parallel test threads cannot observe a
+/// sibling test's pack root.
 struct EnvGuard {
     saved: Option<std::ffi::OsString>,
+    _lock: MutexGuard<'static, ()>,
 }
 
 impl EnvGuard {
     fn redirect(dir: &Path) -> Self {
+        let lock = ENV_LOCK.lock().unwrap_or_else(|poison| poison.into_inner());
         let saved = std::env::var_os("XDG_DATA_HOME");
-        // SAFETY: test-only, single-threaded integration harness; the
-        // env var is restored on drop and no other thread reads PATH
-        // during these tests.
-        // SAFETY: set_var is unsafe in edition 2024 (process-global
-        // mutation); this test harness is single-threaded and the value
-        // is restored on drop.
+        // SAFETY: ENV_LOCK serializes every XDG_DATA_HOME mutation and
+        // read in this test binary, and Drop restores the original value
+        // before releasing the lock.
         unsafe {
             std::env::set_var("XDG_DATA_HOME", dir.join("xdg"));
         }
-        Self { saved }
+        Self { saved, _lock: lock }
     }
 }
 
@@ -92,12 +93,10 @@ impl Drop for EnvGuard {
     fn drop(&mut self) {
         if let Some(saved) = &self.saved {
             // SAFETY: see EnvGuard::redirect.
-            // SAFETY: see EnvGuard::redirect.
             unsafe {
                 std::env::set_var("XDG_DATA_HOME", saved);
             }
         } else {
-            // SAFETY: see EnvGuard::redirect.
             // SAFETY: see EnvGuard::redirect.
             unsafe {
                 std::env::remove_var("XDG_DATA_HOME");

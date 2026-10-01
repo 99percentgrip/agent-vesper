@@ -84,16 +84,24 @@ fn acp_process_release_status_uses_governor_for_every_cargo_path() {
         "Cgroup",
         "RRC RSS",
         "Swap",
+        "Swap trend",
+        "Zram",
+        "Memory PSI",
+        "Gate need",
         "Disk free",
         "Cargo jobs  1",
         "Pressure    Normal",
-        "Action      verification admitted within the RRC resource budget",
+        "Action      verification admitted: current headroom",
     ] {
         assert!(
             status_text.contains(expected),
             "missing {expected:?} in:\n{status_text}"
         );
     }
+    assert!(
+        !status_text.contains("Swap gate"),
+        "logical swap occupancy must not be projected as a fixed gate: {status_text}"
+    );
     assert!(
         status_text
             .lines()

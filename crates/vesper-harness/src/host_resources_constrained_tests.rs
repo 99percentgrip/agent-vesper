@@ -4,7 +4,8 @@
 //! developer machine's cgroup, swap state, or target filesystem.
 
 use super::host_resources::{
-    DiskCapacity, GateCost, HostCapacity, HostResourceGovernor, ProcessTreeUsage, ResourcePolicy,
+    DiskCapacity, GateCost, HostCapacity, HostResourceGovernor, LinuxPressureSignals,
+    ProcessTreeUsage, ResourcePolicy,
 };
 
 const GIB: u64 = 1024 * 1024 * 1024;
@@ -19,6 +20,7 @@ fn capacity(available: u64, swap_used_percent: u64) -> HostCapacity {
         cgroup_memory_limit_bytes: Some(12 * GIB),
         cgroup_memory_current_bytes: Some(12 * GIB - available),
         logical_cpus: 64,
+        linux: LinuxPressureSignals::default(),
     }
 }
 
@@ -52,7 +54,7 @@ fn constrained_memory_acceptance_withholds_expensive_cargo_before_spawn() {
 
     assert_eq!(telemetry.cargo_jobs, 1, "memory must override 64 CPUs");
     assert_eq!(telemetry.pressure.as_label(), "CRITICAL");
-    assert_eq!(telemetry.normal_admission_available_bytes, 6 * GIB);
+    assert_eq!(telemetry.normal_admission_available_bytes, 7 * GIB);
     assert!(
         telemetry
             .action
@@ -61,14 +63,16 @@ fn constrained_memory_acceptance_withholds_expensive_cargo_before_spawn() {
         telemetry.action
     );
     assert!(
-        telemetry.action.contains("6.0 GiB available RAM"),
+        telemetry.action.contains("7.0 GiB available RAM"),
         "{}",
         telemetry.action
     );
     let rendered = telemetry.render();
     assert!(rendered.contains("Cgroup"), "{rendered}");
-    assert!(rendered.contains("Headroom"), "{rendered}");
-    assert!(rendered.contains("Swap gate"), "{rendered}");
+    assert!(rendered.contains("Gate need"), "{rendered}");
+    assert!(rendered.contains("Swap trend"), "{rendered}");
+    assert!(rendered.contains("Zram"), "{rendered}");
+    assert!(!rendered.contains("Swap gate"), "{rendered}");
 }
 
 #[test]

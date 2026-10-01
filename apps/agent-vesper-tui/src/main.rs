@@ -1406,6 +1406,7 @@ fn release_background_task(
             recent_output: task.recent_output,
             process_alive: task.process_alive,
             progress: task.progress,
+            resource_deferred: task.resource_deferred,
             resource_telemetry: task.resource_telemetry,
         }
     })
