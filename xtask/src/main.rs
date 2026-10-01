@@ -2122,6 +2122,11 @@ fn acceptance_verify() -> Result<(), String> {
         (
             "vesper-harness",
             &["--lib"],
+            "release_recovery::tests::canonical_objective_supersedes_historical_active_prerelease_without_clarification",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
             "release_recovery::tests::unrelated_active_release_asks_one_human_clarification_without_mutation",
         ),
         (

@@ -555,6 +555,15 @@ pub struct ReleaseMutationRecord {
     pub objective_label: Option<String>,
     /// Human-facing completed variant label used only if same-objective variants remain.
     pub source_variant_label: Option<String>,
+    /// Stable completed-variant identity from the repository provenance marker.
+    #[serde(default)]
+    pub source_variant_id: Option<String>,
+    /// Whether this epoch was admitted from the authoritative integrated source.
+    #[serde(default)]
+    pub canonical_release_source: bool,
+    /// Historical objective/variant identities explicitly replaced by this source.
+    #[serde(default)]
+    pub supersedes: Vec<String>,
     /// Evidence reports bound by the completed-objective provenance marker.
     pub objective_evidence_reports: Vec<String>,
     /// Clean isolated worktree owned by this release epoch.
@@ -3308,6 +3317,9 @@ struct ReleaseSourceChoice {
     objective_id: Option<String>,
     objective_label: Option<String>,
     variant_label: Option<String>,
+    variant_id: Option<String>,
+    canonical_release_source: bool,
+    supersedes: Vec<String>,
     evidence_reports: Vec<String>,
     base_sha: String,
     intended_commits: Vec<String>,
@@ -3694,8 +3706,19 @@ fn resolve_release_source(
             .as_ref()
             .map(|value| value.objective_label.clone()),
         variant_label: provenance.as_ref().map(|value| value.variant_label.clone()),
+        variant_id: provenance
+            .as_ref()
+            .and_then(|value| value.variant_id.clone()),
+        canonical_release_source: provenance
+            .as_ref()
+            .is_some_and(|value| value.canonical_release_source),
+        supersedes: provenance
+            .as_ref()
+            .map(|value| value.supersedes.clone())
+            .unwrap_or_default(),
         evidence_reports: provenance
-            .map(|value| value.evidence_reports)
+            .as_ref()
+            .map(|value| value.evidence_reports.clone())
             .unwrap_or_default(),
         base_sha,
         intended_commits,
@@ -3807,6 +3830,67 @@ fn same_release_objective(
     }
 }
 
+fn source_explicitly_supersedes_epoch(
+    record: &ReleaseRecoveryRecord,
+    source: &ReleaseSourceChoice,
+) -> bool {
+    if !source.canonical_release_source {
+        return false;
+    }
+    [
+        record.mutation.objective_id.as_deref(),
+        record.mutation.source_variant_id.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    .any(|identity| source.supersedes.iter().any(|older| older == identity))
+}
+
+fn active_objective_description(record: &ReleaseRecoveryRecord) -> String {
+    let label = record
+        .mutation
+        .objective_label
+        .as_deref()
+        .unwrap_or("an earlier release objective");
+    let transition = match (
+        record.mutation.version_before.as_deref(),
+        record.mutation.version_after.as_deref(),
+    ) {
+        (Some(before), Some(after)) => format!("{before} -> {after}"),
+        _ => format!("next {}", record.objective.bump),
+    };
+    bounded(
+        redact_secrets(&format!("{transition} release for {label}")),
+        240,
+    )
+}
+
+fn current_objective_description(source: &ReleaseSourceChoice, bump: &str) -> String {
+    let label = source
+        .objective_label
+        .as_deref()
+        .unwrap_or("the current completed implementation");
+    bounded(
+        redact_secrets(&format!("next {bump} release for {label}")),
+        240,
+    )
+}
+
+fn irreversible_state_description(record: &ReleaseRecoveryRecord) -> &'static str {
+    if record.mutation.publication_verified || record.mutation.publication_run_id.is_some() {
+        "publication activity"
+    } else if record.mutation.tag_pushed
+        || record.mutation.tag_name.is_some()
+        || record.mutation.tag_object.is_some()
+    {
+        "a release tag"
+    } else if record.mutation.candidate_pushed {
+        "a candidate pushed to GitHub"
+    } else {
+        "remote CI attached to its candidate"
+    }
+}
+
 fn release_workspace_matches_epoch(
     record: &ReleaseRecoveryRecord,
     state_root: &Path,
@@ -3868,16 +3952,27 @@ fn reconcile_active_epoch(
     state_root: &Path,
 ) -> Result<ActiveEpochReconciliation, RrcError> {
     if has_irreversible_release_state(&record) {
-        return Ok(ActiveEpochReconciliation::Clarify(
-            "A previous release already changed remote release state. I preserved it and did not start another release. Should I continue reconciling that release, or leave it untouched?"
-                .into(),
-        ));
+        return Ok(ActiveEpochReconciliation::Clarify(format!(
+            "An unfinished {} already has {}. Your new request targets {}. Which release should RRC continue?",
+            active_objective_description(&record),
+            irreversible_state_description(&record),
+            current_objective_description(source, bump),
+        )));
+    }
+    if source_explicitly_supersedes_epoch(&record, source) {
+        return Ok(ActiveEpochReconciliation::Supersede {
+            record,
+            reason:
+                "canonical integrated objective explicitly supersedes the historical prerelease objective"
+                    .into(),
+        });
     }
     if same_release_objective(&record, source, bump) != Some(true) {
-        return Ok(ActiveEpochReconciliation::Clarify(
-            "Another release objective is already active. I preserved it and did not start this release. Should I continue the active release, or leave it untouched and start this completed work?"
-                .into(),
-        ));
+        return Ok(ActiveEpochReconciliation::Clarify(format!(
+            "An unfinished {} is still active. Your new request targets {}. Which release should RRC continue?",
+            active_objective_description(&record),
+            current_objective_description(source, bump),
+        )));
     }
     let source_changed = record.mutation.source_commit.as_deref()
         != Some(source.source_commit.as_str())
@@ -4010,6 +4105,9 @@ where
     record.mutation.source_workspace = Some(source.source_workspace.to_string_lossy().into_owned());
     record.mutation.objective_id = source.objective_id;
     record.mutation.objective_label = source.objective_label;
+    record.mutation.source_variant_id = source.variant_id;
+    record.mutation.canonical_release_source = source.canonical_release_source;
+    record.mutation.supersedes = source.supersedes;
     record.mutation.source_variant_label = source.variant_label;
     record.mutation.objective_evidence_reports = source.evidence_reports;
     record.mutation.release_workspace = Some(release_workspace.to_string_lossy().into_owned());
@@ -4719,12 +4817,16 @@ mod tests {
             ],
         );
         fs::write(completion.join("repair.txt"), "old candidate\n").unwrap();
-        write_objective_marker(
+        write_objective_marker_options(
             &completion,
             "rrc-autonomy-repair",
             "RRC autonomy repair",
             "Older prerelease repair candidate",
             "2026-09-30T00:00:00Z",
+            ObjectiveMarkerOptions {
+                variant_id: Some("historical-prerelease-source"),
+                ..ObjectiveMarkerOptions::default()
+            },
         );
         run_git(&completion, &["add", "."]);
         run_git(&completion, &["commit", "-m", "complete old candidate"]);
@@ -4758,6 +4860,41 @@ mod tests {
             state,
             identity,
         }
+    }
+
+    fn add_canonical_superseding_completion(fixture: &ActiveEpochFixture) -> PathBuf {
+        let current = fixture._temp.path().join("completion-canonical");
+        let old_head = git_text(&fixture.completion, &["rev-parse", "HEAD"]);
+        run_git(
+            &fixture.primary,
+            &[
+                "worktree",
+                "add",
+                "-b",
+                "completion-canonical",
+                current.to_str().unwrap(),
+                &old_head,
+            ],
+        );
+        fs::write(current.join("repair.txt"), "canonical integrated source\n").unwrap();
+        write_objective_marker_options(
+            &current,
+            "corrected-v0.24.4-prerelease-integration-20261001",
+            "Corrected v0.24.4 prerelease integration",
+            "Complete corrected source",
+            "2026-10-01T07:15:40Z",
+            ObjectiveMarkerOptions {
+                variant_id: Some("corrected-v0.24.4-canonical-source-20261001"),
+                canonical_release_source: true,
+                supersedes: &["rrc-autonomy-repair"],
+            },
+        );
+        run_git(&current, &["add", "."]);
+        run_git(
+            &current,
+            &["commit", "-m", "integrate canonical release source"],
+        );
+        current
     }
 
     #[test]
@@ -4863,6 +5000,64 @@ mod tests {
             ReleaseRecoveryState::DiagnosingLocalFailure
         );
         assert_eq!(archive.replacement_source_commit, newer_head);
+        assert_eq!(
+            fs::read(fixture.primary.join("base.txt")).unwrap(),
+            primary_before
+        );
+    }
+
+    #[test]
+    fn canonical_objective_supersedes_historical_active_prerelease_without_clarification() {
+        let fixture = active_epoch_fixture();
+        let ledger = ReleaseLedger::open(fixture.state.clone(), &fixture.identity).unwrap();
+        let previous = ledger.load().unwrap().unwrap();
+        let current = add_canonical_superseding_completion(&fixture);
+        let current_head = git_text(&current, &["rev-parse", "HEAD"]);
+        let primary_before = fs::read(fixture.primary.join("base.txt")).unwrap();
+        let mut launched = None;
+        let outcome = admit_natural_release_with_launcher(
+            &fixture.primary,
+            "Release all completed work as the next patch.",
+            &fixture.state,
+            |workspace, _, _| {
+                launched = Some(workspace);
+                Ok(())
+            },
+        )
+        .unwrap();
+        let NaturalReleaseAdmission::Started(message) = outcome else {
+            panic!("explicitly superseded historical prerelease must not clarify");
+        };
+        assert!(message.contains("preserved as superseded evidence"));
+        let replacement = ledger.load().unwrap().unwrap();
+        assert_ne!(replacement.epoch_id, previous.epoch_id);
+        assert_eq!(
+            replacement.mutation.source_commit.as_deref(),
+            Some(current_head.as_str())
+        );
+        assert_eq!(
+            launched.unwrap(),
+            PathBuf::from(replacement.mutation.release_workspace.as_deref().unwrap())
+        );
+        let archive: SupersededEpochEvidence =
+            serde_json::from_slice(&fs::read(ledger.superseded_path(&previous.epoch_id)).unwrap())
+                .unwrap();
+        assert_eq!(archive.record.epoch_id, previous.epoch_id);
+        assert_eq!(
+            archive.record.mutation.objective_id.as_deref(),
+            Some("rrc-autonomy-repair")
+        );
+        assert_eq!(
+            archive.record.mutation.source_variant_id.as_deref(),
+            Some("historical-prerelease-source")
+        );
+        assert_eq!(archive.replacement_source_commit, current_head);
+        assert_eq!(
+            replacement.mutation.source_variant_id.as_deref(),
+            Some("corrected-v0.24.4-canonical-source-20261001")
+        );
+        assert!(replacement.mutation.canonical_release_source);
+        assert_eq!(replacement.mutation.supersedes, vec!["rrc-autonomy-repair"]);
         assert_eq!(
             fs::read(fixture.primary.join("base.txt")).unwrap(),
             primary_before
@@ -5072,6 +5267,9 @@ mod tests {
         let ledger = ReleaseLedger::open(fixture.state.clone(), &fixture.identity).unwrap();
         let mut active = ledger.load().unwrap().unwrap();
         active.mutation.objective_id = Some("different-completed-objective".into());
+        active.mutation.objective_label = Some("Historical unrelated release".into());
+        active.mutation.version_before = Some("0.23.9".into());
+        active.mutation.version_after = Some("0.24.0".into());
         ledger.save(&active).unwrap();
         let persisted = fs::read(ledger.path()).unwrap();
         let outcome = admit_natural_release_with_launcher(
@@ -5087,14 +5285,22 @@ mod tests {
         assert_eq!(message.matches('?').count(), 1);
         assert!(!message.contains("epoch"));
         assert!(!message.contains("DiagnosingLocalFailure"));
+        assert!(message.contains("0.23.9 -> 0.24.0"));
+        assert!(message.contains("Historical unrelated release"));
+        assert!(message.contains("next patch release"));
+        assert!(message.contains("RRC autonomy repair"));
         assert_eq!(fs::read(ledger.path()).unwrap(), persisted);
     }
 
     #[test]
     fn irreversible_release_state_is_never_discarded_by_new_admission() {
         let fixture = active_epoch_fixture();
+        let canonical = add_canonical_superseding_completion(&fixture);
+        let canonical_head = git_text(&canonical, &["rev-parse", "HEAD"]);
         let ledger = ReleaseLedger::open(fixture.state.clone(), &fixture.identity).unwrap();
         let mut active = ledger.load().unwrap().unwrap();
+        active.mutation.version_before = Some("0.24.2".into());
+        active.mutation.version_after = Some("0.24.3".into());
         active.mutation.candidate_pushed = true;
         active.mutation.candidate_push_ref = Some("refs/heads/main@candidate".into());
         ledger.save(&active).unwrap();
@@ -5110,8 +5316,13 @@ mod tests {
             panic!("irreversible state must clarify");
         };
         assert_eq!(message.matches('?').count(), 1);
-        assert!(message.contains("remote release state"));
+        assert!(message.contains("0.24.2 -> 0.24.3"));
+        assert!(message.contains("RRC autonomy repair"));
+        assert!(message.contains("a candidate pushed to GitHub"));
+        assert!(message.contains("Corrected v0.24.4 prerelease integration"));
         assert!(!message.contains("epoch"));
+        assert!(!message.contains(&canonical_head));
+        assert!(!message.contains("refs/heads"));
         assert_eq!(fs::read(ledger.path()).unwrap(), persisted);
         assert!(!ledger.superseded_path(&active.epoch_id).exists());
     }

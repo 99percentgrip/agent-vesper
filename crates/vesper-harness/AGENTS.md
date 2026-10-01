@@ -37,11 +37,16 @@ Z.ai and Playwright MCP server descriptors.
   bounded atomic user-state checkpoints, structured GitHub Actions access, and
   the shared `/release`/`/ci` projection. Natural-language admission reconciles an
   active checkpoint before creating another: matching recoverable local stages
-  resume automatically; stale same-objective source/workspace identities are
-  atomically replaced only after the full old record is archived under the
-  user-owned release-state root; unrelated objectives and any remote push/tag/
-  publication evidence produce one bounded human clarification without mutation.
-  Primary workspaces are never changed by reconciliation. Resume refreshes exact-SHA
+  resume automatically; stale same-objective source/workspace identities and a
+  canonical integrated source that explicitly supersedes a historical local-only
+  objective are atomically replaced only after the full old record is archived
+  under the user-owned release-state root. The active and replacement records retain
+  stable objective/variant identities, canonical-source status and supersession
+  links. Unrelated objectives and any remote push/tag/publication evidence produce
+  one bounded human clarification without mutation; that prompt names both human
+  objectives, includes known version transitions and describes the irreversible
+  state without paths, raw SHAs or internal state names. Primary workspaces are never
+  changed by reconciliation. Resume refreshes exact-SHA
   GitHub state before progression. GitHub write operations require an unforgeable controller
   admission token; adapters, providers and hosts do not decide retry policy.
   `release_executor` runs the repository's existing local gates, version/commit/

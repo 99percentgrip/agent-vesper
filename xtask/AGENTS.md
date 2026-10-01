@@ -15,7 +15,8 @@ architecture, MSRV, and source-oracle checks.
   not a mutation kill. Build artifacts stay under `target/acceptance-mutations`.
   The fixed acceptance set also executes the RRC partial-matrix, verified-repair,
   pause/resume, immutable-publication, natural-language stale-epoch recovery,
-  obsolete-epoch preservation, unrelated-objective clarification, irreversible-state
+  obsolete-epoch preservation, explicit canonical supersession of a historical
+  local-only objective, unrelated-objective clarification, irreversible-state
   retention, registered-controller/local-subprocess lifecycle, truthful TUI task
   projection, production-orchestrator, native host cancellation/restart
   process-lifecycle, Host Resource Governor cgroup discovery, constrained RAM/swap and
