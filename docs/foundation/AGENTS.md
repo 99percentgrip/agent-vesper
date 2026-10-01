@@ -83,6 +83,10 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 - `release-objective-provenance.json` is the versioned current completed-objective
   binding consumed from a clean candidate's committed HEAD. Keep labels bounded and
   user-facing, completion time RFC 3339, and evidence paths within this directory.
+  `variant_id` supplies stable variant identity, `canonical_release_source` binds the
+  final integrated source against retained historical worktrees, and `supersedes`
+  may name older variant/objective identities. Canonical status is reserved for the
+  one complete corrected integration, not intermediate repair branches.
 - `2026-09-30-autonomous-rrc-prerelease-candidate.md` owns the fresh
   release-profile TUI/ACP candidate identities, build-input provenance hashes,
   external persistent artifact directory, included-behavior source trace, and
