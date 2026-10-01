@@ -229,6 +229,12 @@ cargo xtask verify: exit 0
    preserves that discrepancy explicitly and supplies the red-first correction.
 3. No live provider, GitHub mutation, release admission, release-profile build,
    installer or application replacement was used as verification.
+4. An ad hoc whole-file Markdown link scan was not a valid clean gate: it did
+   not URL-decode percent-escaped paths and also reported pre-existing unrelated
+   evidence-index references absent from this isolated candidate. The scoped
+   check for every link and provenance path added by this audit passed
+   (`ADDED_REPORT_LINKS_OK`; `PROVENANCE_REPORTS_OK count=5`). No unrelated
+   historical index entry was rewritten to make this audit appear green.
 
 ## Unresolved items
 
