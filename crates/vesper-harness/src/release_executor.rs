@@ -350,6 +350,7 @@ impl NativeReleaseExecutor {
         })
     }
 
+    #[cfg(debug_assertions)]
     fn with_activity(
         workspace: &Path,
         cancelled: Arc<AtomicBool>,
