@@ -93,7 +93,29 @@ Own durable project documentation and evidence-backed engineering records.
   records the production executor and controlled GitHub checkpoint; and
   `foundation/release-recovery-controller-final-completion.md` records the
   process-tree repair, five-target lifecycle evidence and final non-publishing
-  audit.
+  audit. `foundation/2026-09-30-release-intent-autonomy-repair.md` records
+  ordinary-language admission and isolated-worktree repair;
+  `foundation/2026-09-30-rrc-source-resolution-ux-repair.md` records the
+  objective-provenance follow-up; `foundation/2026-09-30-rrc-task-lifecycle-repair.md`
+  records registered worker ownership, real local-gate progression and truthful TUI
+  activity; `foundation/2026-09-30-rrc-task-lifecycle-prerelease-candidate.md`
+  records the exact fresh Linux TUI/ACP candidate identities for live acceptance;
+  `foundation/2026-09-30-live-rrc-task-supervision.md` records read-only evidence
+  that the candidate-owned controller and local verification were progressing;
+  `foundation/2026-09-30-rrc-live-telemetry-ux-repair.md` records the earlier bounded
+  live gate/process telemetry work and the candidate later rejected by live terminal
+  acceptance; `foundation/2026-09-30-rrc-terminal-ownership-repair.md` records the
+  corrective exclusive-writer path, full-PTY/mutation evidence and replacement
+  non-publishing prerelease TUI candidate;
+  `foundation/2026-09-30-rrc-complete-version-mutation-repair.md`
+  records the fail-closed complete workspace-version mutation repair;
+  `foundation/2026-09-30-rrc-stale-epoch-autonomy-repair.md` records automatic
+  persisted-epoch reconciliation, obsolete-evidence archival, bounded ambiguity
+  handling, enrolled acceptance cases and the fresh non-publishing TUI candidate;
+  `foundation/release-objective-provenance.json`
+  is the versioned current completed-objective binding consumed by RRC; and
+  `foundation/2026-09-30-autonomous-rrc-prerelease-candidate.md` records the
+  earlier non-publishing TUI/ACP candidate build for Alex-operated acceptance.
 - Root PRD files (`*-prd.md`) own accepted phased requirement documents
   (e.g. `agent-vesper-reasoning-orchestrator-prd.md`,
   `provider-capability-gating-prd.md`, `qm-extraction-prd.md`,

@@ -6,6 +6,49 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `2026-09-30-rrc-terminal-ownership-repair.md` owns the corrected exclusive
+  terminal-writer contract, piped/sanitized release-stream path, real PTY and
+  mutation regression receipts, supersession of the rejected live candidate,
+  fresh replacement TUI identity and explicit non-release boundary.
+- `2026-09-30-rrc-live-telemetry-ux-repair.md` owns the earlier registry-sourced live
+  controller/gate/child/output projection, bounded retention, ticking TUI regression,
+  verification receipts, fresh prerelease TUI identity and non-publishing boundary.
+- `2026-09-30-live-rrc-task-supervision.md` owns the read-only live process-tree,
+  child-turnover and persisted-gate observation used to classify the exact candidate
+  controller as actively progressing rather than stuck.
+- `2026-09-30-rrc-task-lifecycle-prerelease-candidate.md` owns the fresh
+  release-profile TUI/ACP artifact paths and hashes, exact repaired-source identity,
+  required-behavior inclusion trace and explicit no-live-test/no-release boundary.
+- `2026-09-30-rrc-task-lifecycle-repair.md` owns the retained registered-worker
+  repair, real local-gate subprocess/cancellation regression, truthful TUI activity
+  projection, verification receipts and explicit no-build/no-release boundary.
+- `2026-09-30-rrc-stale-epoch-autonomy-repair.md` owns the persisted-epoch
+  admission classification, safe-stage auto-resume, obsolete-record archival,
+  unrelated/irreversible clarification regressions, 34-case acceptance receipt,
+  fresh TUI identity and explicit manual-acceptance-not-run/no-release boundary.
+- `2026-09-30-rrc-version-mutation-prerelease-candidate.md` owns the fresh
+  release-profile TUI/ACP artifact identities, sealed repaired-source hashes,
+  included-behavior trace and explicit manual-acceptance-not-run/no-release boundary.
+- `2026-09-30-rrc-complete-version-mutation-repair.md` owns the fail-closed
+  workspace-version inventory, complete typed manifest/Registry mutation,
+  lockfile regeneration, all-target consistency check, rollback regressions and
+  explicit no-release boundary.
+- `2026-09-30-rrc-source-resolution-ux-repair.md` owns the regression-first
+  objective-provenance source-selection repair, unrelated-worktree exclusion,
+  human-labelled same-objective ambiguity, full local receipts, clean completion
+  commit and fresh prerelease TUI identity.
+- `release-objective-provenance.json` is the versioned current completed-objective
+  binding consumed from a clean candidate's committed HEAD. Keep labels bounded and
+  user-facing, completion time RFC 3339, and evidence paths within this directory.
+- `2026-09-30-autonomous-rrc-prerelease-candidate.md` owns the fresh
+  release-profile TUI/ACP candidate identities, build-input provenance hashes,
+  external persistent artifact directory, included-behavior source trace, and
+  the explicit manual-acceptance-not-run/no-release boundary.
+- `2026-09-30-release-intent-autonomy-repair.md` owns the regression-first
+  ordinary-language release admission repair: shared TUI/ACP interception,
+  deterministic completed-worktree provenance, dirty-checkout preservation,
+  pre-mutation ambiguity refusal, isolated release workspace, persisted provenance,
+  host/harness receipts and the explicit no-release/no-PRD boundary.
 - `release-recovery-controller-pr1-pr3-execution.md` owns the first RRC
   implementation receipt: typed/persisted core, GitHub evidence port and CLI
   adapter, retry/outage guards, shared TUI/ACP commands, local verification,

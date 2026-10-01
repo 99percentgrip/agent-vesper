@@ -1973,7 +1973,7 @@ struct Dependency {
 /// External coding agents and CI run the same runtime/evaluator regression gate.
 /// Exact names make a deleted, renamed, ignored, or zero-match case a failure.
 fn acceptance_verify() -> Result<(), String> {
-    let cases: &[(&str, &[&str], &str)] = &[
+    let mut cases: Vec<(&str, &[&str], &str)> = vec![
         (
             "vesper-agent",
             &["--test", "acceptance_policy"],
@@ -2112,6 +2112,31 @@ fn acceptance_verify() -> Result<(), String> {
         (
             "vesper-harness",
             &["--lib"],
+            "release_recovery::tests::same_recoverable_epoch_resumes_from_natural_language_without_manual_command",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_recovery::tests::obsolete_diagnosing_epoch_is_preserved_and_newer_candidate_is_admitted",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_recovery::tests::unrelated_active_release_asks_one_human_clarification_without_mutation",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_recovery::tests::irreversible_release_state_is_never_discarded_by_new_admission",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_recovery::tests::tui_natural_release_retains_registered_controller_through_local_gate_progress",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
             "release_executor::tests::production_orchestrator_reaches_publication_only_through_settled_gates",
         ),
         (
@@ -2124,9 +2149,20 @@ fn acceptance_verify() -> Result<(), String> {
             &["--lib"],
             "commands::tests::release_routes_to_the_controller_instead_of_a_model_workflow",
         ),
+        (
+            "agent-vesper-tui",
+            &["--lib"],
+            "ui::tests::registered_release_task_replaces_ready_and_no_active_tasks",
+        ),
     ];
+    #[cfg(unix)]
+    cases.push((
+        "agent-vesper-tui",
+        &["--test", "rrc_terminal_pty"],
+        "rrc_child_output_is_captured_sanitized_and_confined_in_a_real_pty",
+    ));
     let started = std::time::Instant::now();
-    for (package, target, name) in cases {
+    for (package, target, name) in &cases {
         let output = Command::new("cargo")
             .current_dir(repository_root())
             .args([

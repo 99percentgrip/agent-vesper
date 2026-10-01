@@ -223,8 +223,20 @@ When the user requests a durable behavior change, record it here or in the relev
   Recovery Controller in `vesper-harness`, not a free-form `/release` prompt.
   Wait for complete exact-SHA matrices, capture and fingerprint first causal
   failures, require focused proof plus a relevant state change, and enforce the
-  persisted retry budget. A published release remains distinct from later red
-  `main`; external outage claims require official and repository-side evidence.
+  persisted retry budget. A new natural-language release request automatically
+  reconciles a persisted epoch: resume the matching recoverable objective from its
+  safe stage, archive and supersede an obsolete same-objective prerelease candidate,
+  and ask one bounded human clarification for unrelated or irreversible state.
+  Epoch IDs, internal states, ledger paths and manual resume/cancel commands are
+  diagnostics, not normal admission prerequisites. While an RRC task is active,
+  hosts project bounded live telemetry from controller-owned gate, subprocess and
+  output state, never a fabricated percentage; elapsed/quiet time ticks, child and
+  gate changes remain visible, and idle labels are forbidden. Interactive Ratatui output
+  has one writer: release children use concurrently drained pipes, terminal controls and
+  secrets are removed before bounded worker telemetry, and background diagnostics never
+  write around the renderer. RUN state and output derive from the same registered-worker
+  snapshot. A published release remains distinct from later red `main`; external outage
+  claims require official and repository-side evidence.
 - TUI↔ACP host parity is bidirectional: any host-agnostic capability or
   behavior change shipped in either host (cognitive memory, reasoning
   orchestration, streaming/finalization, tool/system-prompt behavior, or

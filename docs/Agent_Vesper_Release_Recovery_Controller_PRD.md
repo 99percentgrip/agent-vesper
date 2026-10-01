@@ -1024,6 +1024,13 @@ Secondary corroboration only:
 13. TUI and ACP share one release state.
 14. Release state persists and is resumable.
 15. Uncertainty is surfaced; it is not converted into blind retries.
+16. A fresh natural-language release request reconciles persisted state before admission.
+17. The same recoverable objective resumes automatically from its safe local stage.
+18. An obsolete same-objective prerelease epoch is archived before replacement.
+19. Remote push, tag or publication evidence is never silently discarded.
+20. An unrelated active objective asks one bounded human-facing clarification.
+21. Epoch IDs, internal controller states, ledger paths and manual resume/cancel
+    commands are diagnostics, not normal user prerequisites.
 
 ---
 
@@ -1070,6 +1077,19 @@ red
 
 That behavior is the defect this PRD exists to eliminate.
 
+A new ordinary-language release request also performs this admission reconciliation:
+
+```text
+load persisted epoch
+→ same objective + safe local state: reconcile and continue automatically
+→ same objective + obsolete source/worktree: archive old evidence and replace
+→ remote push/tag/publication exists: preserve and ask only if a decision is needed
+→ unrelated active objective: preserve and ask one bounded clarification
+```
+
+The primary checkout is not the reconciliation workspace and is never cleaned,
+reset, stashed or mutated by this process.
+
 ---
 
 ## 37. Current Implementation Status
@@ -1092,7 +1112,15 @@ refresh, and immutable publication versus later degraded-main handling.
 PR-4 adds controller-owned production progression around the repository's
 existing version, lockfile, registry, local-gate, commit, push, exact-tag and
 publication contracts. Every mutation requires an RRC-issued typed admission
-token. Deterministic source failures run one permission-aware AgentLoop repair in
+token. Version preparation is fail-closed and repository-wide: it inventories
+all declared workspace members, validates the inherited package version plus
+every internal exact path pin in normal, development, build and target-specific
+dependency tables, validates Registry versioned archives, stages one typed
+mutation plan, regenerates `Cargo.lock`, and requires an all-target workspace
+check plus locked metadata consistency before any release gate. Any preflight,
+write, Cargo or postcondition failure restores the original version bytes and
+prevents commit, tag, push and publication. Deterministic source failures run one
+permission-aware AgentLoop repair in
 an isolated user-state worktree; promotion requires observed successful mutation
 and focused-command receipts, a non-empty diff, a clean controller workspace and
 a fresh repair commit before the one admitted full-gate retry. Local subprocesses
@@ -1108,7 +1136,13 @@ refresh exact-SHA remote evidence on resume.
 PR-6 routes `/release patch|minor|major|status|resume|cancel|evidence|retry` and
 `/ci` through the same persisted harness projection in TUI and ACP. Both hosts
 supply their ordinary permission port to repair workers; `/release` is never a
-free-form release prompt.
+free-form release prompt. Natural-language admission now classifies any active
+checkpoint before starting: a matching `DiagnosingLocalFailure` checkpoint
+transitions back to `LocalVerification` and launches automatically; a stale
+same-objective source or release-worktree identity is archived in the user-owned
+release-state root and atomically replaced; unrelated objectives and any recorded
+remote push/tag/publication state remain unchanged behind one bounded clarification.
+The normal message exposes none of the epoch ID, internal state or ledger path.
 
 PR-7 includes a manually dispatched read-only fixture and fail-closed local
 acceptance enrollment. With explicit authorization, the fixture was also run in
@@ -1141,3 +1175,40 @@ Execution evidence and exact verification receipts:
 - [`foundation/release-recovery-controller-hardening-execution.md`](foundation/release-recovery-controller-hardening-execution.md)
 - [`foundation/release-recovery-controller-pr4-pr7-execution.md`](foundation/release-recovery-controller-pr4-pr7-execution.md)
 - [`foundation/release-recovery-controller-final-completion.md`](foundation/release-recovery-controller-final-completion.md)
+- [`foundation/2026-09-30-release-intent-autonomy-repair.md`](foundation/2026-09-30-release-intent-autonomy-repair.md)
+- [`foundation/2026-09-30-rrc-source-resolution-ux-repair.md`](foundation/2026-09-30-rrc-source-resolution-ux-repair.md)
+- [`foundation/2026-09-30-autonomous-rrc-prerelease-candidate.md`](foundation/2026-09-30-autonomous-rrc-prerelease-candidate.md)
+- [`foundation/2026-09-30-rrc-complete-version-mutation-repair.md`](foundation/2026-09-30-rrc-complete-version-mutation-repair.md)
+- [`foundation/2026-09-30-rrc-version-mutation-prerelease-candidate.md`](foundation/2026-09-30-rrc-version-mutation-prerelease-candidate.md)
+- [`foundation/2026-09-30-rrc-stale-epoch-autonomy-repair.md`](foundation/2026-09-30-rrc-stale-epoch-autonomy-repair.md)
+- [`foundation/2026-09-30-rrc-task-lifecycle-repair.md`](foundation/2026-09-30-rrc-task-lifecycle-repair.md)
+- [`foundation/2026-09-30-rrc-task-lifecycle-prerelease-candidate.md`](foundation/2026-09-30-rrc-task-lifecycle-prerelease-candidate.md)
+- [`foundation/2026-09-30-live-rrc-task-supervision.md`](foundation/2026-09-30-live-rrc-task-supervision.md)
+- [`foundation/2026-09-30-rrc-live-telemetry-ux-repair.md`](foundation/2026-09-30-rrc-live-telemetry-ux-repair.md) — superseded after failed terminal-ownership acceptance
+- [`foundation/2026-09-30-rrc-terminal-ownership-repair.md`](foundation/2026-09-30-rrc-terminal-ownership-repair.md) — current corrective evidence and replacement candidate
+
+The terminal-ownership correction makes Ratatui the sole interactive presentation writer.
+Release child stdin is null; stdout and stderr are concurrently drained through owned pipes,
+terminal controls are removed, secrets are redacted, and only bounded records enter the
+registered worker snapshot used by both RUN state and telemetry. A real PTY regression
+covers both streams, ANSI/OSC, carriage-return redraws, pane confinement and settlement;
+it fails when inherited streams are deliberately restored.
+
+The earlier live-telemetry repair projects the registered controller's real gate and child-process
+state into the TUI on every 250 ms render cycle. It exposes stage, command, current test,
+ticking elapsed and last-activity time, completed/total gates, candidate version/SHA,
+retry/fingerprint state and an eight-line redacted output tail. Its production-path
+regression observes workspace verification move from test A to test B, then settle and
+advance to the next gate without restarting the TUI; the renderer regression rejects idle
+labels throughout. No percentage is inferred or fabricated.
+
+The stale-epoch report records the earlier reconciliation repair, all four
+classifications, the enrolled 34-case acceptance receipt and its historical candidate.
+A later live run rejected the subsequent telemetry candidate for terminal-output leakage;
+the terminal-ownership corrective report supersedes its readiness claim. Alex-operated
+live acceptance of the new replacement candidate remains unrun.
+
+The prior candidate report records fresh release-profile TUI and ACP candidate artifacts
+built from the repaired tracked source and sealed by source HEAD, tracked-diff,
+artifact and copied-file hashes. It does not claim manual runtime acceptance or
+a production release; neither was performed.

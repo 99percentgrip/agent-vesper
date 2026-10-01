@@ -3,9 +3,9 @@
 //! checks. The executor follows the existing repository release contract; it
 //! does not contain provider logic or a parallel release policy.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::fs;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -27,15 +27,193 @@ use crate::release_recovery::{
 };
 
 const MAX_COMMAND_OUTPUT: usize = 4096;
+const MAX_TELEMETRY_LINES: usize = 8;
+const MAX_TELEMETRY_LINE_CHARS: usize = 240;
 const OFFICIAL_STATUS_URL: &str = "https://www.githubstatus.com/api/v2/summary.json";
 
-static ACTIVE_RELEASE_WORKERS: OnceLock<Mutex<HashMap<String, Arc<AtomicBool>>>> = OnceLock::new();
+struct ActiveReleaseWorker {
+    cancelled: Arc<AtomicBool>,
+    activity: Arc<Mutex<ReleaseWorkerActivity>>,
+    /// Retaining the handle makes process ownership explicit. Dropping a
+    /// command handler can no longer be mistaken for owning the worker.
+    _handle: thread::JoinHandle<()>,
+}
+
+static ACTIVE_RELEASE_WORKERS: OnceLock<Mutex<HashMap<String, ActiveReleaseWorker>>> =
+    OnceLock::new();
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ReleaseWorkerActivity {
+    epoch_id: String,
+    stage: String,
+    detail: String,
+    current_gate: Option<String>,
+    current_command: Option<String>,
+    current_child: Option<String>,
+    gate_started_at: Option<Instant>,
+    last_activity_at: Instant,
+    completed_gates: usize,
+    total_gates: usize,
+    version_before: Option<String>,
+    version_after: Option<String>,
+    candidate_sha: Option<String>,
+    retry_budget: String,
+    failure_fingerprint: Option<String>,
+    recent_output: VecDeque<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReleaseWorkerSnapshot {
+    pub repo_identity: String,
+    pub epoch_id: String,
+    pub stage: String,
+    pub detail: String,
+    pub cancellable: bool,
+    pub current_gate: Option<String>,
+    pub current_command: Option<String>,
+    pub current_child: Option<String>,
+    pub gate_elapsed_secs: Option<u64>,
+    pub last_activity_ago_secs: u64,
+    pub completed_gates: usize,
+    pub total_gates: usize,
+    pub version_before: Option<String>,
+    pub version_after: Option<String>,
+    pub candidate_sha: Option<String>,
+    pub retry_budget: String,
+    pub failure_fingerprint: Option<String>,
+    pub recent_output: Vec<String>,
+    pub process_alive: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReleaseWorkerRegistration {
+    pub repo_identity: String,
+    pub epoch_id: String,
+}
+
+fn active_workers() -> &'static Mutex<HashMap<String, ActiveReleaseWorker>> {
+    ACTIVE_RELEASE_WORKERS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn capture_release_stream<R: Read>(
+    mut stream: R,
+    activity: Option<Arc<Mutex<ReleaseWorkerActivity>>>,
+) -> std::io::Result<Vec<u8>> {
+    const MAX_CAPTURE_BYTES: usize = 4 * 1024 * 1024;
+    let mut captured = Vec::new();
+    let mut pending = Vec::new();
+    let mut bytes = [0_u8; 4096];
+    loop {
+        let read = match stream.read(&mut bytes) {
+            Ok(0) => break,
+            Ok(read) => read,
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) => return Err(error),
+        };
+        let remaining = MAX_CAPTURE_BYTES.saturating_sub(captured.len());
+        captured.extend_from_slice(&bytes[..read.min(remaining)]);
+        for byte in &bytes[..read] {
+            if matches!(byte, b'\n' | b'\r') {
+                record_captured_line(activity.as_ref(), &pending);
+                pending.clear();
+            } else if pending.len() < MAX_COMMAND_OUTPUT {
+                pending.push(*byte);
+            }
+        }
+    }
+    record_captured_line(activity.as_ref(), &pending);
+    Ok(captured)
+}
+
+fn join_capture_reader(
+    reader: thread::JoinHandle<std::io::Result<Vec<u8>>>,
+    stream_name: &str,
+) -> Result<Vec<u8>, RrcError> {
+    reader
+        .join()
+        .map_err(|_| RrcError::Invalid(format!("release child {stream_name} reader panicked")))?
+        .map_err(RrcError::Io)
+}
+
+fn record_captured_line(activity: Option<&Arc<Mutex<ReleaseWorkerActivity>>>, bytes: &[u8]) {
+    let Some(activity) = activity else { return };
+    let line = sanitize_terminal_text(&String::from_utf8_lossy(bytes));
+    let line = line.trim();
+    if line.is_empty() {
+        return;
+    }
+    if let Ok(mut activity) = activity.lock() {
+        activity.last_activity_at = Instant::now();
+        if let Some(child) = child_name_from_output(line) {
+            activity.current_child = Some(child);
+        }
+        push_telemetry_line(&mut activity, line);
+    }
+}
+
+fn sanitize_terminal_text(input: &str) -> String {
+    #[derive(Clone, Copy)]
+    enum EscapeState {
+        Text,
+        Escape,
+        Csi,
+        Osc,
+        OscEscape,
+        String,
+        StringEscape,
+    }
+
+    let mut output = String::with_capacity(input.len());
+    let mut state = EscapeState::Text;
+    for ch in input.chars() {
+        state = match state {
+            EscapeState::Text if ch == '\u{1b}' => EscapeState::Escape,
+            EscapeState::Text => {
+                if ch == '\t' || (!ch.is_control() && ch != '\u{7f}') {
+                    output.push(ch);
+                }
+                EscapeState::Text
+            }
+            EscapeState::Escape if ch == '[' => EscapeState::Csi,
+            EscapeState::Escape if ch == ']' => EscapeState::Osc,
+            EscapeState::Escape if matches!(ch, 'P' | 'X' | '^' | '_') => EscapeState::String,
+            EscapeState::Escape => EscapeState::Text,
+            EscapeState::Csi if ('@'..='~').contains(&ch) => EscapeState::Text,
+            EscapeState::Csi => EscapeState::Csi,
+            EscapeState::Osc if ch == '\u{7}' => EscapeState::Text,
+            EscapeState::Osc if ch == '\u{1b}' => EscapeState::OscEscape,
+            EscapeState::Osc => EscapeState::Osc,
+            EscapeState::OscEscape if ch == '\\' => EscapeState::Text,
+            EscapeState::OscEscape => EscapeState::Osc,
+            EscapeState::String if ch == '\u{1b}' => EscapeState::StringEscape,
+            EscapeState::String => EscapeState::String,
+            EscapeState::StringEscape if ch == '\\' => EscapeState::Text,
+            EscapeState::StringEscape => EscapeState::String,
+        };
+    }
+    output
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VersionBumpReceipt {
     pub before: String,
     pub after: String,
     pub files: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct VersionFileMutation {
+    relative_path: String,
+    before: Vec<u8>,
+    after: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct VersionMutationPlan {
+    before: String,
+    after: String,
+    files: Vec<VersionFileMutation>,
+    generated_lockfile: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -86,6 +264,7 @@ pub struct OfficialStatusSnapshot {
 pub struct NativeReleaseExecutor {
     workspace: PathBuf,
     cancelled: Arc<AtomicBool>,
+    activity: Option<Arc<Mutex<ReleaseWorkerActivity>>>,
 }
 
 impl NativeReleaseExecutor {
@@ -93,6 +272,19 @@ impl NativeReleaseExecutor {
         Ok(Self {
             workspace: workspace.canonicalize()?,
             cancelled,
+            activity: None,
+        })
+    }
+
+    fn with_activity(
+        workspace: &Path,
+        cancelled: Arc<AtomicBool>,
+        activity: Arc<Mutex<ReleaseWorkerActivity>>,
+    ) -> Result<Self, RrcError> {
+        Ok(Self {
+            workspace: workspace.canonicalize()?,
+            cancelled,
+            activity: Some(activity),
         })
     }
 
@@ -111,48 +303,75 @@ impl NativeReleaseExecutor {
                 "release recovery was cancelled by the user".into(),
             ));
         }
-        let mut stdout = tempfile::tempfile()?;
-        let mut stderr = tempfile::tempfile()?;
         let mut command = Command::new(program);
         command
             .args(args)
             .current_dir(&self.workspace)
             .env_remove("GH_DEBUG")
             .envs(environment.iter().copied())
-            .stdout(Stdio::from(stdout.try_clone()?))
-            .stderr(Stdio::from(stderr.try_clone()?));
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
         #[cfg(windows)]
         let mut child = command.group().kill_on_drop(true).spawn()?;
         #[cfg(not(windows))]
         let mut child = command.group_spawn()?;
+        self.note_process_activity(Some(program), None);
+        let stdout = child
+            .inner()
+            .stdout
+            .take()
+            .ok_or_else(|| RrcError::Invalid("release child stdout pipe is missing".into()))?;
+        let stderr = child
+            .inner()
+            .stderr
+            .take()
+            .ok_or_else(|| RrcError::Invalid("release child stderr pipe is missing".into()))?;
+        let stdout_activity = self.activity.clone();
+        let stderr_activity = self.activity.clone();
+        let stdout_reader = thread::spawn(move || capture_release_stream(stdout, stdout_activity));
+        let stderr_reader = thread::spawn(move || capture_release_stream(stderr, stderr_activity));
+        let mut cancelled = false;
         let status = loop {
             if self.cancelled.load(Ordering::Acquire) {
                 let _ = child.kill();
-                let _ = child.inner().wait();
-                return Err(RrcError::Invalid(
-                    "release recovery was cancelled by the user".into(),
-                ));
+                cancelled = true;
             }
             if let Some(status) = child.inner().try_wait()? {
                 break status;
             }
             thread::sleep(Duration::from_millis(100));
         };
-        stdout.seek(SeekFrom::Start(0))?;
-        stderr.seek(SeekFrom::Start(0))?;
-        let mut stdout_bytes = Vec::new();
-        let mut stderr_bytes = Vec::new();
-        stdout
-            .take(4 * 1024 * 1024)
-            .read_to_end(&mut stdout_bytes)?;
-        stderr
-            .take(4 * 1024 * 1024)
-            .read_to_end(&mut stderr_bytes)?;
+        self.note_process_activity(None, Some("process exited"));
+        let stdout_bytes = join_capture_reader(stdout_reader, "stdout")?;
+        let stderr_bytes = join_capture_reader(stderr_reader, "stderr")?;
+        if cancelled {
+            return Err(RrcError::Invalid(
+                "release recovery was cancelled by the user".into(),
+            ));
+        }
         Ok(Output {
             status,
             stdout: stdout_bytes,
             stderr: stderr_bytes,
         })
+    }
+
+    fn note_process_activity(&self, child: Option<&str>, output: Option<&str>) {
+        let Some(activity) = self.activity.as_ref() else {
+            return;
+        };
+        if let Ok(mut activity) = activity.lock() {
+            activity.last_activity_at = Instant::now();
+            if let Some(child) = child {
+                activity.current_child = Some(child.to_owned());
+            } else if output == Some("process exited") {
+                activity.current_child = None;
+            }
+            if let Some(output) = output {
+                push_telemetry_line(&mut activity, output);
+            }
+        }
     }
 
     fn checked(&self, program: &str, args: &[&str]) -> Result<String, RrcError> {
@@ -185,20 +404,26 @@ impl ReleaseExecutionPort for NativeReleaseExecutor {
                 "release candidate preparation requires a clean working tree".into(),
             ));
         }
-        let cargo_path = self.workspace.join("Cargo.toml");
-        let registry_path = self.workspace.join("registry/agent.json");
-        let cargo = fs::read_to_string(&cargo_path)?;
-        let before = workspace_version(&cargo)?;
-        let after = bump_semver(&before, bump)?;
-        let updated_cargo = update_workspace_manifest(&cargo, &before, &after)?;
-        let registry = fs::read_to_string(&registry_path)?;
-        let updated_registry = update_registry_manifest(&registry, &before, &after)?;
-        atomic_write(&cargo_path, updated_cargo.as_bytes())?;
-        atomic_write(&registry_path, updated_registry.as_bytes())?;
+        let plan = build_version_mutation_plan(&self.workspace, bump)?;
+        let lock_path = self.workspace.join(&plan.generated_lockfile);
+        let lock_before = fs::read(&lock_path)?;
+        apply_version_mutation_plan(&self.workspace, &plan, None)?;
+        if let Err(error) = self
+            .checked("cargo", &["check", "--workspace", "--all-targets"])
+            .and_then(|_| validate_version_mutation(&self.workspace, &plan))
+        {
+            restore_version_mutation(&self.workspace, &plan, &lock_path, &lock_before)?;
+            return Err(error);
+        }
         Ok(VersionBumpReceipt {
-            before,
-            after,
-            files: vec!["Cargo.toml".into(), "registry/agent.json".into()],
+            before: plan.before,
+            after: plan.after,
+            files: plan
+                .files
+                .into_iter()
+                .map(|file| file.relative_path)
+                .chain(std::iter::once(plan.generated_lockfile))
+                .collect(),
         })
     }
 
@@ -206,6 +431,15 @@ impl ReleaseExecutionPort for NativeReleaseExecutor {
         let (program, args) = local_gate_argv(&gate.name).ok_or_else(|| {
             RrcError::Invalid(format!("unknown controller-owned local gate {}", gate.name))
         })?;
+        if let Some(activity) = self.activity.as_ref()
+            && let Ok(mut activity) = activity.lock()
+        {
+            activity.current_gate = Some(gate.name.clone());
+            activity.current_command = Some(gate.command.clone());
+            activity.current_child = Some(program.to_owned());
+            activity.gate_started_at = Some(Instant::now());
+            activity.last_activity_at = Instant::now();
+        }
         self.checked(program, args)
     }
 
@@ -215,15 +449,25 @@ impl ReleaseExecutionPort for NativeReleaseExecutor {
         admission: ReleaseMutationAdmission,
     ) -> Result<String, RrcError> {
         require_kind(admission, ReleaseMutationKind::CommitCandidate)?;
-        self.checked(
-            "git",
-            &["add", "Cargo.toml", "Cargo.lock", "registry/agent.json"],
-        )?;
-        let allowed = ["Cargo.lock", "Cargo.toml", "registry/agent.json"];
+        let root = fs::read_to_string(self.workspace.join("Cargo.toml"))?;
+        let allowed_manifests = workspace_member_manifests(&self.workspace, &root)?
+            .into_iter()
+            .map(|path| relative_version_path(&self.workspace, &path))
+            .collect::<Result<BTreeSet<_>, _>>()?;
+        for path in allowed_manifests
+            .iter()
+            .map(String::as_str)
+            .chain(["Cargo.lock", "registry/agent.json"])
+        {
+            self.checked("git", &["add", "--", path])?;
+        }
         let status = self.checked("git", &["status", "--porcelain"])?;
         for line in status.lines() {
             let path = line.get(3..).unwrap_or_default().trim();
-            if !allowed.contains(&path) {
+            if path != "Cargo.lock"
+                && path != "registry/agent.json"
+                && !allowed_manifests.contains(path)
+            {
                 return Err(RrcError::Invalid(format!(
                     "candidate commit contains non-version path {path}"
                 )));
@@ -639,15 +883,19 @@ fn run_bounded_repair_agent(
         .current_dir(workspace)
         .args(["apply", "--binary", "--index"])
         .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()?;
-    if let Some(stdin) = apply.stdin.as_mut() {
+    if let Some(mut stdin) = apply.stdin.take() {
         use std::io::Write as _;
         stdin.write_all(&diff.stdout)?;
     }
-    if !apply.wait()?.success() {
-        return Err(RrcError::Invalid(
-            "verified repair diff could not be promoted".into(),
-        ));
+    let apply_output = apply.wait_with_output()?;
+    if !apply_output.status.success() {
+        return Err(RrcError::Invalid(format!(
+            "verified repair diff could not be promoted: {}",
+            bounded_output(&apply_output.stderr)
+        )));
     }
     let fingerprint_short = failure.fingerprint.0.chars().take(12).collect::<String>();
     let committed = Command::new("git")
@@ -691,6 +939,7 @@ fn run_bounded_repair_agent(
             disproven_or_insufficient: false,
         }),
     )?;
+    record.mutation.final_candidate_commit = record.release_commit.clone();
     ledger.save(record)?;
     let _ = Command::new("git")
         .current_dir(workspace)
@@ -852,6 +1101,7 @@ pub fn advance_release(
                             .collect(),
                     },
                 )?;
+                record.mutation.final_candidate_commit = record.release_commit.clone();
                 ledger.save(record)?;
             }
         }
@@ -1021,7 +1271,7 @@ pub fn spawn_release_worker(
     workspace: PathBuf,
     repository: String,
     repo_identity: String,
-) -> Result<(), RrcError> {
+) -> Result<ReleaseWorkerRegistration, RrcError> {
     spawn_release_worker_with_factory(workspace, repository, repo_identity, None)
 }
 
@@ -1030,83 +1280,478 @@ pub fn spawn_release_worker_with_factory(
     repository: String,
     repo_identity: String,
     repair_factory: Option<crate::WorkerFactory>,
-) -> Result<(), RrcError> {
-    let active = ACTIVE_RELEASE_WORKERS.get_or_init(|| Mutex::new(HashMap::new()));
+) -> Result<ReleaseWorkerRegistration, RrcError> {
+    let root = default_release_root()
+        .ok_or_else(|| RrcError::Invalid("no user-owned release state root is available".into()))?;
+    spawn_release_worker_at_root(workspace, repository, repo_identity, repair_factory, root)
+}
+
+pub(crate) fn spawn_release_worker_at_root(
+    workspace: PathBuf,
+    repository: String,
+    repo_identity: String,
+    repair_factory: Option<crate::WorkerFactory>,
+    root: PathBuf,
+) -> Result<ReleaseWorkerRegistration, RrcError> {
+    let ledger = ReleaseLedger::open(root.clone(), &repo_identity)?;
+    let record = ledger.load()?.ok_or_else(|| {
+        RrcError::Invalid("release checkpoint disappeared before worker spawn".into())
+    })?;
+    let epoch_id = record.epoch_id.clone();
     let cancelled = Arc::new(AtomicBool::new(false));
-    {
-        let mut guard = active
-            .lock()
-            .map_err(|_| RrcError::Invalid("release worker lock is poisoned".into()))?;
-        if guard.contains_key(&repo_identity) {
-            return Ok(());
-        }
-        guard.insert(repo_identity.clone(), Arc::clone(&cancelled));
-    }
-    std::thread::Builder::new()
+    let now = Instant::now();
+    let activity = Arc::new(Mutex::new(ReleaseWorkerActivity {
+        epoch_id: epoch_id.clone(),
+        stage: "Release recovery".into(),
+        detail: release_activity_detail(&record),
+        current_gate: None,
+        current_command: None,
+        current_child: None,
+        gate_started_at: None,
+        last_activity_at: now,
+        completed_gates: 0,
+        total_gates: record.mutation.local_gates.len(),
+        version_before: record.mutation.version_before.clone(),
+        version_after: record.mutation.version_after.clone(),
+        candidate_sha: None,
+        retry_budget: retry_budget_label(&record),
+        failure_fingerprint: record
+            .failures
+            .last()
+            .map(|failure| failure.fingerprint.0.clone()),
+        recent_output: VecDeque::new(),
+    }));
+    let (start_tx, start_rx) = std::sync::mpsc::sync_channel::<()>(0);
+    let worker_identity = repo_identity.clone();
+    let worker_cancelled = Arc::clone(&cancelled);
+    let worker_activity = Arc::clone(&activity);
+    let handle = std::thread::Builder::new()
         .name("vesper-release-controller".into())
         .spawn(move || {
-            let result = (|| -> Result<(), RrcError> {
-                let root = default_release_root().ok_or_else(|| {
-                    RrcError::Invalid("no user-owned release state root is available".into())
-                })?;
-                let ledger = ReleaseLedger::open(root, &repo_identity)?;
-                let executor = NativeReleaseExecutor::new(&workspace, Arc::clone(&cancelled))?;
-                for _ in 0..16 {
-                    let Some(mut record) = ledger.load()? else {
-                        return Ok(());
-                    };
-                    let before = record.state;
-                    advance_release(
-                        &mut record,
-                        ReleaseAdvanceContext {
-                            workspace: &workspace,
-                            repository: &repository,
-                            ledger: &ledger,
-                            executor: &executor,
-                            github: &GhCliEvidenceAdapter,
-                            health: &CurlGitHubStatusAdapter,
-                            repair_factory: repair_factory.as_ref(),
-                            cancelled: Arc::clone(&cancelled),
-                        },
-                    )?;
-                    if matches!(
-                        record.state,
-                        ReleaseRecoveryState::WaitingForMatrix
-                            | ReleaseRecoveryState::ClassifyingFailure
-                            | ReleaseRecoveryState::NeedMoreEvidence
-                            | ReleaseRecoveryState::PausedExternal
-                            | ReleaseRecoveryState::Published
-                            | ReleaseRecoveryState::PostReleaseMainDegraded
-                            | ReleaseRecoveryState::Escalated
-                            | ReleaseRecoveryState::Complete
-                            | ReleaseRecoveryState::Cancelled
-                    ) || before == ReleaseRecoveryState::RetryAdmissible
-                        || (record.state == before
-                            && record.state != ReleaseRecoveryState::LocalVerification)
-                    {
-                        break;
-                    }
-                }
-                Ok(())
-            })();
-            if let Err(error) = result {
-                eprintln!("release controller paused safely: {error}");
+            if start_rx.recv().is_err() {
+                return;
             }
-            if let Ok(mut guard) = ACTIVE_RELEASE_WORKERS.get().expect("initialized").lock() {
-                guard.remove(&repo_identity);
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                run_release_worker(
+                    &workspace,
+                    &repository,
+                    &worker_identity,
+                    repair_factory.as_ref(),
+                    &root,
+                    Arc::clone(&worker_cancelled),
+                    &worker_activity,
+                )
+            }))
+            .unwrap_or_else(|_| {
+                Err(RrcError::Invalid(
+                    "release controller task panicked before settlement".into(),
+                ))
+            });
+            if let Err(error) = result {
+                persist_worker_failure(&root, &worker_identity, &error);
+                if let Ok(mut activity) = worker_activity.lock() {
+                    activity.detail = "Release recovery paused safely".into();
+                    activity.last_activity_at = Instant::now();
+                    push_telemetry_line(&mut activity, &error.to_string());
+                }
+            }
+            if let Ok(mut guard) = active_workers().lock() {
+                guard.remove(&worker_identity);
             }
         })?;
+    {
+        let mut guard = active_workers()
+            .lock()
+            .map_err(|_| RrcError::Invalid("release worker lock is poisoned".into()))?;
+        if let Some(existing) = guard.get(&repo_identity) {
+            return Ok(ReleaseWorkerRegistration {
+                repo_identity,
+                epoch_id: existing
+                    .activity
+                    .lock()
+                    .map_err(|_| {
+                        RrcError::Invalid("release worker activity lock is poisoned".into())
+                    })?
+                    .epoch_id
+                    .clone(),
+            });
+        }
+        guard.insert(
+            repo_identity.clone(),
+            ActiveReleaseWorker {
+                cancelled,
+                activity,
+                _handle: handle,
+            },
+        );
+    }
+    start_tx.send(()).map_err(|_| {
+        RrcError::Invalid("release worker exited before execution admission".into())
+    })?;
+    Ok(ReleaseWorkerRegistration {
+        repo_identity,
+        epoch_id,
+    })
+}
+
+fn run_release_worker(
+    workspace: &Path,
+    repository: &str,
+    repo_identity: &str,
+    repair_factory: Option<&crate::WorkerFactory>,
+    root: &Path,
+    cancelled: Arc<AtomicBool>,
+    activity: &Arc<Mutex<ReleaseWorkerActivity>>,
+) -> Result<(), RrcError> {
+    let ledger = ReleaseLedger::open(root.to_path_buf(), repo_identity)?;
+    let executor = NativeReleaseExecutor::with_activity(
+        workspace,
+        Arc::clone(&cancelled),
+        Arc::clone(activity),
+    )?;
+    for _ in 0..16 {
+        let Some(mut record) = ledger.load()? else {
+            return Ok(());
+        };
+        update_release_activity(activity, &record);
+        let before = record.state;
+        advance_release(
+            &mut record,
+            ReleaseAdvanceContext {
+                workspace,
+                repository,
+                ledger: &ledger,
+                executor: &executor,
+                github: &GhCliEvidenceAdapter,
+                health: &CurlGitHubStatusAdapter,
+                repair_factory,
+                cancelled: Arc::clone(&cancelled),
+            },
+        )?;
+        update_release_activity(activity, &record);
+        if matches!(
+            record.state,
+            ReleaseRecoveryState::WaitingForMatrix
+                | ReleaseRecoveryState::ClassifyingFailure
+                | ReleaseRecoveryState::NeedMoreEvidence
+                | ReleaseRecoveryState::PausedExternal
+                | ReleaseRecoveryState::Published
+                | ReleaseRecoveryState::PostReleaseMainDegraded
+                | ReleaseRecoveryState::Escalated
+                | ReleaseRecoveryState::Complete
+                | ReleaseRecoveryState::Cancelled
+        ) || before == ReleaseRecoveryState::RetryAdmissible
+            || (record.state == before && record.state != ReleaseRecoveryState::LocalVerification)
+        {
+            break;
+        }
+    }
     Ok(())
+}
+
+fn retry_budget_label(record: &ReleaseRecoveryRecord) -> String {
+    format!(
+        "full {}/{} · infra {}/{} · diagnostic {}/{}",
+        record.retry_budget.full_gate_used,
+        record.retry_budget.full_gate_limit,
+        record.retry_budget.infrastructure_used,
+        record.retry_budget.infrastructure_limit,
+        record.retry_budget.targeted_diagnostic_used,
+        record.retry_budget.targeted_diagnostic_limit,
+    )
+}
+
+fn child_name_from_output(line: &str) -> Option<String> {
+    let trimmed = line.trim();
+    let candidate = trimmed
+        .strip_prefix("Running ")
+        .or_else(|| trimmed.strip_prefix("running "))?;
+    let raw = candidate
+        .rsplit_once('(')
+        .map_or(candidate, |(_, path)| path.trim_end_matches(')').trim());
+    let file = Path::new(raw)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(raw);
+    let stem = file.strip_suffix(".exe").unwrap_or(file);
+    let stem = stem
+        .rsplit_once('-')
+        .filter(|(_, suffix)| suffix.len() >= 8 && suffix.chars().all(|ch| ch.is_ascii_hexdigit()))
+        .map_or(stem, |(name, _)| name);
+    (!stem.is_empty()).then(|| stem.to_owned())
+}
+
+fn push_telemetry_line(activity: &mut ReleaseWorkerActivity, line: &str) {
+    let clean = redact_secrets(&sanitize_terminal_text(line));
+    let bounded = clean
+        .chars()
+        .take(MAX_TELEMETRY_LINE_CHARS)
+        .collect::<String>();
+    activity.recent_output.push_back(bounded);
+    while activity.recent_output.len() > MAX_TELEMETRY_LINES {
+        activity.recent_output.pop_front();
+    }
+}
+
+fn release_activity_detail(record: &ReleaseRecoveryRecord) -> String {
+    if record.state == ReleaseRecoveryState::LocalVerification {
+        if let Some(gate) = record
+            .mutation
+            .local_gates
+            .iter()
+            .find(|gate| gate.state != SettlementState::Succeeded)
+        {
+            return format!("Local verification · {}", gate.name);
+        }
+        return "Local verification".into();
+    }
+    format!("{:?}", record.state)
+}
+
+fn update_release_activity(
+    activity: &Arc<Mutex<ReleaseWorkerActivity>>,
+    record: &ReleaseRecoveryRecord,
+) {
+    if let Ok(mut activity) = activity.lock() {
+        let detail = release_activity_detail(record);
+        let completed = record
+            .mutation
+            .local_gates
+            .iter()
+            .filter(|gate| gate.state == SettlementState::Succeeded)
+            .count();
+        let active_gate = record
+            .mutation
+            .local_gates
+            .iter()
+            .find(|gate| gate.state == SettlementState::Running);
+        let changed = activity.detail != detail
+            || activity.completed_gates != completed
+            || activity.current_gate.as_deref() != active_gate.map(|gate| gate.name.as_str());
+        activity.epoch_id.clone_from(&record.epoch_id);
+        activity.detail = detail;
+        activity.completed_gates = completed;
+        activity.total_gates = record.mutation.local_gates.len();
+        activity
+            .version_before
+            .clone_from(&record.mutation.version_before);
+        activity
+            .version_after
+            .clone_from(&record.mutation.version_after);
+        activity.candidate_sha = record
+            .mutation
+            .candidate_committed
+            .then(|| record.release_commit.clone())
+            .flatten();
+        activity.retry_budget = retry_budget_label(record);
+        activity.failure_fingerprint = record
+            .failures
+            .last()
+            .map(|failure| failure.fingerprint.0.clone());
+        if let Some(gate) = active_gate {
+            if activity.current_gate.as_deref() != Some(gate.name.as_str()) {
+                activity.gate_started_at = Some(Instant::now());
+            }
+            activity.current_gate = Some(gate.name.clone());
+            activity.current_command = Some(gate.command.clone());
+        } else if record.state != ReleaseRecoveryState::LocalVerification {
+            activity.current_gate = None;
+            activity.current_command = None;
+            activity.current_child = None;
+            activity.gate_started_at = None;
+        }
+        if changed {
+            activity.last_activity_at = Instant::now();
+        }
+    }
+}
+
+fn persist_worker_failure(root: &Path, repo_identity: &str, error: &RrcError) {
+    let Ok(ledger) = ReleaseLedger::open(root.to_path_buf(), repo_identity) else {
+        return;
+    };
+    let Ok(Some(mut record)) = ledger.load() else {
+        return;
+    };
+    if record.state == ReleaseRecoveryState::LocalVerification {
+        if let Some(gate) = record
+            .mutation
+            .local_gates
+            .iter_mut()
+            .find(|gate| gate.state == SettlementState::Running)
+        {
+            gate.state = SettlementState::Failed;
+            gate.evidence_ref = Some("local:worker-failed".into());
+        }
+        if let Some(commit) = record.release_commit.clone() {
+            let _ = record.transition(
+                ReleaseRecoveryState::DiagnosingLocalFailure,
+                &commit,
+                format!("release controller task failed: {error}"),
+                vec!["local:controller-task-failed".into()],
+                None,
+            );
+        }
+        let _ = ledger.save(&record);
+    }
+}
+
+#[must_use]
+pub fn active_release_worker(repo_identity: &str) -> Option<ReleaseWorkerSnapshot> {
+    let guard = active_workers().lock().ok()?;
+    let worker = guard.get(repo_identity)?;
+    let activity = worker.activity.lock().ok()?;
+    let now = Instant::now();
+    Some(ReleaseWorkerSnapshot {
+        repo_identity: repo_identity.to_owned(),
+        epoch_id: activity.epoch_id.clone(),
+        stage: activity.stage.clone(),
+        detail: activity.detail.clone(),
+        cancellable: !worker.cancelled.load(Ordering::Acquire),
+        current_gate: activity.current_gate.clone(),
+        current_command: activity.current_command.clone(),
+        current_child: activity.current_child.clone(),
+        gate_elapsed_secs: activity
+            .gate_started_at
+            .map(|started| now.saturating_duration_since(started).as_secs()),
+        last_activity_ago_secs: now
+            .saturating_duration_since(activity.last_activity_at)
+            .as_secs(),
+        completed_gates: activity.completed_gates,
+        total_gates: activity.total_gates,
+        version_before: activity.version_before.clone(),
+        version_after: activity.version_after.clone(),
+        candidate_sha: activity.candidate_sha.clone(),
+        retry_budget: activity.retry_budget.clone(),
+        failure_fingerprint: activity.failure_fingerprint.clone(),
+        recent_output: activity.recent_output.iter().cloned().collect(),
+        process_alive: activity.current_child.is_some(),
+    })
+}
+
+#[cfg(test)]
+pub(crate) fn active_release_worker_count_for_repo(repo_identity: &str) -> usize {
+    active_workers().lock().map_or(0, |workers| {
+        usize::from(workers.contains_key(repo_identity))
+    })
+}
+
+#[must_use]
+pub fn active_release_worker_for_workspace(workspace: &Path) -> Option<ReleaseWorkerSnapshot> {
+    let identity = crate::release_recovery::repository_identity_for_workspace(workspace).ok()?;
+    active_release_worker(&identity)
+}
+
+/// Debug-build-only end-to-end probe used by the native PTY regression.
+/// It exercises the exact production capture and worker-snapshot path without
+/// admitting a release or mutating release state.
+#[cfg(debug_assertions)]
+pub fn spawn_terminal_ownership_probe(
+    workspace: &Path,
+    program: &Path,
+) -> Result<ReleaseWorkerRegistration, RrcError> {
+    let repo_identity = crate::release_recovery::repository_identity_for_workspace(workspace)?;
+    let epoch_id = format!("terminal-ownership-probe-{}", std::process::id());
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let now = Instant::now();
+    let activity = Arc::new(Mutex::new(ReleaseWorkerActivity {
+        epoch_id: epoch_id.clone(),
+        stage: "Release recovery".into(),
+        detail: "Local verification · terminal-ownership-probe".into(),
+        current_gate: Some("terminal-ownership-probe".into()),
+        current_command: Some(program.display().to_string()),
+        current_child: Some(
+            program
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("probe")
+                .to_owned(),
+        ),
+        gate_started_at: Some(now),
+        last_activity_at: now,
+        completed_gates: 0,
+        total_gates: 1,
+        version_before: Some("0.24.4".into()),
+        version_after: Some("0.24.5".into()),
+        candidate_sha: None,
+        retry_budget: "probe".into(),
+        failure_fingerprint: None,
+        recent_output: VecDeque::new(),
+    }));
+    let workspace = workspace.canonicalize()?;
+    let program = program.to_path_buf();
+    let worker_identity = repo_identity.clone();
+    let worker_cancelled = Arc::clone(&cancelled);
+    let worker_activity = Arc::clone(&activity);
+    let (start_tx, start_rx) = std::sync::mpsc::sync_channel::<()>(0);
+    let handle = thread::Builder::new()
+        .name("vesper-release-terminal-probe".into())
+        .spawn(move || {
+            if start_rx.recv().is_err() {
+                return;
+            }
+            let result = NativeReleaseExecutor::with_activity(
+                &workspace,
+                Arc::clone(&worker_cancelled),
+                Arc::clone(&worker_activity),
+            )
+            .and_then(|executor| {
+                executor.command(
+                    program.to_str().ok_or_else(|| {
+                        RrcError::Invalid("terminal probe path is not UTF-8".into())
+                    })?,
+                    &[],
+                )
+            });
+            if let Ok(mut activity) = worker_activity.lock() {
+                activity.current_child = None;
+                activity.completed_gates = usize::from(result.is_ok());
+                activity.detail = if result.is_ok() {
+                    "Local verification settled".into()
+                } else {
+                    "Local verification failed".into()
+                };
+                activity.last_activity_at = Instant::now();
+            }
+            thread::sleep(Duration::from_millis(250));
+            if let Ok(mut workers) = active_workers().lock() {
+                workers.remove(&worker_identity);
+            }
+        })?;
+    {
+        let mut workers = active_workers()
+            .lock()
+            .map_err(|_| RrcError::Invalid("release worker lock is poisoned".into()))?;
+        if workers.contains_key(&repo_identity) {
+            return Err(RrcError::Invalid(
+                "terminal probe found an existing release worker".into(),
+            ));
+        }
+        workers.insert(
+            repo_identity.clone(),
+            ActiveReleaseWorker {
+                cancelled,
+                activity,
+                _handle: handle,
+            },
+        );
+    }
+    start_tx
+        .send(())
+        .map_err(|_| RrcError::Invalid("terminal probe worker exited before start".into()))?;
+    Ok(ReleaseWorkerRegistration {
+        repo_identity,
+        epoch_id,
+    })
 }
 
 /// Signals the user-owned local worker, if present. Remote GitHub workflows are
 /// intentionally not cancelled or described as cancelled by this operation.
 pub fn cancel_release_worker(repo_identity: &str) {
-    if let Some(active) = ACTIVE_RELEASE_WORKERS.get()
-        && let Ok(guard) = active.lock()
-        && let Some(cancelled) = guard.get(repo_identity)
+    if let Ok(guard) = active_workers().lock()
+        && let Some(worker) = guard.get(repo_identity)
     {
-        cancelled.store(true, Ordering::Release);
+        worker.cancelled.store(true, Ordering::Release);
     }
 }
 
@@ -1211,39 +1856,365 @@ fn bump_semver(version: &str, bump: &str) -> Result<String, RrcError> {
     })
 }
 
+fn build_version_mutation_plan(
+    workspace: &Path,
+    bump: &str,
+) -> Result<VersionMutationPlan, RrcError> {
+    let root_path = workspace.join("Cargo.toml");
+    let root = fs::read_to_string(&root_path)?;
+    let before = workspace_version(&root)?;
+    let after = bump_semver(&before, bump)?;
+    let manifests = workspace_member_manifests(workspace, &root)?;
+    let member_dirs = manifests
+        .iter()
+        .map(|path| {
+            path.parent()
+                .ok_or_else(|| RrcError::Invalid("workspace member has no parent".into()))?
+                .canonicalize()
+                .map_err(RrcError::Io)
+        })
+        .collect::<Result<BTreeSet<_>, _>>()?;
+    let mut files = Vec::new();
+    for path in manifests {
+        let input = fs::read_to_string(&path)?;
+        let is_root = path == root_path;
+        let updated =
+            update_workspace_manifest(&input, &before, &after, is_root, &path, &member_dirs)?;
+        if updated != input {
+            files.push(VersionFileMutation {
+                relative_path: relative_version_path(workspace, &path)?,
+                before: input.into_bytes(),
+                after: updated.into_bytes(),
+            });
+        }
+    }
+    let registry_path = workspace.join("registry/agent.json");
+    let registry = fs::read_to_string(&registry_path)?;
+    let updated_registry = update_registry_manifest(&registry, &before, &after)?;
+    files.push(VersionFileMutation {
+        relative_path: "registry/agent.json".into(),
+        before: registry.into_bytes(),
+        after: updated_registry.into_bytes(),
+    });
+    Ok(VersionMutationPlan {
+        before,
+        after,
+        files,
+        generated_lockfile: "Cargo.lock".into(),
+    })
+}
+
+fn workspace_member_manifests(workspace: &Path, root: &str) -> Result<Vec<PathBuf>, RrcError> {
+    let mut members = vec![workspace.join("Cargo.toml")];
+    let mut in_members = false;
+    let mut closed = false;
+    for line in root.lines() {
+        let trimmed = line.trim();
+        if !in_members {
+            if trimmed.starts_with("members") && trimmed.contains('[') {
+                in_members = true;
+            } else {
+                continue;
+            }
+        }
+        for value in quoted_values(trimmed) {
+            let path = workspace.join(value).join("Cargo.toml");
+            if !path.is_file() {
+                return Err(RrcError::Invalid(format!(
+                    "workspace member manifest is missing: {}",
+                    relative_version_path(workspace, &path)?
+                )));
+            }
+            members.push(path);
+        }
+        if trimmed.contains(']') {
+            closed = true;
+            break;
+        }
+    }
+    if !closed {
+        return Err(RrcError::Invalid(
+            "workspace members inventory is malformed".into(),
+        ));
+    }
+    members.sort();
+    members.dedup();
+    Ok(members)
+}
+
+fn quoted_values(line: &str) -> Vec<&str> {
+    let mut values = Vec::new();
+    let mut rest = line;
+    while let Some(start) = rest.find('"') {
+        rest = &rest[start + 1..];
+        let Some(end) = rest.find('"') else { break };
+        values.push(&rest[..end]);
+        rest = &rest[end + 1..];
+    }
+    values
+}
+
+fn relative_version_path(workspace: &Path, path: &Path) -> Result<String, RrcError> {
+    path.strip_prefix(workspace)
+        .map(|relative| relative.to_string_lossy().replace('\\', "/"))
+        .map_err(|_| RrcError::Invalid("version path escaped release workspace".into()))
+}
+
 fn update_workspace_manifest(
     manifest: &str,
     before: &str,
     after: &str,
+    is_root: bool,
+    manifest_path: &Path,
+    member_dirs: &BTreeSet<PathBuf>,
 ) -> Result<String, RrcError> {
+    let lines = manifest.lines().collect::<Vec<_>>();
+    let (multiline_path_lines, multiline_version_lines) =
+        multiline_internal_pins(&lines, before, manifest_path, member_dirs)?;
     let mut output = String::with_capacity(manifest.len());
     let mut workspace_package = false;
-    let mut changed = false;
-    for line in manifest.lines() {
+    let mut workspace_version_seen = false;
+    let mut package_inherits_workspace_version = is_root;
+    for (line_index, line) in lines.into_iter().enumerate() {
         let trimmed = line.trim();
         if trimmed.starts_with('[') {
             workspace_package = trimmed == "[workspace.package]";
         }
-        let updated = if workspace_package && trimmed == format!("version = \"{before}\"") {
-            changed = true;
-            line.replacen(before, after, 1)
-        } else if line.contains("path =") && line.contains(&format!("version = \"={before}\"")) {
-            line.replace(
+        if trimmed == "version.workspace = true" {
+            package_inherits_workspace_version = true;
+        }
+        let mut updated = line.to_owned();
+        if multiline_version_lines.contains(&line_index) {
+            updated = line.replacen(
                 &format!("version = \"={before}\""),
                 &format!("version = \"={after}\""),
-            )
-        } else {
-            line.to_owned()
-        };
+                1,
+            );
+        }
+        if workspace_package && trimmed.starts_with("version = ") {
+            let version = quoted_values(trimmed)
+                .first()
+                .copied()
+                .ok_or_else(|| RrcError::Invalid("workspace version is malformed".into()))?;
+            if !is_root || version != before {
+                return Err(RrcError::Invalid(format!(
+                    "workspace version preflight mismatch in {}: expected {before}, found {version}",
+                    manifest_path.display()
+                )));
+            }
+            workspace_version_seen = true;
+            updated = line.replacen(before, after, 1);
+        }
+        if let Some(path_value) = inline_key_value(trimmed, "path") {
+            let parent = manifest_path
+                .parent()
+                .ok_or_else(|| RrcError::Invalid("manifest has no parent".into()))?;
+            let dependency_dir = parent.join(path_value).canonicalize()?;
+            if member_dirs.contains(&dependency_dir) && !multiline_path_lines.contains(&line_index)
+            {
+                let version = inline_key_value(trimmed, "version").ok_or_else(|| {
+                    RrcError::Invalid(format!(
+                        "workspace dependency in {} lacks an exact version pin: {trimmed}",
+                        manifest_path.display()
+                    ))
+                })?;
+                let expected = format!("={before}");
+                if version != expected {
+                    return Err(RrcError::Invalid(format!(
+                        "workspace dependency preflight mismatch in {}: expected {expected}, found {version}",
+                        manifest_path.display()
+                    )));
+                }
+                updated = updated.replacen(
+                    &format!("version = \"{expected}\""),
+                    &format!("version = \"={after}\""),
+                    1,
+                );
+            }
+        }
         output.push_str(&updated);
         output.push('\n');
     }
-    if !changed {
+    if is_root && !workspace_version_seen {
         return Err(RrcError::Invalid(
             "workspace version did not match expected source".into(),
         ));
     }
+    if !package_inherits_workspace_version {
+        return Err(RrcError::Invalid(format!(
+            "workspace member does not inherit workspace.package.version: {}",
+            manifest_path.display()
+        )));
+    }
     Ok(output)
+}
+
+fn multiline_internal_pins(
+    lines: &[&str],
+    before: &str,
+    manifest_path: &Path,
+    member_dirs: &BTreeSet<PathBuf>,
+) -> Result<(BTreeSet<usize>, BTreeSet<usize>), RrcError> {
+    let mut path_lines = BTreeSet::new();
+    let mut version_lines = BTreeSet::new();
+    let mut start = 0;
+    while start < lines.len() {
+        let header = lines[start].trim();
+        if !is_dependency_detail_header(header) {
+            start += 1;
+            continue;
+        }
+        let end = (start + 1..lines.len())
+            .find(|index| lines[*index].trim().starts_with('['))
+            .unwrap_or(lines.len());
+        let path_row = (start + 1..end).find_map(|index| {
+            inline_key_value(lines[index].trim(), "path").map(|path| (index, path))
+        });
+        if let Some((path_index, path_value)) = path_row {
+            let parent = manifest_path
+                .parent()
+                .ok_or_else(|| RrcError::Invalid("manifest has no parent".into()))?;
+            let dependency_dir = parent.join(path_value).canonicalize()?;
+            if member_dirs.contains(&dependency_dir) {
+                let (version_index, version) = (start + 1..end)
+                    .find_map(|index| {
+                        inline_key_value(lines[index].trim(), "version")
+                            .map(|version| (index, version))
+                    })
+                    .ok_or_else(|| {
+                        RrcError::Invalid(format!(
+                            "workspace dependency table in {} lacks an exact version pin",
+                            manifest_path.display()
+                        ))
+                    })?;
+                let expected = format!("={before}");
+                if version != expected {
+                    return Err(RrcError::Invalid(format!(
+                        "workspace dependency preflight mismatch in {}: expected {expected}, found {version}",
+                        manifest_path.display()
+                    )));
+                }
+                path_lines.insert(path_index);
+                version_lines.insert(version_index);
+            }
+        }
+        start = end;
+    }
+    Ok((path_lines, version_lines))
+}
+
+fn is_dependency_detail_header(line: &str) -> bool {
+    let Some(section) = line
+        .strip_prefix('[')
+        .and_then(|line| line.strip_suffix(']'))
+    else {
+        return false;
+    };
+    section.starts_with("dependencies.")
+        || section.starts_with("dev-dependencies.")
+        || section.starts_with("build-dependencies.")
+        || section.contains(".dependencies.")
+}
+
+fn inline_key_value<'a>(line: &'a str, key: &str) -> Option<&'a str> {
+    let marker = format!("{key} = \"");
+    let start = line.find(&marker)? + marker.len();
+    let rest = &line[start..];
+    Some(&rest[..rest.find('"')?])
+}
+
+fn apply_version_mutation_plan(
+    workspace: &Path,
+    plan: &VersionMutationPlan,
+    fail_after: Option<usize>,
+) -> Result<(), RrcError> {
+    let mut written: Vec<&VersionFileMutation> = Vec::new();
+    for (index, file) in plan.files.iter().enumerate() {
+        if fail_after == Some(index) {
+            for prior in written.iter().rev() {
+                atomic_write(&workspace.join(&prior.relative_path), &prior.before)?;
+            }
+            return Err(RrcError::Invalid(
+                "injected version mutation write failure".into(),
+            ));
+        }
+        if let Err(error) = atomic_write(&workspace.join(&file.relative_path), &file.after) {
+            for prior in written.iter().rev() {
+                atomic_write(&workspace.join(&prior.relative_path), &prior.before)?;
+            }
+            return Err(error);
+        }
+        written.push(file);
+    }
+    Ok(())
+}
+
+fn restore_version_mutation(
+    workspace: &Path,
+    plan: &VersionMutationPlan,
+    lock_path: &Path,
+    lock_before: &[u8],
+) -> Result<(), RrcError> {
+    for file in &plan.files {
+        atomic_write(&workspace.join(&file.relative_path), &file.before)?;
+    }
+    atomic_write(lock_path, lock_before)
+}
+
+fn validate_version_mutation(workspace: &Path, plan: &VersionMutationPlan) -> Result<(), RrcError> {
+    let root_path = workspace.join("Cargo.toml");
+    let root = fs::read_to_string(&root_path)?;
+    if workspace_version(&root)? != plan.after {
+        return Err(RrcError::Invalid(
+            "post-mutation workspace version is inconsistent".into(),
+        ));
+    }
+    let manifests = workspace_member_manifests(workspace, &root)?;
+    let member_dirs = manifests
+        .iter()
+        .map(|path| path.parent().unwrap().canonicalize().map_err(RrcError::Io))
+        .collect::<Result<BTreeSet<_>, _>>()?;
+    let owned_manifests = manifests
+        .iter()
+        .map(|path| path.canonicalize().map_err(RrcError::Io))
+        .collect::<Result<BTreeSet<_>, _>>()?;
+    for path in manifests {
+        let input = fs::read_to_string(&path)?;
+        update_workspace_manifest(
+            &input,
+            &plan.after,
+            &plan.after,
+            path == root_path,
+            &path,
+            &member_dirs,
+        )?;
+    }
+    let registry = fs::read_to_string(workspace.join("registry/agent.json"))?;
+    update_registry_manifest(&registry, &plan.after, &plan.after)?;
+    let metadata = Command::new("cargo")
+        .args(["metadata", "--locked", "--no-deps", "--format-version", "1"])
+        .current_dir(workspace)
+        .output()?;
+    if !metadata.status.success() {
+        return Err(RrcError::Invalid(format!(
+            "post-mutation cargo metadata failed: {}",
+            bounded_output(&metadata.stderr)
+        )));
+    }
+    let value: serde_json::Value = serde_json::from_slice(&metadata.stdout)?;
+    for package in value["packages"].as_array().into_iter().flatten() {
+        let manifest = package["manifest_path"].as_str().unwrap_or_default();
+        let owned = Path::new(manifest)
+            .canonicalize()
+            .is_ok_and(|path| owned_manifests.contains(&path));
+        if owned && package["version"].as_str() != Some(plan.after.as_str()) {
+            return Err(RrcError::Invalid(format!(
+                "workspace package metadata retained a stale version: {}",
+                package["name"].as_str().unwrap_or("unknown")
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn update_registry_manifest(input: &str, before: &str, after: &str) -> Result<String, RrcError> {
@@ -1253,11 +2224,42 @@ fn update_registry_manifest(input: &str, before: &str, after: &str) -> Result<St
             "registry version does not match workspace".into(),
         ));
     }
+    validate_registry_release_urls(&value, before)?;
     value["version"] = serde_json::Value::String(after.into());
     rewrite_version_urls(&mut value, before, after);
     let mut rendered = serde_json::to_string_pretty(&value)?;
     rendered.push('\n');
     Ok(rendered)
+}
+
+fn validate_registry_release_urls(
+    value: &serde_json::Value,
+    expected: &str,
+) -> Result<(), RrcError> {
+    match value {
+        serde_json::Value::Object(map) => {
+            for (key, child) in map {
+                if key == "archive" {
+                    let archive = child.as_str().ok_or_else(|| {
+                        RrcError::Invalid("registry archive URL is not a string".into())
+                    })?;
+                    if !archive.contains(&format!("/v{expected}/")) {
+                        return Err(RrcError::Invalid(format!(
+                            "registry archive URL does not match workspace version {expected}"
+                        )));
+                    }
+                }
+                validate_registry_release_urls(child, expected)?;
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for child in items {
+                validate_registry_release_urls(child, expected)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 fn rewrite_version_urls(value: &mut serde_json::Value, before: &str, after: &str) {
@@ -1340,12 +2342,151 @@ mod tests {
     use super::*;
 
     #[test]
-    fn version_bump_updates_only_workspace_and_internal_path_versions() {
-        let source = "[workspace.package]\nversion = \"0.24.4\"\n[workspace.dependencies]\na = { path = \"a\", version = \"=0.24.4\" }\nb = { version = \"=0.24.4\" }\n";
-        let updated = update_workspace_manifest(source, "0.24.4", "0.24.5").unwrap();
-        assert!(updated.contains("version = \"0.24.5\""));
-        assert!(updated.contains("path = \"a\", version = \"=0.24.5\""));
-        assert!(updated.contains("b = { version = \"=0.24.4\" }"));
+    fn release_telemetry_retains_only_the_newest_bounded_output_lines() {
+        let now = Instant::now();
+        let mut activity = ReleaseWorkerActivity {
+            epoch_id: "epoch".into(),
+            stage: "Release recovery".into(),
+            detail: "Local verification".into(),
+            current_gate: None,
+            current_command: None,
+            current_child: None,
+            gate_started_at: None,
+            last_activity_at: now,
+            completed_gates: 0,
+            total_gates: 7,
+            version_before: None,
+            version_after: None,
+            candidate_sha: None,
+            retry_budget: String::new(),
+            failure_fingerprint: None,
+            recent_output: VecDeque::new(),
+        };
+        for index in 0..32 {
+            push_telemetry_line(&mut activity, &format!("line-{index}"));
+        }
+        assert_eq!(activity.recent_output.len(), MAX_TELEMETRY_LINES);
+        assert_eq!(
+            activity.recent_output.front().map(String::as_str),
+            Some("line-24")
+        );
+        assert_eq!(
+            activity.recent_output.back().map(String::as_str),
+            Some("line-31")
+        );
+        push_telemetry_line(&mut activity, &"x".repeat(MAX_TELEMETRY_LINE_CHARS + 20));
+        assert_eq!(
+            activity.recent_output.back().unwrap().chars().count(),
+            MAX_TELEMETRY_LINE_CHARS
+        );
+        push_telemetry_line(
+            &mut activity,
+            "\u{1b}[2Junsafe\r\u{1b}]0;title\u{7}visible\u{1}text",
+        );
+        assert_eq!(
+            activity.recent_output.back().map(String::as_str),
+            Some("unsafevisibletext")
+        );
+    }
+
+    fn version_fixture(member_version: &str) -> tempfile::TempDir {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join("crates/a")).unwrap();
+        fs::create_dir_all(root.path().join("crates/b")).unwrap();
+        fs::create_dir_all(root.path().join("registry")).unwrap();
+        fs::write(
+            root.path().join("Cargo.toml"),
+            "[workspace]\nmembers = [\"crates/a\", \"crates/b\"]\n[workspace.package]\nversion = \"0.24.4\"\n",
+        )
+        .unwrap();
+        fs::write(
+            root.path().join("crates/a/Cargo.toml"),
+            format!(
+                "[package]\nname = \"a\"\nversion.workspace = true\n[dependencies]\nb = {{ path = \"../b\", version = \"={member_version}\" }}\n[dev-dependencies]\nb-dev = {{ package = \"b\", path = \"../b\", version = \"={member_version}\" }}\n[build-dependencies]\nb-build = {{ package = \"b\", path = \"../b\", version = \"={member_version}\" }}\n[target.'cfg(unix)'.dependencies]\nb-target = {{ package = \"b\", path = \"../b\", version = \"={member_version}\" }}\n[target.'cfg(windows)'.dependencies.b-table]\npath = \"../b\"\nversion = \"={member_version}\"\n[dependencies]\nexternal = {{ version = \"=0.24.4\" }}\n"
+            ),
+        )
+        .unwrap();
+        fs::write(
+            root.path().join("crates/b/Cargo.toml"),
+            "[package]\nname = \"b\"\nversion.workspace = true\n",
+        )
+        .unwrap();
+        fs::write(
+            root.path().join("registry/agent.json"),
+            "{\"version\":\"0.24.4\",\"archive\":\"https://example/v0.24.4/a.tgz\"}",
+        )
+        .unwrap();
+        root
+    }
+
+    #[test]
+    fn version_plan_updates_every_internal_dependency_section_and_not_external_pins() {
+        let root = version_fixture("0.24.4");
+        let plan = build_version_mutation_plan(root.path(), "patch").unwrap();
+        let member = plan
+            .files
+            .iter()
+            .find(|file| file.relative_path == "crates/a/Cargo.toml")
+            .unwrap();
+        let updated = String::from_utf8(member.after.clone()).unwrap();
+        assert_eq!(updated.matches("version = \"=0.24.5\"").count(), 5);
+        assert!(updated.contains("external = { version = \"=0.24.4\" }"));
+        assert_eq!(plan.files.len(), 3);
+    }
+
+    #[test]
+    fn version_plan_rejects_one_mismatched_internal_pin_before_writes() {
+        let root = version_fixture("0.24.3");
+        let before = fs::read(root.path().join("Cargo.toml")).unwrap();
+        let error = build_version_mutation_plan(root.path(), "patch").unwrap_err();
+        assert!(error.to_string().contains("preflight mismatch"));
+        assert_eq!(fs::read(root.path().join("Cargo.toml")).unwrap(), before);
+    }
+
+    #[test]
+    fn repository_version_plan_covers_every_owned_manifest_and_lockfile() {
+        let workspace = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap();
+        let plan = build_version_mutation_plan(workspace, "patch").unwrap();
+        let root = fs::read_to_string(workspace.join("Cargo.toml")).unwrap();
+        let manifests = workspace_member_manifests(workspace, &root).unwrap();
+        for path in manifests {
+            let source = fs::read_to_string(&path).unwrap();
+            if source.contains("path =")
+                && source.contains(&format!("version = \"={}\"", plan.before))
+            {
+                let relative = relative_version_path(workspace, &path).unwrap();
+                assert!(
+                    plan.files.iter().any(|file| file.relative_path == relative),
+                    "missing manifest mutation for {relative}"
+                );
+            }
+        }
+        assert_eq!(plan.generated_lockfile, "Cargo.lock");
+        assert!(
+            plan.files
+                .iter()
+                .any(|file| file.relative_path == "registry/agent.json")
+        );
+    }
+
+    #[test]
+    fn version_plan_write_failure_rolls_back_every_written_file() {
+        let root = version_fixture("0.24.4");
+        let plan = build_version_mutation_plan(root.path(), "patch").unwrap();
+        let originals = plan
+            .files
+            .iter()
+            .map(|file| (file.relative_path.clone(), file.before.clone()))
+            .collect::<Vec<_>>();
+        let error = apply_version_mutation_plan(root.path(), &plan, Some(1)).unwrap_err();
+        assert!(error.to_string().contains("injected"));
+        for (path, bytes) in originals {
+            assert_eq!(fs::read(root.path().join(path)).unwrap(), bytes);
+        }
     }
 
     #[test]
@@ -1354,6 +2495,13 @@ mod tests {
         let updated = update_registry_manifest(source, "0.24.4", "0.24.5").unwrap();
         assert!(updated.contains("\"version\": \"0.24.5\""));
         assert!(updated.contains("/v0.24.5/a.tgz"));
+    }
+
+    #[test]
+    fn registry_bump_rejects_stale_archive_version() {
+        let source = r#"{"version":"0.24.4","archive":"https://example/v0.24.3/a.tgz"}"#;
+        let error = update_registry_manifest(source, "0.24.4", "0.24.5").unwrap_err();
+        assert!(error.to_string().contains("archive URL"));
     }
 
     #[test]

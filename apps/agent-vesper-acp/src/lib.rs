@@ -959,6 +959,49 @@ impl AcpHarnessEngine {
         }
         let config = self.turn_configuration(&request).await;
         let root = workspace_root_path(&request.workspace_roots);
+        if !workflow_replaced
+            && !matches!(
+                vesper_harness::release_recovery::classify_release_intent(&text),
+                vesper_harness::release_recovery::ReleaseIntentDecision::NotRelease
+            )
+        {
+            let permission: Arc<dyn vesper_agent::PermissionPort> = request
+                .permission_requester
+                .as_ref()
+                .map(|requester| {
+                    Arc::new(AcpHarnessPermissionPort {
+                        requester: Arc::clone(requester),
+                        session_id: request.session_id.clone(),
+                    }) as Arc<dyn vesper_agent::PermissionPort>
+                })
+                .unwrap_or_else(|| Arc::new(vesper_agent::DenyPermissionPort));
+            let repair_factory = WorkerFactory::new(Arc::clone(&self.registry), config.clone())
+                .with_permission_port(permission);
+            let release_root = root.clone();
+            let objective = text.clone();
+            let admission = tokio::task::spawn_blocking(move || {
+                vesper_harness::release_recovery::admit_natural_release_for_workspace_with_factory(
+                    &release_root,
+                    &objective,
+                    Some(repair_factory),
+                )
+            })
+            .await
+            .map_err(|error| format!("release admission executor panicked: {error}"))?
+            .map_err(|error| format!("release admission failed: {error}"))?;
+            match admission {
+                vesper_harness::release_recovery::NaturalReleaseAdmission::Started(body)
+                | vesper_harness::release_recovery::NaturalReleaseAdmission::Clarification(body) => {
+                    return Ok(AcpPromptResult {
+                        text: body,
+                        cancelled: false,
+                        persist_turn: false,
+                        history_replacement: None,
+                    });
+                }
+                vesper_harness::release_recovery::NaturalReleaseAdmission::NotRelease => {}
+            }
+        }
         let mut acceptance = self.acceptance_session(&request.session_id);
         // Enrollment-visibility PRD D1: route acceptance reviewer stage
         // lines through the turn's progress port so the client sees live

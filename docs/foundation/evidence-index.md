@@ -1,5 +1,151 @@
 # Foundation Evidence Index
 
+## RRC terminal-ownership corrective repair (2026-09-30)
+
+- Execution report: [`2026-09-30-rrc-terminal-ownership-repair.md`](2026-09-30-rrc-terminal-ownership-repair.md)
+- Owning PRD: [`../Agent_Vesper_Release_Recovery_Controller_PRD.md`](../Agent_Vesper_Release_Recovery_Controller_PRD.md)
+- Verdict: **CORRECTIVE SOURCE REPAIR AND LOCAL PTY ACCEPTANCE PASSED; FRESH
+  NON-PUBLISHING TUI BUILT; ALEX-OPERATED LIVE ACCEPTANCE NOT RUN.** Release child
+  stdout/stderr now flow only through concurrently drained pipes, terminal-control
+  sanitization, secret redaction, bounded registered-worker telemetry, one per-frame
+  ViewModel snapshot and Ratatui. Interactive tracing no longer writes around the
+  renderer. A real 120×36 PTY regression rejects raw CSI/OSC/CR/control output,
+  out-of-RUN writes, premature Ready and stale post-settlement telemetry. Temporarily
+  restoring inherited child streams made that regression fail with exit 101; restoring
+  the repaired source made it pass. All 37 enforced acceptance cases passed. Replacement
+  TUI SHA-256: `7e5cd4f3bc5dd0d3e15473b5f9cae0a202ad8f9fc5ad413b2053652c9351e0c1`.
+  No release, publication, tag, push, installation or VRO-19 work occurred.
+
+## RRC live telemetry UX repair and rejected prerelease TUI (2026-09-30)
+
+- Historical report: [`2026-09-30-rrc-live-telemetry-ux-repair.md`](2026-09-30-rrc-live-telemetry-ux-repair.md)
+- Corrective report: [`2026-09-30-rrc-terminal-ownership-repair.md`](2026-09-30-rrc-terminal-ownership-repair.md)
+- Superseded verdict: **LIVE TERMINAL-OWNERSHIP ACCEPTANCE FAILED; CANDIDATE
+  REJECTED AND MUST NOT BE REUSED.** Its unit/runtime telemetry evidence did not prove
+  alternate-screen confinement. Raw release output corrupted the Ratatui layout and
+  active compilation coexisted with `RUN / Ready`. The corrective report owns all
+  current readiness claims and the replacement artifact.
+
+## Live RRC task supervision (2026-09-30)
+
+- Execution report: [`2026-09-30-live-rrc-task-supervision.md`](2026-09-30-live-rrc-task-supervision.md)
+- Verdict: **ACTIVE AND PROGRESSING; NOT STUCK AT OBSERVATION TIME.** The exact
+  fresh candidate owned `xtask verify` → `cargo test --workspace --all-features`
+  → a live test executable. The leaf test changed from `voice_speech_pipeline` to
+  `context_paging_composition` across an eight-second observation, while persisted
+  RRC state truthfully reported `local_verification` / `workspace-verify: running`.
+  No process was signalled and no live acceptance input was generated.
+
+## RRC task-lifecycle prerelease candidate (2026-09-30)
+
+- Build report: [`2026-09-30-rrc-task-lifecycle-prerelease-candidate.md`](2026-09-30-rrc-task-lifecycle-prerelease-candidate.md)
+- Owning PRD: [`../Agent_Vesper_Release_Recovery_Controller_PRD.md`](../Agent_Vesper_Release_Recovery_Controller_PRD.md)
+- Verdict: **FRESH RELEASE-PROFILE TUI/ACP CANDIDATES BUILT AND IDENTITY-VERIFIED;
+  LIVE ACCEPTANCE NOT RUN; NO RELEASE PERFORMED.** The candidate source is bound to
+  HEAD `01d2df045a7c30253bea8e613e9840b9f62d053b`, tracked-diff SHA-256
+  `74b79361fdf24dccee6caee531dcc9228caea9764a175a0b63b6dab46ec5faed`, and
+  status-inventory SHA-256
+  `86589fb2dc69039d87fb2b2734804eba49510127e6e2e482862932d193f7476c`.
+  TUI SHA-256 is
+  `8f15fa72e4288668043c188007188f94b1da7f29ed6d62886ecaf4409ff7fefd`;
+  ACP SHA-256 is
+  `de49869ac53de856c6d1c9025c5a0eb3d881434196ec346a1713bc25d12ae67b`.
+  The TUI differs from the rejected byte-identical candidate. No release, push,
+  publication, tag, installation, live acceptance, or VRO-19 work occurred.
+
+## RRC registered-task lifecycle repair (2026-09-30)
+
+- Execution report: [`2026-09-30-rrc-task-lifecycle-repair.md`](2026-09-30-rrc-task-lifecycle-repair.md)
+- Owning PRD: [`../Agent_Vesper_Release_Recovery_Controller_PRD.md`](../Agent_Vesper_Release_Recovery_Controller_PRD.md)
+- Verdict: **IMPLEMENTED AND LOCALLY VERIFIED; LIVE TUI ACCEPTANCE NOT RUN; NO
+  CANDIDATE BUILT; NO RELEASE PERFORMED.** Natural-language startup now returns
+  only after one repository-keyed controller task is registered with retained
+  thread ownership, cancellation and epoch/activity state. The real local-gate
+  subprocess regression proves handler-return survival, persisted Running state,
+  cancellation settlement and dirty-checkout preservation. TUI rendering derives
+  running/TODO/Run activity from that registry and rejects simultaneous Ready or
+  No active tasks labels. The previous byte-identical defective candidate is not
+  reused as evidence.
+
+## RRC stale-epoch autonomy repair and prerelease candidate (2026-09-30)
+
+- Execution report: [`2026-09-30-rrc-stale-epoch-autonomy-repair.md`](2026-09-30-rrc-stale-epoch-autonomy-repair.md)
+- Verdict: **LOCALLY VERIFIED; FRESH TUI CANDIDATE BUILT; LIVE ACCEPTANCE NOT
+  RUN; NO RELEASE PERFORMED.** Natural-language admission now resumes a matching
+  recoverable local epoch, archives and replaces an obsolete same-objective
+  prerelease epoch, and preserves unrelated or irreversible release state behind
+  one bounded human clarification. The acceptance gate passes all 34 exact cases.
+  Candidate SHA-256 is
+  `99de2f87e50abd696bac8b204539ec752f14ce9a41370ef8d44af7516c545f01`.
+
+## RRC version-mutation prerelease candidate (2026-09-30)
+
+- Build report: [`2026-09-30-rrc-version-mutation-prerelease-candidate.md`](2026-09-30-rrc-version-mutation-prerelease-candidate.md)
+- Verdict: **FRESH TUI/ACP CANDIDATES BUILT AND IDENTITY-VERIFIED; MANUAL
+  ACCEPTANCE NOT RUN; NO RELEASE PERFORMED.** The external candidate directory
+  preserves release-profile Linux x86-64 binaries built from source HEAD
+  `01d2df045a7c30253bea8e613e9840b9f62d053b` plus tracked-diff identity
+  `f8360122e4cc1e77c7d744317e3e517cd2a204d41bc9d596dbafe9db19d74ec7`.
+  TUI SHA-256 is `d22670002752b37954d60bc360f70a633d4f3c507a47f7da33effbd6762f02de`;
+  ACP SHA-256 is `02d7329cac27fca00a089386766d3e965f2020df8f135f50bb34dc68294f0b70`.
+  No release, publication, tag, push, installation, manual acceptance, or
+  VRO-19 work occurred.
+
+## RRC complete version mutation repair (2026-09-30)
+
+- Execution report: [`2026-09-30-rrc-complete-version-mutation-repair.md`](2026-09-30-rrc-complete-version-mutation-repair.md)
+- Owning PRD: [`../Agent_Vesper_Release_Recovery_Controller_PRD.md`](../Agent_Vesper_Release_Recovery_Controller_PRD.md)
+- Verdict: **IMPLEMENTED AND LOCALLY VERIFIED; NO RELEASE PERFORMED.** RRC version
+  preparation now inventories all declared workspace members, rejects stale
+  inherited package versions, internal exact path pins and Registry archive URLs
+  before writing, applies one typed manifest/Registry transaction with rollback,
+  regenerates `Cargo.lock`, and requires an all-target Cargo check plus locked
+  metadata consistency before later release gates. The direct inventory covered
+  118 exact internal pins across 27 manifests. Harness (162 passed, 2 ignored),
+  all 30 acceptance cases, architecture, clippy, formatting and diff checks passed.
+  Publication and fresh cross-platform execution remain unexecuted.
+
+## RRC source-resolution UX repair (2026-09-30)
+
+- Execution report: [`2026-09-30-rrc-source-resolution-ux-repair.md`](2026-09-30-rrc-source-resolution-ux-repair.md)
+- Current objective binding: [`release-objective-provenance.json`](release-objective-provenance.json)
+- Verdict: **IMPLEMENTED, LOCALLY VERIFIED, AND FRESH PRERELEASE TUI BUILT; NO
+  RELEASE PERFORMED.** Release source selection now resolves committed completed-
+  objective provenance before candidate trees, ignores unrelated historical
+  worktrees, and limits clarification to genuinely different variants of that same
+  objective using human labels rather than paths or SHAs. Harness (158 passed, 2
+  ignored), ACP (61 passed), TUI (267 passed), and all 30 `cargo xtask acceptance`
+  cases passed. Clean local completion commit `3f8ea52e7ee663498b401848444b689d07f09511`
+  produced TUI SHA-256 `159a269bdc7d97d8569630097e327e5394089d4a76e351b8fe6cb84d353c7b97`.
+  Manual acceptance, cross-platform CI, publication, push and installation remain
+  unexecuted.
+
+## Autonomous RRC prerelease candidate (2026-09-30)
+
+- Build report: [`2026-09-30-autonomous-rrc-prerelease-candidate.md`](2026-09-30-autonomous-rrc-prerelease-candidate.md)
+- Verdict: **CANDIDATE BUILT AND IDENTITY-VERIFIED; MANUAL ACCEPTANCE NOT RUN;
+  NO RELEASE PERFORMED.** Fresh Linux x86-64 release-profile TUI and ACP
+  binaries were built from the captured `rrc-autonomy-repair` working-tree
+  snapshot into a new external Cargo target directory, then preserved under
+  `/home/Alex/Projects/agent-vesper-prerelease-candidates/`. The report records
+  artifact hashes/versions and exact HEAD, tracked-diff, and status-inventory
+  identities. No version, tag, push, publication, installation, or manual
+  release-intent acceptance occurred.
+
+## Release-intent autonomy repair (2026-09-30)
+
+- Execution report: [`2026-09-30-release-intent-autonomy-repair.md`](2026-09-30-release-intent-autonomy-repair.md)
+- Verdict: **IMPLEMENTED AND LOCALLY VERIFIED; NO RELEASE PERFORMED.** Both production
+  hosts now intercept conservative ordinary-language release imperatives before
+  provider dispatch, resolve one clean completed source across repository worktrees,
+  preserve a dirty active checkout, persist exact provenance, and launch the existing
+  RRC from a clean detached release worktree. Ambiguity returns one specific
+  clarification before any state/worktree mutation. Harness (158 passed, 2 ignored),
+  ACP (61 passed), TUI (267 passed), the production publication-boundary test, and
+  all 30 `cargo xtask acceptance` cases passed. No version, tag, publication, push,
+  installation, credential, PRD, production `main`, or VRO-19 mutation occurred.
+  Fresh cross-platform CI and live publication were intentionally not run.
+
 ## Release Recovery Controller final completion (2026-09-29)
 
 - Final completion and full PRD audit: [`release-recovery-controller-final-completion.md`](release-recovery-controller-final-completion.md)

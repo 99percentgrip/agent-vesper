@@ -58,6 +58,16 @@ transport, stderr-only tracing, and orderly shutdown.
   normal client-backed permission port to the isolated repair AgentLoop; missing
   client permission support fails closed. `/ci` includes the same persisted
   controller status as TUI; ACP never keeps a host-private release lifecycle.
+  Ordinary free-text release imperatives use that same shared conservative
+  admission before provider dispatch. Admission launches the existing background
+  RRC from a clean isolated release worktree. A persisted matching local-failure
+  epoch resumes automatically; an obsolete same-objective prerelease epoch is
+  archived and superseded automatically. Remote irreversible state or an unrelated
+  active objective asks one bounded human-facing clarification without exposing
+  epoch IDs, controller states or ledger paths. Objective provenance excludes
+  unrelated historical worktrees. Only unresolved variants of the same objective
+  return one human-labelled clarification—never paths or SHAs—without a provider
+  turn or release mutation.
 
 - `/skills settings status|save mode standard|enhanced|save enable|disable <skill>`
   uses the shared domain parser and harness preferences. Reads create no workspace

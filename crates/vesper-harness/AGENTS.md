@@ -13,17 +13,55 @@ Z.ai and Playwright MCP server descriptors.
 ## Ownership
 
 - `release_recovery` owns the provider-neutral Release Recovery Controller:
-  typed lifecycle, controller directives/settled-evidence reducer and immutable
+  conservative natural-language release admission shared by both hosts;
+  repository-wide objective-provenance resolution; ambiguity refusal before
+  mutation; isolated clean release-worktree creation; persisted objective identity,
+  human labels/evidence reports, source workspace, base/source/final SHAs, ordered
+  intended commits, binary-diff hash and release workspace; and the same typed
+  `/release` lifecycle. A clean candidate is eligible only when its committed
+  `docs/foundation/release-objective-provenance.json` binds a validated completed
+  objective and existing committed evidence reports. The newest completed objective
+  excludes unrelated historical worktrees before candidate-tree comparison. Only
+  genuinely different maximal trees for that same objective may clarify, using
+  human variant labels rather than paths or SHAs; raw Git provenance is exposed by
+  `/release evidence`. Questions, planning prose, negation, deferred intent and
+  release-process discussion never admit a release. A dirty active checkout is
+  never cleaned, reset, stashed or used as the release mutation workspace.
+  The typed lifecycle, controller directives/settled-evidence reducer and immutable
   failure evidence; the repository's four exact-SHA pre-release gates; first-causal
   log extraction/redaction, stable fingerprints, last-green comparison,
   retry/focused-proof/diagnostic budgets, outage admission, stagnation limits,
   bounded atomic user-state checkpoints, structured GitHub Actions access, and
-  the shared `/release`/`/ci` projection. Resume refreshes exact-SHA GitHub state
-  before progression. GitHub write operations require an unforgeable controller
+  the shared `/release`/`/ci` projection. Natural-language admission reconciles an
+  active checkpoint before creating another: matching recoverable local stages
+  resume automatically; stale same-objective source/workspace identities are
+  atomically replaced only after the full old record is archived under the
+  user-owned release-state root; unrelated objectives and any remote push/tag/
+  publication evidence produce one bounded human clarification without mutation.
+  Primary workspaces are never changed by reconciliation. Resume refreshes exact-SHA
+  GitHub state before progression. GitHub write operations require an unforgeable controller
   admission token; adapters, providers and hosts do not decide retry policy.
   `release_executor` runs the repository's existing local gates, version/commit/
   push/tag/publication path, bounded official GitHub-status check, persisted
-  background progression and cancellable local subprocesses. Missing or failed
+  background progression and cancellable local subprocesses. Worker admission is
+  registered before the launcher acknowledges startup; the registry retains the
+  owned join handle, cancellation token, epoch identity and live activity until
+  settlement. Its bounded telemetry snapshot is updated from persisted gate changes,
+  command/child lifecycle and streamed stdout/stderr activity; it carries stage, gate,
+  command, current test executable, elapsed/last-activity time, gate counts, version/SHA,
+  retry/fingerprint state and the newest eight redacted output lines. TUI/ACP status
+  queries this ownership rather than inferring work from admission prose or polling the
+  filesystem. Local release children always use null stdin plus explicitly piped stdout
+  and stderr; both streams are drained concurrently, terminal controls are removed, and
+  only bounded/redacted records enter worker telemetry. No release child may inherit an
+  interactive host terminal. Version preparation inventories every declared workspace member,
+  requires one matching inherited
+  package version and matching exact pins for all internal path dependencies across
+  normal/dev/build/target tables, validates Registry release URLs, then applies the
+  complete manifest/Registry mutation transactionally. It regenerates `Cargo.lock`,
+  runs a workspace all-target check and locked metadata validation, and restores all
+  original bytes if writing or validation fails; no later release gate may run on a
+  partial or inconsistent version graph. Missing or failed
   local-gate evidence cannot support external-outage classification. Proven or
   strongly supported deterministic source failures use one permission-aware
   AgentLoop turn in an isolated user-state worktree; promotion requires observed

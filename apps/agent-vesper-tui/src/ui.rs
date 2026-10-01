@@ -186,6 +186,28 @@ pub enum VoicePhase {
     Error,
 }
 
+/// A process-owned background task projected from its real lifecycle registry.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct BackgroundTaskState {
+    pub label: String,
+    pub detail: String,
+    pub cancellable: bool,
+    pub current_gate: Option<String>,
+    pub current_command: Option<String>,
+    pub current_child: Option<String>,
+    pub gate_elapsed_secs: Option<u64>,
+    pub last_activity_ago_secs: u64,
+    pub completed_gates: usize,
+    pub total_gates: usize,
+    pub version_before: Option<String>,
+    pub version_after: Option<String>,
+    pub candidate_sha: Option<String>,
+    pub retry_budget: String,
+    pub failure_fingerprint: Option<String>,
+    pub recent_output: Vec<String>,
+    pub process_alive: bool,
+}
+
 /// Pure view model the renderer consumes every frame.
 #[derive(Debug, Clone, Default)]
 pub struct ViewModel {
@@ -213,6 +235,8 @@ pub struct ViewModel {
     pub command_menu_selected: usize,
     /// Whether an agent turn is currently running.
     pub agent_running: bool,
+    /// Process-owned work independent of a provider turn.
+    pub background_task: Option<BackgroundTaskState>,
     /// Number of follow-up prompts retained in the native FIFO.
     pub queued_prompt_count: usize,
     /// Typed live controls governing real agent turns.
@@ -569,7 +593,7 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
     let phase = model.plan.phase();
     let phase_style = banner_style_for_phase(phase);
     let model_name = superpower_value_for(model, "model").unwrap_or_else(|| "provider".into());
-    let state = if model.agent_running {
+    let state = if model.agent_running || model.background_task.is_some() {
         "RUNNING"
     } else {
         "READY"
@@ -913,6 +937,12 @@ fn run_status_line(model: &ViewModel, show_sidebar: bool, palette: ThemePalette)
                 model.status.clone().unwrap_or_default(),
                 Style::default().fg(palette.text),
             ),
+        ]);
+    }
+    if let Some(task) = model.background_task.as_ref() {
+        return Line::from(vec![
+            Span::styled("● ", Style::default().fg(palette.warning)),
+            Span::styled(task.detail.clone(), Style::default().fg(palette.text)),
         ]);
     }
     if !model.agent_running {
@@ -1738,7 +1768,7 @@ fn render_screen_reader(frame: &mut Frame<'_>, model: &ViewModel) {
             Constraint::Length(2),
         ])
         .split(area);
-    let state = if model.agent_running {
+    let state = if model.agent_running || model.background_task.is_some() {
         "WORKING"
     } else {
         "READY"
@@ -1775,7 +1805,14 @@ fn render_screen_reader(frame: &mut Frame<'_>, model: &ViewModel) {
         chunks[1],
     );
     frame.render_widget(
-        Paragraph::new(model.status.as_deref().unwrap_or("Ready")),
+        Paragraph::new(
+            model
+                .background_task
+                .as_ref()
+                .map(|task| task.detail.as_str())
+                .or(model.status.as_deref())
+                .unwrap_or("Ready"),
+        ),
         chunks[2],
     );
     frame.render_widget(Paragraph::new(format!("> {}", model.input)), chunks[3]);
@@ -1818,7 +1855,13 @@ fn render_sidebar(
     // cannot starve Run out of the viewport.
     let session_height = 7;
     let todo_minimum = u16::from(model.panels.tasks) * 2;
-    let desired_report_height = if model.last_report.is_empty() { 2 } else { 8 };
+    let desired_report_height = if model.background_task.is_some() {
+        18
+    } else if model.last_report.is_empty() {
+        2
+    } else {
+        8
+    };
     let report_height = desired_report_height.min(
         rail.height
             .saturating_sub(session_height + todo_minimum)
@@ -1868,10 +1911,17 @@ fn render_sidebar(
         task_capacity
     };
     let mut todo_lines = if model.task_plan.is_empty() {
-        vec![Line::from(Span::styled(
-            "No active tasks",
-            Style::default().fg(palette.muted),
-        ))]
+        if let Some(task) = model.background_task.as_ref() {
+            vec![Line::from(vec![
+                Span::styled("● ", Style::default().fg(palette.warning)),
+                Span::raw(task.label.clone()),
+            ])]
+        } else {
+            vec![Line::from(Span::styled(
+                "No active tasks",
+                Style::default().fg(palette.muted),
+            ))]
+        }
     } else {
         model
             .task_plan
@@ -1916,7 +1966,102 @@ fn render_sidebar(
         );
     }
 
-    let run_lines = if model.last_report.is_empty() {
+    let run_width = usize::from(chunks[2].width);
+    let run_lines = if let Some(task) = model.background_task.as_ref() {
+        let mut lines = vec![Line::from(vec![
+            Span::styled("● ", Style::default().fg(palette.warning)),
+            Span::raw(truncate_with_ellipsis(
+                &task.label,
+                run_width.saturating_sub(2),
+            )),
+        ])];
+        lines.push(telemetry_row("Stage", &task.detail, run_width, palette));
+        if let Some(gate) = task.current_gate.as_deref() {
+            lines.push(telemetry_row("Gate", gate, run_width, palette));
+        }
+        if let Some(command) = task.current_command.as_deref() {
+            lines.push(telemetry_row("Command", command, run_width, palette));
+        }
+        if let Some(child) = task.current_child.as_deref() {
+            lines.push(telemetry_row("Current", child, run_width, palette));
+        }
+        if let Some(elapsed) = task.gate_elapsed_secs {
+            lines.push(telemetry_row(
+                "Elapsed",
+                &format_telemetry_duration(elapsed),
+                run_width,
+                palette,
+            ));
+        }
+        let last_activity = if task.last_activity_ago_secs >= 60 && task.process_alive {
+            format!(
+                "No output for {} — process still alive",
+                format_telemetry_duration(task.last_activity_ago_secs)
+            )
+        } else {
+            format!(
+                "{} ago",
+                format_telemetry_duration(task.last_activity_ago_secs)
+            )
+        };
+        lines.push(telemetry_row(
+            "Activity",
+            &last_activity,
+            run_width,
+            palette,
+        ));
+        lines.push(telemetry_row(
+            "Gates",
+            &format!("{}/{}", task.completed_gates, task.total_gates),
+            run_width,
+            palette,
+        ));
+        if task.version_before.is_some() || task.version_after.is_some() {
+            lines.push(telemetry_row(
+                "Candidate",
+                &format!(
+                    "{} → {}",
+                    task.version_before.as_deref().unwrap_or("pending"),
+                    task.version_after.as_deref().unwrap_or("pending")
+                ),
+                run_width,
+                palette,
+            ));
+        }
+        if let Some(candidate) = task.candidate_sha.as_deref() {
+            lines.push(telemetry_row("SHA", candidate, run_width, palette));
+        }
+        lines.push(telemetry_row(
+            "Retry",
+            &task.retry_budget,
+            run_width,
+            palette,
+        ));
+        if let Some(fingerprint) = task.failure_fingerprint.as_deref() {
+            lines.push(telemetry_row("Failure", fingerprint, run_width, palette));
+        }
+        if !task.recent_output.is_empty() {
+            lines.push(Line::from(Span::styled(
+                "Recent output",
+                Style::default().fg(palette.accent),
+            )));
+            let capacity = usize::from(chunks[2].height).saturating_sub(lines.len() + 1);
+            lines.extend(
+                task.recent_output
+                    .iter()
+                    .rev()
+                    .take(capacity)
+                    .rev()
+                    .map(|line| {
+                        Line::from(Span::styled(
+                            truncate_with_ellipsis(line, run_width),
+                            Style::default().fg(palette.muted),
+                        ))
+                    }),
+            );
+        }
+        lines
+    } else if model.last_report.is_empty() {
         vec![Line::from(vec![
             Span::styled(
                 if model.agent_running { "● " } else { "○ " },
@@ -1938,7 +2083,7 @@ fn render_sidebar(
     frame.render_widget(
         Paragraph::new(
             std::iter::once(Line::from(Span::styled(
-                if model.last_report.is_empty() {
+                if model.background_task.is_some() || model.last_report.is_empty() {
                     "RUN"
                 } else {
                     "LAST RUN"
@@ -1949,10 +2094,31 @@ fn render_sidebar(
             )))
             .chain(run_lines)
             .collect::<Vec<_>>(),
-        )
-        .wrap(Wrap { trim: false }),
+        ),
         chunks[2],
     );
+}
+
+fn telemetry_row<'a>(label: &str, value: &str, width: usize, palette: ThemePalette) -> Line<'a> {
+    Line::from(vec![
+        Span::styled(format!("{label:<10}"), Style::default().fg(palette.muted)),
+        Span::raw(truncate_with_ellipsis(value, width.saturating_sub(10))),
+    ])
+}
+
+fn format_telemetry_duration(seconds: u64) -> String {
+    if seconds >= 3600 {
+        format!(
+            "{}h {:02}m {:02}s",
+            seconds / 3600,
+            (seconds / 60) % 60,
+            seconds % 60
+        )
+    } else if seconds >= 60 {
+        format!("{}m {:02}s", seconds / 60, seconds % 60)
+    } else {
+        format!("{seconds}s")
+    }
 }
 
 fn truncate_with_ellipsis(text: &str, max_chars: usize) -> String {
@@ -3084,6 +3250,103 @@ mod tests {
         assert!(
             content.contains("turn 199"),
             "auto-follow (None) must show the bottom of the transcript"
+        );
+    }
+
+    #[test]
+    fn registered_release_task_replaces_ready_and_no_active_tasks() {
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
+        let mut model = ViewModel {
+            panels: PanelVisibility {
+                sidebar: true,
+                tasks: true,
+                ..PanelVisibility::default()
+            },
+            background_task: Some(BackgroundTaskState {
+                label: "Release recovery".into(),
+                detail: "Local verification · workspace-verify".into(),
+                cancellable: true,
+                current_gate: Some("workspace-verify".into()),
+                current_command: Some("cargo xtask verify".into()),
+                current_child: Some("routing_quality_eval".into()),
+                gate_elapsed_secs: Some(614),
+                last_activity_ago_secs: 2,
+                completed_gates: 3,
+                total_gates: 7,
+                version_before: Some("0.24.4".into()),
+                version_after: Some("0.24.5".into()),
+                retry_budget: "full 0/1 · infra 0/2 · diagnostic 0/2".into(),
+                recent_output: vec!["test routing_quality_eval ...".into()],
+                process_alive: true,
+                ..BackgroundTaskState::default()
+            }),
+            ..ViewModel::default()
+        };
+        let backend = TestBackend::new(150, 32);
+        let mut terminal = Terminal::new(backend).expect("test backend");
+        terminal
+            .draw(|frame| render_to_frame(frame, &model))
+            .expect("release task render");
+        let content = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(content.contains("Release recovery"), "{content}");
+        assert!(content.contains("Local verification"), "{content}");
+        assert!(content.contains("workspace-verify"), "{content}");
+        assert!(content.contains("routing_quality_eval"), "{content}");
+        assert!(content.contains("10m 14s"), "{content}");
+        assert!(content.contains("3/7"), "{content}");
+        assert!(content.contains("0.24.4 → 0.24.5"), "{content}");
+        assert!(!content.contains("No active tasks"), "{content}");
+        assert!(!content.contains("Ready"), "{content}");
+
+        let task = model.background_task.as_mut().unwrap();
+        task.current_child = Some("test_b".into());
+        task.gate_elapsed_secs = Some(617);
+        task.last_activity_ago_secs = 0;
+        task.completed_gates = 4;
+        task.recent_output.push("Running test_b".into());
+        terminal
+            .draw(|frame| render_to_frame(frame, &model))
+            .expect("updated release telemetry render");
+        let updated = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(updated.contains("test_b"), "{updated}");
+        assert!(updated.contains("10m 17s"), "{updated}");
+        assert!(updated.contains("4/7"), "{updated}");
+        assert!(!updated.contains("No active tasks"), "{updated}");
+        assert!(!updated.contains("Ready"), "{updated}");
+
+        model
+            .background_task
+            .as_mut()
+            .unwrap()
+            .last_activity_ago_secs = 252;
+        terminal
+            .draw(|frame| render_to_frame(frame, &model))
+            .expect("quiet live-process telemetry render");
+        let quiet = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(quiet.contains("No output for 4m 12s"), "{quiet}");
+        assert!(
+            quiet.contains('…'),
+            "narrow telemetry must truncate cleanly: {quiet}"
         );
     }
 
