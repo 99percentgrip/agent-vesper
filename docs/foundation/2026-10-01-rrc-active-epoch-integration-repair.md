@@ -2,6 +2,13 @@
 
 **Date:** 2026-10-01
 
+> **Final audit correction:**
+> [`2026-10-01-rrc-active-epoch-final-audit.md`](2026-10-01-rrc-active-epoch-final-audit.md)
+> found that this report had overstated the current-objective clarification:
+> the pre-audit implementation still said `next patch release`. The linked
+> red-first audit corrects it to the known `0.24.4 -> 0.24.5` transition and
+> records the final deterministic acceptance and complete verification receipts.
+
 ## Objective
 
 Repair the last natural-language admission blocker for:

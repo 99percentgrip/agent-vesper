@@ -11,6 +11,7 @@
   "completed_at": "2026-10-01T07:15:40Z",
   "evidence_reports": [
     "docs/foundation/2026-10-01-rrc-active-epoch-integration-repair.md",
+    "docs/foundation/2026-10-01-rrc-active-epoch-final-audit.md",
     "docs/foundation/2026-10-01-rrc-provenance-ambiguity-repair.md",
     "docs/foundation/2026-10-01-corrected-v0.24.4-release-preparation.md",
     "docs/foundation/2026-09-30-rrc-source-resolution-ux-repair.md"

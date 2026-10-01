@@ -3,13 +3,18 @@
 ## RRC active-epoch final-integration repair (2026-10-01)
 
 - Execution report: [`2026-10-01-rrc-active-epoch-integration-repair.md`](2026-10-01-rrc-active-epoch-integration-repair.md)
+- Final audit: [`2026-10-01-rrc-active-epoch-final-audit.md`](2026-10-01-rrc-active-epoch-final-audit.md)
 - Owning PRD: [`../Agent_Vesper_Release_Recovery_Controller_PRD.md`](../Agent_Vesper_Release_Recovery_Controller_PRD.md)
-- Verdict: **SOURCE-COMPLETE AND LOCALLY VERIFIED; NO RELEASE ACTION.** The
-  canonical corrected integration now explicitly supersedes the live historical
+- Verdict: **SOURCE-COMPLETE, AUDITED AND LOCALLY VERIFIED; NO RELEASE ACTION.**
+  The canonical corrected integration explicitly supersedes the live historical
   local-only prerelease epoch without redundant clarification, while preserving
-  the complete old record and dirty primary checkout. The exact regression is
-  enrolled in the 45-case acceptance gate. Any push, remote CI, tag or publication
-  evidence still requires one human-readable clarification naming both objectives.
+  the complete old record and dirty primary checkout. The final red-first audit
+  corrected current-objective clarification to show the known `0.24.4 -> 0.24.5`
+  transition and made lifecycle acceptance independent of ambient workstation
+  pressure without weakening production governor tests. All 45 exact acceptance
+  cases and complete repository verification passed. Any push, remote CI, tag or
+  publication evidence still requires one human-readable clarification naming
+  both objectives and known version transitions.
 
 ## RRC provenance ambiguity repair and corrected candidate (2026-10-01)
 

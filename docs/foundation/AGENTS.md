@@ -6,6 +6,11 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `2026-10-01-rrc-active-epoch-final-audit.md` owns the red-first correction
+  proving both known version transitions in human clarification, the direct
+  test-only lifecycle policy injection, retained production governor coverage,
+  complete verification and explicit no-release boundary.
+
 - `2026-10-01-rrc-active-epoch-integration-repair.md` owns the live-ledger
   forensic identity, canonical historical-epoch supersession repair, durable
   objective/variant lineage, irreversible-state clarification contract,

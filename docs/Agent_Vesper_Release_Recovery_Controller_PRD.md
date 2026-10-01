@@ -1182,6 +1182,7 @@ non-publishing boundary, not a simulated pass or an RRC implementation gap.
 Execution evidence and exact verification receipts:
 
 - [`foundation/2026-10-01-rrc-active-epoch-integration-repair.md`](foundation/2026-10-01-rrc-active-epoch-integration-repair.md) — canonical historical-epoch supersession, durable identity, irreversible-state clarification, mutation proof and 45-case acceptance
+- [`foundation/2026-10-01-rrc-active-epoch-final-audit.md`](foundation/2026-10-01-rrc-active-epoch-final-audit.md) — red-first known-version clarification correction, lifecycle-fixture/governor separation, current 45-case acceptance and complete verification
 - [`foundation/2026-10-01-rrc-provenance-ambiguity-repair.md`](foundation/2026-10-01-rrc-provenance-ambiguity-repair.md) — canonical final-source binding, equivalent-candidate collapse, real retained-worktree resolution proof, governed full gates and current `0.24.4` replacement TUI
 - [`foundation/2026-10-01-corrected-v0.24.4-release-preparation.md`](foundation/2026-10-01-corrected-v0.24.4-release-preparation.md) — historical corrected source reconstruction excluding the invalid manual `3.3.1` mutation, with its original governed gates and now-superseded TUI
 - [`foundation/release-recovery-controller-pr1-pr3-execution.md`](foundation/release-recovery-controller-pr1-pr3-execution.md)

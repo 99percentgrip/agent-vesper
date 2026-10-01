@@ -148,7 +148,12 @@ Own durable project documentation and evidence-backed engineering records.
   earlier non-publishing TUI/ACP candidate build for Alex-operated acceptance; and
   `foundation/2026-10-01-rrc-provenance-ambiguity-repair.md` records canonical
   final-source binding, equivalent-candidate collapse, the real retained-worktree
-  probe, governed final gates and the current `0.24.4` replacement TUI.
+  probe, governed final gates and the current `0.24.4` replacement TUI;
+  `foundation/2026-10-01-rrc-active-epoch-integration-repair.md` records canonical
+  historical-epoch supersession; and
+  `foundation/2026-10-01-rrc-active-epoch-final-audit.md` records the red-first
+  known-version clarification correction, deterministic lifecycle acceptance,
+  complete verification and unchanged no-release boundary.
 - Root PRD files (`*-prd.md`) own accepted phased requirement documents
   (e.g. `agent-vesper-reasoning-orchestrator-prd.md`,
   `provider-capability-gating-prd.md`, `qm-extraction-prd.md`,
