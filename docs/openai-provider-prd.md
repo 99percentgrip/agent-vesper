@@ -24,6 +24,9 @@ not asserted by offline acceptance. User setup is in [the guide](openai-provider
 
 - [v0.24.4 combined corrective release](foundation/2026-09-29-v0.24.4-combined-corrective-release.md) tracks the exact release source, gates, publication, assets, Registry update, manual acceptance, and retained historical-event limitation.
 - [2026-09-28 malformed-Responses and shared skill-routing repair](foundation/2026-09-28-openai-skill-routing-repair.md) records the current subscription metadata/reasoning decoder fix, bounded secret-safe rejection diagnostics, both-host offline receipts, runnable candidate identities and the unexecuted live/cross-platform gaps.
+- [2026-09-30 Responses decoder reinspection](foundation/2026-09-30-openai-responses-reinspection.md) rechecks the historical and current first-party event shapes, preserves the already-correct acceptance of subscription metadata/reasoning events, and adds expected-shape detail to separate structured diagnostics.
+- [2026-09-30 Responses streaming boundary audit](foundation/2026-09-30-openai-responses-streaming-boundary-audit.md) classifies the recorded failure as a bounded JSON event with an unsupported string event type while preserving the unknown exact discriminant, adds framing/boundary/no-replay regressions, labels diagnostic byte measurements, and enforces safe user prose versus separate structured diagnostics in both hosts.
+- [2026-09-30 Responses live prerelease candidate](foundation/2026-09-30-openai-responses-live-prerelease-candidate.md) records the clean isolated debug source/binary identity, complete 60-test adapter receipt, TUI secret-canary surface proof and one successful direct OpenAI runtime turn. It does not reproduce the unavailable historical event or establish release/cross-platform readiness.
 
 Official documentation inspected on 2026-09-08:
 

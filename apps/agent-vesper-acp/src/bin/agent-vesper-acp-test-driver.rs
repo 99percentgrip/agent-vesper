@@ -90,6 +90,7 @@ async fn main() -> ExitCode {
         eprintln!("integration dispatch gate is required");
         return ExitCode::FAILURE;
     };
+    vesper_harness::release_executor::enable_permissive_resource_governor_for_process_tests();
     let factory = DispatchGateFactory {
         inner: GlmFactory::default(),
         gate_address,

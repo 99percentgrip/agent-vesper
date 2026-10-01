@@ -14,9 +14,19 @@ architecture, MSRV, and source-oracle checks.
   deliberate evaluator defects to fail their named assertion tests; a compile failure is
   not a mutation kill. Build artifacts stay under `target/acceptance-mutations`.
   The fixed acceptance set also executes the RRC partial-matrix, verified-repair,
-  pause/resume, immutable-publication, production-orchestrator, native host
-  cancellation/restart process-lifecycle, and TUI-controller routing cases;
-  deleting or renaming any case fails the gate.
+  pause/resume, immutable-publication, natural-language stale-epoch recovery,
+  obsolete-epoch preservation, unrelated-objective clarification, irreversible-state
+  retention, registered-controller/local-subprocess lifecycle, truthful TUI task
+  projection, production-orchestrator, native host cancellation/restart
+  process-lifecycle, Host Resource Governor cgroup discovery, constrained RAM/swap and
+  disk admission, resumable resource deferral, ACP process-level controller-status and
+  Cargo-policy inheritance, and TUI-controller routing cases. The lifecycle and renderer
+  cases also require live gate elapsed/activity updates, child turnover, completed-gate
+  advancement, bounded output retention and exclusion of
+  contradictory idle labels.
+  The Unix real-PTY case runs the actual TUI and a noisy registered child, rejecting
+  inherited stdout/stderr, raw terminal controls, writes outside RUN, premature Ready,
+  and stale telemetry after settlement. Deleting or renaming any case fails the gate.
 
 - `xtask` may depend on `vesper-testkit`; production crates may not depend on it.
 - Commands must not call providers or mutate source/user state.

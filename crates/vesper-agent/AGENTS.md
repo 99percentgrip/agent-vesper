@@ -99,7 +99,9 @@ the multi-turn, tool-executing layer above it.
   real adapters must accept navigator decomposition/synthesis without tool metadata.
   Provider terminal outcomes other than a normal `Stop` are classified as
   `AgentLoopError::Incomplete` and must never be reported by a host as a
-  completed implementation. Cancellation and visible EOF/stream errors are
+  completed implementation. `AgentLoopError::ProviderTurn` displays only the
+  provider's bounded safe message; its typed `ProviderError` retains structured
+  diagnostics for hosts to record through a separate diagnostic channel. Cancellation and visible EOF/stream errors are
   converted into a classified `StreamInterrupted` terminal too; buffered text
   and complete tool transactions survive and pending tool fragments never replay.
   A typed `StreamInterrupted` terminal returns `AgentTurnOutcome::Interrupted`

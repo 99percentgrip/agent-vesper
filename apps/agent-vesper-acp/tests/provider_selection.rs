@@ -45,6 +45,7 @@ fn synthetic_provider_serves_an_acp_prompt_lifecycle_without_network_io() {
     ));
     let _ = std::fs::remove_dir_all(&temp);
     std::fs::create_dir_all(&temp).unwrap();
+    let signed_out_fixture = support::signed_out_openai_fixture();
 
     // No ZAI_API_KEY and no AGENT_VESPER_GLM_BASE_URL: synthetic mode must not
     // require GLM credentials or any network endpoint.
@@ -60,6 +61,7 @@ fn synthetic_provider_serves_an_acp_prompt_lifecycle_without_network_io() {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    support::set_signed_out_xai_credentials(&mut command, &signed_out_fixture);
     for key in critical_environment_keys() {
         if let Ok(value) = std::env::var(key) {
             command.env(key, value);

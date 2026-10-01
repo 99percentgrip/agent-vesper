@@ -413,8 +413,10 @@ pub enum AgentLoopError {
     /// The provider registry could not create a session.
     #[error("provider session creation failed: {0:?}")]
     ProviderSetup(RuntimeError),
-    /// A provider turn returned a classified error.
-    #[error("provider turn failed: {0:?}")]
+    /// A provider turn returned a classified error. `ProviderError::Display`
+    /// exposes only its bounded safe message; structured diagnostics remain on
+    /// the typed value for hosts that retain them separately.
+    #[error("provider turn failed: {0}")]
     ProviderTurn(ProviderError),
     /// The stream ended without a terminal event.
     #[error("provider stream ended without a terminal outcome")]

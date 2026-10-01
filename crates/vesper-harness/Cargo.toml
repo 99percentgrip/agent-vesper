@@ -53,6 +53,9 @@ docker = ["vesper-sandbox/docker"]
 # VRO-15 PR-9: the opt-in swarm orchestration layer. Default-off: the
 # single-agent loop, TUI, and ACP build identically without it.
 swarm = ["dep:vesper-swarm", "dep:vesper-provider"]
+# Integration-only seams used by the ACP process conformance driver. This is
+# never enabled by the production ACP/TUI feature sets.
+test-support = []
 
 [dev-dependencies]
 tempfile.workspace = true

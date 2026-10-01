@@ -8,7 +8,7 @@ license.workspace = true
 publish = false
 
 [features]
-integration-test-harness = ["dep:vesper-provider-synthetic", "vesper-provider-openai/integration-test-harness", "vesper-provider-xai/integration-test-harness"]
+integration-test-harness = ["dep:vesper-provider-synthetic", "vesper-provider-openai/integration-test-harness", "vesper-provider-xai/integration-test-harness", "vesper-harness/test-support"]
 # VRO-13 PR-4: forwards to the harness/sandbox docker backend so release
 # builds can enable it; zero new mandatory dependencies for default builds.
 docker = ["vesper-harness/docker"]

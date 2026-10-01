@@ -11,6 +11,10 @@ use std::{
 
 use serde_json::{Value, json};
 
+mod credentials;
+#[allow(unused_imports)]
+pub use credentials::set_signed_out_xai_credentials;
+
 pub const CANARY: &str = "vesper-stage41-secret-canary";
 // Per-operation timeout for receiving one JSON-RPC line from the spawned
 // agent process. The agent normally responds in well under 1 second, but
@@ -78,6 +82,27 @@ impl ProcessHarness {
                 ("AGENT_VESPER_TEST_DISPATCH_GATE", gate.to_string()),
                 ("AGENT_VESPER_FULL_HARNESS", "0".to_owned()),
             ],
+        )
+    }
+
+    /// Starts the integration-only driver that keeps real RRC resource
+    /// observation but uses its explicit permissive policy seam. The supplied
+    /// loopback address is deliberately also the never-used provider gate, so
+    /// a release/status-only test can prove it made no provider connection.
+    #[allow(dead_code)] // Used only by the separately compiled governor process test.
+    pub fn spawn_resource_governor_test_driver(
+        address: std::net::SocketAddr,
+        extra: impl IntoIterator<Item = (&'static str, String)>,
+    ) -> Self {
+        Self::spawn_binary(
+            env!("CARGO_BIN_EXE_agent-vesper-acp-test-driver"),
+            address,
+            [
+                ("AGENT_VESPER_TEST_DISPATCH_GATE", address.to_string()),
+                ("AGENT_VESPER_FULL_HARNESS", "1".to_owned()),
+            ]
+            .into_iter()
+            .chain(extra),
         )
     }
 
@@ -207,6 +232,22 @@ impl ProcessHarness {
         );
         assert_eq!(self.response(1)["result"]["protocolVersion"], 1);
         self.send(json!({"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":"/tmp","mcpServers":[]}}));
+        self.response(2)["result"]["sessionId"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    }
+
+    #[allow(dead_code)] // Used only by the separately compiled governor process test.
+    pub fn initialize_and_new_session_in(&mut self, cwd: &std::path::Path) -> String {
+        self.send(
+            json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1}}),
+        );
+        assert_eq!(self.response(1)["result"]["protocolVersion"], 1);
+        self.send(json!({
+            "jsonrpc":"2.0","id":2,"method":"session/new",
+            "params":{"cwd":cwd.to_string_lossy(),"mcpServers":[]}
+        }));
         self.response(2)["result"]["sessionId"]
             .as_str()
             .unwrap()

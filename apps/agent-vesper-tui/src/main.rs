@@ -160,6 +160,19 @@ async fn main() -> io::Result<()> {
         );
         return Ok(());
     }
+    #[cfg(debug_assertions)]
+    if let Some(index) = args
+        .iter()
+        .position(|arg| arg == "--rrc-terminal-ownership-probe")
+    {
+        let program = args.get(index + 1).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "terminal probe program is missing",
+            )
+        })?;
+        return run_rrc_terminal_ownership_probe(std::path::Path::new(program));
+    }
     // Parse `--resume <id>` or `--resume=<id>`.
     let resume_id: Option<String> = args
         .iter()
@@ -180,9 +193,10 @@ async fn main() -> io::Result<()> {
     if args.iter().any(|arg| arg == "--headless") && args.iter().any(|arg| arg == "daemon") {
         return run_headless_daemon().await;
     }
-    // Tracing goes to stderr only; stdout is reserved for terminal escapes.
+    // Ratatui exclusively owns stdout and stderr for the interactive process.
+    // Background tracing must never race the alternate-screen render loop.
     let _ = tracing_subscriber::fmt()
-        .with_writer(io::stderr)
+        .with_writer(io::sink)
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .try_init();
 
@@ -530,6 +544,7 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
         session_id: runtime_session_id.as_str().to_owned(),
         telemetry: Arc::new(trajectory_recorder()),
         activity: Vec::new(),
+        release_milestone_cursor: None,
         live_trajectory: Vec::new(),
         file_changes: Vec::new(),
         show_tool_details: false,
@@ -998,6 +1013,10 @@ struct TuiSession {
     telemetry: Arc<vesper_observability::TrajectoryRecorder>,
     /// Bounded live execution log shown while tools/provider turns run.
     activity: Vec<String>,
+    /// Highest shared RRC milestone rendered to this chat session. The RRC
+    /// sequence is persisted, so redraws and RUN-panel refreshes never repeat
+    /// chat lines while a newly opened session can show recent context once.
+    release_milestone_cursor: Option<(String, u64)>,
     /// VRO-11.4: inline tool telemetry lines rendered DIRECTLY in the main
     /// Conversation panel (not a sidebar). Populated from both the direct
     /// path's `AgentProgressEvent::ToolStarted/ToolFinished` and the ReAct
@@ -1363,6 +1382,63 @@ impl AgentProgressPort for SessionStatusPort {
     }
 }
 
+fn release_background_task(
+    workspace: &std::path::Path,
+) -> Option<agent_vesper_tui::ui::BackgroundTaskState> {
+    vesper_harness::release_executor::active_release_worker_for_workspace(workspace).map(|task| {
+        agent_vesper_tui::ui::BackgroundTaskState {
+            epoch_id: task.epoch_id,
+            label: task.stage,
+            detail: task.detail,
+            cancellable: task.cancellable,
+            current_gate: task.current_gate,
+            current_command: task.current_command,
+            current_child: task.current_child,
+            gate_elapsed_secs: task.gate_elapsed_secs,
+            last_activity_ago_secs: task.last_activity_ago_secs,
+            completed_gates: task.completed_gates,
+            total_gates: task.total_gates,
+            version_before: task.version_before,
+            version_after: task.version_after,
+            candidate_sha: task.candidate_sha,
+            retry_budget: task.retry_budget,
+            failure_fingerprint: task.failure_fingerprint,
+            recent_output: task.recent_output,
+            process_alive: task.process_alive,
+            progress: task.progress,
+            resource_telemetry: task.resource_telemetry,
+        }
+    })
+}
+
+/// Projects the controller-owned milestone stream into the Conversation panel.
+/// The cursor is based on the persisted epoch/sequence pair, not a renderer
+/// timer, so every new milestone appears once while a fresh TUI session retains
+/// up to three recent events for context.
+fn project_release_milestones(
+    session: &mut TuiSession,
+    background_task: Option<&agent_vesper_tui::ui::BackgroundTaskState>,
+) {
+    let Some(task) = background_task else { return };
+    let milestones = &task.progress.milestones;
+    let Some(latest) = milestones.last() else {
+        return;
+    };
+    let start_after = match session.release_milestone_cursor.as_ref() {
+        Some((epoch, sequence)) if epoch == &task.epoch_id => *sequence,
+        // Seed a reopened chat with only its final three concise messages.
+        _ => latest.sequence.saturating_sub(3),
+    };
+    for milestone in milestones.iter().filter(|row| row.sequence > start_after) {
+        session
+            .state
+            .transcript
+            .push(format!("release: {}", milestone.summary));
+        session.state.status = Some(format!("Release update: {}", milestone.summary));
+    }
+    session.release_milestone_cursor = Some((task.epoch_id.clone(), latest.sequence));
+}
+
 #[allow(clippy::too_many_arguments)] // single-call composition boundary
 async fn drive_loop(
     show_landing: bool,
@@ -1667,6 +1743,8 @@ async fn drive_loop(
         refresh_command_menu(session, registry_commands, surface);
 
         let voice = session.voice.snapshot();
+        let background_task = release_background_task(&checkpoint_stores.workspace_root);
+        project_release_milestones(session, background_task.as_ref());
         let model = ViewModel {
             voice_phase: voice.phase,
             voice_elapsed: voice.elapsed,
@@ -1687,6 +1765,7 @@ async fn drive_loop(
             command_menu: session.command_matches.clone(),
             command_menu_selected: session.command_selected,
             agent_running: session.agent_running,
+            background_task,
             queued_prompt_count: session.queued_prompts.len(),
             controls: session.state.controls.clone(),
             panels: session.state.panels,
@@ -2818,11 +2897,41 @@ async fn drive_loop(
                 // the same way: it takes precedence over a free-text
                 // prompt (only one prompt fires per Enter).
                 let workflow_prompt = session.state.pending_prompt.take();
-                let prompt_to_spawn = workflow_prompt.or(prompt_text).or_else(|| {
+                let mut prompt_to_spawn = workflow_prompt.or(prompt_text).or_else(|| {
                     (!session.agent_running)
                         .then(|| session.queued_prompts.pop_front())
                         .flatten()
                 });
+                if !session.agent_running
+                    && let Some(objective) = prompt_to_spawn.as_deref()
+                    && !matches!(
+                        vesper_harness::release_recovery::classify_release_intent(objective),
+                        vesper_harness::release_recovery::ReleaseIntentDecision::NotRelease
+                    )
+                {
+                    let repair_factory = vesper_harness::WorkerFactory::new(
+                        Arc::clone(registry),
+                        agent.configuration().clone(),
+                    )
+                    .with_permission_port(Arc::clone(&approval_port_for_react));
+                    let admission = vesper_harness::release_recovery::admit_natural_release_for_workspace_with_factory(
+                        &checkpoint_stores.workspace_root,
+                        objective,
+                        Some(repair_factory),
+                    );
+                    let body = match admission {
+                        Ok(vesper_harness::release_recovery::NaturalReleaseAdmission::Started(body))
+                        | Ok(vesper_harness::release_recovery::NaturalReleaseAdmission::Clarification(body)) => body,
+                        Ok(vesper_harness::release_recovery::NaturalReleaseAdmission::NotRelease) => String::new(),
+                        Err(error) => format!("release admission failed: {error}"),
+                    };
+                    if !body.is_empty() {
+                        session.state.status =
+                            Some(body.lines().next().unwrap_or("release").to_owned());
+                        session.state.transcript.push(body);
+                        prompt_to_spawn = None;
+                    }
+                }
                 // Mid-turn Enter steers the live direct loop at its next safe
                 // provider boundary. It does not abort the provider stream or
                 // tool currently in flight. Tab owns the separate FIFO path.
@@ -3287,6 +3396,52 @@ async fn ensure_provider_authenticated(
     )
     .await
     .map(|_| ())
+}
+
+#[cfg(debug_assertions)]
+fn run_rrc_terminal_ownership_probe(program: &std::path::Path) -> io::Result<()> {
+    let workspace = std::env::current_dir()?;
+    vesper_harness::release_executor::spawn_terminal_ownership_probe(&workspace, program)
+        .map_err(|error| io::Error::other(error.to_string()))?;
+    enter_raw_mode(false)?;
+    let result = (|| {
+        let mut terminal = Terminal::new(Backend::new(stdout()))?;
+        terminal.clear()?;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let mut saw_active = false;
+        let mut idle_frames = 0_u8;
+        loop {
+            let background_task = release_background_task(&workspace);
+            saw_active |= background_task.is_some();
+            if saw_active && background_task.is_none() {
+                idle_frames = idle_frames.saturating_add(1);
+            }
+            let model = ViewModel {
+                panels: agent_vesper_tui::PanelVisibility {
+                    sidebar: true,
+                    tasks: true,
+                    ..agent_vesper_tui::PanelVisibility::default()
+                },
+                background_task,
+                ..ViewModel::default()
+            };
+            terminal.draw(|frame| render_to_frame(frame, &model))?;
+            if idle_frames >= 2 {
+                break;
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "terminal ownership probe did not settle",
+                ));
+            }
+            std::thread::sleep(std::time::Duration::from_millis(40));
+        }
+        terminal.flush()?;
+        Ok(())
+    })();
+    let cleanup = leave_raw_mode();
+    result.and(cleanup)
 }
 
 fn enter_raw_mode(enable_mouse: bool) -> io::Result<()> {
@@ -8609,6 +8764,37 @@ fn cancellation_diagnostic(source: &AgentEvent) -> String {
     }
 }
 
+fn safe_agent_loop_error_message(error: &AgentLoopError) -> String {
+    match error {
+        AgentLoopError::ProviderTurn(error) => {
+            format!("provider turn failed: {}", error.info.safe_message)
+        }
+        _ => error.to_string(),
+    }
+}
+
+fn provider_failure_diagnostic(event: &AgentEvent) -> Option<String> {
+    let AgentEvent::Failed(AgentLoopError::ProviderTurn(error)) = event else {
+        return None;
+    };
+    let mut fields =
+        serde_json::to_string(&error.info.diagnostics.fields).unwrap_or_else(|_| "{}".to_owned());
+    fields = vesper_agent::vro::SecretScrubber::new().scrub(&fields);
+    const MAX_FIELDS_BYTES: usize = 4_096;
+    if fields.len() > MAX_FIELDS_BYTES {
+        let mut end = MAX_FIELDS_BYTES;
+        while end > 0 && !fields.is_char_boundary(end) {
+            end -= 1;
+        }
+        fields.truncate(end);
+        fields.push('…');
+    }
+    Some(format!(
+        "Provider diagnostic: category={:?}; retryability={:?}; visible_output_emitted={}; fields={fields}",
+        error.info.category, error.info.retryability, error.info.visible_output_emitted
+    ))
+}
+
 /// Drains a completed agent turn non-blockingly.
 ///
 /// Called at the top of every event-loop iteration. If the receiver is empty
@@ -8710,6 +8896,9 @@ fn drain_agent_event(session: &mut TuiSession) {
                     let diagnostic = cancellation_diagnostic(source);
                     push_activity(session, diagnostic.clone());
                     tracing::debug!(diagnostic = %diagnostic, "user-cancelled agent turn");
+                }
+                if let Some(diagnostic) = provider_failure_diagnostic(&event) {
+                    push_activity(session, diagnostic);
                 }
                 collapse_completed_commentary(&mut event, session);
                 build_completion_report(session, &event);
@@ -9063,7 +9252,7 @@ fn build_completion_report(session: &mut TuiSession, event: &AgentEvent) {
         }
         AgentEvent::Failed(error) => vec![
             "✗ Agent turn failed".into(),
-            format!("Error           {error}"),
+            format!("Error           {}", safe_agent_loop_error_message(error)),
             format!("Elapsed         {elapsed:.1}s"),
         ],
         AgentEvent::SideQuestion { .. } => vec![
@@ -9626,9 +9815,10 @@ fn apply_agent_event(event: AgentEvent, state: &mut SessionState) {
             state.status = Some(message);
         }
         AgentEvent::Failed(error) => {
-            // Provider errors typically mean missing credentials or a network
-            // failure; surface the message rather than wedging the UI.
-            let message = error.to_string();
+            // Provider errors surface only their bounded safe message in chat.
+            // Redacted structured diagnostics are retained separately by the
+            // session activity path before this terminal event is consumed.
+            let message = safe_agent_loop_error_message(&error);
             state.status = Some(format!("agent loop error: {message}"));
             state.transcript.push(format!("agent error: {message}"));
         }
@@ -10139,7 +10329,7 @@ impl CognitionBundle {
     ) {
         match cfg.source.as_deref() {
             Some("local") => {
-                eprintln!(
+                tracing::warn!(
                     "cognition: embedding config = local; using LocalHashEmbedder \
                      (zero-network bag-of-words). Switching chat providers will NOT \
                      trigger any migration."
@@ -10164,7 +10354,7 @@ impl CognitionBundle {
                     model.clone(),
                     cfg.api_key.clone(),
                 );
-                eprintln!(
+                tracing::warn!(
                     "cognition: embedding config = lmstudio ({model} @ {endpoint}); \
                      search mode starts in BM25-only (probe runs in background; \
                      auto-upgrades to Hybrid on first successful embed)."
@@ -10189,7 +10379,7 @@ impl CognitionBundle {
                 // first network round-trip happen lazily on first embed;
                 // search() starts in BM25Only and auto-upgrades on first
                 // success.
-                eprintln!(
+                tracing::warn!(
                     "cognition: embedding config = bigmodel; BigModelEmbeddingAdapter \
                      (JWT auth resolved per call from the ZAI credential). Search mode \
                      starts in BM25-only; auto-upgrades to Hybrid on first successful embed."
@@ -10202,7 +10392,7 @@ impl CognitionBundle {
                 )
             }
             Some(other) => {
-                eprintln!(
+                tracing::warn!(
                     "cognition: unknown embedding source '{other}' in embedding.json; \
                      falling back to LocalHashEmbedder (zero-network)."
                 );
@@ -10263,7 +10453,7 @@ impl CognitionBundle {
             Option<usize>,
             vesper_cognition::SearchMode,
         ) = if embedding_config.overrides_provider_routing() {
-            eprintln!(
+            tracing::warn!(
                 "cognition: ADR 0016 provider-independent embedding layer active \
                  (source = {:?}). Chat-provider switches will NOT change the embedder.",
                 embedding_config.source
@@ -10389,7 +10579,7 @@ impl CognitionBundle {
             };
 
             if needs_migration {
-                eprintln!(
+                tracing::warn!(
                     "cognition: embedder model changed ({} → {}); re-embedding \
                      memories and entities. This may take a few seconds for \
                      large stores...",
@@ -10399,7 +10589,7 @@ impl CognitionBundle {
                 match engine.reembed_everything() {
                     Ok((mem_count, ent_count)) => {
                         if mem_count > 0 || ent_count > 0 {
-                            eprintln!(
+                            tracing::warn!(
                                 "cognition: re-embedded {mem_count} memor{} and {ent_count} \
                                  entit{} to model \"{}\" ({active_dim}-d).",
                                 if mem_count == 1 { "y" } else { "ies" },
@@ -10415,7 +10605,7 @@ impl CognitionBundle {
                         search_mode_hint = vesper_cognition::SearchMode::Hybrid;
                     }
                     Err(err) => {
-                        eprintln!("cognition: re-embed migration failed: {err}");
+                        tracing::warn!("cognition: re-embed migration failed: {err}");
                         // ADR 0016: migration failed → embedder likely
                         // unreachable. Force BM25Only so the session stays
                         // usable instead of returning Err every turn.
@@ -10442,7 +10632,7 @@ impl CognitionBundle {
                 match engine.reembed_everything() {
                     Ok(_) => engine.set_search_mode(vesper_cognition::SearchMode::Hybrid),
                     Err(error) => {
-                        eprintln!("cognition: global-memory re-embed failed: {error}");
+                        tracing::warn!("cognition: global-memory re-embed failed: {error}");
                         engine.set_search_mode(vesper_cognition::SearchMode::BM25Only);
                     }
                 }
@@ -10509,7 +10699,7 @@ impl CognitionBundle {
                         vesper_cognition::EmbedAction::Search,
                     ) {
                         Ok(_) => {
-                            eprintln!(
+                            tracing::warn!(
                                 "cognition: background probe succeeded — search mode \
                                  upgraded to Hybrid."
                             );
@@ -10518,7 +10708,7 @@ impl CognitionBundle {
                             }
                         }
                         Err(err) => {
-                            eprintln!(
+                            tracing::warn!(
                                 "cognition: background probe failed ({err}); staying in \
                                  BM25-only mode. Search will auto-upgrade to Hybrid on \
                                  the first successful embed call."
@@ -10551,7 +10741,7 @@ impl CognitionBundle {
         match active_provider {
             "lmstudio" => match LmStudioEmbedder::from_persisted_settings() {
                 Some(adapter) => {
-                    eprintln!(
+                    tracing::warn!(
                         "cognition: LM Studio embedding endpoint configured at {}. \
                          Probe runs in the background; search starts in BM25-only and \
                          auto-upgrades to Hybrid when the endpoint responds.",
@@ -10561,7 +10751,7 @@ impl CognitionBundle {
                     (arc, None)
                 }
                 None => {
-                    eprintln!(
+                    tracing::warn!(
                         "cognition: no LM Studio settings; using LocalHashEmbedder \
                          (zero-network bag-of-words). Run /lmstudio or /provider to \
                          configure a neural embedder. To make embeddings provider-\
@@ -15391,7 +15581,7 @@ fn apply_embedding_set(
                     vesper_cognition::EmbedAction::Search,
                 ) {
                     Ok(_) => {
-                        eprintln!(
+                        tracing::warn!(
                             "cognition: hot-reload probe succeeded — search mode upgraded to Hybrid."
                         );
                         for engine in &engines {
@@ -15399,7 +15589,7 @@ fn apply_embedding_set(
                         }
                     }
                     Err(err) => {
-                        eprintln!(
+                        tracing::warn!(
                             "cognition: hot-reload probe failed ({err}); staying in BM25-only."
                         );
                     }
@@ -15441,7 +15631,7 @@ fn cognitive_context_for_prompt(bundle: &CognitionBundle, prompt: &str) -> Optio
         };
         match engine.search(request) {
             Ok(found) => hits.extend(found.into_iter().map(|hit| (label, hit))),
-            Err(error) => eprintln!(
+            Err(error) => tracing::warn!(
                 "cognition: {label} auto-recall skipped this turn — search failed: {error}"
             ),
         }
@@ -17723,6 +17913,64 @@ mod tests {
     }
 
     #[test]
+    fn provider_failure_keeps_safe_text_separate_from_structured_diagnostics() {
+        const SECRET_CANARY: &str =
+            "Bearer sk-live-test-SecretCanary0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        let mut session = fresh_tui_session_for_trajectory_tests();
+        let mut error = provider_error(vesper_domain::ErrorCategory::MalformedProtocol);
+        error.info.safe_message = vesper_domain::SafeMessage::new(
+            "OpenAI returned malformed or oversized Responses data",
+        )
+        .unwrap();
+        error
+            .info
+            .diagnostics
+            .fields
+            .insert(
+                "openai:protocol-rejection",
+                serde_json::json!({
+                    "stage": "responses-event",
+                    "event_type": "<unrecognized>",
+                    "field": "type",
+                    "observed_bytes": 1_048_576,
+                    "bound": 1_048_576,
+                    "upstream_preview": SECRET_CANARY,
+                }),
+            )
+            .unwrap();
+        drain_terminal_event(
+            &mut session,
+            AgentEvent::Failed(AgentLoopError::ProviderTurn(error)),
+            false,
+        );
+
+        let transcript = session.state.transcript.join("\n");
+        assert!(
+            transcript.contains("OpenAI returned malformed or oversized Responses data"),
+            "{transcript}"
+        );
+        assert!(!transcript.contains("ProviderError"), "{transcript}");
+        assert!(!transcript.contains("responses-event"), "{transcript}");
+        assert!(!transcript.contains("<unrecognized>"), "{transcript}");
+        assert!(!transcript.contains(SECRET_CANARY), "{transcript}");
+        let report = session.last_report.join("\n");
+        assert!(!report.contains("ProviderError"), "{report}");
+        assert!(!report.contains("responses-event"), "{report}");
+        assert!(!report.contains(SECRET_CANARY), "{report}");
+        let activity = session.activity.join("\n");
+        assert!(!activity.contains(SECRET_CANARY), "{activity}");
+        assert!(activity.contains("[REDACTED:BEARER_TOKEN]"), "{activity}");
+        assert!(
+            session
+                .activity
+                .iter()
+                .any(|line| line.contains("responses-event") && line.contains("<unrecognized>")),
+            "structured provider diagnostic was not retained separately: {:?}",
+            session.activity
+        );
+    }
+
+    #[test]
     fn provider_failure_and_timeout_never_become_user_cancellation() {
         let mut failure = fresh_tui_session_for_trajectory_tests();
         drain_terminal_event(
@@ -17863,6 +18111,7 @@ mod tests {
             session_id: "test-session".into(),
             telemetry: Arc::new(vesper_observability::TrajectoryRecorder::disabled()),
             activity: Vec::new(),
+            release_milestone_cursor: None,
             live_trajectory: Vec::new(),
             file_changes: Vec::new(),
             show_tool_details: false,
@@ -17941,6 +18190,7 @@ mod tests {
             session_id: "test-session".into(),
             telemetry: Arc::new(vesper_observability::TrajectoryRecorder::disabled()),
             activity: Vec::new(),
+            release_milestone_cursor: None,
             live_trajectory: Vec::new(),
             file_changes: Vec::new(),
             show_tool_details: false,
@@ -18017,6 +18267,7 @@ mod tests {
             session_id: "test-session".into(),
             telemetry: Arc::new(vesper_observability::TrajectoryRecorder::disabled()),
             activity: Vec::new(),
+            release_milestone_cursor: None,
             live_trajectory: Vec::new(),
             file_changes: Vec::new(),
             show_tool_details: false,
@@ -19143,6 +19394,7 @@ mod tests {
             session_id: "test".to_owned(),
             telemetry: Arc::new(trajectory_recorder()),
             activity: Vec::new(),
+            release_milestone_cursor: None,
             live_trajectory: Vec::new(),
             file_changes: Vec::new(),
             show_tool_details: false,

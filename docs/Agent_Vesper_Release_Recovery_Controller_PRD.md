@@ -1024,6 +1024,13 @@ Secondary corroboration only:
 13. TUI and ACP share one release state.
 14. Release state persists and is resumable.
 15. Uncertainty is surfaced; it is not converted into blind retries.
+16. A fresh natural-language release request reconciles persisted state before admission.
+17. The same recoverable objective resumes automatically from its safe local stage.
+18. An obsolete same-objective prerelease epoch is archived before replacement.
+19. Remote push, tag or publication evidence is never silently discarded.
+20. An unrelated active objective asks one bounded human-facing clarification.
+21. Epoch IDs, internal controller states, ledger paths and manual resume/cancel
+    commands are diagnostics, not normal user prerequisites.
 
 ---
 
@@ -1070,6 +1077,19 @@ red
 
 That behavior is the defect this PRD exists to eliminate.
 
+A new ordinary-language release request also performs this admission reconciliation:
+
+```text
+load persisted epoch
+→ same objective + safe local state: reconcile and continue automatically
+→ same objective + obsolete source/worktree: archive old evidence and replace
+→ remote push/tag/publication exists: preserve and ask only if a decision is needed
+→ unrelated active objective: preserve and ask one bounded clarification
+```
+
+The primary checkout is not the reconciliation workspace and is never cleaned,
+reset, stashed or mutated by this process.
+
 ---
 
 ## 37. Current Implementation Status
@@ -1092,7 +1112,15 @@ refresh, and immutable publication versus later degraded-main handling.
 PR-4 adds controller-owned production progression around the repository's
 existing version, lockfile, registry, local-gate, commit, push, exact-tag and
 publication contracts. Every mutation requires an RRC-issued typed admission
-token. Deterministic source failures run one permission-aware AgentLoop repair in
+token. Version preparation is fail-closed and repository-wide: it inventories
+all declared workspace members, validates the inherited package version plus
+every internal exact path pin in normal, development, build and target-specific
+dependency tables, validates Registry versioned archives, stages one typed
+mutation plan, regenerates `Cargo.lock`, and requires an all-target workspace
+check plus locked metadata consistency before any release gate. Any preflight,
+write, Cargo or postcondition failure restores the original version bytes and
+prevents commit, tag, push and publication. Deterministic source failures run one
+permission-aware AgentLoop repair in
 an isolated user-state worktree; promotion requires observed successful mutation
 and focused-command receipts, a non-empty diff, a clean controller workspace and
 a fresh repair commit before the one admitted full-gate retry. Local subprocesses
@@ -1108,7 +1136,13 @@ refresh exact-SHA remote evidence on resume.
 PR-6 routes `/release patch|minor|major|status|resume|cancel|evidence|retry` and
 `/ci` through the same persisted harness projection in TUI and ACP. Both hosts
 supply their ordinary permission port to repair workers; `/release` is never a
-free-form release prompt.
+free-form release prompt. Natural-language admission now classifies any active
+checkpoint before starting: a matching `DiagnosingLocalFailure` checkpoint
+transitions back to `LocalVerification` and launches automatically; a stale
+same-objective source or release-worktree identity is archived in the user-owned
+release-state root and atomically replaced; unrelated objectives and any recorded
+remote push/tag/publication state remain unchanged behind one bounded clarification.
+The normal message exposes none of the epoch ID, internal state or ledger path.
 
 PR-7 includes a manually dispatched read-only fixture and fail-closed local
 acceptance enrollment. With explicit authorization, the fixture was also run in
@@ -1122,9 +1156,14 @@ and all five jobs passed in the focused-green case. The private repository has
 zero tags and zero releases. Agent Vesper `main`, tags, releases, registry state,
 credentials and production workflows were not changed.
 
-`cargo xtask acceptance` passes all 30 exact cases, including the seven enrolled
-RRC/controller-route/lifecycle cases, and the complete `cargo xtask verify`
-pipeline passes. Native host cancellation/restart then passed on Linux x86_64,
+The historical final-completion receipt passed 30 exact cases and the complete
+`cargo xtask verify` pipeline. The current resource-governor worktree passes 44
+exact acceptance cases, including the enrolled RRC/controller-route/lifecycle,
+cgroup-ancestor, constrained-memory, constrained-disk, resumable-resource-defer,
+ACP controller-status and every-Cargo-path inheritance cases. The ACP process
+case is Linux-local only; the current verification rerun includes `cargo xtask
+verify`, but does not claim macOS/Windows governor acceptance.
+Native host cancellation/restart then passed on Linux x86_64,
 Linux ARM64, macOS Intel, macOS Apple Silicon and Windows x86_64 in private run
 `36594339290` against exact candidate
 `60eacc5c8ef53f4dba1b4eed7d274fa26ec95284`. The test cancels an actual
@@ -1141,3 +1180,89 @@ Execution evidence and exact verification receipts:
 - [`foundation/release-recovery-controller-hardening-execution.md`](foundation/release-recovery-controller-hardening-execution.md)
 - [`foundation/release-recovery-controller-pr4-pr7-execution.md`](foundation/release-recovery-controller-pr4-pr7-execution.md)
 - [`foundation/release-recovery-controller-final-completion.md`](foundation/release-recovery-controller-final-completion.md)
+- [`foundation/2026-09-30-release-intent-autonomy-repair.md`](foundation/2026-09-30-release-intent-autonomy-repair.md)
+- [`foundation/2026-09-30-rrc-source-resolution-ux-repair.md`](foundation/2026-09-30-rrc-source-resolution-ux-repair.md)
+- [`foundation/2026-09-30-autonomous-rrc-prerelease-candidate.md`](foundation/2026-09-30-autonomous-rrc-prerelease-candidate.md)
+- [`foundation/2026-09-30-rrc-complete-version-mutation-repair.md`](foundation/2026-09-30-rrc-complete-version-mutation-repair.md)
+- [`foundation/2026-09-30-rrc-version-mutation-prerelease-candidate.md`](foundation/2026-09-30-rrc-version-mutation-prerelease-candidate.md)
+- [`foundation/2026-09-30-rrc-stale-epoch-autonomy-repair.md`](foundation/2026-09-30-rrc-stale-epoch-autonomy-repair.md)
+- [`foundation/2026-09-30-rrc-task-lifecycle-repair.md`](foundation/2026-09-30-rrc-task-lifecycle-repair.md)
+- [`foundation/2026-09-30-rrc-task-lifecycle-prerelease-candidate.md`](foundation/2026-09-30-rrc-task-lifecycle-prerelease-candidate.md)
+- [`foundation/2026-09-30-live-rrc-task-supervision.md`](foundation/2026-09-30-live-rrc-task-supervision.md)
+- [`foundation/2026-09-30-rrc-host-resource-governor.md`](foundation/2026-09-30-rrc-host-resource-governor.md)
+- [`foundation/2026-09-30-rrc-governor-acp-process-acceptance.md`](foundation/2026-09-30-rrc-governor-acp-process-acceptance.md) — Linux ACP process proof for resource status and every Cargo path
+- [`foundation/2026-09-30-rrc-governor-acp-process-verification-rerun.md`](foundation/2026-09-30-rrc-governor-acp-process-verification-rerun.md) — independent ACP proof rerun, enforced acceptance and complete verification receipt
+- [`foundation/2026-09-30-rrc-governor-live-host-observation.md`](foundation/2026-09-30-rrc-governor-live-host-observation.md) — timestamped Linux capacity/default-policy observation and unavailable requested TUI test-target receipt; no RRC state or rebuild
+- [`foundation/2026-09-30-rrc-progress-milestones.md`](foundation/2026-09-30-rrc-progress-milestones.md)
+- [`foundation/2026-09-30-rrc-live-telemetry-ux-repair.md`](foundation/2026-09-30-rrc-live-telemetry-ux-repair.md) — superseded after failed terminal-ownership acceptance
+- [`foundation/2026-09-30-rrc-terminal-ownership-repair.md`](foundation/2026-09-30-rrc-terminal-ownership-repair.md) — corrective evidence and replacement candidate
+- [`foundation/2026-09-30-rrc-ux-validation-repair.md`](foundation/2026-09-30-rrc-ux-validation-repair.md) — current Linux-local UX validation and deterministic repair receipt
+- [`foundation/2026-09-30-rrc-progress-ux-full-verification.md`](foundation/2026-09-30-rrc-progress-ux-full-verification.md) — all-features PTY repair and successful complete verification receipt
+
+The terminal-ownership correction makes Ratatui the sole interactive presentation writer.
+Release child stdin is null; stdout and stderr are concurrently drained through owned pipes,
+terminal controls are removed, secrets are redacted, and only bounded records enter the
+registered worker snapshot used by both RUN state and telemetry. A real PTY regression
+covers both streams, ANSI/OSC, carriage-return redraws, pane confinement and settlement;
+it fails when inherited streams are deliberately restored.
+
+The current UX validation then found and repaired missing milestone-cursor test-session
+initialization, a scheduler-order race in the full-PTY tail assertion, and strict-Clippy failures
+in the current governor/progress source. The revised 120×36 PTY fixture retains the noisy
+48-line-per-stream payload and all raw-control/pane/settlement assertions. A subsequent complete
+verification attempt exposed one remaining narrow-tail defect: separate long ANSI/CR marker labels
+could truncate before the CR label reached the real RUN rail. The fixture now uses compact paired
+labels on both sides of a real carriage-return boundary; it retains the same capture, control,
+confinement and settlement assertions. Twenty all-feature PTY repetitions and the complete
+`cargo xtask verify` pipeline passed locally, including all 43 enforced acceptance cases. This is
+still local, non-publishing source evidence only; it does not provide cross-platform UX,
+Alex-operated live acceptance, macOS/Windows resource-backend evidence, or production release
+gates.
+
+The earlier live-telemetry repair projects the registered controller's real gate and child-process
+state into the TUI on every 250 ms render cycle. It exposes stage, command, current test,
+ticking elapsed and last-activity time, completed/total gates, candidate version/SHA,
+retry/fingerprint state and an eight-line redacted output tail. Its production-path
+regression observes workspace verification move from test A to test B, then settle and
+advance to the next gate without restarting the TUI; the renderer regression rejects idle
+labels throughout. No percentage is inferred or fabricated.
+
+The Host Resource Governor adds an RRC-owned local-verification admission and live-safety
+boundary. On Linux it reconciles `/proc/meminfo` with cgroup v2/v1 ancestry, observes swap,
+the complete owned process tree and the managed target-cache filesystem, and preserves a
+fixed-or-proportional desktop reserve plus normal headroom. Every controller-launched Cargo
+path inherits bounded `CARGO_BUILD_JOBS`, `RUST_TEST_THREADS` and `CARGO_TARGET_DIR`; expensive
+compiler gates take one cross-epoch file lease. Disk reserve plus expected growth, memory
+pressure, or occupied lease withholds new expensive work. Critical pressure kills the owned
+process group, keeps the same `LocalVerification` epoch resumable without creating source-failure
+or retry-budget evidence, and carries the observed RAM/cgroup, swap, RSS/rustc, disk, budget,
+pressure and action through the registered snapshot. TUI renders it in RUN; ACP `/release status`
+renders the same snapshot. Non-Linux resource discovery is explicit unavailable rather than a
+fabricated capacity, so expensive local verification fails safely pending a truthful backend.
+The later ACP process regression keeps host observation real while using a fixture-only
+permissive admission policy; it observes the registered RUN/resource snapshot, no provider
+dispatch, and inherited bounded Cargo/test/target settings for version `check`, locked
+`metadata`, and the first local gate.
+
+The current progress-milestone repair persists a bounded, monotonic `ReleaseProgress`
+projection with its typed phase, local/remote completion counts, active gate and concise
+state/gate/resource/matrix milestones. This projection has no release authority: legal RRC
+state transitions and immutable evidence remain authoritative. TUI projects each newly observed
+`epoch_id`/sequence milestone once into conversation and RUN; ACP `/release status` and `/ci`
+render the same current projection and recent milestones. Neither host fabricates a percentage,
+progress update or recovery from elapsed time or release-admission prose. RRC deliberately
+renders **no overall release percentage**: no stable weighted denominator spans local gates,
+remote matrices, human decisions and publication. A task may show units only when its typed
+`completed_units / total_units` denominator is known; unknown work remains phase/activity/count
+information without a percentage.
+
+The stale-epoch report records the earlier reconciliation repair, all four
+classifications, the enrolled 34-case acceptance receipt and its historical candidate.
+A later live run rejected the subsequent telemetry candidate for terminal-output leakage;
+the terminal-ownership corrective report supersedes its readiness claim. Alex-operated
+live acceptance of the new replacement candidate remains unrun.
+
+The prior candidate report records fresh release-profile TUI and ACP candidate artifacts
+built from the repaired tracked source and sealed by source HEAD, tracked-diff,
+artifact and copied-file hashes. It does not claim manual runtime acceptance or
+a production release; neither was performed.

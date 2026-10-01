@@ -80,6 +80,10 @@ business logic.
   exist; Last Run says `Cancelled`. Partial assistant output, completed tool
   telemetry, history and structured diagnostics remain available. Provider
   errors, timeouts and uncorroborated provider-side cancellation stay failures.
+  Provider failures put only the bounded provider safe message in chat and Last
+  Run; structured diagnostics are retained separately in activity, scrubbed
+  again at the host boundary and bounded to 4,096 serialized bytes. They must
+  never be interpolated into user-facing error prose.
 
 - Native Lens review/interview execution delegates to `vesper-harness::lens_tools`;
   TUI retains its live interview-limit policy, bordered UI and URL/browser-launch
@@ -146,6 +150,33 @@ business logic.
   repair, the TUI supplies its ordinary approval port; controller state never
   bypasses permission. `/ci` appends the same persisted RRC status shown by ACP.
   The terminal owns presentation only.
+  Ordinary free-text release imperatives are intercepted before provider dispatch
+  by the same shared conservative admission used by ACP. An admitted objective
+  launches the existing background RRC from its isolated release worktree. A
+  persisted matching local-failure epoch resumes automatically; an obsolete
+  same-objective prerelease epoch is archived and superseded automatically. Remote
+  irreversible state or an unrelated active objective asks one bounded human-facing
+  clarification without exposing epoch IDs, controller states or ledger paths.
+  Objective provenance excludes unrelated historical worktrees. Only unresolved
+  variants of the same objective return one human-labelled clarification—never
+  worktree paths or SHAs—without launching a model turn or mutating release state.
+  While the registered controller owns work, the runtime state and right rail render
+  that real task and continuously refreshed controller telemetry: stage, gate, command,
+  current child/test, ticking gate elapsed time, last activity (including explicit
+  prolonged silence while the process remains alive), gate count, candidate version/SHA,
+  retry/fingerprint state, bounded recent output, and the RRC-owned Host Resource
+  Governor's observed RAM/cgroup, swap, process-tree RSS/rustc count, Cargo/test budget,
+  target-cache disk state, pressure and action. They must not simultaneously claim
+  Ready or No active tasks. Admission text alone never creates a running presentation.
+  Ratatui exclusively owns interactive stdout/stderr: release children use null stdin
+  and concurrently drained stdout/stderr pipes, terminal controls are sanitized before
+  bounded/redacted telemetry, and background tracing is not written to the alternate
+  screen. RUN state and telemetry come from one per-frame registered-worker snapshot.
+  Its persisted typed `ReleaseProgress` phase, gate/job counts and monotonic milestones
+  also project into both RUN and the Conversation panel exactly once per epoch/sequence;
+  a freshly opened session may seed only recent milestones for context. The terminal
+  never derives a release update from a timer or admission prose. The real-PTY
+  acceptance test must fail if either child stream inherits the terminal.
   Tier C Phase 7 (ADR 0010): the
   registry now covers the complete Python oracle surface plus Vesper-native
   commands (102 entries, or 103 with `swarm`, including `/export last`). The

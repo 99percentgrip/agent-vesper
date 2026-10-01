@@ -35,6 +35,7 @@ fn driver_setup_preflight_exits_without_provider_or_workspace_state() {
         .current_dir(root.path())
         .env("AGENT_VESPER_BUNDLE_DIR", root.path())
         .arg("--setup-web-driver");
+    support::set_signed_out_xai_credentials(&mut command, &openai_fixture);
     for key in critical_environment_keys() {
         if let Ok(value) = std::env::var(key) {
             command.env(key, value);
@@ -119,6 +120,7 @@ fn stdio_transcript_reaches_real_glm_adapter_with_protocol_pure_stdout() {
     // Inherit platform-critical env vars (Windows Winsock/DLL search paths,
     // macOS temp/subprocess resolution, Linux PATH). ZAI_API_KEY and
     // AGENT_VESPER_* are set explicitly above, so secret isolation is intact.
+    support::set_signed_out_xai_credentials(&mut command, &openai_fixture);
     for key in critical_environment_keys() {
         if let Ok(value) = std::env::var(key) {
             command.env(key, value);
@@ -360,6 +362,7 @@ fn empty_prompt_and_slash_commands_never_dispatch_provider() {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    support::set_signed_out_xai_credentials(&mut command, &openai_fixture);
     for key in critical_environment_keys() {
         if let Ok(value) = std::env::var(key) {
             command.env(key, value);
@@ -582,6 +585,7 @@ fn host_owned_slash_commands_reach_real_stores_with_tui_parity() {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    support::set_signed_out_xai_credentials(&mut command, &openai_fixture);
     for key in critical_environment_keys() {
         if let Ok(value) = std::env::var(key) {
             command.env(key, value);
@@ -707,10 +711,12 @@ fn advertised_first_and_last<'a>(advertised: &[&'a str]) -> (&'a str, &'a str) {
 }
 #[test]
 fn malformed_input_exits_without_stdout_contamination() {
+    let isolated_root = tempfile::tempdir().unwrap();
     let openai_fixture = support::signed_out_openai_fixture();
     let mut command = Command::new(env!("CARGO_BIN_EXE_agent-vesper-acp"));
     command
         .env_clear()
+        .current_dir(isolated_root.path())
         .env(
             "AGENT_VESPER_OPENAI_CREDENTIALS_PATH",
             openai_fixture.path(),
@@ -718,6 +724,7 @@ fn malformed_input_exits_without_stdout_contamination() {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    support::set_signed_out_xai_credentials(&mut command, &openai_fixture);
     for key in critical_environment_keys() {
         if let Ok(value) = std::env::var(key) {
             command.env(key, value);
@@ -728,7 +735,9 @@ fn malformed_input_exits_without_stdout_contamination() {
         .stdin
         .take()
         .unwrap()
-        .write_all(b"{not-json}\n")
+        .write_all(
+            b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":1}}\n{not-json}\n",
+        )
         .unwrap();
     let output = child.wait_with_output().unwrap();
     for line in String::from_utf8(output.stdout).unwrap().lines() {
@@ -736,6 +745,13 @@ fn malformed_input_exits_without_stdout_contamination() {
     }
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert!(!stderr.contains(CANARY));
+    assert!(
+        !isolated_root
+            .path()
+            .join(".config/agent-vesper/xai-credentials.lock")
+            .exists(),
+        "the process must use the supplied signed-out xAI fixture rather than creating a default credential lock"
+    );
 }
 
 #[test]
@@ -780,6 +796,7 @@ fn cancellation_after_reasoning_emits_no_post_cancel_content() {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    support::set_signed_out_xai_credentials(&mut command, &openai_fixture);
     for key in critical_environment_keys() {
         if let Ok(value) = std::env::var(key) {
             command.env(key, value);
@@ -867,6 +884,7 @@ fn session_new_with_client_mcp_servers_creates_session() {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    support::set_signed_out_xai_credentials(&mut command, &openai_fixture);
     for key in critical_environment_keys() {
         if let Ok(value) = std::env::var(key) {
             command.env(key, value);

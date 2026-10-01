@@ -35,6 +35,45 @@ const KNOWN_RESPONSE_EVENT_TYPES: &[&str] = &[
     "response.refusal.done",
     "responsesapi.websocket_timing",
 ];
+
+fn expected_shape(stage: &str, field: &str) -> &'static str {
+    match (stage, field) {
+        (_, "type") => "known Responses event type",
+        (_, "event-after-terminal") => "no event after terminal response",
+        (_, "output_index") => "unsigned 32-bit output index",
+        (_, "response.id") => "optional bounded response id string",
+        (_, "delta") => "bounded text delta",
+        (_, "tool_call_count") => "at most 128 tool calls",
+        (_, "item.call_id") => "bounded tool call id string",
+        (_, "item.name") => "registered bounded tool name",
+        (_, "item.identity") => "matching unique tool call identity",
+        (_, "item.arguments") => "JSON object matching the started tool call",
+        (_, "extensions") => "bounded OpenAI extension metadata",
+        (_, "item.encrypted_content") => "bounded encrypted reasoning object",
+        (_, "item.phase") => "commentary or final_answer",
+        (_, "unfinished_tool_call") => "all started tool calls completed before terminal",
+        ("responses-sse-line", "line") => "single UTF-8 SSE line",
+        ("responses-sse-line", "utf8") => "valid UTF-8 SSE line",
+        ("responses-sse-data" | "responses-sse-json", "data") => "valid JSON SSE event data",
+        (_, "body") => "valid bounded JSON response body",
+        (_, "text") => "nonempty bounded text",
+        (_, "terminal-event") => "successful terminal event",
+        (_, "attempts") => "successful response within retry budget",
+        _ => "valid bounded protocol value",
+    }
+}
+
+fn observed_bytes_basis(stage: &str) -> &'static str {
+    match stage {
+        "responses-event" => "canonical-json",
+        "responses-sse-line" => "sse-line",
+        "responses-sse-data" => "sse-data-accumulator",
+        "responses-sse-json" => "trimmed-sse-data",
+        "responses-body" => "response-body",
+        _ => "rejected-value",
+    }
+}
+
 pub(crate) fn invalid_at(
     stage: &'static str,
     event_type: Option<&str>,
@@ -43,14 +82,19 @@ pub(crate) fn invalid_at(
     bound: Option<usize>,
 ) -> ProviderError {
     // Diagnostics contain only adapter-owned labels, a sanitized event
-    // discriminant, and sizes. Never attach the rejected value or response.
-    let event_type = event_type.map(|value| {
-        if KNOWN_RESPONSE_EVENT_TYPES.contains(&value) {
-            value.to_owned()
-        } else {
-            "<unrecognized>".to_owned()
-        }
-    });
+    // discriminant, expected shape, and sizes. Never attach the rejected
+    // value or response.
+    let event_type = match event_type {
+        Some(value) if KNOWN_RESPONSE_EVENT_TYPES.contains(&value) => value.to_owned(),
+        Some(_) => "<unrecognized>".to_owned(),
+        None if stage.starts_with("responses-") => "<unrecognized>".to_owned(),
+        None => "not-applicable".to_owned(),
+    };
+    let expected = expected_shape(stage, field);
+    let observed_bytes_basis = observed_bytes_basis(stage);
+    // Keep the human-facing message stable and concise. Branch details belong
+    // only in the typed, redacted diagnostic below so hosts can present or log
+    // them separately without turning internal parser labels into chat prose.
     let mut result = error(
         "OpenAI returned malformed or oversized Responses data",
         ErrorCategory::MalformedProtocol,
@@ -66,7 +110,9 @@ pub(crate) fn invalid_at(
                 "stage": stage,
                 "event_type": event_type,
                 "field": field,
+                "expected": expected,
                 "observed_bytes": observed_bytes,
+                "observed_bytes_basis": observed_bytes_basis,
                 "bound": bound,
             }),
         )

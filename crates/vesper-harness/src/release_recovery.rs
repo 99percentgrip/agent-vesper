@@ -24,6 +24,94 @@ pub const STAGNATION_TIME_LIMIT: Duration = Duration::from_secs(20 * 60);
 pub const MAX_CAUSAL_EXCERPT_BYTES: usize = 4096;
 pub const EXTERNAL_HEALTH_BUDGET: Duration = Duration::from_secs(15);
 pub const MAX_EXTERNAL_HEALTH_REQUESTS: u8 = 3;
+/// Bounded, persisted user-facing events shared by TUI, ACP and a restarted
+/// controller. This is deliberately separate from immutable transition
+/// evidence: it is a concise progress projection, not a second authority.
+pub const MAX_PROGRESS_MILESTONES: usize = 32;
+
+/// Typed settlement state for one user-visible RRC task. This is a display
+/// projection only: controller transitions and immutable evidence still own
+/// release authority.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ReleaseProgressState {
+    #[default]
+    Pending,
+    Running,
+    Passed,
+    Failed,
+    Paused,
+    Cancelled,
+    Skipped,
+}
+
+impl ReleaseProgressState {
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Pending => "Pending",
+            Self::Running => "Running",
+            Self::Passed => "Passed",
+            Self::Failed => "Failed",
+            Self::Paused => "Paused",
+            Self::Cancelled => "Cancelled",
+            Self::Skipped => "Skipped",
+        }
+    }
+}
+
+/// Counted work reported by a task. A missing denominator deliberately means
+/// that a host must show the task state rather than inventing a percentage.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct ReleaseProgressUnits {
+    pub completed: u64,
+    pub total: Option<u64>,
+}
+
+impl ReleaseProgressUnits {
+    #[must_use]
+    pub const fn counted(completed: u64, total: u64) -> Self {
+        Self {
+            completed,
+            total: Some(total),
+        }
+    }
+
+    #[must_use]
+    pub fn render(&self) -> Option<String> {
+        self.total
+            .filter(|total| *total > 0)
+            .map(|total| format!("{}/{}", self.completed.min(total), total))
+    }
+}
+
+/// One bounded branch of the shared RRC progress hierarchy. The controller
+/// creates this from settled local/remote records; hosts only render it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct ReleaseProgressTask {
+    pub name: String,
+    pub state: ReleaseProgressState,
+    #[serde(default)]
+    pub units: ReleaseProgressUnits,
+    #[serde(default)]
+    pub children: Vec<ReleaseProgressTask>,
+}
+
+impl ReleaseProgressTask {
+    fn new(
+        name: impl Into<String>,
+        state: ReleaseProgressState,
+        units: ReleaseProgressUnits,
+        children: Vec<Self>,
+    ) -> Self {
+        Self {
+            name: bounded(name.into(), 128),
+            state,
+            units,
+            children,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -53,6 +141,156 @@ pub enum ReleaseRecoveryState {
     PostReleaseMainDegraded,
     Complete,
     Cancelled,
+}
+
+/// Coarse, user-facing lifecycle grouping derived only from RRC state and
+/// settled gate records. Hosts render this type directly; they never invent a
+/// phase from an elapsed timer or from a command admission acknowledgement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ReleaseProgressPhase {
+    #[default]
+    Preparing,
+    LocalVerification,
+    RemoteVerification,
+    FailureDiagnosis,
+    Repair,
+    Publication,
+    Paused,
+    Settled,
+}
+
+impl ReleaseProgressPhase {
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Preparing => "Preparing",
+            Self::LocalVerification => "Local verification",
+            Self::RemoteVerification => "Remote verification",
+            Self::FailureDiagnosis => "Failure diagnosis",
+            Self::Repair => "Focused repair",
+            Self::Publication => "Publication",
+            Self::Paused => "Paused",
+            Self::Settled => "Settled",
+        }
+    }
+
+    /// Short truthful phase label for width-constrained host surfaces. It is
+    /// deliberately a display abbreviation only; serialized state remains the
+    /// typed enum and text-only status uses [`Self::label`].
+    #[must_use]
+    pub const fn compact_label(self) -> &'static str {
+        match self {
+            Self::Preparing => "Preparing",
+            Self::LocalVerification => "Local",
+            Self::RemoteVerification => "Remote",
+            Self::FailureDiagnosis => "Diagnosing",
+            Self::Repair => "Repair",
+            Self::Publication => "Publishing",
+            Self::Paused => "Paused",
+            Self::Settled => "Settled",
+        }
+    }
+}
+
+/// One concise RRC-owned event suitable for a chat milestone and RUN history.
+/// `sequence` is monotonically increasing for the epoch, so a host can resume
+/// without duplicating prior chat lines after a redraw or process restart.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReleaseProgressMilestone {
+    pub sequence: u64,
+    pub at: DateTime<Utc>,
+    pub phase: ReleaseProgressPhase,
+    pub summary: String,
+}
+
+/// Persisted, typed progress projection. It does not authorize a transition:
+/// `ReleaseRecoveryRecord::state`, gate records, and immutable transition
+/// evidence remain the sole lifecycle authority.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct ReleaseProgress {
+    pub phase: ReleaseProgressPhase,
+    pub headline: String,
+    pub current_gate: Option<String>,
+    pub completed_local_gates: usize,
+    pub total_local_gates: usize,
+    pub terminal_remote_jobs: usize,
+    pub total_remote_jobs: usize,
+    /// Bounded persisted hierarchy for local gates and exact-SHA CI jobs.
+    /// Absence in older ledgers is refreshed before their next save.
+    #[serde(default)]
+    pub tasks: Vec<ReleaseProgressTask>,
+    pub next_sequence: u64,
+    pub milestones: Vec<ReleaseProgressMilestone>,
+}
+
+impl ReleaseProgress {
+    /// Reflects a controller-owned local command after it has actually been
+    /// spawned. The gate does not become passed until the ledger records its
+    /// settled result.
+    pub fn mark_local_gate_running(&mut self, gate_name: &str) {
+        let Some(local) = self
+            .tasks
+            .iter_mut()
+            .find(|task| task.name == "Local verification")
+        else {
+            return;
+        };
+        local.state = ReleaseProgressState::Running;
+        if let Some(gate) = local
+            .children
+            .iter_mut()
+            .find(|task| task.name == gate_name)
+        {
+            gate.state = ReleaseProgressState::Running;
+        }
+    }
+
+    /// Applies a bounded, controller-parsed live subtask count to the already
+    /// derived hierarchy. This never changes RRC authority or completion: the
+    /// parent gate remains Running until its command settles and is persisted.
+    pub fn update_local_subtask(
+        &mut self,
+        gate_name: &str,
+        subtask_name: &str,
+        completed: u64,
+        total: u64,
+    ) {
+        if total == 0 || completed > total {
+            return;
+        }
+        let Some(gate) = self.tasks.iter_mut().find_map(|task| {
+            (task.name == "Local verification")
+                .then(|| {
+                    task.children
+                        .iter_mut()
+                        .find(|child| child.name == gate_name)
+                })
+                .flatten()
+        }) else {
+            return;
+        };
+        let state = if completed == total {
+            ReleaseProgressState::Passed
+        } else {
+            ReleaseProgressState::Running
+        };
+        if let Some(subtask) = gate
+            .children
+            .iter_mut()
+            .find(|child| child.name == subtask_name)
+        {
+            subtask.state = state;
+            subtask.units = ReleaseProgressUnits::counted(completed, total);
+        } else {
+            gate.children.push(ReleaseProgressTask::new(
+                subtask_name,
+                state,
+                ReleaseProgressUnits::counted(completed, total),
+                Vec::new(),
+            ));
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -309,6 +547,26 @@ pub struct LocalGateRecord {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct ReleaseMutationRecord {
     pub source_commit: Option<String>,
+    /// Workspace where the admitted completed implementation was observed.
+    pub source_workspace: Option<String>,
+    /// Stable completed-objective identity from the repository provenance marker.
+    pub objective_id: Option<String>,
+    /// Human-facing objective label; raw Git topology stays in evidence only.
+    pub objective_label: Option<String>,
+    /// Human-facing completed variant label used only if same-objective variants remain.
+    pub source_variant_label: Option<String>,
+    /// Evidence reports bound by the completed-objective provenance marker.
+    pub objective_evidence_reports: Vec<String>,
+    /// Clean isolated worktree owned by this release epoch.
+    pub release_workspace: Option<String>,
+    /// Active checkout HEAD from which intended completed commits were derived.
+    pub base_sha: Option<String>,
+    /// Ordered implementation/evidence commits admitted into this release.
+    pub intended_commits: Vec<String>,
+    /// SHA-256 of the exact admitted base..source binary diff.
+    pub intended_diff_sha256: Option<String>,
+    /// Exact clean source/candidate identity selected before version preparation.
+    pub final_candidate_commit: Option<String>,
     pub version_before: Option<String>,
     pub version_after: Option<String>,
     pub version_files: Vec<String>,
@@ -328,9 +586,111 @@ pub struct ReleaseMutationRecord {
 pub struct ReleaseObjective {
     pub bump: String,
     pub branch_ref: String,
+    /// Original bounded user objective; provenance only, never executed as a prompt.
+    #[serde(default)]
+    pub request: Option<String>,
     pub post_release_main_epoch: bool,
     #[serde(default = "default_pre_release_gates")]
     pub required_gate_names: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReleaseIntentDecision {
+    NotRelease,
+    Admit { bump: String, scope: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NaturalReleaseAdmission {
+    NotRelease,
+    Started(String),
+    Clarification(String),
+}
+
+/// Conservative, provider-neutral admission for an ordinary conversation
+/// objective. It recognizes direct imperatives only; questions, planning,
+/// negation, status discussion and deferred intent remain ordinary chat.
+#[must_use]
+pub fn classify_release_intent(text: &str) -> ReleaseIntentDecision {
+    let normalized = text
+        .trim()
+        .trim_matches(|ch: char| matches!(ch, '"' | '\'' | '`'))
+        .to_ascii_lowercase();
+    if normalized.is_empty()
+        || normalized.contains('?')
+        || [
+            "how ",
+            "what ",
+            "when ",
+            "why ",
+            "should ",
+            "could ",
+            "can ",
+            "would ",
+            "explain ",
+            "describe ",
+            "document ",
+            "discuss ",
+        ]
+        .iter()
+        .any(|prefix| normalized.starts_with(prefix))
+        || [
+            "do not release",
+            "don't release",
+            "dont release",
+            "not release",
+            "release later",
+            "ship later",
+            "publish later",
+            "can release later",
+            "release system",
+            "release process",
+            "release workflow",
+        ]
+        .iter()
+        .any(|phrase| normalized.contains(phrase))
+    {
+        return ReleaseIntentDecision::NotRelease;
+    }
+    let imperative = [
+        "release ",
+        "release it",
+        "ship ",
+        "ship it",
+        "publish ",
+        "publish it",
+        "please release ",
+        "please ship ",
+        "please publish ",
+        "go ahead and release ",
+        "go ahead and ship ",
+        "go ahead and publish ",
+    ]
+    .iter()
+    .any(|prefix| normalized.starts_with(prefix));
+    if !imperative {
+        return ReleaseIntentDecision::NotRelease;
+    }
+    let bump = if normalized
+        .split(|ch: char| !ch.is_ascii_alphanumeric())
+        .any(|word| word == "major")
+    {
+        "major"
+    } else if normalized
+        .split(|ch: char| !ch.is_ascii_alphanumeric())
+        .any(|word| word == "minor")
+    {
+        "minor"
+    } else {
+        // Repository policy makes an unspecified imperative a patch. This
+        // avoids needless clarification for "ship this" while keeping the
+        // typed objective explicit and auditable.
+        "patch"
+    };
+    ReleaseIntentDecision::Admit {
+        bump: bump.into(),
+        scope: bounded(text.trim().to_owned(), 2048),
+    }
 }
 
 pub(crate) fn default_pre_release_gates() -> Vec<String> {
@@ -360,6 +720,10 @@ pub struct ReleaseRecoveryRecord {
     pub external_block: Option<ExternalBlockRecord>,
     #[serde(default)]
     pub mutation: ReleaseMutationRecord,
+    /// Bounded host-neutral progress projection. Backward-compatible ledger
+    /// loads derive an empty default and refresh it before the next save.
+    #[serde(default)]
+    pub progress: ReleaseProgress,
     pub transitions: Vec<TransitionRecord>,
     pub consecutive_stagnant_actions: u8,
     pub last_progress_at: DateTime<Utc>,
@@ -387,12 +751,173 @@ impl ReleaseRecoveryRecord {
             retry_budget: RetryBudget::default(),
             external_block: None,
             mutation: ReleaseMutationRecord::default(),
+            progress: ReleaseProgress::default(),
             transitions: Vec::new(),
             consecutive_stagnant_actions: 0,
             last_progress_at: now,
             created_at: now,
             updated_at: now,
         }
+    }
+
+    /// Recomputes the host-neutral progress projection from RRC-owned state.
+    /// This function has no release authority and intentionally performs no
+    /// I/O; callers persist it with the same ledger save as the settled state.
+    pub fn refresh_progress(&mut self) {
+        let completed_local_gates = self
+            .mutation
+            .local_gates
+            .iter()
+            .filter(|gate| gate.state == SettlementState::Succeeded)
+            .count();
+        let current_gate = self
+            .mutation
+            .local_gates
+            .iter()
+            .find(|gate| gate.state == SettlementState::Running)
+            .or_else(|| {
+                (self.state == ReleaseRecoveryState::LocalVerification)
+                    .then(|| {
+                        self.mutation
+                            .local_gates
+                            .iter()
+                            .find(|gate| gate.state == SettlementState::NotStarted)
+                    })
+                    .flatten()
+            })
+            .map(|gate| gate.name.clone());
+        let total_remote_jobs = self.required_gates.iter().map(|gate| gate.jobs.len()).sum();
+        let terminal_remote_jobs = self
+            .required_gates
+            .iter()
+            .flat_map(|gate| gate.jobs.iter())
+            .filter(|job| job.state.terminal())
+            .count();
+        let phase = match self.state {
+            ReleaseRecoveryState::Idle | ReleaseRecoveryState::Preparing => {
+                ReleaseProgressPhase::Preparing
+            }
+            ReleaseRecoveryState::LocalVerification => ReleaseProgressPhase::LocalVerification,
+            ReleaseRecoveryState::CandidateReady
+            | ReleaseRecoveryState::RemoteGateRunning
+            | ReleaseRecoveryState::WaitingForMatrix
+            | ReleaseRecoveryState::RemoteGatesGreen
+            | ReleaseRecoveryState::PostReleaseMainDegraded => {
+                ReleaseProgressPhase::RemoteVerification
+            }
+            ReleaseRecoveryState::DiagnosingLocalFailure
+            | ReleaseRecoveryState::CollectingFailureEvidence
+            | ReleaseRecoveryState::ClassifyingFailure
+            | ReleaseRecoveryState::NeedMoreEvidence
+            | ReleaseRecoveryState::DiagnosingRepair
+            | ReleaseRecoveryState::ExternalHealthCheck => ReleaseProgressPhase::FailureDiagnosis,
+            ReleaseRecoveryState::FocusedRepair
+            | ReleaseRecoveryState::FocusedVerification
+            | ReleaseRecoveryState::RetryAdmissible => ReleaseProgressPhase::Repair,
+            ReleaseRecoveryState::Tagging
+            | ReleaseRecoveryState::Publishing
+            | ReleaseRecoveryState::PostReleaseCloseout => ReleaseProgressPhase::Publication,
+            ReleaseRecoveryState::PausedExternal | ReleaseRecoveryState::Escalated => {
+                ReleaseProgressPhase::Paused
+            }
+            ReleaseRecoveryState::Published
+            | ReleaseRecoveryState::Complete
+            | ReleaseRecoveryState::Cancelled => ReleaseProgressPhase::Settled,
+        };
+        let headline = match self.state {
+            ReleaseRecoveryState::Idle => "Awaiting a release request".into(),
+            ReleaseRecoveryState::Preparing => "Preparing the isolated candidate workspace".into(),
+            ReleaseRecoveryState::LocalVerification => match current_gate.as_deref() {
+                Some(gate) => format!(
+                    "Local verification {completed_local_gates}/{} · {gate}",
+                    self.mutation.local_gates.len()
+                ),
+                None => "Preparing version and local verification".into(),
+            },
+            ReleaseRecoveryState::CandidateReady => {
+                "Local verification passed; pushing the exact candidate".into()
+            }
+            ReleaseRecoveryState::RemoteGateRunning => {
+                "Exact candidate pushed; locating required CI gates".into()
+            }
+            ReleaseRecoveryState::WaitingForMatrix => {
+                format!("Required CI matrix {terminal_remote_jobs}/{total_remote_jobs} terminal")
+            }
+            ReleaseRecoveryState::CollectingFailureEvidence => {
+                "Collecting complete-matrix failure evidence".into()
+            }
+            ReleaseRecoveryState::ClassifyingFailure => {
+                "Classifying the first causal failure".into()
+            }
+            ReleaseRecoveryState::DiagnosingLocalFailure => {
+                "Local verification failed; preserving causal evidence".into()
+            }
+            ReleaseRecoveryState::NeedMoreEvidence => {
+                "More evidence is required before a retry or repair".into()
+            }
+            ReleaseRecoveryState::FocusedRepair => {
+                "Running one focused evidence-backed repair".into()
+            }
+            ReleaseRecoveryState::FocusedVerification => {
+                "Running focused verification for the repair".into()
+            }
+            ReleaseRecoveryState::DiagnosingRepair => {
+                "Focused repair needs additional diagnosis".into()
+            }
+            ReleaseRecoveryState::RetryAdmissible => {
+                "Focused proof passed; preparing a fresh exact-SHA candidate".into()
+            }
+            ReleaseRecoveryState::ExternalHealthCheck => {
+                "Checking official GitHub health evidence".into()
+            }
+            ReleaseRecoveryState::PausedExternal => {
+                "Paused: official external degradation remains confirmed".into()
+            }
+            ReleaseRecoveryState::Escalated => {
+                "Paused safely; controller escalation is required".into()
+            }
+            ReleaseRecoveryState::RemoteGatesGreen => {
+                "Exact-SHA remote gates are green; verifying immutable tag".into()
+            }
+            ReleaseRecoveryState::Tagging => "Immutable tag verified; starting publication".into(),
+            ReleaseRecoveryState::Publishing => "Waiting for publication assets to settle".into(),
+            ReleaseRecoveryState::Published => "Release assets are published and verified".into(),
+            ReleaseRecoveryState::PostReleaseCloseout => "Checking post-release main health".into(),
+            ReleaseRecoveryState::PostReleaseMainDegraded => {
+                "Published release remains verified; later main is degraded".into()
+            }
+            ReleaseRecoveryState::Complete => "Release recovery is complete".into(),
+            ReleaseRecoveryState::Cancelled => "Release recovery was cancelled".into(),
+        };
+        self.progress.phase = phase;
+        self.progress.headline = headline;
+        self.progress.current_gate = current_gate;
+        self.progress.completed_local_gates = completed_local_gates;
+        self.progress.total_local_gates = self.mutation.local_gates.len();
+        self.progress.terminal_remote_jobs = terminal_remote_jobs;
+        self.progress.total_remote_jobs = total_remote_jobs;
+        self.progress.tasks = progress_tasks(self);
+    }
+
+    /// Appends one bounded display event after a state or gate settlement.
+    /// The immutable RRC record remains authoritative; milestones only let a
+    /// host show concise chat progress and resume without duplicate output.
+    pub fn note_progress_milestone(&mut self, summary: impl Into<String>) {
+        self.refresh_progress();
+        let at = Utc::now();
+        let sequence = self.progress.next_sequence.saturating_add(1);
+        self.progress.next_sequence = sequence;
+        self.progress.milestones.push(ReleaseProgressMilestone {
+            sequence,
+            at,
+            phase: self.progress.phase,
+            summary: bounded(redact_secrets(&summary.into()), 512),
+        });
+        if self.progress.milestones.len() > MAX_PROGRESS_MILESTONES {
+            let excess = self.progress.milestones.len() - MAX_PROGRESS_MILESTONES;
+            self.progress.milestones.drain(..excess);
+        }
+        self.updated_at = at;
     }
 
     pub fn transition(
@@ -415,6 +940,7 @@ impl ReleaseRecoveryRecord {
             ));
         }
         let now = Utc::now();
+        let reason = bounded(reason.into(), 1024);
         let (workflow_id, run_id, job_id) = ids
             .map(|(workflow, run, job)| (Some(workflow), Some(run), Some(job)))
             .unwrap_or((None, None, None));
@@ -427,7 +953,7 @@ impl ReleaseRecoveryRecord {
             workflow_id,
             run_id,
             job_id,
-            reason: bounded(reason.into(), 1024),
+            reason: reason.clone(),
             evidence_refs: bounded_refs(evidence_refs),
             repair_attempts: self.repair_attempts.len(),
             full_gate_retries: self.retry_budget.full_gate_used,
@@ -435,6 +961,8 @@ impl ReleaseRecoveryRecord {
         });
         self.state = to;
         self.updated_at = now;
+        self.refresh_progress();
+        self.note_progress_milestone(format!("{} — {reason}", self.progress.phase.label()));
         Ok(())
     }
 
@@ -482,6 +1010,9 @@ impl ReleaseRecoveryRecord {
             self.required_gates.push(gate);
             true
         };
+        if changed {
+            self.refresh_progress();
+        }
         Ok(changed)
     }
 
@@ -675,6 +1206,11 @@ impl ReleaseRecoveryRecord {
 
     #[must_use]
     pub fn render_status(&self) -> String {
+        // Old schema-v1 checkpoints may predate the persisted projection. Do
+        // not write during a read-only `/release status`; derive a local view.
+        let mut progress_record = self.clone();
+        progress_record.refresh_progress();
+        let progress = &progress_record.progress;
         let terminal = self
             .required_gates
             .iter()
@@ -750,9 +1286,29 @@ impl ReleaseRecoveryRecord {
             || "none".into(),
             |block| format!("{} — {}", block.service, block.official_status),
         );
+        let recent_progress = progress
+            .milestones
+            .iter()
+            .rev()
+            .take(4)
+            .rev()
+            .map(|milestone| format!("#{} {}", milestone.sequence, milestone.summary))
+            .collect::<Vec<_>>()
+            .join(" | ");
         format!(
-            "RELEASE RECOVERY\nState                 {:?}\nCandidate SHA         {}\nCurrent main SHA      {}\nVersion provenance    {} -> {}\nLocal gates           {local_complete}/{} · {local_active}\nRemote gate           {active_gate}\nJobs                  {terminal}/{total} terminal\nFailed jobs           {}\nFailure fingerprint   {fingerprint}\nFocused verification  {focused}\nRetry                 {} — {}\nRetry budget          full {}/{} · infrastructure {}/{} · diagnostic {}/{}\nMutation state        commit={} push={} tag={} publish={}\nPublished release     {published}\nCurrent main health   {main_health}\nExternal block        {external}\nNext                  {:?}",
+            "RELEASE RECOVERY\nState                 {:?}\nProgress              {} — {}\nProgress gates        {}/{} local · {}/{} remote jobs\nRecent milestones     {}\nCandidate SHA         {}\nCurrent main SHA      {}\nVersion provenance    {} -> {}\nLocal gates           {local_complete}/{} · {local_active}\nRemote gate           {active_gate}\nJobs                  {terminal}/{total} terminal\nFailed jobs           {}\nFailure fingerprint   {fingerprint}\nFocused verification  {focused}\nRetry                 {} — {}\nRetry budget          full {}/{} · infrastructure {}/{} · diagnostic {}/{}\nMutation state        commit={} push={} tag={} publish={}\nPublished release     {published}\nCurrent main health   {main_health}\nExternal block        {external}\nNext                  {:?}",
             self.state,
+            progress.phase.label(),
+            progress.headline,
+            progress.completed_local_gates,
+            progress.total_local_gates,
+            progress.terminal_remote_jobs,
+            progress.total_remote_jobs,
+            if recent_progress.is_empty() {
+                "none"
+            } else {
+                &recent_progress
+            },
             self.release_commit
                 .as_deref()
                 .map(short_sha)
@@ -787,6 +1343,272 @@ impl ReleaseRecoveryRecord {
             self.mutation.publication_verified,
             next_directive(self, 0),
         )
+    }
+}
+
+fn progress_tasks(record: &ReleaseRecoveryRecord) -> Vec<ReleaseProgressTask> {
+    let local_children = record
+        .mutation
+        .local_gates
+        .iter()
+        .map(|gate| {
+            let state = progress_state_from_settlement(gate.state);
+            let completed = u64::from(state == ReleaseProgressState::Passed);
+            let children = (gate.name == "acceptance").then(|| {
+                vec![ReleaseProgressTask::new(
+                    "Exact acceptance cases",
+                    state,
+                    ReleaseProgressUnits::default(),
+                    Vec::new(),
+                )]
+            });
+            ReleaseProgressTask::new(
+                gate.name.clone(),
+                state,
+                ReleaseProgressUnits::counted(completed, 1),
+                children.unwrap_or_default(),
+            )
+        })
+        .collect::<Vec<_>>();
+    let local_state = if record.mutation.local_gates.is_empty() {
+        stage_state(record, ReleaseProgressPhase::LocalVerification)
+    } else {
+        aggregate_progress_state(local_children.iter().map(|task| task.state))
+    };
+    let local_completed = local_children
+        .iter()
+        .filter(|task| task.state == ReleaseProgressState::Passed)
+        .count() as u64;
+
+    let remote_children = record
+        .objective
+        .required_gate_names
+        .iter()
+        .map(|required| {
+            let Some(gate) = record
+                .required_gates
+                .iter()
+                .find(|gate| gate.name.eq_ignore_ascii_case(required))
+            else {
+                return ReleaseProgressTask::new(
+                    required.clone(),
+                    stage_state(record, ReleaseProgressPhase::RemoteVerification),
+                    ReleaseProgressUnits::default(),
+                    Vec::new(),
+                );
+            };
+            let job_children = gate
+                .jobs
+                .iter()
+                .map(|job| {
+                    ReleaseProgressTask::new(
+                        bounded(
+                            format!(
+                                "{}{}",
+                                job.job_name,
+                                job.platform
+                                    .as_deref()
+                                    .map(|platform| format!(" · {platform}"))
+                                    .unwrap_or_default()
+                            ),
+                            128,
+                        ),
+                        progress_state_from_job(job.state),
+                        ReleaseProgressUnits::counted(u64::from(job.state.terminal()), 1),
+                        Vec::new(),
+                    )
+                })
+                .collect::<Vec<_>>();
+            let terminal = job_children
+                .iter()
+                .filter(|job| {
+                    matches!(
+                        job.state,
+                        ReleaseProgressState::Passed
+                            | ReleaseProgressState::Failed
+                            | ReleaseProgressState::Cancelled
+                            | ReleaseProgressState::Skipped
+                    )
+                })
+                .count() as u64;
+            ReleaseProgressTask::new(
+                gate.name.clone(),
+                aggregate_progress_state(job_children.iter().map(|job| job.state)),
+                if job_children.is_empty() {
+                    ReleaseProgressUnits::default()
+                } else {
+                    ReleaseProgressUnits::counted(terminal, job_children.len() as u64)
+                },
+                job_children,
+            )
+        })
+        .collect::<Vec<_>>();
+    let remote_state = if remote_children.is_empty() {
+        stage_state(record, ReleaseProgressPhase::RemoteVerification)
+    } else {
+        aggregate_progress_state(remote_children.iter().map(|task| task.state))
+    };
+    let remote_terminal = remote_children
+        .iter()
+        .filter(|task| {
+            matches!(
+                task.state,
+                ReleaseProgressState::Passed
+                    | ReleaseProgressState::Failed
+                    | ReleaseProgressState::Cancelled
+                    | ReleaseProgressState::Skipped
+            )
+        })
+        .count() as u64;
+
+    let mut tasks = vec![ReleaseProgressTask::new(
+        "Local verification",
+        local_state,
+        if local_children.is_empty() {
+            ReleaseProgressUnits::default()
+        } else {
+            ReleaseProgressUnits::counted(local_completed, local_children.len() as u64)
+        },
+        local_children,
+    )];
+    if !remote_children.is_empty()
+        || matches!(
+            record.progress.phase,
+            ReleaseProgressPhase::RemoteVerification | ReleaseProgressPhase::Publication
+        )
+    {
+        tasks.push(ReleaseProgressTask::new(
+            "Required CI",
+            remote_state,
+            if remote_children.is_empty() {
+                ReleaseProgressUnits::default()
+            } else {
+                ReleaseProgressUnits::counted(remote_terminal, remote_children.len() as u64)
+            },
+            remote_children,
+        ));
+    }
+    if matches!(
+        record.progress.phase,
+        ReleaseProgressPhase::FailureDiagnosis | ReleaseProgressPhase::Repair
+    ) {
+        tasks.push(ReleaseProgressTask::new(
+            record.progress.phase.label(),
+            stage_state(record, record.progress.phase),
+            ReleaseProgressUnits::default(),
+            Vec::new(),
+        ));
+    }
+    if matches!(
+        record.progress.phase,
+        ReleaseProgressPhase::Publication | ReleaseProgressPhase::Settled
+    ) {
+        tasks.push(ReleaseProgressTask::new(
+            "Publication",
+            publication_progress_state(record),
+            ReleaseProgressUnits::default(),
+            Vec::new(),
+        ));
+    }
+    tasks
+}
+
+fn progress_state_from_settlement(state: SettlementState) -> ReleaseProgressState {
+    match state {
+        SettlementState::NotStarted => ReleaseProgressState::Pending,
+        SettlementState::Running => ReleaseProgressState::Running,
+        SettlementState::Succeeded => ReleaseProgressState::Passed,
+        SettlementState::Failed => ReleaseProgressState::Failed,
+    }
+}
+
+fn progress_state_from_job(state: JobState) -> ReleaseProgressState {
+    match state {
+        JobState::Queued => ReleaseProgressState::Pending,
+        JobState::InProgress => ReleaseProgressState::Running,
+        JobState::Success => ReleaseProgressState::Passed,
+        JobState::Failure | JobState::TimedOut => ReleaseProgressState::Failed,
+        JobState::Cancelled => ReleaseProgressState::Cancelled,
+        JobState::Skipped => ReleaseProgressState::Skipped,
+    }
+}
+
+fn aggregate_progress_state(
+    states: impl Iterator<Item = ReleaseProgressState>,
+) -> ReleaseProgressState {
+    let states = states.collect::<Vec<_>>();
+    if states.is_empty()
+        || states
+            .iter()
+            .all(|state| *state == ReleaseProgressState::Pending)
+    {
+        ReleaseProgressState::Pending
+    } else if states.contains(&ReleaseProgressState::Failed) {
+        ReleaseProgressState::Failed
+    } else if states.contains(&ReleaseProgressState::Cancelled) {
+        ReleaseProgressState::Cancelled
+    } else if states.contains(&ReleaseProgressState::Running) {
+        ReleaseProgressState::Running
+    } else if states.contains(&ReleaseProgressState::Paused) {
+        ReleaseProgressState::Paused
+    } else if states
+        .iter()
+        .all(|state| *state == ReleaseProgressState::Skipped)
+    {
+        ReleaseProgressState::Skipped
+    } else if states.iter().all(|state| {
+        matches!(
+            state,
+            ReleaseProgressState::Passed | ReleaseProgressState::Skipped
+        )
+    }) {
+        ReleaseProgressState::Passed
+    } else {
+        ReleaseProgressState::Pending
+    }
+}
+
+fn stage_state(
+    record: &ReleaseRecoveryRecord,
+    phase: ReleaseProgressPhase,
+) -> ReleaseProgressState {
+    if record.state == ReleaseRecoveryState::Cancelled {
+        return ReleaseProgressState::Cancelled;
+    }
+    if matches!(
+        record.state,
+        ReleaseRecoveryState::PausedExternal | ReleaseRecoveryState::Escalated
+    ) {
+        return ReleaseProgressState::Paused;
+    }
+    if record.progress.phase == phase {
+        return ReleaseProgressState::Running;
+    }
+    if matches!(record.progress.phase, ReleaseProgressPhase::Settled)
+        && matches!(
+            record.state,
+            ReleaseRecoveryState::Complete | ReleaseRecoveryState::Published
+        )
+    {
+        return ReleaseProgressState::Passed;
+    }
+    ReleaseProgressState::Pending
+}
+
+fn publication_progress_state(record: &ReleaseRecoveryRecord) -> ReleaseProgressState {
+    if record.state == ReleaseRecoveryState::Cancelled {
+        ReleaseProgressState::Cancelled
+    } else if record.mutation.publication_verified
+        || matches!(
+            record.state,
+            ReleaseRecoveryState::Published | ReleaseRecoveryState::Complete
+        )
+    {
+        ReleaseProgressState::Passed
+    } else if matches!(record.progress.phase, ReleaseProgressPhase::Publication) {
+        ReleaseProgressState::Running
+    } else {
+        ReleaseProgressState::Pending
     }
 }
 
@@ -1441,6 +2263,10 @@ pub enum RrcError {
     RetryBlocked(String),
     #[error("release mutation blocked: {0}")]
     MutationBlocked(String),
+    /// Local host resource safety is neither a source failure nor external
+    /// CI evidence. The epoch remains locally resumable after recovery.
+    #[error("local resource governor deferred verification: {0}")]
+    ResourceConstrained(String),
     #[error("repair budget exhausted for causal family {0}")]
     RepairBudgetExhausted(String),
     #[error("release ledger I/O failed: {0}")]
@@ -1600,6 +2426,15 @@ pub struct ReleaseLedger {
     repo_key: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct SupersededEpochEvidence {
+    superseded_at: DateTime<Utc>,
+    reason: String,
+    replacement_epoch_id: String,
+    replacement_source_commit: String,
+    record: ReleaseRecoveryRecord,
+}
+
 impl ReleaseLedger {
     pub fn open(root: impl Into<PathBuf>, repo_identity: &str) -> Result<Self, RrcError> {
         let root = root.into();
@@ -1618,6 +2453,13 @@ impl ReleaseLedger {
     }
     fn lock_path(&self) -> PathBuf {
         self.root.join(format!("{}.lock", self.repo_key))
+    }
+
+    fn superseded_path(&self, epoch_id: &str) -> PathBuf {
+        self.root
+            .join("superseded")
+            .join(&self.repo_key)
+            .join(format!("{epoch_id}.json"))
     }
 
     pub fn load(&self) -> Result<Option<ReleaseRecoveryRecord>, RrcError> {
@@ -1667,6 +2509,69 @@ impl ReleaseLedger {
         FileExt::unlock(&lock)?;
         Ok(())
     }
+
+    fn supersede_and_save(
+        &self,
+        previous: &ReleaseRecoveryRecord,
+        reason: &str,
+        replacement: &ReleaseRecoveryRecord,
+    ) -> Result<(), RrcError> {
+        if sha256_hex(previous.repo_identity.as_bytes()) != self.repo_key
+            || sha256_hex(replacement.repo_identity.as_bytes()) != self.repo_key
+        {
+            return Err(RrcError::Invalid(
+                "record repository does not match ledger".into(),
+            ));
+        }
+        let lock = OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(self.lock_path())?;
+        lock.try_lock_exclusive().map_err(|_| RrcError::Busy)?;
+        let current: ReleaseRecoveryRecord = serde_json::from_slice(&fs::read(self.path())?)?;
+        if current.epoch_id != previous.epoch_id || current.updated_at != previous.updated_at {
+            FileExt::unlock(&lock)?;
+            return Err(RrcError::Busy);
+        }
+
+        let directory = self.root.join("superseded").join(&self.repo_key);
+        fs::create_dir_all(&directory)?;
+        let archive_path = self.superseded_path(&previous.epoch_id);
+        if !archive_path.exists() {
+            let evidence = SupersededEpochEvidence {
+                superseded_at: Utc::now(),
+                reason: bounded(reason.to_owned(), 512),
+                replacement_epoch_id: replacement.epoch_id.clone(),
+                replacement_source_commit: replacement
+                    .mutation
+                    .source_commit
+                    .clone()
+                    .unwrap_or_default(),
+                record: previous.clone(),
+            };
+            let mut archive = tempfile::NamedTempFile::new_in(&directory)?;
+            archive.write_all(&serde_json::to_vec_pretty(&evidence)?)?;
+            archive.as_file().sync_all()?;
+            archive
+                .persist(&archive_path)
+                .map_err(|error| error.error)?;
+        }
+
+        let mut active = tempfile::NamedTempFile::new_in(&self.root)?;
+        active.write_all(&serde_json::to_vec_pretty(replacement)?)?;
+        active.as_file().sync_all()?;
+        active.persist(self.path()).map_err(|error| error.error)?;
+        if let Ok(directory) = OpenOptions::new().read(true).open(&directory) {
+            let _ = directory.sync_all();
+        }
+        if let Ok(directory) = OpenOptions::new().read(true).open(&self.root) {
+            let _ = directory.sync_all();
+        }
+        FileExt::unlock(&lock)?;
+        Ok(())
+    }
 }
 
 /// Refreshes exact-SHA remote evidence and applies the complete-matrix rule.
@@ -1697,6 +2602,13 @@ pub fn refresh_remote_evidence(
     let mut changed = false;
     for gate in gates {
         changed |= record.apply_matrix(gate)?;
+    }
+    if changed {
+        record.refresh_progress();
+        record.note_progress_milestone(format!(
+            "Remote matrix update: {}/{} jobs terminal",
+            record.progress.terminal_remote_jobs, record.progress.total_remote_jobs
+        ));
     }
     record.note_progress(changed);
     if record.watchdog_triggered(Utc::now()) {
@@ -2204,6 +3116,10 @@ pub fn default_release_root() -> Option<PathBuf> {
     Some(home.join("agent-vesper").join("release-recovery"))
 }
 
+pub fn repository_identity_for_workspace(workspace: &Path) -> Result<String, RrcError> {
+    repository_identity(&workspace.canonicalize()?)
+}
+
 pub fn start_release(
     repo_identity: &str,
     bump: &str,
@@ -2225,6 +3141,7 @@ pub fn start_release(
         ReleaseObjective {
             bump: bump.into(),
             branch_ref: branch_ref.into(),
+            request: None,
             post_release_main_epoch: false,
             required_gate_names: default_pre_release_gates(),
         },
@@ -2259,7 +3176,10 @@ pub fn release_command(
     let arg = argument.trim();
     match arg {
         "status" | "" if ledger.load()?.is_some() => {
-            Ok(ledger.load()?.expect("checked").render_status())
+            let persisted = ledger.load()?.expect("checked").render_status();
+            let live = crate::release_executor::active_release_worker(repo_identity)
+                .map(|worker| crate::release_executor::render_active_worker_status(&worker));
+            Ok(live.map_or(persisted.clone(), |live| format!("{persisted}\n{live}")))
         }
         "resume" => {
             let record = ledger
@@ -2298,13 +3218,37 @@ pub fn release_command(
             let record = ledger
                 .load()?
                 .ok_or_else(|| RrcError::Invalid("no release checkpoint exists".into()))?;
-            if record.failures.is_empty() {
-                return Ok("release evidence: no failures captured".into());
-            }
             let mut lines = vec![format!(
                 "release evidence: {} failure(s)",
                 record.failures.len()
             )];
+            if let Some(objective) = record.mutation.objective_label.as_deref() {
+                lines.push(format!("  objective: {objective}"));
+            }
+            if let Some(objective_id) = record.mutation.objective_id.as_deref() {
+                lines.push(format!("  objective id: {objective_id}"));
+            }
+            if let Some(workspace) = record.mutation.source_workspace.as_deref() {
+                lines.push(format!("  source workspace: {workspace}"));
+            }
+            if let Some(workspace) = record.mutation.release_workspace.as_deref() {
+                lines.push(format!("  release workspace: {workspace}"));
+            }
+            if let Some(base) = record.mutation.base_sha.as_deref() {
+                lines.push(format!("  base SHA: {base}"));
+            }
+            if let Some(candidate) = record.mutation.final_candidate_commit.as_deref() {
+                lines.push(format!("  candidate SHA: {candidate}"));
+            }
+            if let Some(diff) = record.mutation.intended_diff_sha256.as_deref() {
+                lines.push(format!("  intended diff SHA-256: {diff}"));
+            }
+            for report in &record.mutation.objective_evidence_reports {
+                lines.push(format!("  objective evidence: {report}"));
+            }
+            if record.failures.is_empty() {
+                return Ok(lines.join("\n"));
+            }
             for failure in &record.failures {
                 lines.push(format!(
                     "  {} / {} / {} — {:?} ({:?}) — {}",
@@ -2357,6 +3301,636 @@ pub fn release_command(
     }
 }
 
+#[derive(Debug, Clone)]
+struct ReleaseSourceChoice {
+    source_workspace: PathBuf,
+    source_commit: String,
+    objective_id: Option<String>,
+    objective_label: Option<String>,
+    variant_label: Option<String>,
+    evidence_reports: Vec<String>,
+    base_sha: String,
+    intended_commits: Vec<String>,
+    intended_diff_sha256: String,
+    branch_ref: String,
+}
+
+fn git_output(workspace: &Path, args: &[&str]) -> Result<String, RrcError> {
+    let output = std::process::Command::new("git")
+        .args(args)
+        .current_dir(workspace)
+        .output()?;
+    if !output.status.success() {
+        return Err(RrcError::Invalid(format!(
+            "git {} failed with status {}: {}",
+            args.join(" "),
+            output.status,
+            bounded(
+                String::from_utf8_lossy(&output.stderr).trim().to_owned(),
+                512
+            )
+        )));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
+}
+
+fn git_output_bytes(workspace: &Path, args: &[&str]) -> Result<Vec<u8>, RrcError> {
+    let output = std::process::Command::new("git")
+        .args(args)
+        .current_dir(workspace)
+        .output()?;
+    if !output.status.success() {
+        return Err(RrcError::Invalid(format!(
+            "git {} failed with status {}: {}",
+            args.join(" "),
+            output.status,
+            bounded(
+                String::from_utf8_lossy(&output.stderr).trim().to_owned(),
+                512
+            )
+        )));
+    }
+    Ok(output.stdout)
+}
+
+fn git_succeeds(workspace: &Path, args: &[&str]) -> bool {
+    std::process::Command::new("git")
+        .args(args)
+        .current_dir(workspace)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
+fn exact_git_sha(value: &str) -> Result<String, RrcError> {
+    let value = value.trim();
+    if value.len() == 40 && value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        Ok(value.to_ascii_lowercase())
+    } else {
+        Err(RrcError::Invalid(format!(
+            "expected an exact 40-character git SHA, got {value:?}"
+        )))
+    }
+}
+
+fn repository_identity(workspace: &Path) -> Result<String, RrcError> {
+    let common = PathBuf::from(git_output(workspace, &["rev-parse", "--git-common-dir"])?);
+    let common = if common.is_absolute() {
+        common
+    } else {
+        workspace.join(common)
+    };
+    Ok(common.canonicalize()?.to_string_lossy().into_owned())
+}
+
+fn worktree_paths(workspace: &Path) -> Result<Vec<PathBuf>, RrcError> {
+    let output = git_output(workspace, &["worktree", "list", "--porcelain"])?;
+    Ok(output
+        .lines()
+        .filter_map(|line| line.strip_prefix("worktree "))
+        .map(PathBuf::from)
+        .collect())
+}
+
+const RELEASE_OBJECTIVE_PROVENANCE_PATH: &str = "docs/foundation/release-objective-provenance.json";
+
+#[derive(Debug, Clone, Deserialize)]
+struct CompletedObjectiveProvenance {
+    version: u32,
+    objective_id: String,
+    objective_label: String,
+    variant_label: String,
+    completed_at: String,
+    #[serde(default)]
+    evidence_reports: Vec<String>,
+}
+
+impl CompletedObjectiveProvenance {
+    fn load(candidate: &Path) -> Option<Self> {
+        let marker_spec = format!("HEAD:{RELEASE_OBJECTIVE_PROVENANCE_PATH}");
+        let bytes = git_output_bytes(candidate, &["show", &marker_spec]).ok()?;
+        if bytes.len() > 32 * 1024 {
+            return None;
+        }
+        let value: Self = serde_json::from_slice(&bytes).ok()?;
+        if value.version != 1
+            || value.objective_id.is_empty()
+            || value.objective_id.len() > 128
+            || value.objective_label.is_empty()
+            || value.objective_label.len() > 160
+            || value.variant_label.is_empty()
+            || value.variant_label.len() > 200
+            || chrono::DateTime::parse_from_rfc3339(&value.completed_at).is_err()
+            || value.evidence_reports.is_empty()
+            || value.evidence_reports.len() > 16
+        {
+            return None;
+        }
+        let safe_report = |report: &str| {
+            report.starts_with("docs/foundation/")
+                && report.ends_with(".md")
+                && !report.contains("..")
+                && !report.contains('\\')
+                && git_succeeds(candidate, &["cat-file", "-e", &format!("HEAD:{report}")])
+        };
+        value
+            .evidence_reports
+            .iter()
+            .all(|report| safe_report(report))
+            .then_some(value)
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ProvenanceCandidate {
+    path: PathBuf,
+    head: String,
+    provenance: CompletedObjectiveProvenance,
+}
+
+fn resolve_release_source(
+    active: &Path,
+) -> Result<Result<ReleaseSourceChoice, Vec<String>>, RrcError> {
+    let active = active.canonicalize()?;
+    let base_sha = exact_git_sha(git_output(&active, &["rev-parse", "HEAD"])?.trim())?;
+    let active_clean = git_output(&active, &["status", "--porcelain"])?.is_empty();
+    let mut candidates = Vec::<ProvenanceCandidate>::new();
+    for path in worktree_paths(&active)? {
+        let Ok(path) = path.canonicalize() else {
+            continue;
+        };
+        if !git_output(&path, &["status", "--porcelain"])?.is_empty() {
+            continue;
+        }
+        let head = exact_git_sha(git_output(&path, &["rev-parse", "HEAD"])?.trim())?;
+        if head != base_sha
+            && !git_succeeds(&active, &["merge-base", "--is-ancestor", &base_sha, &head])
+        {
+            continue;
+        }
+        let Some(provenance) = CompletedObjectiveProvenance::load(&path) else {
+            // A clean checkout without an objective binding is repository
+            // topology, not an objective release candidate.
+            continue;
+        };
+        candidates.push(ProvenanceCandidate {
+            path,
+            head,
+            provenance,
+        });
+    }
+    let (source_workspace, provenance) = if candidates.is_empty() {
+        if active_clean {
+            (active.clone(), CompletedObjectiveProvenance::load(&active))
+        } else {
+            return Ok(Err(Vec::new()));
+        }
+    } else {
+        let latest_completed_at = candidates
+            .iter()
+            .map(|candidate| candidate.provenance.completed_at.as_str())
+            .max()
+            .expect("non-empty objective candidates")
+            .to_owned();
+        candidates.retain(|candidate| candidate.provenance.completed_at == latest_completed_at);
+        let objective_ids = candidates
+            .iter()
+            .map(|candidate| candidate.provenance.objective_id.as_str())
+            .collect::<std::collections::BTreeSet<_>>();
+        if objective_ids.len() != 1 {
+            return Err(RrcError::Invalid(
+                "completed-objective provenance has multiple current objective identities; repair the provenance binding before release"
+                    .into(),
+            ));
+        }
+        let candidate_heads = candidates
+            .iter()
+            .map(|candidate| candidate.head.clone())
+            .collect::<Vec<_>>();
+        candidates.retain(|candidate| {
+            !candidate_heads.iter().any(|other| {
+                candidate.head != *other
+                    && git_succeeds(
+                        &active,
+                        &["merge-base", "--is-ancestor", &candidate.head, other],
+                    )
+            })
+        });
+        let mut by_head = std::collections::BTreeMap::<String, Vec<ProvenanceCandidate>>::new();
+        for candidate in candidates {
+            by_head
+                .entry(candidate.head.clone())
+                .or_default()
+                .push(candidate);
+        }
+        if by_head.len() != 1 {
+            let choices = by_head
+                .values()
+                .filter_map(|variants| variants.first())
+                .map(|candidate| candidate.provenance.variant_label.clone())
+                .collect::<Vec<_>>();
+            return Ok(Err(choices));
+        }
+        let (_, mut same_tree) = by_head.into_iter().next().expect("one candidate tree");
+        same_tree.sort_by(|left, right| left.path.cmp(&right.path));
+        let candidate = same_tree.remove(0);
+        (candidate.path, Some(candidate.provenance))
+    };
+    let source_commit =
+        exact_git_sha(git_output(&source_workspace, &["rev-parse", "HEAD"])?.trim())?;
+    let branch_ref = git_output(&source_workspace, &["rev-parse", "--abbrev-ref", "HEAD"])?;
+    let intended_commits = if source_commit == base_sha {
+        Vec::new()
+    } else {
+        git_output(
+            &source_workspace,
+            &[
+                "rev-list",
+                "--reverse",
+                &format!("{base_sha}..{source_commit}"),
+            ],
+        )?
+        .lines()
+        .map(str::to_owned)
+        .collect()
+    };
+    let diff = git_output_bytes(
+        &source_workspace,
+        &["diff", "--binary", &base_sha, &source_commit],
+    )?;
+    Ok(Ok(ReleaseSourceChoice {
+        source_workspace,
+        source_commit,
+        objective_id: provenance.as_ref().map(|value| value.objective_id.clone()),
+        objective_label: provenance
+            .as_ref()
+            .map(|value| value.objective_label.clone()),
+        variant_label: provenance.as_ref().map(|value| value.variant_label.clone()),
+        evidence_reports: provenance
+            .map(|value| value.evidence_reports)
+            .unwrap_or_default(),
+        base_sha,
+        intended_commits,
+        intended_diff_sha256: sha256_hex(&diff),
+        branch_ref,
+    }))
+}
+
+fn create_release_worktree(
+    source: &ReleaseSourceChoice,
+    state_root: &Path,
+    repo_identity: &str,
+) -> Result<PathBuf, RrcError> {
+    let parent = state_root
+        .join("worktrees")
+        .join(&sha256_hex(repo_identity.as_bytes())[..16]);
+    fs::create_dir_all(&parent)?;
+    let destination = parent.join(format!(
+        "{}-{}",
+        Utc::now().format("%Y%m%dT%H%M%S%3fZ"),
+        short_sha(&source.source_commit)
+    ));
+    let destination_text = destination.to_string_lossy().into_owned();
+    git_output(
+        &source.source_workspace,
+        &[
+            "worktree",
+            "add",
+            "--detach",
+            &destination_text,
+            &source.source_commit,
+        ],
+    )?;
+    let destination = destination.canonicalize()?;
+    let head = exact_git_sha(git_output(&destination, &["rev-parse", "HEAD"])?.trim())?;
+    if head != source.source_commit
+        || !git_output(&destination, &["status", "--porcelain"])?.is_empty()
+    {
+        return Err(RrcError::Invalid(
+            "isolated release worktree did not settle at the intended clean source".into(),
+        ));
+    }
+    Ok(destination)
+}
+
+#[derive(Debug)]
+enum ActiveEpochReconciliation {
+    Resume {
+        record: ReleaseRecoveryRecord,
+        workspace: PathBuf,
+    },
+    Supersede {
+        record: ReleaseRecoveryRecord,
+        reason: String,
+    },
+    Clarify(String),
+}
+
+fn has_irreversible_release_state(record: &ReleaseRecoveryRecord) -> bool {
+    record.mutation.candidate_pushed
+        || record.mutation.tag_name.is_some()
+        || record.mutation.tag_object.is_some()
+        || record.mutation.tag_pushed
+        || record.mutation.publication_run_id.is_some()
+        || record.mutation.publication_verified
+        || matches!(
+            record.state,
+            ReleaseRecoveryState::RemoteGateRunning
+                | ReleaseRecoveryState::WaitingForMatrix
+                | ReleaseRecoveryState::CollectingFailureEvidence
+                | ReleaseRecoveryState::ClassifyingFailure
+                | ReleaseRecoveryState::NeedMoreEvidence
+                | ReleaseRecoveryState::FocusedRepair
+                | ReleaseRecoveryState::FocusedVerification
+                | ReleaseRecoveryState::DiagnosingRepair
+                | ReleaseRecoveryState::RetryAdmissible
+                | ReleaseRecoveryState::ExternalHealthCheck
+                | ReleaseRecoveryState::PausedExternal
+                | ReleaseRecoveryState::RemoteGatesGreen
+                | ReleaseRecoveryState::Tagging
+                | ReleaseRecoveryState::Publishing
+                | ReleaseRecoveryState::Published
+                | ReleaseRecoveryState::PostReleaseCloseout
+                | ReleaseRecoveryState::PostReleaseMainDegraded
+        )
+}
+
+fn same_release_objective(
+    record: &ReleaseRecoveryRecord,
+    source: &ReleaseSourceChoice,
+    bump: &str,
+) -> Option<bool> {
+    if record.objective.bump != bump {
+        return Some(false);
+    }
+    match (
+        record.mutation.objective_id.as_deref(),
+        source.objective_id.as_deref(),
+    ) {
+        (Some(previous), Some(current)) => Some(previous == current),
+        (None, None)
+            if record.mutation.source_commit.as_deref() == Some(source.source_commit.as_str())
+                && record.mutation.intended_diff_sha256.as_deref()
+                    == Some(source.intended_diff_sha256.as_str()) =>
+        {
+            Some(true)
+        }
+        _ => None,
+    }
+}
+
+fn release_workspace_matches_epoch(
+    record: &ReleaseRecoveryRecord,
+    state_root: &Path,
+) -> Result<Option<PathBuf>, RrcError> {
+    let Some(path) = record.mutation.release_workspace.as_deref() else {
+        return Ok(None);
+    };
+    let Ok(workspace) = PathBuf::from(path).canonicalize() else {
+        return Ok(None);
+    };
+    let worktree_root = state_root.join("worktrees");
+    let Ok(worktree_root) = worktree_root.canonicalize() else {
+        return Ok(None);
+    };
+    if !workspace.starts_with(&worktree_root)
+        || repository_identity(&workspace)? != record.repo_identity
+    {
+        return Ok(None);
+    }
+    let expected_head = record
+        .release_commit
+        .as_deref()
+        .or(record.mutation.source_commit.as_deref());
+    if expected_head.is_none()
+        || git_output(&workspace, &["rev-parse", "HEAD"])?.trim() != expected_head.unwrap()
+    {
+        return Ok(None);
+    }
+    let status = git_output(
+        &workspace,
+        &["status", "--porcelain", "--untracked-files=all"],
+    )?;
+    if status.is_empty() {
+        return Ok(Some(workspace));
+    }
+    if record.mutation.version_after.is_none() || record.mutation.candidate_committed {
+        return Ok(None);
+    }
+    let mut allowed = record
+        .mutation
+        .version_files
+        .iter()
+        .cloned()
+        .collect::<std::collections::BTreeSet<_>>();
+    allowed.insert("Cargo.lock".into());
+    let status_is_planned = status.lines().all(|line| {
+        let Some(path) = line.get(3..) else {
+            return false;
+        };
+        !path.contains(" -> ") && allowed.contains(path)
+    });
+    Ok(status_is_planned.then_some(workspace))
+}
+
+fn reconcile_active_epoch(
+    mut record: ReleaseRecoveryRecord,
+    source: &ReleaseSourceChoice,
+    bump: &str,
+    state_root: &Path,
+) -> Result<ActiveEpochReconciliation, RrcError> {
+    if has_irreversible_release_state(&record) {
+        return Ok(ActiveEpochReconciliation::Clarify(
+            "A previous release already changed remote release state. I preserved it and did not start another release. Should I continue reconciling that release, or leave it untouched?"
+                .into(),
+        ));
+    }
+    if same_release_objective(&record, source, bump) != Some(true) {
+        return Ok(ActiveEpochReconciliation::Clarify(
+            "Another release objective is already active. I preserved it and did not start this release. Should I continue the active release, or leave it untouched and start this completed work?"
+                .into(),
+        ));
+    }
+    let source_changed = record.mutation.source_commit.as_deref()
+        != Some(source.source_commit.as_str())
+        || record.mutation.intended_diff_sha256.as_deref()
+            != Some(source.intended_diff_sha256.as_str());
+    let release_workspace = release_workspace_matches_epoch(&record, state_root)?;
+    if source_changed || release_workspace.is_none() {
+        return Ok(ActiveEpochReconciliation::Supersede {
+            record,
+            reason: if source_changed {
+                "same release objective has a newer completed source identity".into()
+            } else {
+                "release workspace no longer matches the persisted objective provenance".into()
+            },
+        });
+    }
+    if record.state == ReleaseRecoveryState::Escalated {
+        return Ok(ActiveEpochReconciliation::Clarify(
+            "The current release reached a safety stop that needs one decision. I preserved it and made no new release changes. Should I continue this release?"
+                .into(),
+        ));
+    }
+    if record.state == ReleaseRecoveryState::Preparing {
+        let commit = record
+            .release_commit
+            .clone()
+            .ok_or_else(|| RrcError::Invalid("release source commit is missing".into()))?;
+        record.transition(
+            ReleaseRecoveryState::LocalVerification,
+            &commit,
+            "natural release admission reconciled the recoverable checkpoint",
+            vec!["local:admission-reconciliation".into()],
+            None,
+        )?;
+    } else if record.state == ReleaseRecoveryState::DiagnosingLocalFailure {
+        let commit = record
+            .release_commit
+            .clone()
+            .ok_or_else(|| RrcError::Invalid("release source commit is missing".into()))?;
+        record.transition(
+            ReleaseRecoveryState::LocalVerification,
+            &commit,
+            "natural release admission resumed the persisted safe local stage",
+            vec!["local:admission-reconciliation".into()],
+            None,
+        )?;
+    }
+    Ok(ActiveEpochReconciliation::Resume {
+        record,
+        workspace: release_workspace.expect("checked above"),
+    })
+}
+
+fn admit_natural_release_with_launcher<F>(
+    workspace: &Path,
+    objective: &str,
+    state_root: &Path,
+    launcher: F,
+) -> Result<NaturalReleaseAdmission, RrcError>
+where
+    F: FnOnce(PathBuf, String, String) -> Result<(), RrcError>,
+{
+    let ReleaseIntentDecision::Admit { bump, scope } = classify_release_intent(objective) else {
+        return Ok(NaturalReleaseAdmission::NotRelease);
+    };
+    let canonical = workspace.canonicalize()?;
+    let repo_identity = repository_identity(&canonical)?;
+    let source = match resolve_release_source(&canonical)? {
+        Ok(source) => source,
+        Err(choices) => {
+            let detail = if choices.is_empty() {
+                "No clean completed implementation is provenance-linked to this dirty checkout."
+                    .to_owned()
+            } else {
+                format!(
+                    "I found two or more completed variants of the current objective:\n{}",
+                    choices
+                        .iter()
+                        .enumerate()
+                        .map(|(index, label)| format!("{}. {label}", index + 1))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                )
+            };
+            return Ok(NaturalReleaseAdmission::Clarification(format!(
+                "Release needs one clarification: {detail} Which completed implementation should be released? No workspace or release state was changed."
+            )));
+        }
+    };
+    let remote = git_output(&canonical, &["config", "--get", "remote.origin.url"])?;
+    let repository = github_repository_slug(&remote)?;
+    let ledger = ReleaseLedger::open(state_root.to_path_buf(), &repo_identity)?;
+    let mut superseded = None;
+    if let Some(existing) = ledger.load()?
+        && !matches!(
+            existing.state,
+            ReleaseRecoveryState::Complete | ReleaseRecoveryState::Cancelled
+        )
+    {
+        match reconcile_active_epoch(existing, &source, &bump, state_root)? {
+            ActiveEpochReconciliation::Resume {
+                mut record,
+                workspace,
+            } => {
+                record.objective.request = Some(scope.clone());
+                ledger.save(&record)?;
+                launcher(workspace, repository, repo_identity)?;
+                return Ok(NaturalReleaseAdmission::Started(
+                    "Continuing the matching release automatically from its last safe stage. Local verification is active; no manual resume command was required."
+                        .into(),
+                ));
+            }
+            ActiveEpochReconciliation::Supersede { record, reason } => {
+                superseded = Some((record, reason));
+            }
+            ActiveEpochReconciliation::Clarify(message) => {
+                return Ok(NaturalReleaseAdmission::Clarification(message));
+            }
+        }
+    }
+    let release_workspace = create_release_worktree(&source, state_root, &repo_identity)?;
+    let mut record = start_release(
+        &repo_identity,
+        &bump,
+        &source.branch_ref,
+        &source.source_commit,
+    )?;
+    record.objective.request = Some(scope);
+    record.mutation.source_commit = Some(source.source_commit.clone());
+    record.mutation.source_workspace = Some(source.source_workspace.to_string_lossy().into_owned());
+    record.mutation.objective_id = source.objective_id;
+    record.mutation.objective_label = source.objective_label;
+    record.mutation.source_variant_label = source.variant_label;
+    record.mutation.objective_evidence_reports = source.evidence_reports;
+    record.mutation.release_workspace = Some(release_workspace.to_string_lossy().into_owned());
+    record.mutation.base_sha = Some(source.base_sha);
+    record.mutation.intended_commits = source.intended_commits;
+    record.mutation.intended_diff_sha256 = Some(source.intended_diff_sha256);
+    record.mutation.final_candidate_commit = Some(source.source_commit);
+    let superseded_previous = superseded.is_some();
+    if let Some((previous, reason)) = superseded {
+        ledger.supersede_and_save(&previous, &reason, &record)?;
+    } else {
+        ledger.save(&record)?;
+    }
+    launcher(release_workspace, repository, repo_identity)?;
+    let admission_note = if superseded_previous {
+        "An obsolete failed candidate was preserved as superseded evidence, and the current completed objective was admitted automatically."
+    } else {
+        "The completed objective was admitted automatically."
+    };
+    Ok(NaturalReleaseAdmission::Started(format!(
+        "{admission_note}\nLocal verification started in an isolated release workspace.",
+    )))
+}
+
+pub fn admit_natural_release_for_workspace_with_factory(
+    workspace: &Path,
+    objective: &str,
+    repair_factory: Option<crate::WorkerFactory>,
+) -> Result<NaturalReleaseAdmission, RrcError> {
+    let root = default_release_root()
+        .ok_or_else(|| RrcError::Invalid("no user-owned release state root is available".into()))?;
+    admit_natural_release_with_launcher(
+        workspace,
+        objective,
+        &root,
+        move |release_workspace, repository, repo_identity| {
+            crate::release_executor::spawn_release_worker_with_factory(
+                release_workspace,
+                repository,
+                repo_identity,
+                repair_factory,
+            )
+            .map(|_| ())
+        },
+    )
+}
+
 /// Resolves repository identity and current ref/commit before executing a
 /// shared host command. No remote URL or credential-bearing value is stored.
 pub fn release_command_for_workspace(workspace: &Path, argument: &str) -> Result<String, RrcError> {
@@ -2369,34 +3943,36 @@ pub fn release_command_for_workspace_with_factory(
     repair_factory: Option<crate::WorkerFactory>,
 ) -> Result<String, RrcError> {
     let canonical = workspace.canonicalize()?;
-    let git = |args: &[&str]| -> Result<String, RrcError> {
-        let output = std::process::Command::new("git")
-            .args(args)
-            .current_dir(&canonical)
-            .output()?;
-        if !output.status.success() {
-            return Err(RrcError::Invalid(format!(
-                "git {} failed with status {}",
-                args.join(" "),
-                output.status
-            )));
-        }
-        Ok(bounded(
-            String::from_utf8_lossy(&output.stdout).trim().to_owned(),
-            512,
-        ))
-    };
-    let source_commit = git(&["rev-parse", "HEAD"])?;
-    let branch_ref = git(&["rev-parse", "--abbrev-ref", "HEAD"])?;
-    let repo_identity = canonical.to_string_lossy().into_owned();
+    let repo_identity = repository_identity(&canonical)?;
     let action = argument.trim();
+    let root = default_release_root()
+        .ok_or_else(|| RrcError::Invalid("no user-owned release state root is available".into()))?;
+    let ledger = ReleaseLedger::open(root, &repo_identity)?;
+    let is_start = matches!(action, "patch" | "minor" | "major")
+        || (action.is_empty() && ledger.load()?.is_none());
+    if is_start {
+        let bump = if action.is_empty() { "patch" } else { action };
+        return match admit_natural_release_for_workspace_with_factory(
+            &canonical,
+            &format!("Release the completed implementation as the next {bump} release."),
+            repair_factory,
+        )? {
+            NaturalReleaseAdmission::Started(body)
+            | NaturalReleaseAdmission::Clarification(body) => Ok(body),
+            NaturalReleaseAdmission::NotRelease => Err(RrcError::Invalid(
+                "explicit release command was not admitted".into(),
+            )),
+        };
+    }
+    if action == "status" {
+        return Ok(release_status_for_workspace(&canonical)
+            .unwrap_or_else(|| "release: no active or persisted epoch".into()));
+    }
+    let source_commit = git_output(&canonical, &["rev-parse", "HEAD"])?;
+    let branch_ref = git_output(&canonical, &["rev-parse", "--abbrev-ref", "HEAD"])?;
     if matches!(action, "resume" | "retry") {
-        let remote = git(&["config", "--get", "remote.origin.url"])?;
+        let remote = git_output(&canonical, &["config", "--get", "remote.origin.url"])?;
         let repository = github_repository_slug(&remote)?;
-        let root = default_release_root().ok_or_else(|| {
-            RrcError::Invalid("no user-owned release state root is available".into())
-        })?;
-        let ledger = ReleaseLedger::open(root, &repo_identity)?;
         let record = ledger
             .load()?
             .ok_or_else(|| RrcError::Invalid("no release checkpoint exists".into()))?;
@@ -2410,33 +3986,25 @@ pub fn release_command_for_workspace_with_factory(
             if !decision.admitted {
                 return Err(RrcError::RetryBlocked(decision.reason));
             }
-            // The native executor pushes the verified repaired commit and
-            // waits for fresh push workflows. Actions reruns are deliberately
-            // not used because GitHub preserves the original GITHUB_SHA.
         }
+        let release_workspace = record
+            .mutation
+            .release_workspace
+            .as_deref()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| canonical.clone());
         crate::release_executor::spawn_release_worker_with_factory(
-            canonical.clone(),
+            release_workspace,
             repository,
-            repo_identity.clone(),
-            repair_factory.clone(),
+            repo_identity,
+            repair_factory,
         )?;
         return Ok(format!(
             "{}\nController            active in background; use /release status for the persisted stage",
             record.render_status()
         ));
     }
-    let body = release_command(&repo_identity, action, &source_commit, &branch_ref)?;
-    if matches!(action, "patch" | "minor" | "major" | "") {
-        let remote = git(&["config", "--get", "remote.origin.url"])?;
-        let repository = github_repository_slug(&remote)?;
-        crate::release_executor::spawn_release_worker_with_factory(
-            canonical,
-            repository,
-            repo_identity,
-            repair_factory,
-        )?;
-    }
-    Ok(body)
+    release_command(&repo_identity, action, &source_commit, &branch_ref)
 }
 
 fn github_repository_slug(remote: &str) -> Result<String, RrcError> {
@@ -2477,15 +4045,23 @@ pub fn release_status_for_workspace(workspace: &Path) -> Option<String> {
     if !root.is_dir() {
         return None;
     }
+    let repo_identity = repository_identity(&canonical).ok()?;
     let ledger = ReleaseLedger {
         root,
-        repo_key: sha256_hex(canonical.to_string_lossy().as_bytes()),
+        repo_key: sha256_hex(repo_identity.as_bytes()),
     };
-    ledger
-        .load()
-        .ok()
-        .flatten()
-        .map(|record| record.render_status())
+    ledger.load().ok().flatten().map(|record| {
+        let mut status = record.render_status();
+        if let Some(worker) =
+            crate::release_executor::active_release_worker_for_workspace(&canonical)
+        {
+            status.push_str("\n\n");
+            status.push_str(&crate::release_executor::render_active_worker_status(
+                &worker,
+            ));
+        }
+        status
+    })
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -2521,7 +4097,770 @@ fn short_sha(sha: &str) -> &str {
 
 #[cfg(test)]
 mod tests {
+    use std::thread;
+
     use super::*;
+
+    #[test]
+    fn natural_release_intent_is_imperative_and_fail_closed() {
+        for (prompt, bump) in [
+            ("Release all completed RRC work as the next patch.", "patch"),
+            ("release everything we finished as the next patch", "patch"),
+            ("ship this", "patch"),
+            ("release these fixes", "patch"),
+            ("publish the next patch", "patch"),
+            ("Release this as a minor version.", "minor"),
+        ] {
+            assert!(matches!(
+                classify_release_intent(prompt),
+                ReleaseIntentDecision::Admit { bump: admitted, .. } if admitted == bump
+            ));
+        }
+        for prompt in [
+            "How does the release system work?",
+            "How should we release this?",
+            "We can release later.",
+            "Document the release process.",
+            "Do not release this yet.",
+            "The release build is green.",
+        ] {
+            assert_eq!(
+                classify_release_intent(prompt),
+                ReleaseIntentDecision::NotRelease,
+                "false positive for {prompt:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn natural_release_from_dirty_primary_selects_completed_source_without_mutation() {
+        let temp = tempfile::tempdir().unwrap();
+        let primary = temp.path().join("repository");
+        let completion = temp.path().join("completion");
+        let state = temp.path().join("state");
+        fs::create_dir_all(primary.join("docs/foundation")).unwrap();
+        run_git(&primary, &["init", "-b", "main"]);
+        run_git(&primary, &["config", "user.email", "rrc@example.invalid"]);
+        run_git(&primary, &["config", "user.name", "RRC Test"]);
+        run_git(
+            &primary,
+            &[
+                "remote",
+                "add",
+                "origin",
+                "https://github.com/test/repo.git",
+            ],
+        );
+        fs::write(primary.join("Cargo.toml"), "[workspace]\n").unwrap();
+        fs::write(primary.join("user.txt"), "base\n").unwrap();
+        run_git(&primary, &["add", "."]);
+        run_git(&primary, &["commit", "-m", "base"]);
+        let old_head = git_text(&primary, &["rev-parse", "HEAD"]);
+        run_git(
+            &primary,
+            &[
+                "worktree",
+                "add",
+                "-b",
+                "rrc-completion-test",
+                completion.to_str().unwrap(),
+            ],
+        );
+        fs::write(completion.join("rrc.rs"), "final controller\n").unwrap();
+        fs::create_dir_all(completion.join("docs/foundation")).unwrap();
+        fs::write(
+            completion.join("docs/foundation/rrc-final-completion.md"),
+            "# COMPLETE\n",
+        )
+        .unwrap();
+        run_git(&completion, &["add", "."]);
+        run_git(&completion, &["commit", "-m", "feat: complete RRC"]);
+        write_objective_marker(
+            &completion,
+            "rrc-autonomy-repair",
+            "RRC autonomy repair",
+            "Completed autonomy repair after release admission",
+            "2026-09-30T00:00:00Z",
+        );
+        run_git(&completion, &["add", "."]);
+        run_git(
+            &completion,
+            &["commit", "-m", "docs: bind RRC autonomy objective"],
+        );
+        let intended_head = git_text(&completion, &["rev-parse", "HEAD"]);
+        let historical = temp.path().join("red-main-ci");
+        run_git(
+            &primary,
+            &[
+                "worktree",
+                "add",
+                "-b",
+                "red-main-ci-test",
+                historical.to_str().unwrap(),
+            ],
+        );
+        fs::write(historical.join("red-main.txt"), "historical repair\n").unwrap();
+        write_objective_marker(
+            &historical,
+            "red-main-ci",
+            "Historical red main CI repair",
+            "Red main repair after CI recovery",
+            "2026-09-29T00:00:00Z",
+        );
+        run_git(&historical, &["add", "."]);
+        run_git(
+            &historical,
+            &["commit", "-m", "complete red main CI repair"],
+        );
+        fs::write(primary.join("user.txt"), "private dirty bytes\n").unwrap();
+        let before = fs::read(primary.join("user.txt")).unwrap();
+        let mut launched = None;
+        let outcome = admit_natural_release_with_launcher(
+            &primary,
+            "Release all completed RRC work as the next patch.",
+            &state,
+            |workspace, repository, identity| {
+                launched = Some((workspace, repository, identity));
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert!(matches!(outcome, NaturalReleaseAdmission::Started(_)));
+        let (release_workspace, _, identity) = launched.expect("worker launched automatically");
+        assert_ne!(release_workspace, primary);
+        assert_eq!(
+            git_text(&release_workspace, &["rev-parse", "HEAD"]),
+            intended_head
+        );
+        assert_ne!(
+            git_text(&release_workspace, &["rev-parse", "HEAD"]),
+            old_head
+        );
+        assert!(git_text(&release_workspace, &["status", "--porcelain"]).is_empty());
+        assert_eq!(fs::read(primary.join("user.txt")).unwrap(), before);
+        let ledger = ReleaseLedger::open(state, &identity).unwrap();
+        let record = ledger.load().unwrap().unwrap();
+        assert_eq!(record.state, ReleaseRecoveryState::LocalVerification);
+        assert_eq!(
+            record.mutation.source_workspace.as_deref(),
+            Some(completion.to_string_lossy().as_ref())
+        );
+        assert_eq!(
+            record.mutation.objective_id.as_deref(),
+            Some("rrc-autonomy-repair")
+        );
+        assert_eq!(
+            record.mutation.objective_label.as_deref(),
+            Some("RRC autonomy repair")
+        );
+        assert_ne!(
+            record.mutation.source_workspace.as_deref(),
+            Some(historical.to_string_lossy().as_ref())
+        );
+        assert_eq!(
+            record.mutation.release_workspace.as_deref(),
+            Some(release_workspace.to_string_lossy().as_ref())
+        );
+        assert_eq!(record.mutation.base_sha.as_deref(), Some(old_head.as_str()));
+        assert_eq!(
+            record.mutation.final_candidate_commit.as_deref(),
+            Some(intended_head.as_str())
+        );
+        assert!(!record.mutation.intended_commits.is_empty());
+    }
+
+    #[test]
+    fn ambiguous_completed_candidates_clarify_once_without_mutation() {
+        let temp = tempfile::tempdir().unwrap();
+        let primary = temp.path().join("repository");
+        let state = temp.path().join("state");
+        fs::create_dir_all(&primary).unwrap();
+        run_git(&primary, &["init", "-b", "main"]);
+        run_git(&primary, &["config", "user.email", "rrc@example.invalid"]);
+        run_git(&primary, &["config", "user.name", "RRC Test"]);
+        run_git(
+            &primary,
+            &[
+                "remote",
+                "add",
+                "origin",
+                "https://github.com/test/repo.git",
+            ],
+        );
+        fs::write(primary.join("base.txt"), "base\n").unwrap();
+        run_git(&primary, &["add", "."]);
+        run_git(&primary, &["commit", "-m", "base"]);
+        for name in ["completion-a", "completion-b"] {
+            let path = temp.path().join(name);
+            run_git(
+                &primary,
+                &["worktree", "add", "-b", name, path.to_str().unwrap()],
+            );
+            fs::create_dir_all(path.join("docs/foundation")).unwrap();
+            fs::write(path.join(format!("{name}.txt")), name).unwrap();
+            fs::write(
+                path.join(format!("docs/foundation/{name}-completion.md")),
+                "# COMPLETE\n",
+            )
+            .unwrap();
+            write_objective_marker(
+                &path,
+                "rrc-autonomy-repair",
+                "RRC autonomy repair",
+                if name == "completion-a" {
+                    "Variant completed after CI recovery"
+                } else {
+                    "Earlier variant before CI recovery"
+                },
+                "2026-09-30T00:00:00Z",
+            );
+            run_git(&path, &["add", "."]);
+            run_git(&path, &["commit", "-m", &format!("complete {name}")]);
+        }
+        fs::write(primary.join("base.txt"), "dirty\n").unwrap();
+        let outcome = admit_natural_release_with_launcher(
+            &primary,
+            "Release this as the next patch.",
+            &state,
+            |_, _, _| panic!("ambiguous provenance must not launch"),
+        )
+        .unwrap();
+        let NaturalReleaseAdmission::Clarification(message) = outcome else {
+            panic!("same-objective variants must clarify");
+        };
+        assert!(message.contains("Variant completed after CI recovery"));
+        assert!(message.contains("Earlier variant before CI recovery"));
+        assert!(!message.contains("completion-a"));
+        assert!(!message.contains("completion-b"));
+        assert!(!message.contains(temp.path().to_string_lossy().as_ref()));
+        assert!(
+            !state.exists(),
+            "clarification must not create release state"
+        );
+        assert_eq!(
+            fs::read_to_string(primary.join("base.txt")).unwrap(),
+            "dirty\n"
+        );
+    }
+
+    struct ActiveEpochFixture {
+        _temp: tempfile::TempDir,
+        primary: PathBuf,
+        completion: PathBuf,
+        state: PathBuf,
+        identity: String,
+    }
+
+    fn active_epoch_fixture() -> ActiveEpochFixture {
+        // This fixture exercises an actual controller-owned Cargo gate. Keep
+        // its ephemeral release root on the repository filesystem rather
+        // than `/tmp`, whose small tmpfs is correctly rejected by the RRC
+        // disk reserve + expected-growth policy.
+        let temp = tempfile::Builder::new()
+            .prefix(".rrc-active-epoch-")
+            .tempdir_in(std::env::current_dir().unwrap())
+            .unwrap();
+        let primary = temp.path().join("repository");
+        let completion = temp.path().join("completion-old");
+        let state = temp.path().join("state");
+        fs::create_dir_all(&primary).unwrap();
+        run_git(&primary, &["init", "-b", "main"]);
+        run_git(&primary, &["config", "user.email", "rrc@example.invalid"]);
+        run_git(&primary, &["config", "user.name", "RRC Test"]);
+        run_git(
+            &primary,
+            &[
+                "remote",
+                "add",
+                "origin",
+                "https://github.com/test/repo.git",
+            ],
+        );
+        fs::write(primary.join("base.txt"), "base\n").unwrap();
+        fs::create_dir_all(primary.join(".cargo")).unwrap();
+        fs::create_dir_all(primary.join("xtask/src")).unwrap();
+        fs::write(
+            primary.join(".cargo/config.toml"),
+            "[alias]\nxtask = \"run --quiet -p xtask --\"\n",
+        )
+        .unwrap();
+        fs::write(
+            primary.join("Cargo.toml"),
+            "[workspace]\nmembers = [\"xtask\"]\nresolver = \"2\"\n",
+        )
+        .unwrap();
+        fs::write(
+            primary.join("xtask/Cargo.toml"),
+            "[package]\nname = \"xtask\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+        )
+        .unwrap();
+        fs::write(
+            primary.join("xtask/src/main.rs"),
+            "use std::{fs, thread, time::Duration};\nfn main() {\n    let gate = std::env::args().nth(1).unwrap();\n    if gate == \"verify\" {\n        fs::write(\"local-gate-started\", b\"started\").unwrap();\n        eprintln!(\"Running tests/test_a.rs (target/debug/deps/test_a-0123456789abcdef)\");\n        thread::sleep(Duration::from_secs(2));\n        eprintln!(\"Running tests/test_b.rs (target/debug/deps/test_b-fedcba9876543210)\");\n        thread::sleep(Duration::from_secs(2));\n    } else {\n        assert_eq!(gate, \"acceptance\");\n        eprintln!(\"Running tests/acceptance.rs (target/debug/deps/acceptance-0123456789abcdef)\");\n        thread::sleep(Duration::from_secs(30));\n    }\n}\n",
+        )
+        .unwrap();
+        run_git(&primary, &["add", "."]);
+        run_git(&primary, &["commit", "-m", "base"]);
+        run_git(
+            &primary,
+            &[
+                "worktree",
+                "add",
+                "-b",
+                "completion-old",
+                completion.to_str().unwrap(),
+            ],
+        );
+        fs::write(completion.join("repair.txt"), "old candidate\n").unwrap();
+        write_objective_marker(
+            &completion,
+            "rrc-autonomy-repair",
+            "RRC autonomy repair",
+            "Older prerelease repair candidate",
+            "2026-09-30T00:00:00Z",
+        );
+        run_git(&completion, &["add", "."]);
+        run_git(&completion, &["commit", "-m", "complete old candidate"]);
+        fs::write(primary.join("base.txt"), "Alex's dirty primary bytes\n").unwrap();
+        let outcome = admit_natural_release_with_launcher(
+            &primary,
+            "Release all completed work as the next patch.",
+            &state,
+            |_, _, _| Ok(()),
+        )
+        .unwrap();
+        assert!(matches!(outcome, NaturalReleaseAdmission::Started(_)));
+        let identity = repository_identity(&primary).unwrap();
+        let ledger = ReleaseLedger::open(state.clone(), &identity).unwrap();
+        let mut record = ledger.load().unwrap().unwrap();
+        let commit = record.release_commit.clone().unwrap();
+        record
+            .transition(
+                ReleaseRecoveryState::DiagnosingLocalFailure,
+                &commit,
+                "persisted older prerelease local failure",
+                vec!["local:old-candidate-failure".into()],
+                None,
+            )
+            .unwrap();
+        ledger.save(&record).unwrap();
+        ActiveEpochFixture {
+            _temp: temp,
+            primary,
+            completion,
+            state,
+            identity,
+        }
+    }
+
+    #[test]
+    fn same_recoverable_epoch_resumes_from_natural_language_without_manual_command() {
+        let fixture = active_epoch_fixture();
+        let ledger = ReleaseLedger::open(fixture.state.clone(), &fixture.identity).unwrap();
+        let before = ledger.load().unwrap().unwrap();
+        let mut launched = None;
+        let outcome = admit_natural_release_with_launcher(
+            &fixture.primary,
+            "Release all completed work as the next patch.",
+            &fixture.state,
+            |workspace, _, _| {
+                launched = Some(workspace);
+                Ok(())
+            },
+        )
+        .unwrap();
+        let NaturalReleaseAdmission::Started(message) = outcome else {
+            panic!("matching recoverable epoch must resume");
+        };
+        assert!(message.contains("Continuing the matching release automatically"));
+        assert!(!message.contains("/release"));
+        let after = ledger.load().unwrap().unwrap();
+        assert_eq!(after.epoch_id, before.epoch_id);
+        assert_eq!(after.state, ReleaseRecoveryState::LocalVerification);
+        assert_eq!(
+            launched.unwrap(),
+            PathBuf::from(after.mutation.release_workspace.as_deref().unwrap())
+        );
+        assert!(!ledger.superseded_path(&before.epoch_id).exists());
+    }
+
+    #[test]
+    fn obsolete_diagnosing_epoch_is_preserved_and_newer_candidate_is_admitted() {
+        let fixture = active_epoch_fixture();
+        let ledger = ReleaseLedger::open(fixture.state.clone(), &fixture.identity).unwrap();
+        let previous = ledger.load().unwrap().unwrap();
+        let previous_workspace = previous.mutation.release_workspace.clone().unwrap();
+        let newer = fixture._temp.path().join("completion-new");
+        let old_head = git_text(&fixture.completion, &["rev-parse", "HEAD"]);
+        run_git(
+            &fixture.primary,
+            &[
+                "worktree",
+                "add",
+                "-b",
+                "completion-new",
+                newer.to_str().unwrap(),
+                &old_head,
+            ],
+        );
+        fs::write(newer.join("repair.txt"), "new repaired candidate\n").unwrap();
+        write_objective_marker(
+            &newer,
+            "rrc-autonomy-repair",
+            "RRC autonomy repair",
+            "Newer stale-epoch repair candidate",
+            "2026-09-30T01:00:00Z",
+        );
+        run_git(&newer, &["add", "."]);
+        run_git(&newer, &["commit", "-m", "repair stale epoch autonomy"]);
+        let newer_head = git_text(&newer, &["rev-parse", "HEAD"]);
+        let primary_before = fs::read(fixture.primary.join("base.txt")).unwrap();
+        let mut launched = None;
+        let outcome = admit_natural_release_with_launcher(
+            &fixture.primary,
+            "Release all completed work as the next patch.",
+            &fixture.state,
+            |workspace, _, _| {
+                launched = Some(workspace);
+                Ok(())
+            },
+        )
+        .unwrap();
+        let NaturalReleaseAdmission::Started(message) = outcome else {
+            panic!("newer same-objective candidate must be admitted");
+        };
+        assert!(message.contains("preserved as superseded evidence"));
+        assert!(!message.contains("/release"));
+        let current = ledger.load().unwrap().unwrap();
+        assert_ne!(current.epoch_id, previous.epoch_id);
+        assert_eq!(current.state, ReleaseRecoveryState::LocalVerification);
+        assert_eq!(
+            current.mutation.source_commit.as_deref(),
+            Some(newer_head.as_str())
+        );
+        assert_ne!(
+            current.mutation.release_workspace.as_deref(),
+            Some(previous_workspace.as_str())
+        );
+        assert_eq!(
+            launched.unwrap(),
+            PathBuf::from(current.mutation.release_workspace.as_deref().unwrap())
+        );
+        let archive: SupersededEpochEvidence =
+            serde_json::from_slice(&fs::read(ledger.superseded_path(&previous.epoch_id)).unwrap())
+                .unwrap();
+        assert_eq!(archive.record.epoch_id, previous.epoch_id);
+        assert_eq!(archive.replacement_epoch_id, current.epoch_id);
+        assert_eq!(
+            archive.record.state,
+            ReleaseRecoveryState::DiagnosingLocalFailure
+        );
+        assert_eq!(archive.replacement_source_commit, newer_head);
+        assert_eq!(
+            fs::read(fixture.primary.join("base.txt")).unwrap(),
+            primary_before
+        );
+    }
+
+    #[test]
+    fn tui_natural_release_retains_registered_controller_through_local_gate_progress() {
+        let fixture = active_epoch_fixture();
+        let ledger = ReleaseLedger::open(fixture.state.clone(), &fixture.identity).unwrap();
+        let previous = ledger.load().unwrap().unwrap();
+        let newer = fixture._temp.path().join("completion-lifecycle");
+        let old_head = git_text(&fixture.completion, &["rev-parse", "HEAD"]);
+        run_git(
+            &fixture.primary,
+            &[
+                "worktree",
+                "add",
+                "-b",
+                "completion-lifecycle",
+                newer.to_str().unwrap(),
+                &old_head,
+            ],
+        );
+        fs::write(newer.join("repair.txt"), "controller lifecycle repair\n").unwrap();
+        write_objective_marker(
+            &newer,
+            "rrc-autonomy-repair",
+            "RRC autonomy repair",
+            "Controller lifecycle repair candidate",
+            "2026-09-30T02:00:00Z",
+        );
+        run_git(&newer, &["add", "."]);
+        run_git(&newer, &["commit", "-m", "repair controller lifecycle"]);
+        let primary_before = fs::read(fixture.primary.join("base.txt")).unwrap();
+
+        let outcome = admit_natural_release_with_launcher(
+            &fixture.primary,
+            "Release all completed work as the next patch.",
+            &fixture.state,
+            |workspace, repository, repo_identity| {
+                let worker_ledger =
+                    ReleaseLedger::open(fixture.state.clone(), &repo_identity).unwrap();
+                let mut record = worker_ledger.load().unwrap().unwrap();
+                record.mutation.version_before = Some("0.1.0".into());
+                record.mutation.version_after = Some("0.1.1".into());
+                record.mutation.local_gates = vec![
+                    LocalGateRecord {
+                        name: "workspace-verify".into(),
+                        state: SettlementState::NotStarted,
+                        command: "cargo xtask verify".into(),
+                        evidence_ref: None,
+                    },
+                    LocalGateRecord {
+                        name: "acceptance".into(),
+                        state: SettlementState::NotStarted,
+                        command: "cargo xtask acceptance".into(),
+                        evidence_ref: None,
+                    },
+                ];
+                worker_ledger.save(&record).unwrap();
+                crate::release_executor::spawn_release_worker_at_root(
+                    workspace,
+                    repository,
+                    repo_identity,
+                    None,
+                    fixture.state.clone(),
+                )
+                .map(|_| ())
+            },
+        )
+        .unwrap();
+        let NaturalReleaseAdmission::Started(message) = outcome else {
+            panic!("production admission must start the controller");
+        };
+        assert!(message.contains("Local verification started"));
+
+        let current = ledger.load().unwrap().unwrap();
+        assert_ne!(current.epoch_id, previous.epoch_id);
+        let release_workspace =
+            PathBuf::from(current.mutation.release_workspace.as_deref().unwrap());
+        let started = release_workspace.join("local-gate-started");
+        let deadline = std::time::Instant::now() + Duration::from_secs(15);
+        while !started.exists() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "RunLocalVerification did not start a real subprocess: {}",
+                ledger.load().unwrap().unwrap().render_status()
+            );
+            thread::sleep(Duration::from_millis(25));
+        }
+
+        let task = crate::release_executor::active_release_worker(&fixture.identity)
+            .expect("one registered RRC task must survive handler return");
+        assert_eq!(
+            crate::release_executor::active_release_worker_count_for_repo(&fixture.identity),
+            1
+        );
+        assert_eq!(task.epoch_id, current.epoch_id);
+        assert_eq!(task.stage, "Release recovery");
+        assert!(task.detail.contains("workspace-verify"));
+        assert!(task.cancellable);
+        assert_eq!(task.current_gate.as_deref(), Some("workspace-verify"));
+        assert_eq!(task.current_command.as_deref(), Some("cargo xtask verify"));
+        assert_eq!(task.completed_gates, 0);
+        assert_eq!(task.total_gates, 2);
+        assert_eq!(task.version_before.as_deref(), Some("0.1.0"));
+        assert_eq!(task.version_after.as_deref(), Some("0.1.1"));
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(15);
+        let test_a = loop {
+            let snapshot = crate::release_executor::active_release_worker(&fixture.identity)
+                .expect("worker remains registered while test A runs");
+            if snapshot.current_child.as_deref() == Some("test_a") {
+                break snapshot;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "test A telemetry missing"
+            );
+            thread::sleep(Duration::from_millis(25));
+        };
+        thread::sleep(Duration::from_millis(1100));
+        let ticking = crate::release_executor::active_release_worker(&fixture.identity)
+            .expect("worker remains registered while elapsed time ticks");
+        assert!(ticking.gate_elapsed_secs > test_a.gate_elapsed_secs);
+        assert!(ticking.last_activity_ago_secs >= 1);
+
+        let test_b = loop {
+            let snapshot = crate::release_executor::active_release_worker(&fixture.identity)
+                .expect("worker remains registered while test B runs");
+            if snapshot.current_child.as_deref() == Some("test_b") {
+                break snapshot;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "test B telemetry missing"
+            );
+            thread::sleep(Duration::from_millis(25));
+        };
+        assert!(test_b.last_activity_ago_secs < ticking.last_activity_ago_secs);
+        assert_ne!(test_a.recent_output, test_b.recent_output);
+        assert!(test_b.recent_output.len() <= 8);
+
+        let advanced = loop {
+            let snapshot = crate::release_executor::active_release_worker(&fixture.identity)
+                .expect("worker remains registered while the next gate runs");
+            if snapshot.completed_gates == 1
+                && snapshot.current_gate.as_deref() == Some("acceptance")
+                && snapshot.current_child.as_deref() == Some("acceptance")
+            {
+                break snapshot;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "completed-gate telemetry did not advance"
+            );
+            thread::sleep(Duration::from_millis(25));
+        };
+        assert_eq!(advanced.total_gates, 2);
+        assert_eq!(
+            advanced.current_command.as_deref(),
+            Some("cargo xtask acceptance")
+        );
+        assert_eq!(advanced.current_child.as_deref(), Some("acceptance"));
+        assert!(advanced.process_alive);
+        let progressed = ledger.load().unwrap().unwrap();
+        assert_eq!(progressed.state, ReleaseRecoveryState::LocalVerification);
+        assert_eq!(
+            progressed.mutation.local_gates[0].state,
+            SettlementState::Succeeded
+        );
+        assert_eq!(
+            progressed.mutation.local_gates[1].state,
+            SettlementState::Running
+        );
+        assert_eq!(
+            fs::read(fixture.primary.join("base.txt")).unwrap(),
+            primary_before
+        );
+
+        crate::release_executor::cancel_release_worker(&fixture.identity);
+        let deadline = std::time::Instant::now() + Duration::from_secs(15);
+        while crate::release_executor::active_release_worker(&fixture.identity).is_some() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "cancelled RRC task did not settle"
+            );
+            thread::sleep(Duration::from_millis(25));
+        }
+        let settled = ledger.load().unwrap().unwrap();
+        assert_eq!(settled.state, ReleaseRecoveryState::DiagnosingLocalFailure);
+        assert_eq!(
+            settled.mutation.local_gates[0].state,
+            SettlementState::Succeeded
+        );
+        assert_eq!(
+            settled.mutation.local_gates[1].state,
+            SettlementState::Failed
+        );
+        assert!(ledger.superseded_path(&previous.epoch_id).exists());
+    }
+
+    #[test]
+    fn unrelated_active_release_asks_one_human_clarification_without_mutation() {
+        let fixture = active_epoch_fixture();
+        let ledger = ReleaseLedger::open(fixture.state.clone(), &fixture.identity).unwrap();
+        let mut active = ledger.load().unwrap().unwrap();
+        active.mutation.objective_id = Some("different-completed-objective".into());
+        ledger.save(&active).unwrap();
+        let persisted = fs::read(ledger.path()).unwrap();
+        let outcome = admit_natural_release_with_launcher(
+            &fixture.primary,
+            "Release all completed work as the next patch.",
+            &fixture.state,
+            |_, _, _| panic!("unrelated active release must not launch"),
+        )
+        .unwrap();
+        let NaturalReleaseAdmission::Clarification(message) = outcome else {
+            panic!("unrelated objective must clarify");
+        };
+        assert_eq!(message.matches('?').count(), 1);
+        assert!(!message.contains("epoch"));
+        assert!(!message.contains("DiagnosingLocalFailure"));
+        assert_eq!(fs::read(ledger.path()).unwrap(), persisted);
+    }
+
+    #[test]
+    fn irreversible_release_state_is_never_discarded_by_new_admission() {
+        let fixture = active_epoch_fixture();
+        let ledger = ReleaseLedger::open(fixture.state.clone(), &fixture.identity).unwrap();
+        let mut active = ledger.load().unwrap().unwrap();
+        active.mutation.candidate_pushed = true;
+        active.mutation.candidate_push_ref = Some("refs/heads/main@candidate".into());
+        ledger.save(&active).unwrap();
+        let persisted = fs::read(ledger.path()).unwrap();
+        let outcome = admit_natural_release_with_launcher(
+            &fixture.primary,
+            "Release all completed work as the next patch.",
+            &fixture.state,
+            |_, _, _| panic!("irreversible state must not launch a replacement"),
+        )
+        .unwrap();
+        let NaturalReleaseAdmission::Clarification(message) = outcome else {
+            panic!("irreversible state must clarify");
+        };
+        assert_eq!(message.matches('?').count(), 1);
+        assert!(message.contains("remote release state"));
+        assert!(!message.contains("epoch"));
+        assert_eq!(fs::read(ledger.path()).unwrap(), persisted);
+        assert!(!ledger.superseded_path(&active.epoch_id).exists());
+    }
+
+    fn write_objective_marker(
+        root: &Path,
+        objective_id: &str,
+        objective_label: &str,
+        variant_label: &str,
+        completed_at: &str,
+    ) {
+        let path = root.join("docs/foundation/release-objective-provenance.json");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            root.join("docs/foundation/objective-evidence.md"),
+            format!("# {objective_label}\n"),
+        )
+        .unwrap();
+        fs::write(
+            path,
+            serde_json::json!({
+                "version": 1,
+                "objective_id": objective_id,
+                "objective_label": objective_label,
+                "variant_label": variant_label,
+                "completed_at": completed_at,
+                "evidence_reports": ["docs/foundation/objective-evidence.md"]
+            })
+            .to_string(),
+        )
+        .unwrap();
+    }
+
+    fn run_git(root: &Path, args: &[&str]) {
+        let output = std::process::Command::new("git")
+            .args(args)
+            .current_dir(root)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "git {} failed: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    fn git_text(root: &Path, args: &[&str]) -> String {
+        let output = std::process::Command::new("git")
+            .args(args)
+            .current_dir(root)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "git {} failed", args.join(" "));
+        String::from_utf8_lossy(&output.stdout).trim().to_owned()
+    }
 
     fn record() -> ReleaseRecoveryRecord {
         let mut record = start_release("repo", "patch", "main", "abcdef123456").unwrap();

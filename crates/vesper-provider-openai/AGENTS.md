@@ -39,8 +39,12 @@ Both hosts register one provider with API-key and subscription authentication.
   bounded SSE, opaque reasoning, call/result identity, and interruption safety.
   Subscription metadata events are informational; visible
   `response.reasoning_text.delta` remains provider-visible reasoning. Protocol
-  rejections attach only stage, allowlisted event type, rejected field, observed
-  byte length and applicable bound—never rejected values or raw responses.
+  rejections keep the user-facing safe message generic. Their separate bounded
+  structured diagnostics expose the decoder stage, allowlisted event type or
+  `<unrecognized>`, rejected field, expected shape, observed byte length, the
+  byte measurement basis and applicable limit—never rejected values or raw
+  responses. `responses-event` byte counts are canonical JSON serialization
+  sizes, not raw SSE accumulator measurements.
 - `src/http_error.rs` owns bounded HTTP rejection diagnostics shared by both
   authentication modes and hosts: at most 16 KiB and two seconds of body reading,
   cancellable, with exact code/parameter allowlists. Preserve HTTP status and
@@ -89,6 +93,9 @@ Both hosts register one provider with API-key and subscription authentication.
 
 - Run `cargo test -p vesper-provider-openai --all-features`. Discovery tests cover
   account filtering, failed refresh, cancellation, redirects, body limits and deadline;
+  Responses transport tests cover one-byte and whole-body chunking, CRLF, multiline
+  data, comments/control fields, undelimited EOF, per-event reset across aggregate data
+  over 1 MiB, exact/over-bound events, diagnostic byte basis and no-replay settlement;
   Spark tests cover summary omission and image rejection. Memory extraction discovers
   an available account model rather than assuming the historical default is accessible.
 - Keep the complete nine-tool serialization regression green in both native

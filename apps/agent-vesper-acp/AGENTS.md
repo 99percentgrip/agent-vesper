@@ -58,6 +58,26 @@ transport, stderr-only tracing, and orderly shutdown.
   normal client-backed permission port to the isolated repair AgentLoop; missing
   client permission support fails closed. `/ci` includes the same persisted
   controller status as TUI; ACP never keeps a host-private release lifecycle.
+  Ordinary free-text release imperatives use that same shared conservative
+  admission before provider dispatch. Admission launches the existing background
+  RRC from a clean isolated release worktree. A persisted matching local-failure
+  epoch resumes automatically; an obsolete same-objective prerelease epoch is
+  archived and superseded automatically. Remote irreversible state or an unrelated
+  active objective asks one bounded human-facing clarification without exposing
+  epoch IDs, controller states or ledger paths. Objective provenance excludes
+  unrelated historical worktrees. Only unresolved variants of the same objective
+  return one human-labelled clarification—never paths or SHAs—without a provider
+  turn or release mutation. While a worker is registered, `/release status` includes its
+  shared real RUN snapshot, including Host Resource Governor RAM/cgroup, swap,
+  owned-process, Cargo/test-budget and target-cache pressure/action values; it also
+  renders the same persisted sequence-numbered `ReleaseProgress` phase, gate/job
+  counts and recent milestones as TUI. ACP never infers resource health or progress
+  from a checkpoint timestamp, elapsed time or start acknowledgement. The Unix
+  `release_resource_governor` process regression drives real ACP `/release patch` and
+  `/release status` against a controlled temporary Cargo command. It proves the
+  controller snapshot and all version-check/gate Cargo paths carry the resource policy
+  without provider dispatch; the integration-only driver changes only admission policy,
+  never the Linux telemetry backend.
 
 - `/skills settings status|save mode standard|enhanced|save enable|disable <skill>`
   uses the shared domain parser and harness preferences. Reads create no workspace
@@ -77,7 +97,9 @@ transport, stderr-only tracing, and orderly shutdown.
   cancellation-classified runtime terminal agree. Partial streamed output,
   completed tool updates and returned working history remain intact for later
   turns. A coincident timeout, provider failure or uncorroborated provider-side
-  cancellation remains a failure.
+  cancellation remains a failure. Provider-turn failure text uses only the
+  bounded provider safe message; typed structured diagnostics stay internal and
+  must not be serialized into ordinary ACP response prose.
 - Contain no session, provider-wire, or ACP-mapping business logic.
 - Stdout is exclusively newline-delimited ACP JSON-RPC.
 - Tests use loopback endpoints and synthetic credentials only. The shared process

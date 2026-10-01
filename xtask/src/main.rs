@@ -1973,7 +1973,7 @@ struct Dependency {
 /// External coding agents and CI run the same runtime/evaluator regression gate.
 /// Exact names make a deleted, renamed, ignored, or zero-match case a failure.
 fn acceptance_verify() -> Result<(), String> {
-    let cases: &[(&str, &[&str], &str)] = &[
+    let mut cases: Vec<(&str, &[&str], &str)> = vec![
         (
             "vesper-agent",
             &["--test", "acceptance_policy"],
@@ -2112,6 +2112,31 @@ fn acceptance_verify() -> Result<(), String> {
         (
             "vesper-harness",
             &["--lib"],
+            "release_recovery::tests::same_recoverable_epoch_resumes_from_natural_language_without_manual_command",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_recovery::tests::obsolete_diagnosing_epoch_is_preserved_and_newer_candidate_is_admitted",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_recovery::tests::unrelated_active_release_asks_one_human_clarification_without_mutation",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_recovery::tests::irreversible_release_state_is_never_discarded_by_new_admission",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_recovery::tests::tui_natural_release_retains_registered_controller_through_local_gate_progress",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
             "release_executor::tests::production_orchestrator_reaches_publication_only_through_settled_gates",
         ),
         (
@@ -2120,13 +2145,60 @@ fn acceptance_verify() -> Result<(), String> {
             "release_executor::tests::release_worker_cancel_restart_process_acceptance",
         ),
         (
+            "vesper-harness",
+            &["--lib"],
+            "host_resources::tests::cgroup_v2_discovery_uses_the_strictest_ancestor_limit_and_its_usage",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "host_resources_constrained_tests::constrained_memory_acceptance_withholds_expensive_cargo_before_spawn",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "host_resources_constrained_tests::constrained_disk_acceptance_preserves_target_cache_and_withholds_gate",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_executor::tests::resource_governor_defer_keeps_local_epoch_resumable_without_source_failure",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_progress_tests::persisted_hierarchy_uses_typed_gate_and_job_states_without_percentages",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_executor::tests::trusted_acceptance_output_updates_only_the_active_acceptance_subtask",
+        ),
+        (
             "agent-vesper-tui",
             &["--lib"],
             "commands::tests::release_routes_to_the_controller_instead_of_a_model_workflow",
         ),
+        (
+            "agent-vesper-tui",
+            &["--lib"],
+            "ui::tests::registered_release_task_replaces_ready_and_no_active_tasks",
+        ),
     ];
+    #[cfg(unix)]
+    cases.push((
+        "agent-vesper-acp",
+        &["--test", "release_resource_governor"],
+        "acp_process_release_status_uses_governor_for_every_cargo_path",
+    ));
+    #[cfg(unix)]
+    cases.push((
+        "agent-vesper-tui",
+        &["--test", "rrc_terminal_pty"],
+        "rrc_child_output_is_captured_sanitized_and_confined_in_a_real_pty",
+    ));
     let started = std::time::Instant::now();
-    for (package, target, name) in cases {
+    for (index, (package, target, name)) in cases.iter().enumerate() {
         let output = Command::new("cargo")
             .current_dir(repository_root())
             .args([
@@ -2156,6 +2228,15 @@ fn acceptance_verify() -> Result<(), String> {
             ));
         }
         println!("acceptance verified: {name}");
+        // This controller-owned marker is intentionally machine-readable: the
+        // RRC admits it only while the named acceptance gate owns the child.
+        // The denominator is the current fixed case list, never a renderer
+        // estimate or a count inferred from Cargo output.
+        println!(
+            "acceptance progress: {}/{} — {name}",
+            index + 1,
+            cases.len()
+        );
     }
     println!(
         "Acceptance regression gate: {} exact cases passed in {} ms. Offline fixture model cost: zero; live-model effectiveness is not measured.",

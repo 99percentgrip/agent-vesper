@@ -39,8 +39,13 @@ pub mod bridge_service;
 #[cfg(feature = "bridge")]
 pub mod bridge_settings;
 pub mod dependency_setup;
+pub mod host_resources;
+#[cfg(test)]
+mod host_resources_constrained_tests;
 pub mod lens_tools;
 pub mod release_executor;
+#[cfg(test)]
+mod release_progress_tests;
 pub mod release_recovery;
 pub mod sandbox_backend;
 pub mod scope_holder;
