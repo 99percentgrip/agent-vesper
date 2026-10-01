@@ -6,94 +6,13 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `critical-fixes-execution-prompt.md` owns the reusable execution prompt for
+  the CRITICAL/OPEN tool-output stall repair, including its authoritative
+  acceptance-record location, red-first regression requirements,
+  shared-executor scope, host/platform verification, and evidence closeout.
+
 - `mcp-session-lifecycle-repair.md` owns persistent MCP source repair,
   isolated Playwright continuity evidence, host wiring and platform limitations.
-
-- `v0.22.6-release-execution.md` owns the microphone release gate and publication receipts.
-
-- `voice-control-execution.md` owns dynamic microphone implementation, long-audio
-  lifecycle evidence and explicit real-device/platform acceptance limits.
-
-- `voice-control-recon.md` owns the missing-footer regression diagnosis and
-  requested dynamic microphone control implementation boundaries.
-
-- `v0.22.5-release-execution.md` owns guided setup publication and exact-commit release evidence.
-
-- `dependency-setup-execution.md` and `dependency-setup-verification.json` own guided
-  dependency setup implementation,
-  isolated readiness evidence and explicit missing clean-platform acceptance.
-
-- `dependency-setup-recon.md` owns the dependency-bootstrap investigation and
-  proposed native setup flow. The requested UX is automatic preparation for
-  selected features, without normal users copying shell commands or editing
-  configuration; OS consent and actual readiness checks remain explicit.
-
-- `v0.22.4-release-execution.md` owns the routing-preview release, exact-commit
-  gate and registry receipts, documentation refresh and preserved local installation.
-
-- `settings-and-update-execution.md` owns native Settings, automatic enrollment,
-  updater repair evidence and unexecuted platform acceptance.
-- `v0.22.2-release-execution.md` owns the Settings repair release receipts and
-  initial installation evidence and pending user update test.
-- `v0.22.3-release-execution.md` owns visual-upgrade release receipts and proof
-  that the installed 0.22.2 payload was preserved for user updater testing.
-- `output-visual-upgrade-execution.md` and `output-reference-*.png` own native
-  output upgrade verification and actual renderer reference captures.
-  `output-reference-render.py` rasterizes captured cells with Linux Noto fonts; it
-  is an optional Pillow-based evidence helper, never production rendering.
-- `skill-routing-quality-implementation.md` owns the isolated preview routing
-  implementation, quality HOLD/ADOPT evidence and score-floor integration dependency.
-  `skill-routing-quality-results.json` retains frozen offline predictions;
-  `skill-routing-quality-summary.py` derives metrics without changing labels.
-- `skill-routing-language-execution.md` owns the follow-up language normalization,
-  development measurements, unchanged-corpus evaluation and remaining gates.
-  `skill-routing-language-results.json` preserves its complete prediction receipt.
-- `skill-routing-request-recognition-execution.md` owns request-recognition
-  experiments, sourced language-asset reproduction and retained failed receipts.
-- `skill-routing-embedding-experiment.md` and `skill-routing-embedding-*` own
-  optional offline embedding probes and their unpromoted result receipts.
-  They never form a native runtime, library rewrite or automatic model download.
-- `skill-routing-independent-*` owns the evaluator-authored frozen corpus,
-  authoring provenance, native predictions and separately scoped static reviews.
-- `skill-routing-model-assistance-execution.md` owns native selector implementation,
-  offline boundary/host verification and separately authorized live quality evidence.
-  `skill-routing-model-verification.json` binds source files and offline receipt hashes.
-  `skill-routing-model-live-evaluation.md` and its summary helper separate live
-  decisions, native fallback, unsupported contexts and measured usage; inspected
-  regression cases never become unseen holdout evidence.
-  `skill-routing-current-quality-results.json` retains current four-size lexical
-  ablations, including failed gates.
-- `evidence-index.md` is the durable execution ledger and command record.
-- `completion-assurance-proposal.md` owns the researched proposal for native
-  requirement coverage, execution receipts, and enforced completion decisions.
-  It records inspected sources and the approved acceptance criteria.
-- `completion-assurance-execution.md` owns ADR 0028 implementation evidence,
-  executable coverage, measured limits and release readiness.
-- `vro14-gap-audit.md` owns current web-extraction gaps, repair evidence,
-  deployment prerequisites, and outstanding release acceptance.
-- `vro15-gap-audit.md` owns independent swarm-extraction acceptance findings,
-  verification limits, and the original repair proposal.
-  `vro15-repair-execution.md` tracks Alex's approved full repair scope, gates and
-  execution evidence, including VesperLens provider-neutral feedback delivery.
-  `vro15-codex-repair-prompt.md` is the external coding-agent handoff for remaining
-  repairs; the PRD, accepted ADRs and current execution matrix remain authoritative.
-  `vro15-audit-probes.rs` is standalone non-production evidence: its assertions
-  reproduce defects, not desired behavior; compile/run as documented in the report.
-- ADRs under `adr/` record Stage 0 compatibility and product choices.
-- `memory-oracle-cognitive-memory-blueprint.md` is the reconnaissance record for the
-  external the memory oracle (`29fa4155`) oracle and the evidence base for ADR 0015
-  (Stage 16 — `vesper-cognition`). The the memory oracle oracle is independent of the
-  frozen Python harness; this is the only place where the memory oracle is cited.
-- `vro13-pr8-closeout-evidence.md` is the VRO-13 cross-feature closeout record:
-  the end-to-end fixture (`crates/vesper-harness/tests/vro13_e2e.rs`), the
-  pipeline coverage (watcher/cron fire → composed firewall → sandbox route →
-  scope-keyed transcript), and the PR-1..PR-8 verification trail per
-  `docs/qm-extraction-prd.md`.
-- `vesperlens-end-to-end-acceptance-postmortem.md` is the owner-directed
-  VesperLens audit (v0.20.29 → v0.20.44): the binding end-to-end completion
-  standard, the ten audited gaps, honest-scope list, and the open task of
-  wiring the real-browser scripts into verification.
-- The remaining reports document source-baseline diagnosis, fixture/oracle results, disposable Rust spikes, and readiness.
 
 - `voice-user-latency-acceptance.md` owns Alex's native recording, first-spoken
   and Preview timing observations, the failed repeated-turn playback result on
@@ -323,6 +242,11 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
   the red-first acceptance that repair satisfied. Diagnostic examples are
   isolated recon helpers, never production code.
 
+- `2026-09-21-context7-playwright-mcp-setup.md` owns the approved local MCP
+  setup and historical live receipts: Context7 usable; the installed Playwright
+  route reset browser state between calls. The source repair and its separate
+  acceptance scope live in `mcp-session-lifecycle-repair.md`.
+
 - `voice-speech-pipeline-repair.md` owns bounded synthesis/playback overlap,
   current primary-source comparison, red→green ordering/Stop evidence and the
   user-confirmed removal of the two-sentence playback gap. Initial live coding
@@ -357,6 +281,19 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
   The acoustic-listening boundary this unit left open is superseded as a
   present status by `voice-npu-user-acceptance.md` (2026-09-23) and kept
   here as history.
+
+- `2026-09-21-tool-output-stall-bug-and-recovery.md` owns the recurring
+  tool-output stall: **CRITICAL — OPEN, PATCH REQUIRED** by Alex. Keep its
+  patch acceptance gaps explicit; operational termination is not a fix.
+
+- `2026-09-23-agent-supervision-cron-limitation.md` owns Alex's requirement
+  for supervisor-agent oversight of a working agent (~15-minute cadence with
+  standing stuck-child recovery authorization) and the evidence that the
+  harness `cronjob` route cannot deliver it (sandboxed scheduled sessions
+  without shell or `/proc` access fire blind; sub-hourly schedules rejected).
+  It stays the classification reference for stuck vs healthy agent states
+  (pipe deadlock, timeout-less busy-loop, 429 quota ≠ hang) until a
+  supervisor implementation PRD supersedes it.
 
 - `voice-latency-repair.md` owns repeated-hashing and recorder-import latency
   repairs, fresh-root capture correction, local timing/regression evidence and
@@ -416,11 +353,91 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
   candidate, not selected), and the NPU readiness record
   (historical device/driver/firmware evidence; userland absence superseded by
   `voice-first-speech-and-npu-assessment.md`).
+- `v0.22.6-release-execution.md` owns the microphone release gate and publication receipts.
+
 - `voice-control-execution.md` owns dynamic microphone implementation, long-audio
   lifecycle evidence and explicit real-device/platform acceptance limits.
 
 - `voice-control-recon.md` owns the missing-footer regression diagnosis and
   requested dynamic microphone control implementation boundaries.
+
+- `v0.22.5-release-execution.md` owns guided setup publication and exact-commit release evidence.
+
+- `dependency-setup-execution.md` and `dependency-setup-verification.json` own guided
+  dependency setup implementation,
+  isolated readiness evidence and explicit missing clean-platform acceptance.
+
+- `dependency-setup-recon.md` owns the dependency-bootstrap investigation and
+  proposed native setup flow. The requested UX is automatic preparation for
+  selected features, without normal users copying shell commands or editing
+  configuration; OS consent and actual readiness checks remain explicit.
+
+- `v0.22.4-release-execution.md` owns the routing-preview release, exact-commit
+  gate and registry receipts, documentation refresh and preserved local installation.
+
+- `settings-and-update-execution.md` owns native Settings, automatic enrollment,
+  updater repair evidence and unexecuted platform acceptance.
+- `v0.22.2-release-execution.md` owns the Settings repair release receipts and
+  initial installation evidence and pending user update test.
+- `v0.22.3-release-execution.md` owns visual-upgrade release receipts and proof
+  that the installed 0.22.2 payload was preserved for user updater testing.
+- `output-visual-upgrade-execution.md` and `output-reference-*.png` own native
+  output upgrade verification and actual renderer reference captures.
+  `output-reference-render.py` rasterizes captured cells with Linux Noto fonts; it
+  is an optional Pillow-based evidence helper, never production rendering.
+- `skill-routing-quality-implementation.md` owns the isolated preview routing
+  implementation, quality HOLD/ADOPT evidence and score-floor integration dependency.
+  `skill-routing-quality-results.json` retains frozen offline predictions;
+  `skill-routing-quality-summary.py` derives metrics without changing labels.
+- `skill-routing-language-execution.md` owns the follow-up language normalization,
+  development measurements, unchanged-corpus evaluation and remaining gates.
+  `skill-routing-language-results.json` preserves its complete prediction receipt.
+- `skill-routing-request-recognition-execution.md` owns request-recognition
+  experiments, sourced language-asset reproduction and retained failed receipts.
+- `skill-routing-embedding-experiment.md` and `skill-routing-embedding-*` own
+  optional offline embedding probes and their unpromoted result receipts.
+  They never form a native runtime, library rewrite or automatic model download.
+- `skill-routing-independent-*` owns the evaluator-authored frozen corpus,
+  authoring provenance, native predictions and separately scoped static reviews.
+- `skill-routing-model-assistance-execution.md` owns native selector implementation,
+  offline boundary/host verification and separately authorized live quality evidence.
+  `skill-routing-model-verification.json` binds source files and offline receipt hashes.
+  `skill-routing-model-live-evaluation.md` and its summary helper separate live
+  decisions, native fallback, unsupported contexts and measured usage; inspected
+  regression cases never become unseen holdout evidence.
+  `skill-routing-current-quality-results.json` retains current four-size lexical
+  ablations, including failed gates.
+- `evidence-index.md` is the durable execution ledger and command record.
+- `completion-assurance-proposal.md` owns the researched proposal for native
+  requirement coverage, execution receipts, and enforced completion decisions.
+  It records inspected sources and the approved acceptance criteria.
+- `completion-assurance-execution.md` owns ADR 0028 implementation evidence,
+  executable coverage, measured limits and release readiness.
+- `vro14-gap-audit.md` owns current web-extraction gaps, repair evidence,
+  deployment prerequisites, and outstanding release acceptance.
+- `vro15-gap-audit.md` owns independent swarm-extraction acceptance findings,
+  verification limits, and the original repair proposal.
+  `vro15-repair-execution.md` tracks Alex's approved full repair scope, gates and
+  execution evidence, including VesperLens provider-neutral feedback delivery.
+  `vro15-codex-repair-prompt.md` is the external coding-agent handoff for remaining
+  repairs; the PRD, accepted ADRs and current execution matrix remain authoritative.
+  `vro15-audit-probes.rs` is standalone non-production evidence: its assertions
+  reproduce defects, not desired behavior; compile/run as documented in the report.
+- ADRs under `adr/` record Stage 0 compatibility and product choices.
+- `memory-oracle-cognitive-memory-blueprint.md` is the reconnaissance record for the
+  external the memory oracle (`29fa4155`) oracle and the evidence base for ADR 0015
+  (Stage 16 — `vesper-cognition`). The the memory oracle oracle is independent of the
+  frozen Python harness; this is the only place where the memory oracle is cited.
+- `vro13-pr8-closeout-evidence.md` is the VRO-13 cross-feature closeout record:
+  the end-to-end fixture (`crates/vesper-harness/tests/vro13_e2e.rs`), the
+  pipeline coverage (watcher/cron fire → composed firewall → sandbox route →
+  scope-keyed transcript), and the PR-1..PR-8 verification trail per
+  `docs/qm-extraction-prd.md`.
+- `vesperlens-end-to-end-acceptance-postmortem.md` is the owner-directed
+  VesperLens audit (v0.20.29 → v0.20.44): the binding end-to-end completion
+  standard, the ten audited gaps, honest-scope list, and the open task of
+  wiring the real-browser scripts into verification.
+- The remaining reports document source-baseline diagnosis, fixture/oracle results, disposable Rust spikes, and readiness.
 
 ## Local Contracts
 
@@ -438,6 +455,18 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
   comparison as materially better and good enough for now. Preserve residual
   delay, including the measured first-large-successor cold-start gap, as open;
   do not turn this bounded acceptance into a no-delay or full-VRO claim.
+- Alex's current sequencing: let the active agent finish its current implementation
+  and the voice PRD; the permanent tool-output-stall repair is the **first
+  engineering task afterward**, before other follow-up work. Authorized
+  blocked-tool recovery is a workaround only; retain the bug's CRITICAL / OPEN
+  status and all patch acceptance requirements.
+- Alex observes the tool-output stall more often with native OpenAI selected than
+  with Z.ai/GLM. Preserve this as an unverified investigation lead: the repair must
+  compare matched repeated workloads and distinguish shared executor backpressure,
+  provider stream/tool-event handling and their interaction before assigning cause.
+  The 2026-09-24 diagnostic narrows the reproduced freeze to shared command-output
+  pipe backpressure while leaving provider-specific triggering unverified.
+
 - Update `evidence-index.md` after each bounded phase.
 - Use language-neutral fixtures, deterministic local services, isolated state, and secret canaries.
 

@@ -60,6 +60,10 @@ Own durable project documentation and evidence-backed engineering records.
   dots, syntax-colored numbered diffs, and aligned responsive reports.
 - `settings-and-update-prd.md` owns theme consistency, grouped Settings saves,
   automatic PRD enrollment and confirmed native update installation.
+- `agent-supervision-watcher-prd.md` owns the proposed provider-neutral
+  supervisor-agent layer for observing multiple workers, classifying stalls,
+  notifying workers and Alex, and performing only explicitly authorized,
+  identity-checked recovery after the shared tool-output repair.
 - Root PRD files (`*-prd.md`) own accepted phased requirement documents
   (e.g. `agent-vesper-reasoning-orchestrator-prd.md`,
   `provider-capability-gating-prd.md`, `qm-extraction-prd.md`,
