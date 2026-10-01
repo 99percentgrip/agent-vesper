@@ -12,12 +12,14 @@
   corrected current-objective clarification to show the known `0.24.4 -> 0.24.5`
   transition and made lifecycle acceptance independent of ambient workstation
   pressure without weakening production governor tests. All 45 exact acceptance
-  cases and complete repository verification passed. A later build-only
-  continuation preserved that evidence boundary and passed one governor-admitted
-  `cargo build --all --locked` from clean canonical commit `f7de8685`, with
-  external artifacts and no candidate, release or remote action. Any push, remote
-  CI, tag or publication evidence still requires one human-readable clarification
-  naming both objectives and known version transitions.
+  cases and complete repository verification passed. Later build-only
+  continuations preserved that evidence boundary: one governed locked workspace
+  build passed, followed by one governed release-profile Linux TUI from exact
+  product source `f7de8685` with the production candidate feature set. The final
+  `0.24.4` binary is checksum-preserved outside `target/` for Alex-operated real
+  release acceptance. No RRC epoch, version mutation, push, tag, publication or
+  installation occurred. Any irreversible remote evidence still requires the
+  controller's bounded clarification rules.
 
 ## RRC provenance ambiguity repair and corrected candidate (2026-10-01)
 

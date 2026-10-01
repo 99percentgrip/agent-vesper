@@ -9,8 +9,9 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 - `2026-10-01-rrc-active-epoch-final-audit.md` owns the red-first correction
   proving both known version transitions in human clarification, the direct
   test-only lifecycle policy injection, retained production governor coverage,
-  complete verification, the later governor-admitted locked workspace build and
-  explicit no-release boundary.
+  complete verification, later governor-admitted locked and release-profile TUI
+  builds, the preserved final `0.24.4` Linux acceptance artifact, and explicit
+  no-release boundary.
 
 - `2026-10-01-rrc-active-epoch-integration-repair.md` owns the live-ledger
   forensic identity, canonical historical-epoch supersession repair, durable

@@ -291,7 +291,92 @@ still `0.24.4`, the rejected `3.3.1` commit still outside ancestry, the live RRC
 ledger still byte-identical at SHA-256
 `35af7a158b39225e89c5d57b14ec0dd0068afbef66791120e8a9a227c675899d`, and
 zram active. The primary checkout remained the separate dirty checkout and was
-only observed read-only. No candidate artifact was staged or installed.
+only observed read-only. No candidate artifact was staged or installed during
+that development-profile continuation.
+
+### Final release-profile TUI acceptance candidate
+
+Alex subsequently authorized one final Linux x86-64 release-profile TUI build
+for his own real GitHub release acceptance. Product source is exactly:
+
+```text
+f7de86858f89810065e5a3cacd7fad5703eaeeb9
+```
+
+The worktree was clean at documentation-only descendant
+`99124bd514405a1d0151233adf7c24761a1d22e8`; its complete diff from the product
+source contained only the five documentation files from the preceding evidence
+closeout. Workspace and TUI package versions both remained `0.24.4`.
+
+The existing Host Resource Governor admitted the build with `Pressure Normal`.
+The command preserved the production candidate feature set recorded by the prior
+provenance-fixed candidate:
+
+```sh
+cargo build --locked --release --package agent-vesper-tui \
+  --features docker,swarm,bridge,voice-kokoro,voice-flm
+```
+
+The release build passed once:
+
+```text
+BUILD_START_UTC=20261001T103915Z
+BUILD_EXIT=0
+BUILD_END_UTC=20261001T104427Z
+Finished `release` profile [optimized] target(s) in 5m 11s
+```
+
+The governor receipt records:
+
+```text
+admitted: true
+exit_code: 0
+stopped_for_critical_pressure: false
+observations: 1220
+CARGO_BUILD_JOBS: 2
+RUST_TEST_THREADS: 2
+min_memory_available_bytes: 18779328512
+max_swap_used_bytes: 1241968640
+pressure_events: ["normal"]
+```
+
+The exact output was copied outside the governor-managed target, flushed,
+rehash-verified against the source artifact, and then independently checked by
+`SHA256SUMS`:
+
+```text
+TUI_PATH=/home/Alex/Projects/agent-vesper-prerelease-candidates/v0.24.4-active-epoch-final-linux-x86_64-20261001T103836Z/agent-vesper-tui
+TUI_SHA256=c3d249f7488b9f07e429719ce46cdb138dd3411b96dfbe8278ef6fa00b93f144
+TUI_VERSION=agent-vesper-tui 0.24.4
+BUILD_PROFILE=release
+PRESSURE_RESULT=Normal
+agent-vesper-tui: OK
+```
+
+The new digest differs from the previous provenance-fixed candidate digest
+`b75a52717323a6662ff759956d6338293b60c34e40476c01014517ee2cb3d6dd`.
+The preserved artifact is a stripped x86-64 ELF PIE executable, 27,112,944
+bytes, mode `0755`.
+
+Durable receipts:
+
+```text
+/home/Alex/Projects/agent-vesper-prerelease-builds/v0.24.4-active-epoch-final-release-profile-20261001T103836Z/receipts/governor-preflight.json
+sha256: f23f23d0d5c0d213fb1cdb72579f72da2e708c99d251619de99ab752ba528097
+
+/home/Alex/Projects/agent-vesper-prerelease-builds/v0.24.4-active-epoch-final-release-profile-20261001T103836Z/receipts/cargo-build-release-tui.json
+sha256: 2f2c8f0f20e275c203641a4df01ef04350af02cd7b6776af41f600362322228d
+
+/home/Alex/Projects/agent-vesper-prerelease-builds/v0.24.4-active-epoch-final-release-profile-20261001T103836Z/receipts/cargo-build-release-tui.log
+sha256: d70dd4650472437cd73ca81187abb316cab1431d41fab180ace8a3bffa06eb21
+
+/home/Alex/Projects/agent-vesper-prerelease-candidates/v0.24.4-active-epoch-final-linux-x86_64-20261001T103836Z/BUILD_RECEIPT.txt
+```
+
+No natural-language release request was submitted. No RRC epoch, version
+mutation, push, tag, publication, Registry update or installation was created.
+The live historical ledger and dirty primary checkout remained untouched. This
+artifact is preserved only for Alex-operated acceptance.
 
 ## Invariant audit
 
@@ -318,8 +403,10 @@ only observed read-only. No candidate artifact was staged or installed.
 2. The prior execution report's statement that both version transitions were
    already shown was too strong for the pre-audit implementation. This report
    preserves that discrepancy explicitly and supplies the red-first correction.
-3. No live provider, GitHub mutation, release admission, release-profile build,
-   installer or application replacement was used as verification.
+3. At audit time, no live provider, GitHub mutation, release admission,
+   release-profile build, installer or application replacement was used as
+   verification. The later release-profile build is separately recorded above
+   as a build-only candidate for Alex; it did not rerun or replace audit evidence.
 4. An ad hoc whole-file Markdown link scan was not a valid clean gate: it did
    not URL-decode percent-escaped paths and also reported pre-existing unrelated
    evidence-index references absent from this isolated candidate. The scoped
@@ -330,21 +417,21 @@ only observed read-only. No candidate artifact was staged or installed.
    Twenty-six pressure receipts were retained. Restoring swap required explicit
    OS approval in Alex's terminal because this session had no passwordless sudo;
    the zram generator service was then explicitly restarted before admission.
-6. The build-only continuation did not rerun `cargo xtask acceptance` or
-   `cargo xtask verify`, as Alex explicitly prohibited the full acceptance suite.
-   Their earlier final-audit receipts remain the scope-appropriate behavioral
-   evidence; the new receipt proves only the requested locked workspace build.
+6. Both build-only continuations did not rerun `cargo xtask acceptance` or
+   `cargo xtask verify`, as Alex explicitly prohibited additional acceptance
+   work. Their earlier final-audit receipts remain the scope-appropriate
+   behavioral evidence; the new receipts prove only the requested builds and
+   artifact identity.
 
 ## Unresolved items
 
 - The live historical RRC epoch remains unmodified until Alex authorizes actual
-  release admission.
+  release admission from the preserved binary.
 - The future `0.24.4 -> 0.24.5` candidate commit, push, exact-SHA hosted matrices,
   tag, GitHub Release, assets, Registry update and publication remain unexecuted.
-- Local Linux verification does not substitute for those future exact-SHA release
-  gates or a user-operated installed-candidate acceptance.
-- The new build is a local Linux development-profile workspace build, not a
-  release-profile candidate, cross-platform matrix or publication artifact.
+- Local Linux verification and the preserved Linux acceptance candidate do not
+  substitute for Alex's user-operated acceptance or future exact-SHA release
+  gates.
 
 ## Readiness effect
 
@@ -353,6 +440,7 @@ now resolves the canonical corrected integration, automatically supersedes only
 the obsolete local historical epoch, and asks one human-readable question only
 for genuinely unrelated or irreversible work. When it must ask, both known
 version transitions are explicit. Acceptance is deterministic with respect to
-lifecycle ownership while production resource safety remains unchanged. This is
-release-controller readiness evidence plus a successful governed locked workspace
-build, not authorization or evidence of a release.
+lifecycle ownership while production resource safety remains unchanged. One
+checksum-verified release-profile Linux TUI at version `0.24.4` is preserved for
+Alex's real release acceptance. This is release-controller readiness and candidate
+identity evidence, not authorization or evidence of a release.
