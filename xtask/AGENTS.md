@@ -13,7 +13,8 @@ architecture, MSRV, and source-oracle checks.
   `acceptance-mutations` copies source to a temporary workspace and requires two
   deliberate evaluator defects to fail their named assertion tests; a compile failure is
   not a mutation kill. Build artifacts stay under `target/acceptance-mutations`.
-  The fixed acceptance set also executes the RRC partial-matrix, verified-repair,
+  The fixed acceptance set also executes the RRC partial/missing-matrix active watch,
+  responsive remote-poll cancellation, complete-matrix multi-family verified repair,
   pause/resume, immutable-publication, natural-language stale-epoch recovery,
   obsolete-epoch preservation, explicit canonical supersession of a historical
   local-only objective, unrelated-objective clarification, irreversible-state

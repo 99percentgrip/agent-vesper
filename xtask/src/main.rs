@@ -2097,7 +2097,32 @@ fn acceptance_verify() -> Result<(), String> {
         (
             "vesper-harness",
             &["--lib"],
+            "release_recovery::tests::missing_initial_workflow_runs_remain_an_active_matrix_wait",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_recovery::tests::repeated_incomplete_matrix_refreshes_do_not_spend_repair_watchdog_actions",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_executor::tests::worker_keeps_matrix_and_classification_states_controller_owned",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_executor::tests::remote_poll_wait_is_responsive_to_cancellation",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
             "release_recovery::tests::verified_repair_is_the_only_path_to_one_full_gate_retry",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_recovery::tests::verified_repair_batch_records_every_failure_family_before_retry",
         ),
         (
             "vesper-harness",

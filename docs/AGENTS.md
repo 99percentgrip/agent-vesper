@@ -160,7 +160,12 @@ Own durable project documentation and evidence-backed engineering records.
   current-risk/zram physical-backing repair, typed passive resource defer and
   automatic recovery, truthful deferred TUI state, complete local gates,
   implementation commit, fresh Linux candidate identity, and unchanged
-  no-release/no-install boundary.
+  no-release/no-install boundary; and
+  `foundation/2026-10-01-v0.24.5-rrc-autonomy-and-ci-repair.md` records the
+  immutable failed v0.24.5 candidate, missing/partial matrix-watch and complete-red
+  multi-family repair corrections, all four observed CI failure-family repairs,
+  complete 50-case/local verification, and pending fresh exact-SHA/publication
+  boundary.
 - Root PRD files (`*-prd.md`) own accepted phased requirement documents
   (e.g. `agent-vesper-reasoning-orchestrator-prd.md`,
   `provider-capability-gating-prd.md`, `qm-extraction-prd.md`,

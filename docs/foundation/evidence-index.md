@@ -1,5 +1,21 @@
 # Foundation Evidence Index
 
+## v0.24.5 RRC autonomy and CI repair (2026-10-01)
+
+- Interim execution report: [`2026-10-01-v0.24.5-rrc-autonomy-and-ci-repair.md`](2026-10-01-v0.24.5-rrc-autonomy-and-ci-repair.md)
+- Owning PRD: [`../Agent_Vesper_Release_Recovery_Controller_PRD.md`](../Agent_Vesper_Release_Recovery_Controller_PRD.md)
+- Immutable failed candidate: `864ca49a98ae6ea4ab900295fe8508c0ac7bac1b`
+- Verdict: **SOURCE REPAIR AND COMPLETE LOCAL GATES PASSED; FRESH EXACT-SHA
+  HOSTED GATES AND PUBLICATION ARE PENDING.** Missing and partial workflow state
+  now remains under a cancellable controller-owned 5/10/15/30-second watch without
+  spending the six-action repair watchdog. A settled red matrix supplies all current-
+  commit repairable fingerprints to one bounded agent turn, and the reducer records
+  the resulting family repairs transactionally before requiring a fresh candidate
+  push. All four immutable-candidate failure families have source corrections. The
+  final `cargo xtask acceptance` passed all 50 exact cases and the final complete
+  `cargo xtask verify` passed. No replacement SHA, tag, release, asset, Registry
+  update, installation, or final readiness claim exists yet.
+
 ## RRC current-pressure defer and zram repair (2026-10-01)
 
 - Execution report: [`2026-10-01-rrc-resource-defer-zram-repair.md`](2026-10-01-rrc-resource-defer-zram-repair.md)

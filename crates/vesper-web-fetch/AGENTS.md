@@ -17,7 +17,10 @@ implementation that provisions a backend demanding
   The 900-second container lease is separate from each admission exec's
   45-second host-side bound and remaining-deadline in-container timeout.
 - `Dockerfile` and `browser-pipe.sh` — immutable base/build image pins and
-  exact headless package version; fd 3/4 mapping uses a fixed shell script,
+  exact headless package version. The runtime package set resolves from a fixed
+  Debian snapshot timestamp; its APT-signature-verified HTTP bootstrap is required
+  because the pinned slim base intentionally has no CA bundle before the same
+  transaction installs `ca-certificates`. fd 3/4 mapping uses a fixed shell script,
   never a TCP debugging listener or a new Rust unsafe boundary.
   The image also builds `vesper-setpriv` from checksum-pinned util-linux
   2.41.6 for the shared swarm scope's Landlock confinement; its complete

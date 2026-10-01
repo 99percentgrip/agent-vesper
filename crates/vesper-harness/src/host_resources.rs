@@ -77,6 +77,9 @@ pub struct ResourcePolicy {
     pub disk_reserve_fraction_numerator: u64,
     pub disk_reserve_fraction_denominator: u64,
     pub expected_gate_growth_bytes: u64,
+    /// Test policies may retain real process telemetry while disabling its
+    /// admission threshold. Production defaults always enforce the threshold.
+    pub process_tree_risk_enabled: bool,
 }
 
 impl Default for ResourcePolicy {
@@ -108,6 +111,7 @@ impl Default for ResourcePolicy {
             disk_reserve_fraction_numerator: 1,
             disk_reserve_fraction_denominator: 10,
             expected_gate_growth_bytes: 30 * GIB,
+            process_tree_risk_enabled: true,
         }
     }
 }
@@ -434,6 +438,13 @@ pub struct ExpensiveGateScheduler {
     lock_path: PathBuf,
 }
 
+fn lock_contention(error: &io::Error) -> bool {
+    error.kind() == io::ErrorKind::WouldBlock
+        // `LockFileEx(..., LOCKFILE_FAIL_IMMEDIATELY, ...)` reports
+        // ERROR_LOCK_VIOLATION instead of Rust's `WouldBlock` on Windows.
+        || (cfg!(windows) && error.raw_os_error() == Some(33))
+}
+
 impl ExpensiveGateScheduler {
     pub fn new(cache_root: impl Into<PathBuf>) -> io::Result<Self> {
         let cache_root = cache_root.into();
@@ -452,7 +463,7 @@ impl ExpensiveGateScheduler {
             .open(&self.lock_path)?;
         match file.try_lock_exclusive() {
             Ok(()) => Ok(Some(ExpensiveGateLease { _lock: file })),
-            Err(error) if error.kind() == io::ErrorKind::WouldBlock => Ok(None),
+            Err(error) if lock_contention(&error) => Ok(None),
             Err(error) => Err(error),
         }
     }
@@ -812,7 +823,10 @@ fn classify_pressure(
             ResourcePressure::Critical,
             "zram physical backing is at a critical bound",
         )
-    } else if process.rss_bytes >= effective / 2 && effective > 0 {
+    } else if policy.process_tree_risk_enabled
+        && process.rss_bytes >= effective / 2
+        && effective > 0
+    {
         (
             ResourcePressure::Critical,
             "the RRC-owned process tree consumes at least half of effective memory",
@@ -839,7 +853,8 @@ fn classify_pressure(
             ResourcePressure::Pressure,
             "zram physical backing is above its safe bound",
         )
-    } else if process.rss_bytes > required_gate_headroom
+    } else if policy.process_tree_risk_enabled
+        && process.rss_bytes > required_gate_headroom
         && available < normal_floor.saturating_add(process.rss_bytes / 2)
     {
         (

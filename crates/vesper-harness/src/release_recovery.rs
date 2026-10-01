@@ -19,8 +19,10 @@ use sha2::{Digest, Sha256};
 use crate::host_resources::ResourceTelemetry;
 
 pub const SCHEMA_VERSION: u32 = 1;
-pub const NORMAL_POLL_INTERVAL: Duration = Duration::from_secs(20);
-pub const UNCHANGED_POLL_INTERVAL: Duration = Duration::from_secs(120);
+pub const INITIAL_POLL_INTERVAL: Duration = Duration::from_secs(5);
+pub const SECOND_POLL_INTERVAL: Duration = Duration::from_secs(10);
+pub const THIRD_POLL_INTERVAL: Duration = Duration::from_secs(15);
+pub const MAX_POLL_INTERVAL: Duration = Duration::from_secs(30);
 pub const STAGNATION_ACTION_LIMIT: u8 = 6;
 pub const STAGNATION_TIME_LIMIT: Duration = Duration::from_secs(20 * 60);
 pub const MAX_CAUSAL_EXCERPT_BYTES: usize = 4096;
@@ -1081,6 +1083,13 @@ impl ReleaseRecoveryRecord {
     }
 
     #[must_use]
+    fn remote_matrix_watch_timed_out(&self, now: DateTime<Utc>) -> bool {
+        now.signed_duration_since(self.last_progress_at)
+            .to_std()
+            .is_ok_and(|elapsed| elapsed >= STAGNATION_TIME_LIMIT)
+    }
+
+    #[must_use]
     pub fn matrix_complete(&self) -> bool {
         !self.objective.required_gate_names.is_empty()
             && self.objective.required_gate_names.iter().all(|required| {
@@ -1863,6 +1872,7 @@ pub enum ReleaseControllerEvent {
     LocalVerificationFailed(Vec<String>),
     RemoteGateDispatched(Vec<String>),
     VerifiedRepair(RepairAttempt),
+    VerifiedRepairBatch(Vec<RepairAttempt>),
     FailedRepair(RepairAttempt),
     RetryDispatched {
         kind: RetryKind,
@@ -1884,6 +1894,75 @@ pub enum ReleaseControllerEvent {
         main_commit: String,
         evidence_refs: Vec<String>,
     },
+}
+
+fn apply_verified_repair_batch(
+    record: &mut ReleaseRecoveryRecord,
+    commit: &str,
+    repairs: Vec<RepairAttempt>,
+) -> Result<(), RrcError> {
+    if repairs.is_empty() {
+        return Err(RrcError::Invalid(
+            "verified repair batch must contain at least one repair".into(),
+        ));
+    }
+
+    // Apply the batch to a clone so that a malformed later family cannot leave
+    // the durable reducer partially advanced.
+    let mut next = record.clone();
+    let repaired_commit = repairs[0].source_commit_after.clone().ok_or_else(|| {
+        RrcError::Invalid("verified repair must identify its changed commit".into())
+    })?;
+    let mut evidence_refs = Vec::new();
+    for repair in &repairs {
+        validate_repair_target(&next, repair)?;
+        if repair.focused_status != FocusedProofStatus::Passed {
+            return Err(RrcError::Invalid(
+                "verified repair must contain a passed focused proof".into(),
+            ));
+        }
+        if repair.source_commit_after.as_deref() != Some(repaired_commit.as_str()) {
+            return Err(RrcError::Invalid(
+                "verified repair batch must identify one shared changed commit".into(),
+            ));
+        }
+        evidence_refs.extend(repair.evidence_refs.iter().cloned());
+    }
+    evidence_refs.sort();
+    evidence_refs.dedup();
+
+    next.transition(
+        ReleaseRecoveryState::FocusedRepair,
+        commit,
+        "evidence-backed matrix repair prepared",
+        evidence_refs.clone(),
+        None,
+    )?;
+    next.transition(
+        ReleaseRecoveryState::FocusedVerification,
+        commit,
+        "smallest credible focused proof executed for all classified failure families",
+        evidence_refs,
+        None,
+    )?;
+    for repair in repairs {
+        next.record_repair(repair)?;
+    }
+    next.release_commit = Some(repaired_commit.clone());
+    // GitHub reruns preserve the original GITHUB_SHA. A source repair
+    // therefore invalidates the prior push receipt and must be pushed
+    // as a fresh exact-SHA candidate before another full gate set.
+    next.mutation.candidate_pushed = false;
+    next.mutation.candidate_push_ref = None;
+    next.transition(
+        ReleaseRecoveryState::RetryAdmissible,
+        &repaired_commit,
+        "focused proof passed after repairs for every classified failure family",
+        vec!["rrc:focused-proof".into()],
+        None,
+    )?;
+    *record = next;
+    Ok(())
 }
 
 pub fn apply_controller_event(
@@ -1925,43 +2004,10 @@ pub fn apply_controller_event(
             None,
         ),
         ReleaseControllerEvent::VerifiedRepair(repair) => {
-            validate_repair_target(record, &repair)?;
-            if repair.focused_status != FocusedProofStatus::Passed {
-                return Err(RrcError::Invalid(
-                    "verified repair must contain a passed focused proof".into(),
-                ));
-            }
-            let repaired_commit = repair.source_commit_after.clone().ok_or_else(|| {
-                RrcError::Invalid("verified repair must identify its changed commit".into())
-            })?;
-            record.transition(
-                ReleaseRecoveryState::FocusedRepair,
-                &commit,
-                "evidence-backed repair prepared",
-                repair.evidence_refs.clone(),
-                None,
-            )?;
-            record.transition(
-                ReleaseRecoveryState::FocusedVerification,
-                &commit,
-                "smallest credible focused proof executed",
-                repair.evidence_refs.clone(),
-                None,
-            )?;
-            record.record_repair(repair)?;
-            record.release_commit = Some(repaired_commit.clone());
-            // GitHub reruns preserve the original GITHUB_SHA. A source repair
-            // therefore invalidates the prior push receipt and must be pushed
-            // as a fresh exact-SHA candidate before another full gate set.
-            record.mutation.candidate_pushed = false;
-            record.mutation.candidate_push_ref = None;
-            record.transition(
-                ReleaseRecoveryState::RetryAdmissible,
-                &repaired_commit,
-                "focused proof passed after a relevant source change",
-                vec!["rrc:focused-proof".into()],
-                None,
-            )
+            apply_verified_repair_batch(record, &commit, vec![repair])
+        }
+        ReleaseControllerEvent::VerifiedRepairBatch(repairs) => {
+            apply_verified_repair_batch(record, &commit, repairs)
         }
         ReleaseControllerEvent::FailedRepair(mut repair) => {
             validate_repair_target(record, &repair)?;
@@ -2166,15 +2212,18 @@ fn validate_repair_target(
                 .into(),
         ));
     }
+    let active_commit = record.active_commit();
     let failure = record
         .failures
-        .last()
-        .ok_or_else(|| RrcError::Invalid("repair has no captured failure".into()))?;
-    if repair.fingerprint != failure.fingerprint {
-        return Err(RrcError::Invalid(
-            "repair fingerprint does not target the current failure".into(),
-        ));
-    }
+        .iter()
+        .rev()
+        .find(|failure| {
+            failure.fingerprint == repair.fingerprint
+                && Some(failure.source_commit.as_str()) == active_commit
+        })
+        .ok_or_else(|| {
+            RrcError::Invalid("repair fingerprint does not target a current failure".into())
+        })?;
     if !matches!(
         failure.confidence,
         EvidenceConfidence::Proven | EvidenceConfidence::StronglySupported
@@ -2218,10 +2267,11 @@ pub fn classify_external_health(evidence: ExternalHealthEvidence) -> ExternalHea
 
 #[must_use]
 pub fn poll_interval(unchanged_polls: u8) -> Duration {
-    if unchanged_polls >= 3 {
-        UNCHANGED_POLL_INTERVAL
-    } else {
-        NORMAL_POLL_INTERVAL
+    match unchanged_polls {
+        0 => INITIAL_POLL_INTERVAL,
+        1 => SECOND_POLL_INTERVAL,
+        2 => THIRD_POLL_INTERVAL,
+        _ => MAX_POLL_INTERVAL,
     }
 }
 
@@ -2650,9 +2700,25 @@ pub fn refresh_remote_evidence(
     });
     if gates.is_empty() {
         record.note_progress(false);
-        return Err(RrcError::Invalid(
-            "no required workflow runs exist for the exact candidate SHA".into(),
-        ));
+        if record.state != ReleaseRecoveryState::WaitingForMatrix {
+            record.transition(
+                ReleaseRecoveryState::WaitingForMatrix,
+                &candidate,
+                "required workflow runs have not appeared for the exact candidate SHA",
+                vec!["github:exact-sha-matrix".into()],
+                None,
+            )?;
+        }
+        if record.remote_matrix_watch_timed_out(Utc::now()) {
+            record.transition(
+                ReleaseRecoveryState::Escalated,
+                &candidate,
+                "remote matrix watch timed out before required workflow runs appeared",
+                vec!["rrc:stagnation-watchdog".into()],
+                None,
+            )?;
+        }
+        return Ok(());
     }
     let mut changed = false;
     for gate in gates {
@@ -2666,7 +2732,10 @@ pub fn refresh_remote_evidence(
         ));
     }
     record.note_progress(changed);
-    if record.watchdog_triggered(Utc::now()) {
+    // Passive GitHub refreshes are not substantial recovery actions. Their
+    // poll count drives bounded backoff, but must not exhaust the six-action
+    // repair watchdog while ordinary matrix jobs are still running.
+    if record.remote_matrix_watch_timed_out(Utc::now()) {
         let from = record.state;
         if legal_transition(from, ReleaseRecoveryState::Escalated) {
             record.transition(
@@ -4545,8 +4614,15 @@ mod tests {
         let record = ledger.load().unwrap().unwrap();
         assert_eq!(record.state, ReleaseRecoveryState::LocalVerification);
         assert_eq!(
-            record.mutation.source_workspace.as_deref(),
-            Some(completion.to_string_lossy().as_ref())
+            record
+                .mutation
+                .source_workspace
+                .as_deref()
+                .map(Path::new)
+                .map(Path::canonicalize)
+                .transpose()
+                .unwrap(),
+            Some(completion.canonicalize().unwrap())
         );
         assert_eq!(
             record.mutation.objective_id.as_deref(),
@@ -5770,6 +5846,42 @@ mod tests {
     }
 
     #[test]
+    fn missing_initial_workflow_runs_remain_an_active_matrix_wait() {
+        let mut record = record();
+        let adapter = FakeGitHub {
+            gates: Vec::new(),
+            log: String::new(),
+        };
+        refresh_remote_evidence(&mut record, "owner/repo", &adapter).unwrap();
+        assert_eq!(record.state, ReleaseRecoveryState::WaitingForMatrix);
+        assert!(record.failures.is_empty());
+    }
+
+    #[test]
+    fn repeated_incomplete_matrix_refreshes_do_not_spend_repair_watchdog_actions() {
+        let mut record = record();
+        let adapter = FakeGitHub {
+            gates: vec![GateRecord {
+                name: "gate".into(),
+                head_sha: "abcdef123456".into(),
+                run_id: Some(2),
+                run_attempt: Some(1),
+                jobs: vec![failed_job(JobState::InProgress)],
+                url: None,
+            }],
+            log: String::new(),
+        };
+
+        for _ in 0..(STAGNATION_ACTION_LIMIT + 2) {
+            refresh_remote_evidence(&mut record, "owner/repo", &adapter).unwrap();
+        }
+
+        assert_eq!(record.state, ReleaseRecoveryState::WaitingForMatrix);
+        assert!(record.consecutive_stagnant_actions >= STAGNATION_ACTION_LIMIT);
+        assert!(record.failures.is_empty());
+    }
+
+    #[test]
     fn complete_matrix_collects_first_causal_log_and_classifies_it() {
         let mut record = record();
         let adapter = FakeGitHub {
@@ -5828,17 +5940,23 @@ mod tests {
     #[test]
     fn directives_are_typed_and_back_off_without_model_step_polling() {
         let mut record = record();
-        assert_eq!(
-            next_directive(&record, 0),
-            ReleaseDirective::RefreshMatrix {
-                after: NORMAL_POLL_INTERVAL
-            }
-        );
+        for (unchanged, expected) in [
+            (0, INITIAL_POLL_INTERVAL),
+            (1, SECOND_POLL_INTERVAL),
+            (2, THIRD_POLL_INTERVAL),
+            (3, MAX_POLL_INTERVAL),
+            (u8::MAX, MAX_POLL_INTERVAL),
+        ] {
+            assert_eq!(
+                next_directive(&record, unchanged),
+                ReleaseDirective::RefreshMatrix { after: expected }
+            );
+        }
         record.state = ReleaseRecoveryState::WaitingForMatrix;
         assert_eq!(
             next_directive(&record, 3),
             ReleaseDirective::RefreshMatrix {
-                after: UNCHANGED_POLL_INTERVAL
+                after: MAX_POLL_INTERVAL
             }
         );
         let classified = classified_record();
@@ -5865,6 +5983,62 @@ mod tests {
         .unwrap();
         assert_eq!(record.retry_budget.full_gate_used, 1);
         assert!(!record.retry_admission(RetryKind::FullGate).admitted);
+    }
+
+    #[test]
+    fn verified_repair_batch_records_every_failure_family_before_retry() {
+        let mut record = classified_record();
+        let mut second_failure = record.failures[0].clone();
+        second_failure.fingerprint = FailureFingerprint("second-family".into());
+        second_failure.job_id = 31;
+        second_failure.job_name = "second job".into();
+        record.failures.push(second_failure);
+
+        let mut first = repair_for(&record, FocusedProofStatus::Passed);
+        first.fingerprint = record.failures[0].fingerprint.clone();
+        first.causal_family = "workflow:first job".into();
+        let mut second = repair_for(&record, FocusedProofStatus::Passed);
+        second.causal_family = "workflow:second job".into();
+
+        apply_controller_event(
+            &mut record,
+            ReleaseControllerEvent::VerifiedRepairBatch(vec![first, second]),
+        )
+        .unwrap();
+
+        assert_eq!(record.state, ReleaseRecoveryState::RetryAdmissible);
+        assert_eq!(record.repair_attempts.len(), 2);
+        assert!(record.retry_admission(RetryKind::FullGate).admitted);
+        assert!(
+            record
+                .repair_attempts
+                .iter()
+                .any(|repair| repair.causal_family == "workflow:first job")
+        );
+        assert!(
+            record
+                .repair_attempts
+                .iter()
+                .any(|repair| repair.causal_family == "workflow:second job")
+        );
+    }
+
+    #[test]
+    fn malformed_verified_repair_batch_is_transactional() {
+        let mut record = classified_record();
+        let before = record.clone();
+        let first = repair_for(&record, FocusedProofStatus::Passed);
+        let mut malformed = repair_for(&record, FocusedProofStatus::Passed);
+        malformed.source_commit_after = Some("111111111111".into());
+
+        let error = apply_controller_event(
+            &mut record,
+            ReleaseControllerEvent::VerifiedRepairBatch(vec![first, malformed]),
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("one shared changed commit"));
+        assert_eq!(record, before);
     }
 
     #[test]

@@ -27,7 +27,8 @@ use crate::release_recovery::{
     ReleaseMutationAdmission, ReleaseMutationKind, ReleaseProgress, ReleaseRecoveryRecord,
     ReleaseRecoveryState, RelevantStateChange, RelevantStateChangeKind, ResourceDeferredRecord,
     RrcError, SettlementState, admit_release_mutation, apply_controller_event,
-    classify_external_health, default_release_root, redact_secrets, refresh_remote_evidence,
+    classify_external_health, default_release_root, poll_interval, redact_secrets,
+    refresh_remote_evidence,
 };
 
 const MAX_COMMAND_OUTPUT: usize = 4096;
@@ -83,6 +84,7 @@ fn permissive_resource_policy() -> ResourcePolicy {
         disk_reserve_fraction_numerator: 0,
         disk_reserve_fraction_denominator: 1,
         expected_gate_growth_bytes: 0,
+        process_tree_risk_enabled: false,
     }
 }
 
@@ -983,6 +985,38 @@ pub fn external_health_evidence(
     })
 }
 
+fn repairable_failures(
+    record: &ReleaseRecoveryRecord,
+) -> Vec<crate::release_recovery::FailureRecord> {
+    let active_commit = record.active_commit();
+    let mut failures = record
+        .failures
+        .iter()
+        .filter(|failure| {
+            Some(failure.source_commit.as_str()) == active_commit
+                && !failure.class.infrastructure_like()
+                && matches!(
+                    failure.confidence,
+                    crate::release_recovery::EvidenceConfidence::Proven
+                        | crate::release_recovery::EvidenceConfidence::StronglySupported
+                )
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    failures.sort_by(|left, right| {
+        left.fingerprint
+            .0
+            .cmp(&right.fingerprint.0)
+            .then_with(|| left.job_id.cmp(&right.job_id))
+    });
+    failures.dedup_by(|left, right| left.fingerprint == right.fingerprint);
+    failures
+}
+
+fn repair_worktree_leaf(epoch_id: &str, repair_count: usize, timestamp_micros: i64) -> String {
+    format!("{epoch_id}-repair-{repair_count}-{timestamp_micros}")
+}
+
 fn run_bounded_repair_agent(
     workspace: &Path,
     record: &mut ReleaseRecoveryRecord,
@@ -990,19 +1024,12 @@ fn run_bounded_repair_agent(
     factory: &crate::WorkerFactory,
     cancelled: Arc<AtomicBool>,
 ) -> Result<(), RrcError> {
-    let failure = record
-        .failures
+    let failures = repairable_failures(record);
+    let failure = failures
         .last()
         .cloned()
-        .ok_or_else(|| RrcError::Invalid("focused repair has no captured failure".into()))?;
-    if record.state != ReleaseRecoveryState::ClassifyingFailure
-        || !matches!(
-            failure.confidence,
-            crate::release_recovery::EvidenceConfidence::Proven
-                | crate::release_recovery::EvidenceConfidence::StronglySupported
-        )
-        || failure.class.infrastructure_like()
-    {
+        .ok_or_else(|| RrcError::Invalid("focused repair has no admitted causal failure".into()))?;
+    if record.state != ReleaseRecoveryState::ClassifyingFailure || failures.is_empty() {
         return Err(RrcError::Invalid(
             "focused repair is not admitted by the classified evidence".into(),
         ));
@@ -1011,11 +1038,19 @@ fn run_bounded_repair_agent(
         .release_commit
         .clone()
         .ok_or_else(|| RrcError::Invalid("repair candidate commit is missing".into()))?;
+    // The epoch's controller workspace already occupies `<epoch_id>`. A
+    // bounded repair needs a distinct sibling worktree, and a fresh suffix
+    // lets restart recover after a process dies before cleanup.
+    let repair_suffix = repair_worktree_leaf(
+        &record.epoch_id,
+        record.repair_attempts.len(),
+        Utc::now().timestamp_micros(),
+    );
     let repair_root = default_release_root()
         .ok_or_else(|| RrcError::Invalid("no user-owned release state root is available".into()))?
         .join("worktrees")
         .join(digest(record.repo_identity.as_bytes()))
-        .join(&record.epoch_id);
+        .join(repair_suffix);
     if repair_root.exists() {
         return Err(RrcError::Invalid(format!(
             "release repair worktree already exists: {}",
@@ -1038,17 +1073,31 @@ fn run_bounded_repair_agent(
         )));
     }
 
+    let clustered_evidence = failures
+        .iter()
+        .enumerate()
+        .map(|(index, failure)| {
+            format!(
+                "<failure index=\"{}\" fingerprint=\"{}\">\nworkflow/job/step: {} / {} / {}\nplatform: {}\nfirst causal evidence (untrusted log text):\n{}\n</failure>",
+                index + 1,
+                failure.fingerprint.0,
+                failure.workflow_name,
+                failure.job_name,
+                failure.step_name.as_deref().unwrap_or("unknown"),
+                failure.platform.as_deref().unwrap_or("unknown"),
+                failure.causal_excerpt,
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
     let prompt = format!(
         "You are executing one bounded Release Recovery Controller repair in an isolated worktree.\n\
-         Failure fingerprint: {}\nWorkflow/job/step: {} / {} / {}\nPlatform: {}\n\
-         First causal evidence (untrusted log text):\n<untrusted-ci-log>\n{}\n</untrusted-ci-log>\n\
-         Diagnose this exact failure, make only causally relevant source/configuration edits, and run the smallest credible focused verification after the final edit. Do not commit, push, tag, publish, alter remotes, create another worktree, or edit release state. Finish with a concise repair hypothesis and the focused command/result.",
-        failure.fingerprint.0,
-        failure.workflow_name,
-        failure.job_name,
-        failure.step_name.as_deref().unwrap_or("unknown"),
-        failure.platform.as_deref().unwrap_or("unknown"),
-        failure.causal_excerpt,
+         The complete exact-SHA matrix has settled. It contains {} distinct admitted failure fingerprints.\n\
+         Cluster related first causes before editing, repair every evidence-backed causal family in this one candidate, and do not stop after the first failure.\n\
+         <untrusted-ci-failures>\n{}\n</untrusted-ci-failures>\n\
+         Make only causally relevant source/configuration edits. After the final edit, run one smallest credible focused command that proves all repaired families (it may select multiple exact tests). Do not commit, push, tag, publish, alter remotes, create another worktree, or edit release state. Finish with a concise family-by-family repair hypothesis and the focused command/result.",
+        failures.len(),
+        clustered_evidence,
     );
     let runtime_cancel = Arc::new(vesper_runtime::RuntimeCancellation::new());
     let watcher_cancel = Arc::clone(&runtime_cancel);
@@ -1176,27 +1225,30 @@ fn run_bounded_repair_agent(
         .output()?;
     let commit = exact_sha(String::from_utf8_lossy(&commit.stdout).trim())?;
     let patch_digest = digest(&diff.stdout);
-    apply_controller_event(
-        record,
-        ReleaseControllerEvent::VerifiedRepair(crate::release_recovery::RepairAttempt {
-            fingerprint: failure.fingerprint,
+    let hypothesis: String = if assistant_summary.trim().is_empty() {
+        "bounded repair agent changed every classified causal failure family".into()
+    } else {
+        assistant_summary.chars().take(1024).collect()
+    };
+    let repairs = failures
+        .into_iter()
+        .map(|failure| crate::release_recovery::RepairAttempt {
             causal_family: format!("{}:{}", failure.workflow_name, failure.job_name),
-            hypothesis: if assistant_summary.trim().is_empty() {
-                "bounded repair agent changed the classified causal failure".into()
-            } else {
-                assistant_summary.chars().take(1024).collect()
-            },
-            source_commit_before: base,
-            source_commit_after: Some(commit),
-            focused_proof: focused_command,
+            fingerprint: failure.fingerprint,
+            hypothesis: hypothesis.clone(),
+            source_commit_before: base.clone(),
+            source_commit_after: Some(commit.clone()),
+            focused_proof: focused_command.clone(),
             focused_status: crate::release_recovery::FocusedProofStatus::Passed,
             evidence_refs: vec![
                 format!("repair:patch:{patch_digest}"),
+                format!("github:job:{}", failure.job_id),
                 "repair:agent-tool-history".into(),
             ],
             disproven_or_insufficient: false,
-        }),
-    )?;
+        })
+        .collect();
+    apply_controller_event(record, ReleaseControllerEvent::VerifiedRepairBatch(repairs))?;
     record.mutation.final_candidate_commit = record.release_commit.clone();
     ledger.save(record)?;
     let _ = Command::new("git")
@@ -1478,12 +1530,7 @@ pub fn advance_release(
             refresh_remote_evidence(record, repository, github)?;
             ledger.save(record)?;
         }
-        ReleaseRecoveryState::ClassifyingFailure
-            if record
-                .failures
-                .last()
-                .is_some_and(|failure| !failure.class.infrastructure_like()) =>
-        {
+        ReleaseRecoveryState::ClassifyingFailure if !repairable_failures(record).is_empty() => {
             let factory = repair_factory.ok_or_else(|| {
                 RrcError::Invalid(
                     "release repair requires an active provider-backed host; resume from TUI or ACP"
@@ -1495,8 +1542,9 @@ pub fn advance_release(
         ReleaseRecoveryState::ClassifyingFailure
             if record
                 .failures
-                .last()
-                .is_some_and(|failure| failure.class.infrastructure_like()) =>
+                .iter()
+                .filter(|failure| Some(failure.source_commit.as_str()) == record.active_commit())
+                .any(|failure| failure.class.infrastructure_like()) =>
         {
             let evidence = external_health_evidence(record, health)?;
             apply_controller_event(record, ReleaseControllerEvent::ExternalHealth(evidence))?;
@@ -1892,6 +1940,36 @@ fn watch_resource_deferred(
     }
 }
 
+fn wait_for_remote_poll(delay: Duration, cancelled: &AtomicBool) -> Result<(), RrcError> {
+    let deadline = Instant::now() + delay;
+    while Instant::now() < deadline {
+        if cancelled.load(Ordering::Acquire) {
+            return Err(RrcError::Invalid(
+                "release recovery was cancelled by the user".into(),
+            ));
+        }
+        thread::sleep(
+            deadline
+                .saturating_duration_since(Instant::now())
+                .min(Duration::from_millis(100)),
+        );
+    }
+    Ok(())
+}
+
+fn release_worker_terminal(state: ReleaseRecoveryState) -> bool {
+    matches!(
+        state,
+        ReleaseRecoveryState::NeedMoreEvidence
+            | ReleaseRecoveryState::PausedExternal
+            | ReleaseRecoveryState::Published
+            | ReleaseRecoveryState::PostReleaseMainDegraded
+            | ReleaseRecoveryState::Escalated
+            | ReleaseRecoveryState::Complete
+            | ReleaseRecoveryState::Cancelled
+    )
+}
+
 #[allow(clippy::too_many_arguments)] // background-worker composition owns distinct state, ports and cancellation.
 fn run_release_worker(
     workspace: &Path,
@@ -1910,7 +1988,7 @@ fn run_release_worker(
         Arc::clone(activity),
         resource_governor,
     )?;
-    for _ in 0..16 {
+    loop {
         let Some(mut record) = ledger.load()? else {
             return Ok(());
         };
@@ -1934,19 +2012,24 @@ fn run_release_worker(
             },
         )?;
         update_release_activity(activity, &record);
-        if matches!(
-            record.state,
-            ReleaseRecoveryState::WaitingForMatrix
-                | ReleaseRecoveryState::ClassifyingFailure
-                | ReleaseRecoveryState::NeedMoreEvidence
-                | ReleaseRecoveryState::PausedExternal
-                | ReleaseRecoveryState::Published
-                | ReleaseRecoveryState::PostReleaseMainDegraded
-                | ReleaseRecoveryState::Escalated
-                | ReleaseRecoveryState::Complete
-                | ReleaseRecoveryState::Cancelled
-        ) || before == ReleaseRecoveryState::RetryAdmissible
-            || (record.state == before && record.state != ReleaseRecoveryState::LocalVerification)
+        if record.state == ReleaseRecoveryState::WaitingForMatrix {
+            // The first exact-SHA lookup happens immediately. Subsequent
+            // unchanged observations use bounded 5/10/15/30-second backoff,
+            // while this controller-owned worker remains registered.
+            let unchanged = record.consecutive_stagnant_actions.saturating_sub(1);
+            wait_for_remote_poll(poll_interval(unchanged), &cancelled)?;
+            continue;
+        }
+        if release_worker_terminal(record.state) {
+            break;
+        }
+        if record.state == before
+            && !matches!(
+                record.state,
+                ReleaseRecoveryState::LocalVerification
+                    | ReleaseRecoveryState::RemoteGateRunning
+                    | ReleaseRecoveryState::RetryAdmissible
+            )
         {
             break;
         }
@@ -2970,6 +3053,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn repair_worktree_is_a_restart_safe_sibling_of_the_epoch_workspace() {
+        let first = repair_worktree_leaf("epoch", 0, 100);
+        let restarted = repair_worktree_leaf("epoch", 0, 101);
+
+        assert_ne!(first, "epoch");
+        assert_ne!(first, restarted);
+        assert_eq!(first, "epoch-repair-0-100");
+    }
+
+    #[test]
     fn release_telemetry_retains_only_the_newest_bounded_output_lines() {
         let now = Instant::now();
         let mut activity = ReleaseWorkerActivity {
@@ -3190,6 +3283,68 @@ mod tests {
         let source = r#"{"version":"0.24.4","archive":"https://example/v0.24.3/a.tgz"}"#;
         let error = update_registry_manifest(source, "0.24.4", "0.24.5").unwrap_err();
         assert!(error.to_string().contains("archive URL"));
+    }
+
+    #[test]
+    fn worker_keeps_matrix_and_classification_states_controller_owned() {
+        assert!(!release_worker_terminal(
+            ReleaseRecoveryState::RemoteGateRunning
+        ));
+        assert!(!release_worker_terminal(
+            ReleaseRecoveryState::WaitingForMatrix
+        ));
+        assert!(!release_worker_terminal(
+            ReleaseRecoveryState::ClassifyingFailure
+        ));
+        assert!(release_worker_terminal(ReleaseRecoveryState::Complete));
+    }
+
+    #[test]
+    fn remote_poll_wait_is_responsive_to_cancellation() {
+        let cancelled = AtomicBool::new(true);
+        let started = Instant::now();
+        let error = wait_for_remote_poll(Duration::from_secs(30), &cancelled).unwrap_err();
+        assert!(error.to_string().contains("cancelled by the user"));
+        assert!(started.elapsed() < Duration::from_secs(1));
+    }
+
+    #[test]
+    fn complete_matrix_repair_selection_retains_distinct_causal_families() {
+        let mut record =
+            crate::release_recovery::start_release("repo", "patch", "main", "abcdef123456")
+                .unwrap();
+        record.release_commit = Some("abcdef123456".into());
+        record.state = ReleaseRecoveryState::ClassifyingFailure;
+        for (job_id, workflow, job, fingerprint) in [
+            (1, "five-target-foundation", "macos", "darwin-openpty"),
+            (2, "web-driver", "linux-x86_64", "debian-package-pin"),
+        ] {
+            record
+                .failures
+                .push(crate::release_recovery::FailureRecord {
+                    workflow_id: job_id,
+                    run_id: job_id,
+                    attempt: 1,
+                    job_id,
+                    workflow_name: workflow.into(),
+                    job_name: job.into(),
+                    platform: Some(job.into()),
+                    step_name: Some("test".into()),
+                    fingerprint: crate::release_recovery::FailureFingerprint(fingerprint.into()),
+                    class: crate::release_recovery::ReleaseFailureClass::CompileFailure,
+                    confidence: crate::release_recovery::EvidenceConfidence::Proven,
+                    causal_excerpt: fingerprint.into(),
+                    source_commit: "abcdef123456".into(),
+                    observed_at: Utc::now(),
+                    other_platforms_passed: true,
+                    exists_on_last_green: None,
+                    related_source_touched: None,
+                });
+        }
+        let selected = repairable_failures(&record);
+        assert_eq!(selected.len(), 2);
+        assert_eq!(selected[0].fingerprint.0, "darwin-openpty");
+        assert_eq!(selected[1].fingerprint.0, "debian-package-pin");
     }
 
     #[test]

@@ -1119,19 +1119,26 @@ dependency tables, validates Registry versioned archives, stages one typed
 mutation plan, regenerates `Cargo.lock`, and requires an all-target workspace
 check plus locked metadata consistency before any release gate. Any preflight,
 write, Cargo or postcondition failure restores the original version bytes and
-prevents commit, tag, push and publication. Deterministic source failures run one
-permission-aware AgentLoop repair in
-an isolated user-state worktree; promotion requires observed successful mutation
-and focused-command receipts, a non-empty diff, a clean controller workspace and
-a fresh repair commit before the one admitted full-gate retry. Local subprocesses
-are bounded and cancellation-aware and cannot overwrite a newer persisted
+prevents commit, tag, push and publication. After the required exact-SHA matrix
+settles, all current-commit proven or strongly supported non-infrastructure failure
+fingerprints run through one permission-aware AgentLoop repair in a uniquely named
+sibling user-state worktree. Promotion requires observed successful mutation and
+focused-command receipts, a non-empty diff, a clean controller workspace and a
+fresh repair commit. The reducer transactionally records one repair per admitted
+failure family, clears the old candidate-push receipt, and only then admits the one
+full-gate retry against a fresh exact SHA. Local subprocesses and remote matrix
+waits are bounded and cancellation-aware and cannot overwrite a newer persisted
 `Cancelled` checkpoint.
 
 PR-5 uses one bounded HTTPS-only official GitHub-status request. External outage
 admission requires a non-empty all-green local-gate set, infrastructure-like
 failure evidence, and absence of known source or last-green explanations.
 Production does not query community telemetry. Paused epochs retain identity and
-refresh exact-SHA remote evidence on resume.
+refresh exact-SHA remote evidence on resume. Missing or partial exact-SHA runs remain
+owned by the registered worker and refresh at bounded 5/10/15/30-second intervals;
+passive refreshes do not spend the six-action repair watchdog, cancellation interrupts
+each wait promptly, and the separate 20-minute no-evidence bound still prevents an
+unbounded stalled watch.
 
 PR-6 routes `/release patch|minor|major|status|resume|cancel|evidence|retry` and
 `/ci` through the same persisted harness projection in TUI and ACP. Both hosts
@@ -1161,11 +1168,12 @@ zero tags and zero releases. Agent Vesper `main`, tags, releases, registry state
 credentials and production workflows were not changed.
 
 The historical final-completion receipt passed 30 exact cases and the complete
-`cargo xtask verify` pipeline. The current corrected integration passes 45 exact
-acceptance cases, including the enrolled RRC/controller-route/lifecycle,
-canonical historical-epoch supersession, cgroup-ancestor, constrained-memory,
-constrained-disk, resumable-resource-defer, ACP controller-status and
-every-Cargo-path inheritance cases. The ACP process
+`cargo xtask verify` pipeline. The current v0.24.5 autonomy/CI repair passes 50
+exact acceptance cases, including the enrolled RRC/controller-route/lifecycle,
+canonical historical-epoch supersession, missing and repeatedly incomplete matrix
+watch, responsive remote cancellation, complete-matrix multi-family repair,
+cgroup-ancestor, constrained-memory, constrained-disk, resumable-resource-defer,
+ACP controller-status and every-Cargo-path inheritance cases. The ACP process
 case is Linux-local only; the current verification rerun includes `cargo xtask
 verify`, but does not claim macOS/Windows governor acceptance. Later build-only
 continuations from exact product source `f7de8685` passed one governor-admitted
@@ -1186,6 +1194,7 @@ non-publishing boundary, not a simulated pass or an RRC implementation gap.
 
 Execution evidence and exact verification receipts:
 
+- [`foundation/2026-10-01-v0.24.5-rrc-autonomy-and-ci-repair.md`](foundation/2026-10-01-v0.24.5-rrc-autonomy-and-ci-repair.md) — immutable red-candidate evidence, missing/partial matrix-watch and complete-red multi-family repair corrections, all observed CI failure-family repairs, complete 50-case/local verification and pending fresh exact-SHA/publication receipts
 - [`foundation/2026-10-01-rrc-active-epoch-integration-repair.md`](foundation/2026-10-01-rrc-active-epoch-integration-repair.md) — canonical historical-epoch supersession, durable identity, irreversible-state clarification, mutation proof and 45-case acceptance
 - [`foundation/2026-10-01-rrc-resource-defer-zram-repair.md`](foundation/2026-10-01-rrc-resource-defer-zram-repair.md) — current-risk/zram physical-backing repair, typed passive defer and automatic recovery, truthful deferred TUI state, complete local gates, implementation commit and fresh non-publishing Linux candidate
 - [`foundation/2026-10-01-rrc-active-epoch-final-audit.md`](foundation/2026-10-01-rrc-active-epoch-final-audit.md) — red-first known-version clarification correction, lifecycle-fixture/governor separation, current 45-case acceptance and complete verification

@@ -236,7 +236,11 @@ fn run_git(workspace: &Path, args: &[&str]) {
 }
 
 fn wait_for_receipt(receipts: &Path, name: &str) {
-    let deadline = Instant::now() + Duration::from_secs(10);
+    // Whole-workspace CI may not schedule the spawned ACP worker promptly
+    // while other test binaries are saturating the runner. This bound covers
+    // scheduling latency; the controlled Cargo process itself still records
+    // immediately and remains explicitly released by the test.
+    let deadline = Instant::now() + Duration::from_secs(30);
     loop {
         if fs::read_to_string(receipts).ok().is_some_and(|text| {
             text.lines()
@@ -246,7 +250,8 @@ fn wait_for_receipt(receipts: &Path, name: &str) {
         }
         assert!(
             Instant::now() < deadline,
-            "controlled Cargo did not record {name} before its deadline"
+            "controlled Cargo did not record {name} before its scheduling deadline; receipts={:?}",
+            fs::read_to_string(receipts).ok()
         );
         std::thread::sleep(Duration::from_millis(20));
     }

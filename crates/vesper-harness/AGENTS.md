@@ -46,10 +46,15 @@ Z.ai and Playwright MCP server descriptors.
   one bounded human clarification without mutation; that prompt names both human
   objectives, includes known version transitions and describes the irreversible
   state without paths, raw SHAs or internal state names. Primary workspaces are never
-  changed by reconciliation. Resume refreshes exact-SHA
-  GitHub state before progression. GitHub write operations require an unforgeable controller
-  admission token; adapters, providers and hosts do not decide retry policy.
-  `release_executor` runs the repository's existing local gates, version/commit/
+  changed by reconciliation. Resume refreshes exact-SHA GitHub state before progression.
+  `RemoteGateRunning`, `WaitingForMatrix`, and `ClassifyingFailure` remain active
+  controller-owned worker states: missing/partial runs poll at 5/10/15/30-second
+  bounded intervals, passive refreshes do not spend the six-action repair watchdog,
+  cancellation interrupts each wait promptly, and restart reloads the same epoch before
+  continuing the exact-SHA watch. The separate 20-minute no-evidence timeout still
+  bounds a stalled remote watch. GitHub write operations require
+  an unforgeable controller admission token; adapters, providers and hosts do not
+  decide retry policy. `release_executor` runs the repository's existing local gates, version/commit/
   push/tag/publication path, bounded official GitHub-status check, persisted
   background progression and cancellable local subprocesses. Worker admission is
   registered before the launcher acknowledges startup; the registry retains the
@@ -70,7 +75,8 @@ Z.ai and Playwright MCP server descriptors.
   filesystem; logical zram occupancy is never treated as physical RAM consumption.
   It reserves desktop headroom, exports one inherited
   `CARGO_BUILD_JOBS`/`RUST_TEST_THREADS`/`CARGO_TARGET_DIR` policy, serializes
-  expensive compiler gates, and refuses unsafe new work. Admission pressure or a
+  expensive compiler gates (including Windows `ERROR_LOCK_VIOLATION` contention),
+  and refuses unsafe new work. Admission pressure or a
   critical owned-tree stop persists typed `ResourceDeferred` with the pending gate
   and telemetry, creates no source failure and spends no retry budget. The worker
   watches passively with bounded backoff, does not respawn the gate while pressure is
@@ -90,11 +96,14 @@ Z.ai and Playwright MCP server descriptors.
   runs a workspace all-target check and locked metadata validation, and restores all
   original bytes if writing or validation fails; no later release gate may run on a
   partial or inconsistent version graph. Missing or failed
-  local-gate evidence cannot support external-outage classification. Proven or
-  strongly supported deterministic source failures use one permission-aware
-  AgentLoop turn in an isolated user-state worktree; promotion requires observed
-  mutation and focused-command receipts, a non-empty diff and a clean controller
-  workspace before one fresh-SHA full-gate retry. The native lifecycle regression
+  local-gate evidence cannot support external-outage classification. A complete red
+  matrix supplies every proven or strongly supported deterministic failure to one
+  permission-aware AgentLoop turn in a uniquely named sibling user-state worktree.
+  Promotion requires observed mutation and focused-command receipts, a non-empty diff
+  and a clean controller workspace; the reducer transactionally records a repair for
+  every admitted failure family against one changed commit before one fresh-SHA
+  full-gate retry. A crashed repair may restart in another sibling without colliding
+  with the epoch workspace. The native lifecycle regression
   owns a real child/descendant group or Job Object, proves cancellation reaps it,
   and starts a fresh process that reloads the same epoch/run/job identity; it runs
   on all five target families. Deterministic executor tests and controlled private
