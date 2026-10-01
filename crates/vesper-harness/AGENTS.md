@@ -21,10 +21,13 @@ Z.ai and Playwright MCP server descriptors.
   `/release` lifecycle. A clean candidate is eligible only when its committed
   `docs/foundation/release-objective-provenance.json` binds a validated completed
   objective and existing committed evidence reports. The newest completed objective
-  excludes unrelated historical worktrees before candidate-tree comparison. Only
-  genuinely different maximal trees for that same objective may clarify, using
-  human variant labels rather than paths or SHAs; raw Git provenance is exposed by
-  `/release evidence`. Questions, planning prose, negation, deferred intent and
+  excludes unrelated historical worktrees before candidate comparison. A committed
+  canonical-source marker excludes retained historical variants; explicit supersession
+  may remove an ancestor variant. Equal commit trees and equal implementation diffs
+  collapse after bounded provenance-only paths are removed. Only genuinely different
+  maximal implementations for that same objective may clarify, using unique human
+  labels or label-plus-subject descriptions rather than paths or SHAs; raw Git
+  provenance is exposed by `/release evidence`. Questions, planning prose, negation, deferred intent and
   release-process discussion never admit a release. A dirty active checkout is
   never cleaned, reset, stashed or used as the release mutation workspace.
   The typed lifecycle, controller directives/settled-evidence reducer and immutable

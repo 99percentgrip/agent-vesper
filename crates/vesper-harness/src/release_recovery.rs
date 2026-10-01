@@ -3402,9 +3402,15 @@ struct CompletedObjectiveProvenance {
     objective_id: String,
     objective_label: String,
     variant_label: String,
+    #[serde(default)]
+    variant_id: Option<String>,
     completed_at: String,
     #[serde(default)]
     evidence_reports: Vec<String>,
+    #[serde(default)]
+    canonical_release_source: bool,
+    #[serde(default)]
+    supersedes: Vec<String>,
 }
 
 impl CompletedObjectiveProvenance {
@@ -3422,6 +3428,15 @@ impl CompletedObjectiveProvenance {
             || value.objective_label.len() > 160
             || value.variant_label.is_empty()
             || value.variant_label.len() > 200
+            || value
+                .variant_id
+                .as_ref()
+                .is_some_and(|id| id.is_empty() || id.len() > 128)
+            || value.supersedes.len() > 32
+            || value
+                .supersedes
+                .iter()
+                .any(|id| id.is_empty() || id.len() > 128)
             || chrono::DateTime::parse_from_rfc3339(&value.completed_at).is_err()
             || value.evidence_reports.is_empty()
             || value.evidence_reports.len() > 16
@@ -3441,13 +3456,52 @@ impl CompletedObjectiveProvenance {
             .all(|report| safe_report(report))
             .then_some(value)
     }
+
+    fn identity(&self) -> &str {
+        self.variant_id.as_deref().unwrap_or(&self.variant_label)
+    }
+
+    fn explicitly_supersedes(&self, older: &Self) -> bool {
+        self.supersedes
+            .iter()
+            .any(|id| id == older.identity() || id == &older.objective_id)
+    }
 }
 
 #[derive(Debug, Clone)]
 struct ProvenanceCandidate {
     path: PathBuf,
     head: String,
+    tree: String,
+    subject: String,
+    implementation_diff_sha256: String,
     provenance: CompletedObjectiveProvenance,
+}
+
+fn implementation_diff_identity(
+    active: &Path,
+    base_sha: &str,
+    head: &str,
+    provenance_paths: &std::collections::BTreeSet<String>,
+) -> Result<String, RrcError> {
+    let mut args = vec![
+        "diff".to_owned(),
+        "--binary".to_owned(),
+        base_sha.to_owned(),
+        head.to_owned(),
+        "--".to_owned(),
+        ".".to_owned(),
+        format!(":(exclude){RELEASE_OBJECTIVE_PROVENANCE_PATH}"),
+        ":(exclude)docs/foundation/evidence-index.md".to_owned(),
+        ":(exclude)docs/foundation/AGENTS.md".to_owned(),
+    ];
+    args.extend(
+        provenance_paths
+            .iter()
+            .map(|path| format!(":(exclude){path}")),
+    );
+    let refs = args.iter().map(String::as_str).collect::<Vec<_>>();
+    Ok(sha256_hex(&git_output_bytes(active, &refs)?))
 }
 
 fn resolve_release_source(
@@ -3475,11 +3529,27 @@ fn resolve_release_source(
             // topology, not an objective release candidate.
             continue;
         };
+        let tree = exact_git_sha(git_output(&path, &["rev-parse", "HEAD^{tree}"])?.trim())?;
+        let subject = bounded(
+            redact_secrets(&git_output(&path, &["show", "-s", "--format=%s", "HEAD"])?),
+            120,
+        );
         candidates.push(ProvenanceCandidate {
             path,
             head,
+            tree,
+            subject,
+            implementation_diff_sha256: String::new(),
             provenance,
         });
+    }
+    let provenance_paths = candidates
+        .iter()
+        .flat_map(|candidate| candidate.provenance.evidence_reports.iter().cloned())
+        .collect::<std::collections::BTreeSet<_>>();
+    for candidate in &mut candidates {
+        candidate.implementation_diff_sha256 =
+            implementation_diff_identity(&active, &base_sha, &candidate.head, &provenance_paths)?;
     }
     let (source_workspace, provenance) = if candidates.is_empty() {
         if active_clean {
@@ -3488,6 +3558,15 @@ fn resolve_release_source(
             return Ok(Err(Vec::new()));
         }
     } else {
+        // A final-integration marker is an explicit authoritative binding. It
+        // prevents retained historical worktrees from competing merely because
+        // they still carry an older completed-objective record.
+        if candidates
+            .iter()
+            .any(|candidate| candidate.provenance.canonical_release_source)
+        {
+            candidates.retain(|candidate| candidate.provenance.canonical_release_source);
+        }
         let latest_completed_at = candidates
             .iter()
             .map(|candidate| candidate.provenance.completed_at.as_str())
@@ -3505,6 +3584,20 @@ fn resolve_release_source(
                     .into(),
             ));
         }
+
+        let candidate_snapshot = candidates.clone();
+        candidates.retain(|candidate| {
+            !candidate_snapshot.iter().any(|other| {
+                candidate.head != other.head
+                    && other
+                        .provenance
+                        .explicitly_supersedes(&candidate.provenance)
+                    && git_succeeds(
+                        &active,
+                        &["merge-base", "--is-ancestor", &candidate.head, &other.head],
+                    )
+            })
+        });
         let candidate_heads = candidates
             .iter()
             .map(|candidate| candidate.head.clone())
@@ -3518,24 +3611,57 @@ fn resolve_release_source(
                     )
             })
         });
-        let mut by_head = std::collections::BTreeMap::<String, Vec<ProvenanceCandidate>>::new();
+
+        // Commit identity is not content identity. Collapse equal trees first,
+        // then equal implementation diffs after removing only bounded provenance
+        // bookkeeping paths. This keeps real package/version/source differences.
+        let mut by_tree = std::collections::BTreeMap::<String, Vec<ProvenanceCandidate>>::new();
         for candidate in candidates {
-            by_head
-                .entry(candidate.head.clone())
+            by_tree
+                .entry(candidate.tree.clone())
                 .or_default()
                 .push(candidate);
         }
-        if by_head.len() != 1 {
-            let choices = by_head
-                .values()
-                .filter_map(|variants| variants.first())
-                .map(|candidate| candidate.provenance.variant_label.clone())
+        let mut tree_representatives = Vec::new();
+        for (_, mut variants) in by_tree {
+            variants.sort_by(|left, right| left.path.cmp(&right.path));
+            tree_representatives.push(variants.remove(0));
+        }
+        let mut by_implementation =
+            std::collections::BTreeMap::<String, Vec<ProvenanceCandidate>>::new();
+        for candidate in tree_representatives {
+            by_implementation
+                .entry(candidate.implementation_diff_sha256.clone())
+                .or_default()
+                .push(candidate);
+        }
+        let mut representatives = Vec::new();
+        for (_, mut variants) in by_implementation {
+            variants.sort_by(|left, right| left.path.cmp(&right.path));
+            representatives.push(variants.remove(0));
+        }
+        representatives.sort_by(|left, right| left.path.cmp(&right.path));
+        if representatives.len() != 1 {
+            let mut counts = std::collections::BTreeMap::<String, usize>::new();
+            for candidate in &representatives {
+                *counts
+                    .entry(candidate.provenance.variant_label.clone())
+                    .or_default() += 1;
+            }
+            let choices = representatives
+                .iter()
+                .map(|candidate| {
+                    let label = &candidate.provenance.variant_label;
+                    if counts.get(label).copied().unwrap_or_default() > 1 {
+                        format!("{label} — {}", candidate.subject)
+                    } else {
+                        label.clone()
+                    }
+                })
                 .collect::<Vec<_>>();
             return Ok(Err(choices));
         }
-        let (_, mut same_tree) = by_head.into_iter().next().expect("one candidate tree");
-        same_tree.sort_by(|left, right| left.path.cmp(&right.path));
-        let candidate = same_tree.remove(0);
+        let candidate = representatives.remove(0);
         (candidate.path, Some(candidate.provenance))
     };
     let source_commit =
@@ -4343,6 +4469,187 @@ mod tests {
         );
     }
 
+    #[test]
+    fn same_tree_under_two_provenance_records_collapses_to_one_candidate() {
+        let fixture = provenance_resolution_fixture();
+        let first = add_provenance_variant(
+            &fixture.primary,
+            fixture._temp.path(),
+            "same-tree-a",
+            ProvenanceVariant::new(
+                "shared implementation\n",
+                "Shared completed implementation",
+                "same-tree-a",
+            ),
+        );
+        let second = add_provenance_variant(
+            &fixture.primary,
+            fixture._temp.path(),
+            "same-tree-b",
+            ProvenanceVariant::new(
+                "shared implementation\n",
+                "Shared completed implementation",
+                "same-tree-b",
+            ),
+        );
+        let second_marker = second.join("docs/foundation/release-objective-provenance.json");
+        let marker = fs::read_to_string(&second_marker)
+            .unwrap()
+            .replace("same-tree-b", "same-tree-a");
+        fs::write(&second_marker, marker).unwrap();
+        run_git(&second, &["add", "."]);
+        run_git(
+            &second,
+            &["commit", "--amend", "-m", "same-tree-b distinct commit"],
+        );
+        assert_ne!(
+            git_text(&first, &["rev-parse", "HEAD"]),
+            git_text(&second, &["rev-parse", "HEAD"])
+        );
+        assert_eq!(
+            git_text(&first, &["rev-parse", "HEAD^{tree}"]),
+            git_text(&second, &["rev-parse", "HEAD^{tree}"])
+        );
+        let outcome = admit_natural_release_with_launcher(
+            &fixture.primary,
+            "Release all completed work as the next patch.",
+            &fixture.state,
+            |_, _, _| Ok(()),
+        )
+        .unwrap();
+        assert!(matches!(outcome, NaturalReleaseAdmission::Started(_)));
+    }
+
+    #[test]
+    fn equivalent_implementation_diffs_collapse_despite_distinct_provenance() {
+        let fixture = provenance_resolution_fixture();
+        add_provenance_variant(
+            &fixture.primary,
+            fixture._temp.path(),
+            "equivalent-a",
+            ProvenanceVariant::new(
+                "equivalent implementation\n",
+                "Equivalent evidence record A",
+                "equivalent-a",
+            ),
+        );
+        add_provenance_variant(
+            &fixture.primary,
+            fixture._temp.path(),
+            "equivalent-b",
+            ProvenanceVariant::new(
+                "equivalent implementation\n",
+                "Equivalent evidence record B",
+                "equivalent-b",
+            ),
+        );
+        let outcome = admit_natural_release_with_launcher(
+            &fixture.primary,
+            "Release all completed work as the next patch.",
+            &fixture.state,
+            |_, _, _| Ok(()),
+        )
+        .unwrap();
+        assert!(matches!(outcome, NaturalReleaseAdmission::Started(_)));
+    }
+
+    #[test]
+    fn canonical_final_integration_outranks_historical_autonomy_variants() {
+        let fixture = provenance_resolution_fixture();
+        add_provenance_variant(
+            &fixture.primary,
+            fixture._temp.path(),
+            "historical-autonomy",
+            ProvenanceVariant::new(
+                "historical autonomy source\n",
+                "Completed autonomy repair with objective-linked source selection",
+                "historical-autonomy",
+            ),
+        );
+        add_provenance_variant(
+            &fixture.primary,
+            fixture._temp.path(),
+            "rejected-integration",
+            ProvenanceVariant::new(
+                "version=3.3.1\n",
+                "Completed autonomy repair with objective-linked source selection",
+                "rejected-integration",
+            ),
+        );
+        let corrected = add_provenance_variant(
+            &fixture.primary,
+            fixture._temp.path(),
+            "corrected-integration",
+            ProvenanceVariant {
+                implementation: "version=0.24.4\n",
+                variant_label: "Canonical integrated v0.24.4 release source",
+                commit_subject: "corrected-integration",
+                objective_id: "integrated-v0.24.4-release-source-20261001",
+                canonical_release_source: true,
+                supersedes: &["rrc-source-resolution-ux-repair-20260930"],
+            },
+        );
+        fs::write(fixture.primary.join("base.txt"), "private dirty bytes\n").unwrap();
+        let before = fs::read(fixture.primary.join("base.txt")).unwrap();
+        let mut launched = None;
+        let outcome = admit_natural_release_with_launcher(
+            &fixture.primary,
+            "Release all completed work as the next patch.",
+            &fixture.state,
+            |workspace, _, _| {
+                launched = Some(workspace);
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert!(matches!(outcome, NaturalReleaseAdmission::Started(_)));
+        let release_workspace = launched.expect("canonical integration launched");
+        assert_eq!(
+            git_text(&release_workspace, &["rev-parse", "HEAD"]),
+            git_text(&corrected, &["rev-parse", "HEAD"])
+        );
+        assert_eq!(fs::read(fixture.primary.join("base.txt")).unwrap(), before);
+        assert!(git_text(&release_workspace, &["status", "--porcelain"]).is_empty());
+    }
+
+    #[test]
+    fn genuinely_different_duplicate_labels_explain_the_difference() {
+        let fixture = provenance_resolution_fixture();
+        add_provenance_variant(
+            &fixture.primary,
+            fixture._temp.path(),
+            "different-a",
+            ProvenanceVariant::new(
+                "implementation alpha\n",
+                "Same human label",
+                "alpha transport implementation",
+            ),
+        );
+        add_provenance_variant(
+            &fixture.primary,
+            fixture._temp.path(),
+            "different-b",
+            ProvenanceVariant::new(
+                "implementation beta\n",
+                "Same human label",
+                "beta transport implementation",
+            ),
+        );
+        let outcome = admit_natural_release_with_launcher(
+            &fixture.primary,
+            "Release all completed work as the next patch.",
+            &fixture.state,
+            |_, _, _| panic!("genuinely different variants must clarify"),
+        )
+        .unwrap();
+        let NaturalReleaseAdmission::Clarification(message) = outcome else {
+            panic!("genuinely different variants must clarify");
+        };
+        assert!(message.contains("alpha transport implementation"));
+        assert!(message.contains("beta transport implementation"));
+        assert_eq!(message.matches("Same human label").count(), 2);
+    }
+
     struct ActiveEpochFixture {
         _temp: tempfile::TempDir,
         primary: PathBuf,
@@ -4816,6 +5123,31 @@ mod tests {
         variant_label: &str,
         completed_at: &str,
     ) {
+        write_objective_marker_options(
+            root,
+            objective_id,
+            objective_label,
+            variant_label,
+            completed_at,
+            ObjectiveMarkerOptions::default(),
+        );
+    }
+
+    #[derive(Default)]
+    struct ObjectiveMarkerOptions<'a> {
+        variant_id: Option<&'a str>,
+        canonical_release_source: bool,
+        supersedes: &'a [&'a str],
+    }
+
+    fn write_objective_marker_options(
+        root: &Path,
+        objective_id: &str,
+        objective_label: &str,
+        variant_label: &str,
+        completed_at: &str,
+        options: ObjectiveMarkerOptions<'_>,
+    ) {
         let path = root.join("docs/foundation/release-objective-provenance.json");
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(
@@ -4830,12 +5162,99 @@ mod tests {
                 "objective_id": objective_id,
                 "objective_label": objective_label,
                 "variant_label": variant_label,
+                "variant_id": options.variant_id,
+                "canonical_release_source": options.canonical_release_source,
+                "supersedes": options.supersedes,
                 "completed_at": completed_at,
                 "evidence_reports": ["docs/foundation/objective-evidence.md"]
             })
             .to_string(),
         )
         .unwrap();
+    }
+
+    struct ProvenanceResolutionFixture {
+        _temp: tempfile::TempDir,
+        primary: PathBuf,
+        state: PathBuf,
+    }
+
+    fn provenance_resolution_fixture() -> ProvenanceResolutionFixture {
+        let temp = tempfile::tempdir().unwrap();
+        let primary = temp.path().join("repository");
+        let state = temp.path().join("state");
+        fs::create_dir_all(&primary).unwrap();
+        run_git(&primary, &["init", "-b", "main"]);
+        run_git(&primary, &["config", "user.email", "rrc@example.invalid"]);
+        run_git(&primary, &["config", "user.name", "RRC Test"]);
+        run_git(
+            &primary,
+            &[
+                "remote",
+                "add",
+                "origin",
+                "https://github.com/test/repo.git",
+            ],
+        );
+        fs::write(primary.join("base.txt"), "base\n").unwrap();
+        run_git(&primary, &["add", "."]);
+        run_git(&primary, &["commit", "-m", "base"]);
+        ProvenanceResolutionFixture {
+            _temp: temp,
+            primary,
+            state,
+        }
+    }
+
+    struct ProvenanceVariant<'a> {
+        implementation: &'a str,
+        variant_label: &'a str,
+        commit_subject: &'a str,
+        objective_id: &'a str,
+        canonical_release_source: bool,
+        supersedes: &'a [&'a str],
+    }
+
+    impl<'a> ProvenanceVariant<'a> {
+        fn new(implementation: &'a str, variant_label: &'a str, commit_subject: &'a str) -> Self {
+            Self {
+                implementation,
+                variant_label,
+                commit_subject,
+                objective_id: "rrc-source-resolution-ux-repair-20260930",
+                canonical_release_source: false,
+                supersedes: &[],
+            }
+        }
+    }
+
+    fn add_provenance_variant(
+        primary: &Path,
+        parent: &Path,
+        name: &str,
+        variant: ProvenanceVariant<'_>,
+    ) -> PathBuf {
+        let path = parent.join(name);
+        run_git(
+            primary,
+            &["worktree", "add", "-b", name, path.to_str().unwrap()],
+        );
+        fs::write(path.join("implementation.txt"), variant.implementation).unwrap();
+        write_objective_marker_options(
+            &path,
+            variant.objective_id,
+            "Integrated release objective",
+            variant.variant_label,
+            "2026-10-01T00:00:00Z",
+            ObjectiveMarkerOptions {
+                variant_id: Some(name),
+                canonical_release_source: variant.canonical_release_source,
+                supersedes: variant.supersedes,
+            },
+        );
+        run_git(&path, &["add", "."]);
+        run_git(&path, &["commit", "-m", variant.commit_subject]);
+        path
     }
 
     fn run_git(root: &Path, args: &[&str]) {
