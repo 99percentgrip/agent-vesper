@@ -6,6 +6,11 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `2026-10-01-corrected-v0.24.4-release-preparation.md` owns the
+  correction that excludes the invalid manual `3.3.1` mutation, proves the
+  complete `0.24.4` version graph, records governor-controlled verify/acceptance/
+  build receipts, and identifies the sole corrected TUI for Alex's real RRC test.
+
 - `2026-09-21-tool-output-stall-bug-and-recovery.md` owns the historical
   recurring pipe-backpressure incidents, identity-pinned operational recoveries,
   and original acceptance requirements. Its current heading records the later

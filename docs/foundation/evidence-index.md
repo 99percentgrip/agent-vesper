@@ -1,5 +1,11 @@
 # Foundation Evidence Index
 
+## Corrected v0.24.4 release preparation (2026-10-01)
+
+- Execution report: [`2026-10-01-corrected-v0.24.4-release-preparation.md`](2026-10-01-corrected-v0.24.4-release-preparation.md)
+- Owning PRD: [`../Agent_Vesper_Release_Recovery_Controller_PRD.md`](../Agent_Vesper_Release_Recovery_Controller_PRD.md)
+- Verdict: **CORRECTED CLEAN 0.24.4 SOURCE, GOVERNED COMPLETE VERIFY, EXPLICIT 44-CASE ACCEPTANCE, AND FRESH RELEASE TUI PASSED.** The rejected `3.3.1` version commit is outside corrected ancestry. RRC retains exclusive ownership of the pending `0.24.4 -> 0.24.5` mutation and every real release action after Alex's authorization.
+
 ## Restored historical tool-output stall record
 
 - Historical incident and recovery record: [`2026-09-21-tool-output-stall-bug-and-recovery.md`](2026-09-21-tool-output-stall-bug-and-recovery.md)

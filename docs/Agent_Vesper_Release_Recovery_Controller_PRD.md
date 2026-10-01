@@ -1176,6 +1176,7 @@ non-publishing boundary, not a simulated pass or an RRC implementation gap.
 
 Execution evidence and exact verification receipts:
 
+- [`foundation/2026-10-01-corrected-v0.24.4-release-preparation.md`](foundation/2026-10-01-corrected-v0.24.4-release-preparation.md) — corrected pre-release source excludes the invalid manual `3.3.1` mutation, preserves `0.24.4`, and records governed full gates plus the replacement TUI
 - [`foundation/release-recovery-controller-pr1-pr3-execution.md`](foundation/release-recovery-controller-pr1-pr3-execution.md)
 - [`foundation/release-recovery-controller-hardening-execution.md`](foundation/release-recovery-controller-hardening-execution.md)
 - [`foundation/release-recovery-controller-pr4-pr7-execution.md`](foundation/release-recovery-controller-pr4-pr7-execution.md)
