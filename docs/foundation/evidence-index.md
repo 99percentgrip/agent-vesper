@@ -1,10 +1,22 @@
 # Foundation Evidence Index
 
+## RRC provenance ambiguity repair and corrected candidate (2026-10-01)
+
+- Execution report: [`2026-10-01-rrc-provenance-ambiguity-repair.md`](2026-10-01-rrc-provenance-ambiguity-repair.md)
+- Owning PRD: [`../Agent_Vesper_Release_Recovery_Controller_PRD.md`](../Agent_Vesper_Release_Recovery_Controller_PRD.md)
+- Verdict: **CANONICAL SOURCE RESOLUTION, GOVERNED COMPLETE VERIFY, EXPLICIT
+  44-CASE ACCEPTANCE, REAL RETAINED-WORKTREE PROBE, AND FRESH `0.24.4` RELEASE
+  TUI PASSED.** Historical worktrees remain registered without forcing manual
+  selection. The rejected `3.3.1` commit remains outside ancestry, and RRC retains
+  exclusive ownership of the future `0.24.4 -> 0.24.5` release after Alex's authorization.
+
 ## Corrected v0.24.4 release preparation (2026-10-01)
 
 - Execution report: [`2026-10-01-corrected-v0.24.4-release-preparation.md`](2026-10-01-corrected-v0.24.4-release-preparation.md)
 - Owning PRD: [`../Agent_Vesper_Release_Recovery_Controller_PRD.md`](../Agent_Vesper_Release_Recovery_Controller_PRD.md)
-- Verdict: **CORRECTED CLEAN 0.24.4 SOURCE, GOVERNED COMPLETE VERIFY, EXPLICIT 44-CASE ACCEPTANCE, AND FRESH RELEASE TUI PASSED.** The rejected `3.3.1` version commit is outside corrected ancestry. RRC retains exclusive ownership of the pending `0.24.4 -> 0.24.5` mutation and every real release action after Alex's authorization.
+- Verdict: **HISTORICAL CORRECTED 0.24.4 CANDIDATE; SUPERSEDED FOR MANUAL
+  ACCEPTANCE BY THE PROVENANCE-FIXED CANDIDATE ABOVE.** Its source reconstruction
+  and receipts remain valid for the recorded SHA.
 
 ## Restored historical tool-output stall record
 

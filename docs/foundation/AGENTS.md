@@ -6,10 +6,17 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `2026-10-01-rrc-provenance-ambiguity-repair.md` owns the regression-first
+  canonical-source/equivalent-implementation repair, real retained-worktree
+  resolution probe, governed complete verify and explicit acceptance receipts,
+  exact `0.24.4` ancestry/version boundary, and current replacement TUI for
+  Alex's real RRC test.
+
 - `2026-10-01-corrected-v0.24.4-release-preparation.md` owns the
   correction that excludes the invalid manual `3.3.1` mutation, proves the
   complete `0.24.4` version graph, records governor-controlled verify/acceptance/
-  build receipts, and identifies the sole corrected TUI for Alex's real RRC test.
+  build receipts, and identifies the historical corrected TUI now superseded for
+  manual acceptance by the provenance-fixed candidate.
 
 - `2026-09-21-tool-output-stall-bug-and-recovery.md` owns the historical
   recurring pipe-backpressure incidents, identity-pinned operational recoveries,

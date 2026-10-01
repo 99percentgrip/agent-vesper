@@ -1,5 +1,10 @@
 # Corrected v0.24.4 release preparation
 
+> **Historical candidate:** the source reconstruction and receipts below remain
+> valid for their recorded SHA, but this artifact is superseded for manual
+> acceptance by the provenance-fixed candidate in
+> [`2026-10-01-rrc-provenance-ambiguity-repair.md`](2026-10-01-rrc-provenance-ambiguity-repair.md).
+
 **Date:** 2026-10-01
 
 ## Objective
