@@ -155,7 +155,12 @@ Own durable project documentation and evidence-backed engineering records.
   known-version clarification correction, deterministic lifecycle acceptance,
   complete verification, later governor-admitted locked and release-profile TUI
   builds, the preserved final `0.24.4` Linux acceptance artifact, and unchanged
-  no-release boundary.
+  no-release boundary; and
+  `foundation/2026-10-01-rrc-resource-defer-zram-repair.md` records the later
+  current-risk/zram physical-backing repair, typed passive resource defer and
+  automatic recovery, truthful deferred TUI state, complete local gates,
+  implementation commit, fresh Linux candidate identity, and unchanged
+  no-release/no-install boundary.
 - Root PRD files (`*-prd.md`) own accepted phased requirement documents
   (e.g. `agent-vesper-reasoning-orchestrator-prd.md`,
   `provider-capability-gating-prd.md`, `qm-extraction-prd.md`,

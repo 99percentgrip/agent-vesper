@@ -167,7 +167,10 @@ business logic.
   retry/fingerprint state, bounded recent output, and the RRC-owned Host Resource
   Governor's observed RAM/cgroup, swap, process-tree RSS/rustc count, Cargo/test budget,
   target-cache disk state, pressure and action. They must not simultaneously claim
-  Ready or No active tasks. Admission text alone never creates a running presentation.
+  Ready or No active tasks. A persisted typed resource defer remains registered even
+  without a child process and renders `DEFERRED` (screen-reader: `DEFERRED FOR HOST
+  RESOURCES`) until shared RRC recovery; status text alone must not infer this state.
+  Admission text alone never creates a running presentation.
   Ratatui exclusively owns interactive stdout/stderr: release children use null stdin
   and concurrently drained stdout/stderr pipes, terminal controls are sanitized before
   bounded/redacted telemetry, and background tracing is not written to the alternate

@@ -1,5 +1,24 @@
 # Foundation Evidence Index
 
+## RRC current-pressure defer and zram repair (2026-10-01)
+
+- Execution report: [`2026-10-01-rrc-resource-defer-zram-repair.md`](2026-10-01-rrc-resource-defer-zram-repair.md)
+- Owning PRD: [`../Agent_Vesper_Release_Recovery_Controller_PRD.md`](../Agent_Vesper_Release_Recovery_Controller_PRD.md)
+- Implementation commit: `7760e5079538219e2b9c0dd7e8a75322b7d62444`
+- Verdict: **SOURCE REPAIR, COMPLETE LOCAL GATES, AND FRESH LINUX TUI
+  CANDIDATE PASSED; NO RELEASE OR INSTALLATION.** Current risk now combines
+  effective host/cgroup memory, reserve plus gate headroom, owned-tree RSS,
+  memory PSI, swap trend, and zram physical backing instead of rejecting stale
+  logical zram occupancy. Typed `ResourceDeferred` watches passively with bounded
+  backoff, preserves retry budget and pending-gate identity, and resumes after
+  three safe observations while both TUI modes remain visibly deferred. Final
+  `cargo xtask verify`, MSRV 1.88, architecture, dependency policy, RustSec and
+  all 45 exact acceptance cases passed. The checksum-preserved Linux x86-64 TUI
+  SHA-256 is `85feb7013dc67e0435c083cb0c9ea684db11385fbf358cf0a669a5d87da0bb70`,
+  different from the rejected candidate. No RRC epoch, push, tag, publication,
+  Registry update, installation, swap/service/cache intervention or VRO-19 work
+  occurred.
+
 ## RRC active-epoch final-integration repair (2026-10-01)
 
 - Execution report: [`2026-10-01-rrc-active-epoch-integration-repair.md`](2026-10-01-rrc-active-epoch-integration-repair.md)

@@ -61,7 +61,10 @@ transport, stderr-only tracing, and orderly shutdown.
   Ordinary free-text release imperatives use that same shared conservative
   admission before provider dispatch. Admission launches the existing background
   RRC from a clean isolated release worktree. A persisted matching local-failure
-  epoch resumes automatically; an obsolete same-objective prerelease epoch is
+  epoch resumes automatically; typed host-resource deferral remains a registered
+  active worker and passively returns to local verification after shared governor
+  recovery without `/release resume`, provider dispatch, retry spending or a host-
+  private polling loop; an obsolete same-objective prerelease epoch is
   archived and superseded automatically. Remote irreversible state or an unrelated
   active objective asks one bounded human-facing clarification without exposing
   epoch IDs, controller states or ledger paths. Objective provenance excludes

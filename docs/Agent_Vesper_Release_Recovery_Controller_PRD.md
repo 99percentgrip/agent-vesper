@@ -1187,6 +1187,7 @@ non-publishing boundary, not a simulated pass or an RRC implementation gap.
 Execution evidence and exact verification receipts:
 
 - [`foundation/2026-10-01-rrc-active-epoch-integration-repair.md`](foundation/2026-10-01-rrc-active-epoch-integration-repair.md) — canonical historical-epoch supersession, durable identity, irreversible-state clarification, mutation proof and 45-case acceptance
+- [`foundation/2026-10-01-rrc-resource-defer-zram-repair.md`](foundation/2026-10-01-rrc-resource-defer-zram-repair.md) — current-risk/zram physical-backing repair, typed passive defer and automatic recovery, truthful deferred TUI state, complete local gates, implementation commit and fresh non-publishing Linux candidate
 - [`foundation/2026-10-01-rrc-active-epoch-final-audit.md`](foundation/2026-10-01-rrc-active-epoch-final-audit.md) — red-first known-version clarification correction, lifecycle-fixture/governor separation, current 45-case acceptance and complete verification
 - [`foundation/2026-10-01-rrc-provenance-ambiguity-repair.md`](foundation/2026-10-01-rrc-provenance-ambiguity-repair.md) — canonical final-source binding, equivalent-candidate collapse, real retained-worktree resolution proof, governed full gates and current `0.24.4` replacement TUI
 - [`foundation/2026-10-01-corrected-v0.24.4-release-preparation.md`](foundation/2026-10-01-corrected-v0.24.4-release-preparation.md) — historical corrected source reconstruction excluding the invalid manual `3.3.1` mutation, with its original governed gates and now-superseded TUI
@@ -1257,6 +1258,20 @@ The later ACP process regression keeps host observation real while using a fixtu
 permissive admission policy; it observes the registered RUN/resource snapshot, no provider
 dispatch, and inherited bounded Cargo/test/target settings for version `check`, locked
 `metadata`, and the first local gate.
+
+The 2026-10-01 current-pressure repair removes historical logical swap occupancy as a
+standalone pressure trigger. Linux now persists and renders logical zram occupancy separately
+from compressed bytes and physical `mem_used_total`; admission combines effective host/cgroup
+memory, `MemAvailable`, reserve plus required gate headroom, owned-tree RSS, PSI, swap growth,
+and zram physical backing. A refused expensive gate persists `ResourceDeferred` with the
+pending gate and telemetry, spends no retry budget, and remains one registered active task.
+The worker watches passively at bounded 5/15/30-second intervals and returns automatically to
+`LocalVerification` only after three safely admissible `Normal` observations. Unchanged
+pressure does not respawn Cargo or emit milestone spam; recovery emits one milestone. TUI
+visual and screen-reader paths consume an explicit typed deferred flag and cannot render
+`Ready` or `No active tasks` while deferred. Exact incident, pressure, retry, milestone and
+projection regressions, complete repository verification, MSRV 1.88 and all 45 enforced
+acceptance cases passed. The fresh Linux candidate remains non-publishing evidence only.
 
 The current progress-milestone repair persists a bounded, monotonic `ReleaseProgress`
 projection with its typed phase, local/remote completion counts, active gate and concise

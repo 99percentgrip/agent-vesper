@@ -6,6 +6,12 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `2026-10-01-rrc-resource-defer-zram-repair.md` owns the current-risk Linux
+  pressure and zram physical-backing correction, persisted typed resource defer,
+  passive bounded auto-recovery, truthful deferred TUI projection, complete local
+  verification, implementation commit, fresh checksum-preserved Linux TUI
+  candidate, and explicit no-release/no-install boundary.
+
 - `2026-10-01-rrc-active-epoch-final-audit.md` owns the red-first correction
   proving both known version transitions in human clarification, the direct
   test-only lifecycle policy injection, retained production governor coverage,

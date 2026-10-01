@@ -64,15 +64,21 @@ Z.ai and Playwright MCP server descriptors.
   changes. It is a display/read-resume projection only; RRC state and immutable
   evidence remain the sole progression authority. TUI chat/RUN and ACP status render
   this same projection and must not infer progress from elapsed time. The RRC-owned
-  `host_resources` governor samples Linux physical/cgroup capacity, RAM/swap, the owned
-  process tree and managed-target filesystem; reserves desktop headroom; exports one
-  inherited `CARGO_BUILD_JOBS`/`RUST_TEST_THREADS`/`CARGO_TARGET_DIR` policy; serializes
-  expensive compiler gates; and refuses unsafe new work. Critical pressure kills the
-  owned group, retains a resumable `LocalVerification` epoch without source-failure or
-  retry-budget evidence, and reports the live resource snapshot/action. Non-Linux resource
-  discovery is explicit unavailable: expensive local gates fail safely until a truthful
-  platform backend exists. TUI/ACP status queries this ownership rather than inferring work
-  from admission prose or polling the filesystem. Local release children always use null
+  `host_resources` governor samples Linux physical/cgroup capacity, effective
+  `MemAvailable`, reserve plus required gate headroom, memory PSI, swap growth,
+  zram logical/compressed/physical values, the owned process tree and managed-target
+  filesystem; logical zram occupancy is never treated as physical RAM consumption.
+  It reserves desktop headroom, exports one inherited
+  `CARGO_BUILD_JOBS`/`RUST_TEST_THREADS`/`CARGO_TARGET_DIR` policy, serializes
+  expensive compiler gates, and refuses unsafe new work. Admission pressure or a
+  critical owned-tree stop persists typed `ResourceDeferred` with the pending gate
+  and telemetry, creates no source failure and spends no retry budget. The worker
+  watches passively with bounded backoff, does not respawn the gate while pressure is
+  unchanged, and returns automatically to `LocalVerification` only after three safe
+  `Normal` observations. Defer and recovery each emit one milestone; polling emits
+  none. Non-Linux resource discovery is explicit unavailable: expensive local gates
+  fail safely until a truthful platform backend exists. TUI/ACP status queries this
+  ownership rather than inferring work from admission prose or polling the filesystem. Local release children always use null
   stdin plus explicitly piped stdout and stderr; both streams are drained concurrently,
   terminal controls are removed, and
   only bounded/redacted records enter worker telemetry. No release child may inherit an
