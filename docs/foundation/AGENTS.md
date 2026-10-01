@@ -6,6 +6,11 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `2026-10-01-rrc-active-epoch-integration-repair.md` owns the live-ledger
+  forensic identity, canonical historical-epoch supersession repair, durable
+  objective/variant lineage, irreversible-state clarification contract,
+  mutation proof, 45-case acceptance receipt and explicit no-release boundary.
+
 - `2026-10-01-rrc-provenance-ambiguity-repair.md` owns the regression-first
   canonical-source/equivalent-implementation repair, real retained-worktree
   resolution probe, governed complete verify and explicit acceptance receipts,

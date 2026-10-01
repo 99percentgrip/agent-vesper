@@ -1140,9 +1140,13 @@ free-form release prompt. Natural-language admission now classifies any active
 checkpoint before starting: a matching `DiagnosingLocalFailure` checkpoint
 transitions back to `LocalVerification` and launches automatically; a stale
 same-objective source or release-worktree identity is archived in the user-owned
-release-state root and atomically replaced; unrelated objectives and any recorded
-remote push/tag/publication state remain unchanged behind one bounded clarification.
-The normal message exposes none of the epoch ID, internal state or ledger path.
+release-state root and atomically replaced. An explicitly canonical integrated
+source may likewise replace a historical local-only objective that its committed
+provenance marker supersedes, while retaining exact objective/variant identities
+in both records. Unrelated objectives and any recorded remote push, remote-CI,
+tag or publication state remain unchanged behind one bounded clarification. That
+question names both human objectives and known version transitions while exposing
+none of the epoch ID, internal state, ledger path, worktree path or raw SHA.
 
 PR-7 includes a manually dispatched read-only fixture and fail-closed local
 acceptance enrollment. With explicit authorization, the fixture was also run in
@@ -1157,10 +1161,11 @@ zero tags and zero releases. Agent Vesper `main`, tags, releases, registry state
 credentials and production workflows were not changed.
 
 The historical final-completion receipt passed 30 exact cases and the complete
-`cargo xtask verify` pipeline. The current resource-governor worktree passes 44
-exact acceptance cases, including the enrolled RRC/controller-route/lifecycle,
-cgroup-ancestor, constrained-memory, constrained-disk, resumable-resource-defer,
-ACP controller-status and every-Cargo-path inheritance cases. The ACP process
+`cargo xtask verify` pipeline. The current corrected integration passes 45 exact
+acceptance cases, including the enrolled RRC/controller-route/lifecycle,
+canonical historical-epoch supersession, cgroup-ancestor, constrained-memory,
+constrained-disk, resumable-resource-defer, ACP controller-status and
+every-Cargo-path inheritance cases. The ACP process
 case is Linux-local only; the current verification rerun includes `cargo xtask
 verify`, but does not claim macOS/Windows governor acceptance.
 Native host cancellation/restart then passed on Linux x86_64,
@@ -1176,6 +1181,7 @@ non-publishing boundary, not a simulated pass or an RRC implementation gap.
 
 Execution evidence and exact verification receipts:
 
+- [`foundation/2026-10-01-rrc-active-epoch-integration-repair.md`](foundation/2026-10-01-rrc-active-epoch-integration-repair.md) — canonical historical-epoch supersession, durable identity, irreversible-state clarification, mutation proof and 45-case acceptance
 - [`foundation/2026-10-01-rrc-provenance-ambiguity-repair.md`](foundation/2026-10-01-rrc-provenance-ambiguity-repair.md) — canonical final-source binding, equivalent-candidate collapse, real retained-worktree resolution proof, governed full gates and current `0.24.4` replacement TUI
 - [`foundation/2026-10-01-corrected-v0.24.4-release-preparation.md`](foundation/2026-10-01-corrected-v0.24.4-release-preparation.md) — historical corrected source reconstruction excluding the invalid manual `3.3.1` mutation, with its original governed gates and now-superseded TUI
 - [`foundation/release-recovery-controller-pr1-pr3-execution.md`](foundation/release-recovery-controller-pr1-pr3-execution.md)

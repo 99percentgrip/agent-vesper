@@ -1,5 +1,16 @@
 # Foundation Evidence Index
 
+## RRC active-epoch final-integration repair (2026-10-01)
+
+- Execution report: [`2026-10-01-rrc-active-epoch-integration-repair.md`](2026-10-01-rrc-active-epoch-integration-repair.md)
+- Owning PRD: [`../Agent_Vesper_Release_Recovery_Controller_PRD.md`](../Agent_Vesper_Release_Recovery_Controller_PRD.md)
+- Verdict: **SOURCE-COMPLETE AND LOCALLY VERIFIED; NO RELEASE ACTION.** The
+  canonical corrected integration now explicitly supersedes the live historical
+  local-only prerelease epoch without redundant clarification, while preserving
+  the complete old record and dirty primary checkout. The exact regression is
+  enrolled in the 45-case acceptance gate. Any push, remote CI, tag or publication
+  evidence still requires one human-readable clarification naming both objectives.
+
 ## RRC provenance ambiguity repair and corrected candidate (2026-10-01)
 
 - Execution report: [`2026-10-01-rrc-provenance-ambiguity-repair.md`](2026-10-01-rrc-provenance-ambiguity-repair.md)
