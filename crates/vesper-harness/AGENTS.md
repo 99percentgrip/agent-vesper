@@ -440,8 +440,11 @@ Z.ai and Playwright MCP server descriptors.
   race.
 - The registered-controller lifecycle fixture injects a test-only permissive
   resource policy directly so live workstation pressure cannot replace its
-  worker-ownership assertions with a governor deferral. Dedicated constrained-host
-  and resumable-deferral tests retain production resource-policy coverage.
+  worker-ownership assertions with a governor deferral. In `cfg(test)` only, that
+  explicit policy may use bounded synthetic capacity when the host has no production
+  discovery backend; default/production policy still fails closed. Dedicated
+  constrained-host and resumable-deferral tests retain production resource-policy
+  coverage.
 - Run `cargo test -p vesper-harness`.
 - Run `cargo test -p vesper-harness --test vro13_e2e` (VRO-13 PR-8
   cross-feature fixture: watcher fire → bounded turn → composed

@@ -4,18 +4,20 @@
 
 - Interim execution report: [`2026-10-01-v0.24.5-rrc-autonomy-and-ci-repair.md`](2026-10-01-v0.24.5-rrc-autonomy-and-ci-repair.md)
 - Owning PRD: [`../Agent_Vesper_Release_Recovery_Controller_PRD.md`](../Agent_Vesper_Release_Recovery_Controller_PRD.md)
-- Immutable failed candidates: `864ca49a98ae6ea4ab900295fe8508c0ac7bac1b`
-  and `b0528abeab4a81306a9a7c23b97a46876ca957ba`
-- Verdict: **SECOND SOURCE REPAIR AND COMPLETE LOCAL GATES PASSED; THE FRESH
+- Immutable failed candidates: `864ca49a98ae6ea4ab900295fe8508c0ac7bac1b`,
+  `b0528abeab4a81306a9a7c23b97a46876ca957ba`, and
+  `6fb1547abfce204ef64cc9fc7a6d6c6274e6eb24`
+- Verdict: **THIRD SOURCE REPAIR AND COMPLETE LOCAL GATES PASSED; THE FRESH
   EXACT-SHA HOSTED MATRIX IS PENDING. NO TAG OR PUBLICATION IS IN SCOPE.** Missing
   and partial workflow state remains under a cancellable controller-owned
   5/10/15/30-second watch without spending the six-action repair watchdog. A settled
   red matrix supplies all current-commit repairable fingerprints to one bounded agent
   turn, and the reducer records the resulting family repairs transactionally before
-  requiring a fresh candidate push. Both rounds of observed failure families have
+  requiring a fresh candidate push. All three rounds of observed failure families have
   direct source corrections. Current receipts include the 50-case acceptance gate,
-  complete canonical `cargo xtask verify`, Rust 1.88 full workspace tests, and real
-  digest-pinned Podman readiness/cleanup. The next commit still requires all four
+  complete canonical `cargo xtask verify`, Rust 1.88 full workspace tests, five
+  focused repetitions of all third-matrix regressions, and real digest-pinned Podman
+  readiness/cleanup. The next commit still requires all four
   exact-SHA hosted workflows; no tag, release, asset, Registry update, installation,
   or final readiness claim exists yet.
 

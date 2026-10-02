@@ -236,11 +236,13 @@ fn run_git(workspace: &Path, args: &[&str]) {
 }
 
 fn wait_for_receipt(receipts: &Path, name: &str) {
-    // Whole-workspace CI may not schedule the spawned ACP worker promptly
-    // while other test binaries are saturating the runner. This bound covers
-    // scheduling latency; the controlled Cargo process itself still records
-    // immediately and remains explicitly released by the test.
-    let deadline = Instant::now() + Duration::from_secs(30);
+    // A loaded runner can transiently defer the first expensive gate after
+    // version preparation. Controller recovery deliberately requires three
+    // safe observations at 5/10/15 seconds before retrying, so a 30-second
+    // deadline races the earliest valid recovery. This bound covers that
+    // controller-owned cycle plus scheduling latency; the controlled Cargo
+    // process still records immediately and remains explicitly released.
+    let deadline = Instant::now() + Duration::from_secs(75);
     loop {
         if fs::read_to_string(receipts).ok().is_some_and(|text| {
             text.lines()

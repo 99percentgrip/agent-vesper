@@ -80,7 +80,9 @@ transport, stderr-only tracing, and orderly shutdown.
   `/release status` against a controlled temporary Cargo command. It proves the
   controller snapshot and all version-check/gate Cargo paths carry the resource policy
   without provider dispatch; its integration-only policy keeps live telemetry while
-  disabling host-pressure admission thresholds. Non-Linux governor discovery remains
+  disabling host-pressure admission thresholds. Its receipt wait covers the complete
+  controller-owned three-safe-sample recovery cycle but still requires every controlled
+  Cargo command to record before release. Non-Linux governor discovery remains
   deliberately unavailable and is covered by the separate five-target lifecycle gates.
 
 - `/skills settings status|save mode standard|enhanced|save enable|disable <skill>`

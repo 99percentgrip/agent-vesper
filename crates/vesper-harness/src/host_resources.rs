@@ -654,7 +654,14 @@ impl HostResourceGovernor {
 
     /// Samples the live host and, when supplied, the owned root process tree.
     pub fn snapshot(&self, root_pid: Option<u32>) -> io::Result<ResourceTelemetry> {
-        let mut capacity = discover_host_capacity()?;
+        let mut capacity = match discover_host_capacity() {
+            Ok(capacity) => capacity,
+            #[cfg(test)]
+            Err(_) if !self.policy.admission_pressure_enabled => {
+                return Ok(self.synthetic_test_snapshot());
+            }
+            Err(error) => return Err(error),
+        };
         let swap_used = capacity
             .swap_total_bytes
             .saturating_sub(capacity.swap_free_bytes);
@@ -678,6 +685,32 @@ impl HostResourceGovernor {
         let process = root_pid.map_or(Ok(ProcessTreeUsage::default()), process_tree_usage)?;
         let disk = disk_capacity(&self.target_dir)?;
         Ok(self.telemetry_from(capacity, process, disk))
+    }
+
+    /// Cross-platform lifecycle fixtures verify worker/process ownership, not
+    /// platform resource discovery. Production and feature-built process tests
+    /// never compile this fallback; dedicated governor tests retain real Linux
+    /// and constrained-observation coverage.
+    #[cfg(test)]
+    fn synthetic_test_snapshot(&self) -> ResourceTelemetry {
+        self.telemetry_from(
+            HostCapacity {
+                host_memory_total_bytes: 8 * GIB,
+                memory_available_bytes: 8 * GIB,
+                swap_total_bytes: 0,
+                swap_free_bytes: 0,
+                cgroup_memory_limit_bytes: None,
+                cgroup_memory_current_bytes: None,
+                logical_cpus: 2,
+                linux: LinuxPressureSignals::default(),
+            },
+            ProcessTreeUsage::default(),
+            DiskCapacity {
+                available_bytes: 100 * GIB,
+                total_bytes: 100 * GIB,
+                target_size_bytes: 0,
+            },
+        )
     }
 
     /// Deterministic policy seam for regression fixtures and constrained-host

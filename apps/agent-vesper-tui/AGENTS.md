@@ -765,7 +765,9 @@ business logic.
   7.2 s inserted silence in a 41 s passage — versus 2.9 s at natural sentence
   boundaries under the sentence-level policy. Very short units stay whole.) One
   player stream, cumulative byte receipts and exactly
-  one terminal outcome remain attached to the original segment. Prepared canonical
+  one terminal outcome remain attached to the original segment. The overlap regression
+  may allow loaded-runner synthesis scheduling only inside its controlled player's
+  active lifetime; it must not accept post-drain synthesis as overlap. Prepared canonical
   PCM is capped at 16 MiB per piece (adapter allocations are separate). Stop and selection
   replacement invalidate queued/prepared audio and serialize with stream admission,
   never blocking pipe writes or drain waits. Stale work cannot reopen the player;

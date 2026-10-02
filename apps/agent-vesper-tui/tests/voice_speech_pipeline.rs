@@ -262,14 +262,22 @@ fn run_fixture() {
         wait_for(|| root.join("player-draining").exists()),
         "first player must reach drain"
     );
-    let overlapped = wait_for(|| root.join("synth-2").exists());
+    // The fixture's player is now blocked in its 15-second drain wait. Give a
+    // loaded macOS runner enough time to schedule the synthesis lane, while
+    // still requiring the second synthesis to begin during active playback.
+    let synthesis_overlap_deadline = Instant::now() + Duration::from_secs(12);
+    let mut overlapped = root.join("synth-2").exists();
+    while !overlapped && Instant::now() < synthesis_overlap_deadline {
+        std::thread::sleep(Duration::from_millis(10));
+        overlapped = root.join("synth-2").exists();
+    }
     // Synthesis may now run up to the bounded two-unit bank ahead
     // (boundary continuity repair), so a third synth marker may appear;
     // the enforced bounds are: banked audio never starts a player
     // (player-starts stays 1 below) and stale generations never speak.
     assert!(
         overlapped,
-        "second synthesis must start before first player drains"
+        "second synthesis must start while the first player is active"
     );
     let start = Instant::now();
     worker.stop();
