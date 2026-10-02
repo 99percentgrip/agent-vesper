@@ -85,9 +85,10 @@ impl ProcessHarness {
         )
     }
 
-    /// Starts the integration-only driver that keeps real RRC resource
-    /// observation but uses its explicit permissive policy seam. The supplied
-    /// loopback address is deliberately also the never-used provider gate, so
+    /// Starts the integration-only driver with the explicit permissive RRC
+    /// resource policy. It prefers live observation and permits the test-only
+    /// fallback when discovery is unavailable. The supplied loopback address
+    /// is deliberately also the never-used provider gate, so
     /// a release/status-only test can prove it made no provider connection.
     #[allow(dead_code)] // Used only by the separately compiled governor process test.
     pub fn spawn_resource_governor_test_driver(

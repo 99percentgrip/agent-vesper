@@ -82,9 +82,12 @@ Z.ai and Playwright MCP server descriptors.
   watches passively with bounded backoff, does not respawn the gate while pressure is
   unchanged, and returns automatically to `LocalVerification` only after three safe
   `Normal` observations. Defer and recovery each emit one milestone; polling emits
-  none. Non-Linux resource discovery is explicit unavailable: expensive local gates
-  fail safely until a truthful platform backend exists. TUI/ACP status queries this
-  ownership rather than inferring work from admission prose or polling the filesystem. Local release children always use null
+  none. Non-Linux production resource discovery is explicit unavailable: expensive
+  local gates fail safely until a truthful platform backend exists. The explicit
+  test-support permissive policy may use a bounded synthetic snapshot only when
+  discovery is unavailable; it does not change the production policy. TUI/ACP status
+  queries this ownership rather than inferring work from admission prose or polling
+  the filesystem. Local release children always use null
   stdin plus explicitly piped stdout and stderr; both streams are drained concurrently,
   terminal controls are removed, and
   only bounded/redacted records enter worker telemetry. No release child may inherit an

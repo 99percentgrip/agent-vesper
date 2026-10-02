@@ -20,9 +20,11 @@ architecture, MSRV, and source-oracle checks.
   local-only objective, unrelated-objective clarification, irreversible-state
   retention, registered-controller/local-subprocess lifecycle, truthful TUI task
   projection, production-orchestrator, native host cancellation/restart
-  process-lifecycle, Host Resource Governor cgroup discovery, constrained RAM/swap and
-  disk admission, resumable resource deferral, ACP process-level controller-status and
-  Cargo-policy inheritance, and TUI-controller routing cases. The lifecycle and renderer
+  process-lifecycle, Linux Host Resource Governor cgroup discovery and constrained
+  RAM/swap and disk admission, resumable resource deferral, Linux ACP process-level
+  controller-status and Cargo-policy inheritance, and TUI-controller routing cases.
+  Linux-only governor cases are enrolled only on Linux; host-neutral controller cases
+  remain mandatory on every supported platform. The lifecycle and renderer
   cases also require live gate elapsed/activity updates, child turnover, completed-gate
   advancement, bounded output retention and exclusion of
   contradictory idle labels. The registered-controller lifecycle case injects its

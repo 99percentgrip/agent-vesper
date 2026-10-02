@@ -1,10 +1,11 @@
 //! ACP process acceptance for the RRC Host Resource Governor.
 //!
-//! The integration-only ACP driver enables a permissive *policy* while the
-//! governor still samples the real Linux host/cgroup/process/disk state. A
-//! controlled `cargo` wrapper keeps the first local gate alive long enough to
-//! query `/release status`, proving that the production RRC path both exports
-//! the live snapshot and inherits the governor's bounded Cargo environment.
+//! The integration-only ACP driver enables a permissive *policy*. The governor
+//! samples the Linux host/cgroup/process/disk state when available and uses its
+//! test-support snapshot only if discovery is unavailable. A controlled `cargo`
+//! wrapper keeps the first local gate alive long enough to query `/release
+//! status`, proving that the production RRC path exports resource telemetry and
+//! inherits the governor's bounded Cargo environment.
 
 #![cfg(all(target_os = "linux", feature = "integration-test-harness"))]
 #![allow(dead_code)]

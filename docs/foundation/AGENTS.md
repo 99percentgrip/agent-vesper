@@ -6,10 +6,10 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
-- `2026-10-01-v0.24.5-rrc-autonomy-and-ci-repair.md` owns all three immutable failed
+- `2026-10-01-v0.24.5-rrc-autonomy-and-ci-repair.md` owns all four immutable failed
   v0.24.5 candidate matrices,
   active missing/partial polling, responsive remote cancellation, transactional
-  complete-matrix multi-family repair, all three rounds of hosted failure-family
+  complete-matrix multi-family repair, all four rounds of hosted failure-family
   corrections, complete local canonical/MSRV/runtime gates, and the still-pending
   fresh exact-SHA hosted receipts. Tagging and publication are explicitly outside
   this work unit.

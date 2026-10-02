@@ -1973,7 +1973,7 @@ struct Dependency {
 /// External coding agents and CI run the same runtime/evaluator regression gate.
 /// Exact names make a deleted, renamed, ignored, or zero-match case a failure.
 fn acceptance_verify() -> Result<(), String> {
-    let mut cases: Vec<(&str, &[&str], &str)> = vec![
+    let cases: Vec<(&str, &[&str], &str)> = vec![
         (
             "vesper-agent",
             &["--test", "acceptance_policy"],
@@ -2177,21 +2177,6 @@ fn acceptance_verify() -> Result<(), String> {
         (
             "vesper-harness",
             &["--lib"],
-            "host_resources::tests::cgroup_v2_discovery_uses_the_strictest_ancestor_limit_and_its_usage",
-        ),
-        (
-            "vesper-harness",
-            &["--lib"],
-            "host_resources_constrained_tests::constrained_memory_acceptance_withholds_expensive_cargo_before_spawn",
-        ),
-        (
-            "vesper-harness",
-            &["--lib"],
-            "host_resources_constrained_tests::constrained_disk_acceptance_preserves_target_cache_and_withholds_gate",
-        ),
-        (
-            "vesper-harness",
-            &["--lib"],
             "release_executor::tests::resource_governor_defer_keeps_local_epoch_resumable_without_source_failure",
         ),
         (
@@ -2216,6 +2201,26 @@ fn acceptance_verify() -> Result<(), String> {
         ),
     ];
     #[cfg(unix)]
+    let mut cases = cases;
+    #[cfg(target_os = "linux")]
+    cases.extend([
+        (
+            "vesper-harness",
+            &["--lib"] as &[&str],
+            "host_resources::tests::cgroup_v2_discovery_uses_the_strictest_ancestor_limit_and_its_usage",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"] as &[&str],
+            "host_resources_constrained_tests::constrained_memory_acceptance_withholds_expensive_cargo_before_spawn",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"] as &[&str],
+            "host_resources_constrained_tests::constrained_disk_acceptance_preserves_target_cache_and_withholds_gate",
+        ),
+    ]);
+    #[cfg(target_os = "linux")]
     cases.push((
         "agent-vesper-acp",
         &["--test", "release_resource_governor"],

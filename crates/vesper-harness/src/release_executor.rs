@@ -52,10 +52,10 @@ static ACTIVE_RELEASE_WORKERS: OnceLock<Mutex<HashMap<String, ActiveReleaseWorke
     OnceLock::new();
 
 // Only the integration-only ACP test driver can set this process-local seam.
-// It retains real Linux/cgroup/process/disk observation while removing the
-// host-pressure admission thresholds, so the test can hold a fake Cargo child
-// deterministically on constrained CI machines. Disk-space admission remains
-// active through the explicit test policy. Production binaries neither compile
+// It removes host-pressure admission thresholds so the test can hold a fake
+// Cargo child deterministically on constrained CI machines. Live observation
+// remains preferred; the test-support governor may use its synthetic snapshot
+// only when host discovery is unavailable. Production binaries neither compile
 // this setter nor invoke it.
 #[cfg(feature = "test-support")]
 static PROCESS_TEST_PERMISSIVE_RESOURCE_POLICY: AtomicBool = AtomicBool::new(false);

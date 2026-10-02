@@ -6,6 +6,7 @@
 //! one inherited environment for every Cargo process launched by the Release
 //! Recovery Controller (including nested Cargo launched by `cargo xtask`).
 
+#[cfg(target_os = "linux")]
 use std::collections::{BTreeSet, HashMap};
 use std::fmt;
 use std::fs::{self, File, OpenOptions};
@@ -19,6 +20,7 @@ use serde::{Deserialize, Serialize};
 
 const GIB: u64 = 1024 * 1024 * 1024;
 const MIB: u64 = 1024 * 1024;
+#[cfg(target_os = "linux")]
 const KIB: u64 = 1024;
 
 /// The severity of the observed resource state.
@@ -656,7 +658,7 @@ impl HostResourceGovernor {
     pub fn snapshot(&self, root_pid: Option<u32>) -> io::Result<ResourceTelemetry> {
         let mut capacity = match discover_host_capacity() {
             Ok(capacity) => capacity,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             Err(_) if !self.policy.admission_pressure_enabled => {
                 return Ok(self.synthetic_test_snapshot());
             }
@@ -688,10 +690,11 @@ impl HostResourceGovernor {
     }
 
     /// Cross-platform lifecycle fixtures verify worker/process ownership, not
-    /// platform resource discovery. Production and feature-built process tests
-    /// never compile this fallback; dedicated governor tests retain real Linux
-    /// and constrained-observation coverage.
-    #[cfg(test)]
+    /// platform resource discovery. The explicit test-support policy uses this
+    /// fallback only when live discovery is unavailable; production policies
+    /// cannot select it. Dedicated governor tests retain real Linux and
+    /// constrained-observation coverage.
+    #[cfg(any(test, feature = "test-support"))]
     fn synthetic_test_snapshot(&self) -> ResourceTelemetry {
         self.telemetry_from(
             HostCapacity {
