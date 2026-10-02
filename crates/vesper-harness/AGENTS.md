@@ -84,8 +84,10 @@ Z.ai and Playwright MCP server descriptors.
   `Normal` observations. Defer and recovery each emit one milestone; polling emits
   none. Non-Linux production resource discovery is explicit unavailable: expensive
   local gates fail safely until a truthful platform backend exists. The explicit
-  test-support permissive policy may use a bounded synthetic snapshot only when
-  discovery is unavailable; it does not change the production policy. TUI/ACP status
+  test-support permissive policy always uses a bounded deterministic synthetic snapshot
+  so shared-runner pressure cannot control lifecycle acceptance; dedicated tests retain
+  live Linux discovery and constrained-observation coverage, and the production policy
+  is unchanged. TUI/ACP status
   queries this ownership rather than inferring work from admission prose or polling
   the filesystem. Local release children always use null
   stdin plus explicitly piped stdout and stderr; both streams are drained concurrently,

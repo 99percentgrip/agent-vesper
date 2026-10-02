@@ -1,26 +1,34 @@
 # Foundation Evidence Index
 
-## v0.24.5 RRC autonomy and CI repair (2026-10-01)
+## v0.24.5 deterministic governor repair (2026-10-02)
 
-- Interim execution report: [`2026-10-01-v0.24.5-rrc-autonomy-and-ci-repair.md`](2026-10-01-v0.24.5-rrc-autonomy-and-ci-repair.md)
+- Current execution report: [`2026-10-02-v0.24.5-rrc-deterministic-governor-repair.md`](2026-10-02-v0.24.5-rrc-deterministic-governor-repair.md)
+- Owning PRD: [`../Agent_Vesper_Release_Recovery_Controller_PRD.md`](../Agent_Vesper_Release_Recovery_Controller_PRD.md)
+- Fifth immutable failed candidate: `24ea5c99091b9fafe30efa1207b39273b8520612`
+- Verdict: **FIFTH SOURCE REPAIR AND COMPLETE LOCAL GATES PASSED; A FRESH
+  EXACT-SHA HOSTED MATRIX IS PENDING. NO TAG OR PUBLICATION IS IN SCOPE.** The
+  complete `24ea5c99` matrix reduced canonical, MSRV, Linux x86_64 and Linux
+  ARM64 failures to one live-host-dependent ACP process family while Windows,
+  both macOS jobs, supply-chain and contained web-driver passed. The repaired
+  integration-only permissive policy now selects bounded deterministic capacity
+  before live discovery; production/default admission remains live and
+  fail-closed. A new red-first regression, ten consecutive ACP process runs,
+  all 50 acceptance cases, canonical `cargo xtask verify`, and Rust 1.88
+  `cargo xtask msrv` passed. A fresh exact-SHA matrix remains mandatory.
+
+## v0.24.5 RRC autonomy and CI repair checkpoint (2026-10-01)
+
+- Historical execution report: [`2026-10-01-v0.24.5-rrc-autonomy-and-ci-repair.md`](2026-10-01-v0.24.5-rrc-autonomy-and-ci-repair.md)
 - Owning PRD: [`../Agent_Vesper_Release_Recovery_Controller_PRD.md`](../Agent_Vesper_Release_Recovery_Controller_PRD.md)
 - Immutable failed candidates: `864ca49a98ae6ea4ab900295fe8508c0ac7bac1b`,
   `b0528abeab4a81306a9a7c23b97a46876ca957ba`,
   `6fb1547abfce204ef64cc9fc7a6d6c6274e6eb24`, and
   `d771255dedc5825e68a4a6c8a4638bb5be932fdc`
-- Verdict: **FOURTH SOURCE REPAIR AND COMPLETE LOCAL GATES PASSED; THE FRESH
-  EXACT-SHA HOSTED MATRIX IS PENDING. NO TAG OR PUBLICATION IS IN SCOPE.** Missing
-  and partial workflow state remains under a cancellable controller-owned
-  5/10/15/30-second watch without spending the six-action repair watchdog. A settled
-  red matrix supplies all current-commit repairable fingerprints to one bounded agent
-  turn, and the reducer records the resulting family repairs transactionally before
-  requiring a fresh candidate push. All four rounds of observed failure families have
-  direct source corrections. Current receipts include the 50-case acceptance gate,
-  complete canonical `cargo xtask verify`, Rust 1.88 workspace checks, focused
-  governor/process regressions, and real digest-pinned Podman
-  readiness/cleanup. The next commit still requires all four
-  exact-SHA hosted workflows; no tag, release, asset, Registry update, installation,
-  or final readiness claim exists yet.
+- Verdict: **SUPERSEDED CHECKPOINT.** Candidate `24ea5c99` reproduced the Linux
+  governor failure and invalidated this report's fourth-repair diagnosis; the
+  2026-10-02 continuation above owns current status. Missing/partial matrix watch,
+  transactional multi-family reduction, the historical receipts, and the explicit
+  no-tag/no-publication boundary remain valid evidence.
 
 ## RRC current-pressure defer and zram repair (2026-10-01)
 

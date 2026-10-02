@@ -656,14 +656,16 @@ impl HostResourceGovernor {
 
     /// Samples the live host and, when supplied, the owned root process tree.
     pub fn snapshot(&self, root_pid: Option<u32>) -> io::Result<ResourceTelemetry> {
-        let mut capacity = match discover_host_capacity() {
-            Ok(capacity) => capacity,
-            #[cfg(any(test, feature = "test-support"))]
-            Err(_) if !self.policy.admission_pressure_enabled => {
-                return Ok(self.synthetic_test_snapshot());
-            }
-            Err(error) => return Err(error),
-        };
+        // The integration-only policy is a deterministic process-test seam,
+        // not a weaker production admission mode. Do not let a shared CI
+        // runner's procfs/cgroup/disk timing decide whether lifecycle tests
+        // can reach their controlled Cargo child. Dedicated governor tests
+        // exercise live Linux discovery and explicit constrained snapshots.
+        #[cfg(any(test, feature = "test-support"))]
+        if !self.policy.admission_pressure_enabled {
+            return Ok(self.synthetic_test_snapshot());
+        }
+        let mut capacity = discover_host_capacity()?;
         let swap_used = capacity
             .swap_total_bytes
             .saturating_sub(capacity.swap_free_bytes);
@@ -690,10 +692,10 @@ impl HostResourceGovernor {
     }
 
     /// Cross-platform lifecycle fixtures verify worker/process ownership, not
-    /// platform resource discovery. The explicit test-support policy uses this
-    /// fallback only when live discovery is unavailable; production policies
-    /// cannot select it. Dedicated governor tests retain real Linux and
-    /// constrained-observation coverage.
+    /// platform resource discovery. The explicit test-support policy always
+    /// uses this deterministic snapshot; production policies cannot select it.
+    /// Dedicated governor tests retain real Linux and constrained-observation
+    /// coverage.
     #[cfg(any(test, feature = "test-support"))]
     fn synthetic_test_snapshot(&self) -> ResourceTelemetry {
         self.telemetry_from(
@@ -1569,6 +1571,34 @@ mod tests {
         assert_eq!(telemetry.pressure, ResourcePressure::Normal);
         assert_eq!(telemetry.process_tree_rss_bytes, 20 * GIB);
         assert_eq!(telemetry.memory_psi_full_avg10_bps, Some(u32::MAX));
+        assert!(
+            telemetry
+                .pressure_reason
+                .contains("integration-test policy")
+        );
+    }
+
+    #[test]
+    fn integration_policy_snapshot_is_deterministic_on_live_linux_hosts() {
+        let temp = tempfile::tempdir().unwrap();
+        let policy = ResourcePolicy {
+            admission_pressure_enabled: false,
+            ..ResourcePolicy::default()
+        };
+        let governor = HostResourceGovernor::new(
+            policy,
+            temp.path().join("locks"),
+            temp.path().join("target"),
+        )
+        .unwrap();
+
+        let telemetry = governor.snapshot(Some(std::process::id())).unwrap();
+
+        assert_eq!(telemetry.host_memory_total_bytes, 8 * GIB);
+        assert_eq!(telemetry.memory_available_bytes, 8 * GIB);
+        assert_eq!(telemetry.process_tree_rss_bytes, 0);
+        assert_eq!(telemetry.disk_available_bytes, 100 * GIB);
+        assert_eq!(telemetry.pressure, ResourcePressure::Normal);
         assert!(
             telemetry
                 .pressure_reason

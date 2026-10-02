@@ -1,11 +1,10 @@
 //! ACP process acceptance for the RRC Host Resource Governor.
 //!
-//! The integration-only ACP driver enables a permissive *policy*. The governor
-//! samples the Linux host/cgroup/process/disk state when available and uses its
-//! test-support snapshot only if discovery is unavailable. A controlled `cargo`
-//! wrapper keeps the first local gate alive long enough to query `/release
-//! status`, proving that the production RRC path exports resource telemetry and
-//! inherits the governor's bounded Cargo environment.
+//! The integration-only ACP driver enables a deterministic permissive policy;
+//! dedicated governor tests retain live Linux and constrained-host coverage. A
+//! controlled `cargo` wrapper keeps the first local gate alive long enough to
+//! query `/release status`, proving that the production RRC path exports
+//! resource telemetry and inherits the governor's bounded Cargo environment.
 
 #![cfg(all(target_os = "linux", feature = "integration-test-harness"))]
 #![allow(dead_code)]
@@ -237,13 +236,10 @@ fn run_git(workspace: &Path, args: &[&str]) {
 }
 
 fn wait_for_receipt(receipts: &Path, name: &str) {
-    // A loaded runner can transiently defer the first expensive gate after
-    // version preparation. Controller recovery deliberately requires three
-    // safe observations at 5/10/15 seconds before retrying, so a 30-second
-    // deadline races the earliest valid recovery. This bound covers that
-    // controller-owned cycle plus scheduling latency; the controlled Cargo
-    // process still records immediately and remains explicitly released.
-    let deadline = Instant::now() + Duration::from_secs(75);
+    // The integration policy supplies deterministic capacity, so the
+    // controlled Cargo process must record promptly even on a pressured shared
+    // runner. Keep this bound short enough to expose lifecycle regressions.
+    let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         if fs::read_to_string(receipts).ok().is_some_and(|text| {
             text.lines()

@@ -53,10 +53,10 @@ static ACTIVE_RELEASE_WORKERS: OnceLock<Mutex<HashMap<String, ActiveReleaseWorke
 
 // Only the integration-only ACP test driver can set this process-local seam.
 // It removes host-pressure admission thresholds so the test can hold a fake
-// Cargo child deterministically on constrained CI machines. Live observation
-// remains preferred; the test-support governor may use its synthetic snapshot
-// only when host discovery is unavailable. Production binaries neither compile
-// this setter nor invoke it.
+// Cargo child deterministically on constrained CI machines. The test-support
+// governor uses a synthetic snapshot so shared-runner procfs/cgroup/disk timing
+// cannot control process-lifecycle acceptance. Production binaries neither
+// compile this setter nor invoke it.
 #[cfg(feature = "test-support")]
 static PROCESS_TEST_PERMISSIVE_RESOURCE_POLICY: AtomicBool = AtomicBool::new(false);
 
