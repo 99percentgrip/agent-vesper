@@ -1114,8 +1114,17 @@ current evidence is intentionally focused and local; broad, hosted, release and
 cross-platform gates were not rerun for that repair. A subsequent broad acceptance
 attempt on `25085a95` stopped at a lifecycle fixture whose cancellation expectation
 still required `DiagnosingLocalFailure`; the focused follow-up corrected that stale
-test expectation and proved both typed settlement sides, but broad acceptance remains
-unrerun for the follow-up commit.
+test expectation and proved both typed settlement sides. Broad acceptance then passed
+50/50 on that follow-up commit, while the later complete-verification invocation exposed
+a scheduler-sensitive real-PTY oracle: its generic telemetry proof depended on a
+stdout-only `Compiling crate-*` record surviving two independent readers in one bounded
+eight-line tail. The test-only commit `9a438ffc` appends a compact generic marker to both
+stream suffixes and uses it for capture, RUN-confinement, and stale-settlement assertions;
+ten independent all-feature PTY executions and focused formatting/Clippy/whitespace checks
+passed. Production capture, telemetry capacity, watchdog behavior, and release state are
+unchanged. Complete repository verification was not rerun for this test-only correction;
+current evidence is recorded in
+[`foundation/2026-10-03-rrc-pty-stream-neutral-test-oracle-repair.md`](foundation/2026-10-03-rrc-pty-stream-neutral-test-oracle-repair.md).
 
 The PR-1 through PR-3 foundation
 provides typed states/transitions, settled-evidence reduction, exact-SHA gate

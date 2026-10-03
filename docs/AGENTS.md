@@ -177,7 +177,11 @@ Own durable project documentation and evidence-backed engineering records.
   boundary; and
   `foundation/2026-10-02-rrc-typed-local-settlement-acceptance-repair.md` records
   the stale cancellation-expectation diagnosis, focused two-sided settlement
-  regressions, and explicit broad-acceptance-not-rerun boundary.
+  regressions, and explicit broad-acceptance-not-rerun boundary; and
+  `foundation/2026-10-03-rrc-pty-stream-neutral-test-oracle-repair.md` records
+  the residual stdout-only bounded-tail oracle diagnosis, paired stream-neutral
+  marker repair, ten independent real-PTY passes, focused checks, and explicit
+  no-production-change/no-full-verify boundary.
 - Root PRD files (`*-prd.md`) own accepted phased requirement documents
   (e.g. `agent-vesper-reasoning-orchestrator-prd.md`,
   `provider-capability-gating-prd.md`, `qm-extraction-prd.md`,

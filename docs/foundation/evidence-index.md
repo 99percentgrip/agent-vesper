@@ -1,5 +1,17 @@
 # Foundation Evidence Index
 
+## RRC PTY stream-neutral test-oracle repair (2026-10-03)
+
+- Execution report: [`2026-10-03-rrc-pty-stream-neutral-test-oracle-repair.md`](2026-10-03-rrc-pty-stream-neutral-test-oracle-repair.md)
+- Owning PRD: [`../Agent_Vesper_Release_Recovery_Controller_PRD.md`](../Agent_Vesper_Release_Recovery_Controller_PRD.md)
+- Test correction commit: `9a438ffc731e2bf1e70f53a06469bef0d790ad49`
+- Verdict: **TEST-ONLY STREAM-NEUTRAL ORACLE REPAIR PASSED 10/10; FULL VERIFY
+  NOT RUN.** The real-PTY fixture now terminates both independently drained
+  streams with the same compact generic marker, so bounded-tail capture,
+  confinement, and stale-settlement assertions no longer depend on stdout
+  winning the scheduler race. Production telemetry capacity, capture, watchdog,
+  release, and publication behavior are unchanged.
+
 ## RRC typed local-settlement acceptance repair (2026-10-02)
 
 - Execution report: [`2026-10-02-rrc-typed-local-settlement-acceptance-repair.md`](2026-10-02-rrc-typed-local-settlement-acceptance-repair.md)

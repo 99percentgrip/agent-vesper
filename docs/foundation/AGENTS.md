@@ -6,6 +6,11 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `2026-10-03-rrc-pty-stream-neutral-test-oracle-repair.md` owns the
+  residual stdout-only bounded-tail oracle diagnosis, paired stream-neutral
+  marker repair, ten independent real-PTY receipts, focused checks, and the
+  explicit no-production-change/no-full-verify boundary.
+
 - `2026-10-02-rrc-typed-local-settlement-acceptance-repair.md` owns the
   cancellation-fixture diagnosis, stale acceptance correction, explicit genuine
   local-failure/watchdog/cancellation regressions, focused receipts, and the
