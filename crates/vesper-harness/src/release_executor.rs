@@ -4504,6 +4504,119 @@ mod tests {
     }
 
     #[test]
+    fn genuine_local_gate_failure_enters_diagnosing_local_failure() {
+        struct FailingRelease;
+        impl ReleaseExecutionPort for FailingRelease {
+            fn prepare_version_bump(
+                &self,
+                _bump: &str,
+                _admission: ReleaseMutationAdmission,
+            ) -> Result<VersionBumpReceipt, RrcError> {
+                unreachable!("fixture starts after version preparation")
+            }
+
+            fn run_local_gate(&self, _gate: &LocalGateRecord) -> Result<String, RrcError> {
+                Err(RrcError::Invalid(
+                    "cargo xtask verify failed with status exit status: 1: compiler error".into(),
+                ))
+            }
+
+            fn commit_candidate(
+                &self,
+                _version: &str,
+                _admission: ReleaseMutationAdmission,
+            ) -> Result<String, RrcError> {
+                unreachable!("failed local gate must prevent candidate commit")
+            }
+
+            fn push_candidate(
+                &self,
+                _admission: ReleaseMutationAdmission,
+            ) -> Result<String, RrcError> {
+                unreachable!("failed local gate must prevent candidate push")
+            }
+
+            fn create_and_push_tag(
+                &self,
+                _version: &str,
+                _commit: &str,
+                _admission: ReleaseMutationAdmission,
+            ) -> Result<(String, String), RrcError> {
+                unreachable!("failed local gate must prevent tagging")
+            }
+
+            fn publication(
+                &self,
+                _repository: &str,
+                _tag: &str,
+            ) -> Result<Option<PublicationReceipt>, RrcError> {
+                unreachable!("failed local gate must prevent publication")
+            }
+        }
+
+        struct UnusedHealth;
+        impl ExternalHealthPort for UnusedHealth {
+            fn official_status(&self) -> Result<OfficialStatusSnapshot, RrcError> {
+                unreachable!("local verification must not query external health")
+            }
+        }
+
+        let temporary = tempfile::tempdir().unwrap();
+        let ledger = ReleaseLedger::open(temporary.path(), "repo").unwrap();
+        let mut record =
+            crate::release_recovery::start_release("repo", "patch", "main", "abcdef123456")
+                .unwrap();
+        record.state = ReleaseRecoveryState::LocalVerification;
+        record.mutation.version_after = Some("0.24.5".into());
+        record.mutation.local_gates = vec![LocalGateRecord {
+            name: "fixture".into(),
+            state: SettlementState::NotStarted,
+            command: "cargo xtask verify".into(),
+            evidence_ref: None,
+        }];
+
+        let error = advance_release(
+            &mut record,
+            ReleaseAdvanceContext {
+                workspace: temporary.path(),
+                repository: "owner/repo",
+                ledger: &ledger,
+                executor: &FailingRelease,
+                github: &GreenGithub,
+                health: &UnusedHealth,
+                repair_factory: None,
+                cancelled: Arc::new(AtomicBool::new(false)),
+            },
+        )
+        .expect_err("a nonzero local gate must remain a source failure");
+
+        assert!(matches!(error, RrcError::Invalid(_)));
+        assert_eq!(record.state, ReleaseRecoveryState::DiagnosingLocalFailure);
+        assert_eq!(
+            record.mutation.local_gates[0].state,
+            SettlementState::Failed
+        );
+        assert_eq!(
+            record.mutation.local_gates[0].evidence_ref.as_deref(),
+            Some("local:failed")
+        );
+        assert_eq!(
+            record.transitions.last().unwrap().evidence_refs,
+            vec!["local:fixture"]
+        );
+
+        let persisted = ledger.load().unwrap().expect("persisted source failure");
+        assert_eq!(
+            persisted.state,
+            ReleaseRecoveryState::DiagnosingLocalFailure
+        );
+        assert_eq!(
+            persisted.mutation.local_gates[0].evidence_ref.as_deref(),
+            Some("local:failed")
+        );
+    }
+
+    #[test]
     fn local_gate_watchdog_stop_is_not_persisted_as_source_failure() {
         struct WatchdogRelease;
         impl ReleaseExecutionPort for WatchdogRelease {
@@ -4615,7 +4728,7 @@ mod tests {
     }
 
     #[test]
-    fn local_gate_cancellation_race_does_not_create_failure_evidence() {
+    fn cancellation_does_not_create_local_failure_evidence() {
         let temporary = tempfile::tempdir().unwrap();
         let ledger = ReleaseLedger::open(temporary.path(), "repo").unwrap();
         let mut record =

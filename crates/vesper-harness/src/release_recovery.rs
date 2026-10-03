@@ -5552,6 +5552,8 @@ mod tests {
             primary_before
         );
 
+        // Stop the long-running acceptance fixture through the typed worker-cancellation path;
+        // cancellation is controller liveness, not a failed source-verification result.
         crate::release_executor::cancel_release_worker(&fixture.identity);
         let deadline = std::time::Instant::now() + Duration::from_secs(15);
         while crate::release_executor::active_release_worker(&fixture.identity).is_some() {
@@ -5562,15 +5564,18 @@ mod tests {
             thread::sleep(Duration::from_millis(25));
         }
         let settled = ledger.load().unwrap().unwrap();
-        assert_eq!(settled.state, ReleaseRecoveryState::DiagnosingLocalFailure);
+        assert_eq!(settled.state, ReleaseRecoveryState::LocalVerification);
         assert_eq!(
             settled.mutation.local_gates[0].state,
             SettlementState::Succeeded
         );
         assert_eq!(
             settled.mutation.local_gates[1].state,
-            SettlementState::Failed
+            SettlementState::Running
         );
+        assert!(settled.mutation.local_gates[1].evidence_ref.is_none());
+        assert!(settled.failures.is_empty());
+        assert!(!settled.liveness.blocked());
         assert!(ledger.superseded_path(&previous.epoch_id).exists());
     }
 

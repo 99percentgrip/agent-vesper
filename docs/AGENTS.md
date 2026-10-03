@@ -174,7 +174,10 @@ Own durable project documentation and evidence-backed engineering records.
   `foundation/2026-10-02-rrc-liveness-watchdog-repair.md` records the later
   clean-base command/remote/repair liveness repair, persisted TUI/ACP stop truth,
   focused deterministic receipts, and explicit no-resume/no-release/no-broad-gate
-  boundary.
+  boundary; and
+  `foundation/2026-10-02-rrc-typed-local-settlement-acceptance-repair.md` records
+  the stale cancellation-expectation diagnosis, focused two-sided settlement
+  regressions, and explicit broad-acceptance-not-rerun boundary.
 - Root PRD files (`*-prd.md`) own accepted phased requirement documents
   (e.g. `agent-vesper-reasoning-orchestrator-prd.md`,
   `provider-capability-gating-prd.md`, `qm-extraction-prd.md`,

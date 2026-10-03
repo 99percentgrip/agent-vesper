@@ -6,6 +6,11 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `2026-10-02-rrc-typed-local-settlement-acceptance-repair.md` owns the
+  cancellation-fixture diagnosis, stale acceptance correction, explicit genuine
+  local-failure/watchdog/cancellation regressions, focused receipts, and the
+  broad-acceptance-not-rerun boundary.
+
 - `2026-10-02-rrc-liveness-watchdog-repair.md` owns the clean-base RRC
   progress-watchdog repair: progress-only local/repair stagnation, operation-scoped
   external-request deadlines, cancellable GitHub/publication/health commands, fresh

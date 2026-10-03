@@ -1111,7 +1111,11 @@ progress projection. Local process-tree heartbeat uses owned process-count and
 `rustc`-count transitions; RSS is diagnostic telemetry and never refreshes the
 no-progress clock. Its
 current evidence is intentionally focused and local; broad, hosted, release and
-cross-platform gates were not rerun for that repair.
+cross-platform gates were not rerun for that repair. A subsequent broad acceptance
+attempt on `25085a95` stopped at a lifecycle fixture whose cancellation expectation
+still required `DiagnosingLocalFailure`; the focused follow-up corrected that stale
+test expectation and proved both typed settlement sides, but broad acceptance remains
+unrerun for the follow-up commit.
 
 The PR-1 through PR-3 foundation
 provides typed states/transitions, settled-evidence reduction, exact-SHA gate
@@ -1205,6 +1209,7 @@ non-publishing boundary, not a simulated pass or an RRC implementation gap.
 
 Execution evidence and exact verification receipts:
 
+- [`foundation/2026-10-02-rrc-typed-local-settlement-acceptance-repair.md`](foundation/2026-10-02-rrc-typed-local-settlement-acceptance-repair.md) — classifies the lifecycle acceptance failure as a stale cancellation expectation, preserves typed source-failure/watchdog/cancellation separation, records focused green receipts, and leaves broad acceptance unrerun
 - [`foundation/2026-10-02-rrc-liveness-watchdog-repair.md`](foundation/2026-10-02-rrc-liveness-watchdog-repair.md) — clean-base progress-aware command/remote/repair watchdog repair, persisted shared liveness, focused local receipts, and explicit no-resume/no-release/no-broad-verification boundary
 - [`foundation/2026-10-02-v0.24.5-rrc-deterministic-governor-repair.md`](foundation/2026-10-02-v0.24.5-rrc-deterministic-governor-repair.md) — fifth immutable red-candidate matrix, correction of the earlier incomplete Linux diagnosis, red-first deterministic integration-policy regression, ten-repeat ACP process proof, complete 50-case/canonical/MSRV local gates, and pending fresh exact-SHA hosted receipts with no tag or publication in scope
 - [`foundation/2026-10-01-v0.24.5-rrc-autonomy-and-ci-repair.md`](foundation/2026-10-01-v0.24.5-rrc-autonomy-and-ci-repair.md) — four immutable red-candidate matrices, missing/partial watch and complete-red multi-family repair corrections, all four observed CI repair rounds, complete 50-case/canonical/MSRV/local-runtime verification, and superseded fourth-repair diagnosis with no tag or publication in scope

@@ -1,5 +1,16 @@
 # Foundation Evidence Index
 
+## RRC typed local-settlement acceptance repair (2026-10-02)
+
+- Execution report: [`2026-10-02-rrc-typed-local-settlement-acceptance-repair.md`](2026-10-02-rrc-typed-local-settlement-acceptance-repair.md)
+- Owning PRD: [`../Agent_Vesper_Release_Recovery_Controller_PRD.md`](../Agent_Vesper_Release_Recovery_Controller_PRD.md)
+- Source commit: `25085a95a38f4df6ed6ec5ab41848e8c2be765b6`
+- Verdict: **STALE ACCEPTANCE EXPECTATION CORRECTED; FOCUSED REGRESSIONS PASS;
+  BROAD ACCEPTANCE NOT RERUN.** The lifecycle fixture deliberately cancelled its
+  second real local gate, so `LocalVerification` with no source-failure evidence is
+  correct. A separate focused regression proves a genuine local gate failure still
+  enters `DiagnosingLocalFailure` with causal evidence.
+
 ## RRC liveness/watchdog repair (2026-10-02)
 
 - Execution report: [`2026-10-02-rrc-liveness-watchdog-repair.md`](2026-10-02-rrc-liveness-watchdog-repair.md)
