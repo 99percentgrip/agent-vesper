@@ -6,6 +6,13 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `2026-10-02-rrc-liveness-watchdog-repair.md` owns the clean-base RRC
+  progress-watchdog repair: progress-only local/repair stagnation, operation-scoped
+  external-request deadlines, cancellable GitHub/publication/health commands, fresh
+  remote-matrix timing, repair-agent heartbeat, persisted shared liveness, focused
+  local regressions, and the explicit
+  no-release/no-broad-verification boundary.
+
 - `2026-10-02-v0.24.5-rrc-deterministic-governor-repair.md` owns the fifth
   immutable failed v0.24.5 candidate matrix, correction of the earlier incomplete
   Linux diagnosis, deterministic integration-only governor seam, red-first

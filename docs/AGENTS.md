@@ -170,7 +170,11 @@ Own durable project documentation and evidence-backed engineering records.
   `foundation/2026-10-02-v0.24.5-rrc-deterministic-governor-repair.md` supersedes
   that checkpoint's Linux diagnosis with the fifth immutable matrix, red-first
   deterministic test-support correction, complete local gates, and pending fresh
-  exact-SHA hosted boundary under the same no-tag/no-publication constraint.
+  exact-SHA hosted boundary under the same no-tag/no-publication constraint; and
+  `foundation/2026-10-02-rrc-liveness-watchdog-repair.md` records the later
+  clean-base command/remote/repair liveness repair, persisted TUI/ACP stop truth,
+  focused deterministic receipts, and explicit no-resume/no-release/no-broad-gate
+  boundary.
 - Root PRD files (`*-prd.md`) own accepted phased requirement documents
   (e.g. `agent-vesper-reasoning-orchestrator-prd.md`,
   `provider-capability-gating-prd.md`, `qm-extraction-prd.md`,

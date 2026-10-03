@@ -8,6 +8,8 @@
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
@@ -560,6 +562,40 @@ pub struct ResourceDeferredRecord {
     pub next_check_seconds: u64,
 }
 
+/// Persisted controller liveness is separate from release evidence. A stalled
+/// local process or repair agent must never be presented as a source/CI
+/// failure, and a restart must retain the reason the worker stopped.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ReleaseLivenessState {
+    #[default]
+    Idle,
+    Active,
+    Stalled,
+    DeadlineExceeded,
+    Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct ReleaseLivenessRecord {
+    pub state: ReleaseLivenessState,
+    pub operation: String,
+    pub detail: String,
+    pub observed_at: Option<DateTime<Utc>>,
+}
+
+impl ReleaseLivenessRecord {
+    #[must_use]
+    pub fn blocked(&self) -> bool {
+        matches!(
+            self.state,
+            ReleaseLivenessState::Stalled
+                | ReleaseLivenessState::DeadlineExceeded
+                | ReleaseLivenessState::Failed
+        )
+    }
+}
+
 /// Immutable provenance and settled side-effect state for the production
 /// release path. A state is recorded only after the native adapter has
 /// independently observed the corresponding repository/GitHub fact.
@@ -748,6 +784,10 @@ pub struct ReleaseRecoveryRecord {
     pub external_block: Option<ExternalBlockRecord>,
     #[serde(default)]
     pub resource_deferred: Option<ResourceDeferredRecord>,
+    /// Last controller-operation liveness observation, shared by TUI/ACP and
+    /// retained across restart.
+    #[serde(default)]
+    pub liveness: ReleaseLivenessRecord,
     #[serde(default)]
     pub mutation: ReleaseMutationRecord,
     /// Bounded host-neutral progress projection. Backward-compatible ledger
@@ -781,6 +821,7 @@ impl ReleaseRecoveryRecord {
             retry_budget: RetryBudget::default(),
             external_block: None,
             resource_deferred: None,
+            liveness: ReleaseLivenessRecord::default(),
             mutation: ReleaseMutationRecord::default(),
             progress: ReleaseProgress::default(),
             transitions: Vec::new(),
@@ -936,6 +977,14 @@ impl ReleaseRecoveryRecord {
             ReleaseRecoveryState::Complete => "Release recovery is complete".into(),
             ReleaseRecoveryState::Cancelled => "Release recovery was cancelled".into(),
         };
+        let headline = if self.liveness.blocked() {
+            format!(
+                "Paused — {} · {}",
+                self.liveness.operation, self.liveness.detail
+            )
+        } else {
+            headline
+        };
         self.progress.phase = phase;
         self.progress.headline = headline;
         self.progress.current_gate = current_gate;
@@ -965,6 +1014,50 @@ impl ReleaseRecoveryRecord {
             self.progress.milestones.drain(..excess);
         }
         self.updated_at = at;
+    }
+
+    pub fn note_liveness_active(&mut self, operation: impl Into<String>) {
+        let now = Utc::now();
+        self.liveness = ReleaseLivenessRecord {
+            state: ReleaseLivenessState::Active,
+            operation: bounded(operation.into(), 128),
+            detail: "controller operation is active".into(),
+            observed_at: Some(now),
+        };
+        self.updated_at = now;
+        self.refresh_progress();
+    }
+
+    pub fn note_liveness_failure(&mut self, error: &RrcError) {
+        let (state, operation, detail) = match error {
+            RrcError::WatchdogStalled { operation, .. } => (
+                ReleaseLivenessState::Stalled,
+                operation.clone(),
+                error.to_string(),
+            ),
+            RrcError::WatchdogDeadline { operation, .. } => (
+                ReleaseLivenessState::DeadlineExceeded,
+                operation.clone(),
+                error.to_string(),
+            ),
+            RrcError::Cancelled | RrcError::ResourceConstrained(_) => return,
+            _ => (
+                ReleaseLivenessState::Failed,
+                if self.liveness.operation.is_empty() {
+                    "release controller step".into()
+                } else {
+                    self.liveness.operation.clone()
+                },
+                error.to_string(),
+            ),
+        };
+        self.liveness = ReleaseLivenessRecord {
+            state,
+            operation: bounded(operation, 128),
+            detail: bounded(detail, 512),
+            observed_at: Some(Utc::now()),
+        };
+        self.note_progress_milestone(self.liveness.detail.clone());
     }
 
     pub fn transition(
@@ -1406,7 +1499,11 @@ fn progress_tasks(record: &ReleaseRecoveryRecord) -> Vec<ReleaseProgressTask> {
         .local_gates
         .iter()
         .map(|gate| {
-            let state = progress_state_from_settlement(gate.state);
+            let state = if record.liveness.blocked() && gate.state == SettlementState::Running {
+                ReleaseProgressState::Paused
+            } else {
+                progress_state_from_settlement(gate.state)
+            };
             let completed = u64::from(state == ReleaseProgressState::Passed);
             let children = (gate.name == "acceptance").then(|| {
                 vec![ReleaseProgressTask::new(
@@ -1629,6 +1726,9 @@ fn stage_state(
     if record.state == ReleaseRecoveryState::Cancelled {
         return ReleaseProgressState::Cancelled;
     }
+    if record.liveness.blocked() {
+        return ReleaseProgressState::Paused;
+    }
     if matches!(
         record.state,
         ReleaseRecoveryState::PausedExternal | ReleaseRecoveryState::Escalated
@@ -1659,6 +1759,8 @@ fn publication_progress_state(record: &ReleaseRecoveryRecord) -> ReleaseProgress
         )
     {
         ReleaseProgressState::Passed
+    } else if record.liveness.blocked() {
+        ReleaseProgressState::Paused
     } else if matches!(record.progress.phase, ReleaseProgressPhase::Publication) {
         ReleaseProgressState::Running
     } else {
@@ -1996,13 +2098,20 @@ pub fn apply_controller_event(
             evidence_refs,
             None,
         ),
-        ReleaseControllerEvent::RemoteGateDispatched(evidence_refs) => record.transition(
-            ReleaseRecoveryState::RemoteGateRunning,
-            &commit,
-            "exact-commit remote gates dispatched",
-            evidence_refs,
-            None,
-        ),
+        ReleaseControllerEvent::RemoteGateDispatched(evidence_refs) => {
+            record.transition(
+                ReleaseRecoveryState::RemoteGateRunning,
+                &commit,
+                "exact-commit remote gates dispatched",
+                evidence_refs,
+                None,
+            )?;
+            // The remote-matrix watchdog owns a fresh progress window from
+            // dispatch. Time spent in local verification must not make the
+            // first exact-SHA lookup appear stale.
+            record.note_progress(true);
+            Ok(())
+        }
         ReleaseControllerEvent::VerifiedRepair(repair) => {
             apply_verified_repair_batch(record, &commit, vec![repair])
         }
@@ -2374,6 +2483,25 @@ pub enum RrcError {
     ResourceConstrained(String),
     #[error("repair budget exhausted for causal family {0}")]
     RepairBudgetExhausted(String),
+    /// A controller-owned operation stopped because it produced no observable
+    /// progress inside its state-specific inactivity budget. This is a
+    /// liveness failure, not source, CI, or publication evidence.
+    #[error("release watchdog stopped {operation} after {limit_seconds}s without progress")]
+    WatchdogStalled {
+        operation: String,
+        limit_seconds: u64,
+    },
+    /// A controller-owned operation exceeded its absolute safety ceiling even
+    /// though it may have continued to emit output.
+    #[error("release watchdog stopped {operation} after its {limit_seconds}s execution deadline")]
+    WatchdogDeadline {
+        operation: String,
+        limit_seconds: u64,
+    },
+    /// User cancellation is typed separately from watchdog and command
+    /// failure so persistence and both host projections cannot mislabel it.
+    #[error("release recovery was cancelled by the user")]
+    Cancelled,
     #[error("release ledger I/O failed: {0}")]
     Io(#[from] std::io::Error),
     #[error("release ledger is malformed: {0}")]
@@ -2958,11 +3086,26 @@ pub fn dispatch_admitted_full_retry(
 
 /// GitHub CLI implementation of the structured evidence port. It uses JSON
 /// fields rather than terminal text and never accepts a token argument.
-#[derive(Debug, Clone, Default)]
-pub struct GhCliEvidenceAdapter;
+#[derive(Debug, Clone)]
+pub struct GhCliEvidenceAdapter {
+    cancelled: Arc<AtomicBool>,
+}
+
+impl Default for GhCliEvidenceAdapter {
+    fn default() -> Self {
+        Self {
+            cancelled: Arc::new(AtomicBool::new(false)),
+        }
+    }
+}
 
 impl GhCliEvidenceAdapter {
-    fn gh(repository: &str, args: &[&str]) -> Result<String, RrcError> {
+    #[must_use]
+    pub(crate) fn with_cancellation(cancelled: Arc<AtomicBool>) -> Self {
+        Self { cancelled }
+    }
+
+    fn gh(&self, repository: &str, args: &[&str]) -> Result<String, RrcError> {
         if !matches!(
             github_repository_slug(&format!("https://github.com/{repository}")),
             Ok(parsed) if parsed == repository
@@ -2971,13 +3114,18 @@ impl GhCliEvidenceAdapter {
                 "unsafe GitHub repository identity".into(),
             ));
         }
-        let output = std::process::Command::new("gh")
+        let mut command = std::process::Command::new("gh");
+        command
             .arg("api")
             .args(args)
             .arg("-H")
             .arg("Accept: application/vnd.github+json")
-            .env_remove("GH_DEBUG")
-            .output()?;
+            .env_remove("GH_DEBUG");
+        let output = crate::release_executor::run_bounded_external_command(
+            &mut command,
+            self.cancelled.as_ref(),
+            crate::release_executor::REMOTE_COMMAND_WATCHDOG,
+        )?;
         if !output.status.success() {
             return Err(RrcError::Invalid(format!(
                 "GitHub API command failed with status {}: {}",
@@ -3046,7 +3194,7 @@ impl GitHubEvidencePort for GhCliEvidenceAdapter {
             ));
         }
         let endpoint = format!("repos/{repository}/actions/runs?head_sha={head_sha}&per_page=100");
-        let body = Self::gh(repository, &[&endpoint])?;
+        let body = self.gh(repository, &[&endpoint])?;
         let value: serde_json::Value = serde_json::from_str(&body)?;
         let mut gates = Vec::new();
         for run in value
@@ -3080,7 +3228,7 @@ impl GitHubEvidencePort for GhCliEvidenceAdapter {
                 .ok_or_else(|| RrcError::Invalid("run id missing".into()))?;
             let jobs_endpoint =
                 format!("repos/{repository}/actions/runs/{run_id}/jobs?filter=all&per_page=100");
-            let jobs_body = Self::gh(repository, &[&jobs_endpoint])?;
+            let jobs_body = self.gh(repository, &[&jobs_endpoint])?;
             let jobs_value: serde_json::Value = serde_json::from_str(&jobs_body)?;
             let mut jobs = Vec::new();
             for job in jobs_value
@@ -3170,22 +3318,25 @@ impl GitHubEvidencePort for GhCliEvidenceAdapter {
 
     fn job_log(&self, repository: &str, job_id: u64) -> Result<String, RrcError> {
         let endpoint = format!("repos/{repository}/actions/jobs/{job_id}/logs");
-        Self::gh(repository, &[&endpoint])
+        self.gh(repository, &[&endpoint])
     }
 
     fn rerun_job(&self, repository: &str, job_id: u64) -> Result<(), RrcError> {
         let endpoint = format!("repos/{repository}/actions/jobs/{job_id}/rerun");
-        Self::gh(repository, &["--method", "POST", &endpoint]).map(|_| ())
+        self.gh(repository, &["--method", "POST", &endpoint])
+            .map(|_| ())
     }
 
     fn rerun_failed(&self, repository: &str, run_id: u64) -> Result<(), RrcError> {
         let endpoint = format!("repos/{repository}/actions/runs/{run_id}/rerun-failed-jobs");
-        Self::gh(repository, &["--method", "POST", &endpoint]).map(|_| ())
+        self.gh(repository, &["--method", "POST", &endpoint])
+            .map(|_| ())
     }
 
     fn rerun_workflow(&self, repository: &str, run_id: u64) -> Result<(), RrcError> {
         let endpoint = format!("repos/{repository}/actions/runs/{run_id}/rerun");
-        Self::gh(repository, &["--method", "POST", &endpoint]).map(|_| ())
+        self.gh(repository, &["--method", "POST", &endpoint])
+            .map(|_| ())
     }
 }
 
@@ -3328,6 +3479,7 @@ pub fn release_command(
                 .active_commit()
                 .map(str::to_owned)
                 .unwrap_or_else(|| source_commit.into());
+            record.liveness = ReleaseLivenessRecord::default();
             record.transition(
                 ReleaseRecoveryState::Cancelled,
                 &commit,
@@ -3443,10 +3595,13 @@ struct ReleaseSourceChoice {
 }
 
 fn git_output(workspace: &Path, args: &[&str]) -> Result<String, RrcError> {
-    let output = std::process::Command::new("git")
-        .args(args)
-        .current_dir(workspace)
-        .output()?;
+    let mut command = std::process::Command::new("git");
+    command.args(args).current_dir(workspace);
+    let output = crate::release_executor::run_bounded_external_command(
+        &mut command,
+        &AtomicBool::new(false),
+        crate::release_executor::MUTATION_WATCHDOG,
+    )?;
     if !output.status.success() {
         return Err(RrcError::Invalid(format!(
             "git {} failed with status {}: {}",
@@ -3462,10 +3617,13 @@ fn git_output(workspace: &Path, args: &[&str]) -> Result<String, RrcError> {
 }
 
 fn git_output_bytes(workspace: &Path, args: &[&str]) -> Result<Vec<u8>, RrcError> {
-    let output = std::process::Command::new("git")
-        .args(args)
-        .current_dir(workspace)
-        .output()?;
+    let mut command = std::process::Command::new("git");
+    command.args(args).current_dir(workspace);
+    let output = crate::release_executor::run_bounded_external_command(
+        &mut command,
+        &AtomicBool::new(false),
+        crate::release_executor::MUTATION_WATCHDOG,
+    )?;
     if !output.status.success() {
         return Err(RrcError::Invalid(format!(
             "git {} failed with status {}: {}",
@@ -3481,14 +3639,14 @@ fn git_output_bytes(workspace: &Path, args: &[&str]) -> Result<Vec<u8>, RrcError
 }
 
 fn git_succeeds(workspace: &Path, args: &[&str]) -> bool {
-    std::process::Command::new("git")
-        .args(args)
-        .current_dir(workspace)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .is_ok_and(|status| status.success())
+    let mut command = std::process::Command::new("git");
+    command.args(args).current_dir(workspace);
+    crate::release_executor::run_bounded_external_command(
+        &mut command,
+        &AtomicBool::new(false),
+        crate::release_executor::MUTATION_WATCHDOG,
+    )
+    .is_ok_and(|output| output.status.success())
 }
 
 fn exact_git_sha(value: &str) -> Result<String, RrcError> {
@@ -6404,5 +6562,68 @@ mod tests {
             record.note_progress(false);
         }
         assert!(record.watchdog_triggered(Utc::now()));
+    }
+
+    #[test]
+    fn remote_dispatch_starts_a_fresh_matrix_progress_window() {
+        let mut record = start_release("repo", "patch", "main", "abcdef123456").unwrap();
+        record.objective.required_gate_names = vec!["gate".into()];
+        record
+            .transition(
+                ReleaseRecoveryState::CandidateReady,
+                "abcdef123456",
+                "local verification passed",
+                vec![],
+                None,
+            )
+            .unwrap();
+        record.last_progress_at = Utc::now()
+            - chrono::Duration::from_std(STAGNATION_TIME_LIMIT + Duration::from_secs(1)).unwrap();
+
+        apply_controller_event(
+            &mut record,
+            ReleaseControllerEvent::RemoteGateDispatched(vec!["github:push".into()]),
+        )
+        .unwrap();
+
+        assert_eq!(record.state, ReleaseRecoveryState::RemoteGateRunning);
+        assert_eq!(record.consecutive_stagnant_actions, 0);
+        assert!(!record.remote_matrix_watch_timed_out(Utc::now()));
+    }
+
+    #[test]
+    fn watchdog_liveness_survives_ledger_round_trip_and_drives_shared_headline() {
+        let temporary = tempfile::tempdir().unwrap();
+        let ledger = ReleaseLedger::open(temporary.path(), "repo").unwrap();
+        let mut record = record();
+        let error = RrcError::WatchdogStalled {
+            operation: "focused repair agent".into(),
+            limit_seconds: 600,
+        };
+        record.note_liveness_failure(&error);
+        ledger.save(&record).unwrap();
+
+        let mut loaded = ledger.load().unwrap().expect("persisted record");
+        loaded.refresh_progress();
+        assert_eq!(loaded.liveness.state, ReleaseLivenessState::Stalled);
+        assert_eq!(loaded.liveness.operation, "focused repair agent");
+        assert!(loaded.progress.headline.contains("Paused"));
+        assert!(
+            loaded.progress.headline.contains("without progress"),
+            "TUI and ACP shared projection must retain the truthful stop reason"
+        );
+        assert!(
+            loaded
+                .progress
+                .tasks
+                .iter()
+                .all(|task| task.state != ReleaseProgressState::Running),
+            "a stopped controller stage must not remain Running in the shared projection"
+        );
+        assert_eq!(
+            loaded.state,
+            ReleaseRecoveryState::RemoteGateRunning,
+            "liveness failure must not be fabricated as CI/source settlement"
+        );
     }
 }

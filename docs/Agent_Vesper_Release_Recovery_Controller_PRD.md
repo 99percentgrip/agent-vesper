@@ -1102,7 +1102,18 @@ completion.**
 
 The shared implementation lives in
 `crates/vesper-harness/src/release_recovery.rs` and
-`crates/vesper-harness/src/release_executor.rs`. The PR-1 through PR-3 foundation
+`crates/vesper-harness/src/release_executor.rs`. The 2026-10-02 liveness repair
+adds progress-aware inactivity for controller-owned local commands and focused
+repair turns without elapsed-runtime ceilings, operation-scoped deadlines for
+bounded/cancellable GitHub/publication/health and remote Git calls, a fresh exact-SHA
+remote-watch window, and persisted liveness rendered through the shared TUI/ACP
+progress projection. Local process-tree heartbeat uses owned process-count and
+`rustc`-count transitions; RSS is diagnostic telemetry and never refreshes the
+no-progress clock. Its
+current evidence is intentionally focused and local; broad, hosted, release and
+cross-platform gates were not rerun for that repair.
+
+The PR-1 through PR-3 foundation
 provides typed states/transitions, settled-evidence reduction, exact-SHA gate
 identity, bounded/redacted first-causal evidence, stable fingerprints,
 last-green comparison, focused-proof/retry/repair budgets, stagnation bounds,
@@ -1194,6 +1205,7 @@ non-publishing boundary, not a simulated pass or an RRC implementation gap.
 
 Execution evidence and exact verification receipts:
 
+- [`foundation/2026-10-02-rrc-liveness-watchdog-repair.md`](foundation/2026-10-02-rrc-liveness-watchdog-repair.md) — clean-base progress-aware command/remote/repair watchdog repair, persisted shared liveness, focused local receipts, and explicit no-resume/no-release/no-broad-verification boundary
 - [`foundation/2026-10-02-v0.24.5-rrc-deterministic-governor-repair.md`](foundation/2026-10-02-v0.24.5-rrc-deterministic-governor-repair.md) — fifth immutable red-candidate matrix, correction of the earlier incomplete Linux diagnosis, red-first deterministic integration-policy regression, ten-repeat ACP process proof, complete 50-case/canonical/MSRV local gates, and pending fresh exact-SHA hosted receipts with no tag or publication in scope
 - [`foundation/2026-10-01-v0.24.5-rrc-autonomy-and-ci-repair.md`](foundation/2026-10-01-v0.24.5-rrc-autonomy-and-ci-repair.md) — four immutable red-candidate matrices, missing/partial watch and complete-red multi-family repair corrections, all four observed CI repair rounds, complete 50-case/canonical/MSRV/local-runtime verification, and superseded fourth-repair diagnosis with no tag or publication in scope
 - [`foundation/2026-10-01-rrc-active-epoch-integration-repair.md`](foundation/2026-10-01-rrc-active-epoch-integration-repair.md) — canonical historical-epoch supersession, durable identity, irreversible-state clarification, mutation proof and 45-case acceptance

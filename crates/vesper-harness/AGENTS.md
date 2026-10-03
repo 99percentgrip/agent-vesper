@@ -56,7 +56,21 @@ Z.ai and Playwright MCP server descriptors.
   an unforgeable controller admission token; adapters, providers and hosts do not
   decide retry policy. `release_executor` runs the repository's existing local gates, version/commit/
   push/tag/publication path, bounded official GitHub-status check, persisted
-  background progression and cancellable local subprocesses. Worker admission is
+  background progression and cancellable local subprocesses. Every controller-owned
+  process group is polled for cancellation and bounded by state-specific meaningful-
+  progress inactivity. Local gates use a 30-minute inactivity window and local
+  mutation commands use five minutes, with no elapsed-runtime ceiling while output or
+  reliable process-tree activity advances. Process-tree heartbeat advances only on
+  owned process-count or `rustc`-count transitions; RSS remains diagnostic telemetry
+  and never resets inactivity. Individual external operations retain
+  protocol/safety deadlines: remote Git mutations use 5/30 minutes, GitHub evidence
+  requests use 2/5 minutes, publication requests use 2/10 minutes and official health
+  requests use 15 seconds. The repair AgentLoop uses its progress port as a heartbeat
+  with a 10-minute no-progress bound and no elapsed-runtime ceiling. Exact-SHA dispatch
+  starts a fresh remote-matrix window under the separate 20-minute no-evidence bound.
+  Watchdog outcomes are persisted as typed
+  liveness failures, never source/CI evidence, and both hosts render the shared
+  progress headline after worker exit or restart. Worker admission is
   registered before the launcher acknowledges startup; the registry retains the
   owned join handle, cancellation token, epoch identity and live activity until
   settlement. Its bounded telemetry snapshot is updated from persisted gate changes,

@@ -39,6 +39,103 @@ const RESOURCE_WATCH_NORMAL_CONFIRMATIONS: u8 = 3;
 const RESOURCE_WATCH_INITIAL_INTERVAL: Duration = Duration::from_secs(5);
 const RESOURCE_WATCH_BACKOFF_INTERVAL: Duration = Duration::from_secs(15);
 const RESOURCE_WATCH_MAX_INTERVAL: Duration = Duration::from_secs(30);
+const WATCHDOG_POLL_INTERVAL: Duration = Duration::from_millis(100);
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct CommandWatchdogPolicy {
+    pub(crate) operation: &'static str,
+    pub(crate) inactivity_timeout: Duration,
+    /// Per-operation protocol/safety boundary. Local work has no absolute
+    /// deadline: continuing meaningful progress keeps it alive.
+    pub(crate) hard_deadline: Option<Duration>,
+}
+
+pub(crate) const LOCAL_GATE_WATCHDOG: CommandWatchdogPolicy = CommandWatchdogPolicy {
+    operation: "local verification command",
+    inactivity_timeout: Duration::from_secs(30 * 60),
+    hard_deadline: None,
+};
+
+pub(crate) const MUTATION_WATCHDOG: CommandWatchdogPolicy = CommandWatchdogPolicy {
+    operation: "release mutation command",
+    inactivity_timeout: Duration::from_secs(5 * 60),
+    hard_deadline: None,
+};
+
+const REMOTE_MUTATION_WATCHDOG: CommandWatchdogPolicy = CommandWatchdogPolicy {
+    operation: "remote Git mutation command",
+    inactivity_timeout: Duration::from_secs(5 * 60),
+    hard_deadline: Some(Duration::from_secs(30 * 60)),
+};
+
+pub(crate) const REMOTE_COMMAND_WATCHDOG: CommandWatchdogPolicy = CommandWatchdogPolicy {
+    operation: "GitHub evidence request",
+    inactivity_timeout: Duration::from_secs(2 * 60),
+    hard_deadline: Some(Duration::from_secs(5 * 60)),
+};
+
+const PUBLICATION_WATCHDOG: CommandWatchdogPolicy = CommandWatchdogPolicy {
+    operation: "publication evidence request",
+    inactivity_timeout: Duration::from_secs(2 * 60),
+    hard_deadline: Some(Duration::from_secs(10 * 60)),
+};
+
+const EXTERNAL_HEALTH_WATCHDOG: CommandWatchdogPolicy = CommandWatchdogPolicy {
+    operation: "official GitHub health request",
+    inactivity_timeout: EXTERNAL_HEALTH_BUDGET,
+    hard_deadline: Some(EXTERNAL_HEALTH_BUDGET),
+};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CommandLivenessState {
+    Active,
+    QuietButAlive,
+    Stagnant,
+    TimedOut,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ProcessTreeHeartbeatObservation {
+    process_count: u32,
+    rustc_count: u32,
+}
+
+fn process_tree_heartbeat_observation(
+    telemetry: &ResourceTelemetry,
+) -> ProcessTreeHeartbeatObservation {
+    // RSS remains diagnostic telemetry only: allocator and resident-set movement does not prove
+    // that the supervised operation advanced. Child/process and rustc-count transitions do.
+    ProcessTreeHeartbeatObservation {
+        process_count: telemetry.process_count,
+        rustc_count: telemetry.rustc_count,
+    }
+}
+
+fn command_liveness_state(
+    cancelled: bool,
+    elapsed: Duration,
+    output_inactive_for: Duration,
+    process_inactive_for: Option<Duration>,
+    policy: CommandWatchdogPolicy,
+) -> CommandLivenessState {
+    if cancelled {
+        return CommandLivenessState::Cancelled;
+    }
+    if policy
+        .hard_deadline
+        .is_some_and(|deadline| elapsed >= deadline)
+    {
+        return CommandLivenessState::TimedOut;
+    }
+    if output_inactive_for < policy.inactivity_timeout {
+        return CommandLivenessState::Active;
+    }
+    if process_inactive_for.is_some_and(|quiet| quiet < policy.inactivity_timeout) {
+        return CommandLivenessState::QuietButAlive;
+    }
+    CommandLivenessState::Stagnant
+}
 
 struct ActiveReleaseWorker {
     cancelled: Arc<AtomicBool>,
@@ -164,6 +261,7 @@ fn active_workers() -> &'static Mutex<HashMap<String, ActiveReleaseWorker>> {
 fn capture_release_stream<R: Read>(
     mut stream: R,
     activity: Option<Arc<Mutex<ReleaseWorkerActivity>>>,
+    heartbeat: Arc<Mutex<Instant>>,
 ) -> std::io::Result<Vec<u8>> {
     const MAX_CAPTURE_BYTES: usize = 4 * 1024 * 1024;
     let mut captured = Vec::new();
@@ -178,6 +276,9 @@ fn capture_release_stream<R: Read>(
         };
         let remaining = MAX_CAPTURE_BYTES.saturating_sub(captured.len());
         captured.extend_from_slice(&bytes[..read.min(remaining)]);
+        if let Ok(mut observed) = heartbeat.lock() {
+            *observed = Instant::now();
+        }
         for byte in &bytes[..read] {
             if matches!(byte, b'\n' | b'\r') {
                 record_captured_line(activity.as_ref(), &pending);
@@ -199,6 +300,92 @@ fn join_capture_reader(
         .join()
         .map_err(|_| RrcError::Invalid(format!("release child {stream_name} reader panicked")))?
         .map_err(RrcError::Io)
+}
+
+/// Runs a non-local controller command with bounded output capture,
+/// cancellation polling, an inactivity watchdog, and an absolute deadline.
+/// The child is spawned as an owned process group so timeout/cancellation does
+/// not leave a CLI descendant running after the controller returns.
+pub(crate) fn run_bounded_external_command(
+    command: &mut Command,
+    cancelled: &AtomicBool,
+    policy: CommandWatchdogPolicy,
+) -> Result<Output, RrcError> {
+    if cancelled.load(Ordering::Acquire) {
+        return Err(RrcError::Cancelled);
+    }
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(windows)]
+    let mut child = command.group().kill_on_drop(true).spawn()?;
+    #[cfg(not(windows))]
+    let mut child = command.group_spawn()?;
+    let stdout = child
+        .inner()
+        .stdout
+        .take()
+        .ok_or_else(|| RrcError::Invalid("external child stdout pipe is missing".into()))?;
+    let stderr = child
+        .inner()
+        .stderr
+        .take()
+        .ok_or_else(|| RrcError::Invalid("external child stderr pipe is missing".into()))?;
+    let started_at = Instant::now();
+    let heartbeat = Arc::new(Mutex::new(started_at));
+    let stdout_heartbeat = Arc::clone(&heartbeat);
+    let stderr_heartbeat = Arc::clone(&heartbeat);
+    let stdout_reader =
+        thread::spawn(move || capture_release_stream(stdout, None, stdout_heartbeat));
+    let stderr_reader =
+        thread::spawn(move || capture_release_stream(stderr, None, stderr_heartbeat));
+    let stop = loop {
+        let last_output = heartbeat
+            .lock()
+            .map(|observed| *observed)
+            .unwrap_or(started_at);
+        let reason = match command_liveness_state(
+            cancelled.load(Ordering::Acquire),
+            started_at.elapsed(),
+            last_output.elapsed(),
+            None,
+            policy,
+        ) {
+            CommandLivenessState::Active | CommandLivenessState::QuietButAlive => None,
+            CommandLivenessState::Stagnant => Some(RrcError::WatchdogStalled {
+                operation: policy.operation.into(),
+                limit_seconds: policy.inactivity_timeout.as_secs(),
+            }),
+            CommandLivenessState::TimedOut => Some(RrcError::WatchdogDeadline {
+                operation: policy.operation.into(),
+                limit_seconds: policy
+                    .hard_deadline
+                    .expect("TimedOut requires a hard deadline")
+                    .as_secs(),
+            }),
+            CommandLivenessState::Cancelled => Some(RrcError::Cancelled),
+        };
+        if let Some(reason) = reason {
+            let _ = child.kill();
+            break Some(reason);
+        }
+        if child.inner().try_wait()?.is_some() {
+            break None;
+        }
+        thread::sleep(WATCHDOG_POLL_INTERVAL);
+    };
+    let status = child.inner().wait()?;
+    let stdout = join_capture_reader(stdout_reader, "stdout")?;
+    let stderr = join_capture_reader(stderr_reader, "stderr")?;
+    if let Some(reason) = stop {
+        return Err(reason);
+    }
+    Ok(Output {
+        status,
+        stdout,
+        stderr,
+    })
 }
 
 fn record_captured_line(activity: Option<&Arc<Mutex<ReleaseWorkerActivity>>>, bytes: &[u8]) {
@@ -402,19 +589,37 @@ impl NativeReleaseExecutor {
     }
 
     fn command(&self, program: &str, args: &[&str]) -> Result<Output, RrcError> {
-        self.command_with_env(program, args, &[])
+        self.command_with_env_and_policy(program, args, &[], MUTATION_WATCHDOG)
     }
 
+    fn command_with_policy(
+        &self,
+        program: &str,
+        args: &[&str],
+        policy: CommandWatchdogPolicy,
+    ) -> Result<Output, RrcError> {
+        self.command_with_env_and_policy(program, args, &[], policy)
+    }
+
+    #[cfg(test)]
     fn command_with_env(
         &self,
         program: &str,
         args: &[&str],
         environment: &[(&str, &str)],
     ) -> Result<Output, RrcError> {
+        self.command_with_env_and_policy(program, args, environment, MUTATION_WATCHDOG)
+    }
+
+    fn command_with_env_and_policy(
+        &self,
+        program: &str,
+        args: &[&str],
+        environment: &[(&str, &str)],
+        policy: CommandWatchdogPolicy,
+    ) -> Result<Output, RrcError> {
         if self.cancelled.load(Ordering::Acquire) {
-            return Err(RrcError::Invalid(
-                "release recovery was cancelled by the user".into(),
-            ));
+            return Err(RrcError::Cancelled);
         }
         let mut command = Command::new(program);
         command
@@ -443,18 +648,39 @@ impl NativeReleaseExecutor {
             .ok_or_else(|| RrcError::Invalid("release child stderr pipe is missing".into()))?;
         let stdout_activity = self.activity.clone();
         let stderr_activity = self.activity.clone();
-        let stdout_reader = thread::spawn(move || capture_release_stream(stdout, stdout_activity));
-        let stderr_reader = thread::spawn(move || capture_release_stream(stderr, stderr_activity));
+        let started_at = Instant::now();
+        let heartbeat = Arc::new(Mutex::new(started_at));
+        let stdout_heartbeat = Arc::clone(&heartbeat);
+        let stderr_heartbeat = Arc::clone(&heartbeat);
+        let stdout_reader = thread::spawn(move || {
+            capture_release_stream(stdout, stdout_activity, stdout_heartbeat)
+        });
+        let stderr_reader = thread::spawn(move || {
+            capture_release_stream(stderr, stderr_activity, stderr_heartbeat)
+        });
         let mut cancelled = false;
+        let mut watchdog_stop = None;
         let mut resource_stop = None;
+        let mut process_observation = None;
+        let mut process_heartbeat = None;
         let status = loop {
-            if self.cancelled.load(Ordering::Acquire) {
-                let _ = child.kill();
-                cancelled = true;
-            }
             if let Some(governor) = self.resource_governor.as_ref() {
                 match governor.snapshot(Some(root_pid)) {
                     Ok(telemetry) => {
+                        let observation = process_tree_heartbeat_observation(&telemetry);
+                        match process_observation.replace(observation) {
+                            Some(previous) if previous != observation => {
+                                let observed_at = Instant::now();
+                                process_heartbeat = Some(observed_at);
+                                if let Some(activity) = self.activity.as_ref()
+                                    && let Ok(mut activity) = activity.lock()
+                                {
+                                    activity.last_activity_at = observed_at;
+                                }
+                            }
+                            None => process_heartbeat = Some(started_at),
+                            _ => {}
+                        }
                         self.note_resource_telemetry(telemetry.clone());
                         if telemetry.pressure == ResourcePressure::Critical {
                             let _ = child.kill();
@@ -471,18 +697,53 @@ impl NativeReleaseExecutor {
                     }
                 }
             }
+            let last_output = heartbeat
+                .lock()
+                .map(|observed| *observed)
+                .unwrap_or(started_at);
+            match command_liveness_state(
+                self.cancelled.load(Ordering::Acquire),
+                started_at.elapsed(),
+                last_output.elapsed(),
+                process_heartbeat.map(|observed: Instant| observed.elapsed()),
+                policy,
+            ) {
+                CommandLivenessState::Active | CommandLivenessState::QuietButAlive => {}
+                CommandLivenessState::Stagnant => {
+                    let _ = child.kill();
+                    watchdog_stop = Some(RrcError::WatchdogStalled {
+                        operation: policy.operation.into(),
+                        limit_seconds: policy.inactivity_timeout.as_secs(),
+                    });
+                }
+                CommandLivenessState::TimedOut => {
+                    let _ = child.kill();
+                    watchdog_stop = Some(RrcError::WatchdogDeadline {
+                        operation: policy.operation.into(),
+                        limit_seconds: policy
+                            .hard_deadline
+                            .expect("TimedOut requires a hard deadline")
+                            .as_secs(),
+                    });
+                }
+                CommandLivenessState::Cancelled => {
+                    let _ = child.kill();
+                    cancelled = true;
+                }
+            }
             if let Some(status) = child.inner().try_wait()? {
                 break status;
             }
-            thread::sleep(Duration::from_millis(100));
+            thread::sleep(WATCHDOG_POLL_INTERVAL);
         };
         self.note_process_activity(None, Some("process exited"));
         let stdout_bytes = join_capture_reader(stdout_reader, "stdout")?;
         let stderr_bytes = join_capture_reader(stderr_reader, "stderr")?;
         if cancelled {
-            return Err(RrcError::Invalid(
-                "release recovery was cancelled by the user".into(),
-            ));
+            return Err(RrcError::Cancelled);
+        }
+        if let Some(error) = watchdog_stop {
+            return Err(error);
         }
         if let Some(telemetry) = resource_stop {
             return Err(RrcError::ResourceConstrained(format!(
@@ -603,7 +864,8 @@ impl NativeReleaseExecutor {
             .iter()
             .map(|(key, value)| (key.as_str(), value.as_str()))
             .collect::<Vec<_>>();
-        let output = self.command_with_env(program, args, &environment)?;
+        let output =
+            self.command_with_env_and_policy(program, args, &environment, LOCAL_GATE_WATCHDOG)?;
         if !output.status.success() {
             return Err(RrcError::Invalid(format!(
                 "{} failed with status {}: {}",
@@ -616,7 +878,16 @@ impl NativeReleaseExecutor {
     }
 
     fn checked(&self, program: &str, args: &[&str]) -> Result<String, RrcError> {
-        let output = self.command(program, args)?;
+        self.checked_with_policy(program, args, MUTATION_WATCHDOG)
+    }
+
+    fn checked_with_policy(
+        &self,
+        program: &str,
+        args: &[&str],
+        policy: CommandWatchdogPolicy,
+    ) -> Result<String, RrcError> {
+        let output = self.command_with_policy(program, args, policy)?;
         if !output.status.success() {
             return Err(RrcError::Invalid(format!(
                 "{} failed with status {}: {}",
@@ -626,6 +897,17 @@ impl NativeReleaseExecutor {
             )));
         }
         Ok(bounded_output(&output.stdout))
+    }
+
+    fn gh_json(&self, args: &[&str]) -> Result<serde_json::Value, RrcError> {
+        let output = self.command_with_policy("gh", args, PUBLICATION_WATCHDOG)?;
+        if !output.status.success() {
+            return Err(RrcError::Invalid(format!(
+                "GitHub command failed: {}",
+                bounded_output(&output.stderr)
+            )));
+        }
+        serde_json::from_slice(&output.stdout).map_err(RrcError::Json)
     }
 }
 
@@ -669,7 +951,14 @@ impl ReleaseExecutionPort for NativeReleaseExecutor {
                 &["check", "--workspace", "--all-targets"],
                 &resources,
             )
-            .and_then(|_| validate_version_mutation(&self.workspace, &plan, &resources.cargo))
+            .and_then(|_| {
+                validate_version_mutation(
+                    &self.workspace,
+                    &plan,
+                    &resources.cargo,
+                    self.cancelled.as_ref(),
+                )
+            })
         {
             restore_version_mutation(&self.workspace, &plan, &lock_path, &lock_before)?;
             return Err(error);
@@ -741,7 +1030,11 @@ impl ReleaseExecutionPort for NativeReleaseExecutor {
 
     fn push_candidate(&self, admission: ReleaseMutationAdmission) -> Result<String, RrcError> {
         require_kind(admission, ReleaseMutationKind::PushCandidate)?;
-        self.checked("git", &["push", "origin", "HEAD:main"])?;
+        self.checked_with_policy(
+            "git",
+            &["push", "origin", "HEAD:main"],
+            REMOTE_MUTATION_WATCHDOG,
+        )?;
         let commit = self.checked("git", &["rev-parse", "HEAD"])?;
         Ok(format!("origin/main@{}", exact_sha(commit.trim())?))
     }
@@ -785,7 +1078,7 @@ impl ReleaseExecutionPort for NativeReleaseExecutor {
             self.checked("git", &["rev-parse", &format!("{tag}^{{tag}}")])?
                 .trim(),
         )?;
-        self.checked("git", &["push", "origin", &tag])?;
+        self.checked_with_policy("git", &["push", "origin", &tag], REMOTE_MUTATION_WATCHDOG)?;
         Ok((tag, object))
     }
 
@@ -794,21 +1087,18 @@ impl ReleaseExecutionPort for NativeReleaseExecutor {
         repository: &str,
         tag: &str,
     ) -> Result<Option<PublicationReceipt>, RrcError> {
-        let runs = gh_json(
-            &self.workspace,
-            &[
-                "run",
-                "list",
-                "--repo",
-                repository,
-                "--workflow",
-                "release.yml",
-                "--limit",
-                "20",
-                "--json",
-                "databaseId,status,conclusion,headBranch",
-            ],
-        )?;
+        let runs = self.gh_json(&[
+            "run",
+            "list",
+            "--repo",
+            repository,
+            "--workflow",
+            "release.yml",
+            "--limit",
+            "20",
+            "--json",
+            "databaseId,status,conclusion,headBranch",
+        ])?;
         let rows = runs
             .as_array()
             .ok_or_else(|| RrcError::Invalid("release run response is not an array".into()))?;
@@ -836,18 +1126,15 @@ impl ReleaseExecutionPort for NativeReleaseExecutor {
             .get("databaseId")
             .and_then(serde_json::Value::as_u64)
             .ok_or_else(|| RrcError::Invalid("release workflow run id is missing".into()))?;
-        let release = gh_json(
-            &self.workspace,
-            &[
-                "release",
-                "view",
-                tag,
-                "--repo",
-                repository,
-                "--json",
-                "tagName,isDraft,isPrerelease,assets",
-            ],
-        )?;
+        let release = self.gh_json(&[
+            "release",
+            "view",
+            tag,
+            "--repo",
+            repository,
+            "--json",
+            "tagName,isDraft,isPrerelease,assets",
+        ])?;
         if release.get("tagName").and_then(serde_json::Value::as_str) != Some(tag)
             || release.get("isDraft").and_then(serde_json::Value::as_bool) != Some(false)
         {
@@ -876,13 +1163,30 @@ impl ReleaseExecutionPort for NativeReleaseExecutor {
     }
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct CurlGitHubStatusAdapter;
+#[derive(Debug, Clone)]
+pub struct CurlGitHubStatusAdapter {
+    cancelled: Arc<AtomicBool>,
+}
+
+impl Default for CurlGitHubStatusAdapter {
+    fn default() -> Self {
+        Self {
+            cancelled: Arc::new(AtomicBool::new(false)),
+        }
+    }
+}
+
+impl CurlGitHubStatusAdapter {
+    fn with_cancellation(cancelled: Arc<AtomicBool>) -> Self {
+        Self { cancelled }
+    }
+}
 
 impl ExternalHealthPort for CurlGitHubStatusAdapter {
     fn official_status(&self) -> Result<OfficialStatusSnapshot, RrcError> {
         let started = Instant::now();
-        let output = Command::new("curl")
+        let mut command = Command::new("curl");
+        command
             .args([
                 "--proto",
                 "=https",
@@ -894,8 +1198,12 @@ impl ExternalHealthPort for CurlGitHubStatusAdapter {
                 OFFICIAL_STATUS_URL,
             ])
             .env_remove("GH_TOKEN")
-            .env_remove("GITHUB_TOKEN")
-            .output()?;
+            .env_remove("GITHUB_TOKEN");
+        let output = run_bounded_external_command(
+            &mut command,
+            self.cancelled.as_ref(),
+            EXTERNAL_HEALTH_WATCHDOG,
+        )?;
         if started.elapsed() > EXTERNAL_HEALTH_BUDGET {
             return Err(RrcError::Invalid(
                 "official status check exceeded the 15-second budget".into(),
@@ -1018,6 +1326,49 @@ fn repair_worktree_leaf(epoch_id: &str, repair_count: usize, timestamp_micros: i
     format!("{epoch_id}-repair-{repair_count}-{timestamp_micros}")
 }
 
+const REPAIR_HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+const REPAIR_CANCEL_GRACE: Duration = Duration::from_secs(10);
+
+fn controller_stop_is_not_source_failure(error: &RrcError) -> bool {
+    matches!(
+        error,
+        RrcError::WatchdogStalled { .. } | RrcError::WatchdogDeadline { .. } | RrcError::Cancelled
+    )
+}
+
+fn repair_watchdog_error(
+    cancelled: bool,
+    inactive_for: Duration,
+    heartbeat_timeout: Duration,
+) -> Option<RrcError> {
+    if cancelled {
+        Some(RrcError::Cancelled)
+    } else if inactive_for >= heartbeat_timeout {
+        Some(RrcError::WatchdogStalled {
+            operation: "focused repair agent".into(),
+            limit_seconds: heartbeat_timeout.as_secs(),
+        })
+    } else {
+        None
+    }
+}
+
+struct RepairHeartbeatProgress {
+    heartbeat: Arc<Mutex<Instant>>,
+    downstream: Option<Arc<dyn vesper_agent::AgentProgressPort>>,
+}
+
+impl vesper_agent::AgentProgressPort for RepairHeartbeatProgress {
+    fn emit(&self, event: vesper_agent::AgentProgressEvent) {
+        if let Ok(mut heartbeat) = self.heartbeat.lock() {
+            *heartbeat = Instant::now();
+        }
+        if let Some(downstream) = self.downstream.as_ref() {
+            downstream.emit(event);
+        }
+    }
+}
+
 fn run_bounded_repair_agent(
     workspace: &Path,
     record: &mut ReleaseRecoveryRecord,
@@ -1061,12 +1412,14 @@ fn run_bounded_repair_agent(
     if let Some(parent) = repair_root.parent() {
         fs::create_dir_all(parent)?;
     }
-    let added = Command::new("git")
+    let mut add_worktree = Command::new("git");
+    add_worktree
         .current_dir(workspace)
         .args(["worktree", "add", "--detach"])
         .arg(&repair_root)
-        .arg(&base)
-        .output()?;
+        .arg(&base);
+    let added =
+        run_bounded_external_command(&mut add_worktree, cancelled.as_ref(), MUTATION_WATCHDOG)?;
     if !added.status.success() {
         return Err(RrcError::Invalid(format!(
             "release repair worktree creation failed: {}",
@@ -1101,35 +1454,49 @@ fn run_bounded_repair_agent(
         clustered_evidence,
     );
     let runtime_cancel = Arc::new(vesper_runtime::RuntimeCancellation::new());
-    let watcher_cancel = Arc::clone(&runtime_cancel);
-    let watcher_done = Arc::new(AtomicBool::new(false));
-    let watcher_done_thread = Arc::clone(&watcher_done);
-    let cancelled_thread = Arc::clone(&cancelled);
-    let watcher = thread::spawn(move || {
-        while !watcher_done_thread.load(Ordering::Acquire) {
-            if cancelled_thread.load(Ordering::Acquire) {
-                watcher_cancel.cancel();
-                break;
-            }
-            thread::sleep(Duration::from_millis(100));
-        }
-    });
+    let heartbeat = Arc::new(Mutex::new(Instant::now()));
+    let monitored_factory = factory
+        .clone()
+        .with_progress(Arc::new(RepairHeartbeatProgress {
+            heartbeat: Arc::clone(&heartbeat),
+            downstream: factory.progress(),
+        }));
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| RrcError::Invalid(format!("repair runtime failed: {error}")))?;
-    let turn = runtime.block_on(factory.run_coding_turn_in_workspace(
-        repair_root.clone(),
-        prompt,
-        runtime_cancel,
-    ));
-    watcher_done.store(true, Ordering::Release);
-    let _ = watcher.join();
-    let (outcome, history) = turn.map_err(RrcError::Invalid)?;
+    let repair_started = Instant::now();
+    let turn = runtime.block_on(async {
+        let turn = monitored_factory.run_coding_turn_in_workspace(
+            repair_root.clone(),
+            prompt,
+            Arc::clone(&runtime_cancel),
+        );
+        tokio::pin!(turn);
+        loop {
+            tokio::select! {
+                result = &mut turn => break result.map_err(RrcError::Invalid),
+                () = tokio::time::sleep(WATCHDOG_POLL_INTERVAL) => {
+                    let last_progress = heartbeat
+                        .lock()
+                        .map(|observed| *observed)
+                        .unwrap_or(repair_started);
+                    if let Some(error) = repair_watchdog_error(
+                        cancelled.load(Ordering::Acquire),
+                        last_progress.elapsed(),
+                        REPAIR_HEARTBEAT_TIMEOUT,
+                    ) {
+                        runtime_cancel.cancel();
+                        let _ = tokio::time::timeout(REPAIR_CANCEL_GRACE, &mut turn).await;
+                        break Err(error);
+                    }
+                }
+            }
+        }
+    })?;
+    let (outcome, history) = turn;
     if cancelled.load(Ordering::Acquire) {
-        return Err(RrcError::Invalid(
-            "release recovery was cancelled by the user".into(),
-        ));
+        return Err(RrcError::Cancelled);
     }
     let assistant_summary = match &outcome {
         vesper_agent::AgentTurnOutcome::Completed {
@@ -1159,46 +1526,36 @@ fn run_bounded_repair_agent(
             "repair agent did not run a successful focused command after its final edit".into(),
         )
     })?;
-    let checked = Command::new("git")
-        .current_dir(&repair_root)
-        .args(["diff", "--check"])
-        .output()?;
+    let repair_executor = NativeReleaseExecutor::new(&repair_root, Arc::clone(&cancelled))?;
+    let root_executor = NativeReleaseExecutor::new(workspace, Arc::clone(&cancelled))?;
+    let checked = repair_executor.command("git", &["diff", "--check"])?;
     if !checked.status.success() {
         return Err(RrcError::Invalid(format!(
             "repair diff check failed: {}",
             bounded_output(&checked.stderr)
         )));
     }
-    let diff = Command::new("git")
-        .current_dir(&repair_root)
-        .args(["diff", "--binary", "HEAD"])
-        .output()?;
+    let diff = repair_executor.command("git", &["diff", "--binary", "HEAD"])?;
     if !diff.status.success() || diff.stdout.is_empty() {
         return Err(RrcError::Invalid(
             "repair worktree produced no promotable diff".into(),
         ));
     }
-    let root_status = Command::new("git")
-        .current_dir(workspace)
-        .args(["status", "--porcelain"])
-        .output()?;
+    let root_status = root_executor.command("git", &["status", "--porcelain"])?;
     if !root_status.status.success() || !root_status.stdout.is_empty() {
         return Err(RrcError::Invalid(
             "repair promotion requires the controller workspace to remain clean".into(),
         ));
     }
-    let mut apply = Command::new("git")
-        .current_dir(workspace)
-        .args(["apply", "--binary", "--index"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
-    if let Some(mut stdin) = apply.stdin.take() {
+    let mut patch = tempfile::NamedTempFile::new()?;
+    {
         use std::io::Write as _;
-        stdin.write_all(&diff.stdout)?;
+        patch.write_all(&diff.stdout)?;
+        patch.as_file().sync_all()?;
     }
-    let apply_output = apply.wait_with_output()?;
+    let patch_path = patch.path().to_string_lossy().into_owned();
+    let apply_output =
+        root_executor.command("git", &["apply", "--binary", "--index", &patch_path])?;
     if !apply_output.status.success() {
         return Err(RrcError::Invalid(format!(
             "verified repair diff could not be promoted: {}",
@@ -1206,24 +1563,15 @@ fn run_bounded_repair_agent(
         )));
     }
     let fingerprint_short = failure.fingerprint.0.chars().take(12).collect::<String>();
-    let committed = Command::new("git")
-        .current_dir(workspace)
-        .args([
-            "commit",
-            "-m",
-            &format!("fix(release): repair {fingerprint_short}"),
-        ])
-        .output()?;
+    let commit_message = format!("fix(release): repair {fingerprint_short}");
+    let committed = root_executor.command("git", &["commit", "-m", &commit_message])?;
     if !committed.status.success() {
         return Err(RrcError::Invalid(format!(
             "verified repair commit failed: {}",
             bounded_output(&committed.stderr)
         )));
     }
-    let commit = Command::new("git")
-        .current_dir(workspace)
-        .args(["rev-parse", "HEAD"])
-        .output()?;
+    let commit = root_executor.command("git", &["rev-parse", "HEAD"])?;
     let commit = exact_sha(String::from_utf8_lossy(&commit.stdout).trim())?;
     let patch_digest = digest(&diff.stdout);
     let hypothesis: String = if assistant_summary.trim().is_empty() {
@@ -1252,11 +1600,8 @@ fn run_bounded_repair_agent(
     apply_controller_event(record, ReleaseControllerEvent::VerifiedRepairBatch(repairs))?;
     record.mutation.final_candidate_commit = record.release_commit.clone();
     ledger.save(record)?;
-    let _ = Command::new("git")
-        .current_dir(workspace)
-        .args(["worktree", "remove", "--force"])
-        .arg(&repair_root)
-        .output();
+    let repair_path = repair_root.to_string_lossy().into_owned();
+    let _ = root_executor.command("git", &["worktree", "remove", "--force", &repair_path]);
     Ok(())
 }
 
@@ -1438,6 +1783,9 @@ pub fn advance_release(
                         ledger.save(record)?;
                         return Ok(());
                     }
+                    Err(error) if controller_stop_is_not_source_failure(&error) => {
+                        return Err(error);
+                    }
                     Err(error) => {
                         record.mutation.local_gates[index].state = SettlementState::Failed;
                         record.mutation.local_gates[index].evidence_ref =
@@ -1523,6 +1871,7 @@ pub fn advance_release(
                 vec![pushed],
                 None,
             )?;
+            record.note_progress(true);
             ledger.save(record)?;
         }
         ReleaseRecoveryState::RemoteGateRunning
@@ -1925,9 +2274,7 @@ fn watch_resource_deferred(
         let deadline = Instant::now() + delay;
         while Instant::now() < deadline {
             if cancelled.load(Ordering::Acquire) {
-                return Err(RrcError::Invalid(
-                    "release recovery was cancelled by the user".into(),
-                ));
+                return Err(RrcError::Cancelled);
             }
             thread::sleep(Duration::from_millis(100));
         }
@@ -1945,9 +2292,7 @@ fn wait_for_remote_poll(delay: Duration, cancelled: &AtomicBool) -> Result<(), R
     let deadline = Instant::now() + delay;
     while Instant::now() < deadline {
         if cancelled.load(Ordering::Acquire) {
-            return Err(RrcError::Invalid(
-                "release recovery was cancelled by the user".into(),
-            ));
+            return Err(RrcError::Cancelled);
         }
         thread::sleep(
             deadline
@@ -1971,6 +2316,23 @@ fn release_worker_terminal(state: ReleaseRecoveryState) -> bool {
     )
 }
 
+fn release_liveness_operation(state: ReleaseRecoveryState) -> &'static str {
+    match state {
+        ReleaseRecoveryState::LocalVerification => "local verification",
+        ReleaseRecoveryState::RemoteGateRunning | ReleaseRecoveryState::WaitingForMatrix => {
+            "remote matrix watch"
+        }
+        ReleaseRecoveryState::ClassifyingFailure | ReleaseRecoveryState::FocusedRepair => {
+            "focused repair agent"
+        }
+        ReleaseRecoveryState::Tagging | ReleaseRecoveryState::Publishing => {
+            "publication verification"
+        }
+        ReleaseRecoveryState::ResourceDeferred => "resource recovery watch",
+        _ => "release controller step",
+    }
+}
+
 #[allow(clippy::too_many_arguments)] // background-worker composition owns distinct state, ports and cancellation.
 fn run_release_worker(
     workspace: &Path,
@@ -1989,10 +2351,14 @@ fn run_release_worker(
         Arc::clone(activity),
         resource_governor,
     )?;
+    let github = GhCliEvidenceAdapter::with_cancellation(Arc::clone(&cancelled));
+    let health = CurlGitHubStatusAdapter::with_cancellation(Arc::clone(&cancelled));
     loop {
         let Some(mut record) = ledger.load()? else {
             return Ok(());
         };
+        record.note_liveness_active(release_liveness_operation(record.state));
+        ledger.save(&record)?;
         update_release_activity(activity, &record);
         if record.state == ReleaseRecoveryState::ResourceDeferred {
             watch_resource_deferred(&mut record, &ledger, &executor, &cancelled, activity)?;
@@ -2006,8 +2372,8 @@ fn run_release_worker(
                 repository,
                 ledger: &ledger,
                 executor: &executor,
-                github: &GhCliEvidenceAdapter,
-                health: &CurlGitHubStatusAdapter,
+                github: &github,
+                health: &health,
                 repair_factory,
                 cancelled: Arc::clone(&cancelled),
             },
@@ -2022,6 +2388,10 @@ fn run_release_worker(
             continue;
         }
         if release_worker_terminal(record.state) {
+            record.liveness = Default::default();
+            record.refresh_progress();
+            ledger.save(&record)?;
+            update_release_activity(activity, &record);
             break;
         }
         if record.state == before
@@ -2032,6 +2402,10 @@ fn run_release_worker(
                     | ReleaseRecoveryState::RetryAdmissible
             )
         {
+            record.liveness = Default::default();
+            record.refresh_progress();
+            ledger.save(&record)?;
+            update_release_activity(activity, &record);
             break;
         }
     }
@@ -2180,7 +2554,16 @@ fn persist_worker_failure(root: &Path, repo_identity: &str, error: &RrcError) {
     let Ok(Some(mut record)) = ledger.load() else {
         return;
     };
+    if matches!(error, RrcError::Cancelled) {
+        return;
+    }
+    if controller_stop_is_not_source_failure(error) {
+        record.note_liveness_failure(error);
+        let _ = ledger.save(&record);
+        return;
+    }
     if record.state == ReleaseRecoveryState::LocalVerification {
+        record.liveness = Default::default();
         if let Some(gate) = record
             .mutation
             .local_gates
@@ -2199,6 +2582,9 @@ fn persist_worker_failure(root: &Path, repo_identity: &str, error: &RrcError) {
                 None,
             );
         }
+        let _ = ledger.save(&record);
+    } else {
+        record.note_liveness_failure(error);
         let _ = ledger.save(&record);
     }
 }
@@ -2872,6 +3258,7 @@ fn validate_version_mutation(
     workspace: &Path,
     plan: &VersionMutationPlan,
     cargo: &CargoResourcePolicy,
+    cancelled: &AtomicBool,
 ) -> Result<(), RrcError> {
     let root_path = workspace.join("Cargo.toml");
     let root = fs::read_to_string(&root_path)?;
@@ -2902,11 +3289,13 @@ fn validate_version_mutation(
     }
     let registry = fs::read_to_string(workspace.join("registry/agent.json"))?;
     update_registry_manifest(&registry, &plan.after, &plan.after)?;
-    let metadata = Command::new("cargo")
+    let mut metadata_command = Command::new("cargo");
+    metadata_command
         .args(["metadata", "--locked", "--no-deps", "--format-version", "1"])
         .current_dir(workspace)
-        .envs(cargo.environment())
-        .output()?;
+        .envs(cargo.environment());
+    let metadata =
+        run_bounded_external_command(&mut metadata_command, cancelled, LOCAL_GATE_WATCHDOG)?;
     if !metadata.status.success() {
         return Err(RrcError::Invalid(format!(
             "post-mutation cargo metadata failed: {}",
@@ -3000,21 +3389,6 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), RrcError> {
     temp.persist(path)
         .map_err(|error| RrcError::Io(error.error))?;
     Ok(())
-}
-
-fn gh_json(workspace: &Path, args: &[&str]) -> Result<serde_json::Value, RrcError> {
-    let output = Command::new("gh")
-        .args(args)
-        .current_dir(workspace)
-        .env_remove("GH_DEBUG")
-        .output()?;
-    if !output.status.success() {
-        return Err(RrcError::Invalid(format!(
-            "GitHub command failed: {}",
-            bounded_output(&output.stderr)
-        )));
-    }
-    serde_json::from_slice(&output.stdout).map_err(RrcError::Json)
 }
 
 fn exact_sha(value: &str) -> Result<String, RrcError> {
@@ -3305,7 +3679,7 @@ mod tests {
         let cancelled = AtomicBool::new(true);
         let started = Instant::now();
         let error = wait_for_remote_poll(Duration::from_secs(30), &cancelled).unwrap_err();
-        assert!(error.to_string().contains("cancelled by the user"));
+        assert!(matches!(error, RrcError::Cancelled));
         assert!(started.elapsed() < Duration::from_secs(1));
     }
 
@@ -3884,5 +4258,387 @@ mod tests {
                 .summary
                 .contains("Host capacity recovered")
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn silent_local_command_is_stopped_by_state_specific_watchdog() {
+        let temporary = tempfile::tempdir().unwrap();
+        let executor =
+            NativeReleaseExecutor::new(temporary.path(), Arc::new(AtomicBool::new(false))).unwrap();
+        let error = executor
+            .command_with_env_and_policy(
+                "sh",
+                &["-c", "sleep 5"],
+                &[],
+                CommandWatchdogPolicy {
+                    operation: "local fixture",
+                    inactivity_timeout: Duration::from_millis(150),
+                    hard_deadline: None,
+                },
+            )
+            .expect_err("silent local child must be stopped");
+
+        assert!(matches!(error, RrcError::WatchdogStalled { .. }));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn silent_external_command_is_stopped_by_inactivity_watchdog() {
+        let cancelled = AtomicBool::new(false);
+        let mut command = Command::new("sh");
+        command.args(["-c", "sleep 5"]);
+        let started = Instant::now();
+        let error = run_bounded_external_command(
+            &mut command,
+            &cancelled,
+            CommandWatchdogPolicy {
+                operation: "silent fixture",
+                inactivity_timeout: Duration::from_millis(150),
+                hard_deadline: Some(Duration::from_secs(2)),
+            },
+        )
+        .expect_err("silent child must not outlive its inactivity budget");
+
+        assert!(matches!(error, RrcError::WatchdogStalled { .. }));
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn output_progress_extends_inactivity_window() {
+        let cancelled = AtomicBool::new(false);
+        let mut command = Command::new("sh");
+        command.args([
+            "-c",
+            "i=0; while [ $i -lt 5 ]; do echo tick; i=$((i+1)); sleep 0.05; done",
+        ]);
+        let output = run_bounded_external_command(
+            &mut command,
+            &cancelled,
+            CommandWatchdogPolicy {
+                operation: "progress fixture",
+                inactivity_timeout: Duration::from_millis(120),
+                hard_deadline: None,
+            },
+        )
+        .expect("observable progress must keep the command alive");
+
+        assert!(output.status.success());
+        assert_eq!(String::from_utf8_lossy(&output.stdout).lines().count(), 5);
+    }
+
+    #[test]
+    fn long_running_with_continuous_progress_has_no_absolute_deadline() {
+        let state = command_liveness_state(
+            false,
+            Duration::from_secs(43 * 60 * 60),
+            Duration::from_secs(1),
+            None,
+            LOCAL_GATE_WATCHDOG,
+        );
+
+        assert_eq!(state, CommandLivenessState::Active);
+        assert!(LOCAL_GATE_WATCHDOG.hard_deadline.is_none());
+    }
+
+    #[test]
+    fn quiet_but_alive_child_transition_resets_progress() {
+        let state = command_liveness_state(
+            false,
+            Duration::from_secs(60),
+            Duration::from_secs(60),
+            Some(Duration::from_millis(1)),
+            CommandWatchdogPolicy {
+                operation: "quiet local fixture",
+                inactivity_timeout: Duration::from_secs(30),
+                hard_deadline: None,
+            },
+        );
+
+        assert_eq!(state, CommandLivenessState::QuietButAlive);
+    }
+
+    #[test]
+    fn tiny_rss_jitter_does_not_refresh_process_heartbeat() {
+        let mut previous = ResourceTelemetry {
+            process_count: 2,
+            rustc_count: 1,
+            process_tree_rss_bytes: 64 * 1024 * 1024,
+            ..ResourceTelemetry::default()
+        };
+        let before = process_tree_heartbeat_observation(&previous);
+        previous.process_tree_rss_bytes += 1;
+        let after = process_tree_heartbeat_observation(&previous);
+        assert_eq!(
+            before, after,
+            "one RSS byte must not be meaningful progress"
+        );
+        previous.process_tree_rss_bytes += 1024 * 1024 * 1024;
+        assert_eq!(
+            after,
+            process_tree_heartbeat_observation(&previous),
+            "RSS growth of any size remains telemetry, not progress"
+        );
+
+        let inactivity = Duration::from_secs(31 * 60);
+        let process_inactive_for = if before != after {
+            Duration::ZERO
+        } else {
+            inactivity
+        };
+        let state = command_liveness_state(
+            false,
+            inactivity,
+            inactivity,
+            Some(process_inactive_for),
+            CommandWatchdogPolicy {
+                operation: "RSS jitter fixture",
+                inactivity_timeout: Duration::from_secs(30 * 60),
+                hard_deadline: None,
+            },
+        );
+
+        assert_eq!(state, CommandLivenessState::Stagnant);
+    }
+
+    #[test]
+    fn material_process_tree_transition_supports_quiet_but_alive() {
+        let previous = ResourceTelemetry {
+            process_count: 2,
+            rustc_count: 1,
+            process_tree_rss_bytes: 64 * 1024 * 1024,
+            ..ResourceTelemetry::default()
+        };
+        let mut child_started = previous.clone();
+        child_started.process_count += 1;
+        let mut rustc_started = previous.clone();
+        rustc_started.rustc_count += 1;
+
+        assert_ne!(
+            process_tree_heartbeat_observation(&previous),
+            process_tree_heartbeat_observation(&child_started)
+        );
+        assert_ne!(
+            process_tree_heartbeat_observation(&previous),
+            process_tree_heartbeat_observation(&rustc_started)
+        );
+
+        let inactivity = Duration::from_secs(31 * 60);
+        let state = command_liveness_state(
+            false,
+            inactivity,
+            inactivity,
+            Some(Duration::ZERO),
+            CommandWatchdogPolicy {
+                operation: "process transition fixture",
+                inactivity_timeout: Duration::from_secs(30 * 60),
+                hard_deadline: None,
+            },
+        );
+
+        assert_eq!(state, CommandLivenessState::QuietButAlive);
+    }
+
+    #[test]
+    fn external_request_hard_deadline_is_operation_scoped() {
+        let state = command_liveness_state(
+            false,
+            Duration::from_secs(6 * 60),
+            Duration::ZERO,
+            None,
+            REMOTE_COMMAND_WATCHDOG,
+        );
+
+        assert_eq!(state, CommandLivenessState::TimedOut);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn external_command_cancellation_preempts_watchdog_deadlines() {
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let signal = Arc::clone(&cancelled);
+        let trigger = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(100));
+            signal.store(true, Ordering::Release);
+        });
+        let mut command = Command::new("sh");
+        command.args(["-c", "sleep 5"]);
+        let error = run_bounded_external_command(
+            &mut command,
+            cancelled.as_ref(),
+            CommandWatchdogPolicy {
+                operation: "cancellation fixture",
+                inactivity_timeout: Duration::from_secs(1),
+                hard_deadline: Some(Duration::from_secs(2)),
+            },
+        )
+        .expect_err("user cancellation must stop the owned process group");
+        trigger.join().expect("cancellation trigger");
+
+        assert!(matches!(error, RrcError::Cancelled));
+    }
+
+    #[test]
+    fn repair_heartbeat_distinguishes_progress_stall_and_cancellation() {
+        let heartbeat = Arc::new(Mutex::new(Instant::now() - Duration::from_secs(5)));
+        let progress = RepairHeartbeatProgress {
+            heartbeat: Arc::clone(&heartbeat),
+            downstream: None,
+        };
+        vesper_agent::AgentProgressPort::emit(
+            &progress,
+            vesper_agent::AgentProgressEvent::TurnStarted,
+        );
+        assert!(heartbeat.lock().unwrap().elapsed() < Duration::from_secs(1));
+
+        assert!(repair_watchdog_error(false, Duration::ZERO, Duration::from_secs(10)).is_none());
+        assert!(matches!(
+            repair_watchdog_error(false, Duration::from_secs(10), Duration::from_secs(10)),
+            Some(RrcError::WatchdogStalled { .. })
+        ));
+        assert!(matches!(
+            repair_watchdog_error(true, Duration::ZERO, Duration::from_secs(10)),
+            Some(RrcError::Cancelled)
+        ));
+    }
+
+    #[test]
+    fn local_gate_watchdog_stop_is_not_persisted_as_source_failure() {
+        struct WatchdogRelease;
+        impl ReleaseExecutionPort for WatchdogRelease {
+            fn prepare_version_bump(
+                &self,
+                _bump: &str,
+                _admission: ReleaseMutationAdmission,
+            ) -> Result<VersionBumpReceipt, RrcError> {
+                unreachable!("fixture starts after version preparation")
+            }
+
+            fn run_local_gate(&self, _gate: &LocalGateRecord) -> Result<String, RrcError> {
+                Err(RrcError::WatchdogStalled {
+                    operation: "local verification command".into(),
+                    limit_seconds: 1,
+                })
+            }
+
+            fn commit_candidate(
+                &self,
+                _version: &str,
+                _admission: ReleaseMutationAdmission,
+            ) -> Result<String, RrcError> {
+                unreachable!("watchdog stop must prevent candidate commit")
+            }
+
+            fn push_candidate(
+                &self,
+                _admission: ReleaseMutationAdmission,
+            ) -> Result<String, RrcError> {
+                unreachable!("watchdog stop must prevent candidate push")
+            }
+
+            fn create_and_push_tag(
+                &self,
+                _version: &str,
+                _commit: &str,
+                _admission: ReleaseMutationAdmission,
+            ) -> Result<(String, String), RrcError> {
+                unreachable!("watchdog stop must prevent tagging")
+            }
+
+            fn publication(
+                &self,
+                _repository: &str,
+                _tag: &str,
+            ) -> Result<Option<PublicationReceipt>, RrcError> {
+                unreachable!("watchdog stop must prevent publication")
+            }
+        }
+
+        struct UnusedHealth;
+        impl ExternalHealthPort for UnusedHealth {
+            fn official_status(&self) -> Result<OfficialStatusSnapshot, RrcError> {
+                unreachable!("local verification must not query external health")
+            }
+        }
+
+        let temporary = tempfile::tempdir().unwrap();
+        let ledger = ReleaseLedger::open(temporary.path(), "repo").unwrap();
+        let mut record =
+            crate::release_recovery::start_release("repo", "patch", "main", "abcdef123456")
+                .unwrap();
+        record.state = ReleaseRecoveryState::LocalVerification;
+        record.mutation.version_after = Some("0.24.5".into());
+        record.mutation.local_gates = vec![LocalGateRecord {
+            name: "fixture".into(),
+            state: SettlementState::NotStarted,
+            command: "fixture".into(),
+            evidence_ref: None,
+        }];
+
+        let error = advance_release(
+            &mut record,
+            ReleaseAdvanceContext {
+                workspace: temporary.path(),
+                repository: "owner/repo",
+                ledger: &ledger,
+                executor: &WatchdogRelease,
+                github: &GreenGithub,
+                health: &UnusedHealth,
+                repair_factory: None,
+                cancelled: Arc::new(AtomicBool::new(false)),
+            },
+        )
+        .expect_err("watchdog stop must leave the local gate unsettled");
+
+        assert!(matches!(error, RrcError::WatchdogStalled { .. }));
+        assert_eq!(record.state, ReleaseRecoveryState::LocalVerification);
+        assert_eq!(
+            record.mutation.local_gates[0].state,
+            SettlementState::Running
+        );
+        assert!(record.mutation.local_gates[0].evidence_ref.is_none());
+        assert!(record.failures.is_empty());
+
+        persist_worker_failure(temporary.path(), "repo", &error);
+        let persisted = ledger.load().unwrap().expect("persisted watchdog stop");
+        assert_eq!(persisted.state, ReleaseRecoveryState::LocalVerification);
+        assert_eq!(
+            persisted.mutation.local_gates[0].state,
+            SettlementState::Running
+        );
+        assert!(persisted.mutation.local_gates[0].evidence_ref.is_none());
+        assert_eq!(
+            persisted.liveness.state,
+            crate::release_recovery::ReleaseLivenessState::Stalled
+        );
+    }
+
+    #[test]
+    fn local_gate_cancellation_race_does_not_create_failure_evidence() {
+        let temporary = tempfile::tempdir().unwrap();
+        let ledger = ReleaseLedger::open(temporary.path(), "repo").unwrap();
+        let mut record =
+            crate::release_recovery::start_release("repo", "patch", "main", "abcdef123456")
+                .unwrap();
+        record.state = ReleaseRecoveryState::LocalVerification;
+        record.mutation.local_gates = vec![LocalGateRecord {
+            name: "fixture".into(),
+            state: SettlementState::Running,
+            command: "fixture".into(),
+            evidence_ref: None,
+        }];
+        ledger.save(&record).unwrap();
+
+        persist_worker_failure(temporary.path(), "repo", &RrcError::Cancelled);
+
+        let persisted = ledger.load().unwrap().expect("preserved checkpoint");
+        assert_eq!(persisted.state, ReleaseRecoveryState::LocalVerification);
+        assert_eq!(
+            persisted.mutation.local_gates[0].state,
+            SettlementState::Running
+        );
+        assert!(persisted.mutation.local_gates[0].evidence_ref.is_none());
+        assert!(persisted.failures.is_empty());
     }
 }

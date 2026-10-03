@@ -1,5 +1,18 @@
 # Foundation Evidence Index
 
+## RRC liveness/watchdog repair (2026-10-02)
+
+- Execution report: [`2026-10-02-rrc-liveness-watchdog-repair.md`](2026-10-02-rrc-liveness-watchdog-repair.md)
+- Owning PRD: [`../Agent_Vesper_Release_Recovery_Controller_PRD.md`](../Agent_Vesper_Release_Recovery_Controller_PRD.md)
+- Source base: `89dfb4eac5644c1738f55c8ea273a04dc6ac5e11`
+- Verdict: **IMPLEMENTED WITH FOCUSED LOCAL REGRESSIONS; NO RELEASE OR BROAD
+  VERIFICATION.** RRC local and repair work now use meaningful-progress inactivity
+  without elapsed-runtime ceilings; individual GitHub/publication/health and remote
+  Git operations remain bounded and cancellation-aware. Exact-SHA dispatch starts a
+  fresh remote-watch window, and stopped-worker liveness persists into the shared
+  TUI/ACP progress projection. The historical dirty RRC worktree and live `v0.24.5`
+  epoch were not modified or reconciled.
+
 ## v0.24.5 deterministic governor repair (2026-10-02)
 
 - Current execution report: [`2026-10-02-v0.24.5-rrc-deterministic-governor-repair.md`](2026-10-02-v0.24.5-rrc-deterministic-governor-repair.md)
