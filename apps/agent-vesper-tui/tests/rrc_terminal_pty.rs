@@ -37,11 +37,12 @@ printf '\033[2JCHILD_CLEAR_MARKER\n'
 printf '\033]0;CHILD_TITLE\007OSC_MARKER\n' >&2
 printf 'Progress 10%%\rProgress 90%%\rProgress 100%%\n'
 printf 'control:\001\002\003:end\n' >&2
-# End each concurrently drained stream with a terminal-control and a
-# carriage-return boundary. Both records contain the compact markers, so a
-# narrow RUN tail can prove that the terminal control was inert and the CR
-# split was captured regardless of which reader reaches it last.
+# End each concurrently drained stream with the same generic telemetry marker,
+# then a terminal-control and carriage-return boundary. Either valid reader
+# ordering therefore leaves every compact proof in the bounded RUN tail.
+printf 'TELEMETRY_CAPTURE\n'
 printf '\033[2JANSI_CAPTURE CR_CAPTURE\rANSI_CAPTURE CR_CAPTURE\n'
+printf 'TELEMETRY_CAPTURE\n' >&2
 printf '\033]0;CHILD_TITLE\007ANSI_CAPTURE CR_CAPTURE\rANSI_CAPTURE CR_CAPTURE\n' >&2
 sleep 0.40
 "#,
@@ -102,42 +103,56 @@ sleep 0.40
         .writes
         .iter()
         .find(|write| write.text == "RUN")
-        .expect("RUN heading rendered");
+        .unwrap_or_else(|| {
+            panic!(
+                "RUN heading was not rendered: {}",
+                parsed_write_tail(&trace)
+            )
+        });
     let active = trace
         .writes
         .iter()
         .find(|write| write.text.contains("Release recovery"))
-        .expect("registered release worker rendered");
-    let compiling = trace
+        .unwrap_or_else(|| {
+            panic!(
+                "registered release worker was not rendered: {}",
+                parsed_write_tail(&trace)
+            )
+        });
+    let telemetry = trace
         .writes
         .iter()
-        .filter(|write| write.text.contains("Compiling crate-"))
+        .filter(|write| write.text.contains("TELEMETRY_CAPTURE"))
         .collect::<Vec<_>>();
     assert!(
-        !compiling.is_empty(),
-        "captured child output never reached telemetry"
+        !telemetry.is_empty(),
+        "paired child marker never reached telemetry: {}",
+        parsed_write_tail(&trace)
     );
     assert!(
-        compiling
+        telemetry
             .iter()
             .all(|write| write.row >= run.row && write.col >= run.col),
-        "telemetry escaped RUN rect: RUN=({}, {}), writes={compiling:?}",
+        "telemetry escaped RUN rect: RUN=({}, {}), marker writes={telemetry:?}; {}",
         run.row,
-        run.col
+        run.col,
+        parsed_write_tail(&trace)
     );
     assert!(
         trace
             .writes
             .iter()
             .any(|write| write.text.contains("ANSI_CAPTURE")),
-        "sanitized ANSI payload was not rendered as inert telemetry text"
+        "sanitized ANSI payload was not rendered as inert telemetry text: {}",
+        parsed_write_tail(&trace)
     );
     assert!(
         trace
             .writes
             .iter()
             .any(|write| write.text.contains("CR_CAPTURE")),
-        "carriage-return progress was not captured as bounded telemetry"
+        "carriage-return progress was not captured as bounded telemetry: {}",
+        parsed_write_tail(&trace)
     );
 
     let first_active = trace
@@ -149,10 +164,16 @@ sleep 0.40
         .writes
         .iter()
         .position(|write| write.text.contains("Ready"))
-        .unwrap_or_else(|| panic!("idle Ready rendered after settlement: {:?}", trace.writes));
+        .unwrap_or_else(|| {
+            panic!(
+                "idle Ready was not rendered after settlement: {}",
+                parsed_write_tail(&trace)
+            )
+        });
     assert!(
         first_ready > first_active,
-        "Ready appeared before the registered worker settled"
+        "Ready appeared before the registered worker settled: {}",
+        parsed_write_tail(&trace)
     );
     assert!(active.col >= run.col, "active state escaped sidebar");
 
@@ -161,17 +182,31 @@ sleep 0.40
             .writes
             .iter()
             .any(|write| write.text.contains("Session")),
-        "session layout was never rendered"
+        "session layout was never rendered: {}",
+        parsed_write_tail(&trace)
     );
-    let last_compiling = trace
+    let last_telemetry = trace
         .writes
         .iter()
-        .rposition(|write| write.text.contains("Compiling crate-"))
-        .expect("compilation telemetry write");
+        .rposition(|write| write.text.contains("TELEMETRY_CAPTURE"))
+        .expect("paired telemetry marker write");
     assert!(
-        last_compiling < first_ready,
-        "old telemetry was redrawn after the idle settlement frame"
+        last_telemetry < first_ready,
+        "old telemetry was redrawn after the idle settlement frame: {}",
+        parsed_write_tail(&trace)
     );
+}
+
+fn parsed_write_tail(trace: &TerminalTrace) -> String {
+    let start = trace.writes.len().saturating_sub(32);
+    trace.writes[start..]
+        .iter()
+        .map(|write| {
+            let text = write.text.chars().take(160).collect::<String>();
+            format!("({}, {}) {text:?}", write.row, write.col)
+        })
+        .collect::<Vec<_>>()
+        .join(" | ")
 }
 
 fn contains(haystack: &[u8], needle: &[u8]) -> bool {
