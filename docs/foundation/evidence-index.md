@@ -1,5 +1,17 @@
 # Foundation Evidence Index
 
+## OpenAI TUI startup responsiveness (2026-10-04)
+
+- Execution report: [`2026-10-04-openai-tui-startup-responsiveness.md`](2026-10-04-openai-tui-startup-responsiveness.md)
+- Verdict: **OPENAI STARTUP NO LONGER BLOCKS TUI INPUT; FOCUSED PTY PROOF
+  PASSED; NO RELEASE ACTION.** Credential lookup and account-model discovery
+  run in the background. A stalled loopback `/models` fixture accepts typed
+  and pasted input within 1.2s, then applies either the catalog or an HTTP 500
+  without freezing later input. `cargo fmt --all -- --check`, default and
+  `integration-test-harness` TUI Clippy, and `git diff --check` passed. No
+  push, tag, publication, installation, broad verification, or VRO-19 work
+  occurred.
+
 ## RRC explicit-version target repair (2026-10-03)
 
 - Execution report: [`2026-10-03-rrc-explicit-version-target-repair.md`](2026-10-03-rrc-explicit-version-target-repair.md)

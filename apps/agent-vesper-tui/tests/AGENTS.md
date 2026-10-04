@@ -6,6 +6,11 @@ Verify terminal interaction through the production TUI binary with isolated stat
 
 ## Ownership
 
+- `openai_startup_responsiveness.rs` owns the real-PTY proof that a stalled
+  OpenAI `/models` fixture cannot block typed or bracketed-paste input, and
+  that both catalog completion and HTTP failure leave the event loop
+  responsive. It requires `integration-test-harness` and never calls a live
+  provider.
 - `xai_plain_turn_pty.py` owns the real TUI-process Grok-session `hello` smoke:
   full Code-mode registry, reasoning projection, stale-control suppression and
   exactly one loopback transport dispatch without live quota.

@@ -836,6 +836,16 @@ async fn register_default_providers(
     ),
     vesper_runtime::RuntimeError,
 > {
+    #[cfg(feature = "integration-test-harness")]
+    let openai = match std::env::var("AGENT_VESPER_OPENAI_TEST_URL") {
+        Ok(endpoint) => vesper_provider_openai::OpenAiFactory::for_loopback(
+            &endpoint,
+            vesper_provider_openai::auth::AuthenticationMode::ApiKey,
+        )
+        .map_err(|_| vesper_runtime::RuntimeError::Provider)?,
+        Err(_) => vesper_provider_openai::OpenAiFactory::default(),
+    };
+    #[cfg(not(feature = "integration-test-harness"))]
     let openai = vesper_provider_openai::OpenAiFactory::default();
     let openai_policy = openai.control_policy();
     registry
@@ -1440,6 +1450,61 @@ fn project_release_milestones(
     session.release_milestone_cursor = Some((task.epoch_id.clone(), latest.sequence));
 }
 
+const OPENAI_MODEL_LOADING_STATUS: &str = "Loading OpenAI account models…";
+
+fn spawn_openai_model_discovery(
+    factory: &vesper_provider_openai::OpenAiFactory,
+) -> tokio::task::JoinHandle<
+    Result<vesper_provider_openai::AvailableModels, vesper_provider::ProviderError>,
+> {
+    let factory = factory.clone();
+    tokio::spawn(async move {
+        factory
+            .available_models(Arc::new(vesper_runtime::RuntimeCancellation::new()))
+            .await
+    })
+}
+
+fn apply_openai_model_discovery(
+    session: &mut TuiSession,
+    provider_id: &ProviderId,
+    factory: &vesper_provider_openai::OpenAiFactory,
+    openai_controls: &mut Option<(
+        ProviderSuperpowerSurface,
+        vesper_provider_openai::OpenAiSuperpowerPolicy,
+    )>,
+    openai_model_notice: &mut String,
+    result: Result<vesper_provider_openai::AvailableModels, vesper_provider::ProviderError>,
+) {
+    let available = match result {
+        Ok(available) => {
+            *openai_model_notice = if available.models.is_empty() {
+                "No supported models returned for this account. Check sign-in or retry.".into()
+            } else {
+                "Select a model with ↑/↓, then press Enter.".into()
+            };
+            available
+        }
+        Err(error) => {
+            *openai_model_notice = format!(
+                "{}{}",
+                error.info.safe_message.as_str(),
+                error
+                    .http_status
+                    .map(|status| format!(" (HTTP {status})"))
+                    .unwrap_or_default()
+            );
+            vesper_provider_openai::AvailableModels::unavailable(factory.control_policy().mode)
+        }
+    };
+    session.state.status = Some(openai_model_notice.clone());
+    session.policy = Arc::new(available.policy());
+    *openai_controls = Some((
+        ProviderSuperpowerSurface::new(provider_id.clone(), factory.superpowers_for(&available)),
+        available.policy(),
+    ));
+}
+
 #[allow(clippy::too_many_arguments)] // single-call composition boundary
 async fn drive_loop(
     show_landing: bool,
@@ -1479,7 +1544,28 @@ async fn drive_loop(
     });
     let mut terminal = Terminal::new(Backend::new(stdout()))
         .map_err(|error| format!("terminal init failed: {error}"))?;
-    if let Some(provider) = auth.clone() {
+    // OpenAI credential lookup and model discovery are network/credential-store
+    // work. They must not run before the event loop, or keyboard and paste
+    // input stays unread for the whole request. Other providers keep the
+    // existing startup screen because this repair is scoped to OpenAI.
+    let mut openai_auth_task: Option<tokio::task::JoinHandle<bool>> = None;
+    let mut openai_discovery_task: Option<
+        tokio::task::JoinHandle<
+            Result<vesper_provider_openai::AvailableModels, vesper_provider::ProviderError>,
+        >,
+    > = None;
+    let mut openai_account_pending = false;
+    if provider_id.as_str() == "openai" {
+        openai_account_pending = true;
+        session.state.status = Some(OPENAI_MODEL_LOADING_STATUS.into());
+        if auth.is_some() {
+            let registry = Arc::clone(registry);
+            let id = provider_id.clone();
+            openai_auth_task = Some(tokio::spawn(async move {
+                registry.credential_present(&id).await.unwrap_or(false)
+            }));
+        }
+    } else if let Some(provider) = auth.clone() {
         ensure_provider_authenticated(
             &mut terminal,
             registry,
@@ -1494,7 +1580,7 @@ async fn drive_loop(
     let mut openai_controls = None;
     let mut xai_controls = None;
     let mut openai_model_notice = String::new();
-    let mut refresh_openai_models = provider_id.as_str() == "openai";
+    let mut refresh_openai_models = provider_id.as_str() == "openai" && openai_auth_task.is_none();
     let mut refresh_xai_models = provider_id.as_str() == "xai";
     let mut was_in_settings = false;
     let mut landing_pending = show_landing;
@@ -1508,58 +1594,75 @@ async fn drive_loop(
             session.state.status =
                 Some("Finish or discard voice input before opening Settings.".into());
         }
+        if let Some(task) = openai_auth_task.as_ref()
+            && task.is_finished()
+        {
+            let present = openai_auth_task
+                .take()
+                .expect("finished OpenAI auth task")
+                .await
+                .unwrap_or(false);
+            if let Some(provider) = auth.clone()
+                && AuthenticationIntent::Startup.requires_screen(present)
+            {
+                let mut events = agent_vesper_tui::LiveSettingsEvents::default();
+                let mut hooks = agent_vesper_tui::AuthUiHooks::default();
+                agent_vesper_tui::run_authentication_panel(
+                    &mut terminal,
+                    registry,
+                    provider.id.as_str(),
+                    &session.state.preferences.theme,
+                    &mut events,
+                    &mut hooks,
+                    false,
+                )
+                .await
+                .map(|_| ())?;
+            }
+            refresh_openai_models = true;
+        }
         if provider_id.as_str() == "openai"
+            && openai_discovery_task.is_none()
             && (refresh_openai_models || (session.settings_menu_open && !was_in_settings))
         {
             refresh_openai_models = false;
-            terminal
-                .draw(|frame| {
-                    agent_vesper_tui::settings_menu::render_menu(
-                        frame,
-                        &["Loading account models…".into()],
-                        0,
-                        "Settings · model",
-                        "",
-                        "",
-                        &session.state.preferences.theme,
-                    )
-                })
-                .map_err(|_| "Could not redraw model loading status")?;
-            let factory = openai_factory;
-            let available = match factory
-                .available_models(Arc::new(vesper_runtime::RuntimeCancellation::new()))
+            openai_account_pending = true;
+            session.state.status = Some(OPENAI_MODEL_LOADING_STATUS.into());
+            openai_discovery_task = Some(spawn_openai_model_discovery(openai_factory));
+        }
+        if let Some(task) = openai_discovery_task.as_ref()
+            && task.is_finished()
+        {
+            match openai_discovery_task
+                .take()
+                .expect("finished OpenAI discovery task")
                 .await
             {
-                Ok(available) => {
-                    openai_model_notice = if available.models.is_empty() {
-                        "No supported models returned for this account. Check sign-in or retry."
-                            .into()
-                    } else {
-                        "Select a model with ↑/↓, then press Enter.".into()
-                    };
-                    available
-                }
-                Err(error) => {
-                    openai_model_notice = format!(
-                        "{}{}",
-                        error.info.safe_message.as_str(),
-                        error
-                            .http_status
-                            .map(|status| format!(" (HTTP {status})"))
-                            .unwrap_or_default()
+                Ok(result) => apply_openai_model_discovery(
+                    session,
+                    provider_id,
+                    openai_factory,
+                    &mut openai_controls,
+                    &mut openai_model_notice,
+                    result,
+                ),
+                Err(_) => {
+                    openai_model_notice = "OpenAI model discovery stopped unexpectedly".into();
+                    session.state.status = Some(openai_model_notice.clone());
+                    let unavailable = vesper_provider_openai::AvailableModels::unavailable(
+                        openai_factory.control_policy().mode,
                     );
-                    vesper_provider_openai::AvailableModels::unavailable(
-                        factory.control_policy().mode,
-                    )
+                    session.policy = Arc::new(unavailable.policy());
+                    openai_controls = Some((
+                        ProviderSuperpowerSurface::new(
+                            provider_id.clone(),
+                            openai_factory.superpowers_for(&unavailable),
+                        ),
+                        unavailable.policy(),
+                    ));
                 }
-            };
-            session.state.status = Some(openai_model_notice.clone());
-            session.policy = Arc::new(available.policy());
-            let descriptors = factory.superpowers_for(&available);
-            openai_controls = Some((
-                ProviderSuperpowerSurface::new(provider_id.clone(), descriptors),
-                available.policy(),
-            ));
+            }
+            openai_account_pending = false;
         }
         if provider_id.as_str() == "xai"
             && (refresh_xai_models || (session.settings_menu_open && !was_in_settings))
@@ -1710,6 +1813,7 @@ async fn drive_loop(
         // Mid-turn queued prompt (Claude Code parity): a prompt submitted
         // while a turn was running fires the moment that turn completes.
         if !session.agent_running
+            && !openai_account_pending
             && !session.queued_prompts.is_empty()
             && session.state.phase() == PlanPhase::Normal
             && let Some(text) = session.queued_prompts.pop_front()
@@ -2293,6 +2397,13 @@ async fn drive_loop(
                         });
                         continue;
                     }
+                }
+                if openai_account_pending
+                    && (!session.input.trim().starts_with('/')
+                        || !session.pending_text_pastes.is_empty())
+                {
+                    session.state.status = Some(OPENAI_MODEL_LOADING_STATUS.into());
+                    continue;
                 }
                 let compact_paste_display = (!session.pending_text_pastes.is_empty()).then(|| {
                     let pasted_chars = session
@@ -2965,17 +3076,23 @@ async fn drive_loop(
                 } else if let Some(text) = prompt_to_spawn
                     && session.state.phase() == PlanPhase::Normal
                 {
-                    spawn_submitted_prompt(
-                        agent,
-                        agent_tools,
-                        &approval_port_for_react,
-                        vro,
-                        surface,
-                        cognition_bundle,
-                        memory_stores,
-                        text,
-                        session,
-                    );
+                    if openai_account_pending {
+                        session.input = text;
+                        session.state.preferences.composer_cursor = session.input.len();
+                        session.state.status = Some(OPENAI_MODEL_LOADING_STATUS.into());
+                    } else {
+                        spawn_submitted_prompt(
+                            agent,
+                            agent_tools,
+                            &approval_port_for_react,
+                            vro,
+                            surface,
+                            cognition_bundle,
+                            memory_stores,
+                            text,
+                            session,
+                        );
+                    }
                 }
                 // Phase 8 (ADR 0011): drain any pending memory op against the
                 // durable vesper_memory stores. The op was stashed by

@@ -6,6 +6,11 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `2026-10-04-openai-tui-startup-responsiveness.md` owns the OpenAI TUI
+  startup input freeze, background credential/model discovery, stalled
+  loopback regression, and the explicit no-release/no-broad-verification
+  boundary.
+
 - `2026-10-03-rrc-explicit-version-target-repair.md` owns the typed
   bump-or-exact-version selector, stable-version normalization and fail-closed
   validation, immediate target status, equal-target no-op validation/candidate

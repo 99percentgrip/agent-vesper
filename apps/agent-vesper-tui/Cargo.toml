@@ -28,7 +28,10 @@ voice-flm = ["voice-conversation"]
 swarm = ["vesper-harness/swarm"]
 # VB-PRD-001 Phase 2: the hosted Bridge tool surface (default-off).
 bridge = ["vesper-harness/bridge"]
-integration-test-harness = ["vesper-provider-xai/integration-test-harness"]
+integration-test-harness = [
+    "vesper-provider-openai/integration-test-harness",
+    "vesper-provider-xai/integration-test-harness",
+]
 
 [dependencies]
 vesper-voice = { path = "../../crates/vesper-voice", version = "=0.24.5", optional = true, features = ["stt-sidecar", "tts-subprocess"] }
@@ -132,6 +135,10 @@ required-features = ["voice-flm"]
 [[test]]
 name = "voice_flm_assets"
 required-features = ["voice-conversation"]
+
+[[test]]
+name = "openai_startup_responsiveness"
+required-features = ["integration-test-harness"]
 
 [[example]]
 name = "r3_full_path_repro"

@@ -700,8 +700,17 @@ business logic.
 - Provider request controls are projected only from the active registry
   superpower surface. Hidden controls from a previous authentication mode are
   cleared before dispatch rather than sent as stale provider configuration.
-- `integration-test-harness` may redirect xAI to a loopback endpoint solely for
-  process-level composition tests; normal builds contain no such route.
+- `integration-test-harness` may redirect xAI, and OpenAI model discovery, to a
+  loopback endpoint solely for process-level composition tests. OpenAI uses
+  `AGENT_VESPER_OPENAI_TEST_URL` and accepts only the adapter's loopback
+  policy. Normal builds contain no such route.
+- OpenAI startup credential lookup and account-model discovery run in the
+  background. The event loop shows `Loading OpenAI account models…` and keeps
+  accepting keyboard and bracketed-paste input while that work is pending.
+  Completion replaces the account model policy; failure updates status and
+  stays interactive. Provider prompts are not dispatched until the account
+  check and discovery settle. Authentication screens and model validation are
+  unchanged.
 
 - MCP discovery, browser presets and deferred calls retain one conversation
   owner through direct/VRO/ReAct registries built by `build_hosted_registry`.
