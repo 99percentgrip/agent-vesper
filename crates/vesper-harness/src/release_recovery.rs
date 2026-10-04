@@ -574,6 +574,9 @@ pub enum ReleaseLivenessState {
     Stalled,
     DeadlineExceeded,
     Failed,
+    /// The owning controller process is gone. The epoch stays recoverable and
+    /// this is not source, CI, or publication evidence.
+    OwnerExited,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -582,6 +585,23 @@ pub struct ReleaseLivenessRecord {
     pub operation: String,
     pub detail: String,
     pub observed_at: Option<DateTime<Utc>>,
+    /// Process that last claimed `Active`. Absent means Active is not proof
+    /// that a controller still owns the epoch.
+    #[serde(default)]
+    pub owner_pid: Option<u32>,
+}
+
+static RELEASE_OWNER_RELINQUISHED: AtomicBool = AtomicBool::new(false);
+
+/// Stops this process from persisting `Active` ownership. Later ledger saves
+/// for this process's owner pid become `OwnerExited` instead.
+pub fn relinquish_release_owner_writes() {
+    RELEASE_OWNER_RELINQUISHED.store(true, std::sync::atomic::Ordering::Release);
+}
+
+#[must_use]
+pub fn release_owner_writes_relinquished() -> bool {
+    RELEASE_OWNER_RELINQUISHED.load(std::sync::atomic::Ordering::Acquire)
 }
 
 impl ReleaseLivenessRecord {
@@ -1116,7 +1136,9 @@ impl ReleaseRecoveryRecord {
             ReleaseRecoveryState::Complete => "Release recovery is complete".into(),
             ReleaseRecoveryState::Cancelled => "Release recovery was cancelled".into(),
         };
-        let headline = if self.liveness.blocked() {
+        let headline = if self.liveness.state == ReleaseLivenessState::OwnerExited {
+            "Recoverable — controller owner exited; release epoch is not running".into()
+        } else if self.liveness.blocked() {
             format!(
                 "Paused — {} · {}",
                 self.liveness.operation, self.liveness.detail
@@ -1162,6 +1184,7 @@ impl ReleaseRecoveryRecord {
             operation: bounded(operation.into(), 128),
             detail: "controller operation is active".into(),
             observed_at: Some(now),
+            owner_pid: Some(std::process::id()),
         };
         self.updated_at = now;
         self.refresh_progress();
@@ -1195,6 +1218,7 @@ impl ReleaseRecoveryRecord {
             operation: bounded(operation, 128),
             detail: bounded(detail, 512),
             observed_at: Some(Utc::now()),
+            owner_pid: self.liveness.owner_pid,
         };
         self.note_progress_milestone(self.liveness.detail.clone());
     }
@@ -1639,7 +1663,10 @@ fn progress_tasks(record: &ReleaseRecoveryRecord) -> Vec<ReleaseProgressTask> {
         .local_gates
         .iter()
         .map(|gate| {
-            let state = if record.liveness.blocked() && gate.state == SettlementState::Running {
+            let state = if (record.liveness.blocked()
+                || record.liveness.state == ReleaseLivenessState::OwnerExited)
+                && gate.state == SettlementState::Running
+            {
                 ReleaseProgressState::Paused
             } else {
                 progress_state_from_settlement(gate.state)
@@ -1866,7 +1893,7 @@ fn stage_state(
     if record.state == ReleaseRecoveryState::Cancelled {
         return ReleaseProgressState::Cancelled;
     }
-    if record.liveness.blocked() {
+    if record.liveness.blocked() || record.liveness.state == ReleaseLivenessState::OwnerExited {
         return ReleaseProgressState::Paused;
     }
     if matches!(
@@ -2864,6 +2891,17 @@ impl ReleaseLedger {
                 "record repository does not match ledger".into(),
             ));
         }
+        let mut owned = record.clone();
+        if release_owner_writes_relinquished()
+            && owned.liveness.state == ReleaseLivenessState::Active
+            && owned.liveness.owner_pid == Some(std::process::id())
+        {
+            owned.liveness.state = ReleaseLivenessState::OwnerExited;
+            owned.liveness.detail = "controller owner exited; epoch remains recoverable".into();
+            owned.liveness.observed_at = Some(Utc::now());
+            owned.refresh_progress();
+        }
+        let record = &owned;
         let lock = OpenOptions::new()
             .create(true)
             .truncate(false)
@@ -4712,7 +4750,7 @@ where
         "The completed objective was admitted automatically."
     };
     Ok(NaturalReleaseAdmission::Started(format!(
-        "{admission_note}\nLocal verification started in an isolated release workspace.",
+        "{admission_note}\nRelease controller started and is preparing the release target."
     )))
 }
 
@@ -4856,6 +4894,70 @@ fn github_repository_slug(remote: &str) -> Result<String, RrcError> {
     Ok(format!("{owner}/{repository}"))
 }
 
+/// Clears `Active` liveness when no live owner process can be shown.
+/// The release state, gates, and evidence are unchanged.
+pub fn reconcile_unowned_release(
+    workspace: &Path,
+) -> Result<Option<ReleaseRecoveryRecord>, RrcError> {
+    let identity = repository_identity_for_workspace(workspace)?;
+    let root = default_release_root()
+        .ok_or_else(|| RrcError::Invalid("no user-owned release state root is available".into()))?;
+    let ledger = ReleaseLedger::open(root, &identity)?;
+    let Some(mut record) = ledger.load()? else {
+        return Ok(None);
+    };
+    let owner_live = release_owner_is_live(&identity, record.liveness.owner_pid);
+    if settle_absent_owner(&mut record, owner_live) {
+        ledger.save(&record)?;
+    }
+    Ok(Some(record))
+}
+
+pub(crate) fn settle_absent_owner(record: &mut ReleaseRecoveryRecord, owner_live: bool) -> bool {
+    if record.liveness.state != ReleaseLivenessState::Active || owner_live {
+        return false;
+    }
+    record.liveness.state = ReleaseLivenessState::OwnerExited;
+    if record.liveness.operation.is_empty() {
+        record.liveness.operation = "release controller".into();
+    }
+    record.liveness.detail = "controller owner is gone; epoch remains recoverable".into();
+    record.liveness.observed_at = Some(Utc::now());
+    record.refresh_progress();
+    true
+}
+
+fn release_owner_is_live(repo_identity: &str, owner_pid: Option<u32>) -> bool {
+    let Some(pid) = owner_pid else {
+        return false;
+    };
+    if pid == std::process::id() {
+        return crate::release_executor::active_release_worker(repo_identity).is_some();
+    }
+    foreign_process_alive(pid)
+}
+
+fn foreign_process_alive(pid: u32) -> bool {
+    if pid == 0 {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        std::process::Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success())
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = pid;
+        false
+    }
+}
+
 /// Read-only RRC status for `/ci`; never creates a state root.
 #[must_use]
 pub fn release_status_for_workspace(workspace: &Path) -> Option<String> {
@@ -4864,12 +4966,9 @@ pub fn release_status_for_workspace(workspace: &Path) -> Option<String> {
     if !root.is_dir() {
         return None;
     }
-    let repo_identity = repository_identity(&canonical).ok()?;
-    let ledger = ReleaseLedger {
-        root,
-        repo_key: sha256_hex(repo_identity.as_bytes()),
-    };
-    ledger.load().ok().flatten().map(|record| {
+    let record = reconcile_unowned_release(&canonical).ok().flatten()?;
+    let _ = root;
+    Some({
         let mut status = record.render_status();
         if let Some(worker) =
             crate::release_executor::active_release_worker_for_workspace(&canonical)
@@ -5916,7 +6015,9 @@ mod tests {
         let NaturalReleaseAdmission::Started(message) = outcome else {
             panic!("production admission must start the controller");
         };
-        assert!(message.contains("Local verification started"));
+        assert!(
+            message.contains("Release controller started and is preparing the release target.")
+        );
 
         let current = ledger.load().unwrap().unwrap();
         assert_ne!(current.epoch_id, previous.epoch_id);
@@ -7530,6 +7631,38 @@ mod tests {
             loaded.state,
             ReleaseRecoveryState::RemoteGateRunning,
             "liveness failure must not be fabricated as CI/source settlement"
+        );
+    }
+
+    #[test]
+    fn dead_owner_is_recoverable_and_not_active_or_a_source_failure() {
+        let mut record = start_release("repo", "0.24.5", "main", "abcdef123456").unwrap();
+        record.note_liveness_active("preparing release target");
+        assert_eq!(record.liveness.owner_pid, Some(std::process::id()));
+        assert!(!settle_absent_owner(&mut record, true));
+        assert_eq!(record.liveness.state, ReleaseLivenessState::Active);
+        assert!(settle_absent_owner(&mut record, false));
+        assert_eq!(record.liveness.state, ReleaseLivenessState::OwnerExited);
+        assert_eq!(record.state, ReleaseRecoveryState::LocalVerification);
+        assert!(record.failures.is_empty());
+        assert!(
+            record.progress.headline.contains("not running"),
+            "{}",
+            record.progress.headline
+        );
+        assert!(
+            record
+                .progress
+                .tasks
+                .iter()
+                .all(|task| task.state != ReleaseProgressState::Running)
+        );
+        let mut child = std::process::Command::new("true").spawn().unwrap();
+        let pid = child.id();
+        child.wait().unwrap();
+        assert!(
+            !foreign_process_alive(pid),
+            "exited process {pid} still looked alive"
         );
     }
 }

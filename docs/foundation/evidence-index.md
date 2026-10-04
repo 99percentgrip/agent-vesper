@@ -1,5 +1,15 @@
 # Foundation Evidence Index
 
+## RRC PRD audit ownership repair (2026-10-04)
+
+- Execution report: [`2026-10-04-rrc-prd-audit-ownership-repair.md`](2026-10-04-rrc-prd-audit-ownership-repair.md)
+- Owning PRD: [`../Agent_Vesper_Release_Recovery_Controller_PRD.md`](../Agent_Vesper_Release_Recovery_Controller_PRD.md)
+- Verdict: **DEAD CONTROLLER OWNERSHIP AND HIDDEN VERSION PREPARATION CORRECTED.
+  NO RELEASE ACTION.** A dead or missing owner is `OwnerExited`, not `Active`.
+  Version preparation and the resolved release version are persisted before
+  `cargo check`. OpenAI startup does not contact unselected xAI discovery.
+  Same-target historical reconciliation is unchanged.
+
 ## OpenAI TUI startup responsiveness (2026-10-04)
 
 - Execution report: [`2026-10-04-openai-tui-startup-responsiveness.md`](2026-10-04-openai-tui-startup-responsiveness.md)

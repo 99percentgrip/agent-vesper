@@ -9,6 +9,7 @@ use std::io::{self, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::os::fd::FromRawFd;
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -346,4 +347,62 @@ fn stalled_openai_discovery_accepts_input_then_applies_catalog() {
 #[test]
 fn stalled_openai_discovery_failure_leaves_input_responsive() {
     run_case(false);
+}
+
+#[test]
+fn openai_startup_does_not_wait_for_unselected_xai_discovery() {
+    let home = tempfile::tempdir().expect("home");
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+    let endpoint = format!("http://{}/responses", listener.local_addr().expect("addr"));
+    let contacted = Arc::new(AtomicBool::new(false));
+    let server_contacted = Arc::clone(&contacted);
+    thread::spawn(move || {
+        listener.set_nonblocking(true).expect("listener");
+        let started = Instant::now();
+        while started.elapsed() < Duration::from_secs(12) {
+            if listener.accept().is_ok() {
+                server_contacted.store(true, Ordering::Release);
+                return;
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+    });
+    let (master, slave) = open_pty().expect("pty");
+    let mut input = master.try_clone().expect("input");
+    let output = Arc::new(Mutex::new(Vec::new()));
+    spawn_reader(master, Arc::clone(&output));
+    let mut child = Command::new(env!("CARGO_BIN_EXE_agent-vesper-tui"))
+        .arg("--resume")
+        .arg("missing-openai-startup-session")
+        .current_dir(home.path())
+        .env("TERM", "xterm-256color")
+        .env("AGENT_VESPER_PROVIDER", "openai")
+        .env("AGENT_VESPER_HOME", home.path())
+        .env(
+            "AGENT_VESPER_OPENAI_CREDENTIALS_PATH",
+            home.path().join("openai-credentials.json"),
+        )
+        .env(
+            "AGENT_VESPER_XAI_CREDENTIALS_PATH",
+            home.path().join("xai-credentials.json"),
+        )
+        .env("AGENT_VESPER_XAI_TEST_URL", &endpoint)
+        .env("XDG_CONFIG_HOME", home.path().join("config"))
+        .env("HOME", home.path())
+        .stdin(Stdio::from(slave.try_clone().expect("stdin")))
+        .stdout(Stdio::from(slave.try_clone().expect("stdout")))
+        .stderr(Stdio::from(slave))
+        .spawn()
+        .expect("launch");
+    let visible = wait_for(&output, b"Agent Vesper", Duration::from_secs(8));
+    stop(&mut child, &mut input);
+    assert!(
+        visible,
+        "TUI did not render while unselected xAI discovery was stalled:\n{}",
+        screen(&output)
+    );
+    assert!(
+        !contacted.load(Ordering::Acquire),
+        "unselected xAI discovery was contacted before the TUI could render"
+    );
 }

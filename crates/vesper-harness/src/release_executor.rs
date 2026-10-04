@@ -503,6 +503,12 @@ pub trait ReleaseExecutionPort: Send + Sync {
         None
     }
 
+    fn preview_release_version(&self, _target: &str) -> Result<(String, String), RrcError> {
+        Err(RrcError::Invalid(
+            "release version preview is unavailable for this executor".into(),
+        ))
+    }
+
     fn prepare_version_bump(
         &self,
         bump: &str,
@@ -919,12 +925,27 @@ impl ReleaseExecutionPort for NativeReleaseExecutor {
             .and_then(|activity| activity.resource_telemetry.clone())
     }
 
+    fn preview_release_version(&self, target: &str) -> Result<(String, String), RrcError> {
+        let plan = build_version_mutation_plan(&self.workspace, target)?;
+        Ok((plan.before, plan.after))
+    }
+
     fn prepare_version_bump(
         &self,
         target: &str,
         admission: ReleaseMutationAdmission,
     ) -> Result<VersionBumpReceipt, RrcError> {
         require_kind(admission, ReleaseMutationKind::VersionBump)?;
+        if let Some(activity) = &self.activity
+            && let Ok(mut activity) = activity.lock()
+        {
+            activity.current_gate = Some("version-preparation".into());
+            activity.current_command = Some("cargo check --workspace --all-targets".into());
+            activity.current_child = Some("cargo".into());
+            activity.detail = "Preparing release target and validating the version graph".into();
+            activity.gate_started_at = Some(Instant::now());
+            activity.last_activity_at = Instant::now();
+        }
         if !self
             .checked("git", &["status", "--porcelain"])?
             .trim()
@@ -1702,15 +1723,46 @@ pub fn advance_release(
     match record.state {
         ReleaseRecoveryState::LocalVerification => {
             if record.mutation.version_after.is_none() {
+                if record.mutation.local_gates.is_empty()
+                    && let Ok((before, after)) =
+                        executor.preview_release_version(record.objective.version.as_str())
+                {
+                    record.release_version = Some(after);
+                    record.mutation.version_before = Some(before);
+                    let mut gates = vec![LocalGateRecord {
+                        name: "version-preparation".into(),
+                        state: SettlementState::Running,
+                        command: "cargo check --workspace --all-targets".into(),
+                        evidence_ref: None,
+                    }];
+                    gates.extend(production_local_gates());
+                    record.mutation.local_gates = gates;
+                    record.note_liveness_active("preparing release target");
+                    record.note_progress_milestone(
+                        "Preparing release target and validating the version graph",
+                    );
+                    ledger.save(record)?;
+                }
                 let receipt = executor.prepare_version_bump(
                     record.objective.version.as_str(),
                     admit_release_mutation(record, ReleaseMutationKind::VersionBump)?,
                 )?;
                 record.mutation.source_commit = record.release_commit.clone();
-                record.mutation.version_before = Some(receipt.before);
-                record.mutation.version_after = Some(receipt.after);
+                record.mutation.version_before = Some(receipt.before.clone());
+                record.mutation.version_after = Some(receipt.after.clone());
+                record.release_version = Some(receipt.after);
                 record.mutation.version_files = receipt.files;
-                record.mutation.local_gates = production_local_gates();
+                if let Some(gate) = record
+                    .mutation
+                    .local_gates
+                    .iter_mut()
+                    .find(|gate| gate.name == "version-preparation")
+                {
+                    gate.state = SettlementState::Succeeded;
+                    gate.evidence_ref = Some("local:version-preparation".into());
+                } else {
+                    record.mutation.local_gates = production_local_gates();
+                }
                 record.note_progress_milestone(format!(
                     "Version preparation completed; {} local gates are ready",
                     record.mutation.local_gates.len()
@@ -2657,6 +2709,90 @@ pub(crate) fn active_release_worker_count_for_repo(repo_identity: &str) -> usize
 pub fn active_release_worker_for_workspace(workspace: &Path) -> Option<ReleaseWorkerSnapshot> {
     let identity = crate::release_recovery::repository_identity_for_workspace(workspace).ok()?;
     active_release_worker(&identity)
+}
+
+/// Live in-process worker, or a non-running recoverable epoch. A dead owner
+/// is persisted as `OwnerExited` and is never rendered as Active or Ready.
+#[must_use]
+pub fn release_run_snapshot_for_workspace(workspace: &Path) -> Option<ReleaseWorkerSnapshot> {
+    if let Some(live) = active_release_worker_for_workspace(workspace) {
+        return Some(live);
+    }
+    let record = crate::release_recovery::reconcile_unowned_release(workspace).ok()??;
+    if matches!(
+        record.state,
+        ReleaseRecoveryState::Idle
+            | ReleaseRecoveryState::Complete
+            | ReleaseRecoveryState::Cancelled
+    ) {
+        return None;
+    }
+    let recoverable =
+        record.liveness.state != crate::release_recovery::ReleaseLivenessState::Active;
+    Some(ReleaseWorkerSnapshot {
+        repo_identity: record.repo_identity,
+        epoch_id: record.epoch_id,
+        stage: if recoverable {
+            "Release recoverable".into()
+        } else {
+            "Release controller".into()
+        },
+        detail: if recoverable {
+            record.progress.headline.clone()
+        } else {
+            format!(
+                "Release controller process {} is still running",
+                record.liveness.owner_pid.unwrap_or(0)
+            )
+        },
+        cancellable: false,
+        current_gate: record
+            .mutation
+            .local_gates
+            .iter()
+            .find(|gate| gate.state == SettlementState::Running)
+            .map(|gate| gate.name.clone()),
+        current_command: None,
+        current_child: None,
+        gate_elapsed_secs: None,
+        last_activity_ago_secs: 0,
+        completed_gates: record
+            .mutation
+            .local_gates
+            .iter()
+            .filter(|gate| gate.state == SettlementState::Succeeded)
+            .count(),
+        total_gates: record.mutation.local_gates.len(),
+        version_before: record.mutation.version_before,
+        version_after: record.mutation.version_after.clone(),
+        candidate_sha: record.release_commit,
+        retry_budget: String::new(),
+        failure_fingerprint: None,
+        recent_output: Vec::new(),
+        process_alive: !recoverable,
+        progress: record.progress,
+        resource_deferred: record.state == ReleaseRecoveryState::ResourceDeferred,
+        resource_telemetry: record.resource_deferred.map(|deferred| deferred.telemetry),
+    })
+}
+
+pub fn relinquish_release_ownership() {
+    crate::release_recovery::relinquish_release_owner_writes();
+    let Some(root) = default_release_root() else {
+        return;
+    };
+    let Ok(guard) = active_workers().lock() else {
+        return;
+    };
+    for identity in guard.keys() {
+        let Ok(ledger) = ReleaseLedger::open(root.clone(), identity) else {
+            continue;
+        };
+        let Ok(Some(record)) = ledger.load() else {
+            continue;
+        };
+        let _ = ledger.save(&record);
+    }
 }
 
 /// Renders the registered controller's live state for text-only hosts such as
@@ -3895,6 +4031,137 @@ mod tests {
         assert!(
             !evidence.repository_checks_green,
             "missing local-gate evidence must not satisfy outage admission"
+        );
+    }
+
+    #[test]
+    fn version_preparation_is_persisted_before_the_expensive_check() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = tempfile::tempdir().unwrap();
+        let ledger = ReleaseLedger::open(root.path(), "repo").unwrap();
+        let mut record =
+            crate::release_recovery::start_release("repo", "0.24.5", "main", "abcdef123456")
+                .unwrap();
+        ledger.save(&record).unwrap();
+        struct Exec {
+            root: std::path::PathBuf,
+        }
+        impl ReleaseExecutionPort for Exec {
+            fn preview_release_version(&self, _: &str) -> Result<(String, String), RrcError> {
+                Ok(("0.24.4".into(), "0.24.5".into()))
+            }
+            fn prepare_version_bump(
+                &self,
+                _: &str,
+                admission: ReleaseMutationAdmission,
+            ) -> Result<VersionBumpReceipt, RrcError> {
+                require_kind(admission, ReleaseMutationKind::VersionBump)?;
+                let saved = ReleaseLedger::open(self.root.clone(), "repo")
+                    .unwrap()
+                    .load()
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(saved.release_version.as_deref(), Some("0.24.5"));
+                assert!(saved.mutation.local_gates.iter().any(|gate| {
+                    gate.name == "version-preparation" && gate.state == SettlementState::Running
+                }));
+                assert_eq!(
+                    saved.liveness.state,
+                    crate::release_recovery::ReleaseLivenessState::Active
+                );
+                Ok(VersionBumpReceipt {
+                    before: "0.24.4".into(),
+                    after: "0.24.5".into(),
+                    files: Vec::new(),
+                })
+            }
+            fn run_local_gate(&self, gate: &LocalGateRecord) -> Result<String, RrcError> {
+                Ok(gate.name.clone())
+            }
+            fn commit_candidate(
+                &self,
+                _: &str,
+                _: ReleaseMutationAdmission,
+            ) -> Result<String, RrcError> {
+                unreachable!("commit is outside this test")
+            }
+            fn push_candidate(&self, _: ReleaseMutationAdmission) -> Result<String, RrcError> {
+                unreachable!("push is outside this test")
+            }
+            fn create_and_push_tag(
+                &self,
+                _: &str,
+                _: &str,
+                _: ReleaseMutationAdmission,
+            ) -> Result<(String, String), RrcError> {
+                unreachable!("tag is outside this test")
+            }
+            fn publication(
+                &self,
+                _: &str,
+                _: &str,
+            ) -> Result<Option<PublicationReceipt>, RrcError> {
+                Ok(None)
+            }
+        }
+        struct Quiet;
+        impl GitHubEvidencePort for Quiet {
+            fn matrix_for_sha(
+                &self,
+                _: &str,
+                _: &str,
+            ) -> Result<Vec<crate::release_recovery::GateRecord>, RrcError> {
+                Ok(Vec::new())
+            }
+            fn job_log(&self, _: &str, _: u64) -> Result<String, RrcError> {
+                Ok(String::new())
+            }
+            fn rerun_job(&self, _: &str, _: u64) -> Result<(), RrcError> {
+                Ok(())
+            }
+            fn rerun_failed(&self, _: &str, _: u64) -> Result<(), RrcError> {
+                Ok(())
+            }
+            fn rerun_workflow(&self, _: &str, _: u64) -> Result<(), RrcError> {
+                Ok(())
+            }
+        }
+        struct Unused;
+        impl ExternalHealthPort for Unused {
+            fn official_status(&self) -> Result<OfficialStatusSnapshot, RrcError> {
+                Ok(OfficialStatusSnapshot {
+                    degraded: false,
+                    summary: "unused".into(),
+                    evidence_ref: "unused".into(),
+                })
+            }
+        }
+        advance_release(
+            &mut record,
+            ReleaseAdvanceContext {
+                workspace: workspace.path(),
+                repository: "owner/repo",
+                ledger: &ledger,
+                executor: &Exec {
+                    root: root.path().to_path_buf(),
+                },
+                github: &Quiet,
+                health: &Unused,
+                repair_factory: None,
+                cancelled: Arc::new(AtomicBool::new(false)),
+            },
+        )
+        .unwrap();
+        assert_eq!(record.release_version.as_deref(), Some("0.24.5"));
+        assert!(record.mutation.local_gates.iter().any(|gate| {
+            gate.name == "version-preparation" && gate.state == SettlementState::Succeeded
+        }));
+        assert!(
+            record
+                .mutation
+                .local_gates
+                .iter()
+                .any(|gate| gate.name == "workspace-verify")
         );
     }
 

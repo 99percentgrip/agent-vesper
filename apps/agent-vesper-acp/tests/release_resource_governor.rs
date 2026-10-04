@@ -66,7 +66,8 @@ fn acp_process_release_status_uses_governor_for_every_cargo_path() {
     let started = process.response(3);
     assert!(started.get("error").is_none(), "{started}");
     assert!(
-        update_text(process.transcript()).contains("Local verification started"),
+        update_text(process.transcript())
+            .contains("Release controller started and is preparing the release target."),
         "the ACP command must admit the controller rather than dispatch a provider"
     );
     wait_for_receipt(&receipts, "gate");

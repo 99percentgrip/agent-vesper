@@ -704,6 +704,8 @@ business logic.
   loopback endpoint solely for process-level composition tests. OpenAI uses
   `AGENT_VESPER_OPENAI_TEST_URL` and accepts only the adapter's loopback
   policy. Normal builds contain no such route.
+- Unselected provider discovery does not run before the event loop. OpenAI
+  startup must not wait on xAI account model discovery.
 - OpenAI startup credential lookup and account-model discovery run in the
   background. The event loop shows `Loading OpenAI account models…` and keeps
   accepting keyboard and bracketed-paste input while that work is pending.

@@ -3357,7 +3357,9 @@ pub async fn run_multi_provider(initial: &str) -> Result<(), ()> {
     } else {
         adapter
     };
-    adapter.run_stdio().await.map_err(|_| ())
+    let result = adapter.run_stdio().await.map_err(|_| ());
+    vesper_harness::release_executor::relinquish_release_ownership();
+    result
 }
 
 /// Projects the LM Studio factory's cached native catalog into the footer

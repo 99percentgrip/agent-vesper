@@ -85,7 +85,11 @@ Z.ai and Playwright MCP server descriptors.
   starts a fresh remote-matrix window under the separate 20-minute no-evidence bound.
   Watchdog outcomes are persisted as typed
   liveness failures, never source/CI evidence, and both hosts render the shared
-  progress headline after worker exit or restart. Worker admission is
+  progress headline after worker exit or restart. `Active` stores the owner pid.
+  A missing or dead owner becomes `OwnerExited` and stays recoverable; it is not
+  a source failure and must not be rendered as a live run. Version preparation
+  persists the resolved release version and a visible `version-preparation` gate
+  before the expensive workspace check. Worker admission is
   registered before the launcher acknowledges startup; the registry retains the
   owned join handle, cancellation token, epoch identity and live activity until
   settlement. Its bounded telemetry snapshot is updated from persisted gate changes,

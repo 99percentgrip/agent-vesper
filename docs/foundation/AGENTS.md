@@ -6,6 +6,10 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `2026-10-04-rrc-prd-audit-ownership-repair.md` owns the full-PRD audit
+  classification, dead-owner liveness, visible version preparation, unselected
+  provider startup isolation, and the no-release boundary.
+
 - `2026-10-04-openai-tui-startup-responsiveness.md` owns the OpenAI TUI
   startup input freeze, background credential/model discovery, stalled
   loopback regression, and the explicit no-release/no-broad-verification

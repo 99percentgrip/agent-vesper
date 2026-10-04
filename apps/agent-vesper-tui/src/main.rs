@@ -624,6 +624,7 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
         &mut mcp_stores,
     )
     .await;
+    vesper_harness::release_executor::relinquish_release_ownership();
     let _ = leave_raw_mode();
     #[cfg(feature = "swarm")]
     {
@@ -873,11 +874,8 @@ async fn register_default_providers(
     };
     #[cfg(not(feature = "integration-test-harness"))]
     let xai = vesper_provider_xai::XaiFactory::default();
-    if vesper_provider::ProviderCredentialPort::credential_present(&xai).unwrap_or(false) {
-        let _ = xai
-            .available_models(Arc::new(vesper_runtime::RuntimeCancellation::new()))
-            .await;
-    }
+    // Model discovery for a non-selected provider must not run before the
+    // event loop. xAI catalog refresh stays inside the xAI startup path.
     registry
         .register_with_all(
             xai.clone(),
@@ -1395,7 +1393,7 @@ impl AgentProgressPort for SessionStatusPort {
 fn release_background_task(
     workspace: &std::path::Path,
 ) -> Option<agent_vesper_tui::ui::BackgroundTaskState> {
-    vesper_harness::release_executor::active_release_worker_for_workspace(workspace).map(|task| {
+    vesper_harness::release_executor::release_run_snapshot_for_workspace(workspace).map(|task| {
         agent_vesper_tui::ui::BackgroundTaskState {
             epoch_id: task.epoch_id,
             label: task.stage,

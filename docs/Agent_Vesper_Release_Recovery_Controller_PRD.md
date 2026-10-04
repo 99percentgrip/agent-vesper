@@ -1100,6 +1100,17 @@ CANCELLATION/RESTART ACCEPTANCE ARE VERIFIED. Production release publication
 remains intentionally unexecuted and is not required by this non-publishing
 completion.**
 
+The 2026-10-04 ownership repair does not reopen publication. Version
+preparation is persisted as a visible `version-preparation` gate, with the
+resolved release version, before the expensive workspace check. `Active`
+liveness now carries an owner pid and is cleared to `OwnerExited` when that
+process is gone; that is recoverable state, not a source failure, and hosts
+must not render it as a live RUN or as Ready. Admission says the controller
+started and is preparing the target, not that local verification has started,
+until that preparation is visible. Same-target historical candidate
+reconciliation is unchanged. Evidence:
+[`foundation/2026-10-04-rrc-prd-audit-ownership-repair.md`](foundation/2026-10-04-rrc-prd-audit-ownership-repair.md).
+
 The shared implementation lives in
 `crates/vesper-harness/src/release_recovery.rs` and
 `crates/vesper-harness/src/release_executor.rs`. The 2026-10-02 liveness repair
