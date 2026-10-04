@@ -181,7 +181,14 @@ Own durable project documentation and evidence-backed engineering records.
   `foundation/2026-10-03-rrc-pty-stream-neutral-test-oracle-repair.md` records
   the residual stdout-only bounded-tail oracle diagnosis, paired stream-neutral
   marker repair, ten independent real-PTY passes, focused checks, and explicit
-  no-production-change/no-full-verify boundary.
+  no-production-change/no-full-verify boundary; and
+  `foundation/2026-10-03-rrc-explicit-version-target-repair.md` records typed
+  bump-or-exact-version admission, equal-target no-op behavior and immediate
+  status, same-target canonical-descendant reconciliation with archived candidate/CI
+  evidence, final-audit closure of the mismatched-workspace descendant bypass,
+  pushed-tag/publication refusal, frozen slash-oracle preservation,
+  acceptance-inventory repair, requested local verification receipts, and the
+  no-release boundary.
 - Root PRD files (`*-prd.md`) own accepted phased requirement documents
   (e.g. `agent-vesper-reasoning-orchestrator-prd.md`,
   `provider-capability-gating-prd.md`, `qm-extraction-prd.md`,

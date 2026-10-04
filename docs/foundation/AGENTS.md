@@ -6,6 +6,15 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `2026-10-03-rrc-explicit-version-target-repair.md` owns the typed
+  bump-or-exact-version selector, stable-version normalization and fail-closed
+  validation, immediate target status, equal-target no-op validation/candidate
+  reuse, same-target canonical-descendant reconciliation with full historical
+  candidate/CI archival, final-audit closure of the mismatched-workspace descendant
+  bypass, pushed-tag/publication refusal, frozen slash-oracle preservation,
+  acceptance-inventory repair, requested local verification receipts, and the
+  explicit no-release boundary.
+
 - `2026-10-03-rrc-pty-stream-neutral-test-oracle-repair.md` owns the
   residual stdout-only bounded-tail oracle diagnosis, paired stream-neutral
   marker repair, ten independent real-PTY receipts, focused checks, and the

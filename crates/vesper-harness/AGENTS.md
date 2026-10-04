@@ -27,8 +27,15 @@ Z.ai and Playwright MCP server descriptors.
   collapse after bounded provenance-only paths are removed. Only genuinely different
   maximal implementations for that same objective may clarify, using unique human
   labels or label-plus-subject descriptions rather than paths or SHAs; raw Git
-  provenance is exposed by `/release evidence`. Questions, planning prose, negation, deferred intent and
-  release-process discussion never admit a release. A dirty active checkout is
+  provenance is exposed by `/release evidence`. Questions, planning prose,
+  negation, deferred intent and release-process discussion never admit a release.
+  Admitted objectives carry one typed release-version selector: `patch`, `minor`,
+  `major`, or an exact stable `X.Y.Z` target normalized from optional `vX.Y.Z`.
+  Exact targets are visible in status before version mutation. A lower target
+  fails closed; an equal already-versioned target validates without rewriting
+  manifests, `Cargo.lock`, or Registry metadata and may reuse clean canonical
+  HEAD; a higher target flows through the transactional version graph update.
+  A dirty active checkout is
   never cleaned, reset, stashed or used as the release mutation workspace.
   The typed lifecycle, controller directives/settled-evidence reducer and immutable
   failure evidence; the repository's four exact-SHA pre-release gates; first-causal
@@ -40,10 +47,18 @@ Z.ai and Playwright MCP server descriptors.
   resume automatically; stale same-objective source/workspace identities and a
   canonical integrated source that explicitly supersedes a historical local-only
   objective are atomically replaced only after the full old record is archived
-  under the user-owned release-state root. The active and replacement records retain
+  under the user-owned release-state root. Candidate push, remote CI and failure
+  receipts remain historical evidence: for the same resolved target, a newer
+  canonical strict descendant may replace the active candidate after the full old
+  record is archived. A missing, dirty, or provenance-mismatched release workspace
+  cannot replace a remote-evidence epoch from the unchanged source because it lacks
+  that strict-descendant proof. Selector syntax is not target identity (`Patch` from
+  `0.24.4` and exact `0.24.5` are equal). Conflicting targets with candidate/CI
+  evidence, non-descendant sources, pushed target tags, and actually published target
+  releases require bounded clarification. The active and replacement records retain
   stable objective/variant identities, canonical-source status and supersession
-  links. Unrelated objectives and any remote push/tag/publication evidence produce
-  one bounded human clarification without mutation; that prompt names both human
+  links. Unrelated objectives and the fail-closed cases above produce one bounded
+  human clarification without mutation; that prompt names both human
   objectives, includes known version transitions and describes the irreversible
   state without paths, raw SHAs or internal state names. Primary workspaces are never
   changed by reconciliation. Resume refreshes exact-SHA GitHub state before progression.

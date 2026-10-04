@@ -25,10 +25,10 @@ use crate::release_recovery::{
     EXTERNAL_HEALTH_BUDGET, ExternalHealthEvidence, ExternalHealthVerdict, GhCliEvidenceAdapter,
     GitHubEvidencePort, LocalGateRecord, ReleaseControllerEvent, ReleaseLedger,
     ReleaseMutationAdmission, ReleaseMutationKind, ReleaseProgress, ReleaseRecoveryRecord,
-    ReleaseRecoveryState, RelevantStateChange, RelevantStateChangeKind, ResourceDeferredRecord,
-    RrcError, SettlementState, admit_release_mutation, apply_controller_event,
-    classify_external_health, default_release_root, poll_interval, redact_secrets,
-    refresh_remote_evidence,
+    ReleaseRecoveryState, ReleaseVersionSelector, RelevantStateChange, RelevantStateChangeKind,
+    ResourceDeferredRecord, RrcError, SettlementState, admit_release_mutation,
+    apply_controller_event, classify_external_health, default_release_root, poll_interval,
+    redact_secrets, refresh_remote_evidence, stable_semver_components,
 };
 
 const MAX_COMMAND_OUTPUT: usize = 4096;
@@ -921,7 +921,7 @@ impl ReleaseExecutionPort for NativeReleaseExecutor {
 
     fn prepare_version_bump(
         &self,
-        bump: &str,
+        target: &str,
         admission: ReleaseMutationAdmission,
     ) -> Result<VersionBumpReceipt, RrcError> {
         require_kind(admission, ReleaseMutationKind::VersionBump)?;
@@ -934,23 +934,29 @@ impl ReleaseExecutionPort for NativeReleaseExecutor {
                 "release candidate preparation requires a clean working tree".into(),
             ));
         }
-        let plan = build_version_mutation_plan(&self.workspace, bump)?;
+        let plan = build_version_mutation_plan(&self.workspace, target)?;
+        let version_changes = plan.before != plan.after;
         let lock_path = self.workspace.join(&plan.generated_lockfile);
         let lock_before = fs::read(&lock_path)?;
-        apply_version_mutation_plan(&self.workspace, &plan, None)?;
+        if version_changes {
+            apply_version_mutation_plan(&self.workspace, &plan, None)?;
+        }
         let resources = match self.admit_local_resources(GateCost::Expensive) {
             Ok(resources) => resources,
             Err(error) => {
-                restore_version_mutation(&self.workspace, &plan, &lock_path, &lock_before)?;
+                if version_changes {
+                    restore_version_mutation(&self.workspace, &plan, &lock_path, &lock_before)?;
+                }
                 return Err(error);
             }
         };
+        let check_args = if version_changes {
+            ["check", "--workspace", "--all-targets"].as_slice()
+        } else {
+            ["check", "--locked", "--workspace", "--all-targets"].as_slice()
+        };
         if let Err(error) = self
-            .checked_with_admitted_resources(
-                "cargo",
-                &["check", "--workspace", "--all-targets"],
-                &resources,
-            )
+            .checked_with_admitted_resources("cargo", check_args, &resources)
             .and_then(|_| {
                 validate_version_mutation(
                     &self.workspace,
@@ -960,18 +966,29 @@ impl ReleaseExecutionPort for NativeReleaseExecutor {
                 )
             })
         {
-            restore_version_mutation(&self.workspace, &plan, &lock_path, &lock_before)?;
+            if version_changes {
+                restore_version_mutation(&self.workspace, &plan, &lock_path, &lock_before)?;
+            }
             return Err(error);
+        }
+        if !version_changes && fs::read(&lock_path)? != lock_before {
+            atomic_write(&lock_path, &lock_before)?;
+            return Err(RrcError::Invalid(
+                "equal release target unexpectedly changed Cargo.lock".into(),
+            ));
+        }
+        let mut files = plan
+            .files
+            .into_iter()
+            .map(|file| file.relative_path)
+            .collect::<Vec<_>>();
+        if version_changes {
+            files.push(plan.generated_lockfile);
         }
         Ok(VersionBumpReceipt {
             before: plan.before,
             after: plan.after,
-            files: plan
-                .files
-                .into_iter()
-                .map(|file| file.relative_path)
-                .chain(std::iter::once(plan.generated_lockfile))
-                .collect(),
+            files,
         })
     }
 
@@ -1012,6 +1029,10 @@ impl ReleaseExecutionPort for NativeReleaseExecutor {
             self.checked("git", &["add", "--", path])?;
         }
         let status = self.checked("git", &["status", "--porcelain"])?;
+        if status.trim().is_empty() {
+            let commit = self.checked("git", &["rev-parse", "HEAD"])?;
+            return exact_sha(commit.trim());
+        }
         for line in status.lines() {
             let path = line.get(3..).unwrap_or_default().trim();
             if path != "Cargo.lock"
@@ -1682,7 +1703,7 @@ pub fn advance_release(
         ReleaseRecoveryState::LocalVerification => {
             if record.mutation.version_after.is_none() {
                 let receipt = executor.prepare_version_bump(
-                    &record.objective.bump,
+                    record.objective.version.as_str(),
                     admit_release_mutation(record, ReleaseMutationKind::VersionBump)?,
                 )?;
                 record.mutation.source_commit = record.release_commit.clone();
@@ -2927,36 +2948,45 @@ fn workspace_version(manifest: &str) -> Result<String, RrcError> {
     ))
 }
 
-fn bump_semver(version: &str, bump: &str) -> Result<String, RrcError> {
-    let parts = version
-        .split('.')
-        .map(str::parse::<u64>)
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|_| RrcError::Invalid("workspace version is not stable semver".into()))?;
-    if parts.len() != 3 {
-        return Err(RrcError::Invalid("workspace version is not x.y.z".into()));
-    }
-    let (major, minor, patch) = (parts[0], parts[1], parts[2]);
-    Ok(match bump {
-        "patch" => format!("{major}.{minor}.{}", patch + 1),
-        "minor" => format!("{major}.{}.0", minor + 1),
-        "major" => format!("{}.0.0", major + 1),
-        _ => {
-            return Err(RrcError::Invalid(
-                "release bump must be patch, minor, or major".into(),
-            ));
+fn selected_release_version(version: &str, target: &str) -> Result<String, RrcError> {
+    let [major, minor, patch] = stable_semver_components(version)
+        .ok_or_else(|| RrcError::Invalid("workspace version is not stable x.y.z semver".into()))?;
+    let selector = ReleaseVersionSelector::parse(target).map_err(RrcError::Invalid)?;
+    match selector {
+        ReleaseVersionSelector::Patch => patch
+            .checked_add(1)
+            .map(|patch| format!("{major}.{minor}.{patch}"))
+            .ok_or_else(|| RrcError::Invalid("patch version overflowed".into())),
+        ReleaseVersionSelector::Minor => minor
+            .checked_add(1)
+            .map(|minor| format!("{major}.{minor}.0"))
+            .ok_or_else(|| RrcError::Invalid("minor version overflowed".into())),
+        ReleaseVersionSelector::Major => major
+            .checked_add(1)
+            .map(|major| format!("{major}.0.0"))
+            .ok_or_else(|| RrcError::Invalid("major version overflowed".into())),
+        ReleaseVersionSelector::Exact(after) => {
+            let components = stable_semver_components(&after)
+                .expect("exact release selectors are normalized stable semver");
+            if components < [major, minor, patch] {
+                return Err(RrcError::Invalid(format!(
+                    "exact release version {after} is lower than workspace version {version}"
+                )));
+            }
+            Ok(after)
         }
-    })
+    }
 }
 
 fn build_version_mutation_plan(
     workspace: &Path,
-    bump: &str,
+    target: &str,
 ) -> Result<VersionMutationPlan, RrcError> {
     let root_path = workspace.join("Cargo.toml");
     let root = fs::read_to_string(&root_path)?;
     let before = workspace_version(&root)?;
-    let after = bump_semver(&before, bump)?;
+    let after = selected_release_version(&before, target)?;
+    let version_changes = before != after;
     let manifests = workspace_member_manifests(workspace, &root)?;
     let member_dirs = manifests
         .iter()
@@ -2973,7 +3003,7 @@ fn build_version_mutation_plan(
         let is_root = path == root_path;
         let updated =
             update_workspace_manifest(&input, &before, &after, is_root, &path, &member_dirs)?;
-        if updated != input {
+        if version_changes && updated != input {
             files.push(VersionFileMutation {
                 relative_path: relative_version_path(workspace, &path)?,
                 before: input.into_bytes(),
@@ -2984,11 +3014,13 @@ fn build_version_mutation_plan(
     let registry_path = workspace.join("registry/agent.json");
     let registry = fs::read_to_string(&registry_path)?;
     let updated_registry = update_registry_manifest(&registry, &before, &after)?;
-    files.push(VersionFileMutation {
-        relative_path: "registry/agent.json".into(),
-        before: registry.into_bytes(),
-        after: updated_registry.into_bytes(),
-    });
+    if version_changes {
+        files.push(VersionFileMutation {
+            relative_path: "registry/agent.json".into(),
+            before: registry.into_bytes(),
+            after: updated_registry.into_bytes(),
+        });
+    }
     Ok(VersionMutationPlan {
         before,
         after,
@@ -3546,13 +3578,19 @@ mod tests {
     }
 
     fn version_fixture(member_version: &str) -> tempfile::TempDir {
+        version_fixture_at("0.24.4", member_version)
+    }
+
+    fn version_fixture_at(workspace_version: &str, member_version: &str) -> tempfile::TempDir {
         let root = tempfile::tempdir().unwrap();
         fs::create_dir_all(root.path().join("crates/a")).unwrap();
         fs::create_dir_all(root.path().join("crates/b")).unwrap();
         fs::create_dir_all(root.path().join("registry")).unwrap();
         fs::write(
             root.path().join("Cargo.toml"),
-            "[workspace]\nmembers = [\"crates/a\", \"crates/b\"]\n[workspace.package]\nversion = \"0.24.4\"\n",
+            format!(
+                "[workspace]\nmembers = [\"crates/a\", \"crates/b\"]\n[workspace.package]\nversion = \"{workspace_version}\"\n"
+            ),
         )
         .unwrap();
         fs::write(
@@ -3569,9 +3607,12 @@ mod tests {
         .unwrap();
         fs::write(
             root.path().join("registry/agent.json"),
-            "{\"version\":\"0.24.4\",\"archive\":\"https://example/v0.24.4/a.tgz\"}",
+            format!(
+                "{{\"version\":\"{workspace_version}\",\"archive\":\"https://example/v{workspace_version}/a.tgz\"}}"
+            ),
         )
         .unwrap();
+        fs::write(root.path().join("Cargo.lock"), "# fixture lockfile\n").unwrap();
         root
     }
 
@@ -3588,6 +3629,116 @@ mod tests {
         assert_eq!(updated.matches("version = \"=0.24.5\"").count(), 5);
         assert!(updated.contains("external = { version = \"=0.24.4\" }"));
         assert_eq!(plan.files.len(), 3);
+    }
+
+    #[test]
+    fn version_plan_honors_an_exact_stable_release_target() {
+        let root = version_fixture("0.24.4");
+        let plan = build_version_mutation_plan(root.path(), "0.25.0").unwrap();
+        assert_eq!(plan.before, "0.24.4");
+        assert_eq!(plan.after, "0.25.0");
+        let root_manifest = plan
+            .files
+            .iter()
+            .find(|file| file.relative_path == "Cargo.toml")
+            .unwrap();
+        assert!(
+            String::from_utf8(root_manifest.after.clone())
+                .unwrap()
+                .contains("version = \"0.25.0\"")
+        );
+    }
+
+    #[test]
+    fn version_plan_rejects_decreasing_or_unstable_exact_targets() {
+        let root = version_fixture("0.24.4");
+        for target in ["0.24.3", "0.25.0-beta.1", "01.25.0"] {
+            assert!(
+                build_version_mutation_plan(root.path(), target).is_err(),
+                "invalid exact target unexpectedly admitted: {target}"
+            );
+        }
+    }
+
+    #[test]
+    fn explicit_unpublished_version_does_not_bump_again() {
+        let root = version_fixture_at("0.24.5", "0.24.5");
+        let paths = [
+            "Cargo.toml",
+            "crates/a/Cargo.toml",
+            "crates/b/Cargo.toml",
+            "registry/agent.json",
+            "Cargo.lock",
+        ];
+        let before = paths
+            .iter()
+            .map(|path| (*path, fs::read(root.path().join(path)).unwrap()))
+            .collect::<std::collections::BTreeMap<_, _>>();
+
+        let plan = build_version_mutation_plan(root.path(), "v0.24.5").unwrap();
+        assert_eq!(plan.before, "0.24.5");
+        assert_eq!(plan.after, "0.24.5");
+        assert!(plan.files.is_empty());
+        apply_version_mutation_plan(root.path(), &plan, None).unwrap();
+        for (path, expected) in &before {
+            assert_eq!(&fs::read(root.path().join(path)).unwrap(), expected);
+        }
+
+        let git = |args: &[&str]| {
+            let output = Command::new("git")
+                .args(args)
+                .current_dir(root.path())
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "git {} failed: {}",
+                args.join(" "),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            String::from_utf8_lossy(&output.stdout).trim().to_owned()
+        };
+        git(&["init", "-b", "main"]);
+        git(&["config", "user.email", "rrc@example.invalid"]);
+        git(&["config", "user.name", "RRC Test"]);
+        git(&["add", "."]);
+        git(&["commit", "-m", "already versioned"]);
+        let canonical_head = git(&["rev-parse", "HEAD"]);
+
+        let mut record =
+            crate::release_recovery::start_release("repo", "0.24.5", "main", &canonical_head)
+                .unwrap();
+        record.state = ReleaseRecoveryState::LocalVerification;
+        record.mutation.version_after = Some("0.24.5".into());
+        record.mutation.local_gates = vec![LocalGateRecord {
+            name: "focused".into(),
+            state: SettlementState::Succeeded,
+            command: "focused".into(),
+            evidence_ref: Some("local:focused".into()),
+        }];
+        let executor =
+            NativeReleaseExecutor::new(root.path(), Arc::new(AtomicBool::new(false))).unwrap();
+        let candidate = executor
+            .commit_candidate(
+                "0.24.5",
+                admit_release_mutation(&record, ReleaseMutationKind::CommitCandidate).unwrap(),
+            )
+            .unwrap();
+        assert_eq!(candidate, canonical_head);
+        assert_eq!(git(&["rev-list", "--count", "HEAD"]), "1");
+        assert!(git(&["status", "--porcelain"]).is_empty());
+        for (path, expected) in &before {
+            assert_eq!(&fs::read(root.path().join(path)).unwrap(), expected);
+        }
+    }
+
+    #[test]
+    fn next_patch_still_bumps_normally() {
+        let root = version_fixture_at("0.24.5", "0.24.5");
+        let plan = build_version_mutation_plan(root.path(), "patch").unwrap();
+        assert_eq!(plan.before, "0.24.5");
+        assert_eq!(plan.after, "0.24.6");
+        assert!(!plan.files.is_empty());
     }
 
     #[test]

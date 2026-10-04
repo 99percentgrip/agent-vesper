@@ -646,9 +646,95 @@ pub struct ReleaseMutationRecord {
     pub published_asset_names: Vec<String>,
 }
 
+/// A normalized release target selected by ordinary-language or slash-command
+/// admission. Its string representation remains compatible with schema-v1
+/// ledger `bump` fields while making exact stable versions explicit.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub enum ReleaseVersionSelector {
+    Patch,
+    Minor,
+    Major,
+    Exact(String),
+}
+
+impl ReleaseVersionSelector {
+    pub fn parse(value: &str) -> Result<Self, String> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "patch" => Ok(Self::Patch),
+            "minor" => Ok(Self::Minor),
+            "major" => Ok(Self::Major),
+            _ => {
+                let [major, minor, patch] = stable_semver_components(value).ok_or_else(|| {
+                    "release target must be patch, minor, major, or a stable x.y.z version"
+                        .to_owned()
+                })?;
+                Ok(Self::Exact(format!("{major}.{minor}.{patch}")))
+            }
+        }
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Patch => "patch",
+            Self::Minor => "minor",
+            Self::Major => "major",
+            Self::Exact(version) => version,
+        }
+    }
+
+    #[must_use]
+    pub fn target_label(&self) -> String {
+        match self {
+            Self::Exact(version) => version.clone(),
+            selector => format!("next {}", selector.as_str()),
+        }
+    }
+}
+
+impl TryFrom<String> for ReleaseVersionSelector {
+    type Error = String;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::parse(&value)
+    }
+}
+
+impl From<ReleaseVersionSelector> for String {
+    fn from(value: ReleaseVersionSelector) -> Self {
+        value.as_str().to_owned()
+    }
+}
+
+pub(crate) fn stable_semver_components(value: &str) -> Option<[u64; 3]> {
+    let trimmed = value.trim();
+    let value = trimmed
+        .strip_prefix('v')
+        .or_else(|| trimmed.strip_prefix('V'))
+        .unwrap_or(trimmed);
+    let mut components = value.split('.').map(|component| {
+        if component.is_empty()
+            || (component.len() > 1 && component.starts_with('0'))
+            || !component.bytes().all(|byte| byte.is_ascii_digit())
+        {
+            return None;
+        }
+        component.parse::<u64>().ok()
+    });
+    let parsed = [
+        components.next()??,
+        components.next()??,
+        components.next()??,
+    ];
+    components.next().is_none().then_some(parsed)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReleaseObjective {
-    pub bump: String,
+    /// Serialized as `bump` for schema-v1 ledger compatibility.
+    #[serde(rename = "bump")]
+    pub version: ReleaseVersionSelector,
     pub branch_ref: String,
     /// Original bounded user objective; provenance only, never executed as a prompt.
     #[serde(default)]
@@ -661,7 +747,10 @@ pub struct ReleaseObjective {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReleaseIntentDecision {
     NotRelease,
-    Admit { bump: String, scope: String },
+    Admit {
+        version: ReleaseVersionSelector,
+        scope: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -674,6 +763,47 @@ pub enum NaturalReleaseAdmission {
 /// Conservative, provider-neutral admission for an ordinary conversation
 /// objective. It recognizes direct imperatives only; questions, planning,
 /// negation, status discussion and deferred intent remain ordinary chat.
+fn explicit_release_version(text: &str) -> Result<Option<ReleaseVersionSelector>, ()> {
+    for raw in text.split_whitespace() {
+        let token = raw
+            .trim_matches(|ch: char| {
+                matches!(
+                    ch,
+                    ',' | ';'
+                        | ':'
+                        | '!'
+                        | '?'
+                        | '('
+                        | ')'
+                        | '['
+                        | ']'
+                        | '{'
+                        | '}'
+                        | '"'
+                        | '\''
+                        | '`'
+                )
+            })
+            .trim_end_matches('.');
+        if token.is_empty() {
+            continue;
+        }
+        if let Ok(selector @ ReleaseVersionSelector::Exact(_)) =
+            ReleaseVersionSelector::parse(token)
+        {
+            return Ok(Some(selector));
+        }
+        let candidate = token
+            .strip_prefix('v')
+            .or_else(|| token.strip_prefix('V'))
+            .unwrap_or(token);
+        if candidate.contains('.') && candidate.as_bytes().first().is_some_and(u8::is_ascii_digit) {
+            return Err(());
+        }
+    }
+    Ok(None)
+}
+
 #[must_use]
 pub fn classify_release_intent(text: &str) -> ReleaseIntentDecision {
     let normalized = text
@@ -735,24 +865,30 @@ pub fn classify_release_intent(text: &str) -> ReleaseIntentDecision {
     if !imperative {
         return ReleaseIntentDecision::NotRelease;
     }
-    let bump = if normalized
-        .split(|ch: char| !ch.is_ascii_alphanumeric())
-        .any(|word| word == "major")
-    {
-        "major"
-    } else if normalized
-        .split(|ch: char| !ch.is_ascii_alphanumeric())
-        .any(|word| word == "minor")
-    {
-        "minor"
-    } else {
-        // Repository policy makes an unspecified imperative a patch. This
-        // avoids needless clarification for "ship this" while keeping the
-        // typed objective explicit and auditable.
-        "patch"
+    let version = match explicit_release_version(&normalized) {
+        Ok(Some(version)) => version,
+        Err(()) => return ReleaseIntentDecision::NotRelease,
+        Ok(None) => {
+            if normalized
+                .split(|ch: char| !ch.is_ascii_alphanumeric())
+                .any(|word| word == "major")
+            {
+                ReleaseVersionSelector::Major
+            } else if normalized
+                .split(|ch: char| !ch.is_ascii_alphanumeric())
+                .any(|word| word == "minor")
+            {
+                ReleaseVersionSelector::Minor
+            } else {
+                // Repository policy makes an unspecified imperative a patch.
+                // This avoids needless clarification for "ship this" while
+                // keeping the typed objective explicit and auditable.
+                ReleaseVersionSelector::Patch
+            }
+        }
     };
     ReleaseIntentDecision::Admit {
-        bump: bump.into(),
+        version,
         scope: bounded(text.trim().to_owned(), 2048),
     }
 }
@@ -909,7 +1045,10 @@ impl ReleaseRecoveryRecord {
                     "Local verification {completed_local_gates}/{} · {gate}",
                     self.mutation.local_gates.len()
                 ),
-                None => "Preparing version and local verification".into(),
+                None => format!(
+                    "Preparing release target {} and local verification",
+                    self.objective.version.target_label()
+                ),
             },
             ReleaseRecoveryState::ResourceDeferred => {
                 let gate = self
@@ -1442,8 +1581,9 @@ impl ReleaseRecoveryRecord {
             .map(|milestone| format!("#{} {}", milestone.sequence, milestone.summary))
             .collect::<Vec<_>>()
             .join(" | ");
+        let release_target = self.objective.version.target_label();
         format!(
-            "RELEASE RECOVERY\nState                 {:?}\nProgress              {} — {}\nProgress gates        {}/{} local · {}/{} remote jobs\nRecent milestones     {}\nCandidate SHA         {}\nCurrent main SHA      {}\nVersion provenance    {} -> {}\nLocal gates           {local_complete}/{} · {local_active}\nRemote gate           {active_gate}\nJobs                  {terminal}/{total} terminal\nFailed jobs           {}\nFailure fingerprint   {fingerprint}\nFocused verification  {focused}\nRetry                 {} — {}\nRetry budget          full {}/{} · infrastructure {}/{} · diagnostic {}/{}\nMutation state        commit={} push={} tag={} publish={}\nPublished release     {published}\nCurrent main health   {main_health}\nExternal block        {external}\nNext                  {:?}",
+            "RELEASE RECOVERY\nState                 {:?}\nProgress              {} — {}\nProgress gates        {}/{} local · {}/{} remote jobs\nRecent milestones     {}\nCandidate SHA         {}\nCurrent main SHA      {}\nRelease target         {release_target}\nVersion provenance    {} -> {}\nLocal gates           {local_complete}/{} · {local_active}\nRemote gate           {active_gate}\nJobs                  {terminal}/{total} terminal\nFailed jobs           {}\nFailure fingerprint   {fingerprint}\nFocused verification  {focused}\nRetry                 {} — {}\nRetry budget          full {}/{} · infrastructure {}/{} · diagnostic {}/{}\nMutation state        commit={} push={} tag={} publish={}\nPublished release     {published}\nCurrent main health   {main_health}\nExternal block        {external}\nNext                  {:?}",
             self.state,
             progress.phase.label(),
             progress.headline,
@@ -3397,15 +3537,11 @@ pub fn repository_identity_for_workspace(workspace: &Path) -> Result<String, Rrc
 
 pub fn start_release(
     repo_identity: &str,
-    bump: &str,
+    target: &str,
     branch_ref: &str,
     source_commit: &str,
 ) -> Result<ReleaseRecoveryRecord, RrcError> {
-    if !matches!(bump, "patch" | "minor" | "major") {
-        return Err(RrcError::Invalid(
-            "release bump must be patch, minor, or major".into(),
-        ));
-    }
+    let version = ReleaseVersionSelector::parse(target).map_err(RrcError::Invalid)?;
     let mut record = ReleaseRecoveryRecord::new(
         repo_identity.to_owned(),
         format!(
@@ -3414,7 +3550,7 @@ pub fn start_release(
             short_sha(source_commit)
         ),
         ReleaseObjective {
-            bump: bump.into(),
+            version,
             branch_ref: branch_ref.into(),
             request: None,
             post_release_main_epoch: false,
@@ -4050,13 +4186,30 @@ enum ActiveEpochReconciliation {
     Clarify(String),
 }
 
-fn has_irreversible_release_state(record: &ReleaseRecoveryRecord) -> bool {
-    record.mutation.candidate_pushed
-        || record.mutation.tag_name.is_some()
-        || record.mutation.tag_object.is_some()
-        || record.mutation.tag_pushed
-        || record.mutation.publication_run_id.is_some()
+fn has_publication_boundary(record: &ReleaseRecoveryRecord) -> bool {
+    record.mutation.tag_pushed
         || record.mutation.publication_verified
+        || !record.mutation.published_asset_names.is_empty()
+        || matches!(
+            record.state,
+            ReleaseRecoveryState::Published
+                | ReleaseRecoveryState::PostReleaseCloseout
+                | ReleaseRecoveryState::PostReleaseMainDegraded
+        )
+}
+
+fn has_historical_candidate_or_ci_evidence(record: &ReleaseRecoveryRecord) -> bool {
+    let persisted_remote_gate_evidence = record.required_gates.iter().any(|gate| {
+        gate.run_id.is_some()
+            || gate.run_attempt.is_some()
+            || !gate.jobs.is_empty()
+            || gate.url.is_some()
+    });
+    record.mutation.candidate_pushed
+        || record.mutation.candidate_push_ref.is_some()
+        || record.mutation.publication_run_id.is_some()
+        || persisted_remote_gate_evidence
+        || !record.failures.is_empty()
         || matches!(
             record.state,
             ReleaseRecoveryState::RemoteGateRunning
@@ -4073,20 +4226,13 @@ fn has_irreversible_release_state(record: &ReleaseRecoveryRecord) -> bool {
                 | ReleaseRecoveryState::RemoteGatesGreen
                 | ReleaseRecoveryState::Tagging
                 | ReleaseRecoveryState::Publishing
-                | ReleaseRecoveryState::Published
-                | ReleaseRecoveryState::PostReleaseCloseout
-                | ReleaseRecoveryState::PostReleaseMainDegraded
         )
 }
 
 fn same_release_objective(
     record: &ReleaseRecoveryRecord,
     source: &ReleaseSourceChoice,
-    bump: &str,
 ) -> Option<bool> {
-    if record.objective.bump != bump {
-        return Some(false);
-    }
     match (
         record.mutation.objective_id.as_deref(),
         source.objective_id.as_deref(),
@@ -4130,7 +4276,7 @@ fn active_objective_description(record: &ReleaseRecoveryRecord) -> String {
         record.mutation.version_after.as_deref(),
     ) {
         (Some(before), Some(after)) => format!("{before} -> {after}"),
-        _ => format!("next {}", record.objective.bump),
+        _ => record.objective.version.target_label(),
     };
     bounded(
         redact_secrets(&format!("{transition} release for {label}")),
@@ -4138,62 +4284,140 @@ fn active_objective_description(record: &ReleaseRecoveryRecord) -> String {
     )
 }
 
-fn source_version_transition(source: &ReleaseSourceChoice, bump: &str) -> Option<String> {
-    let manifest = fs::read_to_string(source.source_workspace.join("Cargo.toml")).ok()?;
+fn workspace_version_for_release_source(workspace: &Path) -> Option<String> {
+    let manifest = fs::read_to_string(workspace.join("Cargo.toml")).ok()?;
     let mut workspace_package = false;
-    let mut before = None;
     for line in manifest.lines() {
         let trimmed = line.trim();
         if trimmed.starts_with('[') {
             workspace_package = trimmed == "[workspace.package]";
         } else if workspace_package && trimmed.starts_with("version = ") {
-            before = trimmed.split('"').nth(1).map(str::to_owned);
-            break;
+            return trimmed.split('"').nth(1).map(str::to_owned);
         }
     }
-    let before = before?;
-    let parts = before
-        .split('.')
-        .map(str::parse::<u64>)
-        .collect::<Result<Vec<_>, _>>()
-        .ok()?;
-    let [major, minor, patch] = parts.as_slice() else {
-        return None;
-    };
-    let after = match bump {
-        "patch" => format!("{major}.{minor}.{}", patch.checked_add(1)?),
-        "minor" => format!("{major}.{}.0", minor.checked_add(1)?),
-        "major" => format!("{}.0.0", major.checked_add(1)?),
-        _ => return None,
-    };
+    None
+}
+
+fn resolved_target_from_selector(
+    version: &ReleaseVersionSelector,
+    workspace_version: Option<&str>,
+) -> Option<String> {
+    if let ReleaseVersionSelector::Exact(target) = version {
+        return Some(target.clone());
+    }
+    let [major, minor, patch] = stable_semver_components(workspace_version?)?;
+    match version {
+        ReleaseVersionSelector::Patch => Some(format!("{major}.{minor}.{}", patch.checked_add(1)?)),
+        ReleaseVersionSelector::Minor => Some(format!("{major}.{}.0", minor.checked_add(1)?)),
+        ReleaseVersionSelector::Major => Some(format!("{}.0.0", major.checked_add(1)?)),
+        ReleaseVersionSelector::Exact(_) => unreachable!("handled above"),
+    }
+}
+
+fn resolved_record_release_target(record: &ReleaseRecoveryRecord) -> Option<String> {
+    if let Some(target) = record.mutation.version_after.as_deref() {
+        let [major, minor, patch] = stable_semver_components(target)?;
+        return Some(format!("{major}.{minor}.{patch}"));
+    }
+    let workspace_version = record
+        .mutation
+        .version_before
+        .clone()
+        .or_else(|| {
+            record
+                .mutation
+                .source_workspace
+                .as_deref()
+                .and_then(|path| workspace_version_for_release_source(Path::new(path)))
+        })
+        .or_else(|| {
+            record
+                .mutation
+                .release_workspace
+                .as_deref()
+                .and_then(|path| workspace_version_for_release_source(Path::new(path)))
+        });
+    resolved_target_from_selector(&record.objective.version, workspace_version.as_deref())
+}
+
+fn resolved_source_release_target(
+    source: &ReleaseSourceChoice,
+    version: &ReleaseVersionSelector,
+) -> Option<String> {
+    let workspace_version = workspace_version_for_release_source(&source.source_workspace);
+    resolved_target_from_selector(version, workspace_version.as_deref())
+}
+
+fn source_version_transition(
+    source: &ReleaseSourceChoice,
+    version: &ReleaseVersionSelector,
+) -> Option<String> {
+    let before = workspace_version_for_release_source(&source.source_workspace)?;
+    let after = resolved_target_from_selector(version, Some(&before))?;
     Some(format!("{before} -> {after}"))
 }
 
-fn current_objective_description(source: &ReleaseSourceChoice, bump: &str) -> String {
+fn current_objective_description(
+    source: &ReleaseSourceChoice,
+    version: &ReleaseVersionSelector,
+) -> String {
     let label = source
         .objective_label
         .as_deref()
         .unwrap_or("the current completed implementation");
     let transition =
-        source_version_transition(source, bump).unwrap_or_else(|| format!("next {bump}"));
+        source_version_transition(source, version).unwrap_or_else(|| version.target_label());
     bounded(
         redact_secrets(&format!("{transition} release for {label}")),
         240,
     )
 }
 
+fn source_repository_matches_epoch(
+    record: &ReleaseRecoveryRecord,
+    source: &ReleaseSourceChoice,
+) -> Result<bool, RrcError> {
+    Ok(repository_identity(&source.source_workspace)? == record.repo_identity)
+}
+
+fn source_is_strict_descendant(
+    record: &ReleaseRecoveryRecord,
+    source: &ReleaseSourceChoice,
+) -> bool {
+    let Some(previous) = record
+        .mutation
+        .final_candidate_commit
+        .as_deref()
+        .or(record.release_commit.as_deref())
+        .or(record.mutation.source_commit.as_deref())
+    else {
+        return false;
+    };
+    previous != source.source_commit
+        && git_succeeds(
+            &source.source_workspace,
+            &[
+                "merge-base",
+                "--is-ancestor",
+                previous,
+                &source.source_commit,
+            ],
+        )
+}
+
 fn irreversible_state_description(record: &ReleaseRecoveryRecord) -> &'static str {
-    if record.mutation.publication_verified || record.mutation.publication_run_id.is_some() {
-        "publication activity"
-    } else if record.mutation.tag_pushed
-        || record.mutation.tag_name.is_some()
-        || record.mutation.tag_object.is_some()
+    if record.mutation.publication_verified
+        || !record.mutation.published_asset_names.is_empty()
+        || matches!(
+            record.state,
+            ReleaseRecoveryState::Published
+                | ReleaseRecoveryState::PostReleaseCloseout
+                | ReleaseRecoveryState::PostReleaseMainDegraded
+        )
     {
-        "a release tag"
-    } else if record.mutation.candidate_pushed {
-        "a candidate pushed to GitHub"
+        "an actually published target release"
     } else {
-        "remote CI attached to its candidate"
+        "a pushed target release tag"
     }
 }
 
@@ -4254,45 +4478,99 @@ fn release_workspace_matches_epoch(
 fn reconcile_active_epoch(
     mut record: ReleaseRecoveryRecord,
     source: &ReleaseSourceChoice,
-    bump: &str,
+    version: &ReleaseVersionSelector,
     state_root: &Path,
 ) -> Result<ActiveEpochReconciliation, RrcError> {
-    if has_irreversible_release_state(&record) {
+    if has_publication_boundary(&record) {
         return Ok(ActiveEpochReconciliation::Clarify(format!(
             "An unfinished {} already has {}. Your new request targets {}. Which release should RRC continue?",
             active_objective_description(&record),
             irreversible_state_description(&record),
-            current_objective_description(source, bump),
+            current_objective_description(source, version),
         )));
     }
-    if source_explicitly_supersedes_epoch(&record, source) {
-        return Ok(ActiveEpochReconciliation::Supersede {
-            record,
-            reason:
-                "canonical integrated objective explicitly supersedes the historical prerelease objective"
-                    .into(),
-        });
+    if !source_repository_matches_epoch(&record, source)? {
+        return Ok(ActiveEpochReconciliation::Clarify(
+            "The current completed source belongs to a different repository identity. I preserved the active release and made no new release changes. Which release should RRC continue?"
+                .into(),
+        ));
     }
-    if same_release_objective(&record, source, bump) != Some(true) {
+
+    let same_objective = same_release_objective(&record, source) == Some(true);
+    let explicitly_superseded = source_explicitly_supersedes_epoch(&record, source);
+    if !same_objective && !explicitly_superseded {
         return Ok(ActiveEpochReconciliation::Clarify(format!(
             "An unfinished {} is still active. Your new request targets {}. Which release should RRC continue?",
             active_objective_description(&record),
-            current_objective_description(source, bump),
+            current_objective_description(source, version),
         )));
     }
+
+    let previous_target = resolved_record_release_target(&record);
+    let requested_target = resolved_source_release_target(source, version);
+    let (Some(previous_target), Some(requested_target)) =
+        (previous_target.as_deref(), requested_target.as_deref())
+    else {
+        return Ok(ActiveEpochReconciliation::Clarify(
+            "RRC could not resolve both release targets safely. I preserved the active release and made no new release changes. Which release should RRC continue?"
+                .into(),
+        ));
+    };
+    let historical_remote_evidence = has_historical_candidate_or_ci_evidence(&record);
+    if previous_target != requested_target {
+        if historical_remote_evidence {
+            return Ok(ActiveEpochReconciliation::Clarify(format!(
+                "An unfinished {} has historical candidate or CI evidence for target {previous_target}, while the new request targets {}. Which release should RRC continue?",
+                active_objective_description(&record),
+                current_objective_description(source, version),
+            )));
+        }
+        return Ok(ActiveEpochReconciliation::Supersede {
+            record,
+            reason: "same completed objective now targets a different release version before remote mutation"
+                .into(),
+        });
+    }
+
     let source_changed = record.mutation.source_commit.as_deref()
         != Some(source.source_commit.as_str())
         || record.mutation.intended_diff_sha256.as_deref()
             != Some(source.intended_diff_sha256.as_str());
-    let release_workspace = release_workspace_matches_epoch(&record, state_root)?;
-    if source_changed || release_workspace.is_none() {
+    if source_changed {
+        if !source_is_strict_descendant(&record, source) {
+            return Ok(ActiveEpochReconciliation::Clarify(format!(
+                "The replacement source for target {requested_target} is not a strict descendant of the historical candidate. I preserved the active release and made no new release changes. Which release should RRC continue?"
+            )));
+        }
+        if historical_remote_evidence && !source.canonical_release_source {
+            return Ok(ActiveEpochReconciliation::Clarify(format!(
+                "The replacement source for target {requested_target} is not bound as the canonical release source. I preserved the active release and its historical evidence. Which release should RRC continue?"
+            )));
+        }
         return Ok(ActiveEpochReconciliation::Supersede {
             record,
-            reason: if source_changed {
-                "same release objective has a newer completed source identity".into()
+            reason: if historical_remote_evidence {
+                "same release target adopted a newer canonical descendant while preserving historical candidate and CI evidence"
+                    .into()
+            } else if explicitly_superseded {
+                "canonical integrated objective explicitly supersedes the historical prerelease objective"
+                    .into()
             } else {
-                "release workspace no longer matches the persisted objective provenance".into()
+                "same release objective has a newer completed descendant source identity".into()
             },
+        });
+    }
+
+    let release_workspace = release_workspace_matches_epoch(&record, state_root)?;
+    if release_workspace.is_none() {
+        if historical_remote_evidence {
+            return Ok(ActiveEpochReconciliation::Clarify(format!(
+                "Replacing the workspace for target {requested_target} requires a newer canonical strict descendant of the historical candidate. I preserved the active release and its historical evidence. Which release should RRC continue?"
+            )));
+        }
+        return Ok(ActiveEpochReconciliation::Supersede {
+            record,
+            reason: "release workspace no longer matches the persisted objective provenance".into(),
         });
     }
     if record.state == ReleaseRecoveryState::Escalated {
@@ -4341,7 +4619,7 @@ fn admit_natural_release_with_launcher<F>(
 where
     F: FnOnce(PathBuf, String, String) -> Result<(), RrcError>,
 {
-    let ReleaseIntentDecision::Admit { bump, scope } = classify_release_intent(objective) else {
+    let ReleaseIntentDecision::Admit { version, scope } = classify_release_intent(objective) else {
         return Ok(NaturalReleaseAdmission::NotRelease);
     };
     let canonical = workspace.canonicalize()?;
@@ -4378,7 +4656,7 @@ where
             ReleaseRecoveryState::Complete | ReleaseRecoveryState::Cancelled
         )
     {
-        match reconcile_active_epoch(existing, &source, &bump, state_root)? {
+        match reconcile_active_epoch(existing, &source, &version, state_root)? {
             ActiveEpochReconciliation::Resume {
                 mut record,
                 workspace,
@@ -4402,7 +4680,7 @@ where
     let release_workspace = create_release_worktree(&source, state_root, &repo_identity)?;
     let mut record = start_release(
         &repo_identity,
-        &bump,
+        version.as_str(),
         &source.branch_ref,
         &source.source_commit,
     )?;
@@ -4467,6 +4745,13 @@ pub fn release_command_for_workspace(workspace: &Path, argument: &str) -> Result
     release_command_for_workspace_with_factory(workspace, argument, None)
 }
 
+fn release_start_selector(action: &str, checkpoint_exists: bool) -> Option<ReleaseVersionSelector> {
+    if action.is_empty() {
+        return (!checkpoint_exists).then_some(ReleaseVersionSelector::Patch);
+    }
+    ReleaseVersionSelector::parse(action).ok()
+}
+
 pub fn release_command_for_workspace_with_factory(
     workspace: &Path,
     argument: &str,
@@ -4478,13 +4763,17 @@ pub fn release_command_for_workspace_with_factory(
     let root = default_release_root()
         .ok_or_else(|| RrcError::Invalid("no user-owned release state root is available".into()))?;
     let ledger = ReleaseLedger::open(root, &repo_identity)?;
-    let is_start = matches!(action, "patch" | "minor" | "major")
-        || (action.is_empty() && ledger.load()?.is_none());
-    if is_start {
-        let bump = if action.is_empty() { "patch" } else { action };
+    if let Some(version) = release_start_selector(action, ledger.load()?.is_some()) {
+        let objective = match &version {
+            ReleaseVersionSelector::Exact(target) => format!("Release version {target}."),
+            _ => format!(
+                "Release the completed implementation as the next {} release.",
+                version.as_str()
+            ),
+        };
         return match admit_natural_release_for_workspace_with_factory(
             &canonical,
-            &format!("Release the completed implementation as the next {bump} release."),
+            &objective,
             repair_factory,
         )? {
             NaturalReleaseAdmission::Started(body)
@@ -4643,7 +4932,7 @@ mod tests {
         ] {
             assert!(matches!(
                 classify_release_intent(prompt),
-                ReleaseIntentDecision::Admit { bump: admitted, .. } if admitted == bump
+                ReleaseIntentDecision::Admit { version: admitted, .. } if admitted.as_str() == bump
             ));
         }
         for prompt in [
@@ -4660,6 +4949,65 @@ mod tests {
                 "false positive for {prompt:?}"
             );
         }
+    }
+
+    #[test]
+    fn natural_release_intent_accepts_and_normalizes_explicit_stable_versions() {
+        for prompt in [
+            "Release version 0.25.0.",
+            "release v0.25.0",
+            "Please publish version v0.25.0.",
+        ] {
+            assert!(matches!(
+                classify_release_intent(prompt),
+                ReleaseIntentDecision::Admit {
+                    version: ReleaseVersionSelector::Exact(ref version),
+                    ..
+                } if version == "0.25.0"
+            ));
+        }
+        for prompt in [
+            "Release version 0.25.",
+            "Release v0.25.",
+            "Release version 01.25.0.",
+            "Release version 0.25.0-beta.1.",
+        ] {
+            assert_eq!(
+                classify_release_intent(prompt),
+                ReleaseIntentDecision::NotRelease,
+                "malformed or unstable version must fail closed for {prompt:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn explicit_release_command_routes_exact_versions_through_natural_admission() {
+        assert_eq!(
+            release_start_selector("0.25.0", false),
+            Some(ReleaseVersionSelector::Exact("0.25.0".into()))
+        );
+        assert_eq!(
+            release_start_selector("v0.25.0", false),
+            Some(ReleaseVersionSelector::Exact("0.25.0".into()))
+        );
+        assert_eq!(release_start_selector("status", false), None);
+        assert_eq!(release_start_selector("", true), None);
+    }
+
+    #[test]
+    fn exact_release_target_is_visible_before_version_mutation() {
+        let record = start_release("repo", "v0.25.0", "main", "abcdef123456").unwrap();
+        assert_eq!(
+            record.objective.version,
+            ReleaseVersionSelector::Exact("0.25.0".into())
+        );
+        assert!(
+            record
+                .render_status()
+                .contains("Release target         0.25.0")
+        );
+        assert!(record.progress.headline.contains("release target 0.25.0"));
+        assert!(record.mutation.version_after.is_none());
     }
 
     #[test]
@@ -4756,8 +5104,17 @@ mod tests {
         )
         .unwrap();
         assert!(matches!(outcome, NaturalReleaseAdmission::Started(_)));
-        let (release_workspace, _, identity) = launched.expect("worker launched automatically");
+        let (release_workspace, repository, identity) =
+            launched.expect("worker launched automatically");
         assert_ne!(release_workspace, primary);
+        assert_eq!(repository, "test/repo");
+        assert_eq!(
+            git_text(
+                &release_workspace,
+                &["config", "--get", "remote.origin.url"]
+            ),
+            "https://github.com/test/repo.git"
+        );
         assert_eq!(
             git_text(&release_workspace, &["rev-parse", "HEAD"]),
             intended_head
@@ -5172,6 +5529,119 @@ mod tests {
             completion,
             state,
             identity,
+        }
+    }
+
+    fn add_same_objective_descendant_completion(
+        fixture: &ActiveEpochFixture,
+        workspace_version: Option<&str>,
+    ) -> PathBuf {
+        add_same_objective_descendant_completion_with_canonical(fixture, workspace_version, true)
+    }
+
+    fn add_same_objective_descendant_completion_with_canonical(
+        fixture: &ActiveEpochFixture,
+        workspace_version: Option<&str>,
+        canonical_release_source: bool,
+    ) -> PathBuf {
+        let current = fixture._temp.path().join(if canonical_release_source {
+            "completion-descendant"
+        } else {
+            "completion-descendant-noncanonical"
+        });
+        let old_head = git_text(&fixture.completion, &["rev-parse", "HEAD"]);
+        run_git(
+            &fixture.primary,
+            &[
+                "worktree",
+                "add",
+                "-b",
+                "completion-descendant",
+                current.to_str().unwrap(),
+                &old_head,
+            ],
+        );
+        fs::write(current.join("repair.txt"), "newer canonical descendant\n").unwrap();
+        if let Some(version) = workspace_version {
+            let manifest = fs::read_to_string(current.join("Cargo.toml")).unwrap();
+            fs::write(
+                current.join("Cargo.toml"),
+                manifest.replace("version = \"0.24.4\"", &format!("version = \"{version}\"")),
+            )
+            .unwrap();
+        }
+        write_objective_marker_options(
+            &current,
+            "rrc-autonomy-repair",
+            "RRC autonomy repair",
+            "Newer canonical descendant",
+            "2026-10-03T12:00:00Z",
+            ObjectiveMarkerOptions {
+                variant_id: Some(if canonical_release_source {
+                    "same-target-canonical-descendant"
+                } else {
+                    "same-target-noncanonical-descendant"
+                }),
+                canonical_release_source,
+                ..ObjectiveMarkerOptions::default()
+            },
+        );
+        run_git(&current, &["add", "."]);
+        run_git(&current, &["commit", "-m", "advance canonical source"]);
+        current
+    }
+
+    fn add_same_objective_non_descendant_completion(fixture: &ActiveEpochFixture) -> PathBuf {
+        let current = fixture._temp.path().join("completion-non-descendant");
+        let base_head = git_text(&fixture.primary, &["rev-parse", "HEAD"]);
+        run_git(
+            &fixture.primary,
+            &[
+                "worktree",
+                "add",
+                "-b",
+                "completion-non-descendant",
+                current.to_str().unwrap(),
+                &base_head,
+            ],
+        );
+        fs::write(current.join("repair.txt"), "unrelated branch replacement\n").unwrap();
+        write_objective_marker_options(
+            &current,
+            "rrc-autonomy-repair",
+            "RRC autonomy repair",
+            "Non-descendant replacement",
+            "2026-10-03T12:00:00Z",
+            ObjectiveMarkerOptions {
+                variant_id: Some("same-target-non-descendant"),
+                canonical_release_source: true,
+                ..ObjectiveMarkerOptions::default()
+            },
+        );
+        run_git(&current, &["add", "."]);
+        run_git(&current, &["commit", "-m", "prepare non-descendant source"]);
+        current
+    }
+
+    fn historical_remote_failure(source_commit: &str) -> FailureRecord {
+        FailureRecord {
+            workflow_id: 41,
+            run_id: 7001,
+            attempt: 1,
+            job_id: 91,
+            workflow_name: "canonical".into(),
+            job_name: "linux".into(),
+            platform: Some("linux-x86_64".into()),
+            step_name: Some("test".into()),
+            fingerprint: FailureFingerprint("historical-failure".into()),
+            class: ReleaseFailureClass::TestRegression,
+            confidence: EvidenceConfidence::Proven,
+            causal_excerpt: "historical candidate failure".into(),
+            source_commit: source_commit.into(),
+            observed_at: Utc::now(),
+            other_platforms_passed: true,
+            exists_on_last_green: Some(false),
+            related_source_touched: Some(true),
         }
     }
 
@@ -5611,7 +6081,177 @@ mod tests {
     }
 
     #[test]
-    fn irreversible_release_state_is_never_discarded_by_new_admission() {
+    fn explicit_version_supersedes_same_objective_before_remote_mutation() {
+        let fixture = active_epoch_fixture();
+        let ledger = ReleaseLedger::open(fixture.state.clone(), &fixture.identity).unwrap();
+        let previous = ledger.load().unwrap().unwrap();
+        let mut launched = None;
+        let outcome = admit_natural_release_with_launcher(
+            &fixture.primary,
+            "Release version 0.25.0.",
+            &fixture.state,
+            |workspace, _, _| {
+                launched = Some(workspace);
+                Ok(())
+            },
+        )
+        .unwrap();
+        let NaturalReleaseAdmission::Started(message) = outcome else {
+            panic!("a new explicit target must supersede a reversible stale epoch");
+        };
+        assert!(message.contains("preserved as superseded evidence"));
+        let replacement = ledger.load().unwrap().unwrap();
+        assert_ne!(replacement.epoch_id, previous.epoch_id);
+        assert_eq!(
+            replacement.objective.version,
+            ReleaseVersionSelector::Exact("0.25.0".into())
+        );
+        assert_eq!(
+            launched.unwrap(),
+            PathBuf::from(replacement.mutation.release_workspace.as_deref().unwrap())
+        );
+        let archive: SupersededEpochEvidence =
+            serde_json::from_slice(&fs::read(ledger.superseded_path(&previous.epoch_id)).unwrap())
+                .unwrap();
+        assert_eq!(archive.record.epoch_id, previous.epoch_id);
+        assert_eq!(
+            archive.record.objective.version,
+            ReleaseVersionSelector::Patch
+        );
+    }
+
+    #[test]
+    fn same_target_candidate_only_epoch_adopts_newer_canonical_descendant() {
+        let fixture = active_epoch_fixture();
+        let newer = add_same_objective_descendant_completion(&fixture, None);
+        let newer_head = git_text(&newer, &["rev-parse", "HEAD"]);
+        let ledger = ReleaseLedger::open(fixture.state.clone(), &fixture.identity).unwrap();
+        let mut active = ledger.load().unwrap().unwrap();
+        active.mutation.version_before = Some("0.24.4".into());
+        active.mutation.version_after = Some("0.24.5".into());
+        active.mutation.candidate_pushed = true;
+        active.mutation.candidate_push_ref = Some("refs/heads/main@historical-candidate".into());
+        ledger.save(&active).unwrap();
+
+        let outcome = admit_natural_release_with_launcher(
+            &fixture.primary,
+            "Release v0.24.5.",
+            &fixture.state,
+            |_, _, _| Ok(()),
+        )
+        .unwrap();
+        assert!(matches!(outcome, NaturalReleaseAdmission::Started(_)));
+        let replacement = ledger.load().unwrap().unwrap();
+        assert_eq!(
+            replacement.objective.version,
+            ReleaseVersionSelector::Exact("0.24.5".into())
+        );
+        assert_eq!(
+            replacement.mutation.source_commit.as_deref(),
+            Some(newer_head.as_str())
+        );
+        let archive: SupersededEpochEvidence =
+            serde_json::from_slice(&fs::read(ledger.superseded_path(&active.epoch_id)).unwrap())
+                .unwrap();
+        assert!(archive.record.mutation.candidate_pushed);
+        assert_eq!(
+            archive.record.mutation.candidate_push_ref,
+            active.mutation.candidate_push_ref
+        );
+    }
+
+    #[test]
+    fn same_target_remote_ci_evidence_does_not_force_clarification() {
+        let fixture = active_epoch_fixture();
+        let newer = add_same_objective_descendant_completion(&fixture, None);
+        let newer_head = git_text(&newer, &["rev-parse", "HEAD"]);
+        let ledger = ReleaseLedger::open(fixture.state.clone(), &fixture.identity).unwrap();
+        let mut active = ledger.load().unwrap().unwrap();
+        active.state = ReleaseRecoveryState::Escalated;
+        active.mutation.version_before = Some("0.24.4".into());
+        active.mutation.version_after = Some("0.24.5".into());
+        active.mutation.candidate_pushed = true;
+        active.mutation.publication_run_id = Some(8001);
+        active.required_gates.push(GateRecord {
+            name: "canonical".into(),
+            head_sha: active.release_commit.clone().unwrap(),
+            run_id: Some(7001),
+            run_attempt: Some(1),
+            jobs: vec![JobSnapshot {
+                workflow_id: 41,
+                run_id: 7001,
+                attempt: 1,
+                job_id: 91,
+                workflow_name: "canonical".into(),
+                job_name: "linux".into(),
+                platform: Some("linux-x86_64".into()),
+                state: JobState::Failure,
+                failed_step: Some("test".into()),
+                url: "https://github.example/jobs/91".into(),
+            }],
+            url: Some("https://github.example/runs/7001".into()),
+        });
+        ledger.save(&active).unwrap();
+
+        let outcome = admit_natural_release_with_launcher(
+            &fixture.primary,
+            "Release version 0.24.5.",
+            &fixture.state,
+            |_, _, _| Ok(()),
+        )
+        .unwrap();
+        assert!(matches!(outcome, NaturalReleaseAdmission::Started(_)));
+        assert_eq!(
+            ledger
+                .load()
+                .unwrap()
+                .unwrap()
+                .mutation
+                .source_commit
+                .as_deref(),
+            Some(newer_head.as_str())
+        );
+        let archive: SupersededEpochEvidence =
+            serde_json::from_slice(&fs::read(ledger.superseded_path(&active.epoch_id)).unwrap())
+                .unwrap();
+        assert_eq!(archive.record.required_gates, active.required_gates);
+        assert_eq!(
+            archive.record.mutation.publication_run_id,
+            active.mutation.publication_run_id
+        );
+    }
+
+    #[test]
+    fn same_target_remote_failure_evidence_does_not_force_clarification() {
+        let fixture = active_epoch_fixture();
+        add_same_objective_descendant_completion(&fixture, None);
+        let ledger = ReleaseLedger::open(fixture.state.clone(), &fixture.identity).unwrap();
+        let mut active = ledger.load().unwrap().unwrap();
+        active.state = ReleaseRecoveryState::Escalated;
+        active.mutation.version_before = Some("0.24.4".into());
+        active.mutation.version_after = Some("0.24.5".into());
+        active.mutation.candidate_pushed = true;
+        active.failures.push(historical_remote_failure(
+            active.release_commit.as_deref().unwrap(),
+        ));
+        ledger.save(&active).unwrap();
+
+        let outcome = admit_natural_release_with_launcher(
+            &fixture.primary,
+            "Release version 0.24.5.",
+            &fixture.state,
+            |_, _, _| Ok(()),
+        )
+        .unwrap();
+        assert!(matches!(outcome, NaturalReleaseAdmission::Started(_)));
+        let archive: SupersededEpochEvidence =
+            serde_json::from_slice(&fs::read(ledger.superseded_path(&active.epoch_id)).unwrap())
+                .unwrap();
+        assert_eq!(archive.record.failures, active.failures);
+    }
+
+    #[test]
+    fn different_release_target_with_pushed_candidate_requires_clarification() {
         let fixture = active_epoch_fixture();
         let canonical = add_canonical_superseding_completion(&fixture);
         let canonical_head = git_text(&canonical, &["rev-parse", "HEAD"]);
@@ -5636,7 +6276,7 @@ mod tests {
         assert_eq!(message.matches('?').count(), 1);
         assert!(message.contains("0.24.2 -> 0.24.3"));
         assert!(message.contains("RRC autonomy repair"));
-        assert!(message.contains("a candidate pushed to GitHub"));
+        assert!(message.contains("historical candidate or CI evidence"));
         assert!(message.contains("Corrected v0.24.4 prerelease integration"));
         assert!(message.contains("0.24.4 -> 0.24.5"));
         assert!(!message.contains("epoch"));
@@ -5644,6 +6284,267 @@ mod tests {
         assert!(!message.contains("refs/heads"));
         assert_eq!(fs::read(ledger.path()).unwrap(), persisted);
         assert!(!ledger.superseded_path(&active.epoch_id).exists());
+    }
+
+    #[test]
+    fn pushed_tag_still_requires_irreversible_safety() {
+        let fixture = active_epoch_fixture();
+        add_same_objective_descendant_completion(&fixture, None);
+        let ledger = ReleaseLedger::open(fixture.state.clone(), &fixture.identity).unwrap();
+        let mut active = ledger.load().unwrap().unwrap();
+        active.mutation.version_before = Some("0.24.4".into());
+        active.mutation.version_after = Some("0.24.5".into());
+        active.mutation.candidate_pushed = true;
+        active.mutation.tag_name = Some("v0.24.5".into());
+        active.mutation.tag_object = Some("tag-object".into());
+        active.mutation.tag_pushed = true;
+        ledger.save(&active).unwrap();
+        let persisted = fs::read(ledger.path()).unwrap();
+
+        let outcome = admit_natural_release_with_launcher(
+            &fixture.primary,
+            "Release v0.24.5.",
+            &fixture.state,
+            |_, _, _| panic!("pushed target tag must block replacement"),
+        )
+        .unwrap();
+        let NaturalReleaseAdmission::Clarification(message) = outcome else {
+            panic!("pushed target tag must clarify");
+        };
+        assert!(message.contains("pushed target release tag"));
+        assert_eq!(fs::read(ledger.path()).unwrap(), persisted);
+        assert!(!ledger.superseded_path(&active.epoch_id).exists());
+    }
+
+    #[test]
+    fn publication_still_requires_irreversible_safety() {
+        let fixture = active_epoch_fixture();
+        add_same_objective_descendant_completion(&fixture, None);
+        let ledger = ReleaseLedger::open(fixture.state.clone(), &fixture.identity).unwrap();
+        let mut active = ledger.load().unwrap().unwrap();
+        active.mutation.version_before = Some("0.24.4".into());
+        active.mutation.version_after = Some("0.24.5".into());
+        active.mutation.candidate_pushed = true;
+        active.mutation.publication_run_id = Some(8001);
+        active.mutation.publication_verified = true;
+        active.mutation.published_asset_names = vec!["agent-vesper.tar.gz".into()];
+        ledger.save(&active).unwrap();
+        let persisted = fs::read(ledger.path()).unwrap();
+
+        let outcome = admit_natural_release_with_launcher(
+            &fixture.primary,
+            "Release version 0.24.5.",
+            &fixture.state,
+            |_, _, _| panic!("published target release must block replacement"),
+        )
+        .unwrap();
+        let NaturalReleaseAdmission::Clarification(message) = outcome else {
+            panic!("published target release must clarify");
+        };
+        assert!(message.contains("published target release"));
+        assert_eq!(fs::read(ledger.path()).unwrap(), persisted);
+        assert!(!ledger.superseded_path(&active.epoch_id).exists());
+    }
+
+    #[test]
+    fn same_target_non_descendant_requires_clarification() {
+        let fixture = active_epoch_fixture();
+        add_same_objective_non_descendant_completion(&fixture);
+        let ledger = ReleaseLedger::open(fixture.state.clone(), &fixture.identity).unwrap();
+        let mut active = ledger.load().unwrap().unwrap();
+        active.mutation.version_before = Some("0.24.4".into());
+        active.mutation.version_after = Some("0.24.5".into());
+        active.mutation.candidate_pushed = true;
+        ledger.save(&active).unwrap();
+        let persisted = fs::read(ledger.path()).unwrap();
+
+        let outcome = admit_natural_release_with_launcher(
+            &fixture.primary,
+            "Release version 0.24.5.",
+            &fixture.state,
+            |_, _, _| panic!("non-descendant replacement must not launch"),
+        )
+        .unwrap();
+        let NaturalReleaseAdmission::Clarification(message) = outcome else {
+            panic!("non-descendant replacement must clarify");
+        };
+        assert!(message.contains("not a strict descendant"));
+        assert_eq!(fs::read(ledger.path()).unwrap(), persisted);
+        assert!(!ledger.superseded_path(&active.epoch_id).exists());
+    }
+
+    #[test]
+    fn repository_mismatch_requires_clarification_without_mutation() {
+        let fixture = active_epoch_fixture();
+        let ledger = ReleaseLedger::open(fixture.state.clone(), &fixture.identity).unwrap();
+        let active = ledger.load().unwrap().unwrap();
+        let persisted = fs::read(ledger.path()).unwrap();
+        let foreign = fixture._temp.path().join("foreign-repository");
+        fs::create_dir_all(&foreign).unwrap();
+        run_git(&foreign, &["init", "-b", "main"]);
+        run_git(&foreign, &["config", "user.email", "rrc@example.invalid"]);
+        run_git(&foreign, &["config", "user.name", "RRC Test"]);
+        fs::write(
+            foreign.join("Cargo.toml"),
+            "[workspace]\nmembers = []\n[workspace.package]\nversion = \"0.24.4\"\n",
+        )
+        .unwrap();
+        run_git(&foreign, &["add", "."]);
+        run_git(&foreign, &["commit", "-m", "foreign source"]);
+        let source_commit = git_text(&foreign, &["rev-parse", "HEAD"]);
+        let source = ReleaseSourceChoice {
+            source_workspace: foreign,
+            source_commit: source_commit.clone(),
+            objective_id: Some("rrc-autonomy-repair".into()),
+            objective_label: Some("RRC autonomy repair".into()),
+            variant_label: Some("Foreign source".into()),
+            variant_id: Some("foreign-source".into()),
+            canonical_release_source: true,
+            supersedes: Vec::new(),
+            evidence_reports: Vec::new(),
+            base_sha: source_commit.clone(),
+            intended_commits: vec![source_commit],
+            intended_diff_sha256: "foreign-diff".into(),
+            branch_ref: "main".into(),
+        };
+
+        let outcome = reconcile_active_epoch(
+            active,
+            &source,
+            &ReleaseVersionSelector::Exact("0.24.5".into()),
+            &fixture.state,
+        )
+        .unwrap();
+        let ActiveEpochReconciliation::Clarify(message) = outcome else {
+            panic!("repository mismatch must clarify");
+        };
+        assert!(message.contains("different repository identity"));
+        assert_eq!(fs::read(ledger.path()).unwrap(), persisted);
+    }
+
+    #[test]
+    fn same_target_remote_evidence_requires_descendant_for_workspace_replacement() {
+        let fixture = active_epoch_fixture();
+        let ledger = ReleaseLedger::open(fixture.state.clone(), &fixture.identity).unwrap();
+        let mut active = ledger.load().unwrap().unwrap();
+        active.mutation.version_before = Some("0.24.4".into());
+        active.mutation.version_after = Some("0.24.5".into());
+        active.mutation.candidate_pushed = true;
+        active.mutation.candidate_push_ref = Some("refs/heads/main@historical-candidate".into());
+        let release_workspace = PathBuf::from(
+            active
+                .mutation
+                .release_workspace
+                .as_deref()
+                .expect("release workspace"),
+        );
+        fs::write(
+            release_workspace.join("unplanned.txt"),
+            "workspace no longer matches the persisted epoch\n",
+        )
+        .unwrap();
+        ledger.save(&active).unwrap();
+        let persisted = fs::read(ledger.path()).unwrap();
+
+        let outcome = admit_natural_release_with_launcher(
+            &fixture.primary,
+            "Release version 0.24.5.",
+            &fixture.state,
+            |_, _, _| panic!("remote-history workspace replacement must not launch"),
+        )
+        .unwrap();
+        let NaturalReleaseAdmission::Clarification(message) = outcome else {
+            panic!("remote-history workspace replacement must clarify");
+        };
+        assert!(message.contains("strict descendant"));
+        assert_eq!(fs::read(ledger.path()).unwrap(), persisted);
+        assert!(!ledger.superseded_path(&active.epoch_id).exists());
+    }
+
+    #[test]
+    fn same_target_noncanonical_descendant_requires_clarification() {
+        let fixture = active_epoch_fixture();
+        add_same_objective_descendant_completion_with_canonical(&fixture, None, false);
+        let ledger = ReleaseLedger::open(fixture.state.clone(), &fixture.identity).unwrap();
+        let mut active = ledger.load().unwrap().unwrap();
+        active.mutation.version_before = Some("0.24.4".into());
+        active.mutation.version_after = Some("0.24.5".into());
+        active.mutation.candidate_pushed = true;
+        ledger.save(&active).unwrap();
+        let persisted = fs::read(ledger.path()).unwrap();
+
+        let outcome = admit_natural_release_with_launcher(
+            &fixture.primary,
+            "Release version 0.24.5.",
+            &fixture.state,
+            |_, _, _| panic!("noncanonical replacement must not launch"),
+        )
+        .unwrap();
+        let NaturalReleaseAdmission::Clarification(message) = outcome else {
+            panic!("noncanonical replacement must clarify");
+        };
+        assert!(message.contains("not bound as the canonical release source"));
+        assert_eq!(fs::read(ledger.path()).unwrap(), persisted);
+        assert!(!ledger.superseded_path(&active.epoch_id).exists());
+    }
+
+    #[test]
+    fn exact_live_admission_sentence_adopts_same_unpublished_target() {
+        let fixture = active_epoch_fixture();
+        let newer = add_same_objective_descendant_completion(&fixture, Some("0.24.5"));
+        let newer_head = git_text(&newer, &["rev-parse", "HEAD"]);
+        let ledger = ReleaseLedger::open(fixture.state.clone(), &fixture.identity).unwrap();
+        let mut active = ledger.load().unwrap().unwrap();
+        active.mutation.version_before = Some("0.24.4".into());
+        active.mutation.version_after = Some("0.24.5".into());
+        active.mutation.candidate_pushed = true;
+        active.mutation.candidate_push_ref = Some("refs/heads/main@historical-candidate".into());
+        active.required_gates.push(GateRecord {
+            name: "canonical".into(),
+            head_sha: active.release_commit.clone().unwrap(),
+            run_id: Some(7001),
+            run_attempt: Some(1),
+            jobs: Vec::new(),
+            url: Some("https://github.example/runs/7001".into()),
+        });
+        assert!(!active.mutation.tag_pushed);
+        assert!(!active.mutation.publication_verified);
+        ledger.save(&active).unwrap();
+
+        let outcome = admit_natural_release_with_launcher(
+            &fixture.primary,
+            "Release the current unpublished v0.24.5 from main.",
+            &fixture.state,
+            |_, _, _| Ok(()),
+        )
+        .unwrap();
+        let NaturalReleaseAdmission::Started(message) = outcome else {
+            panic!("the exact live sentence must not clarify");
+        };
+        assert!(!message.contains("clarif"));
+        let replacement = ledger.load().unwrap().unwrap();
+        assert_eq!(
+            replacement.objective.version,
+            ReleaseVersionSelector::Exact("0.24.5".into())
+        );
+        assert_ne!(replacement.objective.version.target_label(), "0.24.6");
+        assert_eq!(
+            replacement.mutation.source_commit.as_deref(),
+            Some(newer_head.as_str())
+        );
+        assert!(
+            fs::read_to_string(
+                PathBuf::from(replacement.mutation.release_workspace.as_deref().unwrap())
+                    .join("Cargo.toml")
+            )
+            .unwrap()
+            .contains("version = \"0.24.5\"")
+        );
+        let archive: SupersededEpochEvidence =
+            serde_json::from_slice(&fs::read(ledger.superseded_path(&active.epoch_id)).unwrap())
+                .unwrap();
+        assert!(archive.record.mutation.candidate_pushed);
+        assert_eq!(archive.record.required_gates, active.required_gates);
     }
 
     fn write_objective_marker(

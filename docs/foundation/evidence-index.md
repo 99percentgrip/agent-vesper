@@ -1,5 +1,22 @@
 # Foundation Evidence Index
 
+## RRC explicit-version target repair (2026-10-03)
+
+- Execution report: [`2026-10-03-rrc-explicit-version-target-repair.md`](2026-10-03-rrc-explicit-version-target-repair.md)
+- Owning PRD: [`../Agent_Vesper_Release_Recovery_Controller_PRD.md`](../Agent_Vesper_Release_Recovery_Controller_PRD.md)
+- Verdict: **TYPED EXACT-VERSION ADMISSION, EQUAL-TARGET NO-OP, AND SAME-TARGET
+  CANDIDATE RECONCILIATION IMPLEMENTED; REQUESTED LOCAL GATES PASSED; NO RELEASE
+  ACTION.** Natural release imperatives and `/release` accept stable `X.Y.Z` targets
+  with optional input `v`, preserve bump behavior, and expose the requested target
+  before mutation. An equal already-versioned target rewrites no version file and
+  reuses clean canonical HEAD. Candidate push, CI, and failure receipts are archived
+  historical evidence when the same target adopts a newer canonical strict
+  descendant; a missing or mismatched release workspace cannot bypass that proof.
+  Pushed target tags and actual publication still require clarification.
+  Harness Clippy, focused/full harness tests, workspace tests, and all 50 acceptance
+  cases passed. No push, tag, publication, installation, provider call,
+  `cargo xtask verify`, or VRO-19 work occurred.
+
 ## RRC PTY stream-neutral test-oracle repair (2026-10-03)
 
 - Execution report: [`2026-10-03-rrc-pty-stream-neutral-test-oracle-repair.md`](2026-10-03-rrc-pty-stream-neutral-test-oracle-repair.md)

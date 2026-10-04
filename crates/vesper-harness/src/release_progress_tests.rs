@@ -3,7 +3,8 @@
 use super::release_executor::{ReleaseWorkerSnapshot, render_active_worker_status};
 use super::release_recovery::{
     GateRecord, JobSnapshot, JobState, LocalGateRecord, MAX_PROGRESS_MILESTONES, ReleaseObjective,
-    ReleaseProgressState, ReleaseRecoveryRecord, ReleaseRecoveryState, SettlementState,
+    ReleaseProgressState, ReleaseRecoveryRecord, ReleaseRecoveryState, ReleaseVersionSelector,
+    SettlementState,
 };
 
 fn record() -> ReleaseRecoveryRecord {
@@ -11,7 +12,7 @@ fn record() -> ReleaseRecoveryRecord {
         "progress-test-repository".into(),
         "progress-test-epoch".into(),
         ReleaseObjective {
-            bump: "patch".into(),
+            version: ReleaseVersionSelector::Patch,
             branch_ref: "main".into(),
             request: Some("release completed progress work".into()),
             post_release_main_epoch: false,

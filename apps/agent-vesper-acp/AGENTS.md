@@ -52,8 +52,9 @@ transport, stderr-only tracing, and orderly shutdown.
   create no evidence state; `tests/acceptance_controls.rs` checks the real isolated ACP
   process.
 
-- `/release patch|minor|major|status|resume|cancel|evidence|retry` delegates to
-  the shared harness Release Recovery Controller and answers without ordinary
+- `/release patch|minor|major|X.Y.Z|status|resume|cancel|evidence|retry`
+  (with optional input `vX.Y.Z`) delegates to the shared harness Release Recovery
+  Controller and answers without ordinary
   provider dispatch. If the controller admits a bounded repair, ACP supplies its
   normal client-backed permission port to the isolated repair AgentLoop; missing
   client permission support fails closed. `/ci` includes the same persisted

@@ -2157,7 +2157,7 @@ fn acceptance_verify() -> Result<(), String> {
         (
             "vesper-harness",
             &["--lib"],
-            "release_recovery::tests::irreversible_release_state_is_never_discarded_by_new_admission",
+            "release_recovery::tests::different_release_target_with_pushed_candidate_requires_clarification",
         ),
         (
             "vesper-harness",

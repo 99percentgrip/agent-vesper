@@ -1164,20 +1164,32 @@ passive refreshes do not spend the six-action repair watchdog, cancellation inte
 each wait promptly, and the separate 20-minute no-evidence bound still prevents an
 unbounded stalled watch.
 
-PR-6 routes `/release patch|minor|major|status|resume|cancel|evidence|retry` and
-`/ci` through the same persisted harness projection in TUI and ACP. Both hosts
+PR-6 routes `/release patch|minor|major|X.Y.Z|status|resume|cancel|evidence|retry`
+and `/ci` through the same persisted harness projection in TUI and ACP. Both hosts
 supply their ordinary permission port to repair workers; `/release` is never a
-free-form release prompt. Natural-language admission now classifies any active
-checkpoint before starting: a matching `DiagnosingLocalFailure` checkpoint
-transitions back to `LocalVerification` and launches automatically; a stale
-same-objective source or release-worktree identity is archived in the user-owned
-release-state root and atomically replaced. An explicitly canonical integrated
-source may likewise replace a historical local-only objective that its committed
-provenance marker supersedes, while retaining exact objective/variant identities
-in both records. Unrelated objectives and any recorded remote push, remote-CI,
-tag or publication state remain unchanged behind one bounded clarification. That
-question names both human objectives and known version transitions while exposing
-none of the epoch ID, internal state, ledger path, worktree path or raw SHA.
+free-form release prompt. Natural-language imperatives accept the same typed
+selector: bump classes retain their historical behavior, while exact stable
+semantic versions normalize optional `vX.Y.Z` to `X.Y.Z`, reject malformed,
+prerelease, leading-zero, or decreasing targets, and appear in release status and
+typed progress before any version mutation. An exact target equal to the workspace
+version is valid when the complete version graph is already at that target: RRC
+validates it without rewriting manifests, `Cargo.lock`, or Registry metadata, and a
+clean canonical HEAD may become the candidate without a synthetic version-bump
+commit. Higher exact targets use the existing transactional complete version-graph
+update. Natural-language admission classifies any active checkpoint before starting:
+a matching `DiagnosingLocalFailure` checkpoint transitions back to
+`LocalVerification` and launches automatically; a stale same-objective source or
+release-worktree identity is archived in the user-owned release-state root and
+atomically replaced. Reconciliation compares resolved target versions, so historical
+`Patch` from `0.24.4` and new `Exact("0.24.5")` are the same target. Candidate push,
+remote CI, and failure receipts are preserved historical evidence rather than
+publication boundaries: for that same target, a newer canonical strict descendant
+is adopted automatically after archiving the complete old record. A different target
+may replace a fully local epoch, but conflicting target plus candidate/CI evidence,
+a non-descendant source, an unrelated objective, a pushed target release tag, or an
+actually published target release remains unchanged behind one bounded clarification.
+That question names both human objectives and known version transitions while
+exposing none of the epoch ID, internal state, ledger path, worktree path or raw SHA.
 
 PR-7 includes a manually dispatched read-only fixture and fail-closed local
 acceptance enrollment. With explicit authorization, the fixture was also run in
@@ -1218,6 +1230,7 @@ non-publishing boundary, not a simulated pass or an RRC implementation gap.
 
 Execution evidence and exact verification receipts:
 
+- [`foundation/2026-10-03-rrc-explicit-version-target-repair.md`](foundation/2026-10-03-rrc-explicit-version-target-repair.md) — typed bump-or-exact-version admission, equal-target no-op validation/candidate reuse, same-target canonical-descendant reconciliation with complete historical candidate/CI archival, final-audit closure of the mismatched-workspace descendant bypass, pushed-tag/publication refusal, frozen slash-oracle preservation, acceptance-inventory repair, and requested local receipts with no release action
 - [`foundation/2026-10-02-rrc-typed-local-settlement-acceptance-repair.md`](foundation/2026-10-02-rrc-typed-local-settlement-acceptance-repair.md) — classifies the lifecycle acceptance failure as a stale cancellation expectation, preserves typed source-failure/watchdog/cancellation separation, records focused green receipts, and leaves broad acceptance unrerun
 - [`foundation/2026-10-02-rrc-liveness-watchdog-repair.md`](foundation/2026-10-02-rrc-liveness-watchdog-repair.md) — clean-base progress-aware command/remote/repair watchdog repair, persisted shared liveness, focused local receipts, and explicit no-resume/no-release/no-broad-verification boundary
 - [`foundation/2026-10-02-v0.24.5-rrc-deterministic-governor-repair.md`](foundation/2026-10-02-v0.24.5-rrc-deterministic-governor-repair.md) — fifth immutable red-candidate matrix, correction of the earlier incomplete Linux diagnosis, red-first deterministic integration-policy regression, ten-repeat ACP process proof, complete 50-case/canonical/MSRV local gates, and pending fresh exact-SHA hosted receipts with no tag or publication in scope

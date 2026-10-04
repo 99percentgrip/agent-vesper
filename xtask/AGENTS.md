@@ -17,8 +17,8 @@ architecture, MSRV, and source-oracle checks.
   responsive remote-poll cancellation, complete-matrix multi-family verified repair,
   pause/resume, immutable-publication, natural-language stale-epoch recovery,
   obsolete-epoch preservation, explicit canonical supersession of a historical
-  local-only objective, unrelated-objective clarification, irreversible-state
-  retention, registered-controller/local-subprocess lifecycle, truthful TUI task
+  local-only objective, unrelated-objective clarification, conflicting-target
+  candidate/CI clarification, registered-controller/local-subprocess lifecycle, truthful TUI task
   projection, production-orchestrator, native host cancellation/restart
   process-lifecycle, Linux Host Resource Governor cgroup discovery and constrained
   RAM/swap and disk admission, resumable resource deferral, Linux ACP process-level

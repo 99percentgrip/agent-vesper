@@ -144,9 +144,10 @@ business logic.
   env var (surfaced as a screen hint) — moving it to the OS credential store is
   the security follow-up.
 - `src/commands.rs` — slash-command parsing, registry, and resolution
-  against the active provider's superpowers. `/release` resolves to a typed
-  shared RRC operation (start/status/resume/cancel/evidence/retry), never a
-  free-form AgentLoop workflow. If the controller admits a bounded isolated
+  against the active provider's superpowers. `/release` accepts `patch`, `minor`,
+  `major`, or a stable exact `X.Y.Z` target (optional input `vX.Y.Z`) and resolves
+  to a typed shared RRC operation (start/status/resume/cancel/evidence/retry),
+  never a free-form AgentLoop workflow. If the controller admits a bounded isolated
   repair, the TUI supplies its ordinary approval port; controller state never
   bypasses permission. `/ci` appends the same persisted RRC status shown by ACP.
   The terminal owns presentation only.
