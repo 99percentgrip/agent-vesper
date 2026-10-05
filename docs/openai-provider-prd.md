@@ -233,3 +233,14 @@ credential vault to verify visible connection failure, retry and back navigation
 Neither walkthrough submitted a prompt. Workspace verification passed 2,129 tests
 with zero failures and 34 explicitly ignored tests; Clippy and the 27-package
 architecture check passed. This does not certify unexecuted release/platform gates.
+
+## Device sign-in UI repair evidence (2026-10-05)
+
+[Execution report](foundation/release-recovery-controller-deep-debug-execution.md#openai-sign-in-follow-up)
+records the confirmed TUI URL-discard defect, native browser launch and explicit
+verification-link/code fallback, retry/copy controls and credential-preserving
+cancellation. Twelve authentication UI tests, all 300 TUI library tests and
+48 native adapter tests passed offline. Live account/browser completion and
+cross-platform UI observation remain unexecuted; RRC's five-target candidate
+predates this additional UI repair. The adapter still uses its native credential
+port and no Codex runtime or credential files.

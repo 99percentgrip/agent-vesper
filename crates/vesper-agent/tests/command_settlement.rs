@@ -149,13 +149,13 @@ fn cancellation_command(marker: &str) -> String {
 
 #[cfg(unix)]
 fn held_pipe_command() -> String {
-    "(sleep 2; echo stale > descendant.marker; echo stale) & echo leader-done".into()
+    "(sleep 2; echo stale > descendant.marker; echo stale) & touch settlement.ready; echo leader-done".into()
 }
 
 #[cfg(windows)]
 fn held_pipe_command() -> String {
     powershell(&format!(
-        "{}; Write-Output leader-done",
+        "{}; Set-Content -LiteralPath settlement.ready -Value ready; Write-Output leader-done",
         powershell_descendant(
             "Start-Sleep -Seconds 2; Set-Content -LiteralPath descendant.marker -Value stale; [Console]::Out.Write('stale')"
         )
@@ -181,16 +181,64 @@ async fn assert_marker_absent_after_cleanup(path: &std::path::Path) {
     );
 }
 
-async fn wait_for_marker(path: &std::path::Path) {
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while !path.exists() && Instant::now() < deadline {
+async fn wait_for_marker<T: std::fmt::Debug>(
+    path: &std::path::Path,
+    task: &mut tokio::task::JoinHandle<T>,
+) {
+    // Shell startup is separate from the post-signal settlement deadline.
+    // Keep this below the cancellation/drop fixtures' 20-second command timeout.
+    let started = Instant::now();
+    let startup_bound = Duration::from_secs(15);
+    let deadline = started + startup_bound;
+    loop {
+        if path.exists() {
+            eprintln!(
+                "fixture ready after {:?}: {}",
+                started.elapsed(),
+                path.display()
+            );
+            return;
+        }
+        if task.is_finished() && !path.exists() {
+            let result = task.await;
+            panic!(
+                "fixture command exited before readiness: {}: {result:?}",
+                path.display()
+            );
+        }
+        if Instant::now() >= deadline {
+            task.abort();
+            let result = task.await;
+            panic!(
+                "fixture command did not start within {startup_bound:?}: {}: {result:?}",
+                path.display()
+            );
+        }
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
-    assert!(
-        path.exists(),
-        "fixture command did not start: {}",
-        path.display()
-    );
+}
+
+#[tokio::test]
+async fn startup_readiness_allows_slow_shell_without_spending_settlement_budget() {
+    let root = tempfile::tempdir().unwrap();
+    let ctx = context(root.path(), Arc::new(Cancel::default()));
+    #[cfg(unix)]
+    let command = "sleep 6; touch startup.ready".to_owned();
+    #[cfg(windows)]
+    let command =
+        powershell("Start-Sleep -Seconds 6; Set-Content -LiteralPath startup.ready -Value ready");
+    let invocation = call(&command, 20);
+    let mut task = tokio::spawn(async move { RunCommand.execute(&invocation, &ctx).await });
+    wait_for_marker(&root.path().join("startup.ready"), &mut task).await;
+    assert!(task.await.unwrap().is_ok());
+}
+
+#[tokio::test]
+#[should_panic(expected = "fixture command exited before readiness")]
+async fn startup_readiness_reports_early_command_failure() {
+    let root = tempfile::tempdir().unwrap();
+    let mut task = tokio::spawn(async { Err::<(), _>("synthetic startup failure") });
+    wait_for_marker(&root.path().join("never.ready"), &mut task).await;
 }
 
 #[tokio::test]
@@ -280,8 +328,8 @@ async fn cancellation_preserves_partial_output_and_next_command_runs() {
     let signal: Arc<dyn CancellationSignal> = cancel.clone();
     let ctx = context(root.path(), signal);
     let call = call(&cancellation_command("cancelled.marker"), 20);
-    let task = tokio::spawn(async move { RunCommand.execute(&call, &ctx).await });
-    wait_for_marker(&root.path().join("cancel.ready")).await;
+    let mut task = tokio::spawn(async move { RunCommand.execute(&call, &ctx).await });
+    wait_for_marker(&root.path().join("cancel.ready"), &mut task).await;
     cancel.0.store(true, Ordering::Release);
     let error = tokio::time::timeout(Duration::from_secs(3), task)
         .await
@@ -313,8 +361,8 @@ async fn dropping_async_caller_still_cleans_owned_process_tree() {
         )
     ));
     let call = call(&command, 20);
-    let task = tokio::spawn(async move { RunCommand.execute(&call, &ctx).await });
-    wait_for_marker(&ready_path).await;
+    let mut task = tokio::spawn(async move { RunCommand.execute(&call, &ctx).await });
+    wait_for_marker(&ready_path, &mut task).await;
     task.abort();
     let _ = task.await;
     assert_marker_absent_after_cleanup(&root.path().join("dropped.marker")).await;
@@ -325,10 +373,13 @@ async fn dropping_async_caller_still_cleans_owned_process_tree() {
 async fn leader_exit_does_not_wait_for_descendant_held_pipe() {
     let root = tempfile::tempdir().unwrap();
     let ctx = context(root.path(), Arc::new(Cancel::default()));
+    let invocation = call(&held_pipe_command(), 5);
+    let mut task = tokio::spawn(async move { RunCommand.execute(&invocation, &ctx).await });
+    wait_for_marker(&root.path().join("settlement.ready"), &mut task).await;
     let started = Instant::now();
-    let output = RunCommand
-        .execute(&call(&held_pipe_command(), 5), &ctx)
+    let output = task
         .await
+        .unwrap()
         .expect("owned descendant must be cleaned after leader exit")
         .text
         .as_str()
@@ -345,19 +396,22 @@ async fn descendant_writing_after_leader_exit_is_cleaned() {
     let ctx = context(root.path(), Arc::new(Cancel::default()));
     #[cfg(unix)]
     let command =
-        "(while :; do printf z; done) & (sleep 2; echo stale > writer.marker) & exit 0".to_owned();
+        "(while :; do printf z; done) & (sleep 2; echo stale > writer.marker) & touch settlement.ready; exit 0".to_owned();
     #[cfg(windows)]
     let command = powershell(&format!(
-        "{}; {}",
+        "{}; {}; Set-Content -LiteralPath settlement.ready -Value ready",
         powershell_descendant("while ($true) { [Console]::Out.Write('z' * 4096) }"),
         powershell_descendant(
             "Start-Sleep -Seconds 2; Set-Content -LiteralPath writer.marker -Value stale"
         )
     ));
+    let invocation = call(&command, 5);
+    let mut task = tokio::spawn(async move { RunCommand.execute(&invocation, &ctx).await });
+    wait_for_marker(&root.path().join("settlement.ready"), &mut task).await;
     let started = Instant::now();
-    let output = RunCommand
-        .execute(&call(&command, 5), &ctx)
+    let output = task
         .await
+        .unwrap()
         .expect("writer descendant must be cleaned")
         .text
         .as_str()

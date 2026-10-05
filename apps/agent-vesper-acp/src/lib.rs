@@ -942,8 +942,9 @@ impl AcpHarnessEngine {
             });
         }
         // Slash commands either answer in-process (never dispatched, never
-        // persisted) or — for `/diff` and `/release` — replace the prompt
-        // with a workflow that drives a real agent turn.
+        // persisted) or — for `/diff` — replace the prompt with a workflow
+        // that drives a real agent turn. `/release` is served in-process by
+        // the shared persisted release controller.
         let mut text = text;
         let mut workflow_replaced = false;
         if !has_non_text_content {
@@ -1329,9 +1330,10 @@ impl AcpHarnessEngine {
     /// unknown-command response for un-catalog `/` text. Returns
     /// `SlashFlow::Ordinary` for ordinary prompts so the multi-turn loop
     /// runs. Slash turns never dispatch the provider and are never persisted
-    /// (fixtures/acp/slash-command parity) — except `/diff` and `/release`,
-    /// which replace the prompt with a workflow that drives one real agent
-    /// turn (TUI parity).
+    /// (fixtures/acp/slash-command parity) — except `/diff`, which replaces
+    /// the prompt with a workflow that drives one real agent turn (TUI
+    /// parity). `/release` is served in-process by the shared persisted
+    /// release controller.
     async fn try_slash_command(&self, request: &AcpPromptRequest, text: &str) -> SlashFlow {
         use vesper_harness::slash_commands::{
             SlashCommandContext, SlashCommandOutcome, execute_slash_command,
@@ -1752,8 +1754,8 @@ impl AcpHarnessEngine {
     /// checkpoint/MCP roots; conversation-state commands (`/compact`,
     /// `/clear-history`, `/clear-plan`) mutate this engine's per-session
     /// history and plan maps; `/usage` queries the live provider quota
-    /// endpoint; `/diff` and `/release` become workflow prompts for a real
-    /// agent turn.
+    /// endpoint; `/diff` becomes a workflow prompt for a real agent turn;
+    /// `/release` uses the shared persisted release controller.
     async fn host_owned_command(
         &self,
         name: &str,
@@ -1861,11 +1863,39 @@ impl AcpHarnessEngine {
                  removed, and a one-paragraph summary of what the changes do."
                     .to_owned(),
             ),
-            "release" => SlashFlow::Workflow(format!(
-                "Cut a {} release from this workspace. Bump the version, update the \
-                 changelog, run the full verification gate, commit, tag, and push.",
-                release_bump(argument)
-            )),
+            "release" => {
+                let workspace_root = workspace_root_path(&request.workspace_roots);
+                let permission: Arc<dyn vesper_agent::PermissionPort> = request
+                    .permission_requester
+                    .as_ref()
+                    .map(|requester| {
+                        Arc::new(AcpHarnessPermissionPort {
+                            requester: Arc::clone(requester),
+                            session_id: request.session_id.clone(),
+                        }) as Arc<dyn vesper_agent::PermissionPort>
+                    })
+                    .unwrap_or_else(|| Arc::new(vesper_agent::DenyPermissionPort));
+                let repair_factory = vesper_harness::WorkerFactory::new(
+                    Arc::clone(&self.registry),
+                    self.config.clone(),
+                )
+                .with_permission_port(permission)
+                .with_release_policy(request.operating_mode, request.permission_mode);
+                let argument = argument.to_owned();
+                let body = tokio::task::spawn_blocking(move || {
+                    vesper_harness::release_recovery::release_command_for_workspace_with_factory(
+                        &workspace_root,
+                        &argument,
+                        Some(repair_factory),
+                    )
+                    .unwrap_or_else(|error| format!("release: {error}"))
+                })
+                .await
+                .unwrap_or_else(|error| {
+                    format!("/release failed — host executor panicked: {error}")
+                });
+                respond(body)
+            }
             _ => {
                 let session_id = request.session_id.as_str().to_owned();
                 let workspace_root = workspace_root_path(&request.workspace_roots);
@@ -2346,17 +2376,8 @@ enum SlashFlow {
     /// validated working-history replacement for runtime persistence.
     Respond(AcpPromptResult),
     /// Replace the prompt with this workflow text and run one real agent
-    /// turn (TUI `/diff` and `/release` parity).
+    /// turn (currently `/diff`; release progression is RRC-owned).
     Workflow(String),
-}
-
-/// Resolves the bump level for `/release [patch|minor|major]` (TUI parity).
-fn release_bump(argument: &str) -> &'static str {
-    match argument.trim().to_ascii_lowercase().as_str() {
-        "minor" => "minor",
-        "major" => "major",
-        _ => "patch",
-    }
 }
 
 /// Resolves the workspace root for checkpoint confinement: the primary ACP
@@ -4025,13 +4046,6 @@ mod tests {
                 .get(&vesper_domain::SessionId::new("sess-plan").unwrap()),
             Some(&"## Step 1".to_owned())
         );
-    }
-
-    #[test]
-    fn release_helper_matches_tui_semantics() {
-        assert_eq!(release_bump(""), "patch");
-        assert_eq!(release_bump("MINOR"), "minor");
-        assert_eq!(release_bump("major"), "major");
     }
 
     #[test]

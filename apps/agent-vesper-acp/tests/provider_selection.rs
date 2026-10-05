@@ -22,8 +22,8 @@
 #![cfg(feature = "integration-test-harness")]
 
 use std::{
-    io::{BufRead, BufReader, Write},
-    process::{Command, Stdio},
+    io::{BufRead, BufReader, Read, Write},
+    process::{Child, Command, Stdio},
     sync::mpsc,
     thread,
     time::{Duration, Instant},
@@ -37,20 +37,48 @@ use support::critical_environment_keys;
 
 const TIMEOUT: Duration = Duration::from_secs(5);
 
+struct OwnedChild(Child);
+
+impl Drop for OwnedChild {
+    fn drop(&mut self) {
+        if self.0.try_wait().ok().flatten().is_none() {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+}
+
 #[test]
 fn synthetic_provider_serves_an_acp_prompt_lifecycle_without_network_io() {
-    let temp = std::env::temp_dir().join(format!(
-        "agent-vesper-stage9-synthetic-{}",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_dir_all(&temp);
-    std::fs::create_dir_all(&temp).unwrap();
+    let temporary_root = tempfile::tempdir().unwrap();
+    let temp = temporary_root.path().to_path_buf();
+
+    // HOME alone cannot isolate an OS credential manager. Keep every registered
+    // native provider explicitly signed out and workspace discovery private.
+    let credentials = temp.join("signed-out.json");
+    std::fs::write(
+        &credentials,
+        serde_json::to_vec(&json!({"credentials": {
+            "openai": {"native-auth": "{\"mode\":\"signed-out\"}"},
+            "xai": {"native-auth": "{\"mode\":\"signed-out\"}"}
+        }}))
+        .unwrap(),
+    )
+    .unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&credentials, std::fs::Permissions::from_mode(0o600)).unwrap();
+    }
 
     // No ZAI_API_KEY and no AGENT_VESPER_GLM_BASE_URL: synthetic mode must not
     // require GLM credentials or any network endpoint.
     let mut command = Command::new(env!("CARGO_BIN_EXE_agent-vesper-acp"));
     command
+        .current_dir(&temp)
         .env_clear()
+        .env("AGENT_VESPER_OPENAI_CREDENTIALS_PATH", &credentials)
+        .env("AGENT_VESPER_XAI_CREDENTIALS_PATH", &credentials)
         .env("HOME", &temp)
         .env("XDG_CONFIG_HOME", temp.join("config"))
         .env("XDG_CACHE_HOME", temp.join("cache"))
@@ -65,13 +93,19 @@ fn synthetic_provider_serves_an_acp_prompt_lifecycle_without_network_io() {
             command.env(key, value);
         }
     }
-    let mut child = command.spawn().unwrap();
-    let mut stdin = child.stdin.take().unwrap();
-    let stdout = child.stdout.take().unwrap();
+    let mut child = OwnedChild(command.spawn().unwrap());
+    let mut stdin = child.0.stdin.take().unwrap();
+    let stdout = child.0.stdout.take().unwrap();
+    let stderr = child.0.stderr.take().unwrap();
+    let errors = thread::spawn(move || {
+        let mut output = String::new();
+        BufReader::new(stderr).read_to_string(&mut output).unwrap();
+        output
+    });
     let (line_sender, line_receiver) = mpsc::channel();
     let reader = thread::spawn(move || {
         for line in BufReader::new(stdout).lines() {
-            line_sender.send(line.unwrap()).unwrap();
+            let _ = line_sender.send(line.unwrap());
         }
     });
 
@@ -84,7 +118,7 @@ fn synthetic_provider_serves_an_acp_prompt_lifecycle_without_network_io() {
 
     send(
         &mut stdin,
-        json!({"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":"/tmp","mcpServers":[]}}),
+        json!({"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":temp,"mcpServers":[]}}),
     );
     let session = response_for(&line_receiver, 2, &mut Vec::new())["result"]["sessionId"]
         .as_str()
@@ -130,7 +164,7 @@ fn synthetic_provider_serves_an_acp_prompt_lifecycle_without_network_io() {
     drop(stdin);
     let deadline = Instant::now() + TIMEOUT;
     let status = loop {
-        if let Some(status) = child.try_wait().unwrap() {
+        if let Some(status) = child.0.try_wait().unwrap() {
             break status;
         }
         assert!(Instant::now() < deadline, "ACP process did not exit on EOF");
@@ -138,6 +172,11 @@ fn synthetic_provider_serves_an_acp_prompt_lifecycle_without_network_io() {
     };
     assert!(status.success(), "ACP process exited with {status}");
     reader.join().unwrap();
+    let stderr = errors.join().unwrap();
+    assert!(
+        !stderr.contains(support::CANARY),
+        "secret reached ACP stderr"
+    );
     // Every stdout line must be ACP JSON-RPC; nothing else may contaminate it.
     assert!(
         transcript
@@ -155,7 +194,9 @@ fn send(stdin: &mut impl Write, value: Value) {
 
 fn response_for(receiver: &mpsc::Receiver<String>, id: u64, transcript: &mut Vec<Value>) -> Value {
     loop {
-        let line = receiver.recv_timeout(TIMEOUT).unwrap();
+        let line = receiver.recv_timeout(TIMEOUT).unwrap_or_else(|error| {
+            panic!("ACP response {id} did not arrive: {error}; transcript={transcript:?}")
+        });
         let value: Value = serde_json::from_str(&line).expect("stdout contained non-JSON text");
         transcript.push(value.clone());
         if value["id"] == id {

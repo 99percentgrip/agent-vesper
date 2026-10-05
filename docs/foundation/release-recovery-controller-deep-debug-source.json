@@ -1,0 +1,960 @@
+{
+  "date": "2026-10-05",
+  "base_primary_head": "0b5630d271965e7d9df3a0a09c116c7f8c44042e",
+  "primary_tree": "pre-existing dirty/untracked implementation; no primary commit or push",
+  "rrc_native_candidate": "0f45e56329457b61f75399e00146670e1a13d3e5",
+  "private_repository": "99percentgrip/agent-vesper-rrc-acceptance",
+  "native_run": {
+    "conclusion": "success",
+    "headSha": "0f45e56329457b61f75399e00146670e1a13d3e5",
+    "jobs": [
+      {
+        "completedAt": "2026-10-05T07:33:32Z",
+        "conclusion": "success",
+        "databaseId": 111658704748,
+        "name": "linux-x86_64",
+        "startedAt": "2026-10-05T07:27:20Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-10-05T07:27:23Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-10-05T07:27:21Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-05T07:27:23Z",
+            "conclusion": "success",
+            "name": "Reject non-SHA candidate input",
+            "number": 2,
+            "startedAt": "2026-10-05T07:27:23Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-05T07:27:27Z",
+            "conclusion": "success",
+            "name": "Run actions/checkout@v6",
+            "number": 3,
+            "startedAt": "2026-10-05T07:27:23Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-05T07:27:36Z",
+            "conclusion": "success",
+            "name": "Install pinned Rust toolchain",
+            "number": 4,
+            "startedAt": "2026-10-05T07:27:27Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-05T07:33:06Z",
+            "conclusion": "success",
+            "name": "Run native RRC controller, adapter, persistence and process regressions",
+            "number": 5,
+            "startedAt": "2026-10-05T07:27:36Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-05T07:33:29Z",
+            "conclusion": "success",
+            "name": "Run typed repair dispatch and retry acceptance",
+            "number": 6,
+            "startedAt": "2026-10-05T07:33:06Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-05T07:33:30Z",
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@v6",
+            "number": 12,
+            "startedAt": "2026-10-05T07:33:29Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-05T07:33:30Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 13,
+            "startedAt": "2026-10-05T07:33:30Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/99percentgrip/agent-vesper-rrc-acceptance/actions/runs/37277822045/job/111658704748"
+      },
+      {
+        "completedAt": "2026-10-05T07:33:33Z",
+        "conclusion": "success",
+        "databaseId": 111658704992,
+        "name": "linux-arm64",
+        "startedAt": "2026-10-05T07:27:24Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-10-05T07:27:25Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-10-05T07:27:24Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-05T07:27:25Z",
+            "conclusion": "success",
+            "name": "Reject non-SHA candidate input",
+            "number": 2,
+            "startedAt": "2026-10-05T07:27:25Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-05T07:27:29Z",
+            "conclusion": "success",
+            "name": "Run actions/checkout@v6",
+            "number": 3,
+            "startedAt": "2026-10-05T07:27:25Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-05T07:27:35Z",
+            "conclusion": "success",
+            "name": "Install pinned Rust toolchain",
+            "number": 4,
+            "startedAt": "2026-10-05T07:27:29Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-05T07:33:07Z",
+            "conclusion": "success",
+            "name": "Run native RRC controller, adapter, persistence and process regressions",
+            "number": 5,
+            "startedAt": "2026-10-05T07:27:35Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-05T07:33:31Z",
+            "conclusion": "success",
+            "name": "Run typed repair dispatch and retry acceptance",
+            "number": 6,
+            "startedAt": "2026-10-05T07:33:07Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-05T07:33:31Z",
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@v6",
+            "number": 12,
+            "startedAt": "2026-10-05T07:33:31Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-05T07:33:31Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 13,
+            "startedAt": "2026-10-05T07:33:31Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/99percentgrip/agent-vesper-rrc-acceptance/actions/runs/37277822045/job/111658704992"
+      },
+      {
+        "completedAt": "2026-10-05T07:36:14Z",
+        "conclusion": "success",
+        "databaseId": 111658705064,
+        "name": "macos-intel",
+        "startedAt": "2026-10-05T07:27:22Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-10-05T07:27:24Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-10-05T07:27:23Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-05T07:27:24Z",
+            "conclusion": "success",
+            "name": "Reject non-SHA candidate input",
+            "number": 2,
+            "startedAt": "2026-10-05T07:27:24Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-05T07:27:40Z",
+            "conclusion": "success",
+            "name": "Run actions/checkout@v6",
+            "number": 3,
+            "startedAt": "2026-10-05T07:27:24Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-05T07:28:06Z",
+            "conclusion": "success",
+            "name": "Install pinned Rust toolchain",
+            "number": 4,
+            "startedAt": "2026-10-05T07:27:40Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-05T07:35:35Z",
+            "conclusion": "success",
+            "name": "Run native RRC controller, adapter, persistence and process regressions",
+            "number": 5,
+            "startedAt": "2026-10-05T07:28:06Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-05T07:36:10Z",
+            "conclusion": "success",
+            "name": "Run typed repair dispatch and retry acceptance",
+            "number": 6,
+            "startedAt": "2026-10-05T07:35:35Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-05T07:36:11Z",
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@v6",
+            "number": 12,
+            "startedAt": "2026-10-05T07:36:10Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-05T07:36:11Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 13,
+            "startedAt": "2026-10-05T07:36:11Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/99percentgrip/agent-vesper-rrc-acceptance/actions/runs/37277822045/job/111658705064"
+      },
+      {
+        "completedAt": "2026-10-05T07:32:17Z",
+        "conclusion": "success",
+        "databaseId": 111658705120,
+        "name": "macos-apple-silicon",
+        "startedAt": "2026-10-05T07:27:25Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-10-05T07:27:27Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-10-05T07:27:26Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-05T07:27:27Z",
+            "conclusion": "success",
+            "name": "Reject non-SHA candidate input",
+            "number": 2,
+            "startedAt": "2026-10-05T07:27:27Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-05T07:27:31Z",
+            "conclusion": "success",
+            "name": "Run actions/checkout@v6",
+            "number": 3,
+            "startedAt": "2026-10-05T07:27:27Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-05T07:27:38Z",
+            "conclusion": "success",
+            "name": "Install pinned Rust toolchain",
+            "number": 4,
+            "startedAt": "2026-10-05T07:27:31Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-05T07:31:53Z",
+            "conclusion": "success",
+            "name": "Run native RRC controller, adapter, persistence and process regressions",
+            "number": 5,
+            "startedAt": "2026-10-05T07:27:38Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-05T07:32:14Z",
+            "conclusion": "success",
+            "name": "Run typed repair dispatch and retry acceptance",
+            "number": 6,
+            "startedAt": "2026-10-05T07:31:53Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-05T07:32:14Z",
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@v6",
+            "number": 12,
+            "startedAt": "2026-10-05T07:32:14Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-05T07:32:15Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 13,
+            "startedAt": "2026-10-05T07:32:14Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/99percentgrip/agent-vesper-rrc-acceptance/actions/runs/37277822045/job/111658705120"
+      },
+      {
+        "completedAt": "2026-10-05T07:34:14Z",
+        "conclusion": "success",
+        "databaseId": 111658705138,
+        "name": "windows-x86_64",
+        "startedAt": "2026-10-05T07:27:20Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-10-05T07:27:21Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-10-05T07:27:21Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-05T07:27:22Z",
+            "conclusion": "success",
+            "name": "Reject non-SHA candidate input",
+            "number": 2,
+            "startedAt": "2026-10-05T07:27:21Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-05T07:27:47Z",
+            "conclusion": "success",
+            "name": "Run actions/checkout@v6",
+            "number": 3,
+            "startedAt": "2026-10-05T07:27:22Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-05T07:27:56Z",
+            "conclusion": "success",
+            "name": "Install pinned Rust toolchain",
+            "number": 4,
+            "startedAt": "2026-10-05T07:27:47Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-05T07:33:36Z",
+            "conclusion": "success",
+            "name": "Run native RRC controller, adapter, persistence and process regressions",
+            "number": 5,
+            "startedAt": "2026-10-05T07:27:56Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-05T07:34:10Z",
+            "conclusion": "success",
+            "name": "Run typed repair dispatch and retry acceptance",
+            "number": 6,
+            "startedAt": "2026-10-05T07:33:36Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-05T07:34:12Z",
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@v6",
+            "number": 12,
+            "startedAt": "2026-10-05T07:34:10Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-05T07:34:12Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 13,
+            "startedAt": "2026-10-05T07:34:12Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/99percentgrip/agent-vesper-rrc-acceptance/actions/runs/37277822045/job/111658705138"
+      }
+    ],
+    "status": "completed"
+  },
+  "source": [
+    {
+      "path": "crates/vesper-harness/src/release_recovery.rs",
+      "sha256": "573be12a134891fb3dbd8a83537b1575953de947c4eb0fc8c70648fffbffde22",
+      "native_candidate_exact_bytes": true
+    },
+    {
+      "path": "crates/vesper-harness/src/release_executor.rs",
+      "sha256": "6fe8d219b650e82c4f09e5d743f0b2d15315e440b3d908b8a7237fab39896e03",
+      "native_candidate_exact_bytes": true
+    },
+    {
+      "path": "crates/vesper-harness/src/lib.rs",
+      "sha256": "1c031a400b826dfebe47d1ea23fbc8bb5ce0b7bcbf1ee8c93bc302015019bd2c",
+      "native_candidate_exact_bytes": true
+    },
+    {
+      "path": "crates/vesper-harness/Cargo.toml",
+      "sha256": "80209891c121f6667b5a7114fd8272372abbf0d88419b4a6c54bcbc9841d68c6",
+      "native_candidate_exact_bytes": true
+    },
+    {
+      "path": "crates/vesper-harness/tests/release_repair_dispatch.rs",
+      "sha256": "a812b2afa771f1c928e995301b478631af9fec86c9e0f42d3c3e0da9d30ade30",
+      "native_candidate_exact_bytes": true
+    },
+    {
+      "path": "crates/vesper-harness/tests/release_repair_retry.rs",
+      "sha256": "3fdf19c28363bd0fd6657ddc9f122f6719502fcf6b8b66fda328e339e98d9ce6",
+      "native_candidate_exact_bytes": true
+    },
+    {
+      "path": "apps/agent-vesper-tui/src/main.rs",
+      "sha256": "f6d6defea3d7c80df69871adc738401c1e51f1f92f1097d183070899944b8157",
+      "native_candidate_exact_bytes": true
+    },
+    {
+      "path": "apps/agent-vesper-acp/src/lib.rs",
+      "sha256": "98dbacb21cf8933c7d11204c5e39e92946b6f36309996c02e1e51364645adaa1",
+      "native_candidate_exact_bytes": true
+    },
+    {
+      "path": "apps/agent-vesper-tui/tests/r3_voice_pack.rs",
+      "sha256": "fd0e926516ffbbf2db9d33451273897dacb347357fa743ec2575d845d07ed36b",
+      "native_candidate_exact_bytes": true
+    },
+    {
+      "path": "xtask/src/main.rs",
+      "sha256": "a3bd0d8a815385300f365426de0a2a7f460ce976515fd4a0c1f84621374e4a9e",
+      "native_candidate_exact_bytes": true
+    },
+    {
+      "path": ".github/workflows/release.yml",
+      "sha256": "a544a10574600b7ece216d23af175e58ef8efb692b2c9839e22aa33537860f6d",
+      "native_candidate_exact_bytes": true
+    },
+    {
+      "path": ".github/workflows/release-recovery-lifecycle-acceptance.yml",
+      "sha256": "d68d9b862f25c3e12236494c40c5675b4519f6d9079106d63ee5a3bdaf405305",
+      "native_candidate_exact_bytes": true
+    },
+    {
+      "path": "Cargo.lock",
+      "sha256": "a0b2d40a2e7ed017dda92261195f664291872e3dafc9b2ac338ab8ec85f3e701",
+      "native_candidate_exact_bytes": true
+    },
+    {
+      "path": "apps/agent-vesper-tui/src/auth_settings.rs",
+      "sha256": "44176ed8a013beeb381f7d7ba5097656a539af4c47caf2486fac46d30225cc15",
+      "native_candidate_exact_bytes": false,
+      "scope": "subsequent authentication UI fix; local acceptance only"
+    }
+  ],
+  "receipts": [
+    {
+      "name": "rrc-audit-acceptance-final.log",
+      "sha256": "889073009c5242df75097281c2eb1e682a6b559331d5ca16f0284e903706fce9",
+      "bytes": 22878
+    },
+    {
+      "name": "rrc-audit-acceptance-retry.log",
+      "sha256": "0f200c5d4489fc02cbde781129e15929bc831c3a6b858a00642ded33c4bab6c8",
+      "bytes": 5212
+    },
+    {
+      "name": "rrc-audit-acceptance.log",
+      "sha256": "ebb92412d103f7646e3e59edc69124a803ca5a9f53059027632772988cde7adc",
+      "bytes": 4746
+    },
+    {
+      "name": "rrc-audit-auth-regression-red.log",
+      "sha256": "04abcf27991dedc4dd705cfe8555ea3a3ef2ed52c599aac7c9746a441cdd9db1",
+      "bytes": 1204
+    },
+    {
+      "name": "rrc-audit-auth-settings-lib.log",
+      "sha256": "a858e57b8aded3d656d0c1777f924357032a0ec59e08b7306672a931f58e8f3c",
+      "bytes": 1473
+    },
+    {
+      "name": "rrc-audit-auth-settings.log",
+      "sha256": "d8c0f2c98a9cfa41c100e5faa0952eb6348831b1005f9bdedb1d485ae051d902",
+      "bytes": 372
+    },
+    {
+      "name": "rrc-audit-checksum-proof.log",
+      "sha256": "e34825beaa29753b8c0c6ecc26070d18b85c252b29e721318356482a9c81de21",
+      "bytes": 463
+    },
+    {
+      "name": "rrc-audit-clippy-auth-final.log",
+      "sha256": "3b7f5f9a1c42171aa7e9aba33245d2c2df0ca8491cc472513612e574899bdeb4",
+      "bytes": 167
+    },
+    {
+      "name": "rrc-audit-clippy-closeout.log",
+      "sha256": "894c8a26224da2596d085d2f6d2c072971e3bf2945430eca93e136436394f727",
+      "bytes": 511
+    },
+    {
+      "name": "rrc-audit-clippy-final.log",
+      "sha256": "02b37ed3be5ccc90832285d86c7c2cb09c472d41e4041628e0b510d1ab90d379",
+      "bytes": 478
+    },
+    {
+      "name": "rrc-audit-clippy-settled.log",
+      "sha256": "2d0ad8ac31914012fd0bf6a1e717f20cabed13a3834b45a8d2dc91169feb0455",
+      "bytes": 423
+    },
+    {
+      "name": "rrc-audit-clippy.log",
+      "sha256": "c417bf8021caed8ce734e52774120b47ad49fa6b43be745c684650ce1690ce62",
+      "bytes": 2149
+    },
+    {
+      "name": "rrc-audit-clippy2.log",
+      "sha256": "d9cca0ecd06e5ce0fb2a2702d5ea1f2924cb200719f4eae185249303a58a1554",
+      "bytes": 355
+    },
+    {
+      "name": "rrc-audit-controlled-candidates.json",
+      "sha256": "27bb9546a97797a3e12c15507c8caf82bc4da9a0aeaa30eeba39789308eb7fb6",
+      "bytes": 515
+    },
+    {
+      "name": "rrc-audit-core.log",
+      "sha256": "e927a51202f8d08f87748edb2dd27e4c0c84f02ee936501a75a54111407e379c",
+      "bytes": 1183
+    },
+    {
+      "name": "rrc-audit-core10.log",
+      "sha256": "c6d043567197489a7d2b1706593cec68988c5db9f053d9b6d0bdd54c498c3aa4",
+      "bytes": 4945
+    },
+    {
+      "name": "rrc-audit-core11.log",
+      "sha256": "54cdde09308bd44b8f9695b7e53992b2993d8fc8e7d48375cc51cfd518d5c725",
+      "bytes": 4945
+    },
+    {
+      "name": "rrc-audit-core2.log",
+      "sha256": "7811b449bc3a556c3db07ea8393aec20b6f1e4e2ca8c643ee93b6c57ce4c6864",
+      "bytes": 4338
+    },
+    {
+      "name": "rrc-audit-core3.log",
+      "sha256": "b2bc21029aa894381c3619d13ea901be9f370119460f4bbeb5c7677b96036d1c",
+      "bytes": 811
+    },
+    {
+      "name": "rrc-audit-core4.log",
+      "sha256": "f817e06bb718eec8a4308cfeae191b8f248492739f143d90252d11c59bb23ae1",
+      "bytes": 4338
+    },
+    {
+      "name": "rrc-audit-core5.log",
+      "sha256": "562ebd0aa51219d0feea4bb6a731604ed76b06d3c2446e1fe8fda99f7fd7c28b",
+      "bytes": 4338
+    },
+    {
+      "name": "rrc-audit-core6.log",
+      "sha256": "24d8d3f3d5482979160f8a6fa5e4d069f5905c5522c6ff932845547e667bc79b",
+      "bytes": 4338
+    },
+    {
+      "name": "rrc-audit-core7.log",
+      "sha256": "71a9da653f36a12e35918b69ce1e55544072ebe2e382d950255f9925bf7e7cb3",
+      "bytes": 4338
+    },
+    {
+      "name": "rrc-audit-core8.log",
+      "sha256": "e0b2a839d8df00c60220c13d675b3cf21d42bd7a34aa1ac0d35b76929d11ebde",
+      "bytes": 4338
+    },
+    {
+      "name": "rrc-audit-core9.log",
+      "sha256": "b63ea011f59dfc5556d5c6dfd832aea6bf981958bd561ad10b28481bbf4abb69",
+      "bytes": 4945
+    },
+    {
+      "name": "rrc-audit-current-github-runs.json",
+      "sha256": "a80b7bacadb5a371119a9fbf8198fb1205ddfb7dc97fbd7dc35f275cd82ed919",
+      "bytes": 3189
+    },
+    {
+      "name": "rrc-audit-existing-assets.jsonl",
+      "sha256": "f1424e8af0fa79abfc9e743a433d823c14e2fde14e0969125dd9a2dfe8bb11ce",
+      "bytes": 2620
+    },
+    {
+      "name": "rrc-audit-existing-publication-verified.log",
+      "sha256": "08813c47a7d6f57c75e7c7d6dd32613372fd135af3b01710d8c7e7bf81230894",
+      "bytes": 275
+    },
+    {
+      "name": "rrc-audit-expanded.log",
+      "sha256": "4ec9ec11566c1dd038940eeed5b3cb4bae9879187c025a31fe8110582f301572",
+      "bytes": 7083
+    },
+    {
+      "name": "rrc-audit-final-focused.log",
+      "sha256": "85fa45a803d4ba964a8fcf860c437e884cd339b54246f65cab0e4f1987d62caf",
+      "bytes": 6385
+    },
+    {
+      "name": "rrc-audit-final-probe-build.log",
+      "sha256": "48ff6338e616c4c124769f2f2d6616f321d43f9a274885231fded55f414ea0cc",
+      "bytes": 165
+    },
+    {
+      "name": "rrc-audit-harness-complete.log",
+      "sha256": "cb843fc22ffd381c4e6c71da2cf36e2a08684246d1169766049f19b78311a603",
+      "bytes": 29611
+    },
+    {
+      "name": "rrc-audit-harness-delivery.log",
+      "sha256": "329329421b90ccd5d52ea8e032f25c8e975cd585f310efc68d828f8ea008245b",
+      "bytes": 29989
+    },
+    {
+      "name": "rrc-audit-harness-final.log",
+      "sha256": "f88f8998958aad5447301619aef558993b15d561ba2ee9823defb16b40ea2301",
+      "bytes": 28822
+    },
+    {
+      "name": "rrc-audit-harness-settled.log",
+      "sha256": "512432fabc7d8974e8364bcb51f3ec7c9c5b2ffbbd7c71b8d57224abc4f9f1a0",
+      "bytes": 29834
+    },
+    {
+      "name": "rrc-audit-harness.log",
+      "sha256": "e95761abc044f35bdd64ff505937a0fea58d58ca2fe0cfc07dd6831676695b69",
+      "bytes": 19973
+    },
+    {
+      "name": "rrc-audit-live-adapter-complete.log",
+      "sha256": "2295245f4b791f4584352fae150e5286acd7e7481cf8d9d704b9f78f75436461",
+      "bytes": 362
+    },
+    {
+      "name": "rrc-audit-live-adapter-final.log",
+      "sha256": "ec33bc27df158335a18c2acc7b43ce7996ab2e9d5f67b11bf8bc751213b865bb",
+      "bytes": 229
+    },
+    {
+      "name": "rrc-audit-live-adapter-green.log",
+      "sha256": "eea01dca4cabddf79f5126e8f08a276c37c97612516fadc2873725ce903b39c2",
+      "bytes": 2585
+    },
+    {
+      "name": "rrc-audit-live-adapter-settled.log",
+      "sha256": "aad25ec344d59bfbe19622cd3e7c3c30d627fbcf4537e5b6ceaf614b87757274",
+      "bytes": 362
+    },
+    {
+      "name": "rrc-audit-live-adapter-verified.log",
+      "sha256": "d5e470c412db7c397a58b3bf14b1097d61b3d20676600a04006870dee9c76845",
+      "bytes": 737
+    },
+    {
+      "name": "rrc-audit-live-adapter.log",
+      "sha256": "3c3d3b6b9bdfe00e3d095e00ac56f36712322e1f789b37f61f58e1ac273b00cd",
+      "bytes": 170
+    },
+    {
+      "name": "rrc-audit-live-final-build.log",
+      "sha256": "ed0dea335775117c79aa72ac125bbf4fa1442393736b4acc10e740be7c990369",
+      "bytes": 165
+    },
+    {
+      "name": "rrc-audit-live-fingerprint-detail.log",
+      "sha256": "4a8e6e6652ce24d3a82aad0d326375249c22c08ce758effab789c93845ab73b0",
+      "bytes": 2714
+    },
+    {
+      "name": "rrc-audit-live-partial-matrix-green.log",
+      "sha256": "15b0af80f8b30e3f8754b69a0fc29d2d34a3372bd0f7233aa08e775cbfff819d",
+      "bytes": 2896
+    },
+    {
+      "name": "rrc-audit-live-partial-matrix.log",
+      "sha256": "0422006eecde74fefd98e6a1a550f27985d3d30bf6147adc2193d258fa659b3b",
+      "bytes": 1673
+    },
+    {
+      "name": "rrc-audit-live-probe-build-final.log",
+      "sha256": "0e1a67e2da2d1fdb967ce890937d0467cd29f5d139d6524db77b63318a894fdd",
+      "bytes": 165
+    },
+    {
+      "name": "rrc-audit-live-probe.rs",
+      "sha256": "60222f197709cc310936050aa8a42659be855c5a42ac8b89903f6c1b22f49779",
+      "bytes": 2627
+    },
+    {
+      "name": "rrc-audit-local-repair.log",
+      "sha256": "85a74cf6cc191ccc53eab6aa029d2b3edc2dc527aeca1e78b4e2434ab0303557",
+      "bytes": 5984
+    },
+    {
+      "name": "rrc-audit-msrv-closeout.log",
+      "sha256": "412efcd04db517d9735274c7e583d82dd7b42c32e18b7dfcf7c855a387bb7b95",
+      "bytes": 6474
+    },
+    {
+      "name": "rrc-audit-msrv-complete.log",
+      "sha256": "d6c1e96cf6bc79a77610ed7fd6361422ffb9d69e88ed0aba5973ca37e116618d",
+      "bytes": 29609
+    },
+    {
+      "name": "rrc-audit-msrv-delivery.log",
+      "sha256": "c581b6af407f4e84fc0045e9b91cd76f3fd57bf553550661857455640d9684ff",
+      "bytes": 29987
+    },
+    {
+      "name": "rrc-audit-msrv-final.log",
+      "sha256": "ca25e4653bff4f1a910db987257dbb845e2b9ac07f23b3cba3c5b767a2dedbeb",
+      "bytes": 89957
+    },
+    {
+      "name": "rrc-audit-msrv-retry.log",
+      "sha256": "3da652d27d8a0fda703aa50d1e4cedd2160f2e743953619dcd1b2dc638d53582",
+      "bytes": 29451
+    },
+    {
+      "name": "rrc-audit-msrv-settled.log",
+      "sha256": "5e5bcec008a3f74629fcc9e785de1954d79b613c8d5d59f7c7cd71e324468fdc",
+      "bytes": 29889
+    },
+    {
+      "name": "rrc-audit-native-matrix-delivery.json",
+      "sha256": "d8af1466c07543dc7d0ac0fc553ca4d01fae637598e8aab1d5978efe0197a255",
+      "bytes": 8365
+    },
+    {
+      "name": "rrc-audit-native-matrix-delivery.log",
+      "sha256": "d99f2fb9376cc377f2b684037107dae34407f7448fc5640a4108e46feb7e7bac",
+      "bytes": 552991
+    },
+    {
+      "name": "rrc-audit-native-matrix-final.json",
+      "sha256": "892ed73bddb64e9c2f99397ec3efe7e36d422799e5081c1b7b0d6545431c1f98",
+      "bytes": 8352
+    },
+    {
+      "name": "rrc-audit-native-matrix-v2.json",
+      "sha256": "96a5b4df791e9d6deaceb9ace7baa93313070cb7af35896cdf2eb9e9da2c027b",
+      "bytes": 8352
+    },
+    {
+      "name": "rrc-audit-native-matrix.json",
+      "sha256": "d511cfb9ea60cf22f513e083f729d461583e3d248366e42159f9582a02fbb165",
+      "bytes": 8352
+    },
+    {
+      "name": "rrc-audit-openai-adapter.log",
+      "sha256": "6235398b8d1379caa8cabbd1e4e3480222e93868ecd63579e923aed28c98b75c",
+      "bytes": 4716
+    },
+    {
+      "name": "rrc-audit-partial-candidate-green.json",
+      "sha256": "4772b4555d058871e871b0b41625c34f35d60b352ff9845288e6841e767c73fc",
+      "bytes": 181
+    },
+    {
+      "name": "rrc-audit-partial-candidate.json",
+      "sha256": "fb9d102a35508502e87df3a9ecc9abab98f9f8d215df9c853c6c8a1bb106e810",
+      "bytes": 181
+    },
+    {
+      "name": "rrc-audit-partial-probe.rs",
+      "sha256": "71aef094a9b7513371a0b336cdaa2a32a997c2eb799f5623f1e383437bf467a2",
+      "bytes": 2239
+    },
+    {
+      "name": "rrc-audit-private-candidate.json",
+      "sha256": "05bb5dd6a2e8b815abc5d8f770117f17e80f05657ad8ff3c46947595a2996e3b",
+      "bytes": 530
+    },
+    {
+      "name": "rrc-audit-probe-build.log",
+      "sha256": "26984c6cf5fe2ec60f9d7245b9e21c1a1ce69bcc4fb2b389569fd23f4cbac282",
+      "bytes": 1790
+    },
+    {
+      "name": "rrc-audit-publication-probe.rs",
+      "sha256": "ba360d65b8494640b6d542cf79bd614ec971e8df25dcad0861ee10232eac21f1",
+      "bytes": 792
+    },
+    {
+      "name": "rrc-audit-real-model-diagnosis.log",
+      "sha256": "c7add0a1acd0931b1d2aedc5cf988c95309c8583c76c8df04800bbf27b089f71",
+      "bytes": 2925
+    },
+    {
+      "name": "rrc-audit-real-model-fixtures.log",
+      "sha256": "b0cc874891cb7663021e5ad8c0ef32744d2007df3436c64296c41005714521cf",
+      "bytes": 1111
+    },
+    {
+      "name": "rrc-audit-real-model-green.log",
+      "sha256": "479fb1adcca7743d95808e565f0e371eda5f8f1e6b19fa94ebaf149e9f72c1cf",
+      "bytes": 2982
+    },
+    {
+      "name": "rrc-audit-real-model-green2.log",
+      "sha256": "99efed754b092f1d02cc985924c629afc53dd1113834645b82ee7cd214624d2c",
+      "bytes": 464
+    },
+    {
+      "name": "rrc-audit-red.log",
+      "sha256": "02ed1e77544ccc206da46859b4522045feb7994555c747af9aa46b9a44386214",
+      "bytes": 16584
+    },
+    {
+      "name": "rrc-audit-release-complete.log",
+      "sha256": "3b44b4284229c8ddd67a29b6cdce5da8704fa66c61e8b128a4c2f67001b9ed95",
+      "bytes": 6578
+    },
+    {
+      "name": "rrc-audit-release-final.log",
+      "sha256": "930bdbacfb596a36c3d5ebe3374ca9f4b633fe8bacbbbac7f3010ef66808fcc7",
+      "bytes": 6474
+    },
+    {
+      "name": "rrc-audit-release-settled.log",
+      "sha256": "0ee48d998e8c3a3a9fd4e9ec4d4995638ca00da9d62af8c80df2e498092b09f3",
+      "bytes": 6672
+    },
+    {
+      "name": "rrc-audit-tui-build-final.log",
+      "sha256": "e56bd1575d22281fc36ed9110ee0a952257b1b1e385870d45ebed1878e3321ff",
+      "bytes": 167
+    },
+    {
+      "name": "rrc-audit-tui-lib-auth-final.log",
+      "sha256": "5941c6c861833ff9a65b057cd2d1790d66d84ab953b064cb057e4d568a748b21",
+      "bytes": 24718
+    },
+    {
+      "name": "rrc-audit-verify-closeout.log",
+      "sha256": "4fbdbbf44202bd078d74c13d793755be7993969f61349d6197d5e5ad9934b1cc",
+      "bytes": 304535
+    },
+    {
+      "name": "rrc-audit-verify-complete.log",
+      "sha256": "c900ef56ae49419968101bd47d1af8c66c61988bb831748c949da308f7e59e11",
+      "bytes": 303744
+    },
+    {
+      "name": "rrc-audit-verify-delivery.log",
+      "sha256": "bb8eacf607a72d27798e9d50ced69de7cea1f92f4e2a4622965df542d8dc657c",
+      "bytes": 303694
+    },
+    {
+      "name": "rrc-audit-verify-final.log",
+      "sha256": "2a386b2c7d0a694fc97d2f6e07488bbe2b00cfdee00fec03b2b0f3ad4eb39165",
+      "bytes": 303363
+    },
+    {
+      "name": "rrc-audit-verify-settled.log",
+      "sha256": "889784817f741a0b76db8de8ccfc2fe721edabe0a16716d88dd6c6ca9d18da25",
+      "bytes": 54744
+    },
+    {
+      "name": "rrc-audit-verify.log",
+      "sha256": "ec96a47daf00cd34b36de6136a69c91172cb05c2534e3d0081ee545b3b5e4dce",
+      "bytes": 288899
+    },
+    {
+      "name": "rrc-audit-version-green.log",
+      "sha256": "c2b3b33598e84bb7626ce87b6210734c01eefe181e80260ca5412357221bdd2d",
+      "bytes": 470
+    },
+    {
+      "name": "rrc-audit-version-red.log",
+      "sha256": "0b5c028d10c23a663fce7f8e03f5ab9d1317e081c99cd96e000bbc0e92074d3f",
+      "bytes": 1088
+    },
+    {
+      "name": "rrc-audit-voice-isolation-fixed.log",
+      "sha256": "1c4d064e920f65a52580188b6d4d63381c70b31cacc4f461720aa92938d21bb5",
+      "bytes": 965
+    },
+    {
+      "name": "rrc-audit-voice-segv-recheck.log",
+      "sha256": "b42f10f5b190f6a1a46411ac9665b2bbedab8658e7b617991909fa5c55314d61",
+      "bytes": 1059
+    },
+    {
+      "name": "rrc-audit-voice-stress-before.log",
+      "sha256": "ad5c51be7b4f4ea7816c7426253dc711cda580b3b07d832333305071331bdcb2",
+      "bytes": 391
+    },
+    {
+      "name": "rrc-audit-windows-failed.log",
+      "sha256": "bd5fb1e6cbdf54a7429c9d717100a3714ad9a37ecfc554962efb7643c9e4c233",
+      "bytes": 82183
+    },
+    {
+      "name": "rrc-audit-workflow-identity.log",
+      "sha256": "0db8dcaba27d2d8732f51ce097d617342b95d14d7040ffafab00d4789965607a",
+      "bytes": 462
+    },
+    {
+      "name": "rrc-audit-workflow-syntax.log",
+      "sha256": "99b6cb533f3e3a053cb51e9d252778c4aa104fafcaf3116b54a4ab9db20152bd",
+      "bytes": 239
+    }
+  ],
+  "archive": {
+    "name": "release-recovery-controller-deep-debug-receipts.tar.gz",
+    "sha256": "5ed6f6022c487953059828591a04ab94de9e703fbb6b2870b292805699fd83cc"
+  },
+  "verification": {
+    "full_repository": "cargo xtask verify completed with 54 exact acceptance cases; before subsequent auth UI fix",
+    "harness_current_and_msrv": {
+      "library_passed": 242,
+      "library_ignored": 6,
+      "integration_passed": 54,
+      "integration_ignored": 5,
+      "nested_subprocess_receipt_not_additive": 1
+    },
+    "rrc_native": {
+      "targets": 5,
+      "library_rrc_cases_per_target": 68,
+      "integration_cases_per_target": 2
+    },
+    "auth_followup": {
+      "authentication_cases": 12,
+      "tui_library_cases": 300,
+      "openai_adapter_cases": 48,
+      "workspace_clippy": "passed",
+      "tui_build": "passed; target/debug/agent-vesper-tui; installation unchanged"
+    },
+    "final_checks": {
+      "format": "passed",
+      "diff_whitespace": "passed",
+      "yaml_bash_bodies": 13,
+      "local_document_links": "passed with URL decoding"
+    }
+  },
+  "unexecuted": [
+    "current production release producing workflow/tag/assets",
+    "real-provider model repair effectiveness and full combined autonomous repair promotion",
+    "interactive TUI/ACP release scenario",
+    "live OpenAI account sign-in and actual browser observation",
+    "native cross-platform authentication UI observation",
+    "real external outage and prolonged 20-minute active hang"
+  ],
+  "receipt_policy": "Failures, stale runs, zero-selected filters and ignored cases are preserved; filenames alone do not certify pass."
+}

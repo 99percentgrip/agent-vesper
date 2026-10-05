@@ -8,14 +8,24 @@ on:
 permissions:
   contents: read
 
+# Bound native debug artifacts without reducing test coverage.
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_PROFILE_DEV_DEBUG: "line-tables-only"
+  CARGO_PROFILE_TEST_DEBUG: "line-tables-only"
+
 jobs:
   quality:
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v6
+      - name: Prepare native Rust storage
+        run: sh .github/prepare-rust-runner.sh
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.95.0 --profile minimal --component clippy,rustfmt
+      - name: Verify release prerequisite policy
+        run: python3 scripts/test_release_gate.py
       - name: Verify workspace
         run: cargo xtask verify
       - name: Completion assurance mutation gate
@@ -31,6 +41,11 @@ jobs:
           "$RUNNER_TEMP/voice-test-python/bin/python" apps/agent-vesper-tui/tests/voice_chunks.py
           python3 apps/agent-vesper-tui/tests/voice_pty.py target/debug/agent-vesper-tui "$RUNNER_TEMP/voice-test-python/bin/python"
           python3 apps/agent-vesper-tui/tests/xai_usage_pty.py target/debug/agent-vesper-tui
+      - name: Verify native release control parity
+        timeout-minutes: 5
+        run: |
+          cargo build -p agent-vesper-acp -p agent-vesper-tui --all-features --locked
+          python3 apps/agent-vesper-tui/tests/release_hosts_pty.py target/debug/agent-vesper-tui target/debug/agent-vesper-acp
       - name: Verify documentation structure
         run: |
           sh -n scripts/install.sh scripts/uninstall.sh
@@ -47,6 +62,11 @@ jobs:
           test -f docs/stage5/session-store-report.md
           test -f docs/stage5/stage6-readiness.md
           test "$(find docs/adr -maxdepth 1 -name '*.md' | wc -l)" -ge 8
+      - name: Record native build storage
+        if: always()
+        run: |
+          df -h / "$GITHUB_WORKSPACE"
+          du -sh target || true
 
   supply-chain:
     runs-on: ubuntu-24.04

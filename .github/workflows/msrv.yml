@@ -8,12 +8,20 @@ on:
 permissions:
   contents: read
 
+# Bound native debug artifacts without reducing test coverage.
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_PROFILE_DEV_DEBUG: "line-tables-only"
+  CARGO_PROFILE_TEST_DEBUG: "line-tables-only"
+
 jobs:
   rust-1-88:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
+      - name: Prepare native Rust storage
+        run: sh .github/prepare-rust-runner.sh
       - name: Install MSRV
         run: rustup toolchain install 1.88.0 --profile minimal
       - name: Test foundational workspace at MSRV
@@ -33,3 +41,8 @@ jobs:
 
       - name: Exact completion assurance cases
         run: cargo +1.88.0 xtask acceptance
+      - name: Record native build storage
+        if: always()
+        run: |
+          df -h / "$GITHUB_WORKSPACE"
+          du -sh target || true

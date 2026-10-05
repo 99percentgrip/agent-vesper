@@ -663,6 +663,13 @@ the multi-turn, tool-executing layer above it.
   retention boundary, the historical 71,443-byte workload, timeout,
   cancellation, dropped callers, nonzero exit, descendant-held pipes,
   delayed-marker descendant cleanup, and post-failure recovery.
+- Readiness-based command fixtures allow bounded shell startup for 15 seconds,
+  report early command termination with its actual result, and abort a timed-out
+  fixture task. This allowance never extends post-signal settlement or cleanup
+  assertions; slow-start and early-failure regressions exercise the helper.
+- Descendant-after-leader fixture timing begins at its explicit leader-exit
+  marker, excluding Windows PowerShell startup. It retains the three-second
+  settlement assertion and delayed-marker cleanup proof.
 - Post-signal leader reaping and stdout/stderr EOF observation share one bounded
   settlement deadline; do not split that budget into scheduling-sensitive
   platform phases.

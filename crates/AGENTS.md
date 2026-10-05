@@ -89,6 +89,9 @@ test-only conformance support.
   parse/strip/prune/convert DOM pipeline with strictly zero I/O (no network,
   no filesystem, no clock). Transports and the headless renderer are
   composition-boundary ports, never implemented here.
+- `vesper-harness` may depend on pure `vesper-policy` to enforce the invoking
+  host's command firewall during native release progression; this exception
+  grants no permission and introduces no concrete provider dependency.
 - Explicit native dependency setup in `vesper-harness` may invoke fixed OS package
   managers and checksum-pinned installer downloads after separate user confirmation.
   This setup-only exception is never a model tool or a host HTTP fallback for web

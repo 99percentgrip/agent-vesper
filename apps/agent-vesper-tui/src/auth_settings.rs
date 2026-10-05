@@ -599,26 +599,29 @@ async fn login<E: SettingsEvents>(
     let mut device_code: Option<String> = None;
     loop {
         if let Ok((url, code)) = rx.try_recv() {
-            if let Some(code) = code {
-                device_code = Some(code);
-            } else {
-                match SignInLink::new(url) {
-                    Ok(parsed) => {
-                        let mut open = |url: &str| (hooks.open_url)(url);
-                        let _ = open(parsed.as_str());
-                        link = Some(parsed);
-                    }
-                    Err(error) => {
-                        cancel.cancel();
-                        state.notice = error;
-                    }
+            match SignInLink::new(url) {
+                Ok(parsed) => {
+                    device_code = code;
+                    state.notice = match (hooks.open_url)(parsed.as_str()) {
+                        Ok(()) => "Browser launch requested. Complete sign-in in the browser.".into(),
+                        Err(_) => "Browser launch failed. Press Enter to retry or C to copy the complete link.".into(),
+                    };
+                    link = Some(parsed);
+                }
+                Err(error) => {
+                    cancel.cancel();
+                    state.notice = error;
                 }
             }
         }
         terminal
             .draw(|frame| {
                 let notice = if let Some(code) = &device_code {
-                    format!("{}\nOne-time code: {code}\nEsc cancels.", state.notice)
+                    format!(
+                        "{}\nVerification link: {}\nOne-time code: {code}\nEnter retries the browser. C copies the complete link. Esc cancels.",
+                        state.notice,
+                        link.as_ref().map_or("", SignInLink::as_str),
+                    )
                 } else if link.is_some() {
                     format!(
                         "{}\nEnter opens the browser again. C copies the complete link. D uses device code when advertised. Esc cancels.",
@@ -688,7 +691,12 @@ async fn login<E: SettingsEvents>(
                         };
                         continue;
                     }
-                    KeyCode::Char('d' | 'D') => {
+                    KeyCode::Char('d' | 'D')
+                        if kind == InteractiveLoginKind::Browser
+                            && state.descriptor.authentication_methods[state.method_focus]
+                                .interactive_login
+                                .contains(&InteractiveLoginKind::DeviceCode) =>
+                    {
                         cancel.cancel();
                         let _ = tokio::time::timeout(Duration::from_secs(1), &mut task).await;
                         state.busy = false;
@@ -1344,12 +1352,25 @@ mod tests {
         }
         fn device_login<'a>(
             &'a self,
-            _: Arc<dyn CancellationSignal>,
+            cancel: Arc<dyn CancellationSignal>,
             on_challenge: Arc<dyn Fn(String, String) + Send + Sync>,
         ) -> ProviderFuture<'a, Result<(), CredentialError>> {
             let port = self.clone();
             Box::pin(async move {
                 on_challenge("https://example.test/device?full=1".into(), "CODE".into());
+                if port
+                    .state
+                    .lock()
+                    .unwrap()
+                    .log
+                    .iter()
+                    .any(|row| row == "hold-device")
+                {
+                    while !cancel.is_cancelled() {
+                        tokio::time::sleep(Duration::from_millis(1)).await;
+                    }
+                    return Err(CredentialError::Failed);
+                }
                 port.store_method_credential(port.interactive_id(), "device-token")
             })
         }
@@ -1922,6 +1943,102 @@ mod tests {
         assert!(!outcome.authentication_committed);
         let text = frame_text(&terminal);
         assert!(!text.contains("secret-canary"), "{text}");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn device_login_opens_and_displays_the_url_and_keeps_retry_copy_after_launch_failure() {
+        // Exercise the production login loop, without a browser, clipboard or real account.
+        for fail_launch in [false, true] {
+            let port = multi("fixture-provider");
+            port.state.lock().unwrap().log.push("hold-device".into());
+            port.store_method_credential("subscription", "previous")
+                .unwrap();
+            let mut state = PanelState {
+                provider_id: port.id.clone(),
+                provider_name: port.id.clone(),
+                descriptor: port.descriptor(),
+                inventory: port.authentication_inventory().unwrap(),
+                selected: 0,
+                method_focus: 0,
+                screen: Screen::Overview,
+                secret: Zeroizing::new(String::new()),
+                notice: String::new(),
+                busy: false,
+                generation: 0,
+                committed: false,
+                removal_scope: CredentialRemovalScope::EntireProvider,
+            };
+            struct ChallengeEvents {
+                polls: usize,
+            }
+            impl SettingsEvents for ChallengeEvents {
+                fn next_event(&mut self) -> Result<Event, String> {
+                    unreachable!()
+                }
+                fn poll_event(&mut self, _: Duration) -> Result<Option<Event>, String> {
+                    self.polls += 1;
+                    std::thread::sleep(Duration::from_millis(10));
+                    Ok(match self.polls {
+                        10 => Some(key(KeyCode::Enter)),
+                        11 => Some(ch('c')),
+                        12 => Some(key(KeyCode::Esc)),
+                        _ => None,
+                    })
+                }
+            }
+            let opened = Arc::new(Mutex::new(Vec::new()));
+            let copied = Arc::new(Mutex::new(Vec::new()));
+            let mut hooks = AuthUiHooks {
+                open_url: Box::new({
+                    let opened = opened.clone();
+                    move |url| {
+                        opened.lock().unwrap().push(url.to_owned());
+                        if fail_launch {
+                            Err("fixture launch refused".into())
+                        } else {
+                            Ok(())
+                        }
+                    }
+                }),
+                copy_url: Box::new({
+                    let copied = copied.clone();
+                    move |url| {
+                        copied.lock().unwrap().push(url.to_owned());
+                        Ok(())
+                    }
+                }),
+            };
+            let mut terminal = Terminal::new(TestBackend::new(140, 40)).unwrap();
+            login(
+                &mut state,
+                &mut terminal,
+                &mut ChallengeEvents { polls: 0 },
+                &mut hooks,
+                Arc::new(port.clone()),
+                LoginTarget {
+                    kind: InteractiveLoginKind::DeviceCode,
+                    generation: 0,
+                    provider_id: "fixture-provider",
+                    method_id: "subscription",
+                    theme: "chatgpt-black",
+                },
+            )
+            .await
+            .unwrap();
+            let url = "https://example.test/device?full=1";
+            assert_eq!(*opened.lock().unwrap(), vec![url, url]);
+            assert_eq!(*copied.lock().unwrap(), vec![url]);
+            let screen = frame_text(&terminal);
+            assert!(screen.contains(url), "{screen}");
+            assert!(screen.contains("One-time code: CODE"), "{screen}");
+            assert!(!screen.contains("Requesting device-code"), "{screen}");
+            assert!(!state.busy);
+            assert!(!state.committed);
+            assert_eq!(
+                port.state.lock().unwrap().stored["subscription"],
+                "previous"
+            );
+        }
     }
 
     #[test]

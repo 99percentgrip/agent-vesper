@@ -9,6 +9,12 @@ on:
 permissions:
   contents: read
 
+# Bound native debug artifacts without reducing test coverage.
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_PROFILE_DEV_DEBUG: "line-tables-only"
+  CARGO_PROFILE_TEST_DEBUG: "line-tables-only"
+
 jobs:
   browser:
     name: Contained browser ${{ matrix.arch }}

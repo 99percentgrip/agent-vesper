@@ -12,6 +12,97 @@ Z.ai and Playwright MCP server descriptors.
 
 ## Ownership
 
+- `release_recovery` owns the provider-neutral RRC state machine, transactional
+  reducer, retry/focused-proof budgets, exact-SHA settled workflow evidence,
+  first-causal extraction, secret redaction and immutable last-green context.
+  GitHub inventories paginate with bounds and use attempt-specific job lists;
+  canonical workflow names come from workflow-ID metadata rather than evaluated
+  run titles; only the four required main-push workflow identities advance gates.
+  Missing, running, skipped or stale evidence cannot authorize publication.
+  Failed-job-only reruns use the shared evidence port with a consumed full or
+  infrastructure admission scoped to the exact run; targeted job tokens cannot
+  authorize a run-wide request. Unadmitted write methods remain blocked.
+  Last-green comparisons require the matching platform/job; missing/skipped
+  historical lanes preserve unknown context. Host Git metadata queries use
+  bounded native process execution.
+- `release_executor` owns continuous bounded polling, local verification,
+  version/commit/exact-SHA push/tag/publication, official-status admission and
+  bounded isolated AgentLoop repair. Host mode, permission port and command
+  firewall apply to native mutations and repairs. Nonrepeatable operations are
+  journaled before execution; uncertain restart never replays them.
+  Promotion requires an observed mutation, explicit hypothesis, native focused
+  re-verification after the final edit, a nonempty patch and full local gates.
+  Cargo test proof must execute tests and include an identifiable failing test,
+  including explicit rustup toolchain selections. The repair role advertises and
+  dispatches only core source tools with supported verification commands; direct
+  Git/GitHub lifecycle commands, compound shells and explicit Git metadata writes
+  refuse before execution. The client registry has no hosted gateways; previously
+  selected provider-owned server tools remain in provider requests under their
+  existing adapter policy. Existing permission/firewall/sandbox enforcement still
+  applies; verification subprocesses
+  are not an additional OS sandbox. Controller-owned release operations use typed
+  admissions outside the model tool registry.
+  The repair factory uses a 24-iteration segment limit even when the invoking host
+  disables its ordinary cap with zero; smaller positive host limits stay smaller.
+  The existing native plan continuation and 20-minute repair deadline still apply.
+  This copied repair configuration never changes the ordinary host setting.
+  Local repair preserves the version seed and includes new files; candidate
+  commits include only admitted version/repair paths. Native version preparation
+  resolves the complete Cargo workspace inventory before writing, updates all
+  member path-dependency pins, and records those manifests in candidate admission.
+  Git repair fixtures declare LF bytes explicitly across native targets.
+  The RRC coding factory fixture runs real file/command tools and native failing
+  then passing Rust tests with two registered fixture provider IDs; fixture
+  streams never establish real model effectiveness or production transport.
+  The combined composition fixture verifies native isolated-worktree proof and
+  one-patch promotion for both fixture IDs; only its fixture-wide gate port is
+  substituted. Production always executes the complete native gate set.
+  Measured CI waits/model repair time and denied autonomous retries persist
+  separately from pure status queries and idle time across host restarts.
+- RRC ledger writers redact all strings, reject stale/cancelled writers and
+  hold one cross-process owner lock during progression. Explicit resume retains
+  identity/counters and refreshes remote evidence first. A watcher propagates
+  persisted cancellation to another host's local process group or Job Object.
+  The parallel-runner watcher fixture has a ten-second scheduling bound;
+  production polling remains 100 ms and cancellation still requires observation.
+  Background GitHub inventory/log/admitted-retry, official status, last-green and
+  publication reads share the worker cancellation token; standalone evidence
+  adapters retain bounded read-only use outside an active worker.
+  Passive CI polls do not consume the active stagnation budget. Infrastructure
+  recovery reserves budget/attempt floors before its scoped rerun.
+- Published assets require a settled exact-SHA tag workflow, an annotated tag
+  targeting that SHA, nondraft/nonprerelease metadata and all fourteen nonempty
+  uploaded archive/checksum assets. Downloaded checksum contents must match the
+  archive and checksum asset's server SHA-256 digests and exact filename.
+  Credential/normalization regexes compile once with thread-safe LazyLock;
+  ledger string redaction must not repeatedly compile patterns per field.
+  CI logs and fingerprints share a cached causal matcher: passing `error::`
+  test names, generic linker/compiler exit wrappers and long preceding linker
+  argument lines cannot hide the actual diagnostic. Unknown text stays Unknown
+  despite an OS label; concrete missing-package/version messages are dependency
+  failures. Remote operation cancellation remains failed/uncertain CI evidence,
+  not a local user-cancelled epoch. GitHub account payment/spending restrictions
+  require owner action: classify as credential/permission failures and escalate
+  without model source repair, outage claims or automatic retry.
+  Direct executor and continuous worker honor this directive before source repair,
+  host mutation permission or mutation journaling; uncertain causes stop for evidence
+  before those side effects as well.
+  Read-only infrastructure health checks likewise precede mutation permission and
+  journaling. An admitted infrastructure rerun still requires owner permission and
+  scans the actual scoped `gh api --method POST .../rerun` commands; unrelated Git
+  patch rules cannot substitute for GitHub write policy.
+  CI logs strip terminal controls and exclude runner command echoes before causal
+  extraction; fingerprints ignore unrelated interleaved output/exit wrappers.
+  A 404 log response may use bounded failure annotations only from the completed
+  failed job's repository-owned check URL. Missing annotations remain unknown;
+  permission/transport failures cannot use this fallback.
+  A later main SHA uses a separate archived
+  epoch; published version/tag/assets remain immutable. Current acceptance and
+  unexecuted platform/live/publication gates belong to the PRD-linked report;
+  historical five-target runs do not validate changed source. The combined
+  Published/docs-red/focused-repair/different-platform-red fixture pins
+  immutable publication, new diagnosis and exhausted full-retry refusal.
+
 - `dependency_setup` owns explicit native dependency consent, local engine health,
   fixed Podman package plans, bounded credential-free progress, setup serialization
   with `fs2`, user-wide runtime preferences and managed VM intent/recovery. It is

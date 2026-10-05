@@ -15,6 +15,11 @@ Own durable project documentation and evidence-backed engineering records.
 
 - `dependency-setup-prd.md` owns confirmed native runtime installation, reuse,
   managed-machine recovery, readiness checks and platform acceptance gates.
+- `Agent_Vesper_Release_Recovery_Controller_PRD.md` owns deterministic `/release`,
+  CI recovery and post-release main-health requirements. Current implementation
+  status, controlled GitHub receipts, five-target native host lifecycle
+  evidence, exact-source prerequisites and controlled producing acceptance remain
+  in section 37 and the linked `foundation/` execution reports.
 
 - `README.md` is the documentation landing page, separating user guides from
   contributor references, specifications, and historical evidence.
@@ -28,6 +33,7 @@ Own durable project documentation and evidence-backed engineering records.
   than repeating implementation diaries or unverified capability claims.
 - `recon/` owns the frozen Python-harness reconnaissance and Rust migration design.
 - `foundation/` owns blocker-resolution evidence, compatibility decisions, fixture contracts, and disposable-spike verdicts.
+- `vro19/` owns the adopted VRO-19 Google subscription/native-API planning bundle, its current G0 scope decision, retained source excerpts and unapproved delegated-agent architecture proposal. VRO-19 is on hold and reference-only: no further research, PRD revision, implementation, live acceptance or API-only substitute is authorized unless Alex explicitly resumes it.
 - `architecture/` owns read-only external-repository pattern reconnaissance mapped to Vesper primitives for future features.
 - Root PRD `advanced-hive-governance-prd.md` (VRO-16) owns the ratified requirements for task-level HITL gates (`YieldToHost`/`HostCommand`/`Suspended`), PIVOT/REFINE decision loops with judge separation, and deterministic verification gates; its upstreams are referenced exclusively as `governance alpha`/`governance beta` (naming-guard tokens land with its PR-1).
 - `adr/` owns accepted production architecture decisions.
@@ -154,6 +160,7 @@ Own durable project documentation and evidence-backed engineering records.
 ## Child DOX Index
 
 - `foundation/AGENTS.md` — Stage 0 decisions, fixture/oracle evidence, and technical-spike reports.
+- `vro19/AGENTS.md` — adopted VRO-19 reference material and the explicit initiative hold contract.
 - `architecture/AGENTS.md` — read-only external-repo pattern reconnaissance feeding feature PRDs.
 - `recon/AGENTS.md` — Agent Vesper migration reconnaissance records and quality gates.
 - `adr/AGENTS.md` — accepted production decisions and verification obligations.

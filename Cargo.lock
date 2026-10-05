@@ -4295,6 +4295,8 @@ dependencies = [
 name = "vesper-harness"
 version = "0.24.4"
 dependencies = [
+ "chrono",
+ "command-group",
  "fs2",
  "futures-util",
  "regex",
@@ -4302,6 +4304,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "tempfile",
+ "thiserror",
  "tokio",
  "url",
  "vesper-agent",

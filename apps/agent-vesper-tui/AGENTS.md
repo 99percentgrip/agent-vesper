@@ -140,7 +140,14 @@ business logic.
   env var (surfaced as a screen hint) — moving it to the OS credential store is
   the security follow-up.
 - `src/commands.rs` — slash-command parsing, registry, and resolution
-  against the active provider's superpowers. Tier C Phase 7 (ADR 0010): the
+  against the active provider's superpowers. `/release` resolves to a typed
+  shared RRC operation (start/status/resume/cancel/evidence/retry), never a
+  free-form AgentLoop workflow. If the controller admits a bounded isolated
+  repair, the TUI supplies current operating/permission modes and its ordinary
+  approval port to both native release stages and repair; controller state never
+  bypasses permission. `/ci` appends the same persisted RRC status shown by ACP.
+  The terminal owns presentation only.
+  Tier C Phase 7 (ADR 0010): the
   registry now covers the complete Python oracle surface plus Vesper-native
   commands (102 entries, or 103 with `swarm`, including `/export last`). The
   `ORACLE_COMMAND_SURFACE` const table is the single source of truth for the
@@ -938,7 +945,10 @@ business logic.
 - OpenAI is one native provider with API-key and ChatGPT device sign-in
   choices in Settings → Providers and `/auth`. Method selection, login,
   cancellation, secure save, and local logout are registry-port driven;
-  device sign-in never launches Codex. The provider preference applies after
+  device sign-in never launches Codex. Every interactive challenge retains its
+  complete HTTPS URL: device login requests browser launch, shows verification
+  link/code, and keeps Enter retry and C copy usable after launch failure.
+  A launch request never claims browser authentication succeeded. The provider preference applies after
   restart; model and reasoning selections drive the next shared agent turn.
   Provider switching checks credential presence without forcing the auth menu:
   a valid stored API key or subscription session is reused when returning to

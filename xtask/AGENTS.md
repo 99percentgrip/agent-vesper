@@ -13,6 +13,18 @@ architecture, MSRV, and source-oracle checks.
   `acceptance-mutations` copies source to a temporary workspace and requires two
   deliberate evaluator defects to fail their named assertion tests; a compile failure is
   not a mutation kill. Build artifacts stay under `target/acceptance-mutations`.
+  The fixed acceptance set also executes the RRC partial-matrix, verified-repair,
+  pause/resume, immutable-publication, production-orchestrator, native host
+  cancellation/restart process-lifecycle, and TUI-controller routing cases;
+  deleting or renaming any case fails the gate. RRC cases additionally pin
+  continuous polling, owner exclusivity, cancellation propagation, stale-writer
+  rejection, mutation journals, exact-attempt routing, reserved retry floors,
+  immutable epoch history, fourteen publication assets, secret redaction and
+  nonzero native focused proof. Native patch fixtures preserve version seeds
+  and new regression files; policy denial remains authoritative. Combined
+  isolated AgentLoop/native proof/promotion and missing last-green platform
+  evidence, missing-runner-log failure annotations and the composed
+  published/docs-red/repair/different-platform-red scenario are mandatory cases.
 
 - `xtask` may depend on `vesper-testkit`; production crates may not depend on it.
 - Commands must not call providers or mutate source/user state.
@@ -28,7 +40,8 @@ architecture, MSRV, and source-oracle checks.
   process-runtime or frontend dependencies; both hosts may compose it after
   the VRO-18 host-parity gate established the shared registry/AgentLoop route.
 - `vesper-harness` may depend on `vesper-web-fetch` to compose the shared
-  sandbox-only helper transport; `vesper-web` remains pure.
+  sandbox-only helper transport and on pure `vesper-policy` for native RRC
+  firewall enforcement; `vesper-web` remains pure.
 
 - `src/swarm_gate.rs` validates Cargo metadata: production swarm dependencies
   must be optional, activated through `swarm`, and excluded from transitive
@@ -41,6 +54,25 @@ architecture, MSRV, and source-oracle checks.
   duplicate-entry and unknown-version baselines fail closed. Format migrations
   preserve existing frozen identities/counts; never regenerate from current hits
   merely to make the gate pass. Unit fixtures enforce these distinctions.
+
+- RRC acceptance includes shared worker cancellation before GitHub/status/publication dispatch
+  and exact admission scope for failed-job-only reruns.
+  Causal selection/fingerprint regressions cover passing error-module tests, long
+  linker wrappers, concrete dependency errors, unknown OS-labelled messages and
+  remote cancellation without a local user-cancel claim, and account execution
+  restrictions requiring owner action without source repair or outage retry.
+  The named native-worker case executes both direct and continuous routes and pins
+  owner-action/uncertainty settlement before permission, repair or mutation journals.
+  The named health-routing case proves read-only diagnosis without source permission,
+  authoritative rerun refusal and firewall checks for the actual GitHub write scope.
+  The named repair-authority case uses real native tools and a temporary Git repo
+  to prove that model commands cannot create a tag outside controller admission.
+  The named repair-budget case executes distinct real Cargo commands with host
+  caps zero, five and one hundred, and proves bounded unsuccessful exhaustion
+  without changing the host configuration.
+  Provider-owned server tool selections are distinct from client gateways; the
+  named fixture proves their request/configuration retention without measuring
+  live hosted execution.
 
 ## Verification
 

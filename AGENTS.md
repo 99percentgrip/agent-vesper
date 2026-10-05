@@ -214,11 +214,20 @@ When the user requests a durable behavior change, record it here or in the relev
 - Registry publishing follows the continuous-update contract: one open
   `agent-vesper` PR in `agentclientprotocol/registry`, updated in place on
   the same branch for every version bump. Never close-and-replace it.
+- Use standard public GitHub Actions for this public project. Deliberately
+  failing RRC workflow/publication acceptance belongs in a separate public test
+  repository; a private-runner billing prerequisite must not be introduced.
 - Public releases are exact-commit gated: push the version commit to `main`,
   require successful canonical, MSRV, five-target foundation, and contained
   web-driver image acceptance workflows
   for that commit, then create its immutable release tag. Never tag first and
   use the release matrix to discover platform failures.
+- Release and CI recovery progression is owned by the provider-neutral Release
+  Recovery Controller in `vesper-harness`, not a free-form `/release` prompt.
+  Wait for complete exact-SHA matrices, capture and fingerprint first causal
+  failures, require focused proof plus a relevant state change, and enforce the
+  persisted retry budget. A published release remains distinct from later red
+  `main`; external outage claims require official and repository-side evidence.
 - TUI↔ACP host parity is bidirectional: any host-agnostic capability or
   behavior change shipped in either host (cognitive memory, reasoning
   orchestration, streaming/finalization, tool/system-prompt behavior, or
@@ -274,14 +283,14 @@ When the user requests a durable behavior change, record it here or in the relev
 
 - `docs/AGENTS.md` — documentation ownership, evidence standards, and child documentation boundaries.
 - `fixtures/AGENTS.md` — language-neutral compatibility scenarios, schemas, and captured oracle results.
-- `.github/AGENTS.md` — CI-only external platform validation workflows.
+- `.github/AGENTS.md` — CI-only external platform validation workflows and runner preparation.
 - `.cargo/AGENTS.md` — repository-local Cargo command and resolver policy.
 - `crates/AGENTS.md` — production foundational crate boundaries, dependency direction,
   and the explicit native dependency-setup exception.
 - `apps/AGENTS.md` — thin production composition binaries.
 - `registry/AGENTS.md` — ACP registry manifest for Zed discovery/install.
 - `skills/AGENTS.md` — curated seed skill library bundled in release archives.
-- `scripts/AGENTS.md` — cross-platform installers for the `agent-vesper-acp` binary.
+- `scripts/AGENTS.md` — cross-platform installers and bounded read-only release prerequisite verification.
 - `spikes/AGENTS.md` — disposable Rust compatibility and platform experiments.
 - `tools/AGENTS.md` — non-production migration tooling and oracle ownership.
 - `xtask/AGENTS.md` — repository verification, fixture, architecture, and MSRV commands.

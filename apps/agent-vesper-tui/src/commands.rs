@@ -491,6 +491,9 @@ pub enum CheckpointOp {
     /// `/ci` — show CI status for the current branch via `gh` (with a
     /// clear "unavailable" notice when `gh` is not on PATH).
     CiStatus,
+    /// `/release patch|minor|major|status|resume|cancel|evidence|retry` —
+    /// execute the shared deterministic Release Recovery Controller.
+    ReleaseControl { argument: String },
     /// `/daemon` — show the headless daemon's lock state (held pid,
     /// stale, or not running) over the shared state root. Pure read: it
     /// never acquires the lock and never spawns anything.
@@ -538,6 +541,7 @@ impl CheckpointOp {
             Self::SessionExport | Self::SessionExportLast => "export",
             Self::ClipboardCopy { .. } => "copy",
             Self::CiStatus => "ci",
+            Self::ReleaseControl { .. } => "release",
             Self::DaemonStatus => "daemon",
             Self::WatcherRegister { .. } => "watch",
             Self::WatcherList => "watch",
@@ -1244,17 +1248,32 @@ impl CommandRegistry {
                     .into(),
             },
             "smart" => resolve_smart(argument),
-            "release" => CommandOutcome::Workflow {
-                display: format!(
-                    "release: cutting a {} release from the workspace.",
-                    release_bump(argument)
-                ),
-                prompt: format!(
-                    "Cut a {} release from this workspace. Bump the version, update the \
-                     changelog, run the full verification gate, commit, tag, and push.",
-                    release_bump(argument)
-                ),
-            },
+            "release" => {
+                let argument = argument.trim().to_ascii_lowercase();
+                let argument = if argument.is_empty() {
+                    "patch".to_owned()
+                } else {
+                    argument
+                };
+                if matches!(
+                    argument.as_str(),
+                    "patch"
+                        | "minor"
+                        | "major"
+                        | "status"
+                        | "resume"
+                        | "cancel"
+                        | "evidence"
+                        | "retry"
+                ) {
+                    CommandOutcome::Checkpoint(CheckpointOp::ReleaseControl { argument })
+                } else {
+                    CommandOutcome::Error(
+                        "Usage: /release [patch|minor|major|status|resume|cancel|evidence|retry]"
+                            .into(),
+                    )
+                }
+            }
             "insights" => CommandOutcome::Workflow {
                 display: "insights: analyzing the session for friction and improvements.".into(),
                 prompt: "Analyze the current session and the recent working-tree changes for \
@@ -1925,16 +1944,6 @@ pub(crate) fn parse_reasoning_mode(value: &str) -> Option<vesper_domain::Reasoni
         "maximum" | "max" => Some(ReasoningMode::Maximum),
         "off" => Some(ReasoningMode::Off),
         _ => None,
-    }
-}
-
-/// Resolves the bump level for `/release [patch|minor|major]`. Defaults to
-/// `patch` when no argument is given or the argument is unrecognized.
-fn release_bump(argument: &str) -> &'static str {
-    match argument.trim().to_ascii_lowercase().as_str() {
-        "minor" => "minor",
-        "major" => "major",
-        _ => "patch",
     }
 }
 
@@ -3289,17 +3298,11 @@ mod tests {
     }
 
     #[test]
-    fn phase7_release_picks_the_right_bump() {
+    fn release_routes_to_the_controller_instead_of_a_model_workflow() {
         let registry = CommandRegistry::stage_11b();
         let plan_state = PlanState::default();
         let provider = provider();
-        for (arg, expected) in [
-            ("", "patch"),
-            ("patch", "patch"),
-            ("minor", "minor"),
-            ("major", "major"),
-            ("bogus", "patch"),
-        ] {
+        for (arg, expected) in [("", "patch"), ("minor", "minor"), ("status", "status")] {
             let outcome = registry.resolve(
                 &CommandIntent::Slash {
                     name: "release".into(),
@@ -3309,16 +3312,25 @@ mod tests {
                 &provider,
                 &[],
             );
-            match outcome {
-                CommandOutcome::Workflow { display, .. } => {
-                    assert!(
-                        display.contains(expected),
-                        "release {arg:?} should mention {expected}: {display}"
-                    );
-                }
-                other => panic!("release {arg:?} should be Workflow, got {other:?}"),
-            }
+            assert_eq!(
+                outcome,
+                CommandOutcome::Checkpoint(CheckpointOp::ReleaseControl {
+                    argument: expected.into()
+                })
+            );
         }
+        assert!(matches!(
+            registry.resolve(
+                &CommandIntent::Slash {
+                    name: "release".into(),
+                    argument: "bogus".into(),
+                },
+                &plan_state,
+                &provider,
+                &[],
+            ),
+            CommandOutcome::Error(_)
+        ));
     }
 
     #[test]

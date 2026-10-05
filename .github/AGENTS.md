@@ -2,10 +2,17 @@
 
 ## Purpose
 
-Own CI definitions used to validate production migration gates and disposable
-platform assumptions on hosts unavailable locally.
+Own CI definitions and guarded runner preparation used to validate production
+migration gates and disposable platform assumptions on hosts unavailable locally.
 
 ## Local Contracts
+
+- `prepare-rust-runner.sh` refuses outside GitHub-hosted Linux. It removes only
+  unused preinstalled Android/.NET/GHC SDK trees on disposable CI machines,
+  records actual free space and preserves the Rust/Node/Python/Docker tool paths.
+  Canonical/MSRV retain storage diagnostics on failure. The focused lifecycle
+  gate proves exact acceptance linking after the workspace and default-doc graphs
+  on both Linux architectures; it never reduces existing verification coverage.
 
 - ADR 0028 acceptance regressions are mandatory in canonical, MSRV and five-target
   foundation workflows. Canonical CI also kills two bounded evaluator mutations. The
@@ -15,6 +22,20 @@ platform assumptions on hosts unavailable locally.
 - Keep the five release-target families explicit in the matrix: linux-x86_64,
   linux-arm64, macos-intel, macos-apple-silicon, windows-x86_64.
 - Validation workflows must not call live providers or require credentials.
+  `release-recovery-acceptance.yml` is a manually dispatched, read-only controlled
+  fixture for deterministic complete-matrix red, repeated-fingerprint, focused-green
+  and post-publication-main-red evidence. Its selectable synthetic macOS/Windows
+  lane is Ubuntu-hosted diagnosis evidence, never native platform proof. `release-recovery-lifecycle-acceptance.yml`
+  is the manually dispatched, read-only five-native-runner gate for an exact SHA in
+  the controlled public acceptance repository; it proves RRC process-tree
+  cancellation, persisted restart identity, controller/adapter/policy regressions
+  and fixture-backed repair/retry without publication authority. It also runs
+  the isolated synthetic ACP lifecycle, focused native command settlement,
+  three additional Windows cancellation
+  repetitions, and hermetic voice-pack fixtures before
+  the complete production gate retry. These
+  fixtures must never replace production exact-commit release gates or intentionally
+  break Agent Vesper `main`.
   The tag-triggered `release.yml` workflow is the sole publishing workflow and
   may publish only compiled, checksummed release archives and exact-commit
   tested browser image archives; it must not make
@@ -36,6 +57,9 @@ platform assumptions on hosts unavailable locally.
   Settings and requires configured embeddings and a permitted backend. Docker/Podman
   supplies the host runtime; native guided setup offers separate confirmed preparation,
   while installer preflight remains import-only and never enables web access.
+- Release uploads compare existing asset bytes and fail on mismatch; no
+  `--clobber` replacement is permitted. Notes describe the tagged version and
+  generated commit changes rather than a fixed historical version narrative.
 - VRO-17 release notes state that the release ships the local speech stack;
   third-party cloud STT/TTS are planned future optional integrations, ACP has
   no microphone/audio capability, and no NPU TTS claim is made.
@@ -63,7 +87,12 @@ platform assumptions on hosts unavailable locally.
   matrix also runs `vesper-agent`'s shared `command_settlement` behavior on
   every target family so Windows/macOS output draining, timeout/cancellation,
   descendant cleanup, caller-drop cleanup and recovery cannot pass by
-  cross-compilation or an empty platform-filtered test binary.
+  cross-compilation or an empty platform-filtered test binary. The explicit
+  RRC host-lifecycle case must likewise run on every family and prove local
+  cancellation reaps a real descendant plus a fresh process reloads the same
+  persisted epoch/run/job identity. Its exact invocation uses `--lib --all-features`
+  to reuse the eligible workspace unit-test build, without relinking unrelated
+  default-feature integration binaries; the selected case must still execute.
   The
   Linux sandbox step is stall-proofed in layers: it skips `apt` entirely when
   the runner image already ships `bwrap`; when it must install it REWRITES
@@ -76,11 +105,17 @@ platform assumptions on hosts unavailable locally.
   60-minute job-timeout cancellation), and caps the step at
   `timeout-minutes: 10`. A missing bwrap fails the bwrap tests truthfully;
   they are never silently skipped.
+- Canonical, MSRV, platform and web-driver Cargo checks disable incremental
+  artifacts and use line-table debug symbols. Preserve every test and gate;
+  hosted-runner disk exhaustion must not be bypassed by reducing coverage.
 - CI validates Stage 5 coverage, read-only session/testkit conformance, and
   writer/SQLite architecture gates on all five target families.
 - `release.yml` checks exact-commit CI through the Actions API using only the
   repository `GITHUB_TOKEN` with `actions: read`; no build or publication job
-  starts when any required push workflow lacks a successful run. It also
+  starts when any required latest main-push run or its attempt-specific jobs
+  are missing, skipped, running or unsuccessful. `scripts/release_gate.py`
+  checks pagination/provenance and changed attempts; publication rechecks
+  prerequisites and uses the original admitted driver artifact run. It also
   declares a single concurrency group `release-pipeline` with
   `cancel-in-progress: true` so a new tag-push (or `workflow_dispatch` with
   a `tag` input) cancels any stuck prior run (e.g. a phantom-queued run
@@ -99,10 +134,10 @@ platform assumptions on hosts unavailable locally.
 ## Verification
 
 - Validate YAML syntax locally where tooling exists.
-- The canonical gate (`cargo xtask verify`) and MSRV 1.88 verification pass on
-  every push. Linux (x86_64, arm64) and macOS (intel, apple-silicon) targets
-  are verified green on the five-target matrix. Windows build-time is being
-  optimized via Cargo artifact caching.
+- Run `cargo xtask verify` and the MSRV workflow; record exact-SHA terminal
+  conclusions rather than inferring success from workflow registration.
+- Require all five native target jobs to settle; focused lifecycle evidence
+  cannot replace complete production prerequisite or publishing gates.
 
 ## Child DOX Index
 
@@ -137,6 +172,11 @@ platform assumptions on hosts unavailable locally.
 - `workflows/platform-foundation.yml` — five-target production-foundation and
   eligible spike matrix.
 - `workflows/foundation-spikes.yml` — five-target disposable spike test matrix.
+- `workflows/release-recovery-acceptance.yml` — manually dispatched, non-publishing
+  RRC fixture matrix with stable synthetic causal output and a secret canary.
+- `workflows/release-recovery-lifecycle-acceptance.yml` — manually dispatched,
+  read-only exact-SHA native five-target cancellation/restart matrix for the
+  controlled public acceptance repository.
 - `workflows/release.yml` — tag-triggered ACP+TUI archive packaging and GitHub
   Release publication for the registry and installers; archives also bundle
   the repo `skills/` seed library seeded by the installers into

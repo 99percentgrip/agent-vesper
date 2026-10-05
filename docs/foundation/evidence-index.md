@@ -1,5 +1,79 @@
 # Foundation Evidence Index
 
+## Release Recovery Controller parity continuation (2026-10-05)
+
+- [Completed continuation report](release-recovery-controller-parity-continuation.md) owns full requirement traceability and repairs. Source `bd24bb4` passed all nine local checks (83 selected/82 RRC, 69 exact, 11 command and 12 auth UI cases), ten isolated ACP repetitions, five native targets with direct named-case logs, controlled red/repeated-red/green probes, and all four main-push prerequisites with eleven successful jobs. Actual producing run 37346108219 passed all seven jobs; annotated test tag `v0.24.4` targets the exact source, all 16 assets were verified and native closeout reached `Complete`. All mandatory binding PRD gates passed. Production main/tags/Registry and Alex's installation remain unchanged.
+- [Binding-section trace](release-recovery-controller-parity-continuation-requirements.json) maps all 36 sections and 23 acceptance criteria to current named cases and actual producing evidence; no mandatory gate remains pending.
+- [Source manifest](release-recovery-controller-parity-continuation-source.json) and
+  [receipt archive](release-recovery-controller-parity-continuation-receipts.tar.gz) bind
+  exact runtime/workflow bytes, full native/main/publication logs, actual tag/assets,
+  completed ledger, failed historical/tooling receipts and optional unexecuted checks.
+
+## Release Recovery Controller deep debug (2026-10-05)
+
+- [Earlier execution report](release-recovery-controller-deep-debug-execution.md)
+  owns defect reproductions, implementation repair, exact source/verification
+  receipts and PRD traceability. Its earlier incomplete verdict is historical; the continuation above now closes
+  current producing acceptance. Live-provider/interactive checks
+  remain optional unexecuted robustness evidence under binding PRD §§1–36.
+  Current private controlled GitHub and five-target fixture checks passed;
+  the OpenAI device-sign-in UI repair is included in later native candidates;
+  real browser/account completion remains unexecuted.
+- [Source manifest](release-recovery-controller-deep-debug-source.json) and
+  [receipt archive](release-recovery-controller-deep-debug-receipts.tar.gz) preserve
+  exact bytes, run identities, passed/failed/stale checks and acceptance limits.
+- The older completion checkpoint below is historical and superseded by this audit.
+
+## Release Recovery Controller final completion (2026-09-29)
+
+- Final completion and full PRD audit: [`release-recovery-controller-final-completion.md`](release-recovery-controller-final-completion.md)
+- Initial execution: [`release-recovery-controller-pr1-pr3-execution.md`](release-recovery-controller-pr1-pr3-execution.md)
+- Hardening execution: [`release-recovery-controller-hardening-execution.md`](release-recovery-controller-hardening-execution.md)
+- PR-4 through PR-7 continuation: [`release-recovery-controller-pr4-pr7-execution.md`](release-recovery-controller-pr4-pr7-execution.md)
+- Owning PRD: [`../Agent_Vesper_Release_Recovery_Controller_PRD.md`](../Agent_Vesper_Release_Recovery_Controller_PRD.md)
+- Historical verdict (superseded): **COMPLETE WITHIN THE AUTHORIZED NON-PUBLISHING SCOPE.** RRC-issued
+  typed tokens gate version, commit, push, retry, tag and publication operations;
+  deterministic source failures use a permission-aware AgentLoop in an isolated
+  epoch worktree and require observed mutation/focused-proof receipts before
+  fail-closed promotion and one fresh-SHA retry. The final audit found and repaired
+  direct-child-only cancellation, with a regression-first leak canary. `cargo
+  xtask acceptance` passes all 30 exact cases and `cargo xtask verify` passes.
+  Four controlled GitHub scenarios remain preserved at exact fixture commit
+  `e149b2e0f57ec9962ad56e217b1a5571b9fb1c23`. Native lifecycle run
+  `36594339290` passed Linux x86_64, Linux ARM64, macOS Intel, macOS Apple
+  Silicon and Windows x86_64 against exact candidate
+  `60eacc5c8ef53f4dba1b4eed7d274fa26ec95284`, proving descendant reaping and
+  fresh-process epoch/run/job reload. The private repository has zero tags and
+  zero releases. Production publication remained explicitly prohibited and was
+  not misreported as a pass; Agent Vesper `main`, tags, releases, registry and
+  installations were unchanged.
+
+## Separate agent process status check (2026-10-02)
+
+- Read-only receipt: [`2026-10-02-agent-process-status-check.md`](2026-10-02-agent-process-status-check.md)
+- Verdict: **TERMINATED ON EXPLICIT USER REQUEST; VERIFICATION INCOMPLETE.**
+  The old TUI-session PID `7726` had begun a new `cargo xtask verify && cargo
+  xtask msrv` sequence in isolated worktree `v0245-rrc-autonomy`; its observed
+  tests progressed from `routing_quality_eval` to `vesper_provider_openai` and
+  `hnsw_tests`. The user then directed termination. `SIGINT` stopped the exact
+  TUI/xtask/cargo/test tree without escalation; PID `7726` and every process
+  referencing that worktree were absent afterwards. The interrupted sequence is
+  not passing verification, and no source/worktree content was modified by the
+  supervising session.
+
+## Active agent supervision (2026-09-29 08:45Z)
+
+- Supervision receipt: [`2026-09-29-active-agent-supervision-0845z.md`](2026-09-29-active-agent-supervision-0845z.md)
+- Related repair: [pushed repair report at `af662ea`](https://github.com/99percentgrip/agent-vesper/blob/af662eac572ba16763520c524dd131b1f9ddbe88/docs/foundation/2026-09-29-red-main-ci-repair.md)
+- Verdict: **ACTIVE; NOT PROCESS-STUCK; TWO PUSHED REPAIRS REGRESS BOTH macOS
+  TARGETS.** Commit `af662ea` failed successful large-output command settlement
+  as `cleanup=uncertain` on Apple Silicon job `109324478181` and Intel job
+  `109324478201`. Follow-up `d097bdf` changed the Darwin zombie proof but repeated
+  the same ACP failure on Apple Silicon job `109343880064` and Intel job
+  `109343880176`. The TUI was polling the remaining workflows despite the known
+  reds. A root-cause correction or revert is required; no green/completion claim
+  is valid.
+
 ## Post-release quality-check repair (2026-09-29)
 
 - Investigation and repair: [`2026-09-29-post-release-quality-check-investigation.md`](2026-09-29-post-release-quality-check-investigation.md)
@@ -69,6 +143,67 @@
 - OpenAI requirements: [`../openai-provider-prd.md`](../openai-provider-prd.md)
 - Shared skill behavior: [`../skills.md`](../skills.md)
 - Verdict: **IMPLEMENTED AND OFFLINE-VERIFIED; LIVE INCIDENT PAYLOAD AND PUBLIC-PROVIDER REPLAY NOT AVAILABLE.** Commit `560b32cdf9c209283c620aaf259790c8f61e8177` repairs bounded explicit-skill parsing and current subscription metadata/reasoning event decoding. Shared parser, native adapter, TUI PTY, ACP process, architecture and complete `cargo xtask verify` gates pass. The exact unretained historical provider event and full original paste remain unprovable; no live call, release, installation change or VRO-19 work occurred.
+
+## VRO-19 hold decision (2026-09-28)
+
+- Decision: [`vro19-hold-decision.md`](vro19-hold-decision.md)
+- Retained reference material: [`../vro19/`](../vro19/)
+- Status: **ON HOLD — REFERENCE ONLY.** Alex directed that VRO-19 receive no further research, PRD revisions, implementation or live acceptance. The existing documents remain available for reference, and an API-key-only Gemini provider is not an authorized substitute. Only Alex's explicit instruction may resume the initiative.
+
+## VRO-19 adoption, G0 scope and architecture proposal (2026-09-28)
+
+- Execution: [`vro19-adoption-g0-architecture-execution.md`](vro19-adoption-g0-architecture-execution.md)
+- Adopted requirements: [`../vro19/VRO-19_Google_Gemini_Antigravity_Integration_PRD_v3.md`](../vro19/VRO-19_Google_Gemini_Antigravity_Integration_PRD_v3.md)
+- G0 decision: [`../vro19/G0_SCOPE_DECISION.md`](../vro19/G0_SCOPE_DECISION.md)
+- Architecture proposal: [`../vro19/proposed-delegated-agent-architecture.md`](../vro19/proposed-delegated-agent-architecture.md)
+- Verdict: **DOCUMENTS ADOPTED; G0 FAIL FOR CONSUMER LOGIN; ARCHITECTURE PROPOSED, NOT ACCEPTED.** Current Google Terms and FAQ prohibit third-party software from using an Antigravity login and point third-party coding agents to separately billed API-key routes. Direct Vesper conversations, Vesper callbacks and VRO/worker/scheduler delegation are therefore disabled. No runtime, login, model, billing, implementation or release action occurred.
+
+## VRO-19 revision 3 package/adoption review (2026-09-28)
+
+- Review: [`vro19-prd-v3-package-review.md`](vro19-prd-v3-package-review.md)
+- Package:
+  `/home/Alex/Projects/prd/VRO-19_Revised_PRD_Package_v3`.
+- Verdict: **PACKAGE VALID — READY FOR DOCUMENTATION/OFFLINE-SCOPE ADOPTION.**
+  The documented validator and independent checks verified all 21 members, 20
+  checksums, four companions, 23 local links, 26 source records, three retained
+  excerpts, 74 account rows, 23 API rows, explicit row statuses/evidence and
+  matching gate derivation. The five revision-2 findings are resolved; no new
+  substantive contradiction was found. G0 and G1 remain `OPEN_EXTERNAL`, G2 and
+  GG-15.8 remain `NOT_RUN`, and no adoption, runtime setup, login, model call,
+  implementation or release occurred.
+
+## VRO-19 revision 2 PRD review (2026-09-27)
+
+- Review: [`vro19-prd-v2-review.md`](vro19-prd-v2-review.md)
+- Input: external revision
+  `/home/Alex/Downloads/VRO-19_Google_Gemini_Antigravity_Integration_PRD_v2.md`,
+  SHA-256
+  `2bb4358f9d413890a6c1442a23680fb26f6d8984107b57cd7c4028af160bdac6`.
+- Verdict: **SUBSTANTIALLY CORRECTED — PACKAGE INCOMPLETE; REVISIONS REQUIRED
+  BEFORE ADOPTION.** Revision 2 resolves the initial policy-order,
+  delegated-architecture, authentication, permission, usage, platform, route-ID
+  and trust-design findings. Its 73 atomic requirement rows are unique and cover
+  GG-01…GG-15. Four asserted companion artifacts are absent, P2/G2 setup is
+  circular under the current pre-G2 restriction, the required mutation proofs
+  lack an atomic row, and per-row current status cannot be checked without the
+  missing machine ledger. No Google login, runtime execution, provider-state
+  change or implementation occurred.
+
+## VRO-19 Google/Gemini/Antigravity PRD review (2026-09-27)
+
+- Review: [`vro19-prd-review.md`](vro19-prd-review.md)
+- Input: external draft
+  `/home/Alex/Downloads/VRO-19_Google_Gemini_Antigravity_Integration_PRD.md`,
+  SHA-256
+  `c2a6517fd1fca2aadf80967025226f9ec28f826be2f9ec3a066e336fd65fb4fa`.
+- Verdict: **REVISIONS REQUIRED — NOT READY FOR REPOSITORY ADOPTION OR
+  PRODUCTION IMPLEMENTATION.** The account/API separation, billing isolation,
+  runtime ownership, and bounded live-proof direction are sound. Blocking gaps
+  remain in authoritative policy scope and delegated-agent architecture; high
+  findings cover auth-flow assumptions, fail-closed permissions, contradictory
+  `/usage` release criteria, six upstream targets versus five Vesper targets,
+  and completion traceability. No Google login, runtime execution, model call,
+  provider state change, or implementation occurred.
 
 ## Grok subscription usage release v0.24.3 (2026-09-27)
 

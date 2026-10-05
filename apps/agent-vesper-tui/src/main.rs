@@ -2810,10 +2810,12 @@ async fn drive_loop(
                 // tokio task; the result is drained at the top of the next
                 // iteration, so the UI keeps redrawing the WORKING banner.
                 //
-                // Phase 7 (ADR 0010): workflow commands (`/security-review`,
-                // `/smart`, `/release`, `/insights`, `/diff`) build a prompt
-                // in `dispatch` and stash it on `SessionState.pending_prompt`.
-                // Drain it the same way: it takes precedence over a free-text
+                // Phase 7 (ADR 0010): model-driven workflow commands
+                // (`/security-review`, `/smart`, `/insights`, `/diff`) build a
+                // prompt in `dispatch` and stash it on
+                // `SessionState.pending_prompt`. `/release` instead executes
+                // through the shared persisted release controller. Drain it
+                // the same way: it takes precedence over a free-text
                 // prompt (only one prompt fires per Enter).
                 let workflow_prompt = session.state.pending_prompt.take();
                 let prompt_to_spawn = workflow_prompt.or(prompt_text).or_else(|| {
@@ -2877,7 +2879,14 @@ async fn drive_loop(
                 // the durable vesper_checkpoints stores. Same synchronous
                 // execution pattern (local filesystem + scoped /ci subprocess).
                 if let Some(op) = session.state.pending_checkpoint_op.take() {
-                    drain_checkpoint_op(op, checkpoint_stores, &mut session.state);
+                    drain_checkpoint_op(
+                        op,
+                        checkpoint_stores,
+                        &mut session.state,
+                        registry,
+                        agent,
+                        Arc::clone(&approval_port_for_react),
+                    );
                 }
                 if let Some((index, write)) = session.state.pending_code_block.take() {
                     execute_code_block(index, write, session, checkpoint_stores);
@@ -13824,11 +13833,34 @@ fn drain_checkpoint_op(
     op: agent_vesper_tui::commands::CheckpointOp,
     stores: &mut CheckpointStores,
     state: &mut SessionState,
+    registry: &Arc<vesper_runtime::ProviderRegistry>,
+    agent: &Arc<AgentLoop>,
+    permission: Arc<dyn vesper_agent::PermissionPort>,
 ) {
     use agent_vesper_tui::commands::CheckpointOp;
     use vesper_checkpoints::CheckpointKind;
 
     match op {
+        CheckpointOp::ReleaseControl { argument } => {
+            let repair_factory = vesper_harness::WorkerFactory::new(
+                Arc::clone(registry),
+                agent.configuration().clone(),
+            )
+            .with_permission_port(permission)
+            .with_release_policy(
+                state.controls.operating_mode,
+                state.controls.permission_mode,
+            );
+            let body =
+                vesper_harness::release_recovery::release_command_for_workspace_with_factory(
+                    &stores.workspace_root,
+                    &argument,
+                    Some(repair_factory),
+                )
+                .unwrap_or_else(|error| format!("release: {error}"));
+            state.transcript.push(body.clone());
+            state.status = Some(body.lines().next().unwrap_or("release").to_owned());
+        }
         CheckpointOp::SessionCreate { name } => {
             let Some(sessions) = stores.sessions.as_ref() else {
                 state.transcript.push(format!(
@@ -14180,7 +14212,14 @@ fn drain_checkpoint_op(
         }
         CheckpointOp::CiStatus => {
             let status = vesper_checkpoints::CiStatusReader::status();
-            state.transcript.push(format!("ci: {}", status.output));
+            let mut body = format!("ci: {}", status.output);
+            if let Some(release) = vesper_harness::release_recovery::release_status_for_workspace(
+                &stores.workspace_root,
+            ) {
+                body.push_str("\n\n");
+                body.push_str(&release);
+            }
+            state.transcript.push(body);
             state.status = if status.available {
                 Some("CI status retrieved.".into())
             } else {

@@ -6,6 +6,54 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `release-recovery-controller-parity-continuation.md` owns continued binding
+  acceptance: publishing prerequisites, last-green lane evidence, measured
+  worker time, combined isolated repair promotion, real TUI/ACP observation and
+  GitHub account-restriction escalation and the corrected standard-public-CI
+  validation route.
+  Its completion verdict depends on current exact-source receipts.
+  `release-recovery-controller-parity-continuation-requirements.json` pins every
+  binding section and maps its behavior to named cases observed on all five
+  current native targets and records exact-source prerequisite and producing gates.
+  The `release-recovery-controller-parity-continuation-source.json` and
+  `release-recovery-controller-parity-continuation-receipts.tar.gz` companions
+  bind code/workflow bytes, exact native and CI identities, passed and failed
+  receipts, actual controlled publication results and explicitly unexecuted optional
+  live-account/production-publication checks.
+
+- `release-recovery-controller-deep-debug-execution.md` owns the preceding RRC
+  defect audit, red-to-green evidence, requirement traceability and remaining
+  live/platform/publication acceptance and the related OpenAI device-sign-in
+  UI repair. The continuation candidate includes that UI change; this earlier
+  report retains its original, narrower host-only acceptance scope. Its `release-recovery-controller-deep-debug-source.json` and
+  `release-recovery-controller-deep-debug-receipts.tar.gz` companions bind dirty source and exact logs.
+  This report supersedes earlier completion claims without discarding receipts.
+- `release-recovery-controller-pr1-pr3-execution.md` owns the first RRC
+  implementation receipt: typed/persisted core, GitHub evidence port and CLI
+  adapter, retry/outage guards, shared TUI/ACP commands, local verification,
+  and the explicit PR-4 through PR-7 acceptance gaps.
+- `release-recovery-controller-hardening-execution.md` owns the policy-core
+  hardening receipt: required-gate completeness, typed directives/events, exact
+  retry and repair budgets, last-green comparison, pause/reopen and AC-23
+  regression, plus the native/live gaps that were open at that checkpoint.
+- `release-recovery-controller-pr4-pr7-execution.md` owns the production executor,
+  permission-aware AgentLoop repair/worktree promotion, bounded official-status
+  path, local cancellation, shared host controls, deterministic acceptance and
+  preserved controlled private-GitHub run/job/log receipts at the PR-7 checkpoint.
+- `release-recovery-controller-final-completion.md` owns the regression-first
+  process-tree repair, 30-case acceptance and complete verification receipts,
+  five-target native cancellation/restart run, full PRD audit, non-publishing
+  boundary and historical RRC completion verdict.
+
+- `2026-10-02-agent-process-status-check.md` owns the separate TUI's
+  operating-system and verification-progress samples, their explicit
+  task-attribution/progress-proof limits, the associated shared-tree snapshot,
+  and the user's authorized graceful termination of that exact process tree.
+
+- `2026-09-29-active-agent-supervision-0845z.md` owns the read-only process,
+  child-command, exact-commit workflow and implementation-state check showing
+  that the separate TUI was actively waiting on CI rather than stalled.
+
 - `2026-09-29-post-release-quality-check-investigation.md` owns the
   post-v0.24.4 quality failure diagnosis, deterministic explicit-marker repair,
   Windows quote-safe correction, local verification, exact GitHub quality and
@@ -34,6 +82,25 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 - `2026-09-28-zai-mcp-web-tools-finishing.md` owns the isolated ACP process-suite
   correction, fixed-category diagnostic hardening, final selective-isolation
   receipts, runnable candidate identities, and still-open live/cross-platform gates.
+
+- `vro19-prd-review.md` owns the read-only review of revision 1 of the external
+  provisional Google Gemini/Antigravity PRD: source verification, policy and
+  delegated-agent architecture blockers, acceptance/traceability gaps,
+  platform-count correction and the not-ready adoption verdict.
+- `vro19-prd-v2-review.md` owns the read-only follow-up review of revision 2: its
+  major design corrections and the package, G2 setup, mutation-ledger and
+  current-status gaps identified before adoption.
+- `vro19-prd-v3-package-review.md` owns revision 3 package and adoption validation:
+  member/checksum/link/ledger consistency, closure of the revision 2 findings,
+  and the documentation/offline-scope adoption verdict.
+- `vro19-adoption-g0-architecture-execution.md` owns the authorized repository
+  adoption receipt, current primary-source G0 decision, proposed-but-unapproved
+  native-versus-delegated architecture comparison, and the no-runtime/no-login
+  boundary. The adopted requirements and current decision records live under
+  `../vro19/`; these reports do not register a provider or authorize Google access.
+- `vro19-hold-decision.md` owns Alex's decision that VRO-19 and VRO-19B are on
+  hold and reference-only, with no further research, PRD revision, implementation,
+  live acceptance or API-only substitute until he explicitly resumes the initiative.
 
 - `vro18-audit1-completeness-and-capability-truth.md` owns the independent
   post-v0.24.0 VRO-18 requirement/reachability audit, exact-artifact F0

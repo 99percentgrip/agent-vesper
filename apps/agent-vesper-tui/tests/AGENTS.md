@@ -6,11 +6,26 @@ Verify terminal interaction through the production TUI binary with isolated stat
 
 ## Ownership
 
+- `release_hosts_pty.py` observes one isolated RRC ledger through real TUI/ACP
+  processes: partial matrix, blocked no-write retry, Published/main degraded,
+  and cross-host cancellation preserving epoch/run/tag/assets. Synthetic persisted
+  evidence and signed-out vaults must never dispatch a provider request.
+
 - `xai_plain_turn_pty.py` owns the real TUI-process Grok-session `hello` smoke:
   full Code-mode registry, reasoning projection, stale-control suppression and
   exactly one loopback transport dispatch without live quota.
 - `xai_usage_pty.py` owns the real TUI-process `/usage` billing lookup:
   loopback `GET /user` and `GET /billing?format=credits`, no inference POST.
+
+- `r3_voice_pack.rs` runs each complete case in a bounded child process with
+  isolated workspace/HOME/XDG roots set before startup. Never mutate process
+  environment or read the invoking workspace's voice selection: a detached
+  worker can outlive an environment guard and load the developer's native pack.
+  Canonicalize the parent root before setting child paths; macOS `/var`
+  aliases `/private/var`. Child identity assertions must compare that canonical
+  root after canonicalizing the child cwd too (Windows adds a `\\?\` prefix),
+  not reject a safe symlink alias. The host-construction case explicitly selects neural speech against an empty
+  fixture pack; all children must be reaped before temporary roots are removed.
 
 - `voice_speech_pipeline.rs` isolates PATH/HOME in a test subprocess and uses
   synthesis-only WAV/player fixtures without devices. It requires the second

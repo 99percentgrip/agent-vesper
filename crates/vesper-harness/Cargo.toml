@@ -7,15 +7,19 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+command-group.workspace = true
 fs2 = "=0.4.3"
+chrono.workspace = true
 regex.workspace = true
 sha2.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio = { workspace = true, features = ["process"] }
 tempfile.workspace = true
+thiserror.workspace = true
 url.workspace = true
 futures-util.workspace = true
+vesper-policy = { path = "../vesper-policy", version = "=0.24.4" }
 vesper-agent = { path = "../vesper-agent", version = "=0.24.4" }
 vesper-checkpoints = { path = "../vesper-checkpoints", version = "=0.24.4" }
 vesper-config = { path = "../vesper-config", version = "=0.24.4" }
@@ -54,9 +58,8 @@ swarm = ["dep:vesper-swarm", "dep:vesper-provider"]
 [dev-dependencies]
 tempfile.workspace = true
 # VRO-13 PR-8: the cross-feature e2e fixture composes the firewall holder
-# (vesper-policy), the provider seam (vesper-provider), and the deterministic
-# fake provider (vesper-testkit) — test-only, mirroring vesper-agent/tests.
-vesper-policy = { path = "../vesper-policy", version = "=0.24.4" }
+# (production vesper-policy), the test-only provider seam (vesper-provider),
+# and deterministic fake provider (vesper-testkit).
 vesper-provider = { path = "../vesper-provider", version = "=0.24.4" }
 vesper-testkit = { path = "../vesper-testkit", version = "=0.24.4" }
 # VRO-15 PR-9: deterministic in-process provider for swarm adapter tests.

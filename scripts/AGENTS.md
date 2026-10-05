@@ -7,9 +7,14 @@ release archive, install or remove both `agent-vesper-acp` and
 `agent-vesper-tui` on the user's PATH, and produce the same first-run UX as the
 original Python `native-glm-acp` installer. Also owns the ACP Registry PR
 submission payload used to sync the published `agent-vesper` registry entry
-with each release.
+with each release. The read-only release prerequisite helper also lives here.
 
 ## Ownership
+
+- `release_gate.py` verifies the latest exact-SHA main-push run and its complete
+  attempt-specific successful job set for all four release workflows; pagination,
+  changed attempts and missing/skipped/running evidence fail closed.
+  `test_release_gate.py` supplies offline structured GitHub fixtures.
 
 - `install.sh` — POSIX installer (Linux + macOS). Downloads the
   `agent-vesper-acp-<platform>-<arch>.tar.gz` release, verifies SHA-256,
@@ -89,6 +94,8 @@ with each release.
   `COMPLETION_REPORTING_INSTRUCTION` system-prompt mandate.
 
 ## Verification
+
+- `python3 scripts/test_release_gate.py` verifies the publishing workflow gate.
 
 - `sh scripts/test_install_upgrade.sh` verifies payload replacement while
   preserving cognition contents/inode, voice state, and unrelated user files.

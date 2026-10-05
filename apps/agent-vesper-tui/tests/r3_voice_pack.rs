@@ -7,10 +7,7 @@
 //! under test (scope save/read, readiness assessment, gate decision,
 //! pack verification, adapter contract) are the real implementations.
 #![cfg(feature = "voice-kokoro")]
-// The EnvGuard below mutates the process environment for pack-root
-// isolation (edition-2024 unsafe). This is the ONLY unsafe in this file:
-// single-threaded harness, restored on drop.
-#![allow(unsafe_code)]
+#![forbid(unsafe_code)]
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -21,20 +18,67 @@ use vesper_voice::audio::PcmFrame;
 use vesper_voice::cancel::VoiceCancel;
 use vesper_voice::ports::{SttDescriptor, SttTranscript, TranscriptProvenance, VoiceTts};
 
-/// A real pack root isolated per test (never the user's managed cache).
+/// Isolate before any native worker starts. A mutex around set_var cannot
+/// protect a detached worker from environment restoration or process teardown.
+fn run_isolated_case(name: &str) -> bool {
+    if std::env::var("VESPER_R3_PACK_CASE").as_deref() == Ok(name) {
+        let root = PathBuf::from(std::env::var_os("VESPER_R3_PACK_ROOT").expect("child root"));
+        assert_eq!(
+            std::env::current_dir().unwrap().canonicalize().unwrap(),
+            root
+        );
+        assert_eq!(
+            std::env::var_os("XDG_DATA_HOME"),
+            Some(root.join("xdg").into_os_string())
+        );
+        return false;
+    }
+    let root = tempfile::Builder::new()
+        .prefix("vesper-r3-process-")
+        .tempdir()
+        .unwrap();
+    let case_root = root.path().canonicalize().expect("canonical child root");
+    let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", name, "--nocapture", "--test-threads=1"])
+        .current_dir(&case_root)
+        .env("VESPER_R3_PACK_CASE", name)
+        .env("VESPER_R3_PACK_ROOT", &case_root)
+        .env("HOME", case_root.join("home"))
+        .env("USERPROFILE", case_root.join("home"))
+        .env("LOCALAPPDATA", case_root.join("local"))
+        .env("APPDATA", case_root.join("roaming"))
+        .env("XDG_DATA_HOME", case_root.join("xdg"))
+        .env("XDG_CONFIG_HOME", case_root.join("config"))
+        .env("XDG_CACHE_HOME", case_root.join("cache"))
+        .env("XDG_STATE_HOME", case_root.join("state"))
+        .spawn()
+        .expect("spawn isolated voice-pack case");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            assert!(
+                status.success(),
+                "isolated voice-pack case {name}: {status}"
+            );
+            return true;
+        }
+        if std::time::Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("isolated voice-pack case {name} exceeded its deadline");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+}
+
 struct IsolatedPack {
-    #[allow(dead_code)]
-    dir: tempfile::TempDir,
     root: PathBuf,
 }
 
-fn isolated_pack(tag: &str) -> IsolatedPack {
-    let dir = tempfile::Builder::new()
-        .prefix(&format!("vesper-r3-{tag}-"))
-        .tempdir()
-        .expect("tempdir");
-    let root = dir.path().to_path_buf();
-    IsolatedPack { dir, root }
+fn isolated_pack(_tag: &str) -> IsolatedPack {
+    IsolatedPack {
+        root: std::env::current_dir().expect("isolated case workspace"),
+    }
 }
 
 /// Installs deterministic double assets that pass every real integrity
@@ -53,6 +97,9 @@ fn verified_record(root: &Path) {
 
 #[test]
 fn engine_selection_defaults_to_system_engine() {
+    if run_isolated_case("engine_selection_defaults_to_system_engine") {
+        return;
+    }
     let scope = vesper_voice::VoiceScope::default();
     let selection = EngineSelection::from_scope(&scope);
     assert_eq!(
@@ -63,51 +110,11 @@ fn engine_selection_defaults_to_system_engine() {
     );
 }
 
-/// Redirects the managed pack root to an isolated directory for the
-/// duration of one test (env mutation is process-global; tests in this
-/// binary that touch the pack root run single-threaded by name via the
-/// harness `--test-threads` default on disjoint fixtures, and every
-/// redirect is restored on drop to avoid cross-test bleed).
-struct EnvGuard {
-    saved: Option<std::ffi::OsString>,
-}
-
-impl EnvGuard {
-    fn redirect(dir: &Path) -> Self {
-        let saved = std::env::var_os("XDG_DATA_HOME");
-        // SAFETY: test-only, single-threaded integration harness; the
-        // env var is restored on drop and no other thread reads PATH
-        // during these tests.
-        // SAFETY: set_var is unsafe in edition 2024 (process-global
-        // mutation); this test harness is single-threaded and the value
-        // is restored on drop.
-        unsafe {
-            std::env::set_var("XDG_DATA_HOME", dir.join("xdg"));
-        }
-        Self { saved }
-    }
-}
-
-impl Drop for EnvGuard {
-    fn drop(&mut self) {
-        if let Some(saved) = &self.saved {
-            // SAFETY: see EnvGuard::redirect.
-            // SAFETY: see EnvGuard::redirect.
-            unsafe {
-                std::env::set_var("XDG_DATA_HOME", saved);
-            }
-        } else {
-            // SAFETY: see EnvGuard::redirect.
-            // SAFETY: see EnvGuard::redirect.
-            unsafe {
-                std::env::remove_var("XDG_DATA_HOME");
-            }
-        }
-    }
-}
-
 #[test]
 fn engine_selection_follows_the_saved_scope() {
+    if run_isolated_case("engine_selection_follows_the_saved_scope") {
+        return;
+    }
     let mut scope = vesper_voice::VoiceScope {
         tts: Some(ProviderId::new("voice-kokoro").expect("id")),
         voice: Some("am_michael".into()),
@@ -139,6 +146,9 @@ fn engine_selection_follows_the_saved_scope() {
 
 #[test]
 fn voice_scope_save_persists_engine_and_voice() {
+    if run_isolated_case("voice_scope_save_persists_engine_and_voice") {
+        return;
+    }
     let dir = tempfile::tempdir().expect("tempdir");
     let mut scope = vesper_voice::VoiceScope {
         enabled: true,
@@ -167,6 +177,9 @@ fn voice_scope_save_persists_engine_and_voice() {
 
 #[test]
 fn pack_readiness_reports_not_installed_on_empty_root() {
+    if run_isolated_case("pack_readiness_reports_not_installed_on_empty_root") {
+        return;
+    }
     let pack = isolated_pack("empty");
     let assessment = vesper_voice_kokoro::assess_pack(&pack.root).expect("assess");
     assert_eq!(
@@ -174,11 +187,8 @@ fn pack_readiness_reports_not_installed_on_empty_root() {
         Some(vesper_voice_kokoro::PackProblem::NotInstalled)
     );
     // The shared assessment surfaces it as a named, actionable check.
-    // Redirect XDG_DATA_HOME to the empty isolated root FIRST: the shared
-    // assessment reads the REAL managed pack root, so without the redirect
-    // this asserted against Alex's installed pack (and only passed before
-    // by racing another test's EnvGuard under parallel threads).
-    let _guard = EnvGuard::redirect(pack.root.parent().expect("temp parent"));
+    // The child process starts with an empty managed root. No developer
+    // pack cache or process-wide environment mutation participates.
     let checks = agent_vesper_tui::voice_readiness::neural_voice_checks();
     assert!(
         checks
@@ -191,14 +201,15 @@ fn pack_readiness_reports_not_installed_on_empty_root() {
 
 #[test]
 fn f9_gate_separates_disabled_from_blocked_with_neural_selected() {
+    if run_isolated_case("f9_gate_separates_disabled_from_blocked_with_neural_selected") {
+        return;
+    }
     // The gate function is the production one; the pack root is
     // redirected to an isolated empty directory for this process.
     let pack = isolated_pack("gate");
-    let _guard = EnvGuard::redirect(pack.dir.path());
     // Recompute the expected root the production code will use.
     let expected_root = pack
-        .dir
-        .path()
+        .root
         .join("xdg")
         .join("agent-vesper")
         .join("voice-pack");
@@ -236,8 +247,11 @@ fn f9_gate_separates_disabled_from_blocked_with_neural_selected() {
 
 #[test]
 fn unverified_pack_never_reads_ready() {
+    if run_isolated_case("unverified_pack_never_reads_ready") {
+        return;
+    }
     let pack = isolated_pack("unverified");
-    verified_record(pack.dir.path());
+    verified_record(pack.root.as_path());
     // Record says verified but files are missing entirely.
     verified_record(&pack.root);
     let record = vesper_voice_kokoro::pack::read_pack_record(&pack.root).expect("record");
@@ -251,6 +265,9 @@ fn unverified_pack_never_reads_ready() {
 
 #[test]
 fn removal_reclaims_pack_bytes_and_preserves_neighbors() {
+    if run_isolated_case("removal_reclaims_pack_bytes_and_preserves_neighbors") {
+        return;
+    }
     let pack = isolated_pack("remove");
     std::fs::create_dir_all(pack.root.join("voices")).expect("mkdir");
     std::fs::write(pack.root.join("voices").join("af_heart.bin"), b"heart").expect("write");
@@ -264,15 +281,16 @@ fn removal_reclaims_pack_bytes_and_preserves_neighbors() {
 
 #[test]
 fn clean_cache_sequence_with_deterministic_assets() {
+    if run_isolated_case("clean_cache_sequence_with_deterministic_assets") {
+        return;
+    }
     // Voice Settings → Install → confirm → progress → verify → Ready
     // → choose voice → Save → F9 uses Kokoro → restart → assets
     // reused. Exercised here with the deterministic synthesis double
     // and an isolated pack root; the REAL install is separate.
     let pack = isolated_pack("sequence");
-    let _guard = EnvGuard::redirect(pack.dir.path());
     let pack_root_path = pack
-        .dir
-        .path()
+        .root
         .join("xdg")
         .join("agent-vesper")
         .join("voice-pack");
@@ -349,6 +367,9 @@ fn clean_cache_sequence_with_deterministic_assets() {
 
 #[test]
 fn pack_success_does_not_imply_device_acceptance() {
+    if run_isolated_case("pack_success_does_not_imply_device_acceptance") {
+        return;
+    }
     // The readiness vocabulary distinguishes setup readiness from a
     // microphone/speaker test (the Settings panel prints the same rule).
     let pack = isolated_pack("labels");
@@ -384,10 +405,22 @@ impl vesper_voice::ports::VoiceStt for NullStt {
 
 #[test]
 fn host_construction_resolves_selection_without_pack_assets() {
+    if run_isolated_case("host_construction_resolves_selection_without_pack_assets") {
+        return;
+    }
     let pack = isolated_pack("host");
-    let _guard = EnvGuard::redirect(pack.dir.path());
+    let scope = vesper_voice::VoiceScope {
+        enabled: true,
+        tts: Some(ProviderId::new("voice-kokoro").unwrap()),
+        ..vesper_voice::VoiceScope::default()
+    };
+    agent_vesper_tui::settings_host_test::save_voice_for_test(&pack.root, &scope).unwrap();
     let host: ConversationHost<NullStt> = ConversationHost::new(Arc::new(NullStt), None);
     // The host must construct with an empty pack cache (launch without
     // the pack offers setup instead of failing startup — directive §2).
     assert!(!host.controller_live());
+    assert!(matches!(
+        EngineSelection::from_scope(&vesper_voice::read_voice_scope(&pack.root).unwrap()),
+        EngineSelection::Neural { .. }
+    ));
 }
