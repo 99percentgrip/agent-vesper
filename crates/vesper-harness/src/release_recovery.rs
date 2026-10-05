@@ -10,6 +10,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::thread;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
@@ -2886,6 +2887,25 @@ impl ReleaseLedger {
     }
 
     pub fn save(&self, record: &ReleaseRecoveryRecord) -> Result<(), RrcError> {
+        self.save_inner(record, true)
+    }
+
+    /// Publishes a checkpoint that the running controller will read before it
+    /// spawns the next cargo child. The rename is visible immediately. Journal
+    /// flush continues in the background so a saturated CI disk cannot hold
+    /// gate admission. Authority transitions keep [`Self::save`].
+    pub(crate) fn save_for_scheduling(
+        &self,
+        record: &ReleaseRecoveryRecord,
+    ) -> Result<(), RrcError> {
+        self.save_inner(record, false)
+    }
+
+    fn save_inner(
+        &self,
+        record: &ReleaseRecoveryRecord,
+        sync_before_return: bool,
+    ) -> Result<(), RrcError> {
         if sha256_hex(record.repo_identity.as_bytes()) != self.repo_key {
             return Err(RrcError::Invalid(
                 "record repository does not match ledger".into(),
@@ -2912,10 +2932,27 @@ impl ReleaseLedger {
         let bytes = serde_json::to_vec_pretty(record)?;
         let mut temp = tempfile::NamedTempFile::new_in(&self.root)?;
         temp.write_all(&bytes)?;
-        temp.as_file().sync_all()?;
-        temp.persist(self.path()).map_err(|error| error.error)?;
-        if let Ok(directory) = OpenOptions::new().read(true).open(&self.root) {
-            let _ = directory.sync_all();
+        if sync_before_return {
+            temp.as_file().sync_all()?;
+        }
+        let path = self.path();
+        temp.persist(&path).map_err(|error| error.error)?;
+        if sync_before_return {
+            if let Ok(directory) = OpenOptions::new().read(true).open(&self.root) {
+                let _ = directory.sync_all();
+            }
+        } else {
+            let root = self.root.clone();
+            let _ = thread::Builder::new()
+                .name("vesper-release-ledger-sync".into())
+                .spawn(move || {
+                    if let Ok(file) = OpenOptions::new().read(true).open(&path) {
+                        let _ = file.sync_all();
+                    }
+                    if let Ok(directory) = OpenOptions::new().read(true).open(root) {
+                        let _ = directory.sync_all();
+                    }
+                });
         }
         FileExt::unlock(&lock)?;
         Ok(())

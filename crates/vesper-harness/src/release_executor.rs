@@ -1741,7 +1741,7 @@ pub fn advance_release(
                     record.note_progress_milestone(
                         "Preparing release target and validating the version graph",
                     );
-                    ledger.save(record)?;
+                    ledger.save_for_scheduling(record)?;
                 }
                 let receipt = executor.prepare_version_bump(
                     record.objective.version.as_str(),
@@ -1767,7 +1767,7 @@ pub fn advance_release(
                     "Version preparation completed; {} local gates are ready",
                     record.mutation.local_gates.len()
                 ));
-                ledger.save(record)?;
+                ledger.save_for_scheduling(record)?;
                 return Ok(());
             }
             if let Some(index) = record
@@ -1784,7 +1784,7 @@ pub fn advance_release(
                     record.mutation.local_gates.len(),
                     gate.name
                 ));
-                ledger.save(record)?;
+                ledger.save_for_scheduling(record)?;
                 let outcome = executor.run_local_gate(&gate);
                 if let Some(latest) = ledger.load()?
                     && latest.state == ReleaseRecoveryState::Cancelled
@@ -2431,7 +2431,7 @@ fn run_release_worker(
             return Ok(());
         };
         record.note_liveness_active(release_liveness_operation(record.state));
-        ledger.save(&record)?;
+        ledger.save_for_scheduling(&record)?;
         update_release_activity(activity, &record);
         if record.state == ReleaseRecoveryState::ResourceDeferred {
             watch_resource_deferred(&mut record, &ledger, &executor, &cancelled, activity)?;

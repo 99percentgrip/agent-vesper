@@ -34,19 +34,32 @@ struct Release {
 fn open_pty() -> io::Result<(File, File)> {
     let mut master = -1;
     let mut slave = -1;
+    // macOS `openpty` takes `*mut winsize`; Linux takes `*const winsize`.
+    #[cfg(target_os = "macos")]
+    let mut size = libc::winsize {
+        ws_row: HEIGHT,
+        ws_col: WIDTH,
+        ws_xpixel: 0,
+        ws_ypixel: 0,
+    };
+    #[cfg(not(target_os = "macos"))]
     let size = libc::winsize {
         ws_row: HEIGHT,
         ws_col: WIDTH,
         ws_xpixel: 0,
         ws_ypixel: 0,
     };
+    #[cfg(target_os = "macos")]
+    let size_ptr = &raw mut size;
+    #[cfg(not(target_os = "macos"))]
+    let size_ptr = &raw const size;
     let result = unsafe {
         libc::openpty(
             &mut master,
             &mut slave,
             std::ptr::null_mut(),
             std::ptr::null_mut(),
-            &size,
+            size_ptr,
         )
     };
     if result != 0 {

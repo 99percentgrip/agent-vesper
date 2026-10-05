@@ -89,7 +89,10 @@ Z.ai and Playwright MCP server descriptors.
   A missing or dead owner becomes `OwnerExited` and stays recoverable; it is not
   a source failure and must not be rendered as a live run. Version preparation
   persists the resolved release version and a visible `version-preparation` gate
-  before the expensive workspace check. Worker admission is
+  before the expensive workspace check. Scheduling checkpoints (worker heartbeats
+  and gate intent saved before a cargo child is spawned) rename into place and
+  return before journal flush, so a saturated CI disk cannot delay the next
+  governed cargo gate; authority transitions still fsync before return. Worker admission is
   registered before the launcher acknowledges startup; the registry retains the
   owned join handle, cancellation token, epoch identity and live activity until
   settlement. Its bounded telemetry snapshot is updated from persisted gate changes,
