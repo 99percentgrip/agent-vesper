@@ -78,7 +78,7 @@ fn native_rejections_are_safe_and_actionable_in_both_authentication_modes() {
         let rejection = process.response(3);
         assert_eq!(
             rejection["error"]["data"],
-            "provider turn failed: ContextLimit"
+            "provider turn failed: OpenAI rejected the request: context window exceeded"
         );
         server.join().unwrap();
         let (transcript, stderr) = process.finish_and_capture();

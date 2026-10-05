@@ -50,6 +50,14 @@ Own durable project documentation and evidence-backed engineering records.
   security, contribution, migration status, and full-harness parity evidence.
 - `openai-provider.md` owns native OpenAI Settings setup, authentication modes,
   model controls, account prerequisites, and explicit capability limitations.
+  `foundation/2026-09-30-openai-responses-reinspection.md` owns the bounded
+  current-source decoder reinspection and expected-shape structured diagnostic
+  repair. `foundation/2026-09-30-openai-responses-streaming-boundary-audit.md`
+  owns the follow-up framing/boundary/no-replay matrix, semantic unknown-event
+  classification, byte-measurement clarification and both-host safe-message
+  separation. `foundation/2026-09-30-openai-responses-live-prerelease-candidate.md`
+  owns the clean isolated debug candidate identity, secret-canary host proof,
+  direct OpenAI runtime receipt and explicit no-release/no-install boundary.
 - `vro18-native-xai-provider-prd.md` owns VRO-18 native xAI reasoning-provider
   requirements, phased acceptance, billing-path isolation, and adjacent-service
   exclusions. `architecture/recon_xai_native_provider.md` and
@@ -85,6 +93,102 @@ Own durable project documentation and evidence-backed engineering records.
   dots, syntax-colored numbered diffs, and aligned responsive reports.
 - `settings-and-update-prd.md` owns theme consistency, grouped Settings saves,
   automatic PRD enrollment and confirmed native update installation.
+- `Agent_Vesper_Release_Recovery_Controller_PRD.md` owns the P0 deterministic
+  release/CI-recovery lifecycle, complete-matrix rule, evidence/fingerprint and
+  retry policy, external-pause semantics, durable checkpoint, and TUI/ACP parity.
+  `foundation/release-recovery-controller-pr1-pr3-execution.md` records the
+  original bounded implementation; `foundation/release-recovery-controller-pr4-pr7-execution.md`
+  records the production executor and controlled GitHub checkpoint; and
+  `foundation/release-recovery-controller-final-completion.md` records the
+  process-tree repair, five-target lifecycle evidence and final non-publishing
+  audit. `foundation/2026-09-30-release-intent-autonomy-repair.md` records
+  ordinary-language admission and isolated-worktree repair;
+  `foundation/2026-09-30-rrc-source-resolution-ux-repair.md` records the
+  objective-provenance follow-up; `foundation/2026-09-30-rrc-task-lifecycle-repair.md`
+  records registered worker ownership, real local-gate progression and truthful TUI
+  activity; `foundation/2026-09-30-rrc-task-lifecycle-prerelease-candidate.md`
+  records the exact fresh Linux TUI/ACP candidate identities for live acceptance;
+  `foundation/2026-09-30-live-rrc-task-supervision.md` records read-only evidence
+  that the candidate-owned controller and local verification were progressing;
+  `foundation/2026-09-30-rrc-live-telemetry-ux-repair.md` records the earlier bounded
+  live gate/process telemetry work and the candidate later rejected by live terminal
+  acceptance; `foundation/2026-09-30-rrc-terminal-ownership-repair.md` records the
+  corrective exclusive-writer path, full-PTY/mutation evidence and replacement
+  non-publishing prerelease TUI candidate;
+  `foundation/2026-09-30-rrc-ux-validation-repair.md` records the red-to-green
+  follow-up validation: deterministic paired-stream PTY evidence, complete
+  milestone-cursor initialization, strict-Clippy remediation and the 43-case
+  Linux-local acceptance receipt;
+  `foundation/2026-09-30-rrc-progress-ux-full-verification.md` records the
+  all-features PTY bounded-tail repair, retained red receipt, twenty-repeat
+  stability result and successful complete `cargo xtask verify` receipt without
+  a candidate or release action;
+  `foundation/2026-09-30-rrc-host-resource-governor.md` records the Linux host/cgroup
+  memory and disk governor, constrained-host regression evidence, cross-host resource
+  telemetry and its explicit no-release boundary;
+  `foundation/2026-09-30-rrc-governor-acp-process-acceptance.md` records the ACP
+  process-level status and every-Cargo-path inheritance proof;
+  `foundation/2026-09-30-rrc-governor-acp-process-verification-rerun.md` records its
+  independent current-worktree verification rerun, including the 44-case acceptance
+  and complete verification receipts;
+  `foundation/2026-09-30-rrc-governor-live-host-observation.md` records the
+  timestamped read-only Linux capacity/default-policy observation and the unavailable
+  requested TUI test-target receipt without creating RRC state or rebuilding; and
+  `foundation/2026-09-30-rrc-progress-milestones.md` records the persisted typed
+  phase/gate/job/milestone projection shared by TUI chat/RUN and ACP status, its scoped
+  verification and the explicit no-release boundary.
+  `foundation/2026-09-30-rrc-complete-version-mutation-repair.md`
+  records the fail-closed complete workspace-version mutation repair;
+  `foundation/2026-09-30-rrc-stale-epoch-autonomy-repair.md` records automatic
+  persisted-epoch reconciliation, obsolete-evidence archival, bounded ambiguity
+  handling, enrolled acceptance cases and the fresh non-publishing TUI candidate;
+  `foundation/release-objective-provenance.json`
+  is the versioned current completed-objective binding consumed by RRC;
+  `foundation/2026-09-30-autonomous-rrc-prerelease-candidate.md` records the
+  earlier non-publishing TUI/ACP candidate build for Alex-operated acceptance; and
+  `foundation/2026-10-01-rrc-provenance-ambiguity-repair.md` records canonical
+  final-source binding, equivalent-candidate collapse, the real retained-worktree
+  probe, governed final gates and the current `0.24.4` replacement TUI;
+  `foundation/2026-10-01-rrc-active-epoch-integration-repair.md` records canonical
+  historical-epoch supersession; and
+  `foundation/2026-10-01-rrc-active-epoch-final-audit.md` records the red-first
+  known-version clarification correction, deterministic lifecycle acceptance,
+  complete verification, later governor-admitted locked and release-profile TUI
+  builds, the preserved final `0.24.4` Linux acceptance artifact, and unchanged
+  no-release boundary; and
+  `foundation/2026-10-01-rrc-resource-defer-zram-repair.md` records the later
+  current-risk/zram physical-backing repair, typed passive resource defer and
+  automatic recovery, truthful deferred TUI state, complete local gates,
+  implementation commit, fresh Linux candidate identity, and unchanged
+  no-release/no-install boundary; and
+  `foundation/2026-10-01-v0.24.5-rrc-autonomy-and-ci-repair.md` records all four
+  immutable failed v0.24.5 candidate matrices,
+  missing/partial matrix-watch and complete-red multi-family repair corrections,
+  all four rounds of observed CI failure-family repairs, complete
+  50-case/canonical/MSRV/local-runtime verification, and the pending fresh exact-SHA
+  hosted boundary with no tag or publication in scope; and
+  `foundation/2026-10-02-v0.24.5-rrc-deterministic-governor-repair.md` supersedes
+  that checkpoint's Linux diagnosis with the fifth immutable matrix, red-first
+  deterministic test-support correction, complete local gates, and pending fresh
+  exact-SHA hosted boundary under the same no-tag/no-publication constraint; and
+  `foundation/2026-10-02-rrc-liveness-watchdog-repair.md` records the later
+  clean-base command/remote/repair liveness repair, persisted TUI/ACP stop truth,
+  focused deterministic receipts, and explicit no-resume/no-release/no-broad-gate
+  boundary; and
+  `foundation/2026-10-02-rrc-typed-local-settlement-acceptance-repair.md` records
+  the stale cancellation-expectation diagnosis, focused two-sided settlement
+  regressions, and explicit broad-acceptance-not-rerun boundary; and
+  `foundation/2026-10-03-rrc-pty-stream-neutral-test-oracle-repair.md` records
+  the residual stdout-only bounded-tail oracle diagnosis, paired stream-neutral
+  marker repair, ten independent real-PTY passes, focused checks, and explicit
+  no-production-change/no-full-verify boundary; and
+  `foundation/2026-10-03-rrc-explicit-version-target-repair.md` records typed
+  bump-or-exact-version admission, equal-target no-op behavior and immediate
+  status, same-target canonical-descendant reconciliation with archived candidate/CI
+  evidence, final-audit closure of the mismatched-workspace descendant bypass,
+  pushed-tag/publication refusal, frozen slash-oracle preservation,
+  acceptance-inventory repair, requested local verification receipts, and the
+  no-release boundary.
 - Root PRD files (`*-prd.md`) own accepted phased requirement documents
   (e.g. `agent-vesper-reasoning-orchestrator-prd.md`,
   `provider-capability-gating-prd.md`, `qm-extraction-prd.md`,

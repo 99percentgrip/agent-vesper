@@ -84,6 +84,7 @@ fn footer_controls_are_advertised_and_settable_end_to_end() {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    support::set_signed_out_xai_credentials(&mut command, &openai_fixture);
     for key in critical_environment_keys() {
         if let Ok(value) = std::env::var(key) {
             command.env(key, value);

@@ -20,10 +20,18 @@ RUN curl --fail --location --proto '=https' --tlsv1.2 \
     && make -j2 setpriv
 
 FROM docker.io/library/debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171
+ARG DEBIAN_SNAPSHOT=20261005T000000Z
 ARG HEADLESS_VERSION=154.0.8037.92-1~deb12u1
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates chromium-headless-shell=${HEADLESS_VERSION} libcap-ng0 procps tini \
-    && apt-get clean
+RUN rm -f /etc/apt/sources.list /etc/apt/sources.list.d/debian.sources \
+    && printf '%s\n' \
+      "deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT} bookworm main" \
+      "deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT} bookworm-updates main" \
+      "deb [check-valid-until=no] http://snapshot.debian.org/archive/debian-security/${DEBIAN_SNAPSHOT} bookworm-security main" \
+      > /etc/apt/sources.list.d/vesper-snapshot.list \
+    && apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates chromium-headless-shell=${HEADLESS_VERSION} libcap-ng0 procps tini \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=build /src/target/release/vesper-web-fetch /usr/local/bin/vesper-web-fetch
 COPY --from=confinement /confinement/util-linux-2.41.6/setpriv /usr/local/bin/vesper-setpriv
 COPY --from=confinement /confinement/source.tar.xz /usr/local/share/vesper-setpriv/source.tar.xz

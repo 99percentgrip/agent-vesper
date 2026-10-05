@@ -1,0 +1,57 @@
+{
+  "status": "preparation evidence; final committed source gates pending",
+  "binding_prd_sha256": "e85011c696d769837c6ed5a83e4290e77eadc4ae27a9ea42cffe0966d37518db",
+  "receipts": [
+    {
+      "path": "vesper-release-governed-local-gates-tenth.log",
+      "bytes": 13431,
+      "sha256": "64cc60a5d5d57e1a3a4b793019e0810a5e2bb6996a97cf80b24b7e7c0c205fd5"
+    },
+    {
+      "path": "vesper-release-swap-window-red.log",
+      "bytes": 1165,
+      "sha256": "cb8f549f4c954c69506ed663cb59010e0807599a2e6ae4931d5ca5fb64411a02"
+    },
+    {
+      "path": "vesper-release-swap-window-green.log",
+      "bytes": 1906,
+      "sha256": "1b45bd3b3d0b3c10a1dac17590fe46224c6657e622c866ea03cb448878160771"
+    },
+    {
+      "path": "vesper-release-local-failure-receipt-red.log",
+      "bytes": 5209,
+      "sha256": "e6f5deffd9dc29eda64488e3a88ddf59b8dc89bce7ef1c39402783675e9dc4d2"
+    },
+    {
+      "path": "vesper-release-local-failure-receipt-green.log",
+      "bytes": 523,
+      "sha256": "a5cce745176019d0afdc78d1c3df37047b776f8a28e5a58583bd1732ba5673e6"
+    },
+    {
+      "path": "vesper-release-acp-natural-policy-red.log",
+      "bytes": 1188,
+      "sha256": "57511e672208a6969f852b2800b86d93bc649507897b78ca35aecd59df75afb4"
+    },
+    {
+      "path": "vesper-release-acp-natural-policy-green.log",
+      "bytes": 589,
+      "sha256": "14372e11de0e056177c2d28fc1dc8e361fb289748f343c3f81551ebfa6735cb5"
+    },
+    {
+      "path": "vesper-release-capacity-message-red.log",
+      "bytes": 1232,
+      "sha256": "d155d0a69a0cc1f21c1f01bd6195e99f4f49465c044e384132d448200e752f6e"
+    },
+    {
+      "path": "vesper-release-capacity-message-green.log",
+      "bytes": 2010,
+      "sha256": "cbeaebc84bbb07ebb0fbf0798603bd57f64b324ad1b0d535950933dcffbfe6df"
+    },
+    {
+      "path": "vesper-release-rrc-tests-fourth.log",
+      "bytes": 15076,
+      "sha256": "d4d4ced6fb5b0e9edd52aafb74b0cd4c4877c02fd16136936bfb366f8ed8110a"
+    }
+  ],
+  "archive_sha256": "41e25ec1dd8a987c18bb2d6eb2857a8f32dc0d4d92e9ae0a3a7eb843b571746b"
+}

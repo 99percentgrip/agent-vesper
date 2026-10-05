@@ -169,6 +169,13 @@ When the user requests a durable behavior change, record it here or in the relev
 - Hash-pinned fixtures and routing evidence retain LF bytes through `.gitattributes`
   on every platform. Do not weaken frozen digests to accommodate checkout conversion.
 
+- RRC local verification uses its controller-owned Host Resource Governor: Linux
+  physical/cgroup memory, swap, owned process-tree and target-filesystem observations
+  preserve a desktop reserve; every Cargo path inherits bounded concurrency and a
+  managed target cache; expensive compiler gates serialize; and critical pressure
+  reaps only the owned group while preserving a resumable local epoch. TUI and ACP
+  show observed resource values/actions, never fabricated host health.
+
 - The frozen Python source at `/home/alex/Projects/Native GLM-5.2 Provider`
   remains a read-only behavioral oracle pinned to
   `bf4d4287e2e3320aa3f09015f678e6169d520045`.
@@ -226,8 +233,21 @@ When the user requests a durable behavior change, record it here or in the relev
   Recovery Controller in `vesper-harness`, not a free-form `/release` prompt.
   Wait for complete exact-SHA matrices, capture and fingerprint first causal
   failures, require focused proof plus a relevant state change, and enforce the
-  persisted retry budget. A published release remains distinct from later red
-  `main`; external outage claims require official and repository-side evidence.
+  persisted retry budget.
+  A new natural-language release request automatically
+  reconciles a persisted epoch: resume the matching recoverable objective from its
+  safe stage, archive and supersede an obsolete same-objective prerelease candidate,
+  and ask one bounded human clarification for unrelated or irreversible state.
+  Epoch IDs, internal states, ledger paths and manual resume/cancel commands are
+  diagnostics, not normal admission prerequisites. While an RRC task is active,
+  hosts project bounded live telemetry from controller-owned gate, subprocess and
+  output state, never a fabricated percentage; elapsed/quiet time ticks, child and
+  gate changes remain visible, and idle labels are forbidden. Interactive Ratatui output
+  has one writer: release children use concurrently drained pipes, terminal controls and
+  secrets are removed before bounded worker telemetry, and background diagnostics never
+  write around the renderer. RUN state and output derive from the same registered-worker
+  snapshot. A published release remains distinct from later red `main`; external outage
+  claims require official and repository-side evidence.
 - TUI↔ACP host parity is bidirectional: any host-agnostic capability or
   behavior change shipped in either host (cognitive memory, reasoning
   orchestration, streaming/finalization, tool/system-prompt behavior, or

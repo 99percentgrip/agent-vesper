@@ -11,6 +11,12 @@ Verify terminal interaction through the production TUI binary with isolated stat
   and cross-host cancellation preserving epoch/run/tag/assets. Synthetic persisted
   evidence and signed-out vaults must never dispatch a provider request.
 
+- `openai_startup_responsiveness.rs` owns the real-PTY proof that a stalled
+  OpenAI `/models` fixture cannot block typed or bracketed-paste input, and
+  that both catalog completion and HTTP failure leave the event loop
+  responsive. A burst already queued in the PTY is applied before the next
+  full redraw. It requires `integration-test-harness` and never calls a live
+  provider.
 - `xai_plain_turn_pty.py` owns the real TUI-process Grok-session `hello` smoke:
   full Code-mode registry, reasoning projection, stale-control suppression and
   exactly one loopback transport dispatch without live quota.

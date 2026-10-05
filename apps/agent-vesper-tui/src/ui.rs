@@ -186,6 +186,38 @@ pub enum VoicePhase {
     Error,
 }
 
+/// A process-owned background task projected from its real lifecycle registry.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct BackgroundTaskState {
+    pub epoch_id: String,
+    pub label: String,
+    pub detail: String,
+    pub cancellable: bool,
+    pub current_gate: Option<String>,
+    pub current_command: Option<String>,
+    pub current_child: Option<String>,
+    pub gate_elapsed_secs: Option<u64>,
+    pub last_activity_ago_secs: u64,
+    pub completed_gates: usize,
+    pub total_gates: usize,
+    pub version_before: Option<String>,
+    pub version_after: Option<String>,
+    pub candidate_sha: Option<String>,
+    pub retry_budget: String,
+    pub failure_fingerprint: Option<String>,
+    pub recent_output: Vec<String>,
+    pub process_alive: bool,
+    /// Shared RRC progress/milestone projection, persisted by the controller
+    /// and used by ACP as well as this terminal renderer.
+    pub progress: vesper_harness::release_recovery::ReleaseProgress,
+    /// True while the typed RRC state is passively waiting for host pressure
+    /// to clear. The worker remains active even though no gate child is alive.
+    pub resource_deferred: bool,
+    /// Observed by the RRC-owned Host Resource Governor; this is not a
+    /// provider quota or a renderer-side inference.
+    pub resource_telemetry: Option<vesper_harness::host_resources::ResourceTelemetry>,
+}
+
 /// Pure view model the renderer consumes every frame.
 #[derive(Debug, Clone, Default)]
 pub struct ViewModel {
@@ -213,6 +245,8 @@ pub struct ViewModel {
     pub command_menu_selected: usize,
     /// Whether an agent turn is currently running.
     pub agent_running: bool,
+    /// Process-owned work independent of a provider turn.
+    pub background_task: Option<BackgroundTaskState>,
     /// Number of follow-up prompts retained in the native FIFO.
     pub queued_prompt_count: usize,
     /// Typed live controls governing real agent turns.
@@ -569,7 +603,13 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
     let phase = model.plan.phase();
     let phase_style = banner_style_for_phase(phase);
     let model_name = superpower_value_for(model, "model").unwrap_or_else(|| "provider".into());
-    let state = if model.agent_running {
+    let state = if model
+        .background_task
+        .as_ref()
+        .is_some_and(|task| task.resource_deferred)
+    {
+        "DEFERRED"
+    } else if model.agent_running || model.background_task.is_some() {
         "RUNNING"
     } else {
         "READY"
@@ -913,6 +953,17 @@ fn run_status_line(model: &ViewModel, show_sidebar: bool, palette: ThemePalette)
                 model.status.clone().unwrap_or_default(),
                 Style::default().fg(palette.text),
             ),
+        ]);
+    }
+    if let Some(task) = model.background_task.as_ref() {
+        let marker = if task.resource_deferred {
+            "◌ "
+        } else {
+            "● "
+        };
+        return Line::from(vec![
+            Span::styled(marker, Style::default().fg(palette.warning)),
+            Span::styled(task.detail.clone(), Style::default().fg(palette.text)),
         ]);
     }
     if !model.agent_running {
@@ -1738,7 +1789,13 @@ fn render_screen_reader(frame: &mut Frame<'_>, model: &ViewModel) {
             Constraint::Length(2),
         ])
         .split(area);
-    let state = if model.agent_running {
+    let state = if model
+        .background_task
+        .as_ref()
+        .is_some_and(|task| task.resource_deferred)
+    {
+        "DEFERRED FOR HOST RESOURCES"
+    } else if model.agent_running || model.background_task.is_some() {
         "WORKING"
     } else {
         "READY"
@@ -1775,7 +1832,14 @@ fn render_screen_reader(frame: &mut Frame<'_>, model: &ViewModel) {
         chunks[1],
     );
     frame.render_widget(
-        Paragraph::new(model.status.as_deref().unwrap_or("Ready")),
+        Paragraph::new(
+            model
+                .background_task
+                .as_ref()
+                .map(|task| task.detail.as_str())
+                .or(model.status.as_deref())
+                .unwrap_or("Ready"),
+        ),
         chunks[2],
     );
     frame.render_widget(Paragraph::new(format!("> {}", model.input)), chunks[3]);
@@ -1818,7 +1882,13 @@ fn render_sidebar(
     // cannot starve Run out of the viewport.
     let session_height = 7;
     let todo_minimum = u16::from(model.panels.tasks) * 2;
-    let desired_report_height = if model.last_report.is_empty() { 2 } else { 8 };
+    let desired_report_height = if model.background_task.is_some() {
+        18
+    } else if model.last_report.is_empty() {
+        2
+    } else {
+        8
+    };
     let report_height = desired_report_height.min(
         rail.height
             .saturating_sub(session_height + todo_minimum)
@@ -1868,10 +1938,17 @@ fn render_sidebar(
         task_capacity
     };
     let mut todo_lines = if model.task_plan.is_empty() {
-        vec![Line::from(Span::styled(
-            "No active tasks",
-            Style::default().fg(palette.muted),
-        ))]
+        if let Some(task) = model.background_task.as_ref() {
+            vec![Line::from(vec![
+                Span::styled("● ", Style::default().fg(palette.warning)),
+                Span::raw(task.label.clone()),
+            ])]
+        } else {
+            vec![Line::from(Span::styled(
+                "No active tasks",
+                Style::default().fg(palette.muted),
+            ))]
+        }
     } else {
         model
             .task_plan
@@ -1916,7 +1993,278 @@ fn render_sidebar(
         );
     }
 
-    let run_lines = if model.last_report.is_empty() {
+    let run_width = usize::from(chunks[2].width);
+    let run_lines = if let Some(task) = model.background_task.as_ref() {
+        let task_label = if task.resource_deferred {
+            format!("{} · Resource deferred", task.label)
+        } else {
+            task.label.clone()
+        };
+        let mut lines = vec![Line::from(vec![
+            Span::styled(
+                if task.resource_deferred {
+                    "◌ "
+                } else {
+                    "● "
+                },
+                Style::default().fg(palette.warning),
+            ),
+            Span::raw(truncate_with_ellipsis(
+                &task_label,
+                run_width.saturating_sub(2),
+            )),
+        ])];
+        lines.push(telemetry_row("Stage", &task.detail, run_width, palette));
+        lines.push(telemetry_row(
+            "Progress",
+            &format!(
+                "{} · {}/{} local · {}/{} CI",
+                task.progress.phase.compact_label(),
+                task.progress.completed_local_gates,
+                task.progress.total_local_gates,
+                task.progress.terminal_remote_jobs,
+                task.progress.total_remote_jobs,
+            ),
+            run_width,
+            palette,
+        ));
+        lines.extend(progress_task_lines(
+            &task.progress.tasks,
+            run_width,
+            palette,
+        ));
+        if let Some(gate) = task.current_gate.as_deref() {
+            lines.push(telemetry_row("Gate", gate, run_width, palette));
+        }
+        if let Some(command) = task.current_command.as_deref() {
+            lines.push(telemetry_row("Command", command, run_width, palette));
+        }
+        if let Some(child) = task.current_child.as_deref() {
+            lines.push(telemetry_row("Current", child, run_width, palette));
+        }
+        if let Some(elapsed) = task.gate_elapsed_secs {
+            lines.push(telemetry_row(
+                "Elapsed",
+                &format_telemetry_duration(elapsed),
+                run_width,
+                palette,
+            ));
+        }
+        let last_activity = if task.last_activity_ago_secs >= 60 && task.process_alive {
+            format!(
+                "No output for {} — process still alive",
+                format_telemetry_duration(task.last_activity_ago_secs)
+            )
+        } else {
+            format!(
+                "{} ago",
+                format_telemetry_duration(task.last_activity_ago_secs)
+            )
+        };
+        lines.push(telemetry_row(
+            "Activity",
+            &last_activity,
+            run_width,
+            palette,
+        ));
+        lines.push(telemetry_row(
+            "Gates",
+            &format!("{}/{}", task.completed_gates, task.total_gates),
+            run_width,
+            palette,
+        ));
+        if task.version_before.is_some() || task.version_after.is_some() {
+            lines.push(telemetry_row(
+                "Candidate",
+                &format!(
+                    "{} → {}",
+                    task.version_before.as_deref().unwrap_or("pending"),
+                    task.version_after.as_deref().unwrap_or("pending")
+                ),
+                run_width,
+                palette,
+            ));
+        }
+        if let Some(candidate) = task.candidate_sha.as_deref() {
+            lines.push(telemetry_row("SHA", candidate, run_width, palette));
+        }
+        lines.push(telemetry_row(
+            "Retry",
+            &task.retry_budget,
+            run_width,
+            palette,
+        ));
+        if let Some(fingerprint) = task.failure_fingerprint.as_deref() {
+            lines.push(telemetry_row("Failure", fingerprint, run_width, palette));
+        }
+        if let Some(resources) = task.resource_telemetry.as_ref() {
+            lines.push(telemetry_row(
+                "RAM",
+                &format!(
+                    "{} / {} available",
+                    format_telemetry_bytes(resources.memory_available_bytes),
+                    format_telemetry_bytes(resources.effective_memory_bytes),
+                ),
+                run_width,
+                palette,
+            ));
+            if let Some(limit) = resources.cgroup_memory_limit_bytes {
+                lines.push(telemetry_row(
+                    "cgroup",
+                    &format!(
+                        "{} / {} used",
+                        format_telemetry_bytes(resources.cgroup_memory_current_bytes.unwrap_or(0)),
+                        format_telemetry_bytes(limit),
+                    ),
+                    run_width,
+                    palette,
+                ));
+            }
+            lines.push(telemetry_row(
+                "Reserve",
+                &format!(
+                    "{} kept free",
+                    format_telemetry_bytes(resources.reserve_bytes),
+                ),
+                run_width,
+                palette,
+            ));
+            lines.push(telemetry_row(
+                "Headroom",
+                &format!(
+                    "{} above reserve · gate need {} · admit at {} available",
+                    format_telemetry_bytes(resources.memory_headroom_bytes()),
+                    format_telemetry_bytes(resources.required_gate_headroom_bytes),
+                    format_telemetry_bytes(resources.normal_admission_available_bytes),
+                ),
+                run_width,
+                palette,
+            ));
+            lines.push(telemetry_row(
+                "RRC tree",
+                &format!(
+                    "{} · {} proc · {} rustc",
+                    format_telemetry_bytes(resources.process_tree_rss_bytes),
+                    resources.process_count,
+                    resources.rustc_count,
+                ),
+                run_width,
+                palette,
+            ));
+            lines.push(telemetry_row(
+                "Swap",
+                &format!(
+                    "{} used · {} free · {}% logical",
+                    format_telemetry_bytes(
+                        resources
+                            .swap_total_bytes
+                            .saturating_sub(resources.swap_free_bytes),
+                    ),
+                    format_telemetry_bytes(resources.swap_free_bytes),
+                    resources.swap_used_percent,
+                ),
+                run_width,
+                palette,
+            ));
+            lines.push(telemetry_row(
+                "Swap trend",
+                &resources.swap_growth_bytes_per_minute.map_or_else(
+                    || "collecting baseline".into(),
+                    |growth| format!("{}/min growth", format_telemetry_bytes(growth)),
+                ),
+                run_width,
+                palette,
+            ));
+            lines.push(telemetry_row(
+                "Memory PSI",
+                &match (
+                    resources.memory_psi_some_avg10_bps,
+                    resources.memory_psi_full_avg10_bps,
+                ) {
+                    (Some(some), Some(full)) => format!(
+                        "some {:.2}% · full {:.2}% avg10",
+                        f64::from(some) / 100.0,
+                        f64::from(full) / 100.0,
+                    ),
+                    _ => "unavailable".into(),
+                },
+                run_width,
+                palette,
+            ));
+            lines.push(telemetry_row(
+                "zram",
+                &resources.zram_physical_used_bytes.map_or_else(
+                    || "not active / unavailable".into(),
+                    |physical| {
+                        format!(
+                            "{} physical · {} compressed · {} logical",
+                            format_telemetry_bytes(physical),
+                            format_telemetry_bytes(resources.zram_compressed_bytes.unwrap_or(0)),
+                            format_telemetry_bytes(resources.zram_logical_used_bytes.unwrap_or(0)),
+                        )
+                    },
+                ),
+                run_width,
+                palette,
+            ));
+            lines.push(telemetry_row(
+                "Budget",
+                &format!(
+                    "{} Cargo / {} test · {}",
+                    resources.cargo_jobs,
+                    resources.test_threads,
+                    resources.pressure.as_label(),
+                ),
+                run_width,
+                palette,
+            ));
+            lines.push(telemetry_row(
+                "Disk",
+                &format!(
+                    "{} free · {} target",
+                    format_telemetry_bytes(resources.disk_available_bytes),
+                    format_telemetry_bytes(resources.target_size_bytes),
+                ),
+                run_width,
+                palette,
+            ));
+            lines.push(telemetry_row(
+                "Resource",
+                &resources.action,
+                run_width,
+                palette,
+            ));
+        }
+        if let Some(milestone) = task.progress.milestones.last() {
+            lines.push(telemetry_row(
+                "Milestone",
+                &format!("#{} {}", milestone.sequence, milestone.summary),
+                run_width,
+                palette,
+            ));
+        }
+        if !task.recent_output.is_empty() {
+            lines.push(Line::from(Span::styled(
+                "Recent output",
+                Style::default().fg(palette.accent),
+            )));
+            let capacity = usize::from(chunks[2].height).saturating_sub(lines.len() + 1);
+            lines.extend(
+                task.recent_output
+                    .iter()
+                    .rev()
+                    .take(capacity)
+                    .rev()
+                    .map(|line| {
+                        Line::from(Span::styled(
+                            truncate_with_ellipsis(line, run_width),
+                            Style::default().fg(palette.muted),
+                        ))
+                    }),
+            );
+        }
+        lines
+    } else if model.last_report.is_empty() {
         vec![Line::from(vec![
             Span::styled(
                 if model.agent_running { "● " } else { "○ " },
@@ -1938,7 +2286,7 @@ fn render_sidebar(
     frame.render_widget(
         Paragraph::new(
             std::iter::once(Line::from(Span::styled(
-                if model.last_report.is_empty() {
+                if model.background_task.is_some() || model.last_report.is_empty() {
                     "RUN"
                 } else {
                     "LAST RUN"
@@ -1949,10 +2297,111 @@ fn render_sidebar(
             )))
             .chain(run_lines)
             .collect::<Vec<_>>(),
-        )
-        .wrap(Wrap { trim: false }),
+        ),
         chunks[2],
     );
+}
+
+fn progress_task_lines(
+    tasks: &[vesper_harness::release_recovery::ReleaseProgressTask],
+    width: usize,
+    palette: ThemePalette,
+) -> Vec<Line<'static>> {
+    const MAX_LINES: usize = 8;
+    let mut lines = Vec::new();
+    for task in tasks {
+        append_progress_task_lines(&mut lines, task, 0, width, palette, MAX_LINES);
+        if lines.len() >= MAX_LINES {
+            break;
+        }
+    }
+    lines
+}
+
+fn append_progress_task_lines(
+    lines: &mut Vec<Line<'static>>,
+    task: &vesper_harness::release_recovery::ReleaseProgressTask,
+    depth: usize,
+    width: usize,
+    palette: ThemePalette,
+    maximum: usize,
+) {
+    if lines.len() >= maximum {
+        return;
+    }
+    use vesper_harness::release_recovery::ReleaseProgressState;
+    let (marker, color) = match task.state {
+        ReleaseProgressState::Passed => ("✓", palette.added),
+        ReleaseProgressState::Failed | ReleaseProgressState::Cancelled => ("×", palette.removed),
+        ReleaseProgressState::Running => ("●", palette.warning),
+        ReleaseProgressState::Paused => ("Ⅱ", palette.warning),
+        ReleaseProgressState::Pending | ReleaseProgressState::Skipped => ("○", palette.muted),
+    };
+    let indent = "  ".repeat(depth.min(2));
+    let units = task
+        .units
+        .render()
+        .map(|units| format!(" · {units}"))
+        .unwrap_or_default();
+    let prefix = format!("{indent}{marker} {} · ", task.state.label());
+    let name_width = width
+        .saturating_sub(prefix.chars().count())
+        .saturating_sub(units.chars().count());
+    lines.push(Line::from(vec![
+        Span::styled(prefix, Style::default().fg(color)),
+        Span::styled(
+            truncate_with_ellipsis(&task.name, name_width),
+            Style::default().fg(palette.text),
+        ),
+        Span::styled(units, Style::default().fg(palette.muted)),
+    ]));
+    for child in &task.children {
+        append_progress_task_lines(
+            lines,
+            child,
+            depth.saturating_add(1),
+            width,
+            palette,
+            maximum,
+        );
+        if lines.len() >= maximum {
+            break;
+        }
+    }
+}
+
+fn telemetry_row<'a>(label: &str, value: &str, width: usize, palette: ThemePalette) -> Line<'a> {
+    Line::from(vec![
+        Span::styled(format!("{label:<10}"), Style::default().fg(palette.muted)),
+        Span::raw(truncate_with_ellipsis(value, width.saturating_sub(10))),
+    ])
+}
+
+fn format_telemetry_bytes(bytes: u64) -> String {
+    const GIB: u64 = 1024 * 1024 * 1024;
+    const MIB: u64 = 1024 * 1024;
+    if bytes >= GIB {
+        format!("{:.1} GiB", bytes as f64 / GIB as f64)
+    } else if bytes >= MIB {
+        format!("{:.0} MiB", bytes as f64 / MIB as f64)
+    } else {
+        format!("{bytes} B")
+    }
+}
+
+fn format_telemetry_duration(seconds: u64) -> String {
+    if seconds >= 3600 {
+        format!(
+            "{}h {:02}m {:02}s",
+            seconds / 3600,
+            (seconds / 60) % 60,
+            seconds % 60
+        )
+    } else if seconds >= 60 {
+        format!("{}m {:02}s", seconds / 60, seconds % 60)
+    } else {
+        format!("{seconds}s")
+    }
 }
 
 fn truncate_with_ellipsis(text: &str, max_chars: usize) -> String {
@@ -3085,6 +3534,188 @@ mod tests {
             content.contains("turn 199"),
             "auto-follow (None) must show the bottom of the transcript"
         );
+    }
+
+    #[test]
+    fn registered_release_task_replaces_ready_and_no_active_tasks() {
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
+        let mut model = ViewModel {
+            panels: PanelVisibility {
+                sidebar: true,
+                tasks: true,
+                ..PanelVisibility::default()
+            },
+            background_task: Some(BackgroundTaskState {
+                label: "Release recovery".into(),
+                detail: "Local verification · workspace-verify".into(),
+                cancellable: true,
+                current_gate: Some("workspace-verify".into()),
+                current_command: Some("cargo xtask verify".into()),
+                current_child: Some("routing_quality_eval".into()),
+                gate_elapsed_secs: Some(614),
+                last_activity_ago_secs: 2,
+                completed_gates: 3,
+                total_gates: 7,
+                version_before: Some("0.24.4".into()),
+                version_after: Some("0.24.5".into()),
+                retry_budget: "full 0/1 · infra 0/2 · diagnostic 0/2".into(),
+                recent_output: vec!["test routing_quality_eval ...".into()],
+                process_alive: true,
+                progress: vesper_harness::release_recovery::ReleaseProgress {
+                    phase:
+                        vesper_harness::release_recovery::ReleaseProgressPhase::LocalVerification,
+                    completed_local_gates: 3,
+                    total_local_gates: 7,
+                    terminal_remote_jobs: 4,
+                    total_remote_jobs: 5,
+                    tasks: vec![vesper_harness::release_recovery::ReleaseProgressTask {
+                        name: "Local verification".into(),
+                        state: vesper_harness::release_recovery::ReleaseProgressState::Running,
+                        units: vesper_harness::release_recovery::ReleaseProgressUnits::counted(3, 7),
+                        children: vec![
+                            vesper_harness::release_recovery::ReleaseProgressTask {
+                                name: "workspace-verify".into(),
+                                state: vesper_harness::release_recovery::ReleaseProgressState::Passed,
+                                units: vesper_harness::release_recovery::ReleaseProgressUnits::counted(1, 1),
+                                children: Vec::new(),
+                            },
+                            vesper_harness::release_recovery::ReleaseProgressTask {
+                                name: "acceptance".into(),
+                                state: vesper_harness::release_recovery::ReleaseProgressState::Running,
+                                units: vesper_harness::release_recovery::ReleaseProgressUnits::counted(0, 1),
+                                children: vec![vesper_harness::release_recovery::ReleaseProgressTask {
+                                    name: "Exact acceptance cases".into(),
+                                    state: vesper_harness::release_recovery::ReleaseProgressState::Running,
+                                    units: vesper_harness::release_recovery::ReleaseProgressUnits::counted(18, 41),
+                                    children: Vec::new(),
+                                }],
+                            },
+                        ],
+                    }],
+                    ..vesper_harness::release_recovery::ReleaseProgress::default()
+                },
+                ..BackgroundTaskState::default()
+            }),
+            ..ViewModel::default()
+        };
+        let backend = TestBackend::new(150, 32);
+        let mut terminal = Terminal::new(backend).expect("test backend");
+        terminal
+            .draw(|frame| render_to_frame(frame, &model))
+            .expect("release task render");
+        let content = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(content.contains("Release recovery"), "{content}");
+        assert!(content.contains("Local verification"), "{content}");
+        assert!(content.contains("workspace-verify"), "{content}");
+        assert!(content.contains("routing_quality_eval"), "{content}");
+        assert!(content.contains("10m 14s"), "{content}");
+        assert!(content.contains("3/7"), "{content}");
+        assert!(content.contains("Progress"), "{content}");
+        assert!(
+            content.contains("Running · Local verification · 3/7"),
+            "{content}"
+        );
+        assert!(
+            content.contains("Passed · workspace-verify · 1/1"),
+            "{content}"
+        );
+        assert!(content.contains("acceptance"), "{content}");
+        assert!(content.contains("18/41"), "{content}");
+        assert!(content.contains("4/5 CI"), "{content}");
+        assert!(content.contains("0.24.4 → 0.24.5"), "{content}");
+        assert!(!content.contains("No active tasks"), "{content}");
+        assert!(!content.contains("Ready"), "{content}");
+
+        let task = model.background_task.as_mut().unwrap();
+        task.current_child = Some("test_b".into());
+        task.gate_elapsed_secs = Some(617);
+        task.last_activity_ago_secs = 0;
+        task.completed_gates = 4;
+        task.recent_output.push("Running test_b".into());
+        terminal
+            .draw(|frame| render_to_frame(frame, &model))
+            .expect("updated release telemetry render");
+        let updated = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(updated.contains("test_b"), "{updated}");
+        assert!(updated.contains("10m 17s"), "{updated}");
+        assert!(updated.contains("4/7"), "{updated}");
+        assert!(!updated.contains("No active tasks"), "{updated}");
+        assert!(!updated.contains("Ready"), "{updated}");
+
+        model
+            .background_task
+            .as_mut()
+            .unwrap()
+            .last_activity_ago_secs = 252;
+        terminal
+            .draw(|frame| render_to_frame(frame, &model))
+            .expect("quiet live-process telemetry render");
+        let quiet = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(quiet.contains("No output for 4m 12s"), "{quiet}");
+        assert!(
+            quiet.contains('…'),
+            "narrow telemetry must truncate cleanly: {quiet}"
+        );
+
+        let task = model.background_task.as_mut().unwrap();
+        task.resource_deferred = true;
+        task.detail = "Resource deferred · waiting for host pressure to clear".into();
+        task.current_child = None;
+        task.gate_elapsed_secs = None;
+        task.process_alive = false;
+        terminal
+            .draw(|frame| render_to_frame(frame, &model))
+            .expect("resource-deferred release render");
+        let deferred = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(deferred.contains("DEFERRED"), "{deferred}");
+        assert!(deferred.contains("Resource deferred"), "{deferred}");
+        assert!(!deferred.contains("No active tasks"), "{deferred}");
+        assert!(!deferred.contains("READY"), "{deferred}");
+        assert!(!deferred.contains("Ready"), "{deferred}");
+
+        model.preferences.screen_reader = true;
+        terminal
+            .draw(|frame| render_to_frame(frame, &model))
+            .expect("screen-reader resource-deferred release render");
+        let accessible = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(
+            accessible.contains("DEFERRED FOR HOST RESOURCES"),
+            "{accessible}"
+        );
+        assert!(!accessible.contains("READY"), "{accessible}");
+        assert!(!accessible.contains("Ready"), "{accessible}");
     }
 
     #[test]

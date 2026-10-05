@@ -491,7 +491,7 @@ pub enum CheckpointOp {
     /// `/ci` — show CI status for the current branch via `gh` (with a
     /// clear "unavailable" notice when `gh` is not on PATH).
     CiStatus,
-    /// `/release patch|minor|major|status|resume|cancel|evidence|retry` —
+    /// `/release patch|minor|major|X.Y.Z|status|resume|cancel|evidence|retry` —
     /// execute the shared deterministic Release Recovery Controller.
     ReleaseControl { argument: String },
     /// `/daemon` — show the headless daemon's lock state (held pid,
@@ -1255,6 +1255,8 @@ impl CommandRegistry {
                 } else {
                     argument
                 };
+                let release_target =
+                    vesper_harness::release_recovery::ReleaseVersionSelector::parse(&argument);
                 if matches!(
                     argument.as_str(),
                     "patch"
@@ -1265,11 +1267,12 @@ impl CommandRegistry {
                         | "cancel"
                         | "evidence"
                         | "retry"
-                ) {
+                ) || release_target.is_ok()
+                {
                     CommandOutcome::Checkpoint(CheckpointOp::ReleaseControl { argument })
                 } else {
                     CommandOutcome::Error(
-                        "Usage: /release [patch|minor|major|status|resume|cancel|evidence|retry]"
+                        "Usage: /release [patch|minor|major|X.Y.Z|status|resume|cancel|evidence|retry]"
                             .into(),
                     )
                 }
@@ -1853,7 +1856,9 @@ impl CommandRegistry {
         buffer.push_str(
             "  /smart <name>      expand a smart-prompt template (pr|review|commit|fix-ci)\n",
         );
-        buffer.push_str("  /release [bump]    cut a release (patch|minor|major, default patch)\n");
+        buffer.push_str(
+            "  /release [target]  cut a release (patch|minor|major|X.Y.Z, default patch)\n",
+        );
         buffer.push_str("  /insights          analyze the session for friction and improvements\n");
         buffer.push_str("  /diff              summarize the working-tree diff\n");
         buffer.push_str("\nMeta:\n");
@@ -3302,7 +3307,13 @@ mod tests {
         let registry = CommandRegistry::stage_11b();
         let plan_state = PlanState::default();
         let provider = provider();
-        for (arg, expected) in [("", "patch"), ("minor", "minor"), ("status", "status")] {
+        for (arg, expected) in [
+            ("", "patch"),
+            ("minor", "minor"),
+            ("0.25.0", "0.25.0"),
+            ("v0.25.0", "v0.25.0"),
+            ("status", "status"),
+        ] {
             let outcome = registry.resolve(
                 &CommandIntent::Slash {
                     name: "release".into(),

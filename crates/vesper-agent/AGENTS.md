@@ -28,6 +28,11 @@ the multi-turn, tool-executing layer above it.
   and a bounded preview with its real starting source line only after the mutation
   succeeds. Shell nonzero exits and timeouts are failed tool results, including
   the sandbox timeout route; bounded diagnostics stay available to both hosts.
+  Unix command settlement re-signals the owned process group while leader
+  reaping and pipe draining remain incomplete, then stops before an unnecessary
+  final signal. Darwin `killpg` `EPERM` is accepted only as its documented
+  no-signalable-member result; verified settlement still requires a reaped leader
+  and EOF on both inherited pipes. Other signal failures remain fail-closed.
 - `src/registry.rs` — `ToolRegistry`: name → executor routing plus mode- and
   provider-filtered production advertisement through `definitions_for_provider`.
   `definitions_for` remains provider-free for schema inspection and legacy tests.
@@ -99,7 +104,9 @@ the multi-turn, tool-executing layer above it.
   real adapters must accept navigator decomposition/synthesis without tool metadata.
   Provider terminal outcomes other than a normal `Stop` are classified as
   `AgentLoopError::Incomplete` and must never be reported by a host as a
-  completed implementation. Cancellation and visible EOF/stream errors are
+  completed implementation. `AgentLoopError::ProviderTurn` displays only the
+  provider's bounded safe message; its typed `ProviderError` retains structured
+  diagnostics for hosts to record through a separate diagnostic channel. Cancellation and visible EOF/stream errors are
   converted into a classified `StreamInterrupted` terminal too; buffered text
   and complete tool transactions survive and pending tool fragments never replay.
   A typed `StreamInterrupted` terminal returns `AgentTurnOutcome::Interrupted`

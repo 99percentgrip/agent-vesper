@@ -1024,6 +1024,13 @@ Secondary corroboration only:
 13. TUI and ACP share one release state.
 14. Release state persists and is resumable.
 15. Uncertainty is surfaced; it is not converted into blind retries.
+16. A fresh natural-language release request reconciles persisted state before admission.
+17. The same recoverable objective resumes automatically from its safe local stage.
+18. An obsolete same-objective prerelease epoch is archived before replacement.
+19. Remote push, tag or publication evidence is never silently discarded.
+20. An unrelated active objective asks one bounded human-facing clarification.
+21. Epoch IDs, internal controller states, ledger paths and manual resume/cancel
+    commands are diagnostics, not normal user prerequisites.
 
 ---
 
@@ -1070,70 +1077,41 @@ red
 
 That behavior is the defect this PRD exists to eliminate.
 
+A new ordinary-language release request also performs this admission reconciliation:
+
+```text
+load persisted epoch
+→ same objective + safe local state: reconcile and continue automatically
+→ same objective + obsolete source/worktree: archive old evidence and replace
+→ remote push/tag/publication exists: preserve and ask only if a decision is needed
+→ unrelated active objective: preserve and ask one bounded clarification
+```
+
+The primary checkout is not the reconciliation workspace and is never cleaned,
+reset, stashed or mutated by this process.
+
 ---
 
 ## 37. Current Implementation Status
 
-**Status: COMPLETE FOR BINDING SECTIONS 1–36. CURRENT NATIVE, CONTROLLED
-GITHUB, EXACT-COMMIT PREREQUISITES, ACTUAL PRODUCING WORKFLOW/ASSETS AND
-NATIVE POST-PUBLICATION CLOSEOUT ALL PASSED.**
+**Release integration in progress; the combined production candidate is not yet certified or published.**
 
-[The continuation report](foundation/release-recovery-controller-parity-continuation.md)
-owns current methods, repairs, all AC-01 through AC-23 traceability, exact-source
-receipts, failed/historical results and completed section 32 acceptance. The shared
-controller/executor live in `crates/vesper-harness`; TUI and ACP use the same worker
-with their active permission/mode ports.
+[The production release report](foundation/2026-10-06-rrc-parity-production-release.md)
+owns reconciliation with the newer production source, exact-source local verification,
+all four complete hosted prerequisite matrices, actual publication and Registry delivery.
+The binding sections above retain the current production bytes, including natural admission,
+provenance reconciliation and explicit-version requirements. Their SHA-256 is
+`e85011c696d769837c6ed5a83e4290e77eadc4ae27a9ea42cffe0966d37518db`.
 
-Current public candidate **`bd24bb48765d73c704fb81945ca87e33d093e121`**, in
-`99percentgrip/agent-vesper-rrc-public-acceptance`, retains the owner-action,
-read-only health/firewall, command authority, disabled-host-cap repair limit and
-provider-selection corrections. It additionally separates fixture shell startup
-from unchanged cancellation settlement, and isolates the synthetic ACP fixture
-from native credentials and ambient working directories. Six owning paths were
-compared before primary promotion; primary HEAD remains unchanged. All nine local
-checks pass: 83 selected stable/MSRV cases (82 RRC), 69 exact cases, 11 command
-cases, full workspace/default-doc/stage verification, clippy, 12 authentication UI
-cases and real rebuilt TUI/ACP processes. Ten ACP fixture repetitions also pass.
-Five-native run **37337247051** passed all targets with direct nonzero case logs;
-current-source controlled red/repeated-red/green probes also passed. Public test
-main now points to this SHA. Canonical **37339588552**, MSRV **37339588477**,
-foundation **37339588698** and web-driver **37339588839** passed all eleven jobs.
-The native executor created annotated test tag `v0.24.4` targeting this source.
-Publication run **37346108219** passed all seven jobs; release **403959731** has
-16 verified assets, including all 14 mandatory archives/checksums. Seven actual
-downloaded checksum files match archive and checksum server digests. Native
-closeout reached `Complete` with tag/version/assets/publication identity preserved.
-[The section trace](foundation/release-recovery-controller-parity-continuation-requirements.json)
-maps all 36 sections and 23 acceptance criteria to current named native cases
-and actual producing receipts. Binding sections 1–36 remain byte-identical.
+[The completed public continuation](foundation/release-recovery-controller-parity-continuation.md)
+certifies its frozen candidate `bd24bb48765d73c704fb81945ca87e33d093e121` against the
+then-current binding scope. Its source manifest, requirement trace, controlled public
+publication and archived receipts remain historical evidence; they cannot certify
+changed production code. Earlier execution reports retain their original scope and
+unexecuted items.
 
-Previous `7394fc54` passed its local and controlled probes but settled four green
-native targets and one Windows readiness-fixture failure after RRC/typed repair
-passed. Its failure and the subsequent local ACP fixture timeout remain retained;
-their mechanisms are distinguished from unproven startup/keyring hypotheses.
-
-Previous source `ced7b9b` passed all five native targets, all three controlled
-workflow probes, and all four complete prerequisite workflows including every
-job. No tag was admitted after the default-zero budget and provider-tool retention
-regressions were demonstrated; its receipts remain historical. The budget-only
-prepared `a92f822` passed local checks but was never promoted separately.
-
-Previous public source `35026933eff7720c98c6cc2c5d39732e325a9e6a` passed all five
-focused native targets and all four complete main-push prerequisite workflows.
-Those historical receipts do not certify the additional executor correction.
-The separate public validation route removes the avoidable private-runner billing
-prerequisite; no payment/account change or outage claim was needed.
-
-Binding sections 1–36 specify multiple provider fixtures (AC-16), mocked outage
-evidence (section 30), and controlled real GitHub workflow acceptance. Live-model
-effectiveness and interactive OpenAI account/browser completion remain unexecuted
-robustness checks; fixture results do not certify them. No production publication
-or installed-application replacement is authorized merely by this audit.
-
-Historical execution evidence:
-
-- [Deep debug audit](foundation/release-recovery-controller-deep-debug-execution.md)
-- [PR-1 through PR-3](foundation/release-recovery-controller-pr1-pr3-execution.md)
-- [Policy hardening](foundation/release-recovery-controller-hardening-execution.md)
-- [PR-4 through PR-7](foundation/release-recovery-controller-pr4-pr7-execution.md)
-- [Historical completion checkpoint](foundation/release-recovery-controller-final-completion.md)
+The release preserves the OpenAI device-sign-in URL/browser-launch repair together
+with the later background startup discovery fix. Actual browser/account completion
+is unexecuted; it is separate from deterministic release recovery acceptance.
+Production publication will use standard public GitHub Actions. Alex's installed
+application is outside this release authorization.

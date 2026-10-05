@@ -80,6 +80,10 @@ business logic.
   exist; Last Run says `Cancelled`. Partial assistant output, completed tool
   telemetry, history and structured diagnostics remain available. Provider
   errors, timeouts and uncorroborated provider-side cancellation stay failures.
+  Provider failures put only the bounded provider safe message in chat and Last
+  Run; structured diagnostics are retained separately in activity, scrubbed
+  again at the host boundary and bounded to 4,096 serialized bytes. They must
+  never be interpolated into user-facing error prose.
 
 - Native Lens review/interview execution delegates to `vesper-harness::lens_tools`;
   TUI retains its live interview-limit policy, bordered UI and URL/browser-launch
@@ -147,6 +151,45 @@ business logic.
   approval port to both native release stages and repair; controller state never
   bypasses permission. `/ci` appends the same persisted RRC status shown by ACP.
   The terminal owns presentation only.
+  against the active provider's superpowers. `/release` accepts `patch`, `minor`,
+  `major`, or a stable exact `X.Y.Z` target (optional input `vX.Y.Z`) and resolves
+  to a typed shared RRC operation (start/status/resume/cancel/evidence/retry),
+  never a free-form AgentLoop workflow. If the controller admits a bounded isolated
+  repair, the TUI supplies its ordinary approval port; controller state never
+  bypasses permission. `/ci` appends the same persisted RRC status shown by ACP.
+  The terminal owns presentation only.
+  Explicit and natural-language release routes both inherit current operating/
+  permission controls and the ordinary approval port.
+  Ordinary free-text release imperatives are intercepted before provider dispatch
+  by the same shared conservative admission used by ACP. An admitted objective
+  launches the existing background RRC from its isolated release worktree. A
+  persisted matching local-failure epoch resumes automatically; an obsolete
+  same-objective prerelease epoch is archived and superseded automatically. Remote
+  irreversible state or an unrelated active objective asks one bounded human-facing
+  clarification without exposing epoch IDs, controller states or ledger paths.
+  Objective provenance excludes unrelated historical worktrees. Only unresolved
+  variants of the same objective return one human-labelled clarification—never
+  worktree paths or SHAs—without launching a model turn or mutating release state.
+  While the registered controller owns work, the runtime state and right rail render
+  that real task and continuously refreshed controller telemetry: stage, gate, command,
+  current child/test, ticking gate elapsed time, last activity (including explicit
+  prolonged silence while the process remains alive), gate count, candidate version/SHA,
+  retry/fingerprint state, bounded recent output, and the RRC-owned Host Resource
+  Governor's observed RAM/cgroup, swap, process-tree RSS/rustc count, Cargo/test budget,
+  target-cache disk state, pressure and action. They must not simultaneously claim
+  Ready or No active tasks. A persisted typed resource defer remains registered even
+  without a child process and renders `DEFERRED` (screen-reader: `DEFERRED FOR HOST
+  RESOURCES`) until shared RRC recovery; status text alone must not infer this state.
+  Admission text alone never creates a running presentation.
+  Ratatui exclusively owns interactive stdout/stderr: release children use null stdin
+  and concurrently drained stdout/stderr pipes, terminal controls are sanitized before
+  bounded/redacted telemetry, and background tracing is not written to the alternate
+  screen. RUN state and telemetry come from one per-frame registered-worker snapshot.
+  Its persisted typed `ReleaseProgress` phase, gate/job counts and monotonic milestones
+  also project into both RUN and the Conversation panel exactly once per epoch/sequence;
+  a freshly opened session may seed only recent milestones for context. The terminal
+  never derives a release update from a timer or admission prose. The real-PTY
+  acceptance test must fail if either child stream inherits the terminal.
   Tier C Phase 7 (ADR 0010): the
   registry now covers the complete Python oracle surface plus Vesper-native
   commands (102 entries, or 103 with `swarm`, including `/export last`). The
@@ -666,8 +709,20 @@ business logic.
 - Provider request controls are projected only from the active registry
   superpower surface. Hidden controls from a previous authentication mode are
   cleared before dispatch rather than sent as stale provider configuration.
-- `integration-test-harness` may redirect xAI to a loopback endpoint solely for
-  process-level composition tests; normal builds contain no such route.
+- `integration-test-harness` may redirect xAI, and OpenAI model discovery, to a
+  loopback endpoint solely for process-level composition tests. OpenAI uses
+  `AGENT_VESPER_OPENAI_TEST_URL` and accepts only the adapter's loopback
+  policy. Normal builds contain no such route.
+- Unselected provider discovery does not run before the event loop. OpenAI
+  startup must not wait on xAI account model discovery.
+- OpenAI startup credential lookup and account-model discovery run in the
+  background. The event loop shows `Loading OpenAI account models…` and keeps
+  accepting keyboard and bracketed-paste input while that work is pending.
+  Already-queued keystrokes and pastes are applied before the next full redraw,
+  so a startup burst is not serialized one event per frame. Completion replaces
+  the account model policy; failure updates status and stays interactive.
+  Provider prompts are not dispatched until the account check and discovery
+  settle. Authentication screens and model validation are unchanged.
 
 - MCP discovery, browser presets and deferred calls retain one conversation
   owner through direct/VRO/ReAct registries built by `build_hosted_registry`.
@@ -732,7 +787,9 @@ business logic.
   7.2 s inserted silence in a 41 s passage — versus 2.9 s at natural sentence
   boundaries under the sentence-level policy. Very short units stay whole.) One
   player stream, cumulative byte receipts and exactly
-  one terminal outcome remain attached to the original segment. Prepared canonical
+  one terminal outcome remain attached to the original segment. The overlap regression
+  may allow loaded-runner synthesis scheduling only inside its controlled player's
+  active lifetime; it must not accept post-drain synthesis as overlap. Prepared canonical
   PCM is capped at 16 MiB per piece (adapter allocations are separate). Stop and selection
   replacement invalidate queued/prepared audio and serialize with stream admission,
   never blocking pipe writes or drain waits. Stale work cannot reopen the player;
@@ -994,7 +1051,7 @@ business logic.
   oracle's `LOCAL_COMMANDS`. Every registered command resolves to a concrete
   typed handler; an accidental missing route fails as an internal parity
   violation. No deferred fallback exists. Workflow commands
-  (`/security-review`, `/smart`, `/release`, `/insights`, `/diff`) build a
+  (`/security-review`, `/smart`, `/insights`, `/diff`) build a
   prompt and stash it on `SessionState.pending_prompt`; the binary drains it
   into a background `AgentLoop` turn (same path as free-text prompts).
 - ADR 0011 (Tier C Phase 8): the 13 awareness/memory commands

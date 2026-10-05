@@ -75,6 +75,36 @@ implementation acceptance).
 PR-5 host/release evidence:
 [`foundation/voice-pr5-host-release-execution.md`](foundation/voice-pr5-host-release-execution.md).
 
+Follow-up: [08:44 UTC status check](foundation/2026-09-21-agent-progress-0844z.md) observed MCP workspace test activity and subsequent process exit, with the agent alive and no blocked file-read child sampled. No intervention; this is not voice progress or completion evidence.
+
+Provider investigation lead: Alex observes the tool-output stall more often with native OpenAI selected than with Z.ai/GLM. The [provider-correlation record](foundation/2026-09-21-tool-stall-provider-observation.md) requires matched repeated comparison during the later permanent repair; it does not establish provider causality or change voice acceptance.
+
+Latest recovery: [08:32 UTC authorized termination](foundation/2026-09-21-agent-stall-0832z-recovery.md) removed the next blocked child (`726814`), preserving the agent with subsequent runtime I/O. Sustained progress remains unverified. Alex requests current implementation and voice PRD completion before focus on permanent tool-output repair; the critical bug and all acceptance requirements remain open.
+
+Earlier operational observation: [08:15 UTC status check](foundation/2026-09-21-agent-stall-0815z.md) confirmed the same output-blockage symptom in TUI `718229`. The [authorized 08:20 UTC recovery](foundation/2026-09-21-agent-stall-0820z-recovery.md) terminated only its blocked `cat` child; exit and original agent preservation were verified, and runtime I/O advanced. A new file-read child then blocked again at closeout; sustained semantic task progress remains unverified. The critical bug remains open and no voice acceptance status changes.
+
+Runtime observation (2026-09-21): [resumed-session status check](foundation/2026-09-21-agent-runtime-status-check.md)
+found the working session blocked on local file-reading tool output. This
+was verification only: no code changes or recovery, and no voice acceptance
+items were re-run or closed. In the [authorized follow-up](foundation/2026-09-21-agent-tool-stall-recovery.md),
+only the blocked child was terminated; the original Vesper process stayed
+alive and resumed network/I/O activity. This is operational recovery, not a
+source repair or additional voice acceptance. A later [recheck](foundation/2026-09-21-agent-tool-stall-recheck.md)
+found the same symptom in a new shell/`cat` invocation. The [second authorized
+recovery and bug record](foundation/2026-09-21-tool-output-stall-bug-and-recovery.md)
+records identity-pinned SIGTERM to that shell and child, both exits, preservation
+of the original TUI, and renewed runtime I/O. The recurring tool-output bug
+is **CRITICAL — OPEN, PATCH REQUIRED** by Alex; required patch acceptance is
+recorded in the bug report. Task progress and voice acceptance are not inferred
+from I/O.
+A [06:10 UTC status check](foundation/2026-09-21-agent-tool-stall-0610z-recheck.md)
+confirmed another shell/`cat` invocation blocked on stdout, at 33m20s elapsed;
+no code changes or recovery were performed in that check. In the
+[critical escalation and authorized recovery](foundation/2026-09-21-critical-tool-output-stall-recovery.md),
+shell `702497` and child `702500` were subsequently terminated with SIGTERM;
+both exits, original TUI preservation, and renewed runtime I/O were verified.
+Sustained task progress is unverified; the required patch remains open.
+
 ---
 
 ## 0. Executive summary

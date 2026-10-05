@@ -47,6 +47,10 @@ those gates. All missing or failed items remain visible in the execution report.
 
 - [Reconnaissance](foundation/dependency-setup-recon.md)
 - [Implementation and acceptance](foundation/dependency-setup-execution.md)
+- [User-authorized Context7/Playwright MCP setup](foundation/2026-09-21-context7-playwright-mcp-setup.md)
+  records separate optional Node/MCP dependency setup on Linux. This is not
+  native container-setup acceptance: Context7 calls passed; the installed
+  Playwright route failed page continuity. Source repair evidence is linked below.
 
 - [Release status](foundation/v0.22.5-release-execution.md)
 

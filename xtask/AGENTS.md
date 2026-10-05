@@ -25,6 +25,32 @@ architecture, MSRV, and source-oracle checks.
   isolated AgentLoop/native proof/promotion and missing last-green platform
   evidence, missing-runner-log failure annotations and the composed
   published/docs-red/repair/different-platform-red scenario are mandatory cases.
+  The fixed acceptance set also executes the RRC partial/missing-matrix active watch,
+  responsive remote-poll cancellation, complete-matrix multi-family verified repair,
+  pause/resume, immutable-publication, natural-language stale-epoch recovery,
+  obsolete-epoch preservation, explicit canonical supersession of a historical
+  local-only objective, unrelated-objective clarification, conflicting-target
+  candidate/CI clarification, registered-controller/local-subprocess lifecycle, truthful TUI task
+  projection, production-orchestrator, native host cancellation/restart
+  process-lifecycle, Linux Host Resource Governor cgroup discovery and constrained
+  RAM/swap and disk admission, resumable resource deferral, Linux ACP process-level
+  controller-status and Cargo-policy inheritance through explicit and natural-language
+  session-policy routes, and TUI-controller routing cases.
+  The local failure receipt case requires late stdout assertions to survive bounded
+  storage with secrets redacted.
+  Host-neutral swap-window cases reject subsecond rate amplification and retain
+  sustained pressure/critical detection on every target; the threshold case also
+  requires displayed RAM requirements to include actual swap/owned-tree margins.
+  Linux-only governor cases are enrolled only on Linux; host-neutral controller cases
+  remain mandatory on every supported platform. The lifecycle and renderer
+  cases also require live gate elapsed/activity updates, child turnover, completed-gate
+  advancement, bounded output retention and exclusion of
+  contradictory idle labels. The registered-controller lifecycle case injects its
+  test-only resource policy directly; live pressure behavior remains owned by the
+  separate governor acceptance cases.
+  The Unix real-PTY case runs the actual TUI and a noisy registered child, rejecting
+  inherited stdout/stderr, raw terminal controls, writes outside RUN, premature Ready,
+  and stale telemetry after settlement. Deleting or renaming any case fails the gate.
 
 - `xtask` may depend on `vesper-testkit`; production crates may not depend on it.
 - Commands must not call providers or mutate source/user state.

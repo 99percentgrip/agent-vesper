@@ -1,5 +1,11 @@
 # Foundation Evidence Index
 
+## RRC parity production release (2026-10-06)
+
+- [Release execution report](2026-10-06-rrc-parity-production-release.md) owns the
+  requested production integration and `0.24.5` release. Verification and publication
+  are in progress; earlier frozen public receipts remain historical evidence.
+
 ## Release Recovery Controller parity continuation (2026-10-05)
 
 - [Completed continuation report](release-recovery-controller-parity-continuation.md) owns full requirement traceability and repairs. Source `bd24bb4` passed all nine local checks (83 selected/82 RRC, 69 exact, 11 command and 12 auth UI cases), ten isolated ACP repetitions, five native targets with direct named-case logs, controlled red/repeated-red/green probes, and all four main-push prerequisites with eleven successful jobs. Actual producing run 37346108219 passed all seven jobs; annotated test tag `v0.24.4` targets the exact source, all 16 assets were verified and native closeout reached `Complete`. All mandatory binding PRD gates passed. Production main/tags/Registry and Alex's installation remain unchanged.
@@ -23,6 +29,498 @@
   [receipt archive](release-recovery-controller-deep-debug-receipts.tar.gz) preserve
   exact bytes, run identities, passed/failed/stale checks and acceptance limits.
 - The older completion checkpoint below is historical and superseded by this audit.
+## RRC PRD audit ownership repair (2026-10-04)
+
+- Execution report: [`2026-10-04-rrc-prd-audit-ownership-repair.md`](2026-10-04-rrc-prd-audit-ownership-repair.md)
+- Owning PRD: [`../Agent_Vesper_Release_Recovery_Controller_PRD.md`](../Agent_Vesper_Release_Recovery_Controller_PRD.md)
+- Verdict: **DEAD CONTROLLER OWNERSHIP AND HIDDEN VERSION PREPARATION CORRECTED.
+  NO RELEASE ACTION.** A dead or missing owner is `OwnerExited`, not `Active`.
+  Version preparation and the resolved release version are persisted before
+  `cargo check`. OpenAI startup does not contact unselected xAI discovery.
+  Same-target historical reconciliation is unchanged.
+
+## OpenAI TUI startup responsiveness (2026-10-04)
+
+- Execution report: [`2026-10-04-openai-tui-startup-responsiveness.md`](2026-10-04-openai-tui-startup-responsiveness.md)
+- Verdict: **OPENAI STARTUP NO LONGER BLOCKS TUI INPUT; FOCUSED PTY PROOF
+  PASSED; NO RELEASE ACTION.** Credential lookup and account-model discovery
+  run in the background. A stalled loopback `/models` fixture accepts typed
+  and pasted input within 1.2s, then applies either the catalog or an HTTP 500
+  without freezing later input. `cargo fmt --all -- --check`, default and
+  `integration-test-harness` TUI Clippy, and `git diff --check` passed. No
+  push, tag, publication, installation, broad verification, or VRO-19 work
+  occurred.
+
+## RRC explicit-version target repair (2026-10-03)
+
+- Execution report: [`2026-10-03-rrc-explicit-version-target-repair.md`](2026-10-03-rrc-explicit-version-target-repair.md)
+- Owning PRD: [`../Agent_Vesper_Release_Recovery_Controller_PRD.md`](../Agent_Vesper_Release_Recovery_Controller_PRD.md)
+- Verdict: **TYPED EXACT-VERSION ADMISSION, EQUAL-TARGET NO-OP, AND SAME-TARGET
+  CANDIDATE RECONCILIATION IMPLEMENTED; REQUESTED LOCAL GATES PASSED; NO RELEASE
+  ACTION.** Natural release imperatives and `/release` accept stable `X.Y.Z` targets
+  with optional input `v`, preserve bump behavior, and expose the requested target
+  before mutation. An equal already-versioned target rewrites no version file and
+  reuses clean canonical HEAD. Candidate push, CI, and failure receipts are archived
+  historical evidence when the same target adopts a newer canonical strict
+  descendant; a missing or mismatched release workspace cannot bypass that proof.
+  Pushed target tags and actual publication still require clarification.
+  Harness Clippy, focused/full harness tests, workspace tests, and all 50 acceptance
+  cases passed. No push, tag, publication, installation, provider call,
+  `cargo xtask verify`, or VRO-19 work occurred.
+
+## RRC PTY stream-neutral test-oracle repair (2026-10-03)
+
+- Execution report: [`2026-10-03-rrc-pty-stream-neutral-test-oracle-repair.md`](2026-10-03-rrc-pty-stream-neutral-test-oracle-repair.md)
+- Owning PRD: [`../Agent_Vesper_Release_Recovery_Controller_PRD.md`](../Agent_Vesper_Release_Recovery_Controller_PRD.md)
+- Test correction commit: `9a438ffc731e2bf1e70f53a06469bef0d790ad49`
+- Verdict: **TEST-ONLY STREAM-NEUTRAL ORACLE REPAIR PASSED 10/10; FULL VERIFY
+  NOT RUN.** The real-PTY fixture now terminates both independently drained
+  streams with the same compact generic marker, so bounded-tail capture,
+  confinement, and stale-settlement assertions no longer depend on stdout
+  winning the scheduler race. Production telemetry capacity, capture, watchdog,
+  release, and publication behavior are unchanged.
+
+## RRC typed local-settlement acceptance repair (2026-10-02)
+
+- Execution report: [`2026-10-02-rrc-typed-local-settlement-acceptance-repair.md`](2026-10-02-rrc-typed-local-settlement-acceptance-repair.md)
+- Owning PRD: [`../Agent_Vesper_Release_Recovery_Controller_PRD.md`](../Agent_Vesper_Release_Recovery_Controller_PRD.md)
+- Source commit: `25085a95a38f4df6ed6ec5ab41848e8c2be765b6`
+- Verdict: **STALE ACCEPTANCE EXPECTATION CORRECTED; FOCUSED REGRESSIONS PASS;
+  BROAD ACCEPTANCE NOT RERUN.** The lifecycle fixture deliberately cancelled its
+  second real local gate, so `LocalVerification` with no source-failure evidence is
+  correct. A separate focused regression proves a genuine local gate failure still
+  enters `DiagnosingLocalFailure` with causal evidence.
+
+## RRC liveness/watchdog repair (2026-10-02)
+
+- Execution report: [`2026-10-02-rrc-liveness-watchdog-repair.md`](2026-10-02-rrc-liveness-watchdog-repair.md)
+- Owning PRD: [`../Agent_Vesper_Release_Recovery_Controller_PRD.md`](../Agent_Vesper_Release_Recovery_Controller_PRD.md)
+- Source base: `89dfb4eac5644c1738f55c8ea273a04dc6ac5e11`
+- Verdict: **IMPLEMENTED WITH FOCUSED LOCAL REGRESSIONS; NO RELEASE OR BROAD
+  VERIFICATION.** RRC local and repair work now use meaningful-progress inactivity
+  without elapsed-runtime ceilings; individual GitHub/publication/health and remote
+  Git operations remain bounded and cancellation-aware. Exact-SHA dispatch starts a
+  fresh remote-watch window, and stopped-worker liveness persists into the shared
+  TUI/ACP progress projection. The historical dirty RRC worktree and live `v0.24.5`
+  epoch were not modified or reconciled.
+
+## v0.24.5 deterministic governor repair (2026-10-02)
+
+- Current execution report: [`2026-10-02-v0.24.5-rrc-deterministic-governor-repair.md`](2026-10-02-v0.24.5-rrc-deterministic-governor-repair.md)
+- Owning PRD: [`../Agent_Vesper_Release_Recovery_Controller_PRD.md`](../Agent_Vesper_Release_Recovery_Controller_PRD.md)
+- Fifth immutable failed candidate: `24ea5c99091b9fafe30efa1207b39273b8520612`
+- Verdict: **FIFTH SOURCE REPAIR AND COMPLETE LOCAL GATES PASSED; A FRESH
+  EXACT-SHA HOSTED MATRIX IS PENDING. NO TAG OR PUBLICATION IS IN SCOPE.** The
+  complete `24ea5c99` matrix reduced canonical, MSRV, Linux x86_64 and Linux
+  ARM64 failures to one live-host-dependent ACP process family while Windows,
+  both macOS jobs, supply-chain and contained web-driver passed. The repaired
+  integration-only permissive policy now selects bounded deterministic capacity
+  before live discovery; production/default admission remains live and
+  fail-closed. A new red-first regression, ten consecutive ACP process runs,
+  all 50 acceptance cases, canonical `cargo xtask verify`, and Rust 1.88
+  `cargo xtask msrv` passed. A fresh exact-SHA matrix remains mandatory.
+
+## v0.24.5 RRC autonomy and CI repair checkpoint (2026-10-01)
+
+- Historical execution report: [`2026-10-01-v0.24.5-rrc-autonomy-and-ci-repair.md`](2026-10-01-v0.24.5-rrc-autonomy-and-ci-repair.md)
+- Owning PRD: [`../Agent_Vesper_Release_Recovery_Controller_PRD.md`](../Agent_Vesper_Release_Recovery_Controller_PRD.md)
+- Immutable failed candidates: `864ca49a98ae6ea4ab900295fe8508c0ac7bac1b`,
+  `b0528abeab4a81306a9a7c23b97a46876ca957ba`,
+  `6fb1547abfce204ef64cc9fc7a6d6c6274e6eb24`, and
+  `d771255dedc5825e68a4a6c8a4638bb5be932fdc`
+- Verdict: **SUPERSEDED CHECKPOINT.** Candidate `24ea5c99` reproduced the Linux
+  governor failure and invalidated this report's fourth-repair diagnosis; the
+  2026-10-02 continuation above owns current status. Missing/partial matrix watch,
+  transactional multi-family reduction, the historical receipts, and the explicit
+  no-tag/no-publication boundary remain valid evidence.
+
+## RRC current-pressure defer and zram repair (2026-10-01)
+
+- Execution report: [`2026-10-01-rrc-resource-defer-zram-repair.md`](2026-10-01-rrc-resource-defer-zram-repair.md)
+- Owning PRD: [`../Agent_Vesper_Release_Recovery_Controller_PRD.md`](../Agent_Vesper_Release_Recovery_Controller_PRD.md)
+- Implementation commit: `7760e5079538219e2b9c0dd7e8a75322b7d62444`
+- Verdict: **SOURCE REPAIR, COMPLETE LOCAL GATES, AND FRESH LINUX TUI
+  CANDIDATE PASSED; NO RELEASE OR INSTALLATION.** Current risk now combines
+  effective host/cgroup memory, reserve plus gate headroom, owned-tree RSS,
+  memory PSI, swap trend, and zram physical backing instead of rejecting stale
+  logical zram occupancy. Typed `ResourceDeferred` watches passively with bounded
+  backoff, preserves retry budget and pending-gate identity, and resumes after
+  three safe observations while both TUI modes remain visibly deferred. Final
+  `cargo xtask verify`, MSRV 1.88, architecture, dependency policy, RustSec and
+  all 45 exact acceptance cases passed. The checksum-preserved Linux x86-64 TUI
+  SHA-256 is `85feb7013dc67e0435c083cb0c9ea684db11385fbf358cf0a669a5d87da0bb70`,
+  different from the rejected candidate. No RRC epoch, push, tag, publication,
+  Registry update, installation, swap/service/cache intervention or VRO-19 work
+  occurred.
+
+## RRC active-epoch final-integration repair (2026-10-01)
+
+- Execution report: [`2026-10-01-rrc-active-epoch-integration-repair.md`](2026-10-01-rrc-active-epoch-integration-repair.md)
+- Final audit: [`2026-10-01-rrc-active-epoch-final-audit.md`](2026-10-01-rrc-active-epoch-final-audit.md)
+- Owning PRD: [`../Agent_Vesper_Release_Recovery_Controller_PRD.md`](../Agent_Vesper_Release_Recovery_Controller_PRD.md)
+- Verdict: **SOURCE-COMPLETE, AUDITED AND LOCALLY VERIFIED; NO RELEASE ACTION.**
+  The canonical corrected integration explicitly supersedes the live historical
+  local-only prerelease epoch without redundant clarification, while preserving
+  the complete old record and dirty primary checkout. The final red-first audit
+  corrected current-objective clarification to show the known `0.24.4 -> 0.24.5`
+  transition and made lifecycle acceptance independent of ambient workstation
+  pressure without weakening production governor tests. All 45 exact acceptance
+  cases and complete repository verification passed. Later build-only
+  continuations preserved that evidence boundary: one governed locked workspace
+  build passed, followed by one governed release-profile Linux TUI from exact
+  product source `f7de8685` with the production candidate feature set. The final
+  `0.24.4` binary is checksum-preserved outside `target/` for Alex-operated real
+  release acceptance. No RRC epoch, version mutation, push, tag, publication or
+  installation occurred. Any irreversible remote evidence still requires the
+  controller's bounded clarification rules.
+
+## RRC provenance ambiguity repair and corrected candidate (2026-10-01)
+
+- Execution report: [`2026-10-01-rrc-provenance-ambiguity-repair.md`](2026-10-01-rrc-provenance-ambiguity-repair.md)
+- Owning PRD: [`../Agent_Vesper_Release_Recovery_Controller_PRD.md`](../Agent_Vesper_Release_Recovery_Controller_PRD.md)
+- Verdict: **CANONICAL SOURCE RESOLUTION, GOVERNED COMPLETE VERIFY, EXPLICIT
+  44-CASE ACCEPTANCE, REAL RETAINED-WORKTREE PROBE, AND FRESH `0.24.4` RELEASE
+  TUI PASSED.** Historical worktrees remain registered without forcing manual
+  selection. The rejected `3.3.1` commit remains outside ancestry, and RRC retains
+  exclusive ownership of the future `0.24.4 -> 0.24.5` release after Alex's authorization.
+
+## Corrected v0.24.4 release preparation (2026-10-01)
+
+- Execution report: [`2026-10-01-corrected-v0.24.4-release-preparation.md`](2026-10-01-corrected-v0.24.4-release-preparation.md)
+- Owning PRD: [`../Agent_Vesper_Release_Recovery_Controller_PRD.md`](../Agent_Vesper_Release_Recovery_Controller_PRD.md)
+- Verdict: **HISTORICAL CORRECTED 0.24.4 CANDIDATE; SUPERSEDED FOR MANUAL
+  ACCEPTANCE BY THE PROVENANCE-FIXED CANDIDATE ABOVE.** Its source reconstruction
+  and receipts remain valid for the recorded SHA.
+
+## Restored historical tool-output stall record
+
+- Historical incident and recovery record: [`2026-09-21-tool-output-stall-bug-and-recovery.md`](2026-09-21-tool-output-stall-bug-and-recovery.md)
+- Current status: **CLOSED — RELEASED IN v0.23.6.** The restored index route points
+  to the current report, which preserves the original incidents and acceptance box
+  while linking the later permanent repair, five-target verification, and release.
+  Stale OPEN wording and links to absent planning records from the older restoration
+  branch were intentionally not reintroduced.
+
+## Red main CI follow-up repair (2026-09-29)
+
+- Execution: [`2026-09-29-red-main-ci-repair.md`](2026-09-29-red-main-ci-repair.md)
+- Predecessor: [`2026-09-29-post-release-quality-check-investigation.md`](2026-09-29-post-release-quality-check-investigation.md)
+- Verdict: **ROOT-CAUSE CORRECTION IMPLEMENTED AND LOCALLY VERIFIED;
+  EXACT-COMMIT GITHUB GATES PENDING.** The first two pushed cleanup repairs
+  (`af662ea`, `d097bdf`) both failed ordinary successful-command settlement on
+  Apple Silicon and Intel macOS. Pinned XNU source proves why: a found process
+  group containing only excluded `SZOMB` members produces POSIX `EPERM`, not
+  `ESRCH`. The final correction classifies that Darwin terminal state, still
+  requires leader reaping plus both pipe EOFs, and stops before an unnecessary
+  final signal. The late-fork and LM Studio fixture repairs remain intact.
+
+## OpenAI Responses live prerelease candidate (2026-09-30)
+
+- Execution report: [`2026-09-30-openai-responses-live-prerelease-candidate.md`](2026-09-30-openai-responses-live-prerelease-candidate.md)
+- Owning PRD: [`../openai-provider-prd.md`](../openai-provider-prd.md)
+- Verdict: **NON-PUBLISHING LINUX DEBUG CANDIDATE PASSED OFFLINE AND ONE REAL
+  OPENAI TURN; NO RELEASE OR INSTALLATION.** A clean isolated commit contains
+  only the Responses boundary/error-surface repair over base `01d2df0`; the
+  staged binary is hash-addressed and byte-identical to the dedicated build
+  output. All 60 adapter tests and both TUI provider-failure tests passed,
+  including a bearer-token canary absent from chat, Last Run and raw activity
+  while a redacted placeholder remains in bounded activity diagnostics. The
+  exact staged binary completed one OpenAI GPT-5.6 Terra turn and rendered
+  `✓ Turn complete`. The unavailable historical event was not reproduced;
+  cross-platform/release gates remain unexecuted.
+
+## OpenAI Responses streaming boundary audit (2026-09-30)
+
+- Execution report: [`2026-09-30-openai-responses-streaming-boundary-audit.md`](2026-09-30-openai-responses-streaming-boundary-audit.md)
+- Owning PRD: [`../openai-provider-prd.md`](../openai-provider-prd.md)
+- Verdict: **RECORDED FAILURE CLASSIFIED AS A BOUNDED JSON EVENT WITH AN
+  UNSUPPORTED STRING EVENT TYPE; EXACT DISCRIMINANT AND LIVE REPLAY REMAIN
+  UNAVAILABLE.** Direct loopback regressions cover one-byte and coalesced HTTP
+  chunks, CRLF, multiline data, ignored SSE controls, unterminated EOF,
+  aggregate traffic over 1 MiB, exact/over-bound events, canonical-JSON byte
+  measurement and exact-once interruption with no tool replay. `MAX_EVENT`
+  remains 1 MiB and unknown semantic events remain fail-closed. TUI/ACP user
+  prose now uses only the bounded safe message while typed redacted diagnostics
+  remain separate. Offline affected-crate tests, strict Clippy and architecture
+  passed; no live provider, candidate, release, RRC or VRO-19 action occurred.
+
+## OpenAI Responses decoder reinspection (2026-09-30)
+
+- Execution report: [`2026-09-30-openai-responses-reinspection.md`](2026-09-30-openai-responses-reinspection.md)
+- Owning PRD: [`../openai-provider-prd.md`](../openai-provider-prd.md)
+- Verdict: **BOUNDED DIAGNOSTIC REPAIR IMPLEMENTED AND FOCUSED OFFLINE TESTS
+  PASSED; NO LIVE PROVIDER OR RELEASE ACTION.** Pinned historical and current
+  first-party source retain `response.metadata`, `codex.response.metadata` and
+  `response.reasoning_text.delta`; Vesper already accepted those shapes and the
+  focused loopback regression remains green. A red-first regression proved that
+  true parser rejections still exposed only a generic safe message. The adapter
+  now reports the decoder stage, allowlisted event type or `<unrecognized>`,
+  rejected field, expected shape and applicable limit without rejected values or
+  payloads, while retaining `MalformedProtocol` and fail-closed unknown events.
+
+## RRC Linux live closeout and progress-contract audit (2026-09-30)
+
+- Execution report: [`2026-09-30-rrc-linux-live-closeout-audit.md`](2026-09-30-rrc-linux-live-closeout-audit.md)
+- Owning PRD: [`../Agent_Vesper_Release_Recovery_Controller_PRD.md`](../Agent_Vesper_Release_Recovery_Controller_PRD.md)
+- Verdict: **LINUX HOST DECISION AND THE ONE REQUIRED PTY RUN PASSED; PROGRESS
+  CONTRACT NOT READY; NO RELEASE ACTION.** The source-matched live observation
+  selected two Cargo jobs and two Rust test threads on the 20-CPU host, retained
+  the desktop memory/disk reserves, and did not create the managed target cache.
+  The exact `rrc_terminal_pty` command passed once. Independent A–H review found
+  unknown-denominator fallback and constrained-width status rendering proven,
+  but found no overall/local/CI percentages and insufficient direct retry/reopen,
+  durable-restart, and once-only conversation-projection acceptance evidence.
+  The conditional release-readiness sentence was therefore not issued.
+
+## RRC Host Resource Governor live Linux capacity observation (2026-09-30)
+
+- Execution report: [`2026-09-30-rrc-governor-live-host-observation.md`](2026-09-30-rrc-governor-live-host-observation.md)
+- Owning PRD: [`../Agent_Vesper_Release_Recovery_Controller_PRD.md`](../Agent_Vesper_Release_Recovery_Controller_PRD.md)
+- Verdict: **READ-ONLY LINUX CAPACITY OBSERVATION COMPLETE; REQUESTED TUI TEST
+  TARGET UNAVAILABLE; NO CANDIDATE OR RELEASE ACTION.** The timestamped
+  source-matched `/proc`, cgroup-v2 and filesystem observation derived `Normal`
+  pressure and the conservative two-Cargo-job/two-test-thread policy, with
+  enough observed disk headroom. The absent controller-managed target cache was
+  not created. Cargo rejected the specifically requested
+  `rrc_governed_resource_recovery` TUI target before compilation; no test was
+  substituted or written. This is neither expensive-gate admission nor
+  cross-platform, worker-process, candidate, or release-readiness proof.
+
+## RRC Host Resource Governor ACP process verification rerun (2026-09-30)
+
+- Execution report: [`2026-09-30-rrc-governor-acp-process-verification-rerun.md`](2026-09-30-rrc-governor-acp-process-verification-rerun.md)
+- Owning PRD: [`../Agent_Vesper_Release_Recovery_Controller_PRD.md`](../Agent_Vesper_Release_Recovery_Controller_PRD.md)
+- Verdict: **LINUX-LOCAL ACP PROCESS PROOF RE-RUN PASSED; NO CANDIDATE OR
+  RELEASE ACTION.** The exact controlled-Cargo ACP regression passed, as did
+  strict format/lint/whitespace checks, the 44-case `cargo xtask acceptance`
+  gate and complete `cargo xtask verify`. This confirms registered-worker
+  RUN/resource status and governor policy inheritance for version `check`,
+  locked `metadata` and the local gate without provider dispatch. It does not
+  establish non-Linux resource support, Alex-operated live acceptance or release
+  readiness.
+
+## RRC Host Resource Governor ACP process acceptance (2026-09-30)
+
+- Execution report: [`2026-09-30-rrc-governor-acp-process-acceptance.md`](2026-09-30-rrc-governor-acp-process-acceptance.md)
+- Owning PRD: [`../Agent_Vesper_Release_Recovery_Controller_PRD.md`](../Agent_Vesper_Release_Recovery_Controller_PRD.md)
+- Verdict: **LINUX-LOCAL ACP PROCESS PROOF PASSED; NO CANDIDATE OR RELEASE ACTION.**
+  An actual ACP `/release patch` and `/release status` turn exercised the registered
+  RRC worker, its live resource snapshot and a controlled local gate without any
+  provider request. The controlled Cargo wrapper observed governor-bounded jobs/test
+  threads and its managed target directory for version `check`, locked `metadata` and
+  the local gate. `cargo xtask acceptance` passed 44 exact cases. This narrow proof
+  does not establish non-Linux resource support, Alex-operated live acceptance or a
+  release.
+
+## RRC progress UX full-verification repair (2026-09-30)
+
+- Execution report: [`2026-09-30-rrc-progress-ux-full-verification.md`](2026-09-30-rrc-progress-ux-full-verification.md)
+- Owning PRD: [`../Agent_Vesper_Release_Recovery_Controller_PRD.md`](../Agent_Vesper_Release_Recovery_Controller_PRD.md)
+- Verdict: **FULL REPOSITORY VERIFICATION PASSED LOCALLY ON LINUX; NO CANDIDATE
+  OR RELEASE ACTION.** The first all-features real-PTY run exposed a narrow
+  bounded-tail marker truncation defect. The fixture retained its real stdout/stderr,
+  CSI/OSC/CR, confinement and settlement checks, but now uses compact paired labels
+  that fit in the narrow RUN row. Twenty all-feature PTY repetitions and the full
+  `cargo xtask verify` pipeline passed; the latter ended with all 43 enforced
+  acceptance cases. Explicit container/device/public-web gates remain ignored by
+  their existing contracts. Alex-operated acceptance, cross-platform resource/UX
+  evidence and release gates remain unexecuted. No candidate build, release,
+  publication, tag, push, installation, live-provider call or VRO-19 work occurred.
+
+## RRC UX validation and deterministic repair (2026-09-30)
+
+- Execution report: [`2026-09-30-rrc-ux-validation-repair.md`](2026-09-30-rrc-ux-validation-repair.md)
+- Owning PRD: [`../Agent_Vesper_Release_Recovery_Controller_PRD.md`](../Agent_Vesper_Release_Recovery_Controller_PRD.md)
+- Verdict: **LOCALLY VERIFIED ON LINUX; NO RELEASE ACTION.** Follow-up validation
+  found and corrected four missing TUI milestone-cursor test initializers, a real
+  cross-stream bounded-tail race in the PTY regression, and strict-Clippy failures
+  in the current governor/progress source. The PTY still drives the real 120×36 TUI
+  and rejects inherited stdout/stderr, raw controls, out-of-RUN writes, premature
+  `Ready` and stale telemetry; paired terminal/CR terminus markers make its bounded
+  tail assertion scheduler-order independent. Five consecutive PTY runs, strict TUI
+  all-target Clippy, harness (183 passed; 2 ignored), TUI library (268), TUI binary
+  (166), ACP library (61), and `cargo xtask acceptance` (43 exact cases) passed.
+  Alex-operated live acceptance, cross-platform UX/resource evidence and production
+  release gates remain unexecuted. No release, publication, tag, push, installation,
+  candidate build, provider call or VRO-19 work occurred.
+
+## RRC Host Resource Governor (2026-09-30)
+
+- Execution report: [`2026-09-30-rrc-host-resource-governor.md`](2026-09-30-rrc-host-resource-governor.md)
+- Owning PRD: [`../Agent_Vesper_Release_Recovery_Controller_PRD.md`](../Agent_Vesper_Release_Recovery_Controller_PRD.md)
+- Verdict: **IMPLEMENTED AND LOCALLY VERIFIED ON LINUX; NO RELEASE ACTION.**
+  RRC expensive local gates reconcile `/proc/meminfo` with the process cgroup,
+  swap, owned-tree RSS/rustc count, target-cache filesystem, reserve/headroom
+  policy and a cross-epoch exclusive lease before Cargo starts. They inherit
+  bounded Cargo/test concurrency and controller-managed target storage. Critical
+  pressure stops only the owned group and leaves `LocalVerification` resumable;
+  TUI RUN and ACP status render the same observed telemetry. `cargo xtask
+  acceptance` passed 41 exact cases, including cgroup, constrained-memory,
+  constrained-disk, and resumable-defer cases. macOS and Windows resource
+  discovery remain explicit unavailable/fail-closed extension work; this is not
+  cross-platform governor acceptance. No release, publication, tag, push,
+  installation, live-provider call, or VRO-19 work occurred.
+
+## RRC persisted progress milestones (2026-09-30)
+
+- Execution report: [`2026-09-30-rrc-progress-milestones.md`](2026-09-30-rrc-progress-milestones.md)
+- Owning PRD: [`../Agent_Vesper_Release_Recovery_Controller_PRD.md`](../Agent_Vesper_Release_Recovery_Controller_PRD.md)
+- Verdict: **IMPLEMENTED AND SCOPED LOCALLY VERIFIED; NO RELEASE ACTION.** RRC
+  persists a bounded typed phase, active gate, local/remote counts and monotonic
+  milestones as a display/read-resume projection only. The executor's registered
+  worker snapshot is shared by ACP status and TUI RUN; TUI conversation deduplicates
+  updates by persisted epoch/sequence. Focused harness/TUI regressions and the ACP
+  library suite (61 tests) passed. Full acceptance, full verification, ACP process-suite
+  rerun, cross-platform CI and
+  manual live-host acceptance remain unexecuted for this scoped UI/status change.
+  No release, publication, tag, push, installation, candidate build, VRO-19 work or
+  primary-checkout mutation occurred.
+
+## RRC terminal-ownership corrective repair (2026-09-30)
+
+- Execution report: [`2026-09-30-rrc-terminal-ownership-repair.md`](2026-09-30-rrc-terminal-ownership-repair.md)
+- Owning PRD: [`../Agent_Vesper_Release_Recovery_Controller_PRD.md`](../Agent_Vesper_Release_Recovery_Controller_PRD.md)
+- Verdict: **CORRECTIVE SOURCE REPAIR AND LOCAL PTY ACCEPTANCE PASSED; FRESH
+  NON-PUBLISHING TUI BUILT; ALEX-OPERATED LIVE ACCEPTANCE NOT RUN.** Release child
+  stdout/stderr now flow only through concurrently drained pipes, terminal-control
+  sanitization, secret redaction, bounded registered-worker telemetry, one per-frame
+  ViewModel snapshot and Ratatui. Interactive tracing no longer writes around the
+  renderer. A real 120×36 PTY regression rejects raw CSI/OSC/CR/control output,
+  out-of-RUN writes, premature Ready and stale post-settlement telemetry. Temporarily
+  restoring inherited child streams made that regression fail with exit 101; restoring
+  the repaired source made it pass. All 37 enforced acceptance cases passed. Replacement
+  TUI SHA-256: `7e5cd4f3bc5dd0d3e15473b5f9cae0a202ad8f9fc5ad413b2053652c9351e0c1`.
+  No release, publication, tag, push, installation or VRO-19 work occurred.
+
+## RRC live telemetry UX repair and rejected prerelease TUI (2026-09-30)
+
+- Historical report: [`2026-09-30-rrc-live-telemetry-ux-repair.md`](2026-09-30-rrc-live-telemetry-ux-repair.md)
+- Corrective report: [`2026-09-30-rrc-terminal-ownership-repair.md`](2026-09-30-rrc-terminal-ownership-repair.md)
+- Superseded verdict: **LIVE TERMINAL-OWNERSHIP ACCEPTANCE FAILED; CANDIDATE
+  REJECTED AND MUST NOT BE REUSED.** Its unit/runtime telemetry evidence did not prove
+  alternate-screen confinement. Raw release output corrupted the Ratatui layout and
+  active compilation coexisted with `RUN / Ready`. The corrective report owns all
+  current readiness claims and the replacement artifact.
+
+## Live RRC task supervision (2026-09-30)
+
+- Execution report: [`2026-09-30-live-rrc-task-supervision.md`](2026-09-30-live-rrc-task-supervision.md)
+- Verdict: **ACTIVE AND PROGRESSING; NOT STUCK AT OBSERVATION TIME.** The exact
+  fresh candidate owned `xtask verify` → `cargo test --workspace --all-features`
+  → a live test executable. The leaf test changed from `voice_speech_pipeline` to
+  `context_paging_composition` across an eight-second observation, while persisted
+  RRC state truthfully reported `local_verification` / `workspace-verify: running`.
+  No process was signalled and no live acceptance input was generated.
+
+## RRC task-lifecycle prerelease candidate (2026-09-30)
+
+- Build report: [`2026-09-30-rrc-task-lifecycle-prerelease-candidate.md`](2026-09-30-rrc-task-lifecycle-prerelease-candidate.md)
+- Owning PRD: [`../Agent_Vesper_Release_Recovery_Controller_PRD.md`](../Agent_Vesper_Release_Recovery_Controller_PRD.md)
+- Verdict: **FRESH RELEASE-PROFILE TUI/ACP CANDIDATES BUILT AND IDENTITY-VERIFIED;
+  LIVE ACCEPTANCE NOT RUN; NO RELEASE PERFORMED.** The candidate source is bound to
+  HEAD `01d2df045a7c30253bea8e613e9840b9f62d053b`, tracked-diff SHA-256
+  `74b79361fdf24dccee6caee531dcc9228caea9764a175a0b63b6dab46ec5faed`, and
+  status-inventory SHA-256
+  `86589fb2dc69039d87fb2b2734804eba49510127e6e2e482862932d193f7476c`.
+  TUI SHA-256 is
+  `8f15fa72e4288668043c188007188f94b1da7f29ed6d62886ecaf4409ff7fefd`;
+  ACP SHA-256 is
+  `de49869ac53de856c6d1c9025c5a0eb3d881434196ec346a1713bc25d12ae67b`.
+  The TUI differs from the rejected byte-identical candidate. No release, push,
+  publication, tag, installation, live acceptance, or VRO-19 work occurred.
+
+## RRC registered-task lifecycle repair (2026-09-30)
+
+- Execution report: [`2026-09-30-rrc-task-lifecycle-repair.md`](2026-09-30-rrc-task-lifecycle-repair.md)
+- Owning PRD: [`../Agent_Vesper_Release_Recovery_Controller_PRD.md`](../Agent_Vesper_Release_Recovery_Controller_PRD.md)
+- Verdict: **IMPLEMENTED AND LOCALLY VERIFIED; LIVE TUI ACCEPTANCE NOT RUN; NO
+  CANDIDATE BUILT; NO RELEASE PERFORMED.** Natural-language startup now returns
+  only after one repository-keyed controller task is registered with retained
+  thread ownership, cancellation and epoch/activity state. The real local-gate
+  subprocess regression proves handler-return survival, persisted Running state,
+  cancellation settlement and dirty-checkout preservation. TUI rendering derives
+  running/TODO/Run activity from that registry and rejects simultaneous Ready or
+  No active tasks labels. The previous byte-identical defective candidate is not
+  reused as evidence.
+
+## RRC stale-epoch autonomy repair and prerelease candidate (2026-09-30)
+
+- Execution report: [`2026-09-30-rrc-stale-epoch-autonomy-repair.md`](2026-09-30-rrc-stale-epoch-autonomy-repair.md)
+- Verdict: **LOCALLY VERIFIED; FRESH TUI CANDIDATE BUILT; LIVE ACCEPTANCE NOT
+  RUN; NO RELEASE PERFORMED.** Natural-language admission now resumes a matching
+  recoverable local epoch, archives and replaces an obsolete same-objective
+  prerelease epoch, and preserves unrelated or irreversible release state behind
+  one bounded human clarification. The acceptance gate passes all 34 exact cases.
+  Candidate SHA-256 is
+  `99de2f87e50abd696bac8b204539ec752f14ce9a41370ef8d44af7516c545f01`.
+
+## RRC version-mutation prerelease candidate (2026-09-30)
+
+- Build report: [`2026-09-30-rrc-version-mutation-prerelease-candidate.md`](2026-09-30-rrc-version-mutation-prerelease-candidate.md)
+- Verdict: **FRESH TUI/ACP CANDIDATES BUILT AND IDENTITY-VERIFIED; MANUAL
+  ACCEPTANCE NOT RUN; NO RELEASE PERFORMED.** The external candidate directory
+  preserves release-profile Linux x86-64 binaries built from source HEAD
+  `01d2df045a7c30253bea8e613e9840b9f62d053b` plus tracked-diff identity
+  `f8360122e4cc1e77c7d744317e3e517cd2a204d41bc9d596dbafe9db19d74ec7`.
+  TUI SHA-256 is `d22670002752b37954d60bc360f70a633d4f3c507a47f7da33effbd6762f02de`;
+  ACP SHA-256 is `02d7329cac27fca00a089386766d3e965f2020df8f135f50bb34dc68294f0b70`.
+  No release, publication, tag, push, installation, manual acceptance, or
+  VRO-19 work occurred.
+
+## RRC complete version mutation repair (2026-09-30)
+
+- Execution report: [`2026-09-30-rrc-complete-version-mutation-repair.md`](2026-09-30-rrc-complete-version-mutation-repair.md)
+- Owning PRD: [`../Agent_Vesper_Release_Recovery_Controller_PRD.md`](../Agent_Vesper_Release_Recovery_Controller_PRD.md)
+- Verdict: **IMPLEMENTED AND LOCALLY VERIFIED; NO RELEASE PERFORMED.** RRC version
+  preparation now inventories all declared workspace members, rejects stale
+  inherited package versions, internal exact path pins and Registry archive URLs
+  before writing, applies one typed manifest/Registry transaction with rollback,
+  regenerates `Cargo.lock`, and requires an all-target Cargo check plus locked
+  metadata consistency before later release gates. The direct inventory covered
+  118 exact internal pins across 27 manifests. Harness (162 passed, 2 ignored),
+  all 30 acceptance cases, architecture, clippy, formatting and diff checks passed.
+  Publication and fresh cross-platform execution remain unexecuted.
+
+## RRC source-resolution UX repair (2026-09-30)
+
+- Execution report: [`2026-09-30-rrc-source-resolution-ux-repair.md`](2026-09-30-rrc-source-resolution-ux-repair.md)
+- Current objective binding: [`release-objective-provenance.json`](release-objective-provenance.json)
+- Verdict: **IMPLEMENTED, LOCALLY VERIFIED, AND FRESH PRERELEASE TUI BUILT; NO
+  RELEASE PERFORMED.** Release source selection now resolves committed completed-
+  objective provenance before candidate trees, ignores unrelated historical
+  worktrees, and limits clarification to genuinely different variants of that same
+  objective using human labels rather than paths or SHAs. Harness (158 passed, 2
+  ignored), ACP (61 passed), TUI (267 passed), and all 30 `cargo xtask acceptance`
+  cases passed. Clean local completion commit `3f8ea52e7ee663498b401848444b689d07f09511`
+  produced TUI SHA-256 `159a269bdc7d97d8569630097e327e5394089d4a76e351b8fe6cb84d353c7b97`.
+  Manual acceptance, cross-platform CI, publication, push and installation remain
+  unexecuted.
+
+## Autonomous RRC prerelease candidate (2026-09-30)
+
+- Build report: [`2026-09-30-autonomous-rrc-prerelease-candidate.md`](2026-09-30-autonomous-rrc-prerelease-candidate.md)
+- Verdict: **CANDIDATE BUILT AND IDENTITY-VERIFIED; MANUAL ACCEPTANCE NOT RUN;
+  NO RELEASE PERFORMED.** Fresh Linux x86-64 release-profile TUI and ACP
+  binaries were built from the captured `rrc-autonomy-repair` working-tree
+  snapshot into a new external Cargo target directory, then preserved under
+  `/home/Alex/Projects/agent-vesper-prerelease-candidates/`. The report records
+  artifact hashes/versions and exact HEAD, tracked-diff, and status-inventory
+  identities. No version, tag, push, publication, installation, or manual
+  release-intent acceptance occurred.
+
+## Release-intent autonomy repair (2026-09-30)
+
+- Execution report: [`2026-09-30-release-intent-autonomy-repair.md`](2026-09-30-release-intent-autonomy-repair.md)
+- Verdict: **IMPLEMENTED AND LOCALLY VERIFIED; NO RELEASE PERFORMED.** Both production
+  hosts now intercept conservative ordinary-language release imperatives before
+  provider dispatch, resolve one clean completed source across repository worktrees,
+  preserve a dirty active checkout, persist exact provenance, and launch the existing
+  RRC from a clean detached release worktree. Ambiguity returns one specific
+  clarification before any state/worktree mutation. Harness (158 passed, 2 ignored),
+  ACP (61 passed), TUI (267 passed), the production publication-boundary test, and
+  all 30 `cargo xtask acceptance` cases passed. No version, tag, publication, push,
+  installation, credential, PRD, production `main`, or VRO-19 mutation occurred.
+  Fresh cross-platform CI and live publication were intentionally not run.
 
 ## Release Recovery Controller final completion (2026-09-29)
 
@@ -32,6 +530,7 @@
 - PR-4 through PR-7 continuation: [`release-recovery-controller-pr4-pr7-execution.md`](release-recovery-controller-pr4-pr7-execution.md)
 - Owning PRD: [`../Agent_Vesper_Release_Recovery_Controller_PRD.md`](../Agent_Vesper_Release_Recovery_Controller_PRD.md)
 - Historical verdict (superseded): **COMPLETE WITHIN THE AUTHORIZED NON-PUBLISHING SCOPE.** RRC-issued
+- Verdict: **COMPLETE WITHIN THE AUTHORIZED NON-PUBLISHING SCOPE.** RRC-issued
   typed tokens gate version, commit, push, retry, tag and publication operations;
   deterministic source failures use a permission-aware AgentLoop in an isolated
   epoch worktree and require observed mutation/focused-proof receipts before

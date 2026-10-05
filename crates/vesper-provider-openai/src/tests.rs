@@ -376,10 +376,12 @@ mod http {
                 .contains("Subscription limits do not apply")
         );
     }
-    async fn factory(
+    async fn factory_with_chunk_size(
         body: String,
         mode: auth::AuthenticationMode,
+        chunk_size: usize,
     ) -> (OpenAiFactory, tokio::task::JoinHandle<Value>) {
+        assert!(chunk_size > 0);
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}/responses", listener.local_addr().unwrap());
         let server = tokio::spawn(async move {
@@ -427,7 +429,7 @@ mod http {
                 }
                 let request = serde_json::from_slice(&bytes[start..start + length]).unwrap();
                 socket.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",body.len()).as_bytes()).await.unwrap();
-                for chunk in body.as_bytes().chunks(3) {
+                for chunk in body.as_bytes().chunks(chunk_size) {
                     if socket.write_all(chunk).await.is_err() {
                         break;
                     }
@@ -438,16 +440,29 @@ mod http {
         let factory = OpenAiFactory::for_loopback(&url, mode).unwrap();
         (factory, server)
     }
-    async fn session(
+    async fn factory(
         body: String,
         mode: auth::AuthenticationMode,
+    ) -> (OpenAiFactory, tokio::task::JoinHandle<Value>) {
+        factory_with_chunk_size(body, mode, 3).await
+    }
+    async fn session_with_chunk_size(
+        body: String,
+        mode: auth::AuthenticationMode,
+        chunk_size: usize,
     ) -> (OpenAiSession, tokio::task::JoinHandle<Value>) {
-        let (factory, server) = factory(body, mode).await;
+        let (factory, server) = factory_with_chunk_size(body, mode, chunk_size).await;
         let session = factory
             .create_session(&OpenAiFactory::default_configuration(), Arc::new(Never))
             .await
             .unwrap();
         (session, server)
+    }
+    async fn session(
+        body: String,
+        mode: auth::AuthenticationMode,
+    ) -> (OpenAiSession, tokio::task::JoinHandle<Value>) {
+        session_with_chunk_size(body, mode, 3).await
     }
     #[tokio::test]
     async fn memory_extraction_uses_native_auth_and_tool_free_json_in_both_modes() {
@@ -595,6 +610,351 @@ mod http {
         assert_eq!(terminal, Some(FinishOutcome::Stop));
         server.await.unwrap();
     }
+
+    async fn collect_stream(
+        body: String,
+        chunk_size: usize,
+    ) -> Vec<Result<ProviderStreamEvent, ProviderError>> {
+        let (session, server) =
+            session_with_chunk_size(body, auth::AuthenticationMode::ApiKey, chunk_size).await;
+        let mut stream = session
+            .start(fixture_request(), Arc::new(Never))
+            .await
+            .unwrap();
+        let mut events = Vec::new();
+        while let Some(event) = stream.next().await {
+            events.push(event);
+        }
+        server.await.unwrap();
+        events
+    }
+
+    fn split_metadata_event(data_bytes: usize) -> String {
+        let first_prefix = "{\"type\":\"response.metadata\",\"a\":\"";
+        let first_suffix = "\",";
+        let second_prefix = "\"b\":\"";
+        let second_suffix = "\"}";
+        let fixed =
+            first_prefix.len() + first_suffix.len() + second_prefix.len() + second_suffix.len() + 2; // one accumulator newline per data line
+        let padding = data_bytes.checked_sub(fixed).unwrap();
+        let first_padding = padding / 2;
+        let second_padding = padding - first_padding;
+        let first = format!("{first_prefix}{}{first_suffix}", "a".repeat(first_padding));
+        let second = format!(
+            "{second_prefix}{}{second_suffix}",
+            "b".repeat(second_padding)
+        );
+        assert_eq!(first.len() + second.len() + 2, data_bytes);
+        format!("data: {first}\ndata: {second}\n\n")
+    }
+
+    #[tokio::test]
+    async fn sse_one_byte_http_chunks_preserve_event_boundaries_and_utf8() {
+        let body = concat!(
+            "data: {\"type\":\"response.output_text.delta\",\"output_index\":0,\"delta\":\"one 世界\"}\n\n",
+            "data: {\"type\":\"response.completed\",\"response\":{}}\n\n",
+        )
+        .to_owned();
+        let events = collect_stream(body, 1).await;
+        let text = events
+            .iter()
+            .filter_map(|event| match event.as_ref().unwrap() {
+                ProviderStreamEvent::ContentDelta {
+                    part: ContentPart::Text(text),
+                    ..
+                } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<String>();
+        assert_eq!(text, "one 世界");
+        assert!(matches!(
+            events.last().unwrap().as_ref().unwrap(),
+            ProviderStreamEvent::Completed {
+                finish: FinishOutcome::Stop,
+                ..
+            }
+        ));
+    }
+
+    #[tokio::test]
+    async fn sse_multiple_events_in_one_http_chunk_remain_separate() {
+        let body = concat!(
+            "data: {\"type\":\"response.output_text.delta\",\"output_index\":0,\"delta\":\"first\"}\n\n",
+            "data: {\"type\":\"response.output_text.delta\",\"output_index\":0,\"delta\":\"second\"}\n\n",
+            "data: {\"type\":\"response.completed\",\"response\":{}}\n\n",
+        )
+        .to_owned();
+        let events = collect_stream(body.clone(), body.len()).await;
+        let deltas = events
+            .iter()
+            .filter_map(|event| match event.as_ref().unwrap() {
+                ProviderStreamEvent::ContentDelta {
+                    part: ContentPart::Text(text),
+                    ..
+                } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(deltas, ["first", "second"]);
+        assert_eq!(events.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn sse_crlf_blank_lines_reset_the_data_accumulator() {
+        let body = concat!(
+            "data: {\"type\":\"response.output_text.delta\",\"output_index\":0,\"delta\":\"left\"}\r\n\r\n",
+            "data: {\"type\":\"response.output_text.delta\",\"output_index\":0,\"delta\":\"right\"}\r\n\r\n",
+            "data: {\"type\":\"response.completed\",\"response\":{}}\r\n\r\n",
+        )
+        .to_owned();
+        let events = collect_stream(body, 7).await;
+        let text = events
+            .iter()
+            .filter_map(|event| match event.as_ref().unwrap() {
+                ProviderStreamEvent::ContentDelta {
+                    part: ContentPart::Text(text),
+                    ..
+                } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<String>();
+        assert_eq!(text, "leftright");
+        assert_eq!(events.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn sse_multiline_data_reassembles_only_the_current_json_event() {
+        let body = concat!(
+            "data: {\"type\":\n",
+            "data: \"response.output_text.delta\",\"output_index\":0,\"delta\":\"joined\"}\n\n",
+            "data: {\"type\":\"response.completed\",\"response\":{}}\n\n",
+        )
+        .to_owned();
+        let events = collect_stream(body, 5).await;
+        assert!(matches!(
+            events.first().unwrap().as_ref().unwrap(),
+            ProviderStreamEvent::ContentDelta {
+                part: ContentPart::Text(text),
+                ..
+            } if text.as_str() == "joined"
+        ));
+        assert_eq!(events.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn sse_comments_and_control_fields_never_enter_json_data() {
+        let body = concat!(
+            ": keepalive\n",
+            "id: private-id-that-must-not-enter-json\n",
+            "event: response\n",
+            "retry: 10\n",
+            "data: {\"type\":\"response.output_text.delta\",\"output_index\":0,\"delta\":\"clean\"}\n\n",
+            "data: {\"type\":\"response.completed\",\"response\":{}}\n\n",
+        )
+        .to_owned();
+        let events = collect_stream(body, 11).await;
+        assert!(matches!(
+            events.first().unwrap().as_ref().unwrap(),
+            ProviderStreamEvent::ContentDelta {
+                part: ContentPart::Text(text),
+                ..
+            } if text.as_str() == "clean"
+        ));
+        assert_eq!(events.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn sse_eof_discards_an_undelimited_event_without_decoding_or_replay() {
+        let body = "data: {\"type\":\"response.output_text.delta\",\"output_index\":0,\"delta\":\"must not escape\"}\n".to_owned();
+        let events = collect_stream(body, 13).await;
+        assert_eq!(events.len(), 1);
+        assert!(matches!(
+            events[0].as_ref().unwrap(),
+            ProviderStreamEvent::Completed {
+                finish: FinishOutcome::StreamInterrupted {
+                    cause: StreamInterruptionCause::RemoteEof,
+                    tool_call_started: false,
+                },
+                ..
+            }
+        ));
+    }
+
+    #[tokio::test]
+    async fn sse_aggregate_over_one_mib_across_events_does_not_accumulate() {
+        let delta = "x".repeat(4096);
+        let mut body = String::new();
+        for _ in 0..257 {
+            body.push_str("data: ");
+            body.push_str(
+                &json!({
+                    "type": "response.output_text.delta",
+                    "output_index": 0,
+                    "delta": delta,
+                })
+                .to_string(),
+            );
+            body.push_str("\n\n");
+        }
+        assert!(body.len() > wire::MAX_EVENT);
+        body.push_str("data: {\"type\":\"response.completed\",\"response\":{}}\n\n");
+        let chunk_size = body.len();
+        let events = collect_stream(body, chunk_size).await;
+        let mut output_bytes = 0;
+        let mut deltas = 0;
+        for event in &events {
+            match event.as_ref().unwrap() {
+                ProviderStreamEvent::ContentDelta {
+                    part: ContentPart::Text(text),
+                    ..
+                } => {
+                    deltas += 1;
+                    output_bytes += text.as_str().len();
+                }
+                ProviderStreamEvent::Completed {
+                    finish: FinishOutcome::Stop,
+                    ..
+                } => {}
+                other => panic!("unexpected event: {other:?}"),
+            }
+        }
+        assert_eq!(deltas, 257);
+        assert_eq!(output_bytes, 257 * 4096);
+        assert_eq!(events.len(), 258);
+    }
+
+    #[tokio::test]
+    async fn sse_exact_one_mib_multiline_event_is_accepted_then_cleared() {
+        let mut body = split_metadata_event(wire::MAX_EVENT);
+        body.push_str("data: {\"type\":\"response.completed\",\"response\":{}}\n\n");
+        let events = collect_stream(body, 64 * 1024).await;
+        assert_eq!(events.len(), 1);
+        assert!(matches!(
+            events[0].as_ref().unwrap(),
+            ProviderStreamEvent::Completed {
+                finish: FinishOutcome::Stop,
+                ..
+            }
+        ));
+    }
+
+    #[tokio::test]
+    async fn sse_valid_single_line_event_over_one_mib_reports_line_bound() {
+        let payload = json!({
+            "type": "response.metadata",
+            "padding": "x".repeat(wire::MAX_EVENT),
+        });
+        let body = format!("data: {payload}\n\n");
+        let events = collect_stream(body, 64 * 1024).await;
+        assert_eq!(events.len(), 1);
+        let error = events[0].as_ref().unwrap_err();
+        let diagnostic = error
+            .info
+            .diagnostics
+            .fields
+            .get("openai:protocol-rejection")
+            .unwrap();
+        assert_eq!(diagnostic["stage"], "responses-sse-line");
+        assert_eq!(diagnostic["field"], "line");
+        assert_eq!(diagnostic["observed_bytes_basis"], "sse-line");
+        assert!(diagnostic["observed_bytes"].as_u64().unwrap() > wire::MAX_EVENT as u64);
+    }
+
+    #[tokio::test]
+    async fn sse_multiline_event_over_one_mib_reports_data_bound_not_unknown_type() {
+        let body = split_metadata_event(wire::MAX_EVENT + 1);
+        let events = collect_stream(body, 64 * 1024).await;
+        assert_eq!(events.len(), 1);
+        let error = events[0].as_ref().unwrap_err();
+        let diagnostic = error
+            .info
+            .diagnostics
+            .fields
+            .get("openai:protocol-rejection")
+            .unwrap();
+        assert_eq!(diagnostic["stage"], "responses-sse-data");
+        assert_eq!(diagnostic["field"], "data");
+        assert_eq!(diagnostic["observed_bytes_basis"], "sse-data-accumulator");
+        assert_eq!(diagnostic["observed_bytes"], wire::MAX_EVENT + 1);
+        assert_ne!(diagnostic["stage"], "responses-event");
+    }
+
+    #[tokio::test]
+    async fn sse_semantic_rejection_can_report_exact_bound_after_bounded_wire_input() {
+        // serde_json canonicalizes each `1e100` as `1e+100`. This proves that the
+        // decoder's observed_bytes is the reserialized Value size, not the raw
+        // SSE accumulator size: a bounded wire event can therefore report the
+        // exact 1 MiB bound at the later semantic `type` rejection stage.
+        let prefix = r#"{"type":"future.response.event","numbers":[1e100,1e100,1e100,1e100,1e100,1e100],"padding":""#;
+        let suffix = r#""}"#;
+        // The six-byte `data: ` prefix makes this an exactly-MAX_EVENT SSE
+        // line. The six inserted `+` signs then make the parsed Value's
+        // canonical serialization exactly MAX_EVENT bytes as well.
+        let padding = wire::MAX_EVENT - 6 - prefix.len() - suffix.len();
+        let raw = format!("{prefix}{}{suffix}", "x".repeat(padding));
+        assert_eq!(raw.len(), wire::MAX_EVENT - 6);
+        assert_eq!(
+            serde_json::from_str::<Value>(&raw)
+                .unwrap()
+                .to_string()
+                .len(),
+            wire::MAX_EVENT
+        );
+
+        let events = collect_stream(format!("data: {raw}\n\n"), 64 * 1024).await;
+        assert_eq!(events.len(), 1);
+        let error = events[0].as_ref().unwrap_err();
+        let diagnostic = error
+            .info
+            .diagnostics
+            .fields
+            .get("openai:protocol-rejection")
+            .unwrap();
+        assert_eq!(diagnostic["stage"], "responses-event");
+        assert_eq!(diagnostic["event_type"], "<unrecognized>");
+        assert_eq!(diagnostic["field"], "type");
+        assert_eq!(diagnostic["observed_bytes_basis"], "canonical-json");
+        assert_eq!(diagnostic["observed_bytes"], wire::MAX_EVENT);
+        assert_eq!(diagnostic["bound"], wire::MAX_EVENT);
+    }
+
+    #[tokio::test]
+    async fn malformed_after_visible_text_and_tool_start_emits_one_terminal_without_replay() {
+        let body = concat!(
+            "data: {\"type\":\"response.output_text.delta\",\"output_index\":0,\"delta\":\"keep exactly once\"}\n\n",
+            "data: {\"type\":\"response.output_item.added\",\"output_index\":1,\"item\":{\"type\":\"function_call\",\"call_id\":\"call_1\",\"name\":\"read_file\",\"arguments\":\"\"}}\n\n",
+            "data: {malformed\n\n",
+        )
+        .to_owned();
+        let events = collect_stream(body, 17).await;
+        let mut text = Vec::new();
+        let mut starts = 0;
+        let mut calls = 0;
+        let mut terminals = 0;
+        for event in events {
+            match event.unwrap() {
+                ProviderStreamEvent::ContentDelta {
+                    part: ContentPart::Text(delta),
+                    ..
+                } => text.push(delta.as_str().to_owned()),
+                ProviderStreamEvent::ToolCallStarted { .. } => starts += 1,
+                ProviderStreamEvent::ToolCallCompleted(_) => calls += 1,
+                ProviderStreamEvent::Completed {
+                    finish:
+                        FinishOutcome::StreamInterrupted {
+                            tool_call_started: true,
+                            ..
+                        },
+                    ..
+                } => terminals += 1,
+                _ => {}
+            }
+        }
+        assert_eq!(text, ["keep exactly once"]);
+        assert_eq!(starts, 1);
+        assert_eq!(calls, 0);
+        assert_eq!(terminals, 1);
+    }
 }
 
 #[test]
@@ -607,6 +967,7 @@ fn malformed_event_diagnostics_are_bounded_and_secret_safe() {
             "payload": canary,
         }))
         .unwrap_err();
+    assert_eq!(error.info.category, ErrorCategory::MalformedProtocol);
     let diagnostic = error
         .info
         .diagnostics
@@ -616,9 +977,38 @@ fn malformed_event_diagnostics_are_bounded_and_secret_safe() {
     assert_eq!(diagnostic["stage"], "responses-event");
     assert_eq!(diagnostic["event_type"], "<unrecognized>");
     assert_eq!(diagnostic["field"], "type");
+    assert_eq!(diagnostic["expected"], "known Responses event type");
+    assert_eq!(diagnostic["observed_bytes_basis"], "canonical-json");
     assert!(diagnostic["observed_bytes"].as_u64().unwrap() > 0);
     assert_eq!(diagnostic["bound"], wire::MAX_EVENT);
+    let visible = error.info.safe_message.as_str();
+    assert_eq!(
+        visible,
+        "OpenAI returned malformed or oversized Responses data"
+    );
+    assert!(!visible.contains("responses-event"), "{visible}");
+    assert!(!visible.contains("<unrecognized>"), "{visible}");
     assert!(!format!("{error:?}").contains(canary));
+
+    let known_error = wire::Decoder::new(&fixture_request())
+        .event(json!({
+            "type": "response.output_text.delta",
+            "output_index": 0,
+        }))
+        .unwrap_err();
+    assert_eq!(
+        known_error.info.safe_message.as_str(),
+        "OpenAI returned malformed or oversized Responses data"
+    );
+    let known_diagnostic = known_error
+        .info
+        .diagnostics
+        .fields
+        .get("openai:protocol-rejection")
+        .unwrap();
+    assert_eq!(known_diagnostic["event_type"], "response.output_text.delta");
+    assert_eq!(known_diagnostic["field"], "delta");
+    assert_eq!(known_diagnostic["expected"], "bounded text delta");
 }
 
 #[test]

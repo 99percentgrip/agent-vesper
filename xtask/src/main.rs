@@ -1974,7 +1974,7 @@ struct Dependency {
 /// External coding agents and CI run the same runtime/evaluator regression gate.
 /// Exact names make a deleted, renamed, ignored, or zero-match case a failure.
 fn acceptance_verify() -> Result<(), String> {
-    let cases: &[(&str, &[&str], &str)] = &[
+    let cases: Vec<(&str, &[&str], &str)> = vec![
         (
             "vesper-agent",
             &["--test", "acceptance_policy"],
@@ -2098,7 +2098,32 @@ fn acceptance_verify() -> Result<(), String> {
         (
             "vesper-harness",
             &["--lib"],
+            "release_recovery::tests::missing_initial_workflow_runs_remain_an_active_matrix_wait",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_recovery::tests::repeated_incomplete_matrix_refreshes_do_not_spend_repair_watchdog_actions",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_executor::tests::worker_keeps_matrix_and_classification_states_controller_owned",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_executor::tests::remote_poll_wait_is_responsive_to_cancellation",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
             "release_recovery::tests::verified_repair_is_the_only_path_to_one_full_gate_retry",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_recovery::tests::verified_repair_batch_records_every_failure_family_before_retry",
         ),
         (
             "vesper-harness",
@@ -2113,12 +2138,57 @@ fn acceptance_verify() -> Result<(), String> {
         (
             "vesper-harness",
             &["--lib"],
+            "release_recovery::tests::same_recoverable_epoch_resumes_from_natural_language_without_manual_command",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_recovery::tests::obsolete_diagnosing_epoch_is_preserved_and_newer_candidate_is_admitted",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_recovery::tests::canonical_objective_supersedes_historical_active_prerelease_without_clarification",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_recovery::tests::unrelated_active_release_asks_one_human_clarification_without_mutation",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_recovery::tests::different_release_target_with_pushed_candidate_requires_clarification",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_recovery::tests::tui_natural_release_retains_registered_controller_through_local_gate_progress",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
             "release_executor::tests::production_orchestrator_reaches_publication_only_through_settled_gates",
         ),
         (
             "vesper-harness",
             &["--lib"],
             "release_executor::tests::release_worker_cancel_restart_process_acceptance",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_executor::tests::resource_governor_defer_keeps_local_epoch_resumable_without_source_failure",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_progress_tests::persisted_hierarchy_uses_typed_gate_and_job_states_without_percentages",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_executor::tests::trusted_acceptance_output_updates_only_the_active_acceptance_subtask",
         ),
         (
             "agent-vesper-tui",
@@ -2320,9 +2390,72 @@ fn acceptance_verify() -> Result<(), String> {
             &["--lib"],
             "release_executor::tests::isolated_agent_repair_verifies_and_promotes_one_patch_for_two_provider_fixtures",
         ),
+        (
+            "agent-vesper-tui",
+            &["--lib"],
+            "ui::tests::registered_release_task_replaces_ready_and_no_active_tasks",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_executor::tests::local_failure_receipt_preserves_late_stdout_cause_and_redacts_secrets",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "host_resources::tests::reported_normal_threshold_includes_swap_and_owned_tree_burst_margins",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "host_resources::tests::swap_growth_window_rejects_subsecond_rate_amplification",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "host_resources::tests::swap_growth_window_preserves_sustained_pressure_and_critical_signals",
+        ),
     ];
+    #[cfg(unix)]
+    let mut cases = cases;
+    #[cfg(target_os = "linux")]
+    cases.extend([
+        (
+            "vesper-harness",
+            &["--lib"] as &[&str],
+            "host_resources::tests::cgroup_v2_discovery_uses_the_strictest_ancestor_limit_and_its_usage",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"] as &[&str],
+            "host_resources_constrained_tests::constrained_memory_acceptance_withholds_expensive_cargo_before_spawn",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"] as &[&str],
+            "host_resources_constrained_tests::constrained_disk_acceptance_preserves_target_cache_and_withholds_gate",
+        ),
+    ]);
+    #[cfg(target_os = "linux")]
+    cases.push((
+        "agent-vesper-acp",
+        &["--test", "release_resource_governor"],
+        "acp_process_release_status_uses_governor_for_every_cargo_path",
+    ));
+    #[cfg(target_os = "linux")]
+    cases.push((
+        "agent-vesper-acp",
+        &["--test", "release_resource_governor"],
+        "acp_natural_release_inherits_session_permission_and_governor",
+    ));
+    #[cfg(unix)]
+    cases.push((
+        "agent-vesper-tui",
+        &["--test", "rrc_terminal_pty"],
+        "rrc_child_output_is_captured_sanitized_and_confined_in_a_real_pty",
+    ));
     let started = std::time::Instant::now();
-    for (package, target, name) in cases {
+    for (index, (package, target, name)) in cases.iter().enumerate() {
         let output = Command::new("cargo")
             .current_dir(repository_root())
             .args([
@@ -2352,6 +2485,15 @@ fn acceptance_verify() -> Result<(), String> {
             ));
         }
         println!("acceptance verified: {name}");
+        // This controller-owned marker is intentionally machine-readable: the
+        // RRC admits it only while the named acceptance gate owns the child.
+        // The denominator is the current fixed case list, never a renderer
+        // estimate or a count inferred from Cargo output.
+        println!(
+            "acceptance progress: {}/{} — {name}",
+            index + 1,
+            cases.len()
+        );
     }
     println!(
         "Acceptance regression gate: {} exact cases passed in {} ms. Offline fixture model cost: zero; live-model effectiveness is not measured.",

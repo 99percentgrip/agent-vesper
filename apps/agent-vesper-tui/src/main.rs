@@ -160,6 +160,19 @@ async fn main() -> io::Result<()> {
         );
         return Ok(());
     }
+    #[cfg(debug_assertions)]
+    if let Some(index) = args
+        .iter()
+        .position(|arg| arg == "--rrc-terminal-ownership-probe")
+    {
+        let program = args.get(index + 1).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "terminal probe program is missing",
+            )
+        })?;
+        return run_rrc_terminal_ownership_probe(std::path::Path::new(program));
+    }
     // Parse `--resume <id>` or `--resume=<id>`.
     let resume_id: Option<String> = args
         .iter()
@@ -180,9 +193,10 @@ async fn main() -> io::Result<()> {
     if args.iter().any(|arg| arg == "--headless") && args.iter().any(|arg| arg == "daemon") {
         return run_headless_daemon().await;
     }
-    // Tracing goes to stderr only; stdout is reserved for terminal escapes.
+    // Ratatui exclusively owns stdout and stderr for the interactive process.
+    // Background tracing must never race the alternate-screen render loop.
     let _ = tracing_subscriber::fmt()
-        .with_writer(io::stderr)
+        .with_writer(io::sink)
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .try_init();
 
@@ -530,6 +544,7 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
         session_id: runtime_session_id.as_str().to_owned(),
         telemetry: Arc::new(trajectory_recorder()),
         activity: Vec::new(),
+        release_milestone_cursor: None,
         live_trajectory: Vec::new(),
         file_changes: Vec::new(),
         show_tool_details: false,
@@ -609,6 +624,7 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
         &mut mcp_stores,
     )
     .await;
+    vesper_harness::release_executor::relinquish_release_ownership();
     let _ = leave_raw_mode();
     #[cfg(feature = "swarm")]
     {
@@ -821,6 +837,16 @@ async fn register_default_providers(
     ),
     vesper_runtime::RuntimeError,
 > {
+    #[cfg(feature = "integration-test-harness")]
+    let openai = match std::env::var("AGENT_VESPER_OPENAI_TEST_URL") {
+        Ok(endpoint) => vesper_provider_openai::OpenAiFactory::for_loopback(
+            &endpoint,
+            vesper_provider_openai::auth::AuthenticationMode::ApiKey,
+        )
+        .map_err(|_| vesper_runtime::RuntimeError::Provider)?,
+        Err(_) => vesper_provider_openai::OpenAiFactory::default(),
+    };
+    #[cfg(not(feature = "integration-test-harness"))]
     let openai = vesper_provider_openai::OpenAiFactory::default();
     let openai_policy = openai.control_policy();
     registry
@@ -848,11 +874,8 @@ async fn register_default_providers(
     };
     #[cfg(not(feature = "integration-test-harness"))]
     let xai = vesper_provider_xai::XaiFactory::default();
-    if vesper_provider::ProviderCredentialPort::credential_present(&xai).unwrap_or(false) {
-        let _ = xai
-            .available_models(Arc::new(vesper_runtime::RuntimeCancellation::new()))
-            .await;
-    }
+    // Model discovery for a non-selected provider must not run before the
+    // event loop. xAI catalog refresh stays inside the xAI startup path.
     registry
         .register_with_all(
             xai.clone(),
@@ -998,6 +1021,10 @@ struct TuiSession {
     telemetry: Arc<vesper_observability::TrajectoryRecorder>,
     /// Bounded live execution log shown while tools/provider turns run.
     activity: Vec<String>,
+    /// Highest shared RRC milestone rendered to this chat session. The RRC
+    /// sequence is persisted, so redraws and RUN-panel refreshes never repeat
+    /// chat lines while a newly opened session can show recent context once.
+    release_milestone_cursor: Option<(String, u64)>,
     /// VRO-11.4: inline tool telemetry lines rendered DIRECTLY in the main
     /// Conversation panel (not a sidebar). Populated from both the direct
     /// path's `AgentProgressEvent::ToolStarted/ToolFinished` and the ReAct
@@ -1363,6 +1390,119 @@ impl AgentProgressPort for SessionStatusPort {
     }
 }
 
+fn release_background_task(
+    workspace: &std::path::Path,
+) -> Option<agent_vesper_tui::ui::BackgroundTaskState> {
+    vesper_harness::release_executor::release_run_snapshot_for_workspace(workspace).map(|task| {
+        agent_vesper_tui::ui::BackgroundTaskState {
+            epoch_id: task.epoch_id,
+            label: task.stage,
+            detail: task.detail,
+            cancellable: task.cancellable,
+            current_gate: task.current_gate,
+            current_command: task.current_command,
+            current_child: task.current_child,
+            gate_elapsed_secs: task.gate_elapsed_secs,
+            last_activity_ago_secs: task.last_activity_ago_secs,
+            completed_gates: task.completed_gates,
+            total_gates: task.total_gates,
+            version_before: task.version_before,
+            version_after: task.version_after,
+            candidate_sha: task.candidate_sha,
+            retry_budget: task.retry_budget,
+            failure_fingerprint: task.failure_fingerprint,
+            recent_output: task.recent_output,
+            process_alive: task.process_alive,
+            progress: task.progress,
+            resource_deferred: task.resource_deferred,
+            resource_telemetry: task.resource_telemetry,
+        }
+    })
+}
+
+/// Projects the controller-owned milestone stream into the Conversation panel.
+/// The cursor is based on the persisted epoch/sequence pair, not a renderer
+/// timer, so every new milestone appears once while a fresh TUI session retains
+/// up to three recent events for context.
+fn project_release_milestones(
+    session: &mut TuiSession,
+    background_task: Option<&agent_vesper_tui::ui::BackgroundTaskState>,
+) {
+    let Some(task) = background_task else { return };
+    let milestones = &task.progress.milestones;
+    let Some(latest) = milestones.last() else {
+        return;
+    };
+    let start_after = match session.release_milestone_cursor.as_ref() {
+        Some((epoch, sequence)) if epoch == &task.epoch_id => *sequence,
+        // Seed a reopened chat with only its final three concise messages.
+        _ => latest.sequence.saturating_sub(3),
+    };
+    for milestone in milestones.iter().filter(|row| row.sequence > start_after) {
+        session
+            .state
+            .transcript
+            .push(format!("release: {}", milestone.summary));
+        session.state.status = Some(format!("Release update: {}", milestone.summary));
+    }
+    session.release_milestone_cursor = Some((task.epoch_id.clone(), latest.sequence));
+}
+
+const OPENAI_MODEL_LOADING_STATUS: &str = "Loading OpenAI account models…";
+
+fn spawn_openai_model_discovery(
+    factory: &vesper_provider_openai::OpenAiFactory,
+) -> tokio::task::JoinHandle<
+    Result<vesper_provider_openai::AvailableModels, vesper_provider::ProviderError>,
+> {
+    let factory = factory.clone();
+    tokio::spawn(async move {
+        factory
+            .available_models(Arc::new(vesper_runtime::RuntimeCancellation::new()))
+            .await
+    })
+}
+
+fn apply_openai_model_discovery(
+    session: &mut TuiSession,
+    provider_id: &ProviderId,
+    factory: &vesper_provider_openai::OpenAiFactory,
+    openai_controls: &mut Option<(
+        ProviderSuperpowerSurface,
+        vesper_provider_openai::OpenAiSuperpowerPolicy,
+    )>,
+    openai_model_notice: &mut String,
+    result: Result<vesper_provider_openai::AvailableModels, vesper_provider::ProviderError>,
+) {
+    let available = match result {
+        Ok(available) => {
+            *openai_model_notice = if available.models.is_empty() {
+                "No supported models returned for this account. Check sign-in or retry.".into()
+            } else {
+                "Select a model with ↑/↓, then press Enter.".into()
+            };
+            available
+        }
+        Err(error) => {
+            *openai_model_notice = format!(
+                "{}{}",
+                error.info.safe_message.as_str(),
+                error
+                    .http_status
+                    .map(|status| format!(" (HTTP {status})"))
+                    .unwrap_or_default()
+            );
+            vesper_provider_openai::AvailableModels::unavailable(factory.control_policy().mode)
+        }
+    };
+    session.state.status = Some(openai_model_notice.clone());
+    session.policy = Arc::new(available.policy());
+    *openai_controls = Some((
+        ProviderSuperpowerSurface::new(provider_id.clone(), factory.superpowers_for(&available)),
+        available.policy(),
+    ));
+}
+
 #[allow(clippy::too_many_arguments)] // single-call composition boundary
 async fn drive_loop(
     show_landing: bool,
@@ -1402,7 +1542,28 @@ async fn drive_loop(
     });
     let mut terminal = Terminal::new(Backend::new(stdout()))
         .map_err(|error| format!("terminal init failed: {error}"))?;
-    if let Some(provider) = auth.clone() {
+    // OpenAI credential lookup and model discovery are network/credential-store
+    // work. They must not run before the event loop, or keyboard and paste
+    // input stays unread for the whole request. Other providers keep the
+    // existing startup screen because this repair is scoped to OpenAI.
+    let mut openai_auth_task: Option<tokio::task::JoinHandle<bool>> = None;
+    let mut openai_discovery_task: Option<
+        tokio::task::JoinHandle<
+            Result<vesper_provider_openai::AvailableModels, vesper_provider::ProviderError>,
+        >,
+    > = None;
+    let mut openai_account_pending = false;
+    if provider_id.as_str() == "openai" {
+        openai_account_pending = true;
+        session.state.status = Some(OPENAI_MODEL_LOADING_STATUS.into());
+        if auth.is_some() {
+            let registry = Arc::clone(registry);
+            let id = provider_id.clone();
+            openai_auth_task = Some(tokio::spawn(async move {
+                registry.credential_present(&id).await.unwrap_or(false)
+            }));
+        }
+    } else if let Some(provider) = auth.clone() {
         ensure_provider_authenticated(
             &mut terminal,
             registry,
@@ -1417,12 +1578,16 @@ async fn drive_loop(
     let mut openai_controls = None;
     let mut xai_controls = None;
     let mut openai_model_notice = String::new();
-    let mut refresh_openai_models = provider_id.as_str() == "openai";
+    let mut refresh_openai_models = provider_id.as_str() == "openai" && openai_auth_task.is_none();
     let mut refresh_xai_models = provider_id.as_str() == "xai";
     let mut was_in_settings = false;
     let mut landing_pending = show_landing;
     let mut settings_from_landing = false;
     let mut restored_settings = false;
+    // Keystrokes and bracketed paste already sitting in the terminal are applied
+    // before the next full redraw. One event per frame missed the startup PTY
+    // budget on slow macOS runners (typed text plus paste needs three frames).
+    let mut pending_terminal_events = VecDeque::new();
     loop {
         if session.settings_menu_open
             && session.voice.snapshot().phase != agent_vesper_tui::ui::VoicePhase::Idle
@@ -1431,58 +1596,75 @@ async fn drive_loop(
             session.state.status =
                 Some("Finish or discard voice input before opening Settings.".into());
         }
+        if let Some(task) = openai_auth_task.as_ref()
+            && task.is_finished()
+        {
+            let present = openai_auth_task
+                .take()
+                .expect("finished OpenAI auth task")
+                .await
+                .unwrap_or(false);
+            if let Some(provider) = auth.clone()
+                && AuthenticationIntent::Startup.requires_screen(present)
+            {
+                let mut events = agent_vesper_tui::LiveSettingsEvents::default();
+                let mut hooks = agent_vesper_tui::AuthUiHooks::default();
+                agent_vesper_tui::run_authentication_panel(
+                    &mut terminal,
+                    registry,
+                    provider.id.as_str(),
+                    &session.state.preferences.theme,
+                    &mut events,
+                    &mut hooks,
+                    false,
+                )
+                .await
+                .map(|_| ())?;
+            }
+            refresh_openai_models = true;
+        }
         if provider_id.as_str() == "openai"
+            && openai_discovery_task.is_none()
             && (refresh_openai_models || (session.settings_menu_open && !was_in_settings))
         {
             refresh_openai_models = false;
-            terminal
-                .draw(|frame| {
-                    agent_vesper_tui::settings_menu::render_menu(
-                        frame,
-                        &["Loading account models…".into()],
-                        0,
-                        "Settings · model",
-                        "",
-                        "",
-                        &session.state.preferences.theme,
-                    )
-                })
-                .map_err(|_| "Could not redraw model loading status")?;
-            let factory = openai_factory;
-            let available = match factory
-                .available_models(Arc::new(vesper_runtime::RuntimeCancellation::new()))
+            openai_account_pending = true;
+            session.state.status = Some(OPENAI_MODEL_LOADING_STATUS.into());
+            openai_discovery_task = Some(spawn_openai_model_discovery(openai_factory));
+        }
+        if let Some(task) = openai_discovery_task.as_ref()
+            && task.is_finished()
+        {
+            match openai_discovery_task
+                .take()
+                .expect("finished OpenAI discovery task")
                 .await
             {
-                Ok(available) => {
-                    openai_model_notice = if available.models.is_empty() {
-                        "No supported models returned for this account. Check sign-in or retry."
-                            .into()
-                    } else {
-                        "Select a model with ↑/↓, then press Enter.".into()
-                    };
-                    available
-                }
-                Err(error) => {
-                    openai_model_notice = format!(
-                        "{}{}",
-                        error.info.safe_message.as_str(),
-                        error
-                            .http_status
-                            .map(|status| format!(" (HTTP {status})"))
-                            .unwrap_or_default()
+                Ok(result) => apply_openai_model_discovery(
+                    session,
+                    provider_id,
+                    openai_factory,
+                    &mut openai_controls,
+                    &mut openai_model_notice,
+                    result,
+                ),
+                Err(_) => {
+                    openai_model_notice = "OpenAI model discovery stopped unexpectedly".into();
+                    session.state.status = Some(openai_model_notice.clone());
+                    let unavailable = vesper_provider_openai::AvailableModels::unavailable(
+                        openai_factory.control_policy().mode,
                     );
-                    vesper_provider_openai::AvailableModels::unavailable(
-                        factory.control_policy().mode,
-                    )
+                    session.policy = Arc::new(unavailable.policy());
+                    openai_controls = Some((
+                        ProviderSuperpowerSurface::new(
+                            provider_id.clone(),
+                            openai_factory.superpowers_for(&unavailable),
+                        ),
+                        unavailable.policy(),
+                    ));
                 }
-            };
-            session.state.status = Some(openai_model_notice.clone());
-            session.policy = Arc::new(available.policy());
-            let descriptors = factory.superpowers_for(&available);
-            openai_controls = Some((
-                ProviderSuperpowerSurface::new(provider_id.clone(), descriptors),
-                available.policy(),
-            ));
+            }
+            openai_account_pending = false;
         }
         if provider_id.as_str() == "xai"
             && (refresh_xai_models || (session.settings_menu_open && !was_in_settings))
@@ -1633,6 +1815,7 @@ async fn drive_loop(
         // Mid-turn queued prompt (Claude Code parity): a prompt submitted
         // while a turn was running fires the moment that turn completes.
         if !session.agent_running
+            && !openai_account_pending
             && !session.queued_prompts.is_empty()
             && session.state.phase() == PlanPhase::Normal
             && let Some(text) = session.queued_prompts.pop_front()
@@ -1666,112 +1849,128 @@ async fn drive_loop(
         drain_mobile_decision(session);
         refresh_command_menu(session, registry_commands, surface);
 
-        let voice = session.voice.snapshot();
-        let model = ViewModel {
-            voice_phase: voice.phase,
-            voice_elapsed: voice.elapsed,
-            plan: session.state.plan.clone(),
-            superpowers: Some(surface.clone()),
-            overrides: session.state.overrides.clone(),
-            transcript: session.state.transcript.clone(),
-            input: session.input.clone(),
-            composer_attachments: composer_attachment_labels(
-                &session.pending_images,
-                &session.pending_text_pastes,
-            ),
-            status: if voice.phase != agent_vesper_tui::ui::VoicePhase::Idle {
-                Some(voice.detail.clone())
-            } else {
-                session.state.status.clone()
-            },
-            command_menu: session.command_matches.clone(),
-            command_menu_selected: session.command_selected,
-            agent_running: session.agent_running,
-            queued_prompt_count: session.queued_prompts.len(),
-            controls: session.state.controls.clone(),
-            panels: session.state.panels,
-            task_plan: session.state.task_plan.clone(),
-            activity: session.activity.clone(),
-            live_trajectory: session.live_trajectory.clone(),
-            file_changes: session.file_changes.clone(),
-            show_tool_details: session.show_tool_details,
-            reasoning: session.reasoning.clone(),
-            reasoning_diagnostics: session.reasoning_diagnostics.clone(),
-            live_response: session.live_response.clone(),
-            turn_elapsed_ms: session
-                .turn_started
-                .map(|started| started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64)
-                .unwrap_or(0),
-            turn_tokens: session.turn_tokens,
-            thinking_elapsed_ms: session
-                .thinking_started
-                .zip(session.thinking_last_delta)
-                .map(|(start, end)| {
-                    end.duration_since(start)
-                        .as_millis()
-                        .min(u128::from(u64::MAX)) as u64
-                }),
-            animation_frame: session
-                .turn_started
-                .map(|started| (started.elapsed().as_millis() / 250) as u64)
-                .unwrap_or(0),
-            last_report: session.last_report.clone(),
-            working_tree_title: session
-                .working_tree_view
-                .map(|view| ["Changes", "Git", "Diff", "Files", "GitHub"][view].to_owned()),
-            working_tree_lines: session.working_tree_lines.clone(),
-            preferences: session.state.preferences.clone(),
-            conversation_manual_scroll: session.state.conversation_manual_scroll,
-            pending_permission: session
-                .pending_approval
-                .as_ref()
-                .map(|request| PermissionModal {
-                    tool: request.tool.clone(),
-                    arguments: serde_json::to_string_pretty(&request.arguments)
-                        .unwrap_or_else(|_| request.arguments.to_string()),
-                    reason: request.reason.clone(),
-                    focus: session.state.permission_modal_focus,
-                }),
-        };
-        // VRO-11.9: stash the frame's view model so the click handler can
-        // inverse-map transcript rows (click-on-URL opens the browser).
-        session.last_model = Some(model.clone());
         let model_discovery_unavailable = openai_controls.is_some()
             && unavailable_model_menu(session.settings_menu_open, &session.input, surface);
-        if let Err(error) = terminal.draw(|frame| {
-            if session.settings_menu_open
-                && session.pending_approval.is_none()
-                && !session.state.preferences.screen_reader
-            {
-                if model_discovery_unavailable {
-                    agent_vesper_tui::settings_menu::render_model_unavailable(
-                        frame,
-                        &openai_model_notice,
-                        &session.state.preferences.theme,
-                    );
+        if pending_terminal_events.is_empty() {
+            let voice = session.voice.snapshot();
+            let background_task = release_background_task(&checkpoint_stores.workspace_root);
+            project_release_milestones(session, background_task.as_ref());
+            let model = ViewModel {
+                voice_phase: voice.phase,
+                voice_elapsed: voice.elapsed,
+                plan: session.state.plan.clone(),
+                superpowers: Some(surface.clone()),
+                overrides: session.state.overrides.clone(),
+                transcript: session.state.transcript.clone(),
+                input: session.input.clone(),
+                composer_attachments: composer_attachment_labels(
+                    &session.pending_images,
+                    &session.pending_text_pastes,
+                ),
+                status: if voice.phase != agent_vesper_tui::ui::VoicePhase::Idle {
+                    Some(voice.detail.clone())
                 } else {
-                    agent_vesper_tui::settings_menu::render(
-                        frame,
-                        &session.command_matches,
-                        session.command_selected,
-                        &session.input,
-                        session.state.status.as_deref(),
-                        &session.state.preferences.theme,
-                    );
+                    session.state.status.clone()
+                },
+                command_menu: session.command_matches.clone(),
+                command_menu_selected: session.command_selected,
+                agent_running: session.agent_running,
+                background_task,
+                queued_prompt_count: session.queued_prompts.len(),
+                controls: session.state.controls.clone(),
+                panels: session.state.panels,
+                task_plan: session.state.task_plan.clone(),
+                activity: session.activity.clone(),
+                live_trajectory: session.live_trajectory.clone(),
+                file_changes: session.file_changes.clone(),
+                show_tool_details: session.show_tool_details,
+                reasoning: session.reasoning.clone(),
+                reasoning_diagnostics: session.reasoning_diagnostics.clone(),
+                live_response: session.live_response.clone(),
+                turn_elapsed_ms: session
+                    .turn_started
+                    .map(|started| started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64)
+                    .unwrap_or(0),
+                turn_tokens: session.turn_tokens,
+                thinking_elapsed_ms: session
+                    .thinking_started
+                    .zip(session.thinking_last_delta)
+                    .map(|(start, end)| {
+                        end.duration_since(start)
+                            .as_millis()
+                            .min(u128::from(u64::MAX)) as u64
+                    }),
+                animation_frame: session
+                    .turn_started
+                    .map(|started| (started.elapsed().as_millis() / 250) as u64)
+                    .unwrap_or(0),
+                last_report: session.last_report.clone(),
+                working_tree_title: session
+                    .working_tree_view
+                    .map(|view| ["Changes", "Git", "Diff", "Files", "GitHub"][view].to_owned()),
+                working_tree_lines: session.working_tree_lines.clone(),
+                preferences: session.state.preferences.clone(),
+                conversation_manual_scroll: session.state.conversation_manual_scroll,
+                pending_permission: session.pending_approval.as_ref().map(|request| {
+                    PermissionModal {
+                        tool: request.tool.clone(),
+                        arguments: serde_json::to_string_pretty(&request.arguments)
+                            .unwrap_or_else(|_| request.arguments.to_string()),
+                        reason: request.reason.clone(),
+                        focus: session.state.permission_modal_focus,
+                    }
+                }),
+            };
+            // VRO-11.9: stash the frame's view model so the click handler can
+            // inverse-map transcript rows (click-on-URL opens the browser).
+            session.last_model = Some(model.clone());
+            if let Err(error) = terminal.draw(|frame| {
+                if session.settings_menu_open
+                    && session.pending_approval.is_none()
+                    && !session.state.preferences.screen_reader
+                {
+                    if model_discovery_unavailable {
+                        agent_vesper_tui::settings_menu::render_model_unavailable(
+                            frame,
+                            &openai_model_notice,
+                            &session.state.preferences.theme,
+                        );
+                    } else {
+                        agent_vesper_tui::settings_menu::render(
+                            frame,
+                            &session.command_matches,
+                            session.command_selected,
+                            &session.input,
+                            session.state.status.as_deref(),
+                            &session.state.preferences.theme,
+                        );
+                    }
+                } else {
+                    render_to_frame(frame, &model);
                 }
-            } else {
-                render_to_frame(frame, &model);
+            }) {
+                return Err(format!("redraw failed: {error}"));
             }
-        }) {
-            return Err(format!("redraw failed: {error}"));
-        }
 
-        if !event::poll(std::time::Duration::from_millis(250))
-            .map_err(|error| format!("event poll failed: {error}"))?
-        {
-            continue;
+            if !event::poll(std::time::Duration::from_millis(250))
+                .map_err(|error| format!("event poll failed: {error}"))?
+            {
+                continue;
+            }
+            loop {
+                pending_terminal_events.push_back(
+                    event::read().map_err(|error| format!("event read failed: {error}"))?,
+                );
+                if !event::poll(std::time::Duration::ZERO)
+                    .map_err(|error| format!("event poll failed: {error}"))?
+                {
+                    break;
+                }
+            }
         }
-        let mut event = event::read().map_err(|error| format!("event read failed: {error}"))?;
+        let Some(mut event) = pending_terminal_events.pop_front() else {
+            continue;
+        };
         if model_discovery_unavailable && session.pending_approval.is_none() {
             let size = terminal.size().map_err(|error| error.to_string())?;
             let viewport = ratatui::layout::Rect::new(0, 0, size.width, size.height);
@@ -2213,6 +2412,13 @@ async fn drive_loop(
                         });
                         continue;
                     }
+                }
+                if openai_account_pending
+                    && (!session.input.trim().starts_with('/')
+                        || !session.pending_text_pastes.is_empty())
+                {
+                    session.state.status = Some(OPENAI_MODEL_LOADING_STATUS.into());
+                    continue;
                 }
                 let compact_paste_display = (!session.pending_text_pastes.is_empty()).then(|| {
                     let pasted_chars = session
@@ -2818,11 +3024,45 @@ async fn drive_loop(
                 // the same way: it takes precedence over a free-text
                 // prompt (only one prompt fires per Enter).
                 let workflow_prompt = session.state.pending_prompt.take();
-                let prompt_to_spawn = workflow_prompt.or(prompt_text).or_else(|| {
+                let mut prompt_to_spawn = workflow_prompt.or(prompt_text).or_else(|| {
                     (!session.agent_running)
                         .then(|| session.queued_prompts.pop_front())
                         .flatten()
                 });
+                if !session.agent_running
+                    && let Some(objective) = prompt_to_spawn.as_deref()
+                    && !matches!(
+                        vesper_harness::release_recovery::classify_release_intent(objective),
+                        vesper_harness::release_recovery::ReleaseIntentDecision::NotRelease
+                    )
+                {
+                    let repair_factory = vesper_harness::WorkerFactory::new(
+                        Arc::clone(registry),
+                        agent.configuration().clone(),
+                    )
+                    .with_permission_port(Arc::clone(&approval_port_for_react))
+                    .with_release_policy(
+                        session.state.controls.operating_mode,
+                        session.state.controls.permission_mode,
+                    );
+                    let admission = vesper_harness::release_recovery::admit_natural_release_for_workspace_with_factory(
+                        &checkpoint_stores.workspace_root,
+                        objective,
+                        Some(repair_factory),
+                    );
+                    let body = match admission {
+                        Ok(vesper_harness::release_recovery::NaturalReleaseAdmission::Started(body))
+                        | Ok(vesper_harness::release_recovery::NaturalReleaseAdmission::Clarification(body)) => body,
+                        Ok(vesper_harness::release_recovery::NaturalReleaseAdmission::NotRelease) => String::new(),
+                        Err(error) => format!("release admission failed: {error}"),
+                    };
+                    if !body.is_empty() {
+                        session.state.status =
+                            Some(body.lines().next().unwrap_or("release").to_owned());
+                        session.state.transcript.push(body);
+                        prompt_to_spawn = None;
+                    }
+                }
                 // Mid-turn Enter steers the live direct loop at its next safe
                 // provider boundary. It does not abort the provider stream or
                 // tool currently in flight. Tab owns the separate FIFO path.
@@ -2855,17 +3095,23 @@ async fn drive_loop(
                 } else if let Some(text) = prompt_to_spawn
                     && session.state.phase() == PlanPhase::Normal
                 {
-                    spawn_submitted_prompt(
-                        agent,
-                        agent_tools,
-                        &approval_port_for_react,
-                        vro,
-                        surface,
-                        cognition_bundle,
-                        memory_stores,
-                        text,
-                        session,
-                    );
+                    if openai_account_pending {
+                        session.input = text;
+                        session.state.preferences.composer_cursor = session.input.len();
+                        session.state.status = Some(OPENAI_MODEL_LOADING_STATUS.into());
+                    } else {
+                        spawn_submitted_prompt(
+                            agent,
+                            agent_tools,
+                            &approval_port_for_react,
+                            vro,
+                            surface,
+                            cognition_bundle,
+                            memory_stores,
+                            text,
+                            session,
+                        );
+                    }
                 }
                 // Phase 8 (ADR 0011): drain any pending memory op against the
                 // durable vesper_memory stores. The op was stashed by
@@ -3287,6 +3533,52 @@ async fn ensure_provider_authenticated(
     )
     .await
     .map(|_| ())
+}
+
+#[cfg(debug_assertions)]
+fn run_rrc_terminal_ownership_probe(program: &std::path::Path) -> io::Result<()> {
+    let workspace = std::env::current_dir()?;
+    vesper_harness::release_executor::spawn_terminal_ownership_probe(&workspace, program)
+        .map_err(|error| io::Error::other(error.to_string()))?;
+    enter_raw_mode(false)?;
+    let result = (|| {
+        let mut terminal = Terminal::new(Backend::new(stdout()))?;
+        terminal.clear()?;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let mut saw_active = false;
+        let mut idle_frames = 0_u8;
+        loop {
+            let background_task = release_background_task(&workspace);
+            saw_active |= background_task.is_some();
+            if saw_active && background_task.is_none() {
+                idle_frames = idle_frames.saturating_add(1);
+            }
+            let model = ViewModel {
+                panels: agent_vesper_tui::PanelVisibility {
+                    sidebar: true,
+                    tasks: true,
+                    ..agent_vesper_tui::PanelVisibility::default()
+                },
+                background_task,
+                ..ViewModel::default()
+            };
+            terminal.draw(|frame| render_to_frame(frame, &model))?;
+            if idle_frames >= 2 {
+                break;
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "terminal ownership probe did not settle",
+                ));
+            }
+            std::thread::sleep(std::time::Duration::from_millis(40));
+        }
+        terminal.flush()?;
+        Ok(())
+    })();
+    let cleanup = leave_raw_mode();
+    result.and(cleanup)
 }
 
 fn enter_raw_mode(enable_mouse: bool) -> io::Result<()> {
@@ -8609,6 +8901,37 @@ fn cancellation_diagnostic(source: &AgentEvent) -> String {
     }
 }
 
+fn safe_agent_loop_error_message(error: &AgentLoopError) -> String {
+    match error {
+        AgentLoopError::ProviderTurn(error) => {
+            format!("provider turn failed: {}", error.info.safe_message)
+        }
+        _ => error.to_string(),
+    }
+}
+
+fn provider_failure_diagnostic(event: &AgentEvent) -> Option<String> {
+    let AgentEvent::Failed(AgentLoopError::ProviderTurn(error)) = event else {
+        return None;
+    };
+    let mut fields =
+        serde_json::to_string(&error.info.diagnostics.fields).unwrap_or_else(|_| "{}".to_owned());
+    fields = vesper_agent::vro::SecretScrubber::new().scrub(&fields);
+    const MAX_FIELDS_BYTES: usize = 4_096;
+    if fields.len() > MAX_FIELDS_BYTES {
+        let mut end = MAX_FIELDS_BYTES;
+        while end > 0 && !fields.is_char_boundary(end) {
+            end -= 1;
+        }
+        fields.truncate(end);
+        fields.push('…');
+    }
+    Some(format!(
+        "Provider diagnostic: category={:?}; retryability={:?}; visible_output_emitted={}; fields={fields}",
+        error.info.category, error.info.retryability, error.info.visible_output_emitted
+    ))
+}
+
 /// Drains a completed agent turn non-blockingly.
 ///
 /// Called at the top of every event-loop iteration. If the receiver is empty
@@ -8710,6 +9033,9 @@ fn drain_agent_event(session: &mut TuiSession) {
                     let diagnostic = cancellation_diagnostic(source);
                     push_activity(session, diagnostic.clone());
                     tracing::debug!(diagnostic = %diagnostic, "user-cancelled agent turn");
+                }
+                if let Some(diagnostic) = provider_failure_diagnostic(&event) {
+                    push_activity(session, diagnostic);
                 }
                 collapse_completed_commentary(&mut event, session);
                 build_completion_report(session, &event);
@@ -9063,7 +9389,7 @@ fn build_completion_report(session: &mut TuiSession, event: &AgentEvent) {
         }
         AgentEvent::Failed(error) => vec![
             "✗ Agent turn failed".into(),
-            format!("Error           {error}"),
+            format!("Error           {}", safe_agent_loop_error_message(error)),
             format!("Elapsed         {elapsed:.1}s"),
         ],
         AgentEvent::SideQuestion { .. } => vec![
@@ -9626,9 +9952,10 @@ fn apply_agent_event(event: AgentEvent, state: &mut SessionState) {
             state.status = Some(message);
         }
         AgentEvent::Failed(error) => {
-            // Provider errors typically mean missing credentials or a network
-            // failure; surface the message rather than wedging the UI.
-            let message = error.to_string();
+            // Provider errors surface only their bounded safe message in chat.
+            // Redacted structured diagnostics are retained separately by the
+            // session activity path before this terminal event is consumed.
+            let message = safe_agent_loop_error_message(&error);
             state.status = Some(format!("agent loop error: {message}"));
             state.transcript.push(format!("agent error: {message}"));
         }
@@ -10139,7 +10466,7 @@ impl CognitionBundle {
     ) {
         match cfg.source.as_deref() {
             Some("local") => {
-                eprintln!(
+                tracing::warn!(
                     "cognition: embedding config = local; using LocalHashEmbedder \
                      (zero-network bag-of-words). Switching chat providers will NOT \
                      trigger any migration."
@@ -10164,7 +10491,7 @@ impl CognitionBundle {
                     model.clone(),
                     cfg.api_key.clone(),
                 );
-                eprintln!(
+                tracing::warn!(
                     "cognition: embedding config = lmstudio ({model} @ {endpoint}); \
                      search mode starts in BM25-only (probe runs in background; \
                      auto-upgrades to Hybrid on first successful embed)."
@@ -10189,7 +10516,7 @@ impl CognitionBundle {
                 // first network round-trip happen lazily on first embed;
                 // search() starts in BM25Only and auto-upgrades on first
                 // success.
-                eprintln!(
+                tracing::warn!(
                     "cognition: embedding config = bigmodel; BigModelEmbeddingAdapter \
                      (JWT auth resolved per call from the ZAI credential). Search mode \
                      starts in BM25-only; auto-upgrades to Hybrid on first successful embed."
@@ -10202,7 +10529,7 @@ impl CognitionBundle {
                 )
             }
             Some(other) => {
-                eprintln!(
+                tracing::warn!(
                     "cognition: unknown embedding source '{other}' in embedding.json; \
                      falling back to LocalHashEmbedder (zero-network)."
                 );
@@ -10263,7 +10590,7 @@ impl CognitionBundle {
             Option<usize>,
             vesper_cognition::SearchMode,
         ) = if embedding_config.overrides_provider_routing() {
-            eprintln!(
+            tracing::warn!(
                 "cognition: ADR 0016 provider-independent embedding layer active \
                  (source = {:?}). Chat-provider switches will NOT change the embedder.",
                 embedding_config.source
@@ -10389,7 +10716,7 @@ impl CognitionBundle {
             };
 
             if needs_migration {
-                eprintln!(
+                tracing::warn!(
                     "cognition: embedder model changed ({} → {}); re-embedding \
                      memories and entities. This may take a few seconds for \
                      large stores...",
@@ -10399,7 +10726,7 @@ impl CognitionBundle {
                 match engine.reembed_everything() {
                     Ok((mem_count, ent_count)) => {
                         if mem_count > 0 || ent_count > 0 {
-                            eprintln!(
+                            tracing::warn!(
                                 "cognition: re-embedded {mem_count} memor{} and {ent_count} \
                                  entit{} to model \"{}\" ({active_dim}-d).",
                                 if mem_count == 1 { "y" } else { "ies" },
@@ -10415,7 +10742,7 @@ impl CognitionBundle {
                         search_mode_hint = vesper_cognition::SearchMode::Hybrid;
                     }
                     Err(err) => {
-                        eprintln!("cognition: re-embed migration failed: {err}");
+                        tracing::warn!("cognition: re-embed migration failed: {err}");
                         // ADR 0016: migration failed → embedder likely
                         // unreachable. Force BM25Only so the session stays
                         // usable instead of returning Err every turn.
@@ -10442,7 +10769,7 @@ impl CognitionBundle {
                 match engine.reembed_everything() {
                     Ok(_) => engine.set_search_mode(vesper_cognition::SearchMode::Hybrid),
                     Err(error) => {
-                        eprintln!("cognition: global-memory re-embed failed: {error}");
+                        tracing::warn!("cognition: global-memory re-embed failed: {error}");
                         engine.set_search_mode(vesper_cognition::SearchMode::BM25Only);
                     }
                 }
@@ -10509,7 +10836,7 @@ impl CognitionBundle {
                         vesper_cognition::EmbedAction::Search,
                     ) {
                         Ok(_) => {
-                            eprintln!(
+                            tracing::warn!(
                                 "cognition: background probe succeeded — search mode \
                                  upgraded to Hybrid."
                             );
@@ -10518,7 +10845,7 @@ impl CognitionBundle {
                             }
                         }
                         Err(err) => {
-                            eprintln!(
+                            tracing::warn!(
                                 "cognition: background probe failed ({err}); staying in \
                                  BM25-only mode. Search will auto-upgrade to Hybrid on \
                                  the first successful embed call."
@@ -10551,7 +10878,7 @@ impl CognitionBundle {
         match active_provider {
             "lmstudio" => match LmStudioEmbedder::from_persisted_settings() {
                 Some(adapter) => {
-                    eprintln!(
+                    tracing::warn!(
                         "cognition: LM Studio embedding endpoint configured at {}. \
                          Probe runs in the background; search starts in BM25-only and \
                          auto-upgrades to Hybrid when the endpoint responds.",
@@ -10561,7 +10888,7 @@ impl CognitionBundle {
                     (arc, None)
                 }
                 None => {
-                    eprintln!(
+                    tracing::warn!(
                         "cognition: no LM Studio settings; using LocalHashEmbedder \
                          (zero-network bag-of-words). Run /lmstudio or /provider to \
                          configure a neural embedder. To make embeddings provider-\
@@ -15395,7 +15722,7 @@ fn apply_embedding_set(
                     vesper_cognition::EmbedAction::Search,
                 ) {
                     Ok(_) => {
-                        eprintln!(
+                        tracing::warn!(
                             "cognition: hot-reload probe succeeded — search mode upgraded to Hybrid."
                         );
                         for engine in &engines {
@@ -15403,7 +15730,7 @@ fn apply_embedding_set(
                         }
                     }
                     Err(err) => {
-                        eprintln!(
+                        tracing::warn!(
                             "cognition: hot-reload probe failed ({err}); staying in BM25-only."
                         );
                     }
@@ -15445,7 +15772,7 @@ fn cognitive_context_for_prompt(bundle: &CognitionBundle, prompt: &str) -> Optio
         };
         match engine.search(request) {
             Ok(found) => hits.extend(found.into_iter().map(|hit| (label, hit))),
-            Err(error) => eprintln!(
+            Err(error) => tracing::warn!(
                 "cognition: {label} auto-recall skipped this turn — search failed: {error}"
             ),
         }
@@ -17727,6 +18054,64 @@ mod tests {
     }
 
     #[test]
+    fn provider_failure_keeps_safe_text_separate_from_structured_diagnostics() {
+        const SECRET_CANARY: &str =
+            "Bearer sk-live-test-SecretCanary0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        let mut session = fresh_tui_session_for_trajectory_tests();
+        let mut error = provider_error(vesper_domain::ErrorCategory::MalformedProtocol);
+        error.info.safe_message = vesper_domain::SafeMessage::new(
+            "OpenAI returned malformed or oversized Responses data",
+        )
+        .unwrap();
+        error
+            .info
+            .diagnostics
+            .fields
+            .insert(
+                "openai:protocol-rejection",
+                serde_json::json!({
+                    "stage": "responses-event",
+                    "event_type": "<unrecognized>",
+                    "field": "type",
+                    "observed_bytes": 1_048_576,
+                    "bound": 1_048_576,
+                    "upstream_preview": SECRET_CANARY,
+                }),
+            )
+            .unwrap();
+        drain_terminal_event(
+            &mut session,
+            AgentEvent::Failed(AgentLoopError::ProviderTurn(error)),
+            false,
+        );
+
+        let transcript = session.state.transcript.join("\n");
+        assert!(
+            transcript.contains("OpenAI returned malformed or oversized Responses data"),
+            "{transcript}"
+        );
+        assert!(!transcript.contains("ProviderError"), "{transcript}");
+        assert!(!transcript.contains("responses-event"), "{transcript}");
+        assert!(!transcript.contains("<unrecognized>"), "{transcript}");
+        assert!(!transcript.contains(SECRET_CANARY), "{transcript}");
+        let report = session.last_report.join("\n");
+        assert!(!report.contains("ProviderError"), "{report}");
+        assert!(!report.contains("responses-event"), "{report}");
+        assert!(!report.contains(SECRET_CANARY), "{report}");
+        let activity = session.activity.join("\n");
+        assert!(!activity.contains(SECRET_CANARY), "{activity}");
+        assert!(activity.contains("[REDACTED:BEARER_TOKEN]"), "{activity}");
+        assert!(
+            session
+                .activity
+                .iter()
+                .any(|line| line.contains("responses-event") && line.contains("<unrecognized>")),
+            "structured provider diagnostic was not retained separately: {:?}",
+            session.activity
+        );
+    }
+
+    #[test]
     fn provider_failure_and_timeout_never_become_user_cancellation() {
         let mut failure = fresh_tui_session_for_trajectory_tests();
         drain_terminal_event(
@@ -17867,6 +18252,7 @@ mod tests {
             session_id: "test-session".into(),
             telemetry: Arc::new(vesper_observability::TrajectoryRecorder::disabled()),
             activity: Vec::new(),
+            release_milestone_cursor: None,
             live_trajectory: Vec::new(),
             file_changes: Vec::new(),
             show_tool_details: false,
@@ -17945,6 +18331,7 @@ mod tests {
             session_id: "test-session".into(),
             telemetry: Arc::new(vesper_observability::TrajectoryRecorder::disabled()),
             activity: Vec::new(),
+            release_milestone_cursor: None,
             live_trajectory: Vec::new(),
             file_changes: Vec::new(),
             show_tool_details: false,
@@ -18021,6 +18408,7 @@ mod tests {
             session_id: "test-session".into(),
             telemetry: Arc::new(vesper_observability::TrajectoryRecorder::disabled()),
             activity: Vec::new(),
+            release_milestone_cursor: None,
             live_trajectory: Vec::new(),
             file_changes: Vec::new(),
             show_tool_details: false,
@@ -19147,6 +19535,7 @@ mod tests {
             session_id: "test".to_owned(),
             telemetry: Arc::new(trajectory_recorder()),
             activity: Vec::new(),
+            release_milestone_cursor: None,
             live_trajectory: Vec::new(),
             file_changes: Vec::new(),
             show_tool_details: false,

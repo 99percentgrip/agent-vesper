@@ -6,6 +6,13 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `2026-10-06-rrc-parity-production-release.md` owns reconciliation of the frozen
+  parity candidate with newer production, current-source verification, exact-SHA
+  prerequisite/publication receipts, immutable release closeout and the in-place
+  Registry update. Earlier candidate reports retain their frozen source scope.
+  Its preparation evidence JSON and archive bind intermediate local red/green
+  receipts; final exact-source and publication evidence belongs in the report.
+
 - `release-recovery-controller-parity-continuation.md` owns continued binding
   acceptance: publishing prerequisites, last-green lane evidence, measured
   worker time, combined isolated repair promotion, real TUI/ACP observation and
@@ -28,6 +35,170 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
   report retains its original, narrower host-only acceptance scope. Its `release-recovery-controller-deep-debug-source.json` and
   `release-recovery-controller-deep-debug-receipts.tar.gz` companions bind dirty source and exact logs.
   This report supersedes earlier completion claims without discarding receipts.
+- `2026-10-04-rrc-prd-audit-ownership-repair.md` owns the full-PRD audit
+  classification, dead-owner liveness, visible version preparation, unselected
+  provider startup isolation, and the no-release boundary.
+
+- `2026-10-04-openai-tui-startup-responsiveness.md` owns the OpenAI TUI
+  startup input freeze, background credential/model discovery, stalled
+  loopback regression, and the explicit no-release/no-broad-verification
+  boundary.
+
+- `2026-10-03-rrc-explicit-version-target-repair.md` owns the typed
+  bump-or-exact-version selector, stable-version normalization and fail-closed
+  validation, immediate target status, equal-target no-op validation/candidate
+  reuse, same-target canonical-descendant reconciliation with full historical
+  candidate/CI archival, final-audit closure of the mismatched-workspace descendant
+  bypass, pushed-tag/publication refusal, frozen slash-oracle preservation,
+  acceptance-inventory repair, requested local verification receipts, and the
+  explicit no-release boundary.
+
+- `2026-10-03-rrc-pty-stream-neutral-test-oracle-repair.md` owns the
+  residual stdout-only bounded-tail oracle diagnosis, paired stream-neutral
+  marker repair, ten independent real-PTY receipts, focused checks, and the
+  explicit no-production-change/no-full-verify boundary.
+
+- `2026-10-02-rrc-typed-local-settlement-acceptance-repair.md` owns the
+  cancellation-fixture diagnosis, stale acceptance correction, explicit genuine
+  local-failure/watchdog/cancellation regressions, focused receipts, and the
+  broad-acceptance-not-rerun boundary.
+
+- `2026-10-02-rrc-liveness-watchdog-repair.md` owns the clean-base RRC
+  progress-watchdog repair: progress-only local/repair stagnation, operation-scoped
+  external-request deadlines, cancellable GitHub/publication/health commands, fresh
+  remote-matrix timing, repair-agent heartbeat, persisted shared liveness, focused
+  local regressions, and the explicit
+  no-release/no-broad-verification boundary.
+
+- `2026-10-02-v0.24.5-rrc-deterministic-governor-repair.md` owns the fifth
+  immutable failed v0.24.5 candidate matrix, correction of the earlier incomplete
+  Linux diagnosis, deterministic integration-only governor seam, red-first
+  regression and complete local acceptance/canonical/MSRV receipts, plus the
+  pending fresh exact-SHA matrix. Tagging and publication remain outside scope.
+
+- `2026-10-01-v0.24.5-rrc-autonomy-and-ci-repair.md` owns the historical first four
+  immutable failed v0.24.5 candidate matrices, active missing/partial polling,
+  responsive remote cancellation, transactional complete-matrix multi-family
+  repair, all four rounds of hosted failure-family corrections, complete local
+  canonical/MSRV/runtime gates, and the pending fresh exact-SHA receipts at that
+  checkpoint. Its fourth-repair diagnosis is superseded by the 2026-10-02
+  continuation; tagging and publication remained explicitly outside that work unit.
+
+- `2026-10-01-rrc-resource-defer-zram-repair.md` owns the current-risk Linux
+  pressure and zram physical-backing correction, persisted typed resource defer,
+  passive bounded auto-recovery, truthful deferred TUI projection, complete local
+  verification, implementation commit, fresh checksum-preserved Linux TUI
+  candidate, and explicit no-release/no-install boundary.
+
+- `2026-10-01-rrc-active-epoch-final-audit.md` owns the red-first correction
+  proving both known version transitions in human clarification, the direct
+  test-only lifecycle policy injection, retained production governor coverage,
+  complete verification, later governor-admitted locked and release-profile TUI
+  builds, the preserved final `0.24.4` Linux acceptance artifact, and explicit
+  no-release boundary.
+
+- `2026-10-01-rrc-active-epoch-integration-repair.md` owns the live-ledger
+  forensic identity, canonical historical-epoch supersession repair, durable
+  objective/variant lineage, irreversible-state clarification contract,
+  mutation proof, 45-case acceptance receipt and explicit no-release boundary.
+
+- `2026-10-01-rrc-provenance-ambiguity-repair.md` owns the regression-first
+  canonical-source/equivalent-implementation repair, real retained-worktree
+  resolution probe, governed complete verify and explicit acceptance receipts,
+  exact `0.24.4` ancestry/version boundary, and current replacement TUI for
+  Alex's real RRC test.
+
+- `2026-10-01-corrected-v0.24.4-release-preparation.md` owns the
+  correction that excludes the invalid manual `3.3.1` mutation, proves the
+  complete `0.24.4` version graph, records governor-controlled verify/acceptance/
+  build receipts, and identifies the historical corrected TUI now superseded for
+  manual acceptance by the provenance-fixed candidate.
+
+- `2026-09-21-tool-output-stall-bug-and-recovery.md` owns the historical
+  recurring pipe-backpressure incidents, identity-pinned operational recoveries,
+  and original acceptance requirements. Its current heading records the later
+  provider-neutral repair and v0.23.6 release; do not restore superseded OPEN text.
+
+- `2026-09-29-red-main-ci-repair.md` owns the follow-up diagnosis and repair
+  for documentation-closeout run `36534993336`: Unix late-fork process-group
+  cleanup, macOS inherited nonblocking LM Studio fixture sockets, local stress
+  evidence, exact delivery-time GitHub receipts, and the unchanged release boundary.
+
+- `2026-09-30-rrc-progress-milestones.md` owns the persisted typed RRC phase,
+  local/remote gate counts and bounded sequence-numbered milestone projection for
+  TUI chat/RUN and ACP status, its regression receipts and explicit no-release boundary.
+- `2026-09-30-rrc-host-resource-governor.md` owns RRC's Linux host/cgroup
+  discovery, RAM/swap reserve policy, Cargo/test concurrency inheritance,
+  exclusive compiler-gate lease, managed target-cache/disk admission, owned
+  process-tree pressure stop, TUI/ACP resource telemetry, constrained-host
+  regressions, and its explicit no-release boundary.
+- `2026-09-30-rrc-governor-acp-process-acceptance.md` owns the Linux ACP
+  process proof that registered-worker RUN/resource status and every
+  version-preparation/local-gate Cargo path use the controller-owned governor;
+  it records the integration-only policy seam and explicit no-release boundary.
+- `2026-09-30-rrc-governor-acp-process-verification-rerun.md` owns the
+  independent current-worktree rerun of that ACP process proof, the 44-case
+  acceptance receipt and complete `cargo xtask verify` receipt; it records the
+  unchanged Linux-local/no-release boundary.
+- `2026-09-30-rrc-governor-live-host-observation.md` owns the timestamped,
+  read-only Linux host-capacity and default-policy calculation, the unavailable
+  requested TUI test-target receipt, and the explicit no-governor-construction,
+  no-rebuild/no-release boundary.
+- `2026-09-30-rrc-terminal-ownership-repair.md` owns the corrected exclusive
+  terminal-writer contract, piped/sanitized release-stream path, real PTY and
+  mutation regression receipts, supersession of the rejected live candidate,
+  fresh replacement TUI identity and explicit non-release boundary.
+- `2026-09-30-rrc-ux-validation-repair.md` owns the follow-up red-to-green
+  validation of the current RRC terminal/progress UX: deterministic paired-stream
+  PTY tail evidence, complete TUI test-session initialization, strict-Clippy
+  remediation, five-repeat PTY receipt, and the 43-case local acceptance result.
+- `2026-09-30-rrc-progress-ux-full-verification.md` owns the later all-features
+  real-PTY bounded-tail repair, its retained red receipt, twenty-repeat stability
+  result, complete `cargo xtask verify` receipt, and explicit non-candidate/
+  non-release boundary.
+- `2026-09-30-rrc-live-telemetry-ux-repair.md` owns the earlier registry-sourced live
+  controller/gate/child/output projection, bounded retention, ticking TUI regression,
+  verification receipts, fresh prerelease TUI identity and non-publishing boundary.
+- `2026-09-30-live-rrc-task-supervision.md` owns the read-only live process-tree,
+  child-turnover and persisted-gate observation used to classify the exact candidate
+  controller as actively progressing rather than stuck.
+- `2026-09-30-rrc-task-lifecycle-prerelease-candidate.md` owns the fresh
+  release-profile TUI/ACP artifact paths and hashes, exact repaired-source identity,
+  required-behavior inclusion trace and explicit no-live-test/no-release boundary.
+- `2026-09-30-rrc-task-lifecycle-repair.md` owns the retained registered-worker
+  repair, real local-gate subprocess/cancellation regression, truthful TUI activity
+  projection, verification receipts and explicit no-build/no-release boundary.
+- `2026-09-30-rrc-stale-epoch-autonomy-repair.md` owns the persisted-epoch
+  admission classification, safe-stage auto-resume, obsolete-record archival,
+  unrelated/irreversible clarification regressions, 34-case acceptance receipt,
+  fresh TUI identity and explicit manual-acceptance-not-run/no-release boundary.
+- `2026-09-30-rrc-version-mutation-prerelease-candidate.md` owns the fresh
+  release-profile TUI/ACP artifact identities, sealed repaired-source hashes,
+  included-behavior trace and explicit manual-acceptance-not-run/no-release boundary.
+- `2026-09-30-rrc-complete-version-mutation-repair.md` owns the fail-closed
+  workspace-version inventory, complete typed manifest/Registry mutation,
+  lockfile regeneration, all-target consistency check, rollback regressions and
+  explicit no-release boundary.
+- `2026-09-30-rrc-source-resolution-ux-repair.md` owns the regression-first
+  objective-provenance source-selection repair, unrelated-worktree exclusion,
+  human-labelled same-objective ambiguity, full local receipts, clean completion
+  commit and fresh prerelease TUI identity.
+- `release-objective-provenance.json` is the versioned current completed-objective
+  binding consumed from a clean candidate's committed HEAD. Keep labels bounded and
+  user-facing, completion time RFC 3339, and evidence paths within this directory.
+  `variant_id` supplies stable variant identity, `canonical_release_source` binds the
+  final integrated source against retained historical worktrees, and `supersedes`
+  may name older variant/objective identities. Canonical status is reserved for the
+  one complete corrected integration, not intermediate repair branches.
+- `2026-09-30-autonomous-rrc-prerelease-candidate.md` owns the fresh
+  release-profile TUI/ACP candidate identities, build-input provenance hashes,
+  external persistent artifact directory, included-behavior source trace, and
+  the explicit manual-acceptance-not-run/no-release boundary.
+- `2026-09-30-release-intent-autonomy-repair.md` owns the regression-first
+  ordinary-language release admission repair: shared TUI/ACP interception,
+  deterministic completed-worktree provenance, dirty-checkout preservation,
+  pre-mutation ambiguity refusal, isolated release workspace, persisted provenance,
+  host/harness receipts and the explicit no-release/no-PRD boundary.
 - `release-recovery-controller-pr1-pr3-execution.md` owns the first RRC
   implementation receipt: typed/persisted core, GitHub evidence port and CLI
   adapter, retry/outage guards, shared TUI/ACP commands, local verification,
@@ -49,6 +220,7 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
   operating-system and verification-progress samples, their explicit
   task-attribution/progress-proof limits, the associated shared-tree snapshot,
   and the user's authorized graceful termination of that exact process tree.
+  boundary and final RRC completion verdict.
 
 - `2026-09-29-active-agent-supervision-0845z.md` owns the read-only process,
   child-command, exact-commit workflow and implementation-state check showing
@@ -68,6 +240,19 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 - `2026-09-28-openai-skill-routing-repair.md` owns the interrupted-turn diagnosis,
   red-to-green shared skill parser and native OpenAI subscription-event repair,
   TUI/ACP production-path receipts, candidate identities and retained live/cross-platform gaps.
+- `2026-09-30-openai-responses-reinspection.md` owns the bounded reinspection of
+  the historical repair against pinned and current first-party source, the
+  expected-shape structured-diagnostic correction, focused test receipts and
+  unchanged no-live-provider/no-release boundary.
+- `2026-09-30-openai-responses-streaming-boundary-audit.md` owns the follow-up
+  root-cause-class determination, framing/chunking/CRLF/multiline/EOF/boundary
+  and no-replay matrix, canonical-JSON byte-basis clarification, both-host safe
+  failure separation, affected-crate receipts and explicit no-live/no-release
+  boundary.
+- `2026-09-30-openai-responses-live-prerelease-candidate.md` owns the clean
+  isolated debug source/binary identity, secret-canary TUI surface proof,
+  direct OpenAI runtime receipt, retained failed-attempt deviations and explicit
+  no-release/no-install boundary.
 - `2026-09-29-user-cancellation-presentation-repair.md` owns the token-plus-terminal
   cancellation classification, benign TUI/ACP presentation, partial/action retention,
   red-to-green host receipts and fresh local TUI candidate identity.

@@ -959,6 +959,50 @@ impl AcpHarnessEngine {
         }
         let config = self.turn_configuration(&request).await;
         let root = workspace_root_path(&request.workspace_roots);
+        if !workflow_replaced
+            && !matches!(
+                vesper_harness::release_recovery::classify_release_intent(&text),
+                vesper_harness::release_recovery::ReleaseIntentDecision::NotRelease
+            )
+        {
+            let permission: Arc<dyn vesper_agent::PermissionPort> = request
+                .permission_requester
+                .as_ref()
+                .map(|requester| {
+                    Arc::new(AcpHarnessPermissionPort {
+                        requester: Arc::clone(requester),
+                        session_id: request.session_id.clone(),
+                    }) as Arc<dyn vesper_agent::PermissionPort>
+                })
+                .unwrap_or_else(|| Arc::new(vesper_agent::DenyPermissionPort));
+            let repair_factory = WorkerFactory::new(Arc::clone(&self.registry), config.clone())
+                .with_permission_port(permission)
+                .with_release_policy(request.operating_mode, request.permission_mode);
+            let release_root = root.clone();
+            let objective = text.clone();
+            let admission = tokio::task::spawn_blocking(move || {
+                vesper_harness::release_recovery::admit_natural_release_for_workspace_with_factory(
+                    &release_root,
+                    &objective,
+                    Some(repair_factory),
+                )
+            })
+            .await
+            .map_err(|error| format!("release admission executor panicked: {error}"))?
+            .map_err(|error| format!("release admission failed: {error}"))?;
+            match admission {
+                vesper_harness::release_recovery::NaturalReleaseAdmission::Started(body)
+                | vesper_harness::release_recovery::NaturalReleaseAdmission::Clarification(body) => {
+                    return Ok(AcpPromptResult {
+                        text: body,
+                        cancelled: false,
+                        persist_turn: false,
+                        history_replacement: None,
+                    });
+                }
+                vesper_harness::release_recovery::NaturalReleaseAdmission::NotRelease => {}
+            }
+        }
         let mut acceptance = self.acceptance_session(&request.session_id);
         // Enrollment-visibility PRD D1: route acceptance reviewer stage
         // lines through the turn's progress port so the client sees live
@@ -2087,7 +2131,7 @@ fn safe_agent_loop_error(error: &vesper_agent::AgentLoopError) -> String {
     match error {
         AgentLoopError::ProviderSetup(_) => "provider session setup failed".to_owned(),
         AgentLoopError::ProviderTurn(error) => {
-            format!("provider turn failed: {:?}", error.info.category)
+            format!("provider turn failed: {}", error.info.safe_message)
         }
         AgentLoopError::StreamWithoutTerminal => {
             "provider stream ended without a terminal response".to_owned()
@@ -3315,7 +3359,9 @@ pub async fn run_multi_provider(initial: &str) -> Result<(), ()> {
     } else {
         adapter
     };
-    adapter.run_stdio().await.map_err(|_| ())
+    let result = adapter.run_stdio().await.map_err(|_| ());
+    vesper_harness::release_executor::relinquish_release_ownership();
+    result
 }
 
 /// Projects the LM Studio factory's cached native catalog into the footer
@@ -3730,6 +3776,12 @@ mod tests {
                 "secret-bearing detector details".to_owned(),
             )),
             "repeated tool loop detected; the turn was stopped safely"
+        );
+        assert_eq!(
+            safe_agent_loop_error(&vesper_agent::AgentLoopError::ProviderTurn(
+                classified_provider_error(vesper_domain::ErrorCategory::MalformedProtocol),
+            )),
+            "provider turn failed: classified test error"
         );
     }
 

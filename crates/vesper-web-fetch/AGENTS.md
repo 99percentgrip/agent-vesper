@@ -19,7 +19,10 @@ implementation that provisions a backend demanding
 - `Dockerfile` and `browser-pipe.sh` — immutable base/build image pins and
   exact headless package version available for both amd64/arm64 in Debian
   security; refresh a removed pin only with primary package evidence and both
-  native image acceptance gates. fd 3/4 mapping uses a fixed shell script,
+  native image acceptance gates. The runtime package set resolves from a fixed
+  Debian snapshot timestamp; its APT-signature-verified HTTP bootstrap is required
+  because the pinned slim base intentionally has no CA bundle before the same
+  transaction installs `ca-certificates`. fd 3/4 mapping uses a fixed shell script,
   never a TCP debugging listener or a new Rust unsafe boundary.
   The image also builds `vesper-setpriv` from checksum-pinned util-linux
   2.41.6 for the shared swarm scope's Landlock confinement; its complete

@@ -1105,6 +1105,11 @@ mod selected_model_wire_tests {
                     Err(error) => panic!("fixture accept failed: {error}"),
                 }
             };
+            // macOS inherits O_NONBLOCK from this listener onto the accepted
+            // socket. Restore blocking reads before applying the bounded read
+            // timeout so a briefly delayed request body cannot spuriously
+            // fail with WouldBlock.
+            stream.set_nonblocking(false).unwrap();
             stream
                 .set_read_timeout(Some(std::time::Duration::from_secs(10)))
                 .unwrap();

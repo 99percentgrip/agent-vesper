@@ -262,14 +262,22 @@ fn run_fixture() {
         wait_for(|| root.join("player-draining").exists()),
         "first player must reach drain"
     );
-    let overlapped = wait_for(|| root.join("synth-2").exists());
+    // The fixture's player is now blocked in its 15-second drain wait. Give a
+    // loaded macOS runner enough time to schedule the synthesis lane, while
+    // still requiring the second synthesis to begin during active playback.
+    let synthesis_overlap_deadline = Instant::now() + Duration::from_secs(12);
+    let mut overlapped = root.join("synth-2").exists();
+    while !overlapped && Instant::now() < synthesis_overlap_deadline {
+        std::thread::sleep(Duration::from_millis(10));
+        overlapped = root.join("synth-2").exists();
+    }
     // Synthesis may now run up to the bounded two-unit bank ahead
     // (boundary continuity repair), so a third synth marker may appear;
     // the enforced bounds are: banked audio never starts a player
     // (player-starts stays 1 below) and stale generations never speak.
     assert!(
         overlapped,
-        "second synthesis must start before first player drains"
+        "second synthesis must start while the first player is active"
     );
     let start = Instant::now();
     worker.stop();
@@ -352,8 +360,10 @@ fn run_fixture() {
     // whole sentence (the espeak fixture models 6 s for >120-char pieces);
     // Stop still wins for the PLAYER immediately — settle here only waits
     // out the single in-flight inference, bounded by the fixture's own
-    // modeled latency plus margin.
-    let settle = Instant::now() + Duration::from_secs(12);
+    // modeled latency plus a bounded runner-scheduling margin. Keep this
+    // independent of the sub-second Stop responsiveness assertion above:
+    // settlement observes non-preemptible synthesis, not player shutdown.
+    let settle = Instant::now() + Duration::from_secs(30);
     while worker.is_busy() && Instant::now() < settle {
         std::thread::sleep(Duration::from_millis(10));
     }
@@ -383,9 +393,10 @@ fn run_fixture() {
     let mut done = Vec::new();
     // Sentence-level successors: the successor inference spans one whole
     // sentence; the fixture models 6 s for >120-char pieces. Bounded wait
-    // consistent with that modeled latency (unchanged invariant: settle
-    // exactly once; only the inference length changed).
-    let sentence_deadline = Instant::now() + Duration::from_secs(12);
+    // consistent with that modeled latency plus bounded CI scheduling
+    // margin (unchanged invariant: settle exactly once; only the wait
+    // allowance changes).
+    let sentence_deadline = Instant::now() + Duration::from_secs(30);
     let mut settled = false;
     while Instant::now() < sentence_deadline && !settled {
         for outcome in worker.drain() {

@@ -100,17 +100,17 @@ impl ReleaseExecutionPort for RepairExecutor {
     fn prepare_version_bump(
         &self,
         _: &str,
-        _: ReleaseMutationAdmission,
+        _: &ReleaseMutationAdmission,
     ) -> Result<VersionBumpReceipt, RrcError> {
         unreachable!()
     }
     fn run_local_gate(&self, _: &LocalGateRecord) -> Result<String, RrcError> {
         unreachable!()
     }
-    fn commit_candidate(&self, _: &str, _: ReleaseMutationAdmission) -> Result<String, RrcError> {
+    fn commit_candidate(&self, _: &str, _: &ReleaseMutationAdmission) -> Result<String, RrcError> {
         unreachable!()
     }
-    fn push_candidate(&self, admission: ReleaseMutationAdmission) -> Result<String, RrcError> {
+    fn push_candidate(&self, admission: &ReleaseMutationAdmission) -> Result<String, RrcError> {
         assert_eq!(admission.kind(), ReleaseMutationKind::PushCandidate);
         self.0.fetch_add(1, Ordering::SeqCst);
         Ok("origin/main@2222222222222222222222222222222222222222".into())
@@ -119,7 +119,7 @@ impl ReleaseExecutionPort for RepairExecutor {
         &self,
         _: &str,
         _: &str,
-        _: ReleaseMutationAdmission,
+        _: &ReleaseMutationAdmission,
     ) -> Result<(String, String), RrcError> {
         unreachable!()
     }
