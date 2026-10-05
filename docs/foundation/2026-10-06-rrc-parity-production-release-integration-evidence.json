@@ -1,0 +1,83 @@
+{
+  "status": "intermediate source verified; runner annotation repair focused verified; final candidate gates pending",
+  "verified_candidate_sha": "d091dff7a0224bbcb4b8d5d090334b1c0d86a04a",
+  "native_local_gates": "all seven succeeded; version preparation succeeded; CandidateReady; 94 Linux acceptance cases",
+  "controlled_run_id": 37367171770,
+  "controlled_result": "all five cancelled without runner acquisition; controlled acceptance unexecuted",
+  "official_incident": "https://stspg.io/c11dc9nb1zdq",
+  "new_fix": "owned terminal cancelled/timed-out failure annotations; specific runner-acquisition classification",
+  "focused_result": "two tests passed; actual native adapter classified five real jobs and refused full retry",
+  "archive_sha256": "33d1930806f690150d3fb0a1ae8cf8f40964a53cbf400dc6db4b8588250f1919",
+  "receipts": [
+    {
+      "path": "vesper-release-production-admission.log",
+      "bytes": 345,
+      "sha256": "81f3e2fa44e991b3bc0ddbf0e32a543f205c2375430ab1ccd487894344145300"
+    },
+    {
+      "path": "vesper-release-production-verify.log",
+      "bytes": 11970,
+      "sha256": "5599618d27486244c0103ed26649d55a5d98b0c9521d8a2553e019b900a50369"
+    },
+    {
+      "path": "vesper-release-cancelled-runner-red.log",
+      "bytes": 1172,
+      "sha256": "b8d47a3ef4b1ab89adb6f45043be46ab1b584a8bbb88f90dac5d36aacc79dbea"
+    },
+    {
+      "path": "vesper-release-cancelled-runner-green.log",
+      "bytes": 1203,
+      "sha256": "8b2ec813d6cdb1fda145ef50397002f64a5d73a531d186cc8d2a63f31afc3b27"
+    },
+    {
+      "path": "vesper-release-cancelled-runner-green-second.log",
+      "bytes": 607,
+      "sha256": "5bf3d585a2bd68d24a9bac526e5f56084cf21ea029a48474679a3ce676a5f052"
+    },
+    {
+      "path": "vesper-release-cancelled-runner-native-observation.log",
+      "bytes": 253,
+      "sha256": "5949ea5a3351af104139b19d53be5f06cfeb0d1b60f8025d35bcc33011c67788"
+    },
+    {
+      "path": "vesper-release-public-partial.log",
+      "bytes": 209,
+      "sha256": "119d3f579d4baa3f605274c469d1054c7c72b350f90b16d9853793084e52f6e2"
+    },
+    {
+      "path": "vesper-release-public-partial-long.log",
+      "bytes": 545,
+      "sha256": "afeecf6d6133137e5318e51cac40353a6d95a8db1d462ba992faea2b5b8cd64b"
+    },
+    {
+      "path": "vesper-release-public-infrastructure-failure.txt",
+      "bytes": 1162,
+      "sha256": "fd663be141f4ee83b54deabd0f8ecbb1a8b849101ff41c4cbf84ceba9cccce20"
+    },
+    {
+      "path": "vesper-release-public-infrastructure-run.json",
+      "bytes": 15065,
+      "sha256": "d125be76cf38bc28e2dcf3940c2882ac6e743a7a5a9a33932bbaa55114a1a610"
+    },
+    {
+      "path": "vesper-release-public-infrastructure-jobs.json",
+      "bytes": 5058,
+      "sha256": "302f4b6774715ba602add9e2a2ce5cfa1f94e2595b2c97c7c1a3a39ffaf6ad52"
+    },
+    {
+      "path": "vesper-release-github-official-status.json",
+      "bytes": 6837,
+      "sha256": "5921a30c4375721e872a65ea4bd19c31c4a9bcae9fdc9ce26625c909fedf7a67"
+    },
+    {
+      "path": "vesper-release-github-official-status-latest.json",
+      "bytes": 6837,
+      "sha256": "95eeb0d756e4fb4df02a01d84842541f1e0c9e3ddb87d08b7756bf1010de08cb"
+    },
+    {
+      "path": "vesper-release-registry-prevalidation.json",
+      "bytes": 128,
+      "sha256": "df5b2f7d01b3a17d87eb4f7a26cfdccbec43c34f65837d931f12ea77d836154a"
+    }
+  ]
+}

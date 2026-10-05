@@ -93,6 +93,49 @@ receipts will be archived and digest-bound before delivery.
   documented in [the continuation](release-recovery-controller-parity-continuation.md);
   those receipts do not replace current-source acceptance.
 
+## Committed-source verification and runner incident
+
+Candidate `d091dff7a0224bbcb4b8d5d090334b1c0d86a04a` completed native version
+validation and **all seven local gates**, including **94 named Linux acceptance
+cases**, full workspace verification, Rust 1.88, architecture, supply-chain policy,
+advisories and production binary builds. The native ledger reached `CandidateReady`.
+This source remains an intermediate candidate because the subsequent observed
+runner-annotation repair requires fresh final-source gates.
+
+The standard public controlled run
+[37367171770](https://github.com/99percentgrip/agent-vesper-rrc-public-acceptance/actions/runs/37367171770)
+queued every job, then cancelled all five without executing steps. Repository-owned
+annotations report failure to acquire hosted runners. GitHub's
+[official Actions incident](https://stspg.io/c11dc9nb1zdq) independently reports
+runner-assignment delays. No billing prerequisite or private runner was introduced.
+The short observer timed out while queued. The longer observer correctly refused
+premature diagnosis/retry during partial cancellation, then exposed the native
+404-log fallback's rejection of cancelled job identities. Those receipts are
+failures, not controlled acceptance passes.
+
+The fallback now accepts completed `failure`, `cancelled` and `timed_out` identities,
+retaining the exact job ID, repository-owned check URL, bounded pagination, failure
+annotation requirement, redaction and 403/transport refusal. The specific acquired-
+runner diagnostic is selected and classified as strongly supported runner
+infrastructure evidence. Cancellation without annotations does not establish an
+outage, and generic cancellation retains its prior classification.
+
+The new named regression failed compiled before correction; its two-case rerun
+passed. An initial follow-up assertion incorrectly required the causal excerpt to
+start at the diagnostic, contrary to the existing one-line context contract; that
+fixture expectation was corrected to require retained causal content and the exact
+classification. The initial follow-up failure remains archived. The current native
+adapter subsequently read the actual five cancelled jobs, captured their owned
+causal annotations, classified all five correctly and refused a full retry. That
+read-only probe created only its isolated acceptance ledger, with no production
+ledger or GitHub mutation. Both hosts use the shared adapter. The new case is
+mandatory on every native target (95 Linux cases after enrollment).
+
+[Integration manifest](2026-10-06-rrc-parity-production-release-integration-evidence.json)
+binds these actual local, failed external, focused and native adapter receipts.
+The public controlled source was pushed only to its separate test branch; production
+main, tag, release assets and Alex's installation remain unchanged at this checkpoint.
+
 ## Deviations and unresolved work
 
 Production advanced beyond the original parity candidate, so a reconciliation and

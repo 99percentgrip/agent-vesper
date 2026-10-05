@@ -11,7 +11,9 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
   prerequisite/publication receipts, immutable release closeout and the in-place
   Registry update. Earlier candidate reports retain their frozen source scope.
   Its preparation evidence JSON and archive bind intermediate local red/green
-  receipts; final exact-source and publication evidence belongs in the report.
+  receipts; its integration companions bind intermediate committed-source gates,
+  actual public runner-acquisition failure and the native annotation repair.
+  Final exact-source and publication evidence belongs in the report.
 
 - `release-recovery-controller-parity-continuation.md` owns continued binding
   acceptance: publishing prerequisites, last-green lane evidence, measured

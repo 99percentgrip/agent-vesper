@@ -2751,8 +2751,9 @@ pub fn classify_failure(
         || normalized.contains("the operation was cancelled")
     {
         ReleaseFailureClass::Cancelled
-    } else if normalized.contains("runner")
-        && (normalized.contains("lost") || normalized.contains("provision"))
+    } else if (normalized.contains("runner")
+        && (normalized.contains("lost") || normalized.contains("provision")))
+        || normalized.contains("job was not acquired by runner")
     {
         ReleaseFailureClass::RunnerInfrastructureFailure
     } else if normalized.contains("artifact")
@@ -8393,6 +8394,47 @@ mod tests {
     }
 
     #[test]
+    fn terminal_cancelled_runner_job_uses_owned_failure_annotations() {
+        let message =
+            "The job was not acquired by Runner of type hosted even after multiple attempts";
+        for conclusion in ["cancelled", "timed_out"] {
+            let evidence = job_log_with_fetch("owner/repo", 42, |endpoint, _| {
+                if endpoint.ends_with("/logs") {
+                    Err(RrcError::Invalid("gh: HTTP 404".into()))
+                } else if endpoint.ends_with("/actions/jobs/42") {
+                    Ok(serde_json::json!({"id":42,"status":"completed","conclusion":conclusion,"check_run_url":"https://api.github.com/repos/owner/repo/check-runs/77"}).to_string())
+                } else {
+                    assert_eq!(endpoint, "repos/owner/repo/check-runs/77/annotations?per_page=100&page=1");
+                    Ok(serde_json::json!([{"annotation_level":"failure","message":message}]).to_string())
+                }
+            }).expect("terminal runner failures retain repository-owned annotations");
+            let causal = first_causal_excerpt(&evidence);
+            assert!(
+                causal.contains(message),
+                "the causal runner annotation must survive bounded extraction"
+            );
+            assert_eq!(
+                classify_failure(&causal, Some("linux")),
+                (
+                    ReleaseFailureClass::RunnerInfrastructureFailure,
+                    EvidenceConfidence::StronglySupported
+                )
+            );
+        }
+        assert!(job_log_with_fetch("owner/repo", 42, |endpoint, _| {
+            if endpoint.ends_with("/logs") {
+                Err(RrcError::Invalid("gh: HTTP 404".into()))
+            } else if endpoint.ends_with("/actions/jobs/42") {
+                Ok(serde_json::json!({"id":42,"status":"completed","conclusion":"cancelled","check_run_url":"https://api.github.com/repos/owner/repo/check-runs/77"}).to_string())
+            } else { Ok("[]".into()) }
+        }).is_err(), "cancellation without failure evidence cannot invent a runner outage");
+        assert_eq!(
+            classify_failure("The operation was canceled.", None).0,
+            ReleaseFailureClass::Cancelled
+        );
+    }
+
+    #[test]
     fn published_docs_red_repair_then_other_platform_red_stops_speculation() {
         let published = published_fixture();
         let publication = published.mutation.clone();
@@ -8817,7 +8859,7 @@ fn is_account_execution_restriction(normalized: &str) -> bool {
 
 fn is_causal_diagnostic(line: &str) -> bool {
     static CAUSAL: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"(?i)(panicked at|assertion [`']?(?:left|right)|assertionerror:|error\[e\d+\]|error:(?:\s|$)|fatal:(?:\s|$)|permission denied|unauthorized|rate limit|runner .* (?:lost|failed)|timed out|process exited while answering|no space left on device|disk full|package .* is not available|e: version .* was not found|the operation was cancel(?:l)?ed)")
+        Regex::new(r"(?i)(panicked at|assertion [`']?(?:left|right)|assertionerror:|error\[e\d+\]|error:(?:\s|$)|fatal:(?:\s|$)|permission denied|unauthorized|rate limit|runner .* (?:lost|failed)|the job was not acquired by runner|timed out|process exited while answering|no space left on device|disk full|package .* is not available|e: version .* was not found|the operation was cancel(?:l)?ed)")
             .expect("static causal regex")
     });
     static TEST_STATUS: LazyLock<Regex> = LazyLock::new(|| {
@@ -9099,7 +9141,10 @@ fn job_log_with_fetch(
     )?)?;
     if job.get("id").and_then(serde_json::Value::as_u64) != Some(job_id)
         || job.get("status").and_then(serde_json::Value::as_str) != Some("completed")
-        || job.get("conclusion").and_then(serde_json::Value::as_str) != Some("failure")
+        || !matches!(
+            job.get("conclusion").and_then(serde_json::Value::as_str),
+            Some("failure" | "cancelled" | "timed_out")
+        )
     {
         return Err(RrcError::Invalid(
             "missing log has no completed failed job identity".into(),

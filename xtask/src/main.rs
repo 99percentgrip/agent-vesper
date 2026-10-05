@@ -2398,6 +2398,11 @@ fn acceptance_verify() -> Result<(), String> {
         (
             "vesper-harness",
             &["--lib"],
+            "release_recovery::tests::terminal_cancelled_runner_job_uses_owned_failure_annotations",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
             "release_executor::tests::local_failure_receipt_preserves_late_stdout_cause_and_redacts_secrets",
         ),
         (

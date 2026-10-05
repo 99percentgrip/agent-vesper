@@ -36,6 +36,9 @@ architecture, MSRV, and source-oracle checks.
   RAM/swap and disk admission, resumable resource deferral, Linux ACP process-level
   controller-status and Cargo-policy inheritance through explicit and natural-language
   session-policy routes, and TUI-controller routing cases.
+  The terminal cancelled/timed-out runner case requires repository-owned failure
+  annotations, preserves the causal acquisition message, and rejects missing
+  annotations without inventing an outage; it runs on every native target.
   The local failure receipt case requires late stdout assertions to survive bounded
   storage with secrets redacted.
   Host-neutral swap-window cases reject subsecond rate amplification and retain

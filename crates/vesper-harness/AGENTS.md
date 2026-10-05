@@ -98,7 +98,9 @@ Z.ai and Playwright MCP server descriptors.
   CI logs strip terminal controls and exclude runner command echoes before causal
   extraction; fingerprints ignore unrelated interleaved output/exit wrappers.
   A 404 log response may use bounded failure annotations only from the completed
-  failed job's repository-owned check URL. Missing annotations remain unknown;
+  failure, cancelled or timed-out job's repository-owned check URL. A concrete
+  runner-acquisition failure annotation selects runner infrastructure evidence;
+  cancellation alone never proves an outage. Missing annotations remain unknown;
   permission/transport failures cannot use this fallback.
   A later main SHA uses a separate archived
   epoch; published version/tag/assets remain immutable. Current acceptance and
