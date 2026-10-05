@@ -670,6 +670,11 @@ impl NativeReleaseExecutor {
         let mut process_observation = None;
         let mut process_heartbeat = None;
         let status = loop {
+            // Reap before sampling. A fast controlled Cargo exits in milliseconds;
+            // walking procfs/cgroup on a busy runner must not delay the next gate.
+            if let Some(status) = child.inner().try_wait()? {
+                break status;
+            }
             if let Some(governor) = self.resource_governor.as_ref() {
                 match governor.snapshot(Some(root_pid)) {
                     Ok(telemetry) => {
@@ -736,9 +741,6 @@ impl NativeReleaseExecutor {
                     let _ = child.kill();
                     cancelled = true;
                 }
-            }
-            if let Some(status) = child.inner().try_wait()? {
-                break status;
             }
             thread::sleep(WATCHDOG_POLL_INTERVAL);
         };

@@ -91,8 +91,11 @@ Z.ai and Playwright MCP server descriptors.
   persists the resolved release version and a visible `version-preparation` gate
   before the expensive workspace check. Scheduling checkpoints (worker heartbeats
   and gate intent saved before a cargo child is spawned) rename into place and
-  return before journal flush, so a saturated CI disk cannot delay the next
-  governed cargo gate; authority transitions still fsync before return. Worker admission is
+  do not flush the ledger file or its directory on any thread. A background
+  directory flush stalled the next governed Cargo spawn on saturated CI disks.
+  Authority transitions still fsync before return. An exited local child is
+  reaped before the next host-resource sample so a fast Cargo command cannot
+  sit behind procfs or cgroup discovery. Worker admission is
   registered before the launcher acknowledges startup; the registry retains the
   owned join handle, cancellation token, epoch identity and live activity until
   settlement. Its bounded telemetry snapshot is updated from persisted gate changes,

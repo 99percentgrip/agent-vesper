@@ -709,10 +709,11 @@ business logic.
 - OpenAI startup credential lookup and account-model discovery run in the
   background. The event loop shows `Loading OpenAI account models…` and keeps
   accepting keyboard and bracketed-paste input while that work is pending.
-  Completion replaces the account model policy; failure updates status and
-  stays interactive. Provider prompts are not dispatched until the account
-  check and discovery settle. Authentication screens and model validation are
-  unchanged.
+  Already-queued keystrokes and pastes are applied before the next full redraw,
+  so a startup burst is not serialized one event per frame. Completion replaces
+  the account model policy; failure updates status and stays interactive.
+  Provider prompts are not dispatched until the account check and discovery
+  settle. Authentication screens and model validation are unchanged.
 
 - MCP discovery, browser presets and deferred calls retain one conversation
   owner through direct/VRO/ReAct registries built by `build_hosted_registry`.

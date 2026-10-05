@@ -1584,6 +1584,10 @@ async fn drive_loop(
     let mut landing_pending = show_landing;
     let mut settings_from_landing = false;
     let mut restored_settings = false;
+    // Keystrokes and bracketed paste already sitting in the terminal are applied
+    // before the next full redraw. One event per frame missed the startup PTY
+    // budget on slow macOS runners (typed text plus paste needs three frames).
+    let mut pending_terminal_events = VecDeque::new();
     loop {
         if session.settings_menu_open
             && session.voice.snapshot().phase != agent_vesper_tui::ui::VoicePhase::Idle
@@ -1845,115 +1849,128 @@ async fn drive_loop(
         drain_mobile_decision(session);
         refresh_command_menu(session, registry_commands, surface);
 
-        let voice = session.voice.snapshot();
-        let background_task = release_background_task(&checkpoint_stores.workspace_root);
-        project_release_milestones(session, background_task.as_ref());
-        let model = ViewModel {
-            voice_phase: voice.phase,
-            voice_elapsed: voice.elapsed,
-            plan: session.state.plan.clone(),
-            superpowers: Some(surface.clone()),
-            overrides: session.state.overrides.clone(),
-            transcript: session.state.transcript.clone(),
-            input: session.input.clone(),
-            composer_attachments: composer_attachment_labels(
-                &session.pending_images,
-                &session.pending_text_pastes,
-            ),
-            status: if voice.phase != agent_vesper_tui::ui::VoicePhase::Idle {
-                Some(voice.detail.clone())
-            } else {
-                session.state.status.clone()
-            },
-            command_menu: session.command_matches.clone(),
-            command_menu_selected: session.command_selected,
-            agent_running: session.agent_running,
-            background_task,
-            queued_prompt_count: session.queued_prompts.len(),
-            controls: session.state.controls.clone(),
-            panels: session.state.panels,
-            task_plan: session.state.task_plan.clone(),
-            activity: session.activity.clone(),
-            live_trajectory: session.live_trajectory.clone(),
-            file_changes: session.file_changes.clone(),
-            show_tool_details: session.show_tool_details,
-            reasoning: session.reasoning.clone(),
-            reasoning_diagnostics: session.reasoning_diagnostics.clone(),
-            live_response: session.live_response.clone(),
-            turn_elapsed_ms: session
-                .turn_started
-                .map(|started| started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64)
-                .unwrap_or(0),
-            turn_tokens: session.turn_tokens,
-            thinking_elapsed_ms: session
-                .thinking_started
-                .zip(session.thinking_last_delta)
-                .map(|(start, end)| {
-                    end.duration_since(start)
-                        .as_millis()
-                        .min(u128::from(u64::MAX)) as u64
-                }),
-            animation_frame: session
-                .turn_started
-                .map(|started| (started.elapsed().as_millis() / 250) as u64)
-                .unwrap_or(0),
-            last_report: session.last_report.clone(),
-            working_tree_title: session
-                .working_tree_view
-                .map(|view| ["Changes", "Git", "Diff", "Files", "GitHub"][view].to_owned()),
-            working_tree_lines: session.working_tree_lines.clone(),
-            preferences: session.state.preferences.clone(),
-            conversation_manual_scroll: session.state.conversation_manual_scroll,
-            pending_permission: session
-                .pending_approval
-                .as_ref()
-                .map(|request| PermissionModal {
-                    tool: request.tool.clone(),
-                    arguments: serde_json::to_string_pretty(&request.arguments)
-                        .unwrap_or_else(|_| request.arguments.to_string()),
-                    reason: request.reason.clone(),
-                    focus: session.state.permission_modal_focus,
-                }),
-        };
-        // VRO-11.9: stash the frame's view model so the click handler can
-        // inverse-map transcript rows (click-on-URL opens the browser).
-        session.last_model = Some(model.clone());
         let model_discovery_unavailable = openai_controls.is_some()
             && unavailable_model_menu(session.settings_menu_open, &session.input, surface);
-        if let Err(error) = terminal.draw(|frame| {
-            if session.settings_menu_open
-                && session.pending_approval.is_none()
-                && !session.state.preferences.screen_reader
-            {
-                if model_discovery_unavailable {
-                    agent_vesper_tui::settings_menu::render_model_unavailable(
-                        frame,
-                        &openai_model_notice,
-                        &session.state.preferences.theme,
-                    );
+        if pending_terminal_events.is_empty() {
+            let voice = session.voice.snapshot();
+            let background_task = release_background_task(&checkpoint_stores.workspace_root);
+            project_release_milestones(session, background_task.as_ref());
+            let model = ViewModel {
+                voice_phase: voice.phase,
+                voice_elapsed: voice.elapsed,
+                plan: session.state.plan.clone(),
+                superpowers: Some(surface.clone()),
+                overrides: session.state.overrides.clone(),
+                transcript: session.state.transcript.clone(),
+                input: session.input.clone(),
+                composer_attachments: composer_attachment_labels(
+                    &session.pending_images,
+                    &session.pending_text_pastes,
+                ),
+                status: if voice.phase != agent_vesper_tui::ui::VoicePhase::Idle {
+                    Some(voice.detail.clone())
                 } else {
-                    agent_vesper_tui::settings_menu::render(
-                        frame,
-                        &session.command_matches,
-                        session.command_selected,
-                        &session.input,
-                        session.state.status.as_deref(),
-                        &session.state.preferences.theme,
-                    );
+                    session.state.status.clone()
+                },
+                command_menu: session.command_matches.clone(),
+                command_menu_selected: session.command_selected,
+                agent_running: session.agent_running,
+                background_task,
+                queued_prompt_count: session.queued_prompts.len(),
+                controls: session.state.controls.clone(),
+                panels: session.state.panels,
+                task_plan: session.state.task_plan.clone(),
+                activity: session.activity.clone(),
+                live_trajectory: session.live_trajectory.clone(),
+                file_changes: session.file_changes.clone(),
+                show_tool_details: session.show_tool_details,
+                reasoning: session.reasoning.clone(),
+                reasoning_diagnostics: session.reasoning_diagnostics.clone(),
+                live_response: session.live_response.clone(),
+                turn_elapsed_ms: session
+                    .turn_started
+                    .map(|started| started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64)
+                    .unwrap_or(0),
+                turn_tokens: session.turn_tokens,
+                thinking_elapsed_ms: session
+                    .thinking_started
+                    .zip(session.thinking_last_delta)
+                    .map(|(start, end)| {
+                        end.duration_since(start)
+                            .as_millis()
+                            .min(u128::from(u64::MAX)) as u64
+                    }),
+                animation_frame: session
+                    .turn_started
+                    .map(|started| (started.elapsed().as_millis() / 250) as u64)
+                    .unwrap_or(0),
+                last_report: session.last_report.clone(),
+                working_tree_title: session
+                    .working_tree_view
+                    .map(|view| ["Changes", "Git", "Diff", "Files", "GitHub"][view].to_owned()),
+                working_tree_lines: session.working_tree_lines.clone(),
+                preferences: session.state.preferences.clone(),
+                conversation_manual_scroll: session.state.conversation_manual_scroll,
+                pending_permission: session.pending_approval.as_ref().map(|request| {
+                    PermissionModal {
+                        tool: request.tool.clone(),
+                        arguments: serde_json::to_string_pretty(&request.arguments)
+                            .unwrap_or_else(|_| request.arguments.to_string()),
+                        reason: request.reason.clone(),
+                        focus: session.state.permission_modal_focus,
+                    }
+                }),
+            };
+            // VRO-11.9: stash the frame's view model so the click handler can
+            // inverse-map transcript rows (click-on-URL opens the browser).
+            session.last_model = Some(model.clone());
+            if let Err(error) = terminal.draw(|frame| {
+                if session.settings_menu_open
+                    && session.pending_approval.is_none()
+                    && !session.state.preferences.screen_reader
+                {
+                    if model_discovery_unavailable {
+                        agent_vesper_tui::settings_menu::render_model_unavailable(
+                            frame,
+                            &openai_model_notice,
+                            &session.state.preferences.theme,
+                        );
+                    } else {
+                        agent_vesper_tui::settings_menu::render(
+                            frame,
+                            &session.command_matches,
+                            session.command_selected,
+                            &session.input,
+                            session.state.status.as_deref(),
+                            &session.state.preferences.theme,
+                        );
+                    }
+                } else {
+                    render_to_frame(frame, &model);
                 }
-            } else {
-                render_to_frame(frame, &model);
+            }) {
+                return Err(format!("redraw failed: {error}"));
             }
-        }) {
-            return Err(format!("redraw failed: {error}"));
-        }
 
-        if !event::poll(std::time::Duration::from_millis(250))
-            .map_err(|error| format!("event poll failed: {error}"))?
-        {
-            continue;
+            if !event::poll(std::time::Duration::from_millis(250))
+                .map_err(|error| format!("event poll failed: {error}"))?
+            {
+                continue;
+            }
+            loop {
+                pending_terminal_events.push_back(
+                    event::read().map_err(|error| format!("event read failed: {error}"))?,
+                );
+                if !event::poll(std::time::Duration::ZERO)
+                    .map_err(|error| format!("event poll failed: {error}"))?
+                {
+                    break;
+                }
+            }
         }
-        let mut event = event::read().map_err(|error| format!("event read failed: {error}"))?;
+        let Some(mut event) = pending_terminal_events.pop_front() else {
+            continue;
+        };
         if model_discovery_unavailable && session.pending_approval.is_none() {
             let size = terminal.size().map_err(|error| error.to_string())?;
             let viewport = ratatui::layout::Rect::new(0, 0, size.width, size.height);

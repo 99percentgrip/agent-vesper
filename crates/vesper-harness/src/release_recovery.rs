@@ -10,7 +10,6 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-use std::thread;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
@@ -2891,9 +2890,11 @@ impl ReleaseLedger {
     }
 
     /// Publishes a checkpoint that the running controller will read before it
-    /// spawns the next cargo child. The rename is visible immediately. Journal
-    /// flush continues in the background so a saturated CI disk cannot hold
-    /// gate admission. Authority transitions keep [`Self::save`].
+    /// spawns the next cargo child. The rename is visible immediately and this
+    /// path does not flush the file or its directory, in this thread or another.
+    /// A background `sync_all` still occupies the directory inode and stalled
+    /// the next governed Cargo spawn on saturated CI disks. Authority
+    /// transitions keep [`Self::save`].
     pub(crate) fn save_for_scheduling(
         &self,
         record: &ReleaseRecoveryRecord,
@@ -2935,24 +2936,10 @@ impl ReleaseLedger {
         if sync_before_return {
             temp.as_file().sync_all()?;
         }
-        let path = self.path();
-        temp.persist(&path).map_err(|error| error.error)?;
-        if sync_before_return {
-            if let Ok(directory) = OpenOptions::new().read(true).open(&self.root) {
-                let _ = directory.sync_all();
-            }
-        } else {
-            let root = self.root.clone();
-            let _ = thread::Builder::new()
-                .name("vesper-release-ledger-sync".into())
-                .spawn(move || {
-                    if let Ok(file) = OpenOptions::new().read(true).open(&path) {
-                        let _ = file.sync_all();
-                    }
-                    if let Ok(directory) = OpenOptions::new().read(true).open(root) {
-                        let _ = directory.sync_all();
-                    }
-                });
+        temp.persist(self.path()).map_err(|error| error.error)?;
+        if sync_before_return && let Ok(directory) = OpenOptions::new().read(true).open(&self.root)
+        {
+            let _ = directory.sync_all();
         }
         FileExt::unlock(&lock)?;
         Ok(())

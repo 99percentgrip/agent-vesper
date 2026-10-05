@@ -18,9 +18,7 @@ const WIDTH: u16 = 120;
 const HEIGHT: u16 = 36;
 const LOADING: &[u8] = b"Loading OpenAI account models";
 const LEGACY_LOADING: &[u8] = b"Loading account models";
-const TYPED_Z: &[u8] = b"mZ";
-const TYPED_Q: &[u8] = b"mQ";
-const PASTED: &[u8] = b"PASTETOKEN";
+const TYPED_AND_PASTED: &[u8] = b"ZQPASTETOKEN";
 const AFTER_FAILURE: &[u8] = b"POSTFAIL";
 const CATALOG_APPLIED: &[u8] = b"Select a model";
 const DISCOVERY_FAILED: &[u8] = b"HTTP 500";
@@ -263,9 +261,7 @@ fn input_while_discovery_is_pending(output: &Mutex<Vec<u8>>, input: &mut File) {
         .write_all(b"ZQ\x1b[200~PASTETOKEN\x1b[201~")
         .expect("send startup input");
     let started = Instant::now();
-    let visible = wait_for(output, PASTED, Duration::from_millis(1200))
-        && contains(output, TYPED_Z)
-        && contains(output, TYPED_Q);
+    let visible = wait_for(output, TYPED_AND_PASTED, Duration::from_millis(1200));
     assert!(
         visible,
         "typed/pasted input was not visible within {:?} while discovery was still pending (elapsed {:?}):\n{}",
