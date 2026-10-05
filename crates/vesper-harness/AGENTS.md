@@ -33,7 +33,17 @@ Z.ai and Playwright MCP server descriptors.
   Promotion requires an observed mutation, explicit hypothesis, native focused
   re-verification after the final edit, a nonempty patch and full local gates.
   Cargo test proof must execute tests and include an identifiable failing test,
-  including explicit rustup toolchain selections. The repair role advertises and
+  including explicit rustup toolchain selections. Rust panic parsing accepts numeric
+  thread IDs as well as older messages, preserving exact failing-test binding.
+  Production repair Cargo commands use the controller governor, exclusive resource
+  lease, managed cache, bounded jobs/test threads and native owned-child progress/
+  cancellation watchdog. Its real output/process transitions refresh the repair
+  heartbeat and registered-worker telemetry; quiet time alone never does.
+  Model flags cannot override that policy or workspace.
+  Missing governors and selected sandboxes without a governed Cargo route refuse
+  before host dispatch; the current sandbox port cannot bind the managed cache and
+  environment. Unwinding or dropping a repair task settles its cancellation watcher.
+  Legacy ungoverned commands exist only in explicit unit-test repair fixtures. The repair role advertises and
   dispatches only core source tools with supported verification commands; direct
   Git/GitHub lifecycle commands, compound shells and explicit Git metadata writes
   refuse before execution. The client registry has no hosted gateways; previously

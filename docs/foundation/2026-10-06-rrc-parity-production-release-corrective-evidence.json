@@ -1,0 +1,235 @@
+{
+  "failed_candidate_sha": "477f9806ce0f3dd78ad96f86e76604f2ad58d22d",
+  "status": "corrective source integration verified locally; full exact-source production gates and publication pending",
+  "binding_prd_sha256": "e85011c696d769837c6ed5a83e4290e77eadc4ae27a9ea42cffe0966d37518db",
+  "archive": "2026-10-06-rrc-parity-production-release-corrective-receipts.tar.gz",
+  "archive_sha256": "9905f56056c72d7fa536102547537d62b625555759212feb2f593f8e8ac08481",
+  "sanitizer": "existing credential/terminal-control receipt sanitizer; original private receipt files preserved",
+  "receipts": [
+    {
+      "path": "vesper-release-acp-metadata-process-green.log",
+      "sha256": "9695ca6b9b2393c34364ca00be6087641b6715268b18860fec6abdbdd7a54610",
+      "bytes": 1028
+    },
+    {
+      "path": "vesper-release-corrective-acceptance.log",
+      "sha256": "4b90a6b1f2d4fd19ffadc9ecf9e6b67167873497137247bca2f220f5eb23abaf",
+      "bytes": 24222
+    },
+    {
+      "path": "vesper-release-corrective-command-acceptance.log",
+      "sha256": "93a4bc3bb31b8be3e30b7de438cd6e4509df386b6a5f5b7807892bf3268930b1",
+      "bytes": 22401
+    },
+    {
+      "path": "vesper-release-corrective-final-acceptance.log",
+      "sha256": "c81581ec241bfb820cdf6bedcf4b91215fd2eec2065fe4f81c8f2807abb10db6",
+      "bytes": 22401
+    },
+    {
+      "path": "vesper-release-current-canonical.log",
+      "sha256": "dd6ceabede9a4a2fb8b1c796c888d3aa0a28a808d591999b455a7282385f3a0e",
+      "bytes": 117898
+    },
+    {
+      "path": "vesper-release-current-controlled-complete.json",
+      "sha256": "a60feec2b4b4aca8c04d2146fc1286a75afb93cead359dbc727e158d50afcfb1",
+      "bytes": 853
+    },
+    {
+      "path": "vesper-release-current-controlled-green-jobs.json",
+      "sha256": "b008a0a3a36a82f5b7f7e89d62f90fc3543f185aa592bcd6b86bc088e73a5406",
+      "bytes": 10453
+    },
+    {
+      "path": "vesper-release-current-controlled-green-run.json",
+      "sha256": "438076f8d29156db05a60d1041b1b10b47505c05a9c33b2d60e3ecd0609ffe7f",
+      "bytes": 15076
+    },
+    {
+      "path": "vesper-release-current-controlled-green.log",
+      "sha256": "15c9294be4d00cad4c7d167b086a627d99b7b04ecfd3fbf791f0135ae482cd01",
+      "bytes": 210
+    },
+    {
+      "path": "vesper-release-current-controlled-partial.log",
+      "sha256": "d046b503a8285b10df589b72841284c3021e18ac2fd360a8d00886223a0d0cdf",
+      "bytes": 991
+    },
+    {
+      "path": "vesper-release-current-controlled-red-jobs.json",
+      "sha256": "2879a63ca5210687ed54524dde1ff4efacb8ac709e41c8cdceb96de7c31c863f",
+      "bytes": 10448
+    },
+    {
+      "path": "vesper-release-current-controlled-red-run.json",
+      "sha256": "6d953ca77cd7c983107f53b29ee898971792b18a3e3b73ca2bbbb98d89f786ea",
+      "bytes": 15074
+    },
+    {
+      "path": "vesper-release-current-controlled-red.log",
+      "sha256": "3e5509e6dbec850089975385301b586d2f4c46f5631482bced89a84b6e6492c4",
+      "bytes": 345
+    },
+    {
+      "path": "vesper-release-current-controlled-repeat-jobs.json",
+      "sha256": "17a1bf79b37a7a8664c850c6da26cc328dea8d969f3280c82e1332e130c8d4f2",
+      "bytes": 10453
+    },
+    {
+      "path": "vesper-release-current-controlled-repeat-run.json",
+      "sha256": "f43564d31853686d7f88cf3c02874ae21146b8737dfc6b3ea11b1c09fb32770d",
+      "bytes": 15076
+    },
+    {
+      "path": "vesper-release-current-controlled-repeat.log",
+      "sha256": "ea8a7fd3b6d681bc150269dbf3d9129bc6be656fc4891c02d8169d6d921b7e89",
+      "bytes": 345
+    },
+    {
+      "path": "vesper-release-current-foundation-linux-x86_64.log",
+      "sha256": "da2c9485c278bf94dd754c03a140bada1543d6f0db803fc237234c4d5913af7e",
+      "bytes": 93913
+    },
+    {
+      "path": "vesper-release-current-foundation-macos-arm.log",
+      "sha256": "137d9515970a202ab280fd3858199f79d0f9bf3e5e24acf05bc9baf492f86c19",
+      "bytes": 152129
+    },
+    {
+      "path": "vesper-release-current-foundation-macos-intel.log",
+      "sha256": "9e4f80513ef086ebea8259b2d22759a8352a93f9bd70391f8b6cbd4be2baf8cc",
+      "bytes": 311440
+    },
+    {
+      "path": "vesper-release-current-foundation-windows.log",
+      "sha256": "f371acedf45fcdd50a37cb4cea4037cfc54fcb303da20549f61c862f52cf48e2",
+      "bytes": 597250
+    },
+    {
+      "path": "vesper-release-current-msrv.log",
+      "sha256": "7544c4b768320cc95e2f574c941a2caba8ec37afceb49d46fc8d67acac55c09c",
+      "bytes": 86131
+    },
+    {
+      "path": "vesper-release-current-production-canonical-jobs.json",
+      "sha256": "3e6bd8af5f6bf0a598abe8b3121cd9509728434012e02b70e018162732e01bf5",
+      "bytes": 8001
+    },
+    {
+      "path": "vesper-release-current-production-canonical-run.json",
+      "sha256": "d229c51faa362a6b90918172bd7f55902aef05f294a51a29e8bce689ec843fed",
+      "bytes": 14737
+    },
+    {
+      "path": "vesper-release-current-production-final-matrix.json",
+      "sha256": "b3c29872f8e3ff296236b09c337b67fed67485232585ced38195cb0832ec1c93",
+      "bytes": 2262
+    },
+    {
+      "path": "vesper-release-current-production-foundation-jobs.json",
+      "sha256": "fecf5579a89f5280c3a88ae326490a4c69d8fbdc5712ccc74cbd2be8b9927a5b",
+      "bytes": 27803
+    },
+    {
+      "path": "vesper-release-current-production-foundation-run.json",
+      "sha256": "386f72ceb21c720de646429cf1c8c88a6d12ca2a773895ec8ee24901b4a54a5f",
+      "bytes": 14753
+    },
+    {
+      "path": "vesper-release-current-production-msrv-jobs.json",
+      "sha256": "039e38019069bcd030858487e387356d118e1eae7de61264ef9373147ac9676f",
+      "bytes": 4250
+    },
+    {
+      "path": "vesper-release-current-production-msrv-run.json",
+      "sha256": "651eca551703050116c45c50b1b7c0e80b8fea03e6ef3ee068d4281fce030f98",
+      "bytes": 14720
+    },
+    {
+      "path": "vesper-release-current-production-web-driver-jobs.json",
+      "sha256": "2a994225119f4f674d9421127f03111c2f7b4203fe91f18ce3a5c6f49094339b",
+      "bytes": 11774
+    },
+    {
+      "path": "vesper-release-current-production-web-driver-run.json",
+      "sha256": "d0b9886e325d4d998eaf801dd139528b785952db7cd2f585d14ba16a3708ac1d",
+      "bytes": 14732
+    },
+    {
+      "path": "vesper-release-executor-corrective-final-green.log",
+      "sha256": "d1a94eebf85fd5be28868cacbd65a2b2b9ed80f2072de13aaa2bd22dd417da58",
+      "bytes": 7548
+    },
+    {
+      "path": "vesper-release-executor-corrective-green.log",
+      "sha256": "32f21f3fe81ebe672df3905f69136dc1b17d55fce55b49dafa47a164fedbabfc",
+      "bytes": 6555
+    },
+    {
+      "path": "vesper-release-executor-corrective-progress-green.log",
+      "sha256": "f0d8b328406b4a3fb2f031659c2570712f7c9681331a1eaed8b8c3148b5f2d43",
+      "bytes": 6378
+    },
+    {
+      "path": "vesper-release-focused-cargo.rs",
+      "sha256": "f207efd02909733796dfb9c26bc40e43ee0478bee5619412ff5614a9bf931855",
+      "bytes": 978
+    },
+    {
+      "path": "vesper-release-old-proof-incremental-reclamation.json",
+      "sha256": "790d0a6d688b5b72d892ab02e69edf0ebfecfd5881100d9bc46e068106419b5a",
+      "bytes": 856
+    },
+    {
+      "path": "vesper-release-panic-id-regression-red.log",
+      "sha256": "1f8bba5d244bed44d4398f7eba13f98981ec0dd1fd332978259dde3ded1f9451",
+      "bytes": 1317
+    },
+    {
+      "path": "vesper-release-production-partial-matrix.json",
+      "sha256": "7a134793c687bc245a8d58c00725ac86fba85c529c90b12195ebfc3b1d5e309e",
+      "bytes": 2398
+    },
+    {
+      "path": "vesper-release-repair-cargo-green.log",
+      "sha256": "e600aabc98416496a7e6aebd0dd952a2d3ee372df97cb74f9a6c63d5d2ba9ec2",
+      "bytes": 899
+    },
+    {
+      "path": "vesper-release-shell-fixture-green.log",
+      "sha256": "e4aad40c942df8312dba02a6e6f0f4cf44d8c3834f627f3f6f9e644dd043a51e",
+      "bytes": 86
+    },
+    {
+      "path": "vesper-release-shell-fixture-repro.log",
+      "sha256": "51f3c2404fc97d01c639bfee000626bcda9a8f5c98ebdce08e25695cb46132b6",
+      "bytes": 374
+    },
+    {
+      "path": "vesper-release-speech-semantic-red.log",
+      "sha256": "a8464f260c0d510059f4e832eb1107e16f9487f6a8d2083e27911d0e38e5b945",
+      "bytes": 1267
+    },
+    {
+      "path": "vesper-release-speech-semantic-restored-green.log",
+      "sha256": "3c30f9fe08f074ddfaceeed04c5f9d29736cce09f8b80d003266b507ef12e464",
+      "bytes": 1025
+    }
+  ],
+  "scope_limits": [
+    "Controlled platform labels execute on Ubuntu",
+    "Exact-source full native and hosted production gates pending",
+    "Prepared real-provider repair producer not executed",
+    "No live OpenAI account completion",
+    "Selected sandbox governed Cargo route unavailable and fail-closed",
+    "Non-Linux production resource discovery unavailable and fail-closed"
+  ],
+  "corrective_source_files": {
+    "crates/vesper-harness/src/release_executor.rs": "390715114df8b118850c6682978b16f46b301f342bc4251a42a474fbe74453c7",
+    "crates/vesper-harness/src/lib.rs": "d01e3f91f93ebd5aa78c24f9d46deadc4e12f710e2aee382b25d131e8a5cf96a",
+    "apps/agent-vesper-acp/tests/release_resource_governor.rs": "c529742b9978c2c7625ee26adecc0b3ff15e9a5203898ebd6bc3104123b3a8b1",
+    "apps/agent-vesper-tui/tests/r3_speech_worker.rs": "61ea4c0114cfabdf009c41f541205e8999f6193eae0cac9ce1d42c56d0526240",
+    "xtask/src/main.rs": "dc5fc76b19a5873de329847212f387cd870ed338bb866cb13fbf567f399b962b"
+  }
+}

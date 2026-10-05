@@ -193,6 +193,11 @@ Verify terminal interaction through the production TUI binary with isolated stat
   Rust updater test, which runs the shipped installer only in temporary roots.
 - Rust rendering and configuration unit tests remain beside their source modules.
 
+- `r3_speech_worker::enqueue_never_blocks_for_synthesis` holds actual worker
+  synthesis behind a controlled gate and requires two caller returns before
+  release. It uses the existing test TTS port without device or installed-engine
+  discovery. Scheduling deadlines bound settlement, not enqueue performance.
+
 ## Local Contracts
 
 - Use temporary HOME, workspace and global data roots plus synthetic credentials.

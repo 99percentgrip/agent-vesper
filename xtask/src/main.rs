@@ -2333,6 +2333,21 @@ fn acceptance_verify() -> Result<(), String> {
         (
             "vesper-harness",
             &["--lib"],
+            "release_executor::tests::focused_proof_identifies_rust_panic_with_numeric_thread_id",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_executor::tests::repair_cargo_requires_governor_and_rejects_policy_overrides",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_executor::tests::repair_command_signal_watcher_settles_on_unwind",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
             "release_executor::tests::native_firewall_denial_cannot_be_bypassed_by_a_release_admission",
         ),
         (
@@ -2453,6 +2468,19 @@ fn acceptance_verify() -> Result<(), String> {
         &["--test", "release_resource_governor"],
         "acp_natural_release_inherits_session_permission_and_governor",
     ));
+    #[cfg(target_os = "linux")]
+    cases.extend([
+        (
+            "vesper-harness",
+            &["--lib"] as &[&str],
+            "release_executor::tests::repair_cargo_uses_managed_cache_and_bounded_environment",
+        ),
+        (
+            "agent-vesper-acp",
+            &["--test", "release_resource_governor"] as &[&str],
+            "controlled_cargo_metadata_emits_valid_json",
+        ),
+    ]);
     #[cfg(unix)]
     cases.push((
         "agent-vesper-tui",

@@ -4,7 +4,8 @@
 
 Publish the requested patch release with the RRC parity and native OpenAI sign-in
 repairs while preserving the newer changes already committed to production.
-**In progress: no production push, tag, publication or installation performed.**
+**In progress: native production push performed; exact-source hosted gates failed.
+No release tag, publication or installation performed.**
 The latest public release is `v0.24.4`; production already contains the unpublished
 `0.24.5` version graph. The intended release target is `0.24.5`, subject to native
 version validation and complete exact-source gates.
@@ -140,8 +141,8 @@ main, tag, release assets and Alex's installation remain unchanged at this check
 
 Production advanced beyond the original parity candidate, so a reconciliation and
 fresh verification are required before release. No acceptance scope is reduced.
-Current local rerun, full hosted prerequisites, actual publication/checksums/native
-closeout and the existing Registry PR update are outstanding. Live OpenAI account
+Corrective-source local verification, fresh full hosted prerequisites, actual
+publication/checksums/native closeout and the existing Registry PR update are outstanding. Live OpenAI account
 completion and replacement of Alex's local installation are unexecuted.
 
 ## Readiness effect and DOX
@@ -150,3 +151,108 @@ No current production release-readiness claim yet. Nearest operational contracts
 reconciled for the combined behavior; parent indexes retain their existing boundaries.
 Detailed final receipts and delivery summary will distinguish tested source, immutable
 published source and any subsequent documentation-only main commit.
+
+
+## Production candidate `477f9806` and corrective source
+
+The registered native controller completed version validation and all seven local
+production gates (including 95 mandatory Linux acceptance cases), then pushed
+`477f9806ce0f3dd78ad96f86e76604f2ad58d22d` to production main. The actual four-workflow,
+eleven-job matrix completed: canonical and MSRV failed; foundation failed on Linux
+and both macOS targets, with Windows passing; all three web-driver jobs passed.
+No failed or historical candidate authorizes publication.
+
+The separate public acceptance repository executed fresh partial/red/repeated-red/
+green controls for that exact candidate. Its five platform labels run on Ubuntu,
+so they establish controller/evidence behavior, not five-target native acceptance.
+The native adapter preserved the repeated causal fingerprint, refused premature
+retry and redacted the canary. These passes remain scoped to `477f9806`.
+
+Actual hosted causes and source corrections:
+
+- ACP's generated metadata script put escaped JSON inside the printf format.
+  Bash accepted it; Debian dash retained backslashes and returned invalid JSON,
+  preventing the first expensive gate receipt. The literal `%s` argument fixes
+  portability. The exact Rust-generated old/new scripts were executed under an
+  extracted, hash-checked Debian dash package; no runtime was installed.
+- The speech enqueue fixture imposed a ten-millisecond shared-runner benchmark.
+  Its replacement holds actual worker synthesis and requires both caller returns
+  before release. A deliberately blocking production enqueue failed the new
+  assertion; original production bytes were restored and the clean suite rerun.
+- The output-progress watchdog fixture had a 120-millisecond scheduling margin.
+  The revised fixture still exceeds one inactivity window and requires every
+  progress receipt, with adequate scheduling margin. Production timeouts are unchanged.
+- Actual Rust 1.95 panic messages include a numeric thread ID, which the existing
+  exact failing-test parser missed. The new mandatory regression failed with the
+  old parser and accepts both old and numeric-ID formats after correction.
+- Source inspection found model-issued repair Cargo using generic command execution
+  rather than the controller governor. The shared production repair registry now
+  inherits the exclusive lease, bounded jobs/test threads, managed cache, native
+  progress watchdog and owned cancellation. Policy/workspace overrides refuse;
+  missing governors refuse before dispatch. Actual temporary-crate Cargo execution
+  verifies the environment/cache and released lease. Watcher cleanup also survives
+  unwinding. Legacy ungoverned repair dispatch is restricted to unit-test fixtures.
+
+While the Windows job was still running, the native remote watcher reached its
+separate twenty-minute no-new-evidence limit and settled as `Escalated`. This is
+required by binding PRD section 19; it is not weakened. The immutable epoch retained
+zero used full/infrastructure/diagnostic retries, no captured incomplete-matrix
+causes, and no tag/publication. The corrective source must be a genuine canonical
+strict descendant. Native admission must archive the complete stopped record
+before selecting its successor; no ledger reset or invented repair history is used.
+
+The current sandbox command port lacks managed-cache/environment binding. Governed
+repair Cargo therefore refuses selected sandbox routes before unsandboxed host
+execution. This is an explicit remaining composition limitation, not a tested
+sandbox capability. Production resource discovery remains Linux-scoped; non-Linux
+backends are unavailable and fail closed. A real-provider repair producer was
+prepared but not executed after the epoch stopped; fixture models and that prepared
+producer do not establish live-model effectiveness.
+
+
+[Corrective evidence manifest](2026-10-06-rrc-parity-production-release-corrective-evidence.json)
+and [receipt archive](2026-10-06-rrc-parity-production-release-corrective-receipts.tar.gz)
+bind the failed exact-source matrix, public controls and executed corrective proofs.
+The current-source executor suite passed 59 cases; the restored speech suite passed
+six and ACP metadata/process suite passed three. Full successor certification remains
+pending. Parent DOX boundaries and child indexes are unchanged; only owning contracts
+changed for the repair-command policy and fixture verification semantics.
+
+
+### Corrective verification methods
+
+Native default resource admission and its exclusive lease bounded each preparation
+Cargo invocation (`CARGO_INCREMENTAL=0`, one admitted job/test thread and the owned
+managed task cache). The temporary preparation wrapper supplies admission/lease;
+it does not establish registered-worker live-pressure/watchdog acceptance. Production
+release progression uses the real registered controller and native executor.
+
+Executed commands: `cargo test --locked -p vesper-harness --all-features --lib
+release_executor::tests`, `cargo test --locked -p agent-vesper-tui --all-features
+--test r3_speech_worker`, `cargo test --locked -p agent-vesper-acp --all-features
+--test release_resource_governor`, and `cargo xtask acceptance`. The first expanded
+acceptance pass executed 100 exact cases in 116929 ms. A subsequent source trace
+added repair-Cargo output/process heartbeat and registered-worker telemetry wiring;
+its current 59-case executor rerun passed, including actual environment/cache,
+heartbeat, bounded output, resource telemetry and settled-child assertions. The
+100-case preparation receipt remains scoped to the preceding source revision;
+final exact-source native and hosted gates must reexecute the complete inventory.
+
+The resource governor withheld compilation while swap was nearly exhausted. An
+inactive earlier proof cache contained 1,313,325,056 allocated bytes of generated
+incremental data. Cleanup held its exclusive Cargo cache lock, checked 160 owner
+processes and found no accessible active references; six protected noncompiler
+processes were retained. Only incremental entries were reclaimed, preserving source,
+final binaries, dependency libraries and receipts. The unchanged resource policy
+then admitted compilation. Primary HEAD `0b5630d2` and its 142 dirty paths remain
+preserved; Alex's installed application is untouched.
+
+
+The final corrective preparation rerun passed all 100 exact acceptance cases in
+126866 ms after the repair-command telemetry correction. Its actual managed-cache
+case additionally requires the displayed command to match the executed Cargo args,
+no stale gate, real resource/output observations, refreshed repair heartbeat and
+settled child. The evidence manifest binds final corrected Rust bytes and all
+preparation receipts; publication remains pending complete exact-source native and
+hosted gates. The canonical provenance marker certifies this source-integration
+work unit only, never release completion or unexecuted live-account acceptance.

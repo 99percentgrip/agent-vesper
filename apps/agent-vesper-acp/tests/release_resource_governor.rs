@@ -32,6 +32,25 @@ impl Drop for GateRelease {
 }
 
 #[test]
+fn controlled_cargo_metadata_emits_valid_json() {
+    let fixture = tempfile::tempdir().expect("temporary controlled Cargo fixture");
+    let cargo = fixture.path().join("cargo");
+    write_controlled_cargo(
+        &cargo,
+        &fixture.path().join("receipts"),
+        &fixture.path().join("release"),
+    );
+    let output = Command::new(&cargo)
+        .arg("metadata")
+        .output()
+        .expect("run metadata wrapper");
+    assert!(output.status.success());
+    let metadata: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .expect("controlled metadata must be valid JSON under the host POSIX shell");
+    assert_eq!(metadata, json!({"packages": []}));
+}
+
+#[test]
 fn acp_process_release_status_uses_governor_for_every_cargo_path() {
     governed_release_process("/release patch");
 }
@@ -232,7 +251,7 @@ fn write_controlled_cargo(path: &Path, receipts: &Path, release: &Path) {
     fs::write(
         path,
         format!(
-            "#!/bin/sh\ntag=gate\ncase \" $* \" in\n  *\" metadata \"*) tag=metadata ;;\n  *\" check \"*) tag=check ;;\nesac\nprintf '%s|%s|%s|%s\\n' \"$tag\" \"${{CARGO_BUILD_JOBS-}}\" \"${{RUST_TEST_THREADS-}}\" \"${{CARGO_TARGET_DIR-}}\" >> '{}'\nif [ \"$tag\" = metadata ]; then\n  printf '{{\\\"packages\\\":[]}}'\n  exit 0\nfi\nif [ \"$tag\" = check ]; then\n  exit 0\nfi\nwhile [ ! -e '{}' ]; do sleep 0.02; done\nexit 7\n",
+            "#!/bin/sh\ntag=gate\ncase \" $* \" in\n  *\" metadata \"*) tag=metadata ;;\n  *\" check \"*) tag=check ;;\nesac\nprintf '%s|%s|%s|%s\\n' \"$tag\" \"${{CARGO_BUILD_JOBS-}}\" \"${{RUST_TEST_THREADS-}}\" \"${{CARGO_TARGET_DIR-}}\" >> '{}'\nif [ \"$tag\" = metadata ]; then\n  printf '%s\\n' '{{\"packages\":[]}}'\n  exit 0\nfi\nif [ \"$tag\" = check ]; then\n  exit 0\nfi\nwhile [ ! -e '{}' ]; do sleep 0.02; done\nexit 7\n",
             quote(receipts),
             quote(release),
         ),

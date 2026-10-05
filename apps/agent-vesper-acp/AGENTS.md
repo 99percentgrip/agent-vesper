@@ -86,7 +86,9 @@ transport, stderr-only tracing, and orderly shutdown.
   deterministic synthetic snapshot so shared-runner procfs/cgroup/disk timing cannot
   control process-lifecycle acceptance. Dedicated governor tests retain live Linux and
   constrained-host coverage. Its short receipt deadline requires every controlled Cargo
-  command to record promptly before release. Non-Linux production governor discovery
+  command to record promptly before release. Its metadata JSON uses a literal
+  `%s` argument rather than implementation-dependent printf format escapes; the
+  named metadata regression requires valid JSON. Non-Linux production governor discovery
   remains deliberately unavailable and is covered by the separate five-target lifecycle
   gates.
 

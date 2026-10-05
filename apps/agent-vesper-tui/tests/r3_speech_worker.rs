@@ -22,24 +22,104 @@ fn worker_with_mock() -> SpeechWorker {
     )
 }
 
-/// RED (was the defect): speak_unit on the event thread blocked for the
-/// whole synthesis. The enqueue contract: returns in milliseconds.
+struct HeldSynthesis {
+    inner: vesper_voice::fakes::FakeTts,
+    entered: std::sync::mpsc::Sender<()>,
+    release: std::sync::Mutex<std::sync::mpsc::Receiver<()>>,
+    held: std::sync::atomic::AtomicBool,
+}
+
+impl vesper_voice::ports::VoiceTts for HeldSynthesis {
+    fn synthesize<'a>(
+        &'a self,
+        text: &'a str,
+        voice: &'a vesper_voice::ports::VoiceProfile,
+        cancel: &'a vesper_voice::cancel::VoiceCancel,
+    ) -> vesper_voice::ports::VoiceFuture<
+        'a,
+        Result<vesper_voice::ports::TtsStream<'a>, vesper_voice::error::VoiceError>,
+    > {
+        Box::pin(async move {
+            if !self.held.swap(true, std::sync::atomic::Ordering::AcqRel) {
+                self.entered.send(()).expect("observe real synthesis entry");
+                let released = self
+                    .release
+                    .lock()
+                    .expect("synthesis gate")
+                    .recv_timeout(Duration::from_secs(20));
+                assert!(released.is_ok(), "fixture synthesis gate was not released");
+            }
+            self.inner.synthesize(text, voice, cancel).await
+        })
+    }
+
+    fn descriptor(&self) -> &vesper_voice::ports::TtsDescriptor {
+        self.inner.descriptor()
+    }
+
+    fn voices<'a>(
+        &'a self,
+    ) -> vesper_voice::ports::VoiceFuture<
+        'a,
+        Result<Vec<vesper_voice::ports::VoiceProfile>, vesper_voice::error::VoiceError>,
+    > {
+        self.inner.voices()
+    }
+}
+
+struct ReleaseSynthesis(std::sync::mpsc::Sender<()>);
+
+impl Drop for ReleaseSynthesis {
+    fn drop(&mut self) {
+        let _ = self.0.send(());
+    }
+}
+
+/// The caller returns for both jobs while actual worker synthesis remains held.
+/// Wall-clock scheduling on a shared runner is not an enqueue benchmark.
 #[test]
 fn enqueue_never_blocks_for_synthesis() {
-    let worker = worker_with_mock();
-    let started = Instant::now();
-    worker.enqueue(SpeechJob {
-        segment: 1,
-        text: "Understood. This is a longer reply to make the point.".into(),
+    let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel();
+    let release = ReleaseSynthesis(release_tx);
+    let worker = Arc::new(SpeechWorker::spawn_with_tts_for_test(
+        EngineSelection::System {
+            voice_name: "en".into(),
+        },
+        Arc::new(PlaybackOwner::new("/nonexistent-player".into(), None)),
+        Arc::new(HeldSynthesis {
+            inner: vesper_voice::fakes::FakeTts::on_device(),
+            entered: entered_tx,
+            release: std::sync::Mutex::new(release_rx),
+            held: std::sync::atomic::AtomicBool::new(false),
+        }),
+    ));
+    let (returned_tx, returned_rx) = std::sync::mpsc::channel();
+    let caller_worker = Arc::clone(&worker);
+    let caller = std::thread::spawn(move || {
+        for segment in [1, 2] {
+            caller_worker.enqueue(SpeechJob {
+                segment,
+                text: "Queued speech.".into(),
+            });
+            returned_tx.send(segment).expect("observe caller return");
+        }
     });
-    let elapsed = started.elapsed();
-    // Even the espeak subprocess takes tens of ms; the enqueue itself
-    // must be far under that (a channel send).
-    assert!(
-        elapsed < Duration::from_millis(10),
-        "enqueue took {elapsed:?}"
-    );
+    let entered = entered_rx.recv_timeout(Duration::from_secs(10)).is_ok();
+    let first = returned_rx.recv_timeout(Duration::from_secs(5)).ok();
+    let second = returned_rx.recv_timeout(Duration::from_secs(5)).ok();
+    // Release before assertions and join the caller, including a regressed inline path.
+    worker.stop();
+    drop(release);
+    caller.join().expect("enqueue caller settled");
     worker.shutdown();
+    assert!(entered, "the real worker must enter controlled synthesis");
+    assert_eq!(first, Some(1), "first enqueue waited for synthesis release");
+    assert_eq!(
+        second,
+        Some(2),
+        "queued enqueue waited for synthesis release"
+    );
 }
 
 /// Stop invalidates a job enqueued BEFORE it: the outcome is Stale.

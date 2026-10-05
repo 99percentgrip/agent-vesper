@@ -590,6 +590,7 @@ pub struct NativeReleaseExecutor {
     /// constructor leaves it absent only for narrow executor tests that do
     /// not represent a controller-admitted local gate.
     resource_governor: Option<HostResourceGovernor>,
+    repair_heartbeat: Option<Arc<Mutex<Instant>>>,
 }
 
 impl NativeReleaseExecutor {
@@ -600,6 +601,7 @@ impl NativeReleaseExecutor {
             firewall: None,
             activity: None,
             resource_governor: None,
+            repair_heartbeat: None,
         })
     }
 
@@ -615,6 +617,7 @@ impl NativeReleaseExecutor {
             firewall: None,
             activity: Some(activity),
             resource_governor: None,
+            repair_heartbeat: None,
         })
     }
 
@@ -630,6 +633,7 @@ impl NativeReleaseExecutor {
             firewall: None,
             activity: Some(activity),
             resource_governor: Some(resource_governor),
+            repair_heartbeat: None,
         })
     }
 
@@ -703,7 +707,13 @@ impl NativeReleaseExecutor {
         let stdout_activity = self.activity.clone();
         let stderr_activity = self.activity.clone();
         let started_at = Instant::now();
-        let heartbeat = Arc::new(Mutex::new(started_at));
+        let heartbeat = self
+            .repair_heartbeat
+            .clone()
+            .unwrap_or_else(|| Arc::new(Mutex::new(started_at)));
+        if let Ok(mut observed) = heartbeat.lock() {
+            *observed = started_at;
+        }
         let stdout_heartbeat = Arc::clone(&heartbeat);
         let stderr_heartbeat = Arc::clone(&heartbeat);
         let stdout_reader = thread::spawn(move || {
@@ -731,6 +741,11 @@ impl NativeReleaseExecutor {
                             Some(previous) if previous != observation => {
                                 let observed_at = Instant::now();
                                 process_heartbeat = Some(observed_at);
+                                if let Some(shared) = &self.repair_heartbeat
+                                    && let Ok(mut observed) = shared.lock()
+                                {
+                                    *observed = observed_at;
+                                }
                                 if let Some(activity) = self.activity.as_ref()
                                     && let Ok(mut activity) = activity.lock()
                                 {
@@ -4972,21 +4987,25 @@ pub(crate) mod tests {
         let mut command = Command::new("sh");
         command.args([
             "-c",
-            "i=0; while [ $i -lt 5 ]; do echo tick; i=$((i+1)); sleep 0.05; done",
+            "i=0; while [ $i -lt 30 ]; do echo tick; i=$((i+1)); sleep 0.1; done",
         ]);
+        // Total work exceeds one inactivity window; periodic output must extend it.
+        // The scheduling margin belongs to this fixture, not production policy.
+        let started = Instant::now();
         let output = run_bounded_external_command(
             &mut command,
             &cancelled,
             CommandWatchdogPolicy {
                 operation: "progress fixture",
-                inactivity_timeout: Duration::from_millis(120),
+                inactivity_timeout: Duration::from_secs(2),
                 hard_deadline: None,
             },
         )
         .expect("observable progress must keep the command alive");
 
         assert!(output.status.success());
-        assert_eq!(String::from_utf8_lossy(&output.stdout).lines().count(), 5);
+        assert_eq!(String::from_utf8_lossy(&output.stdout).lines().count(), 30);
+        assert!(started.elapsed() > Duration::from_secs(2));
     }
 
     #[test]
@@ -6507,6 +6526,238 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn repair_cargo_requires_governor_and_rejects_policy_overrides() {
+        let workspace = tempfile::tempdir().unwrap();
+        let resources = tempfile::tempdir().unwrap();
+        let context = repair_command_test_context(workspace.path());
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let command = repair_command_test_call("cargo test actual_regression -- --exact");
+        let missing =
+            runtime.block_on(repair_tool_registry_with_governor(None).execute(&command, &context));
+        assert!(
+            matches!(missing, Err(vesper_agent::ToolError::Failed(message)) if message.contains("controller-owned resource governor"))
+        );
+        let governor = HostResourceGovernor::new(
+            permissive_resource_policy(),
+            resources.path().join("scheduler"),
+            resources.path().join("target"),
+        )
+        .unwrap();
+        let registry = repair_tool_registry_with_governor(Some(governor));
+        for flag in [
+            "--jobs=99",
+            "-j99",
+            "--target-dir=elsewhere",
+            "--config=elsewhere",
+            "--manifest-path=elsewhere",
+            "--test-threads=99",
+        ] {
+            let call = repair_command_test_call(&format!("cargo test actual_regression {flag}"));
+            assert!(
+                matches!(runtime.block_on(registry.execute(&call, &context)), Err(vesper_agent::ToolError::InvalidArguments { reason, .. }) if reason.contains("resource policy")),
+                "{flag}"
+            );
+        }
+        assert!(!resources.path().join("target/debug").exists());
+        assert!(fs::read_dir(workspace.path()).unwrap().next().is_none());
+
+        use vesper_agent::sandbox_route::*;
+        struct NoDispatch;
+        impl SandboxBackendPort for NoDispatch {
+            fn capabilities(&self) -> SandboxCapabilities {
+                SandboxCapabilities {
+                    backend: "fixture-full".into(),
+                    process_tree: CapabilityStatus::Available,
+                    filesystem: CapabilityStatus::Available,
+                    network: CapabilityStatus::Available,
+                    strength: SecurityStrength::Full,
+                }
+            }
+            fn run_command(
+                &self,
+                _: &str,
+                _: &Path,
+                _: u64,
+                _: &Arc<dyn vesper_provider::CancellationSignal>,
+            ) -> Result<SandboxOutcome, SandboxRunError> {
+                panic!("unsupported governed route must refuse before dispatch")
+            }
+        }
+        let mut sandbox_context = context;
+        sandbox_context.sandbox = Some(Arc::new(SandboxRoute::new(
+            SandboxDemand {
+                requirement: IsolationRequirement::Full,
+                ..SandboxDemand::none()
+            },
+            SandboxBackendChoice::Default,
+            Arc::new(NoDispatch),
+        )));
+        assert!(
+            matches!(runtime.block_on(registry.execute(&command, &sandbox_context)), Err(vesper_agent::ToolError::Failed(message)) if message.contains("refusing host execution"))
+        );
+        assert!(fs::read_dir(workspace.path()).unwrap().next().is_none());
+    }
+
+    fn repair_command_test_context(workspace: &Path) -> vesper_agent::ToolContext {
+        vesper_agent::ToolContext {
+            workspace_roots: vec![vesper_domain::WorkspaceRoot {
+                name: vesper_domain::BoundedString::new("repair-fixture").unwrap(),
+                path: vesper_domain::BoundedString::new(workspace.display().to_string()).unwrap(),
+                primary: true,
+            }],
+            firewall: None,
+            sandbox: None,
+            provider_id: vesper_domain::ProviderId::new("fixture.repair").unwrap(),
+            operating_mode: vesper_domain::SessionOperatingMode::Code,
+            permission_mode: vesper_domain::SessionPermissionMode::Bypass,
+            conversation: Vec::new(),
+            cancellation: Arc::new(vesper_runtime::RuntimeCancellation::new()),
+        }
+    }
+
+    fn repair_command_test_call(command: &str) -> vesper_domain::ToolCall {
+        vesper_domain::ToolCall {
+            id: vesper_domain::ToolCallId::new("repair-cargo").unwrap(),
+            tool_id: vesper_domain::ToolId::new("run_command").unwrap(),
+            arguments: serde_json::json!({"command": command}),
+            extensions: Default::default(),
+        }
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn repair_cargo_uses_managed_cache_and_bounded_environment() {
+        let workspace = tempfile::tempdir().unwrap();
+        let resources = tempfile::tempdir().unwrap();
+        fs::create_dir(workspace.path().join("src")).unwrap();
+        fs::write(workspace.path().join("Cargo.toml"), "[package]\nname = \"governed-repair-fixture\"\nversion = \"0.1.0\"\nedition = \"2024\"\n[workspace]\n").unwrap();
+        fs::write(workspace.path().join("src/lib.rs"), r#"
+#[test]
+fn actual_regression() {
+    assert_eq!(std::env::var("CARGO_BUILD_JOBS").unwrap(), "1");
+    assert_eq!(std::env::var("RUST_TEST_THREADS").unwrap(), "1");
+    assert!(std::path::Path::new(&std::env::var("CARGO_TARGET_DIR").unwrap()).ends_with("managed-cache"));
+}
+"#).unwrap();
+        let cache = resources.path().join("managed-cache");
+        let governor = HostResourceGovernor::new(
+            permissive_resource_policy(),
+            resources.path().join("scheduler"),
+            &cache,
+        )
+        .unwrap();
+        let started = Instant::now();
+        let heartbeat = Arc::new(Mutex::new(started - Duration::from_secs(600)));
+        let activity = Arc::new(Mutex::new(ReleaseWorkerActivity {
+            epoch_id: "repair-fixture".into(),
+            stage: "Release recovery".into(),
+            detail: "Focused repair".into(),
+            current_gate: None,
+            current_command: None,
+            current_child: None,
+            gate_started_at: None,
+            last_activity_at: started,
+            completed_gates: 0,
+            total_gates: 0,
+            version_before: None,
+            version_after: None,
+            candidate_sha: None,
+            retry_budget: String::new(),
+            failure_fingerprint: None,
+            recent_output: VecDeque::new(),
+            progress: ReleaseProgress::default(),
+            resource_deferred: false,
+            resource_telemetry: None,
+        }));
+        let registry = build_repair_tool_registry(
+            Some(governor.clone()),
+            false,
+            Some(RepairCommandProgress {
+                heartbeat: Arc::clone(&heartbeat),
+                activity: Some(Arc::clone(&activity)),
+            }),
+        );
+        let call = repair_command_test_call("cargo test --offline actual_regression -- --exact");
+        let context = repair_command_test_context(workspace.path());
+        let output = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(registry.execute(&call, &context))
+            .unwrap();
+        assert!(output.text.as_str().contains("1 passed; 0 failed"));
+        assert!(*heartbeat.lock().unwrap() >= started);
+        let observed = activity.lock().unwrap();
+        assert!(observed.current_child.is_none());
+        assert_eq!(
+            observed.current_command.as_deref(),
+            Some("cargo test --offline actual_regression -- --exact")
+        );
+        assert!(observed.current_gate.is_none());
+        assert!(observed.resource_telemetry.is_some());
+        assert!(
+            observed
+                .recent_output
+                .iter()
+                .any(|line| line.contains("1 passed; 0 failed"))
+        );
+        assert!(cache.join("debug/deps").exists());
+        assert!(!workspace.path().join("target").exists());
+        // The native expensive-resource lease is released after owned-child settlement.
+        assert!(governor.preflight(GateCost::Expensive).is_ok());
+    }
+
+    #[test]
+    fn repair_command_signal_watcher_settles_on_unwind() {
+        let cancelled = Arc::new(AtomicBool::new(false));
+        drop(RepairCommandCancellation {
+            cancelled: Arc::clone(&cancelled),
+            settled: false,
+        });
+        assert!(cancelled.load(Ordering::Acquire));
+        cancelled.store(false, Ordering::Release);
+        drop(RepairCommandCancellation {
+            cancelled: Arc::clone(&cancelled),
+            settled: true,
+        });
+        assert!(!cancelled.load(Ordering::Acquire));
+        let settled = Arc::new(AtomicBool::new(false));
+        let observed_settled = Arc::clone(&settled);
+        let result = std::panic::catch_unwind(move || {
+            let done = Arc::new(AtomicBool::new(false));
+            let observed_done = Arc::clone(&done);
+            let worker = thread::spawn(move || {
+                while !observed_done.load(Ordering::Acquire) {
+                    thread::sleep(Duration::from_millis(1));
+                }
+                observed_settled.store(true, Ordering::Release);
+            });
+            let _watcher = RepairCommandSignalWatcher {
+                done,
+                worker: Some(worker),
+            };
+            panic!("controlled repair task unwind");
+        });
+        assert!(result.is_err());
+        assert!(settled.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn focused_proof_identifies_rust_panic_with_numeric_thread_id() {
+        for line in [
+            "thread 'actual_regression' panicked at tests/case.rs:272:9:",
+            "2026-10-05T21:39:18Z thread 'actual_regression' (14427) panicked at tests/case.rs:272:9:",
+        ] {
+            assert_eq!(failed_rust_test(line).as_deref(), Some("actual_regression"));
+        }
+        for line in [
+            "thread 'main' (1234) panicked at src/main.rs:1:1:",
+            "thread '<unnamed>' (1234) panicked at src/lib.rs:1:1:",
+            "thread 'actual_regression' (invalid) panicked at src/lib.rs:1:1:",
+        ] {
+            assert_eq!(failed_rust_test(line), None);
+        }
+    }
+
+    #[test]
     fn focused_test_proof_requires_a_nonzero_executed_pass() {
         assert!(!cargo_test_executed(
             "test result: ok. 0 passed; 0 failed; 5 filtered out"
@@ -7198,10 +7449,36 @@ fn run_bounded_repair_agent_with_verification(
         .map_err(|error| RrcError::Invalid(format!("repair runtime failed: {error}")))?;
     let repair_started = Instant::now();
     let turn = runtime.block_on(async {
-        let turn = monitored_factory.run_coding_turn_in_workspace(
+        let tools = match verification.governor.clone() {
+            Some(governor) => build_repair_tool_registry(
+                Some(governor),
+                false,
+                Some(RepairCommandProgress {
+                    heartbeat: Arc::clone(&heartbeat),
+                    activity: active_workers().lock().ok().and_then(|workers| {
+                        workers
+                            .get(&record.repo_identity)
+                            .map(|worker| Arc::clone(&worker.activity))
+                    }),
+                }),
+            ),
+            None => {
+                // The substituted fixture-wide gate port is test-only.
+                #[cfg(test)]
+                {
+                    repair_tool_registry()
+                }
+                #[cfg(not(test))]
+                {
+                    repair_tool_registry_with_governor(None)
+                }
+            }
+        };
+        let turn = monitored_factory.run_coding_turn_in_workspace_with_registry(
             repair_root.clone(),
             prompt,
             Arc::clone(&runtime_cancel),
+            tools,
         );
         tokio::pin!(turn);
         loop {
@@ -7434,11 +7711,37 @@ fn apply_binary_patch(executor: &NativeReleaseExecutor, bytes: &[u8]) -> Result<
 
 /// The repair role can edit source and execute supported verification, but cannot
 /// directly perform controller-owned Git/GitHub lifecycle operations.
+#[cfg(test)]
 pub(crate) fn repair_tool_registry() -> vesper_agent::ToolRegistry {
-    struct RepairTools(vesper_agent::ToolRegistry);
+    build_repair_tool_registry(None, true, None)
+}
+
+fn repair_tool_registry_with_governor(
+    governor: Option<HostResourceGovernor>,
+) -> vesper_agent::ToolRegistry {
+    build_repair_tool_registry(governor, false, None)
+}
+
+#[derive(Clone)]
+struct RepairCommandProgress {
+    heartbeat: Arc<Mutex<Instant>>,
+    activity: Option<Arc<Mutex<ReleaseWorkerActivity>>>,
+}
+
+fn build_repair_tool_registry(
+    governor: Option<HostResourceGovernor>,
+    fixture_commands: bool,
+    progress: Option<RepairCommandProgress>,
+) -> vesper_agent::ToolRegistry {
+    struct RepairTools {
+        inner: vesper_agent::ToolRegistry,
+        governor: Option<HostResourceGovernor>,
+        fixture_commands: bool,
+        progress: Option<RepairCommandProgress>,
+    }
     impl vesper_agent::ToolService for RepairTools {
         fn definitions(&self) -> Vec<vesper_domain::ToolDefinition> {
-            self.0
+            self.inner
                 .definitions_for(vesper_domain::SessionOperatingMode::Code)
         }
         fn execute<'a>(
@@ -7480,12 +7783,165 @@ pub(crate) fn repair_tool_registry() -> vesper_agent::ToolRegistry {
                     })
                 });
             }
-            self.0.execute(call, context)
+            if call.tool_id.as_str() == "run_command"
+                && call
+                    .arguments
+                    .get("command")
+                    .and_then(serde_json::Value::as_str)
+                    .is_some_and(|command| command.split_whitespace().next() == Some("cargo"))
+                && !self.fixture_commands
+            {
+                return run_governed_repair_command(
+                    call,
+                    context,
+                    self.governor.clone(),
+                    self.progress.clone(),
+                );
+            }
+            self.inner.execute(call, context)
         }
     }
-    vesper_agent::ToolRegistry::empty().with_service(Arc::new(RepairTools(
-        vesper_agent::ToolRegistry::parity_default(),
-    )))
+    vesper_agent::ToolRegistry::empty().with_service(Arc::new(RepairTools {
+        inner: vesper_agent::ToolRegistry::parity_default(),
+        governor,
+        fixture_commands,
+        progress,
+    }))
+}
+
+struct RepairCommandCancellation {
+    cancelled: Arc<AtomicBool>,
+    settled: bool,
+}
+
+impl Drop for RepairCommandCancellation {
+    fn drop(&mut self) {
+        if !self.settled {
+            self.cancelled.store(true, Ordering::Release);
+        }
+    }
+}
+
+struct RepairCommandSignalWatcher {
+    done: Arc<AtomicBool>,
+    worker: Option<thread::JoinHandle<()>>,
+}
+
+impl Drop for RepairCommandSignalWatcher {
+    fn drop(&mut self) {
+        self.done.store(true, Ordering::Release);
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+    }
+}
+
+fn run_governed_repair_command<'a>(
+    call: &'a vesper_domain::ToolCall,
+    context: &'a vesper_agent::ToolContext,
+    governor: Option<HostResourceGovernor>,
+    progress: Option<RepairCommandProgress>,
+) -> vesper_agent::ToolFuture<'a, Result<vesper_agent::ToolResult, vesper_agent::ToolError>> {
+    Box::pin(async move {
+        use vesper_agent::ToolError;
+        let governor = governor.ok_or_else(|| {
+            ToolError::Failed(
+                "RRC repair Cargo requires the controller-owned resource governor".into(),
+            )
+        })?;
+        let command = call
+            .arguments
+            .get("command")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| ToolError::InvalidArguments {
+                tool: "run_command".into(),
+                reason: "missing command".into(),
+            })?;
+        let words = command.split_whitespace().collect::<Vec<_>>();
+        if words.iter().any(|word| {
+            word.starts_with("--target-dir")
+                || word.starts_with("--jobs")
+                || word.starts_with("-j")
+                || word.starts_with("--test-threads")
+                || word.starts_with("--config")
+                || word.starts_with("--manifest-path")
+        }) {
+            return Err(ToolError::InvalidArguments {
+                tool: "run_command".into(),
+                reason:
+                    "repair Cargo cannot override the controller's resource policy or workspace"
+                        .into(),
+            });
+        }
+        // Native host verification cannot silently bypass a requested OS sandbox.
+        // The existing sandbox port has no managed-cache/environment binding.
+        if let Some(route) = context.sandbox.as_deref() {
+            return Err(ToolError::Failed(if route.satisfies_demand() {
+                "selected sandbox has no governed RRC Cargo route; refusing host execution".into()
+            } else {
+                route.refusal_text()
+            }));
+        }
+        let workspace = context
+            .workspace_roots
+            .iter()
+            .find(|root| root.primary)
+            .or_else(|| context.workspace_roots.first())
+            .ok_or_else(|| ToolError::Failed("repair workspace is missing".into()))?;
+        let workspace = PathBuf::from(workspace.path.as_str());
+        let signal = context.cancellation.clone();
+        let cancelled = Arc::new(AtomicBool::new(signal.is_cancelled()));
+        let mut guard = RepairCommandCancellation {
+            cancelled: Arc::clone(&cancelled),
+            settled: false,
+        };
+        let firewall = context.firewall.clone();
+        let words = words.into_iter().map(str::to_owned).collect::<Vec<_>>();
+        let result = tokio::task::spawn_blocking(move || {
+            let done = Arc::new(AtomicBool::new(false));
+            let observed_done = Arc::clone(&done);
+            let observed_cancelled = Arc::clone(&cancelled);
+            let watcher = thread::spawn(move || {
+                while !observed_done.load(Ordering::Acquire) {
+                    if signal.is_cancelled() {
+                        observed_cancelled.store(true, Ordering::Release);
+                        break;
+                    }
+                    thread::sleep(WATCHDOG_POLL_INTERVAL);
+                }
+            });
+            let _watcher = RepairCommandSignalWatcher {
+                done,
+                worker: Some(watcher),
+            };
+            // Hold the exclusive lease through native owned-child settlement.
+            (|| {
+                let mut executor = NativeReleaseExecutor::new(&workspace, cancelled)?
+                    .with_firewall(firewall)
+                    .with_resource_governor(governor);
+                if let Some(progress) = progress {
+                    executor.repair_heartbeat = Some(progress.heartbeat);
+                    executor.activity = progress.activity;
+                }
+                let admission = executor.admit_local_resources(GateCost::Expensive)?;
+                let args = words[1..].iter().map(String::as_str).collect::<Vec<_>>();
+                if let Some(activity) = &executor.activity
+                    && let Ok(mut activity) = activity.lock()
+                {
+                    activity.current_gate = None;
+                    activity.current_command = Some(format_command(&words[0], &args));
+                    activity.gate_started_at = Some(Instant::now());
+                }
+                executor.checked_with_admitted_resources(&words[0], &args, &admission)
+            })()
+        })
+        .await
+        .map_err(|error| ToolError::Failed(format!("governed repair task failed: {error}")))?;
+        guard.settled = true;
+        let output =
+            result.map_err(|error| ToolError::Failed(redact_secrets(&error.to_string())))?;
+        vesper_agent::ToolResult::new(output)
+    })
 }
 
 fn cargo_command<'a>(words: &[&'a str]) -> Option<&'a str> {
@@ -7559,7 +8015,7 @@ fn run_focused_verification(
 }
 
 fn failed_rust_test(excerpt: &str) -> Option<String> {
-    regex::Regex::new(r"thread '([^']+)' panicked")
+    regex::Regex::new(r"thread '([^']+)'(?: \([0-9]+\))? panicked")
         .expect("static Rust panic regex")
         .captures(excerpt)
         .map(|captures| captures[1].to_owned())

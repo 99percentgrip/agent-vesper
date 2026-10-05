@@ -2773,11 +2773,28 @@ impl WorkerFactory {
         self.progress.clone()
     }
 
+    #[cfg(test)]
     pub(crate) async fn run_coding_turn_in_workspace(
         &self,
         workspace: PathBuf,
         prompt: String,
         cancellation: Arc<vesper_runtime::RuntimeCancellation>,
+    ) -> Result<(AgentTurnOutcome, Vec<ConversationMessage>), String> {
+        self.run_coding_turn_in_workspace_with_registry(
+            workspace,
+            prompt,
+            cancellation,
+            release_executor::repair_tool_registry(),
+        )
+        .await
+    }
+
+    pub(crate) async fn run_coding_turn_in_workspace_with_registry(
+        &self,
+        workspace: PathBuf,
+        prompt: String,
+        cancellation: Arc<vesper_runtime::RuntimeCancellation>,
+        tools: ToolRegistry,
     ) -> Result<(AgentTurnOutcome, Vec<ConversationMessage>), String> {
         let mut config = self.config.clone();
         config.max_tool_iterations = if config.max_tool_iterations == 0 {
@@ -2791,12 +2808,8 @@ impl WorkerFactory {
                 .map_err(|error| error.to_string())?,
             primary: true,
         }];
-        let mut worker = AgentLoop::new(
-            self.registry.clone(),
-            release_executor::repair_tool_registry(),
-            config,
-        )
-        .with_permission_port(self.permission.clone());
+        let mut worker = AgentLoop::new(self.registry.clone(), tools, config)
+            .with_permission_port(self.permission.clone());
         if let Some(progress) = self.progress.clone() {
             worker = worker.with_progress_port(progress);
         }

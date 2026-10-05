@@ -13,7 +13,10 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
   Its preparation evidence JSON and archive bind intermediate local red/green
   receipts; its integration companions bind intermediate committed-source gates,
   actual public runner-acquisition failure and the native annotation repair.
-  Final exact-source and publication evidence belongs in the report.
+  Its corrective companions retain the complete failed production matrix, fresh
+  public controls, shell portability and semantic mutation receipts; the stopped
+  epoch is preserved before native strict-descendant admission. Final exact-source
+  and publication evidence belongs in the report.
 
 - `release-recovery-controller-parity-continuation.md` owns continued binding
   acceptance: publishing prerequisites, last-green lane evidence, measured

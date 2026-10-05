@@ -40,7 +40,10 @@ architecture, MSRV, and source-oracle checks.
   annotations, preserves the causal acquisition message, and rejects missing
   annotations without inventing an outage; it runs on every native target.
   The local failure receipt case requires late stdout assertions to survive bounded
-  storage with secrets redacted.
+  storage with secrets redacted. Numeric-thread-ID panic parsing, repair Cargo
+  governor/override refusal and watcher unwind settlement are mandatory on every
+  target. Linux additionally runs actual managed-cache/bounded-environment repair
+  Cargo and portable controlled-metadata JSON cases.
   Host-neutral swap-window cases reject subsecond rate amplification and retain
   sustained pressure/critical detection on every target; the threshold case also
   requires displayed RAM requirements to include actual swap/owned-tree margins.
