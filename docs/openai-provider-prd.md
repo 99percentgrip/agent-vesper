@@ -295,3 +295,12 @@ cancellation. Twelve authentication UI tests, all 300 TUI library tests and
 cross-platform UI observation remain unexecuted; RRC's five-target candidate
 predates this additional UI repair. The adapter still uses its native credential
 port and no Codex runtime or credential files.
+
+## RRC initial-request recovery evidence
+
+The [RRC autonomy audit](foundation/2026-10-06-rrc-autonomy-and-prd-audit.md)
+records the stopped worker request and verified adapter-owned HTTP 500/503 retry
+metadata. Shared repair code honors that metadata before any output/tools, permits
+one bounded retry and retains typed failure diagnostics. Both authentication modes
+retain Never for authentication/payment/quota rejections. These offline receipts
+do not establish the HTTP status of the earlier live error or a vendor outage.

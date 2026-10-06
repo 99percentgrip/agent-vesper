@@ -4419,6 +4419,7 @@ dependencies = [
  "fs2",
  "futures-core",
  "futures-util",
+ "httpdate",
  "reqwest",
  "serde",
  "serde_json",

@@ -6442,6 +6442,19 @@ pub(crate) mod tests {
         vesper_testkit::FakeProviderSession,
         tokio::runtime::Runtime,
     ) {
+        repair_test_factory_with_prefix(label, repaired, commands, Vec::new())
+    }
+
+    fn repair_test_factory_with_prefix(
+        label: &str,
+        repaired: &str,
+        commands: &[&str],
+        prefix: Vec<vesper_testkit::ScriptedProviderResponse>,
+    ) -> (
+        crate::WorkerFactory,
+        vesper_testkit::FakeProviderSession,
+        tokio::runtime::Runtime,
+    ) {
         use vesper_domain::{
             BoundedString, ContentPart, ContentText, ExtensionMap, FinishOutcome, ProviderId,
             ToolCall, ToolCallId, ToolId,
@@ -6517,7 +6530,8 @@ pub(crate) mod tests {
                 metadata: ExtensionMap::default(),
             }),
         ]));
-        let session = vesper_testkit::FakeProviderSession::with_scripts(scripts);
+        let session =
+            vesper_testkit::FakeProviderSession::with_scripts(prefix.into_iter().chain(scripts));
         let id = ProviderId::new(label).unwrap();
         let registry = Arc::new(vesper_runtime::ProviderRegistry::new());
         let runtime = tokio::runtime::Builder::new_current_thread()
@@ -6679,6 +6693,207 @@ pub(crate) mod tests {
                 "pub fn answer() {}\n"
             );
         }
+    }
+
+    #[test]
+    fn repair_initial_provider_retry_is_bounded_and_never_replays_tools() {
+        fn failure(
+            label: &str,
+            retry: vesper_domain::Retryability,
+            delay: Option<u64>,
+        ) -> vesper_testkit::ScriptedProviderResponse {
+            Err(Box::new(vesper_provider::ProviderError {
+                provider_id: vesper_domain::ProviderId::new(label).unwrap(),
+                provider_code: None,
+                http_status: Some(503),
+                continuation_possible: false,
+                info: vesper_domain::ErrorInfo {
+                    category: vesper_domain::ErrorCategory::Transport,
+                    retryability: retry,
+                    retry_after_ms: delay,
+                    visible_output_emitted: false,
+                    safe_message: vesper_domain::SafeMessage::new(
+                        "service temporarily unavailable",
+                    )
+                    .unwrap(),
+                    diagnostics: Default::default(),
+                    provider_code: None,
+                    causes: Vec::new(),
+                },
+                metadata: Default::default(),
+            }))
+        }
+        for label in ["fixture.retry-a", "fixture.retry-b"] {
+            let root = tempfile::tempdir().unwrap();
+            fs::create_dir(root.path().join("src")).unwrap();
+            let (factory, session, runtime) = repair_test_factory_with_prefix(
+                label,
+                "pub fn answer() {}\n",
+                &[],
+                vec![failure(
+                    label,
+                    vesper_domain::Retryability::BeforeVisibleOutput,
+                    None,
+                )],
+            );
+            let (outcome, _) = runtime
+                .block_on(factory.run_coding_turn_in_workspace(
+                    root.path().to_path_buf(),
+                    "Complete repair".into(),
+                    Arc::new(vesper_runtime::RuntimeCancellation::new()),
+                ))
+                .unwrap();
+            assert!(outcome.is_success());
+            assert_eq!(session.requests().len(), 3);
+            assert_eq!(
+                session.requests()[0].messages,
+                session.requests()[1].messages
+            );
+            assert!(root.path().join("src/lib.rs").exists());
+        }
+        for (retry, delay, failures, expected) in [
+            (vesper_domain::Retryability::Never, None, 1, 1),
+            (
+                vesper_domain::Retryability::BeforeVisibleOutput,
+                Some(30_001),
+                1,
+                1,
+            ),
+            (vesper_domain::Retryability::BeforeVisibleOutput, None, 2, 2),
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let label = "fixture.retry-refusal";
+            let prefix = (0..failures)
+                .map(|_| failure(label, retry, delay))
+                .collect();
+            let (factory, session, runtime) =
+                repair_test_factory_with_prefix(label, "", &[], prefix);
+            let error = runtime
+                .block_on(factory.run_coding_turn_in_workspace(
+                    root.path().to_path_buf(),
+                    "Complete repair".into(),
+                    Arc::new(vesper_runtime::RuntimeCancellation::new()),
+                ))
+                .unwrap_err();
+            assert_eq!(session.requests().len(), expected);
+            assert!(error.contains("HTTP=503"));
+            assert!(!root.path().join("src/lib.rs").exists());
+        }
+        let root = tempfile::tempdir().unwrap();
+        let label = "fixture.retry-ambiguous";
+        let error = match failure(
+            label,
+            vesper_domain::Retryability::BeforeVisibleOutput,
+            None,
+        ) {
+            Err(error) => *error,
+            Ok(_) => unreachable!(),
+        };
+        let prefix = vec![Ok(vec![
+            Ok(vesper_provider::ProviderStreamEvent::ToolCallStarted {
+                index: 0,
+                call_id: None,
+                name: None,
+            }),
+            Err(error),
+        ])];
+        let (factory, session, runtime) = repair_test_factory_with_prefix(label, "", &[], prefix);
+        let (outcome, _) = runtime
+            .block_on(factory.run_coding_turn_in_workspace(
+                root.path().to_path_buf(),
+                "Complete repair".into(),
+                Arc::new(vesper_runtime::RuntimeCancellation::new()),
+            ))
+            .unwrap();
+        assert!(matches!(
+            outcome,
+            vesper_agent::AgentTurnOutcome::Interrupted {
+                tool_call_started: true,
+                ..
+            }
+        ));
+        assert_eq!(session.requests().len(), 1);
+
+        let root = tempfile::tempdir().unwrap();
+        let label = "fixture.retry-cancel";
+        let (factory, session, runtime) = repair_test_factory_with_prefix(
+            label,
+            "",
+            &[],
+            vec![failure(
+                label,
+                vesper_domain::Retryability::BeforeVisibleOutput,
+                None,
+            )],
+        );
+        let cancellation = Arc::new(vesper_runtime::RuntimeCancellation::new());
+        runtime.block_on(async {
+            let signal = cancellation.clone();
+            let canceller = tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                signal.cancel();
+            });
+            let result = factory
+                .run_coding_turn_in_workspace(
+                    root.path().to_path_buf(),
+                    "Complete repair".into(),
+                    cancellation,
+                )
+                .await;
+            assert!(
+                result
+                    .unwrap_err()
+                    .contains("cancelled before initial-request retry")
+            );
+            canceller.await.unwrap();
+        });
+        assert_eq!(session.requests().len(), 1);
+
+        // A transient rejection after the successful write must not restart it.
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir(root.path().join("src")).unwrap();
+        let label = "fixture.retry-after-write";
+        let initial = Ok(vec![
+            Ok(vesper_provider::ProviderStreamEvent::ToolCallCompleted(
+                vesper_domain::ToolCall {
+                    id: vesper_domain::ToolCallId::new("write-once").unwrap(),
+                    tool_id: vesper_domain::ToolId::new("write_file").unwrap(),
+                    arguments: serde_json::json!({"path":"src/lib.rs","content":"preserved action"}),
+                    extensions: Default::default(),
+                },
+            )),
+            Ok(vesper_provider::ProviderStreamEvent::Completed {
+                finish: vesper_domain::FinishOutcome::ToolCalls,
+                metadata: Default::default(),
+            }),
+        ]);
+        let (factory, session, runtime) = repair_test_factory_with_prefix(
+            label,
+            "overwritten",
+            &[],
+            vec![
+                initial,
+                failure(
+                    label,
+                    vesper_domain::Retryability::BeforeVisibleOutput,
+                    None,
+                ),
+            ],
+        );
+        assert!(
+            runtime
+                .block_on(factory.run_coding_turn_in_workspace(
+                    root.path().to_path_buf(),
+                    "Complete repair".into(),
+                    Arc::new(vesper_runtime::RuntimeCancellation::new())
+                ))
+                .is_err()
+        );
+        assert_eq!(session.requests().len(), 2);
+        assert_eq!(
+            fs::read_to_string(root.path().join("src/lib.rs")).unwrap(),
+            "preserved action"
+        );
     }
 
     #[test]

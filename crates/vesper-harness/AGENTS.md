@@ -59,6 +59,13 @@ Z.ai and Playwright MCP server descriptors.
   96 turns (smaller host caps remain smaller). Native plan continuation shares this
   ceiling. Interruption never continues or replays ambiguous calls. Semantic and
   heartbeat watchdogs span all segments; terminal refusals identify their outcome.
+  Initial provider rejection permits one retry within the same admission only when
+  the adapter permits retry before visible output, exactly one request has started,
+  no output/tool/compaction work has occurred and cancellation is clear. Wait at
+  least two seconds and honor server delays up to 30 seconds; longer delays defer.
+  Repeated rejection, Never, ambiguous fragments and any executed action refuse
+  restart. The failed request counts toward the role ceiling. Preserve safe category,
+  HTTP status, retryability and server delay in terminal diagnostics.
   This copied repair configuration never changes the ordinary host setting.
   Local repair preserves the version seed and includes new files; candidate
   commits include only admitted version/repair paths. Native version preparation
@@ -236,7 +243,10 @@ Z.ai and Playwright MCP server descriptors.
   changes. It is a display/read-resume projection only; RRC state and immutable
   evidence remain the sole progression authority. TUI chat/RUN and ACP status render
   this same projection and must not infer progress from elapsed time. The RRC-owned
-  `host_resources` governor samples Linux physical/cgroup capacity, effective
+  `host_resources` expensive-gate leases explicitly unlock on drop before closing
+  their descriptor, so a concurrent fork's duplicate cannot delay safe reacquisition.
+  Owned children must settle before their resource admission drops. Its governor
+  samples Linux physical/cgroup capacity, effective
   `MemAvailable`, reserve plus required gate headroom, memory PSI, swap growth,
   swap growth uses a minimum five-second observation window and retains the last
   measured trend between windows; startup warming is explicit and default pressure

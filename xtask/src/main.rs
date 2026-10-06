@@ -2486,6 +2486,26 @@ fn acceptance_verify() -> Result<(), String> {
             "release_executor::tests::repair_terminal_diagnostics_identify_the_safety_stop",
         ),
         (
+            "vesper-harness",
+            &["--lib"],
+            "host_resources::tests::expensive_slot_release_unlocks_inherited_file_description",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_executor::tests::repair_initial_provider_retry_is_bounded_and_never_replays_tools",
+        ),
+        (
+            "vesper-provider-openai",
+            &["--lib"],
+            "http_error_tests::transient_http_rejections_admit_only_before_output_retry_in_both_modes",
+        ),
+        (
+            "vesper-provider-openai",
+            &["--lib"],
+            "http_error::retry_tests::transient_retry_respects_server_delay_and_refuses_malformed_headers",
+        ),
+        (
             "vesper-agent",
             &["--test", "agent_loop"],
             "role_ceiling_bounds_planned_continuation",

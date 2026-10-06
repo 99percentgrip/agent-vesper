@@ -55,7 +55,11 @@ Both hosts register one provider with API-key and subscription authentication.
   cancellable, with exact code/parameter allowlists. Preserve HTTP status and
   authentication/rate classifications; never echo provider prose or arbitrary
   identifiers, or grant retries from error-body claims. Unknown, malformed,
-  oversized and stalled bodies retain the safe status-based fallback.
+  oversized and stalled bodies retain the safe status-based fallback. HTTP 500/503
+  rejections before streaming permit BeforeVisibleOutput retry, never automatic
+  adapter replay. Numeric and HTTP-date Retry-After become bounded typed delays;
+  malformed/overflow headers refuse retry. Authentication/payment/quota statuses
+  retain Never. Header/body prose never enters diagnostics.
   `src/http_error_tests.rs` exercises native loopback transport in both modes;
   `src/http_error_bounds_tests.rs` verifies stalled-body and cancellation bounds.
   `src/http_error_parameter_tests.rs` proves safe parameter diagnostics survive

@@ -31,6 +31,14 @@ pub(crate) async fn rejection(
     };
     let mut result = error(message, category, false);
     result.http_status = Some(status);
+    transient_retry_policy(
+        &mut result,
+        response
+            .headers()
+            .get(reqwest::header::RETRY_AFTER)
+            .and_then(|value| value.to_str().ok()),
+        std::time::SystemTime::now(),
+    );
     let read = async {
         if response
             .content_length()
@@ -59,6 +67,41 @@ pub(crate) async fn rejection(
         classify(&mut result, &payload);
     }
     result
+}
+
+fn transient_retry_policy(
+    result: &mut ProviderError,
+    retry_after: Option<&str>,
+    now: std::time::SystemTime,
+) {
+    // Only an HTTP rejection before a stream exists can admit this retry.
+    // Authentication, payment, quota and arbitrary body claims cannot.
+    if !matches!(result.http_status, Some(500 | 503)) {
+        return;
+    }
+    result.info.retryability = vesper_domain::Retryability::BeforeVisibleOutput;
+    if let Some(header) = retry_after {
+        let delay = if header.len() > 128 {
+            None
+        } else if let Ok(seconds) = header.trim().parse::<u64>() {
+            seconds.checked_mul(1000)
+        } else {
+            httpdate::parse_http_date(header).ok().and_then(|deadline| {
+                u64::try_from(
+                    deadline
+                        .duration_since(now)
+                        .unwrap_or_default()
+                        .as_nanos()
+                        .div_ceil(1_000_000),
+                )
+                .ok()
+            })
+        };
+        result.info.retry_after_ms = delay;
+        if delay.is_none() {
+            result.info.retryability = vesper_domain::Retryability::Never;
+        }
+    }
 }
 
 fn classify(result: &mut ProviderError, payload: &Value) {
@@ -134,4 +177,42 @@ fn classify_parameter(result: &mut ProviderError, error_body: &Value) {
             .expect("bounded static parameter");
     }
     // Never change retryability/continuation based on error-body claims.
+}
+
+#[cfg(test)]
+mod retry_tests {
+    use super::*;
+
+    #[test]
+    fn transient_retry_respects_server_delay_and_refuses_malformed_headers() {
+        let now = std::time::UNIX_EPOCH + Duration::from_secs(1_000_000);
+        for (header, expected) in [
+            ("3".to_owned(), Some(3000)),
+            (
+                httpdate::fmt_http_date(now + Duration::from_secs(5)),
+                Some(5000),
+            ),
+            ("31".to_owned(), Some(31_000)),
+            ("18446744073709551615".to_owned(), None),
+            ("private-header-canary".to_owned(), None),
+        ] {
+            let mut result = error("service failed", ErrorCategory::Transport, false);
+            result.http_status = Some(503);
+            transient_retry_policy(&mut result, Some(&header), now);
+            assert_eq!(result.info.retry_after_ms, expected);
+            assert_eq!(
+                result.retry_decision(),
+                if expected.is_some() {
+                    vesper_provider::RetryDecision::RetryBeforeVisibleOutput
+                } else {
+                    vesper_provider::RetryDecision::DoNotRetry
+                }
+            );
+            assert!(
+                !serde_json::to_string(&result)
+                    .unwrap()
+                    .contains("private-header-canary")
+            );
+        }
+    }
 }

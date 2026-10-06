@@ -102,9 +102,11 @@ architecture, MSRV, and source-oracle checks.
   authoritative rerun refusal and firewall checks for the actual GitHub write scope.
   The named repair-authority case uses real native tools and a temporary Git repo
   to prove that model commands cannot create a tag outside controller admission.
-  The named repair-budget case executes distinct real Cargo commands with host
+  The named repair-budget case executes distinct real file observations with host
   caps zero, five and one hundred, and proves bounded unsuccessful exhaustion
-  without changing the host configuration.
+  without changing the host configuration. Mandatory cases cover inherited lock
+  descriptions, initial adapter-admitted retry, both-auth-mode HTTP rejection policy
+  and numeric/date server delays; action/fragment replay and long-delay retries refuse.
   Provider-owned server tool selections are distinct from client gateways; the
   named fixture proves their request/configuration retention without measuring
   live hosted execution.

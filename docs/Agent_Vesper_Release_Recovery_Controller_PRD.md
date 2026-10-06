@@ -1142,3 +1142,9 @@ one persisted admission, with a role ceiling covering later native plans. Typed
 terminal diagnostics distinguish exhaustion, interruption and acceptance failure.
 The autonomy report preserves the settled red 0.24.7 candidate and focused UI
 repairs; final-source hosted/publication evidence remains required.
+
+The additional settled Apple Silicon scheduler failure has a red/green inherited
+file-description regression and explicit lease unlock. Initial provider recovery
+uses the adapter's typed retry decision under one bounded shared admission, never
+replays output/tools, and retains safe terminal status. The autonomy audit records
+126 exact local cases, stopped worker evidence and pending final-source CI.

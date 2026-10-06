@@ -128,3 +128,30 @@ async fn error_body_cannot_override_authentication_status_or_grant_replay() {
     assert_eq!(error.info.retryability, Retryability::Never);
     assert!(!error.continuation_possible);
 }
+
+#[tokio::test]
+async fn transient_http_rejections_admit_only_before_output_retry_in_both_modes() {
+    for mode in [AuthenticationMode::ApiKey, AuthenticationMode::ChatGpt] {
+        for status in [500, 503] {
+            let error = rejected(mode, status, "private-service-canary".into()).await;
+            assert_eq!(error.http_status, Some(status));
+            assert_eq!(
+                error.retry_decision(),
+                vesper_provider::RetryDecision::RetryBeforeVisibleOutput
+            );
+            assert!(!error.info.visible_output_emitted);
+            assert!(
+                !serde_json::to_string(&error)
+                    .unwrap()
+                    .contains("private-service-canary")
+            );
+        }
+        for status in [401, 402, 403, 429] {
+            let error = rejected(mode, status, "{}".into()).await;
+            assert_eq!(
+                error.retry_decision(),
+                vesper_provider::RetryDecision::DoNotRetry
+            );
+        }
+    }
+}

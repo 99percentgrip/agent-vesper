@@ -2723,6 +2723,48 @@ pub struct WorkerFactory {
     progress: Option<Arc<dyn vesper_agent::AgentProgressPort>>,
 }
 
+/// Observe only whether a failed initial repair request is safe to repeat.
+struct RepairStartProgress {
+    downstream: Option<Arc<dyn vesper_agent::AgentProgressPort>>,
+    requests: AtomicU64,
+    work_observed: std::sync::atomic::AtomicBool,
+}
+
+impl vesper_agent::AgentProgressPort for RepairStartProgress {
+    fn emit(&self, event: vesper_agent::AgentProgressEvent) {
+        use vesper_agent::AgentProgressEvent;
+        if matches!(event, AgentProgressEvent::ProviderTurnStarted { .. }) {
+            self.requests.fetch_add(1, Ordering::Relaxed);
+        } else if !matches!(
+            event,
+            AgentProgressEvent::TurnStarted
+                | AgentProgressEvent::ContextPressureUpdated { .. }
+                | AgentProgressEvent::Status { .. }
+        ) {
+            self.work_observed.store(true, Ordering::Relaxed);
+        }
+        if let Some(downstream) = &self.downstream {
+            downstream.emit(event);
+        }
+    }
+}
+
+fn repair_loop_error_diagnostic(error: &vesper_agent::AgentLoopError) -> String {
+    match error {
+        vesper_agent::AgentLoopError::ProviderTurn(error) => format!(
+            "{} [category={:?}, HTTP={}, retry={:?}, retry-after-ms={:?}]",
+            error.info.safe_message,
+            error.info.category,
+            error
+                .http_status
+                .map_or_else(|| "unavailable".into(), |status| status.to_string()),
+            error.info.retryability,
+            error.info.retry_after_ms,
+        ),
+        _ => error.to_string(),
+    }
+}
+
 impl WorkerFactory {
     #[must_use]
     pub fn new(
@@ -2815,22 +2857,58 @@ impl WorkerFactory {
             .min(vesper_agent::ABSOLUTE_MAX_TOOL_ITERATIONS);
         let mut worker = AgentLoop::new(self.registry.clone(), tools, config)
             .with_permission_port(self.permission.clone());
-        if let Some(progress) = self.progress.clone() {
-            worker = worker.with_progress_port(progress);
-        }
+        let progress = Arc::new(RepairStartProgress {
+            downstream: self.progress.clone(),
+            requests: AtomicU64::new(0),
+            work_observed: std::sync::atomic::AtomicBool::new(false),
+        });
+        worker = worker.with_progress_port(progress.clone());
         let mut history = vec![build_user_message(&prompt)];
         let mut spent = 0_u32;
         for _ in 0..vesper_agent::agent_loop::MAX_PLAN_CONTINUATION_SEGMENTS {
             worker = worker.with_tool_iteration_ceiling(total_limit.saturating_sub(spent));
-            let (mut outcome, next_history) = worker
-                .run_prompt_with_history_with_cancellation(
-                    history,
-                    self.release_mode,
-                    self.release_permission,
-                    cancellation.clone(),
-                )
-                .await
-                .map_err(|error| error.to_string())?;
+            let (mut outcome, next_history) = loop {
+                let result = worker
+                    .run_prompt_with_history_with_cancellation(
+                        history.clone(),
+                        self.release_mode,
+                        self.release_permission,
+                        cancellation.clone(),
+                    )
+                    .await;
+                match result {
+                    Ok(result) => break result,
+                    Err(vesper_agent::AgentLoopError::ProviderTurn(ref error))
+                        if spent == 0
+                            && progress.requests.load(Ordering::Relaxed) == 1
+                            && !progress.work_observed.load(Ordering::Relaxed)
+                            && !cancellation.is_cancelled()
+                            && error.retry_decision()
+                                == vesper_provider::RetryDecision::RetryBeforeVisibleOutput
+                            && error.info.retry_after_ms.unwrap_or(2000) <= 30_000 =>
+                    {
+                        spent = 1;
+                        let delay = error.info.retry_after_ms.unwrap_or(2000).max(2000);
+                        vesper_agent::AgentProgressPort::emit(
+                            progress.as_ref(),
+                            vesper_agent::AgentProgressEvent::Status {
+                                text: format!(
+                                    "Initial repair request was rejected before output or tools; one adapter-admitted retry after {delay} ms"
+                                ),
+                            },
+                        );
+                        tokio::select! {
+                            _ = tokio::time::sleep(std::time::Duration::from_millis(delay)) => {},
+                            _ = async { while !cancellation.is_cancelled() {
+                                tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+                            } } => return Err("repair cancelled before initial-request retry".into()),
+                        }
+                        worker =
+                            worker.with_tool_iteration_ceiling(total_limit.saturating_sub(spent));
+                    }
+                    Err(error) => return Err(repair_loop_error_diagnostic(&error)),
+                }
+            };
             let iterations = match &mut outcome {
                 AgentTurnOutcome::Completed { iterations, .. }
                 | AgentTurnOutcome::Acceptance { iterations, .. }

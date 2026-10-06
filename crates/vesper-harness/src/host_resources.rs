@@ -459,6 +459,15 @@ pub struct ExpensiveGateLease {
     _lock: File,
 }
 
+impl Drop for ExpensiveGateLease {
+    fn drop(&mut self) {
+        // Closing only our descriptor can leave a concurrent fork's duplicate
+        // holding the same open-file lock until exec. Release the lease now;
+        // owned children have already settled before their admission drops.
+        let _ = FileExt::unlock(&self._lock);
+    }
+}
+
 /// A single repository-scoped scheduler. File locking makes the serialization
 /// survive controller restarts and prevents two epochs sharing a target cache.
 #[derive(Debug, Clone)]
@@ -1759,6 +1768,19 @@ mod tests {
         assert!(scheduler.try_acquire().unwrap().is_none());
         drop(first);
         assert!(scheduler.try_acquire().unwrap().is_some());
+    }
+
+    #[test]
+    fn expensive_slot_release_unlocks_inherited_file_description() {
+        let temp = tempfile::tempdir().unwrap();
+        let scheduler = ExpensiveGateScheduler::new(temp.path()).unwrap();
+        let lease = scheduler.try_acquire().unwrap().unwrap();
+        // A concurrent fork can retain the same open file description until
+        // exec closes it. Keep an equivalent duplicate alive deterministically.
+        let inherited = lease._lock.try_clone().unwrap();
+        drop(lease);
+        assert!(scheduler.try_acquire().unwrap().is_some());
+        drop(inherited);
     }
 
     #[test]
