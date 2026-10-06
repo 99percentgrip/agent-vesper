@@ -425,3 +425,15 @@ The full xAI package passed **56/56** in **10.58 seconds**; the independent HTTP
 repeat passed **15/15**. Frozen [Windows-SSE evidence](2026-10-06-rrc-parity-production-release-windows-sse-evidence.json)
 and [sanitized receipts](2026-10-06-rrc-parity-production-release-windows-sse-receipts.tar.gz)
 bind the complete failed matrix, native state and local correction.
+
+### Focused diagnostic preparation deviations
+
+The first temporary public diagnostic workflow dispatch was refused because its
+plain YAML `run` value contained `tests::http::`. The corrected diagnostic uses a
+block scalar and parsed YAML before dispatch. No test executed in the refused attempt.
+The diagnostic branch initially retained the production objective provenance; native
+admission selected that clean descendant for version preparation. No producer, local
+gate, push, tag or publication was started for it. Diagnostic provenance is now a
+separate non-canonical objective. The production variant explicitly supersedes that
+old source-integration variant; native archival preserves the mistakenly selected
+preparation epoch. No ledger bytes or retry counters are manually reset.
