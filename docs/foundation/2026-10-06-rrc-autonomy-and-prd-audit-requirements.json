@@ -2,15 +2,15 @@
   "status": "local audit and current-source verification; hosted and producing proof pending",
   "base_commit": "a56f0ba76525bf4e7e288eefe2dff731cb120914",
   "candidate_commit": null,
-  "binding_prd_sha256": "e85011c696d769837c6ed5a83e4290e77eadc4ae27a9ea42cffe0966d37518db",
+  "binding_prd_sha256": "9e61c80fa518ce0c02a59f1e3dae3dbeb06adefb68f5c76e86562670b26cb9e5",
   "source_sha256": {
     "crates/vesper-harness/src/release_closeout.rs": "ccc50f5517aa8b47c03bfe3afea127b469ed67176029326e6b20eadba2bf557b",
-    "crates/vesper-harness/src/release_executor.rs": "330b67c45be852ac58d2ff85bdf0eb9e2708f4800a4ea6d851c724db15492da8",
+    "crates/vesper-harness/src/release_executor.rs": "c82b7445b664b8a0a2c8efd25b3ce42d81ec0844e55bd747a34a6db6e52e8e06",
     "crates/vesper-harness/src/release_recovery.rs": "37044f6609ef70575df804ee88233a0c6b5d189143e918aaeeaf1fcc361afa62",
     "apps/agent-vesper-acp/src/lib.rs": "8cfb32ebcc0234c041e393d6de2a2e316304c27254c9d55284e345ed63e9cbbc",
     "apps/agent-vesper-acp/tests/release_resource_governor.rs": "0ace964fbee41fcc091ee57ca8c51816ab5c2f8eb6f9fe04ffda2a50df375dfc",
     "apps/agent-vesper-tui/src/main.rs": "71ec79ea067c5da6e738e5075743248afdd696634db698eaeaada26329c0ad26",
-    "xtask/src/main.rs": "04339f550670192d4c939714a4093d8f303999c4959851c4f3b782eb462cb36a"
+    "xtask/src/main.rs": "46780fe56438d51c4e0354d1569e6db9bf79e66ac2837f699ce8f469d7bec32a"
   },
   "sections": [
     {
@@ -396,12 +396,14 @@
       "named_cases": [
         "release_recovery::tests::status_projection_exposes_product_fields_without_causal_log_content",
         "release_executor::tests::persisted_cancellation_reaches_a_worker_in_another_host",
-        "release_executor::tests::published_closeout_finishes_report_without_replaying_release_mutations"
+        "release_executor::tests::published_closeout_finishes_report_without_replaying_release_mutations",
+        "release_executor::tests::live_progress_uses_durable_milestones_without_losing_case_counts"
       ],
       "linux_current_passed": [
         "release_recovery::tests::status_projection_exposes_product_fields_without_causal_log_content",
         "release_executor::tests::persisted_cancellation_reaches_a_worker_in_another_host",
-        "release_executor::tests::published_closeout_finishes_report_without_replaying_release_mutations"
+        "release_executor::tests::published_closeout_finishes_report_without_replaying_release_mutations",
+        "release_executor::tests::live_progress_uses_durable_milestones_without_losing_case_counts"
       ],
       "linux_unexecuted": [],
       "hosted_current_status": "pending exact commit"
@@ -431,7 +433,8 @@
         "release_executor::tests::an_unsettled_mutation_is_never_replayed_on_restart",
         "release_recovery::tests::cancelled_epoch_resumes_the_same_run_and_job_identity",
         "release_closeout::tests::closeout_registry_uncertain_write_never_replays",
-        "release_closeout::tests::closeout_report_restart_is_idempotent_and_preserves_user_edits"
+        "release_closeout::tests::closeout_report_restart_is_idempotent_and_preserves_user_edits",
+        "release_executor::tests::live_progress_uses_durable_milestones_without_losing_case_counts"
       ],
       "linux_current_passed": [
         "release_recovery::tests::ledger_round_trip_preserves_job_ids",
@@ -439,7 +442,8 @@
         "release_executor::tests::an_unsettled_mutation_is_never_replayed_on_restart",
         "release_recovery::tests::cancelled_epoch_resumes_the_same_run_and_job_identity",
         "release_closeout::tests::closeout_registry_uncertain_write_never_replays",
-        "release_closeout::tests::closeout_report_restart_is_idempotent_and_preserves_user_edits"
+        "release_closeout::tests::closeout_report_restart_is_idempotent_and_preserves_user_edits",
+        "release_executor::tests::live_progress_uses_durable_milestones_without_losing_case_counts"
       ],
       "linux_unexecuted": [],
       "hosted_current_status": "pending exact commit"
@@ -526,13 +530,15 @@
         "release_executor::tests::release_worker_cancel_restart_process_acceptance",
         "release_executor::tests::persisted_cancellation_reaches_a_worker_in_another_host",
         "release_recovery::tests::remote_operation_cancellation_is_not_local_user_cancellation",
-        "release_recovery::tests::cancelled_checkpoint_can_be_explicitly_resumed_without_erasing_counters"
+        "release_recovery::tests::cancelled_checkpoint_can_be_explicitly_resumed_without_erasing_counters",
+        "release_executor::tests::live_progress_uses_durable_milestones_without_losing_case_counts"
       ],
       "linux_current_passed": [
         "release_executor::tests::release_worker_cancel_restart_process_acceptance",
         "release_executor::tests::persisted_cancellation_reaches_a_worker_in_another_host",
         "release_recovery::tests::remote_operation_cancellation_is_not_local_user_cancellation",
-        "release_recovery::tests::cancelled_checkpoint_can_be_explicitly_resumed_without_erasing_counters"
+        "release_recovery::tests::cancelled_checkpoint_can_be_explicitly_resumed_without_erasing_counters",
+        "release_executor::tests::live_progress_uses_durable_milestones_without_losing_case_counts"
       ],
       "linux_unexecuted": [],
       "hosted_current_status": "pending exact commit"
@@ -1261,11 +1267,13 @@
       "criterion": "AC-20",
       "named_cases": [
         "release_executor::tests::release_worker_cancel_restart_process_acceptance",
-        "release_recovery::tests::cancelled_epoch_resumes_the_same_run_and_job_identity"
+        "release_recovery::tests::cancelled_epoch_resumes_the_same_run_and_job_identity",
+        "release_executor::tests::live_progress_uses_durable_milestones_without_losing_case_counts"
       ],
       "linux_current_passed": [
         "release_executor::tests::release_worker_cancel_restart_process_acceptance",
-        "release_recovery::tests::cancelled_epoch_resumes_the_same_run_and_job_identity"
+        "release_recovery::tests::cancelled_epoch_resumes_the_same_run_and_job_identity",
+        "release_executor::tests::live_progress_uses_durable_milestones_without_losing_case_counts"
       ],
       "linux_unexecuted": [],
       "historical_receipts_are_current_proof": false,
@@ -1291,11 +1299,13 @@
       "criterion": "AC-22",
       "named_cases": [
         "release_recovery::tests::watchdog_triggers_after_six_stagnant_actions",
-        "release_executor::tests::background_controller_waits_then_publishes_without_continue_prompts"
+        "release_executor::tests::background_controller_waits_then_publishes_without_continue_prompts",
+        "release_executor::tests::live_progress_uses_durable_milestones_without_losing_case_counts"
       ],
       "linux_current_passed": [
         "release_recovery::tests::watchdog_triggers_after_six_stagnant_actions",
-        "release_executor::tests::background_controller_waits_then_publishes_without_continue_prompts"
+        "release_executor::tests::background_controller_waits_then_publishes_without_continue_prompts",
+        "release_executor::tests::live_progress_uses_durable_milestones_without_losing_case_counts"
       ],
       "linux_unexecuted": [],
       "historical_receipts_are_current_proof": false,
@@ -1339,11 +1349,13 @@
     "harness": {
       "passed": 369,
       "ignored": 6,
-      "failed": 0
+      "failed": 0,
+      "scope": "Full suite before live-progress addition; added current-source projection regression passed separately. Final native full suite is required."
     },
     "acceptance": {
-      "passed": 118,
-      "failed": 0
+      "passed": 119,
+      "failed": 0,
+      "log": "vesper-rrc-live-progress-acceptance.log"
     },
     "clippy": "passed changed packages with all targets/features and warnings denied",
     "clock_portability": "one exact current-source case passed"
@@ -1357,5 +1369,17 @@
     "partial_observed": true,
     "production_deliberately_failed": false,
     "scope": "Production GitHub reader and matrix/admission protocol; not five native platforms or live-model effectiveness"
+  },
+  "native_interrupted_candidate": {
+    "source": "2c42ae69e5ac4d6655a6871d92f6929620d154f7",
+    "target": "0.24.7",
+    "passed_gates": [
+      "version-preparation",
+      "workspace-verify",
+      "acceptance",
+      "architecture"
+    ],
+    "stop": "Native cancellation before any commit/push/tag/publication; progress projection gap found live",
+    "released": false
   }
 }

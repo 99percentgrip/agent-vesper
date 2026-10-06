@@ -28,7 +28,7 @@ Sequential local commands use the existing candidate target cache, `CARGO_BUILD_
 
 - `cargo test -p vesper-harness --lib --all-features`: 369 passed, zero failed, six ignored; log `/tmp/vesper-rrc-audit-harness-final.log`. The portable monotonic-clock case also passed in an exact follow-up.
 - `cargo xtask verify`: the earlier attempt failed the later-main link regression; the repaired full canonical gate must run through native RRC before candidate publication.
-- `cargo xtask acceptance`: all 118 exact cases passed; log `/tmp/vesper-rrc-audit-acceptance-final.log`.
+- `cargo xtask acceptance`: all 119 exact cases passed after the additional live projection regression; log `/tmp/vesper-rrc-audit-acceptance-final.log`.
 - Changed harness, ACP, TUI and xtask Clippy passed with all targets/features and warnings denied; `/tmp/vesper-rrc-audit-clippy-final.log`.
 - Fresh controlled public runs on isolated SHA `897de26bd175dbb12a8fe5db26e603e5a0af721f`: red run 37487548629 exposed one failed/four active jobs and withheld diagnosis until settlement; repeated red run 37487842976 preserved fingerprint `3c6137dc79a06f05ae5269a436ef60372b2410631d7db1c131f3e13ed9e424dc` and refused an unchanged retry; green run 37488147422 settled five successful jobs. `/tmp/vesper-rrc-public-audit/orchestration.log` retains the native-reader observations.
 - Before the expanded audit changes, the closeout candidate passed 361 harness cases (6 ignored), 5 ACP process cases, changed-package Clippy and all 100 then-enrolled acceptance cases. These are scoped intermediate receipts, not evidence for the later changes.
@@ -55,6 +55,12 @@ The repairs remove confirmed premature completion, false receipt reuse, excessiv
 
 ## Archived local receipts
 
-[Local and public protocol receipts](2026-10-06-rrc-autonomy-and-prd-audit-receipts.tar.gz), SHA-256 43ec5b9166900bd43f1eae6217730fcdb4a8a2c900a95812735e2d7869afbca4.
+[Local and public protocol receipts](2026-10-06-rrc-autonomy-and-prd-audit-receipts.tar.gz), SHA-256 a0aee9e39b4b34da3aec3043c9dc746d025b50f4d034c3070ce78b2b888f3315.
 
 The prior epoch was Complete/Idle without an in-flight operation or owner. Scoped Cargo cleaning of only its harness/ACP/TUI products preserved the dependency cache and increased observed free disk from 124 GiB to 155 GiB; native reserve thresholds remain unchanged.
+
+## Native candidate observation and additional progress repair
+
+The first connected native ACP run on source 2c42ae69 bumped its isolated worktree to 0.24.7 and passed workspace verify, 118-case acceptance and architecture after version preparation. It recovered from resource pressure without a continue prompt. Before publication, live observation exposed a stale host projection: persisted gate-start milestones became visible only after the blocking gate returned. The active snapshot retained its earlier progress tree. Native cancellation stopped this candidate with commit/push/tag/publication flags false; its checkpoints and passing gate receipts remain preserved. This is an interrupted candidate, not a released result. The shared snapshot now projects current same-epoch persisted progress while retaining trusted acceptance-case units; mismatched epochs cannot overwrite a live snapshot. Both hosts already consume this shared snapshot. The added exact regression is enrolled in acceptance. Final-source native release gates remain required.
+
+The expanded progress candidate passed 119 exact acceptance cases (202732 ms). Same-epoch projection and final-case/outer-gate separation passed the focused regression; changed-package Clippy and rebuilt ACP receipts are retained with the final source. Native release gates remain pending.

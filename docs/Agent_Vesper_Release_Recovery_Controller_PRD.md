@@ -1130,3 +1130,9 @@ application is outside this release authorization.
 [Historical requirement trace](foundation/2026-10-06-rrc-parity-production-release-final-requirements.json) binds the earlier production candidate; it cannot certify this changed source or the subsequently reproduced closeout defects.
 
 [Post-release documentation/Windows repair](foundation/2026-10-06-documentation-ci-and-windows-readiness-repair.md) records the unnecessary separate documentation push, newly exposed command-fixture readiness/MCP startup failures and the same-commit documentation rule. This later main-health repair does not move the published tag or relabel cancelled checks as passed.
+
+The expanded audit also repairs live host progress: same-epoch durable milestones
+and gate settlement are projected while blocking commands run, and trusted exact
+acceptance-case counts remain visible without certifying the outer gate early.
+The [autonomy audit](foundation/2026-10-06-rrc-autonomy-and-prd-audit.md) retains
+the interrupted native candidate and the regression evidence.

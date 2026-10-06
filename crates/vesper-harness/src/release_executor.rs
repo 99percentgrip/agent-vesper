@@ -3251,7 +3251,19 @@ pub fn active_release_worker_for_workspace(workspace: &Path) -> Option<ReleaseWo
 /// is persisted as `OwnerExited` and is never rendered as Active or Ready.
 #[must_use]
 pub fn release_run_snapshot_for_workspace(workspace: &Path) -> Option<ReleaseWorkerSnapshot> {
-    if let Some(live) = active_release_worker_for_workspace(workspace) {
+    if let Some(mut live) = active_release_worker_for_workspace(workspace) {
+        // Commands update the durable ledger before their blocking execution.
+        // Never wait for a whole gate to finish before projecting its milestone.
+        if let Ok(Some(record)) = crate::release_recovery::reconcile_unowned_release(workspace)
+            && let Some(progress) =
+                current_release_progress(&live.epoch_id, &live.progress, &record)
+        {
+            live.detail.clone_from(&progress.headline);
+            live.current_gate.clone_from(&progress.current_gate);
+            live.completed_gates = progress.completed_local_gates;
+            live.total_gates = progress.total_local_gates;
+            live.progress = progress;
+        }
         return Some(live);
     }
     let record = crate::release_recovery::reconcile_unowned_release(workspace).ok()??;
@@ -3310,6 +3322,42 @@ pub fn release_run_snapshot_for_workspace(workspace: &Path) -> Option<ReleaseWor
         resource_deferred: record.state == ReleaseRecoveryState::ResourceDeferred,
         resource_telemetry: record.resource_deferred.map(|deferred| deferred.telemetry),
     })
+}
+
+fn current_release_progress(
+    epoch: &str,
+    live: &ReleaseProgress,
+    record: &ReleaseRecoveryRecord,
+) -> Option<ReleaseProgress> {
+    if record.epoch_id != epoch {
+        return None;
+    }
+    let mut view = record.clone();
+    view.refresh_progress();
+    fn preserve_case_units(
+        durable: &mut [crate::release_recovery::ReleaseProgressTask],
+        live: &[crate::release_recovery::ReleaseProgressTask],
+    ) {
+        for task in durable {
+            if let Some(observed) = live.iter().find(|item| item.name == task.name) {
+                if task.name == "Exact acceptance cases"
+                    && task.state == crate::release_recovery::ReleaseProgressState::Running
+                    && matches!(
+                        observed.state,
+                        crate::release_recovery::ReleaseProgressState::Running
+                            | crate::release_recovery::ReleaseProgressState::Passed
+                    )
+                    && observed.units.total.is_some()
+                {
+                    task.units = observed.units.clone();
+                    task.state = observed.state;
+                }
+                preserve_case_units(&mut task.children, &observed.children);
+            }
+        }
+    }
+    preserve_case_units(&mut view.progress.tasks, &live.tasks);
+    Some(view.progress)
 }
 
 /// Durable final delivery is separate from an active RUN snapshot. Hosts must
@@ -4292,6 +4340,69 @@ pub(crate) mod tests {
             exact_cases.state,
             crate::release_recovery::ReleaseProgressState::Running
         );
+    }
+
+    #[test]
+    fn live_progress_uses_durable_milestones_without_losing_case_counts() {
+        use crate::release_recovery::{
+            LocalGateRecord, ReleaseProgressState, ReleaseProgressUnits,
+        };
+        let mut record =
+            crate::release_recovery::start_release("repo", "0.24.7", "main", &"a".repeat(40))
+                .unwrap();
+        record.state = ReleaseRecoveryState::LocalVerification;
+        record.mutation.local_gates = vec![
+            LocalGateRecord {
+                name: "workspace-verify".into(),
+                state: SettlementState::Succeeded,
+                ..Default::default()
+            },
+            LocalGateRecord {
+                name: "acceptance".into(),
+                state: SettlementState::Running,
+                ..Default::default()
+            },
+        ];
+        record.note_progress_milestone("Running local gate 2/2: acceptance");
+        record.refresh_progress();
+        let mut live = record.progress.clone();
+        live.milestones.clear();
+        live.headline = "stale prior gate".into();
+        let cases = &mut live.tasks[0].children[1].children[0];
+        cases.state = ReleaseProgressState::Running;
+        cases.units = ReleaseProgressUnits::counted(18, 118);
+        let current = current_release_progress(&record.epoch_id, &live, &record).unwrap();
+        assert_eq!(current.milestones, record.progress.milestones);
+        assert_eq!(current.current_gate.as_deref(), Some("acceptance"));
+        assert_eq!(current.completed_local_gates, 1);
+        assert_eq!(
+            current.tasks[0].children[1].children[0]
+                .units
+                .render()
+                .as_deref(),
+            Some("18/118")
+        );
+        assert_ne!(current.headline, live.headline);
+        let cases = &mut live.tasks[0].children[1].children[0];
+        cases.state = ReleaseProgressState::Passed;
+        cases.units = ReleaseProgressUnits::counted(118, 118);
+        let current = current_release_progress(&record.epoch_id, &live, &record).unwrap();
+        assert_eq!(
+            current.tasks[0].children[1].state,
+            ReleaseProgressState::Running
+        );
+        assert_eq!(
+            current.tasks[0].children[1].children[0].state,
+            ReleaseProgressState::Passed
+        );
+        assert_eq!(
+            current.tasks[0].children[1].children[0]
+                .units
+                .render()
+                .as_deref(),
+            Some("118/118")
+        );
+        assert!(current_release_progress("different-epoch", &live, &record).is_none());
     }
 
     fn version_fixture(member_version: &str) -> tempfile::TempDir {

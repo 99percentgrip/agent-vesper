@@ -444,6 +444,10 @@ Z.ai and Playwright MCP server descriptors.
 
 ## Local Contracts
 
+- Shared live release snapshots project same-epoch persisted milestones and gate
+  settlement immediately, retaining trusted live acceptance-case counts. A blocking
+  gate must not freeze TUI/ACP progress at its preceding milestone.
+
 - `release_closeout` owns existing-registry-PR delivery and local release reports.
   Publication is an immutable checkpoint, not a worker termination condition.
   The native worker continues through current-main matrix settlement, expected-blob
