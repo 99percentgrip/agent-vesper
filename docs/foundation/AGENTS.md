@@ -10,6 +10,11 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
   primary-source OpenAI catalog audit, GPT-6.1 Sol/GPT-6 Sol/Luna capability
   additions, subscription discovery floor, both-host hermetic evidence, retained
   older-model rationale and the exact-commit hosted-gates/no-release boundary.
+- `2026-10-06-openai-catalog-prerelease-review-and-repair.md` owns the independent
+  ACP prerelease review, its permission/quota limitations, confirmed API-key refresh
+  preservation and discovery-order defects, red-first repairs, disproved logout
+  concern, local acceptance/canonical/MSRV receipts, and pending exact-version hosted
+  release gates.
 
 - `2026-10-06-documentation-ci-and-windows-readiness-repair.md` owns the
   post-publication documentation-trigger mistake, complete cancelled matrix,

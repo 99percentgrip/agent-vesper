@@ -62,6 +62,9 @@ Own durable project documentation and evidence-backed engineering records.
   current primary-source catalog audit, GPT-6.1 Sol/GPT-6 Sol/Luna additions,
   0.155.0 subscription discovery floor, hermetic both-host receipts and the
   exact-commit hosted-gates/no-release boundary.
+  `foundation/2026-10-06-openai-catalog-prerelease-review-and-repair.md` owns the
+  independent prerelease review, confirmed credential-refresh/discovery-order
+  repairs, red-first evidence, disproved logout concern and review limitations.
 - `vro18-native-xai-provider-prd.md` owns VRO-18 native xAI reasoning-provider
   requirements, phased acceptance, billing-path isolation, and adjacent-service
   exclusions. `architecture/recon_xai_native_provider.md` and

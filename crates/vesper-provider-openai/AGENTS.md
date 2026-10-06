@@ -13,6 +13,7 @@ Both hosts register one provider with API-key and subscription authentication.
   mode, local logout, bounded refresh, and cross-process RAII file locking.
   An environment/scoped API key reports API authentication metadata when no stored
   mode is selected; a selected subscription or sign-out tombstone takes precedence.
+  Subscription login and refresh preserve a separately stored valid API key.
 - `src/catalog.rs` owns verified model/effort/capability metadata. GPT-6.1 Sol
   exposes low through max and rejects none/minimal; GPT-6 Sol/Luna permit API-only
   none. Codex-host `ultra` is never exposed as a literal Responses effort. The
@@ -26,7 +27,9 @@ Both hosts register one provider with API-key and subscription authentication.
   origins and no redirects. Failure clears previous choices; no static fallback.
   Snapshots stay in the factory/session instance, never global or on disk. Credential
   replacement/logout invalidates them; dispatch rejects absent models or a different
-  authentication mode. The service remains authoritative after discovery.
+  authentication mode. Concurrent discoveries are generation-ordered: only the latest
+  started operation may publish, so an older completion cannot restore stale account
+  choices. The service remains authoritative after discovery.
   Subscription `client_version` is the pinned catalog protocol compatibility
   version (0.155.0), independent of Vesper's package version. Keep Vesper's own
   User-Agent identity. HTTP failures use the bounded shared rejection classifier.
@@ -67,8 +70,9 @@ Both hosts register one provider with API-key and subscription authentication.
 ## Local Contracts
 
 - Never install, bundle, launch, or read credentials from Codex.
-- API-key and subscription modes replace the selected credential record; never fall
-  back to API billing when subscription authentication fails.
+- API-key and subscription modes replace the selected mode without deleting another
+  valid stored method credential; never fall back to API billing when subscription
+  authentication fails.
 - Provider preference changes never mutate this credential record. Returning
   to OpenAI reuses the valid selected mode until explicit logout or replacement.
 - Depend only on auth/domain/provider/config/security foundations.

@@ -1,6 +1,10 @@
 //! Account-scoped model choices. Capabilities remain adapter-owned.
 use crate::{OpenAiCatalog, OpenAiFactory, OpenAiSession, auth::AuthenticationMode, error};
-use std::{collections::BTreeSet, sync::Arc, time::Duration};
+use std::{
+    collections::BTreeSet,
+    sync::{Arc, atomic::Ordering},
+    time::Duration,
+};
 use vesper_domain::ErrorCategory;
 use vesper_provider::*;
 
@@ -120,11 +124,22 @@ impl OpenAiFactory {
         &self,
         cancel: Arc<dyn CancellationSignal>,
     ) -> Result<AvailableModels, ProviderError> {
+        let generation = self
+            .availability_generation
+            .fetch_add(1, Ordering::AcqRel)
+            .wrapping_add(1);
+        let mode = self.control_policy().mode;
         // Invalidate before awaiting: cancellation by dropping this future must
-        // not leave the previous account's choices authoritative.
-        *self.availability.write().map_err(|_| {
-            crate::wire::invalid_at("model-discovery", None, "availability-lock", None, None)
-        })? = Some(AvailableModels::unavailable(self.control_policy().mode));
+        // not leave the previous account's choices authoritative. A newer
+        // discovery or credential mutation owns the snapshot once it starts.
+        {
+            let mut published = self.availability.write().map_err(|_| {
+                crate::wire::invalid_at("model-discovery", None, "availability-lock", None, None)
+            })?;
+            if self.availability_generation.load(Ordering::Acquire) == generation {
+                *published = Some(AvailableModels::unavailable(mode));
+            }
+        }
         let session = OpenAiSession::new(self.credentials.clone(), "medium".into())?;
         #[cfg(feature = "integration-test-harness")]
         let session = session.with_test_route(self.test_route.clone());
@@ -132,10 +147,13 @@ impl OpenAiFactory {
         let snapshot = result
             .as_ref()
             .cloned()
-            .unwrap_or_else(|_| AvailableModels::unavailable(self.control_policy().mode));
-        *self.availability.write().map_err(|_| {
+            .unwrap_or_else(|_| AvailableModels::unavailable(mode));
+        let mut published = self.availability.write().map_err(|_| {
             crate::wire::invalid_at("model-discovery", None, "availability-lock", None, None)
-        })? = Some(snapshot);
+        })?;
+        if self.availability_generation.load(Ordering::Acquire) == generation {
+            *published = Some(snapshot);
+        }
         result
     }
 }
@@ -436,6 +454,70 @@ mod transport_tests {
                 .await
                 .is_err()
         );
+    }
+
+    #[tokio::test]
+    async fn older_discovery_completion_cannot_replace_the_newer_snapshot() {
+        async fn read_request(socket: &mut tokio::net::TcpStream) {
+            let mut bytes = Vec::new();
+            while !bytes.windows(4).any(|window| window == b"\r\n\r\n") {
+                let mut buffer = [0; 4096];
+                let count = socket.read(&mut buffer).await.unwrap();
+                assert!(count > 0);
+                bytes.extend_from_slice(&buffer[..count]);
+            }
+        }
+
+        async fn reply(socket: &mut tokio::net::TcpStream, body: &str) {
+            socket
+                .write_all(
+                    format!(
+                        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                        body.len()
+                    )
+                    .as_bytes(),
+                )
+                .await
+                .unwrap();
+        }
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let factory = OpenAiFactory::for_loopback(
+            &format!("http://{}/responses", listener.local_addr().unwrap()),
+            AuthenticationMode::ApiKey,
+        )
+        .unwrap();
+        let (first_received_tx, first_received_rx) = tokio::sync::oneshot::channel();
+        let (release_old_tx, release_old_rx) = tokio::sync::oneshot::channel();
+        let server = tokio::spawn(async move {
+            let (mut old_socket, _) = listener.accept().await.unwrap();
+            read_request(&mut old_socket).await;
+            first_received_tx.send(()).unwrap();
+
+            let (mut new_socket, _) = listener.accept().await.unwrap();
+            read_request(&mut new_socket).await;
+            reply(&mut new_socket, r#"{"data":[{"id":"gpt-6.1-sol"}]}"#).await;
+
+            release_old_rx.await.unwrap();
+            reply(&mut old_socket, r#"{"data":[{"id":"gpt-5.5"}]}"#).await;
+        });
+
+        let old_factory = factory.clone();
+        let old =
+            tokio::spawn(
+                async move { old_factory.available_models(Arc::new(Never)).await.unwrap() },
+            );
+        first_received_rx.await.unwrap();
+        let newest = factory.available_models(Arc::new(Never)).await.unwrap();
+        assert!(newest.contains("gpt-6.1-sol"));
+        release_old_tx.send(()).unwrap();
+        let older = old.await.unwrap();
+        assert!(older.contains("gpt-5.5"));
+
+        let published = factory.availability.read().unwrap().clone().unwrap();
+        assert!(published.contains("gpt-6.1-sol"));
+        assert!(!published.contains("gpt-5.5"));
+        server.await.unwrap();
     }
 }
 

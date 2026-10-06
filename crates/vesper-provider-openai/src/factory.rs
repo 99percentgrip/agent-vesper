@@ -2,7 +2,10 @@ use crate::{
     DEFAULT_MODEL, OpenAiCatalog, OpenAiSession, REASONING_LEVELS, credentials::Credentials, error,
     provider_id,
 };
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
+};
 use vesper_domain::{
     BoundedString, ExtensionMap, ProviderId, SchemaVersion, VersionedExtensionEnvelope,
 };
@@ -12,6 +15,7 @@ use vesper_provider::*;
 pub struct OpenAiFactory {
     id: ProviderId,
     pub(crate) availability: Arc<std::sync::RwLock<Option<crate::AvailableModels>>>,
+    pub(crate) availability_generation: Arc<AtomicU64>,
     pub(crate) credentials: Credentials,
     #[cfg(feature = "integration-test-harness")]
     pub(crate) test_route: Option<(String, crate::auth::AuthenticationMode)>,
@@ -21,6 +25,7 @@ impl Default for OpenAiFactory {
         Self {
             id: provider_id(),
             availability: Default::default(),
+            availability_generation: Default::default(),
             credentials: Credentials::default(),
             #[cfg(feature = "integration-test-harness")]
             test_route: None,
@@ -29,6 +34,7 @@ impl Default for OpenAiFactory {
 }
 impl OpenAiFactory {
     fn invalidate_models(&self) -> Result<(), CredentialError> {
+        self.availability_generation.fetch_add(1, Ordering::AcqRel);
         let mut snapshot = self
             .availability
             .write()

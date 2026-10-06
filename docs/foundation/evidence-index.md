@@ -9,6 +9,13 @@
   and both-host hermetic proof, canonical/MSRV receipts, and the explicit
   no-live-account/no-release boundary. The source is locally ready to enter
   exact-commit release CI; hosted five-target/publication gates remain unexecuted.
+- [Independent prerelease review and repair](2026-10-06-openai-catalog-prerelease-review-and-repair.md)
+  records the separate ACP review and its permission/quota limits, confirms and
+  repairs subscription-refresh API-key loss and out-of-order discovery publication,
+  disproves the logout-token concern, and preserves both red-first regressions plus
+  the complete 64-test adapter result. Both-host focused suites, 100-case acceptance,
+  canonical verification and Rust 1.88 MSRV now pass; exact-version hosted gates remain
+  pending and are not inferred from those local results.
 
 ## Documentation CI and Windows readiness repair (2026-10-06)
 

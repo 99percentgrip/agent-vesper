@@ -28,6 +28,7 @@ not asserted by offline acceptance. User setup is in [the guide](openai-provider
 - [2026-09-30 Responses streaming boundary audit](foundation/2026-09-30-openai-responses-streaming-boundary-audit.md) classifies the recorded failure as a bounded JSON event with an unsupported string event type while preserving the unknown exact discriminant, adds framing/boundary/no-replay regressions, labels diagnostic byte measurements, and enforces safe user prose versus separate structured diagnostics in both hosts.
 - [2026-09-30 Responses live prerelease candidate](foundation/2026-09-30-openai-responses-live-prerelease-candidate.md) records the clean isolated debug source/binary identity, complete 60-test adapter receipt, TUI secret-canary surface proof and one successful direct OpenAI runtime turn. It does not reproduce the unavailable historical event or establish release/cross-platform readiness.
 - [2026-10-06 catalog audit and GPT-6.1 Sol implementation](foundation/2026-10-06-openai-catalog-audit-and-gpt-6-1-sol.md) records current primary-source metadata, the complete stale/missing-row audit, native catalog/discovery/Responses changes, both-host hermetic evidence, and the no-release/no-live-account boundary.
+- [2026-10-06 independent prerelease review and repair](foundation/2026-10-06-openai-catalog-prerelease-review-and-repair.md) records the separate ACP review and limitations, red-first correction of subscription-refresh API-key loss and stale out-of-order discovery publication, the disproved logout concern, current acceptance/canonical/MSRV receipts, and pending exact-version hosted gates.
 
 Official documentation inspected on 2026-09-08:
 
@@ -100,7 +101,9 @@ evidence, not proof of a stable third-party API or live account entitlement.
 - Authentication: fixed TLS origins, redirect refusal, bounded device polling,
   PKCE exchange, one-shot refresh, cancellation, secure selected-mode records,
   local logout, redacted secret wrappers, and cross-process credential locks.
-  Auth fixtures cover pending/approved/expired/cancelled/oversized/invalid
+  Subscription login and refresh preserve a separately stored valid API key while
+  retaining subscription as the selected mode; explicit logout replaces the whole
+  stored record. Auth fixtures cover pending/approved/expired/cancelled/oversized/invalid
   responses and refresh rotation. Storage tests use temporary private vaults.
 - Catalog: GPT-6 Astra, GPT-6.1 Sol, GPT-6 Sol/Luna, GPT-5.6 Sol/Terra/Luna,
   GPT-5.5, GPT-5.4, GPT-5.2, GPT-5.3 Codex, and GPT-5.3 Codex Spark;
@@ -112,6 +115,8 @@ evidence, not proof of a stable third-party API or live account entitlement.
   Native authenticated discovery intersects API model identifiers or visible subscription
   entries with this capability index. Both hosts filter choices and the shared factory
   blocks dispatch outside its account snapshot. Failed refresh clears old choices.
+  Concurrent discovery is generation-ordered, so an older completion cannot replace
+  the latest-started account snapshot; credential mutations supersede in-flight rows.
   Public model documentation and the pinned upstream catalog are evidence;
   model identifiers alone never establish capabilities or account entitlement.
 - Usage: `ProviderSession::query_usage` and the shared bordered renderer replace
@@ -272,7 +277,13 @@ also preserves saved selections and API accounts that still return them. Authent
 discovery remains the availability authority, so absent/hidden rows never appear or
 dispatch merely because they remain in the capability index. The linked execution
 report records hermetic implementation evidence; no live account call, user-state
-write, installation, version change, push, tag or release was performed.
+write, installation, version change, push, tag or release was performed. The later
+[independent prerelease review](foundation/2026-10-06-openai-catalog-prerelease-review-and-repair.md)
+found and repaired two state-integrity blockers outside the catalog metadata itself:
+subscription refresh now retains another valid stored API key, and only the latest-
+started discovery may publish shared account availability. Its 64-test adapter result
+is joined by current both-host focused, 100-case acceptance, canonical and Rust 1.88
+MSRV receipts; exact-version hosted release gates remain separate.
 
 ## Device sign-in UI repair evidence (2026-10-05)
 

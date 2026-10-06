@@ -371,10 +371,7 @@ impl Credentials {
         }
         account(&result)?;
         let existing = self.read()?;
-        let mut value = token_value(&result);
-        if let Some(key) = existing.get("api_key").cloned() {
-            value["api_key"] = key;
-        }
+        let value = token_value_preserving_api_key(&result, &existing);
         let this = self.clone();
         tokio::task::spawn_blocking(move || this.write(value))
             .await
@@ -419,7 +416,7 @@ impl Credentials {
                 .refresh(&saved, cancel.as_ref())
                 .await
                 .map_err(|_| CredentialError::Failed)?;
-            let next = token_value(&saved);
+            let next = token_value_preserving_api_key(&saved, &value);
             let this = self.clone();
             tokio::task::spawn_blocking(move || this.write(next))
                 .await
@@ -460,8 +457,16 @@ fn tokens(value: &Value) -> Result<SubscriptionTokens, CredentialError> {
         id_token: get("id_token")?,
     })
 }
-fn token_value(tokens: &SubscriptionTokens) -> Value {
-    json!({"mode":"chatgpt","access_token":tokens.access_token().expose().as_str(),"refresh_token":tokens.refresh_token().expose().as_str(),"id_token":tokens.id_token().expose().as_str()})
+fn token_value_preserving_api_key(tokens: &SubscriptionTokens, existing: &Value) -> Value {
+    let mut value = json!({"mode":"chatgpt","access_token":tokens.access_token().expose().as_str(),"refresh_token":tokens.refresh_token().expose().as_str(),"id_token":tokens.id_token().expose().as_str()});
+    if let Some(key) = existing
+        .get("api_key")
+        .and_then(Value::as_str)
+        .filter(|key| vesper_auth::validate_secret(key).is_ok())
+    {
+        value["api_key"] = json!(key);
+    }
+    value
 }
 fn object(value: Value) -> Value {
     if value.is_object() { value } else { json!({}) }
@@ -563,6 +568,26 @@ mod tests {
             .store_api_key("replacement-fixture-key")
             .unwrap();
         assert!(credentials.present().unwrap());
+    }
+
+    #[test]
+    fn refreshed_subscription_record_preserves_the_saved_api_key() {
+        let existing = json!({
+            "mode": "chatgpt",
+            "api_key": "fixture-api-key",
+            "access_token": "old-access",
+            "refresh_token": "old-refresh",
+            "id_token": "old-id"
+        });
+        let refreshed = SubscriptionTokens {
+            access_token: SecretValue::new("new-access"),
+            refresh_token: SecretValue::new("new-refresh"),
+            id_token: SecretValue::new("new-id"),
+        };
+        let value = token_value_preserving_api_key(&refreshed, &existing);
+        assert_eq!(value["mode"], "chatgpt");
+        assert_eq!(value["api_key"], "fixture-api-key");
+        assert_eq!(value["refresh_token"], "new-refresh");
     }
 
     #[test]

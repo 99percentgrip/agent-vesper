@@ -6,8 +6,9 @@
   "variant_id": "openai-catalog-gpt-6-1-sol-verified-source-20261006",
   "canonical_release_source": true,
   "supersedes": [],
-  "completed_at": "2026-10-06T09:50:54+00:00",
+  "completed_at": "2026-10-06T11:22:17+00:00",
   "evidence_reports": [
-    "docs/foundation/2026-10-06-openai-catalog-audit-and-gpt-6-1-sol.md"
+    "docs/foundation/2026-10-06-openai-catalog-audit-and-gpt-6-1-sol.md",
+    "docs/foundation/2026-10-06-openai-catalog-prerelease-review-and-repair.md"
   ]
 }

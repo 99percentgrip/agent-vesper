@@ -6,7 +6,7 @@ Branch: `feat/openai-gpt-6-1-sol`
 
 Base: `56f5ce6adfb26282f50350043beec5915a9c038d` (`origin/main`)
 
-Verdict: **IMPLEMENTED AND LOCALLY VERIFIED; READY TO ENTER EXACT-COMMIT RELEASE CI. NO RELEASE ACTION.**
+Verdict: **IMPLEMENTED; INDEPENDENT REVIEW BLOCKERS REPAIRED WITH RED-FIRST PROOF. ACCEPTANCE, CANONICAL AND MSRV GATES PASS; EXACT-VERSION/EXACT-SHA HOSTED RELEASE CI IS PENDING. NO RELEASE ACTION.**
 
 ## Objective
 
@@ -64,7 +64,11 @@ public 1,050,000-token capacity is likewise distinct from Vesper's conservative
   0.153.0 to 0.155.0, the minimum required by GPT-6 Sol/Luna in the pinned catalog.
 - Kept discovery fail-closed: API and subscription results are intersected with the
   capability index; hidden, unknown, absent, malformed, failed, and stale rows cannot
-  become choices or dispatch targets.
+  become choices or dispatch targets. The prerelease review added generation ordering
+  so an older overlapping discovery cannot overwrite the latest-started snapshot.
+- Unified subscription login/refresh persistence so refreshing subscription tokens
+  preserves another separately stored valid API key without changing the selected
+  subscription mode or introducing fallback billing.
 - Added adapter tests for exact GPT-6.1 Sol metadata, image/tool-capable Responses
   serialization, 128K output boundary, and reasoning exclusions in both modes.
 - Added current GPT-6 Sol/Luna auth-mode regressions and discovery coverage.
@@ -85,7 +89,9 @@ introduced.
 Production and hermetic tests:
 
 - `crates/vesper-provider-openai/src/catalog.rs`
+- `crates/vesper-provider-openai/src/credentials.rs`
 - `crates/vesper-provider-openai/src/discovery.rs`
+- `crates/vesper-provider-openai/src/factory.rs`
 - `crates/vesper-provider-openai/src/tests.rs`
 - `apps/agent-vesper-acp/tests/openai_native.rs`
 - `apps/agent-vesper-tui/src/main.rs`
@@ -100,6 +106,7 @@ Documentation and contracts:
 - `docs/foundation/evidence-index.md`
 - `docs/foundation/release-objective-provenance.json`
 - `docs/foundation/2026-10-06-openai-catalog-audit-and-gpt-6-1-sol.md`
+- `docs/foundation/2026-10-06-openai-catalog-prerelease-review-and-repair.md`
 
 ## Exact verification evidence
 
@@ -118,6 +125,14 @@ credentials and loopback fixtures only.
 
    cargo test -p agent-vesper-tui openai_
    test result: ok. 3 passed; 0 failed; 0 ignored
+   ```
+
+   The original catalog candidate produced the 62-test receipt above. After the
+   independent prerelease review repairs, the complete adapter suite produced:
+
+   ```text
+   cargo test -p vesper-provider-openai --all-features
+   test result: ok. 64 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
    ```
 
    Named new receipts included:
@@ -215,6 +230,15 @@ The final audit re-derived these invariants from source and primary evidence:
    choices against the adapter/account surface.
 6. Direct Responses serialization remains native and no Codex dependency or process
    was added.
+7. A successful subscription refresh preserves a separately stored valid API key but
+   leaves subscription selected; explicit logout still replaces the complete record.
+8. Shared account availability is latest-started: an older concurrent discovery may
+   return to its caller but cannot overwrite a newer snapshot or credential invalidation.
+
+The independent prerelease review and both red-first repair receipts are recorded in
+[the linked review report](2026-10-06-openai-catalog-prerelease-review-and-repair.md).
+Its logout-token concern was disproved from replacement-write semantics and the existing
+vault-canary test; no speculative logout change was made.
 
 A test-only diff was applied to a detached checkout of pre-change base
 `56f5ce6adfb26282f50350043beec5915a9c038d`. The corrected red command produced:
@@ -280,12 +304,13 @@ evidence remain unexecuted and are not represented as release proof.
 
 ## Unresolved and release boundary
 
-The source is locally ready to enter the normal exact-commit release pipeline. It is
-not publication proof. The required canonical, MSRV, five-target foundation, and
-contained web-driver GitHub workflows must still run successfully for the eventual
-pushed commit before any immutable release tag. Live account entitlement and service
-availability remain outside hermetic acceptance. No release action was requested or
-performed.
+The repaired source passed the 64-test adapter suite, both-host focused suites, all
+100 exact acceptance cases, canonical workspace verification and the Rust 1.88 MSRV
+workspace suite. These local receipts precede version preparation and do not substitute
+for the canonical, MSRV, five-target foundation and contained web-driver GitHub
+workflows required on the exact pushed version commit before any immutable release tag.
+Live account entitlement and service availability remain outside hermetic acceptance.
+No release action has yet been performed.
 
 ## Readiness effect
 
@@ -293,5 +318,7 @@ The native OpenAI catalog now covers all current visible coding rows in the pinn
 OpenAI catalog while preserving older evidence-backed account-specific choices. Both
 hosts consume the same provider-owned metadata, and GPT-6.1 Sol has direct hermetic
 catalog, discovery, reasoning, image/Responses, real-tool, provider-switch, and
-next-turn evidence. The change is locally release-candidate ready, subject to the
-unchanged exact-commit hosted gates above.
+next-turn evidence. The two review blockers have red-first focused repairs and the
+repaired source passed acceptance, canonical and MSRV verification. The change is
+locally ready for native RRC version preparation; exact-version hosted gates remain
+mandatory before release.
