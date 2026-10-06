@@ -4,12 +4,7 @@
 
 - [Release execution report](2026-10-06-rrc-parity-production-release.md) owns the
   requested production integration and `0.24.5` release. Verification and publication
-  are in progress. Native-pushed `bd49a5b3` passed eight local steps and ten of
-  eleven settled hosted jobs. Windows reproduced the previously documented xAI
-  oversized-SSE fixture timeout; the corrected fifteen-case HTTP suite passed locally.
-  Complete matrices, native causal captures, public controls and corrections remain
-  archived in the report's evidence companions. Native Windows proof and successor
-  prerequisites/publication remain pending. Earlier frozen receipts are historical.
+  are complete at mandatory RRC PRD scope: production `v0.24.5`, eight local gates, eleven prerequisites, seven producing jobs, sixteen verified assets, native `Complete`, and existing Registry PR #539 updated in place. The recurring Windows SSE fixture is corrected and proved on native Windows. [Current requirement trace](2026-10-06-rrc-parity-production-release-final-requirements.json) and the report’s final source/evidence/archive companions bind all 36 sections and 23 criteria to current evidence. Earlier failures and optional/live/platform limits remain explicit.
 
 ## Release Recovery Controller parity continuation (2026-10-05)
 

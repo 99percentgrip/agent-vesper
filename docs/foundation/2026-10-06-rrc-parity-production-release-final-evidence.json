@@ -1,0 +1,677 @@
+{
+  "candidate_sha": "7e837db36f4090e566ac1a7461b5b103b8649368",
+  "version": "0.24.5",
+  "status": "Published production release; all exact-source prerequisites and producing jobs passed; actual assets verified; native Complete; Registry PR539 updated in place.",
+  "archive": "2026-10-06-rrc-parity-production-release-final-receipts.tar.gz",
+  "archive_sha256": "74dff6c0be9b3b2873ebe4fa86e7bb3f9204f73797477c11b12cf6553842ac1a",
+  "binding_prd_sha256": "e85011c696d769837c6ed5a83e4290e77eadc4ae27a9ea42cffe0966d37518db",
+  "receipts": [
+    {
+      "path": "rrc-parity-public-controlled.rs",
+      "bytes": 2350,
+      "source_sha256": "e0970513666b830a30a0f1ac1043be6aae6245978d1d2c6ed3671599e2544489",
+      "sha256": "e0970513666b830a30a0f1ac1043be6aae6245978d1d2c6ed3671599e2544489"
+    },
+    {
+      "path": "vesper-production-release-controller-v2.rs",
+      "bytes": 9929,
+      "source_sha256": "e62b8ccaaa9e5541895ea8c5bdd7024939a3a67493fc4b9da3d5e1a34f6482e7",
+      "sha256": "e62b8ccaaa9e5541895ea8c5bdd7024939a3a67493fc4b9da3d5e1a34f6482e7"
+    },
+    {
+      "path": "vesper-release-bd49-complete-failed-native-epoch.json",
+      "bytes": 32540,
+      "source_sha256": "039560e0289715c4b7b5716b577f1cef45dad5106698eade7f6e05ac018bc929",
+      "sha256": "039560e0289715c4b7b5716b577f1cef45dad5106698eade7f6e05ac018bc929"
+    },
+    {
+      "path": "vesper-release-build-final-evidence.py",
+      "bytes": 4623,
+      "source_sha256": "e6efbbb06ea87a4036f8668fe5d59a3da97e42f173adc1ef7df706d4602a7f6d",
+      "sha256": "e6efbbb06ea87a4036f8668fe5d59a3da97e42f173adc1ef7df706d4602a7f6d"
+    },
+    {
+      "path": "vesper-release-corrective-partial-scoped.rs",
+      "bytes": 2451,
+      "source_sha256": "313fdacbed3a78578a87c59e6a45aed641110979621fdfc1854e3946647d7f53",
+      "sha256": "313fdacbed3a78578a87c59e6a45aed641110979621fdfc1854e3946647d7f53"
+    },
+    {
+      "path": "vesper-release-final-complete-native-epoch.json",
+      "bytes": 35106,
+      "source_sha256": "5d8013283013c767d4e49129c466e9c9f07632f3fd2a2a77f838e150656206f2",
+      "sha256": "5d8013283013c767d4e49129c466e9c9f07632f3fd2a2a77f838e150656206f2"
+    },
+    {
+      "path": "vesper-release-final-primary-preservation.json",
+      "bytes": 345,
+      "source_sha256": "d4f22a7779c2e35df1a3178abd5cbcfeb382334dad0e619c609c77539f139364",
+      "sha256": "d4f22a7779c2e35df1a3178abd5cbcfeb382334dad0e619c609c77539f139364"
+    },
+    {
+      "path": "vesper-release-final-requirements.json",
+      "bytes": 349896,
+      "source_sha256": "8a15abb5574bfb4d8e96f74f52ea22ef4b9b0cd8b4ae0d4271efcda6460c69ee",
+      "sha256": "8a15abb5574bfb4d8e96f74f52ea22ef4b9b0cd8b4ae0d4271efcda6460c69ee"
+    },
+    {
+      "path": "vesper-release-finalize-report.py",
+      "bytes": 8465,
+      "source_sha256": "de4017f2f9503db7d926ab63d77ca7dbb2a79f9e624ce93873fb3e51a14b5f81",
+      "sha256": "de4017f2f9503db7d926ab63d77ca7dbb2a79f9e624ce93873fb3e51a14b5f81"
+    },
+    {
+      "path": "vesper-release-finalize-requirement-trace.py",
+      "bytes": 4424,
+      "source_sha256": "e673a1ddb0e51b2fc85832c43ce0d1593aae1fb9dde9547284200005c9303790",
+      "sha256": "e673a1ddb0e51b2fc85832c43ce0d1593aae1fb9dde9547284200005c9303790"
+    },
+    {
+      "path": "vesper-release-focused-cargo.rs",
+      "bytes": 978,
+      "source_sha256": "f207efd02909733796dfb9c26bc40e43ee0478bee5619412ff5614a9bf931855",
+      "sha256": "f207efd02909733796dfb9c26bc40e43ee0478bee5619412ff5614a9bf931855"
+    },
+    {
+      "path": "vesper-release-native-closeout.log",
+      "bytes": 2975,
+      "source_sha256": "5fa56fd774f47c59585dff5e84f8366c17f947c749c0154e6a29ecea1912fc83",
+      "sha256": "5fa56fd774f47c59585dff5e84f8366c17f947c749c0154e6a29ecea1912fc83"
+    },
+    {
+      "path": "vesper-release-prepare-registry-delivery.py",
+      "bytes": 2412,
+      "source_sha256": "887f1b824d4609feba376d5e2a606a85c2bf3ef96234ea9d4e424bd80b80ed51",
+      "sha256": "887f1b824d4609feba376d5e2a606a85c2bf3ef96234ea9d4e424bd80b80ed51"
+    },
+    {
+      "path": "vesper-release-probe-published-linux-version.py",
+      "bytes": 1890,
+      "source_sha256": "41c23446d59babeb44684788d2afa43e7d4f423b1a13c94a26ce06b848aa50d2",
+      "sha256": "41c23446d59babeb44684788d2afa43e7d4f423b1a13c94a26ce06b848aa50d2"
+    },
+    {
+      "path": "vesper-release-producing-collection.log",
+      "bytes": 1923,
+      "source_sha256": "0faae8a56a488290155a05db69cbe076b5d590e020f353b8a10c3e5a41c12736",
+      "sha256": "0faae8a56a488290155a05db69cbe076b5d590e020f353b8a10c3e5a41c12736"
+    },
+    {
+      "path": "vesper-release-producing-job-112120652854.log",
+      "bytes": 31692,
+      "source_sha256": "a37859714f7f3455613c95c97c30f3ae8e6d13de672a3c267bd1427eef52e3de",
+      "sha256": "8a9b0d607791d3dbebc87bd0eec87fdc32dfbcb31258aa267280b7beafd7018c"
+    },
+    {
+      "path": "vesper-release-producing-job-112120732468.log",
+      "bytes": 71482,
+      "source_sha256": "f924d2aa57d9d6638a84f75704944b1d63511a3427db7e51022aa3b9b03e77b6",
+      "sha256": "42081108770f054c1f82890d9d8db6f6239a66083f4395dc8e3d6b8e31fe30b6"
+    },
+    {
+      "path": "vesper-release-producing-job-112120732500.log",
+      "bytes": 74632,
+      "source_sha256": "0d8b7e889ecaa300216824edc5fc54233dee4040d2b0320d393587f310d01b82",
+      "sha256": "c4f2dba1ab8f70545e6bcd8d2e904684c1d6df45aa45b9f492dcecd2ecb1d357"
+    },
+    {
+      "path": "vesper-release-producing-job-112120732515.log",
+      "bytes": 75607,
+      "source_sha256": "73bc73b4192cef06ace82cc18bcd9f0fe16f1f9bb443f3dc4349a8b8e5acc9c3",
+      "sha256": "a06ffcc568210673e751ff5d0641051f6e866c0c3b0710a2ac0ad15199b2a1bb"
+    },
+    {
+      "path": "vesper-release-producing-job-112120732548.log",
+      "bytes": 74477,
+      "source_sha256": "ce8e0221d67b176f53043e85b3092b7e4f2be54cb26ed8f7239e90c7dd9ad948",
+      "sha256": "c200446d8a595df30fd955a0819ce1dab9231c08b056e762cfd95ed79df9d473"
+    },
+    {
+      "path": "vesper-release-producing-job-112120732551.log",
+      "bytes": 72766,
+      "source_sha256": "96734570476f86df5f72493c50fc63c805f4df518b9860a181c4e3d071151280",
+      "sha256": "fa82d69027f2e15ae5516e526d636da3e277dadff41b91be7f68e7e81f60907d"
+    },
+    {
+      "path": "vesper-release-producing-job-112124071197.log",
+      "bytes": 25393,
+      "source_sha256": "f04e3199f47983757557f8e7bd291d25f513f759838ba740fdf1378d3fc395cc",
+      "sha256": "6e2c3031fe7a1efe6259dccbf1a73e0a3044796395c4d64108c4013d366db308"
+    },
+    {
+      "path": "vesper-release-producing-jobs.json",
+      "bytes": 26677,
+      "source_sha256": "959e466e9f270405577332c126d94cf860290c700066050f86b85c08398e93fc",
+      "sha256": "959e466e9f270405577332c126d94cf860290c700066050f86b85c08398e93fc"
+    },
+    {
+      "path": "vesper-release-producing-matrix.json",
+      "bytes": 1923,
+      "source_sha256": "0faae8a56a488290155a05db69cbe076b5d590e020f353b8a10c3e5a41c12736",
+      "sha256": "0faae8a56a488290155a05db69cbe076b5d590e020f353b8a10c3e5a41c12736"
+    },
+    {
+      "path": "vesper-release-producing-run.json",
+      "bytes": 14749,
+      "source_sha256": "b84831081730ded3d0dce3db80c7d1c947462f6fd74a3f336cf898bea8d327c4",
+      "sha256": "b84831081730ded3d0dce3db80c7d1c947462f6fd74a3f336cf898bea8d327c4"
+    },
+    {
+      "path": "vesper-release-published-assets-verification.json",
+      "bytes": 5063,
+      "source_sha256": "0dd9104748fe75580eb158ecb1611b57e80c55f87ec7754f1fb36cd3ca4228f4",
+      "sha256": "0dd9104748fe75580eb158ecb1611b57e80c55f87ec7754f1fb36cd3ca4228f4"
+    },
+    {
+      "path": "vesper-release-published-assets-verification.log",
+      "bytes": 1252,
+      "source_sha256": "86febc0e3456636487519219369021cae77b4fdf1c99d2f53bb227918b87a456",
+      "sha256": "86febc0e3456636487519219369021cae77b4fdf1c99d2f53bb227918b87a456"
+    },
+    {
+      "path": "vesper-release-published-linux-version-initial-failed.log",
+      "bytes": 619,
+      "source_sha256": "038834639dd14fcb7a2cf3b2d14613cc91d6dd25fdfdcf879c21a8cc0b83b1c0",
+      "sha256": "038834639dd14fcb7a2cf3b2d14613cc91d6dd25fdfdcf879c21a8cc0b83b1c0"
+    },
+    {
+      "path": "vesper-release-published-linux-version-verification.json",
+      "bytes": 712,
+      "source_sha256": "a65117c390aaa5ba2f61a242f1e8d58046f27532872cba617a3327a480056da7",
+      "sha256": "a65117c390aaa5ba2f61a242f1e8d58046f27532872cba617a3327a480056da7"
+    },
+    {
+      "path": "vesper-release-published-linux-version-verification.log",
+      "bytes": 712,
+      "source_sha256": "a65117c390aaa5ba2f61a242f1e8d58046f27532872cba617a3327a480056da7",
+      "sha256": "a65117c390aaa5ba2f61a242f1e8d58046f27532872cba617a3327a480056da7"
+    },
+    {
+      "path": "vesper-release-published-release.json",
+      "bytes": 34868,
+      "source_sha256": "fa01d6c93af3f9113f2b61bc8c010a72d12e31926b4bb0101ee36fbbb5825e16",
+      "sha256": "fa01d6c93af3f9113f2b61bc8c010a72d12e31926b4bb0101ee36fbbb5825e16"
+    },
+    {
+      "path": "vesper-release-published-tag.json",
+      "bytes": 1277,
+      "source_sha256": "b99e9b768b4367ec259d072c9191bd8d13724ad302a412dcaa1f16a90c3b7a83",
+      "sha256": "b99e9b768b4367ec259d072c9191bd8d13724ad302a412dcaa1f16a90c3b7a83"
+    },
+    {
+      "path": "vesper-release-registered-producer-corrective.rs",
+      "bytes": 5804,
+      "source_sha256": "33b377a948f56c53f02d03681993bd20c9cb04157d7ff916936c57cea93dfe8b",
+      "sha256": "33b377a948f56c53f02d03681993bd20c9cb04157d7ff916936c57cea93dfe8b"
+    },
+    {
+      "path": "vesper-release-registry-delivered-pr.json",
+      "bytes": 260,
+      "source_sha256": "bd923cdaeb48dcdcfc0b9fc6c8b196a0754c9a65a627207fd1b3fff64bb0bbee",
+      "sha256": "bd923cdaeb48dcdcfc0b9fc6c8b196a0754c9a65a627207fd1b3fff64bb0bbee"
+    },
+    {
+      "path": "vesper-release-registry-delivery.json",
+      "bytes": 911,
+      "source_sha256": "c9efacc15ed8b5a48ff5175d039f9b59c7b147746037d6491c28c1091b9de31b",
+      "sha256": "c9efacc15ed8b5a48ff5175d039f9b59c7b147746037d6491c28c1091b9de31b"
+    },
+    {
+      "path": "vesper-release-registry-final-validate.py",
+      "bytes": 1368,
+      "source_sha256": "13a46ff56fc6bb2c0dbf6621b2af30ac73b766c7279ad7bb3ea7161bb4d95d4c",
+      "sha256": "13a46ff56fc6bb2c0dbf6621b2af30ac73b766c7279ad7bb3ea7161bb4d95d4c"
+    },
+    {
+      "path": "vesper-release-registry-final-validation.json",
+      "bytes": 951,
+      "source_sha256": "83a77183a8d82390a45411d14b179c970d3cd6c723d206444f69d49256cf165e",
+      "sha256": "83a77183a8d82390a45411d14b179c970d3cd6c723d206444f69d49256cf165e"
+    },
+    {
+      "path": "vesper-release-registry-pr-body.md",
+      "bytes": 3889,
+      "source_sha256": "8801ff5e64b44b50fbfcdc09284d5579ace63616c6bc26a29524c544cb591e09",
+      "sha256": "8801ff5e64b44b50fbfcdc09284d5579ace63616c6bc26a29524c544cb591e09"
+    },
+    {
+      "path": "vesper-release-verify-published-assets.py",
+      "bytes": 4645,
+      "source_sha256": "01cefd876176833a03a43cc61b03386660df1907c63dca516fb6270fc76037d5",
+      "sha256": "01cefd876176833a03a43cc61b03386660df1907c63dca516fb6270fc76037d5"
+    },
+    {
+      "path": "vesper-release-windows-sse-complete-local-native-epoch.json",
+      "bytes": 18648,
+      "source_sha256": "6dd08191d29744fa8550eba6623c1915fb76c88456072f2bd064afd36a90758f",
+      "sha256": "6dd08191d29744fa8550eba6623c1915fb76c88456072f2bd064afd36a90758f"
+    },
+    {
+      "path": "vesper-release-windows-sse-controlled-complete.json",
+      "bytes": 895,
+      "source_sha256": "5e9f79140a48760cb46bd5f0f630ab9158e6e77d1c0b6a70d0d1ef7d305b9b56",
+      "sha256": "5e9f79140a48760cb46bd5f0f630ab9158e6e77d1c0b6a70d0d1ef7d305b9b56"
+    },
+    {
+      "path": "vesper-release-windows-sse-controlled-green-job-112097795264.log",
+      "bytes": 2908,
+      "source_sha256": "3545919968fcbeab461068464e62f4db85c840bfc4b531588e66736905e961c8",
+      "sha256": "84e42508d65ae661a9b020ebff60dcc14e79fab000f1a021775f593c19945598"
+    },
+    {
+      "path": "vesper-release-windows-sse-controlled-green-job-112097795441.log",
+      "bytes": 2764,
+      "source_sha256": "04b77c7c90edab30721e1dad76ceeea9b302ed26cb1a79eb9512c263f8298093",
+      "sha256": "52323c9ea06297bd674e9f1ccce9d8e46e567a1750ec8ab1e0784a129ebd93e4"
+    },
+    {
+      "path": "vesper-release-windows-sse-controlled-green-job-112097795465.log",
+      "bytes": 2765,
+      "source_sha256": "06a39dd22d122f7e0e60b7715133be58ad54a2a48ed897a95f8959581866f556",
+      "sha256": "caa943cd58ba1aa5b880334b0e7dcdcffefecac59c63582376b10c188a0476ff"
+    },
+    {
+      "path": "vesper-release-windows-sse-controlled-green-job-112097795477.log",
+      "bytes": 2771,
+      "source_sha256": "2cae2837277412daa034bdd6153c87cd4268857f4642253987d854dd592cc760",
+      "sha256": "ef134759c635d126d89b66c607753666c0006dbc221207359b206178498b0a3a"
+    },
+    {
+      "path": "vesper-release-windows-sse-controlled-green-job-112097795575.log",
+      "bytes": 2769,
+      "source_sha256": "4d5a2d06f5db244dec4e20598da5499ef7c1c2280d2f6c5e96c57870d702c24b",
+      "sha256": "9e15c610138efa81d7637452cff61c7af48b578d3f6ecaf972ec7bc192edc4bf"
+    },
+    {
+      "path": "vesper-release-windows-sse-controlled-green-jobs.json",
+      "bytes": 14251,
+      "source_sha256": "59d14c914baaeb1d44ba83cef41c8e5620244dec1bc3a79781a7fc060103ba3d",
+      "sha256": "59d14c914baaeb1d44ba83cef41c8e5620244dec1bc3a79781a7fc060103ba3d"
+    },
+    {
+      "path": "vesper-release-windows-sse-controlled-green-run.json",
+      "bytes": 16418,
+      "source_sha256": "8eacf17fea73e90e6131f64ae2be2cbbe6c2f9a382f541d5cc57a5bf0e57e563",
+      "sha256": "8eacf17fea73e90e6131f64ae2be2cbbe6c2f9a382f541d5cc57a5bf0e57e563"
+    },
+    {
+      "path": "vesper-release-windows-sse-controlled-green.log",
+      "bytes": 210,
+      "source_sha256": "18fcb521cfa2c4b524dd832506a0a4aea0665bb54e4b8620eb3390d41a0cb44b",
+      "sha256": "18fcb521cfa2c4b524dd832506a0a4aea0665bb54e4b8620eb3390d41a0cb44b"
+    },
+    {
+      "path": "vesper-release-windows-sse-controlled-orchestration.log",
+      "bytes": 448,
+      "source_sha256": "c6d0471df55daf8a52d3db02eaae6db2c2d3f2f6b32812931f6a7d2a98a5e8d1",
+      "sha256": "c6d0471df55daf8a52d3db02eaae6db2c2d3f2f6b32812931f6a7d2a98a5e8d1"
+    },
+    {
+      "path": "vesper-release-windows-sse-controlled-partial.log",
+      "bytes": 1275,
+      "source_sha256": "86ad2bc9ac98a446e241d1a38166c8809ddcd9e590fdafbc9cef164b52fa8d9e",
+      "sha256": "86ad2bc9ac98a446e241d1a38166c8809ddcd9e590fdafbc9cef164b52fa8d9e"
+    },
+    {
+      "path": "vesper-release-windows-sse-controlled-red-job-112097241964.log",
+      "bytes": 2141,
+      "source_sha256": "9ff201399a05583d6bcd361e6342f9162a6df8e2c3f57e136873b7172fc59842",
+      "sha256": "4ff685bbb35098dc203f2ea952a32b361af0fa7acc13bdf7e24c47234df1a285"
+    },
+    {
+      "path": "vesper-release-windows-sse-controlled-red-job-112097242115.log",
+      "bytes": 2148,
+      "source_sha256": "eab58994a9659dbef2f9d606b6dcff5591ae3a5c5cdc5e6706027f306c830629",
+      "sha256": "cd60a420dd1a46ceac6b27d254ebf867c5b930497f607bb49e4d4ed3831a85b3"
+    },
+    {
+      "path": "vesper-release-windows-sse-controlled-red-job-112097242160.log",
+      "bytes": 2140,
+      "source_sha256": "8b77a58ae5a3b50bd73ac24236a17007395c86cdcd9fd57a75f7121d84c09722",
+      "sha256": "04e70f184d0b032553fa3492b7b11133717e6539ccf4fdcb471dcba1f0f4c037"
+    },
+    {
+      "path": "vesper-release-windows-sse-controlled-red-job-112097242207.log",
+      "bytes": 2143,
+      "source_sha256": "b7101adf7ad9b6359597d1047d83e9c84166d25ff36de7cb6b93a824fa3e7a55",
+      "sha256": "39505b6a8ed838334e5ca0a3dce13d8572ec3dfeb83fc55fd7bd5609d88c61a1"
+    },
+    {
+      "path": "vesper-release-windows-sse-controlled-red-job-112097242219.log",
+      "bytes": 2779,
+      "source_sha256": "b71296be63298f1b8f684b731dcbe5fdf2d1ff3c9aaa5300a747ac1784a63791",
+      "sha256": "83da8780344100196b4485ba59bb26261ce9faaba3e2d62e76694d3503c5af91"
+    },
+    {
+      "path": "vesper-release-windows-sse-controlled-red-jobs.json",
+      "bytes": 14246,
+      "source_sha256": "0330040f65ce111237ce826823ecb8206b7b262fd5bc9584b04f6449dc6cd727",
+      "sha256": "0330040f65ce111237ce826823ecb8206b7b262fd5bc9584b04f6449dc6cd727"
+    },
+    {
+      "path": "vesper-release-windows-sse-controlled-red-run.json",
+      "bytes": 16416,
+      "source_sha256": "43f1717586c23691d8cd4f41be0e8a7fc8576eb2ed87c7b628bbe259257708d6",
+      "sha256": "43f1717586c23691d8cd4f41be0e8a7fc8576eb2ed87c7b628bbe259257708d6"
+    },
+    {
+      "path": "vesper-release-windows-sse-controlled-red.log",
+      "bytes": 345,
+      "source_sha256": "196c1ee8e1a186f8fb0a319d6e54533488c52e12262097dd57b22727d6279e5f",
+      "sha256": "196c1ee8e1a186f8fb0a319d6e54533488c52e12262097dd57b22727d6279e5f"
+    },
+    {
+      "path": "vesper-release-windows-sse-controlled-repeat-job-112097521302.log",
+      "bytes": 2151,
+      "source_sha256": "ac2aff187125f54be8182335aab570b5fd90e1cfab514640c7fbc62efb9b2275",
+      "sha256": "11b98931dad0eec53932dd29e9bd9d5fb0d141abe3e9936511b337564549e221"
+    },
+    {
+      "path": "vesper-release-windows-sse-controlled-repeat-job-112097521513.log",
+      "bytes": 2141,
+      "source_sha256": "0b0455c085a79963be7993da11c3f2908ed75368adba38b292b2c3ae4eda6249",
+      "sha256": "5e07eb9484f918e1645b7b3d8a1f18aac6a42578ca87f6a06ccef7c28e103215"
+    },
+    {
+      "path": "vesper-release-windows-sse-controlled-repeat-job-112097521531.log",
+      "bytes": 2780,
+      "source_sha256": "2af91ad239b4fb4aff244e7e971e318b9e7ee1c2c2a24554a6647f433a730afa",
+      "sha256": "b53e37df3d814155614b3aca21c1d2181715c0418f37140203c3954ee04d6631"
+    },
+    {
+      "path": "vesper-release-windows-sse-controlled-repeat-job-112097521556.log",
+      "bytes": 2142,
+      "source_sha256": "3f492a59e570ea38a4016e652d7287049764fc3bd1816caf211ce2c98681e6dc",
+      "sha256": "85a865a39ef0644d7cde96a5c2a430a0d7c18c0cfe58823d8e8790da52e00ace"
+    },
+    {
+      "path": "vesper-release-windows-sse-controlled-repeat-job-112097521616.log",
+      "bytes": 2156,
+      "source_sha256": "efeb1260d2ba4d6ca0474540aa553ee181b7372596397df9e0a3f37e669b7013",
+      "sha256": "f0b9cc1e66bd2cebbbe1088b8e31421256c2666fc0c2cc1d34f8cd65cb71f892"
+    },
+    {
+      "path": "vesper-release-windows-sse-controlled-repeat-jobs.json",
+      "bytes": 14251,
+      "source_sha256": "32738a25eb3e5a60783842bcc6e328d3859a7fa55e2c0f0b90ec73e2ea28e0a7",
+      "sha256": "32738a25eb3e5a60783842bcc6e328d3859a7fa55e2c0f0b90ec73e2ea28e0a7"
+    },
+    {
+      "path": "vesper-release-windows-sse-controlled-repeat-run.json",
+      "bytes": 16418,
+      "source_sha256": "5e0aea23028541c1914c8ef17d2ec7729c26b288a2d7aa89ed7a955169846048",
+      "sha256": "5e0aea23028541c1914c8ef17d2ec7729c26b288a2d7aa89ed7a955169846048"
+    },
+    {
+      "path": "vesper-release-windows-sse-controlled-repeat.log",
+      "bytes": 345,
+      "source_sha256": "cb91e06d8ac3ad877f666475523c92e6d1438f7f061225f7cc1b7257c88a1ece",
+      "sha256": "cb91e06d8ac3ad877f666475523c92e6d1438f7f061225f7cc1b7257c88a1ece"
+    },
+    {
+      "path": "vesper-release-windows-sse-document-verification.json",
+      "bytes": 653,
+      "source_sha256": "c575086e688825b2b899e0a6bb95bb563bd9199fbe30066e5952c5e728566cf5",
+      "sha256": "c575086e688825b2b899e0a6bb95bb563bd9199fbe30066e5952c5e728566cf5"
+    },
+    {
+      "path": "vesper-release-windows-sse-focused-green.log",
+      "bytes": 4446,
+      "source_sha256": "5f25dfa51154ccf682cadf241e8b1781cccc9d267a28c0c42ab82f5d97117dbb",
+      "sha256": "5f25dfa51154ccf682cadf241e8b1781cccc9d267a28c0c42ab82f5d97117dbb"
+    },
+    {
+      "path": "vesper-release-windows-sse-focused-native-collection.log",
+      "bytes": 1094,
+      "source_sha256": "8773e57cce16aeeef53f18600a1160442139ed3edfcf9aa0b9dc4d94a9f52e82",
+      "sha256": "8773e57cce16aeeef53f18600a1160442139ed3edfcf9aa0b9dc4d94a9f52e82"
+    },
+    {
+      "path": "vesper-release-windows-sse-focused-native-job-112096824718.log",
+      "bytes": 60603,
+      "source_sha256": "6c82142ce418bd27971b28e5debe867754403dc8b78d6de86aee26bb1e254163",
+      "sha256": "faa0c5502ed9b2575546fe717e0ce8e00d4cc8c2e98ec608b51047d0cf5f22e6"
+    },
+    {
+      "path": "vesper-release-windows-sse-focused-native-job-112096824917.log",
+      "bytes": 56681,
+      "source_sha256": "46c22a4ab0acffe3ae9732691a6688e7ae7a2c58a3007848c065eb2a59d953b1",
+      "sha256": "d04650be1e247acb78732fdf293d11f669d8eebbbdcbf9026e2975fa2eb8144d"
+    },
+    {
+      "path": "vesper-release-windows-sse-focused-native-jobs.json",
+      "bytes": 6609,
+      "source_sha256": "60f17adedfa185eec8a05e6114bbe9f3a2b9405d033f6ea65ae1454977da944c",
+      "sha256": "e1638ba9d207f9aaa24724323a2cc990515300e8ffa973bbfa4b6b58b84ed276"
+    },
+    {
+      "path": "vesper-release-windows-sse-focused-native-run.json",
+      "bytes": 16396,
+      "source_sha256": "57d54b2eff896319def9eb0ee75ed3c832a4d08d6000e4d4befaadb0cbdc89c9",
+      "sha256": "3e7dc2a149ff08534245df1f7e3e39b968f624e6f0dacb8785f15aad369d61ed"
+    },
+    {
+      "path": "vesper-release-windows-sse-focused-native-verification.json",
+      "bytes": 1241,
+      "source_sha256": "f8000aeef83c9d45724a83e55f2dbfde5aaed70916eb881fa01ec2f87c54a669",
+      "sha256": "f8000aeef83c9d45724a83e55f2dbfde5aaed70916eb881fa01ec2f87c54a669"
+    },
+    {
+      "path": "vesper-release-windows-sse-focused-repeat.log",
+      "bytes": 1653,
+      "source_sha256": "c9e3509c4cbce5a492142cfcb9ea764a75a338188c14817dbdaa154bcb317606",
+      "sha256": "c9e3509c4cbce5a492142cfcb9ea764a75a338188c14817dbdaa154bcb317606"
+    },
+    {
+      "path": "vesper-release-windows-sse-idle-example-cache-reclamation.json",
+      "bytes": 1310,
+      "source_sha256": "fc25e7b2d5e8edb03891352e2f1c30ca6a3f2d6c6965f94ec4d10039aab205e5",
+      "sha256": "fc25e7b2d5e8edb03891352e2f1c30ca6a3f2d6c6965f94ec4d10039aab205e5"
+    },
+    {
+      "path": "vesper-release-windows-sse-incremental-reclamation.json",
+      "bytes": 1400,
+      "source_sha256": "7cf8bef0f5a3693d71c4ef676a71fa60839d46f3194c6588e859f41dd2b30da2",
+      "sha256": "7cf8bef0f5a3693d71c4ef676a71fa60839d46f3194c6588e859f41dd2b30da2"
+    },
+    {
+      "path": "vesper-release-windows-sse-local-capture.log",
+      "bytes": 42,
+      "source_sha256": "022677624110039081dbddd91731b8a4b996bf404f79b0bec4a540e804b6aaa7",
+      "sha256": "022677624110039081dbddd91731b8a4b996bf404f79b0bec4a540e804b6aaa7"
+    },
+    {
+      "path": "vesper-release-windows-sse-matrix-collection.log",
+      "bytes": 4203,
+      "source_sha256": "5e3c9f523ccd4e77d0df88a44cacfbf820e6bbb3862fc92c89d6f76b0855aeb9",
+      "sha256": "5e3c9f523ccd4e77d0df88a44cacfbf820e6bbb3862fc92c89d6f76b0855aeb9"
+    },
+    {
+      "path": "vesper-release-windows-sse-native-admission.log",
+      "bytes": 345,
+      "source_sha256": "c03de6974adcc0b33ef7f51eeae32a8236129e59f0ff923dfbe9a37b170fd65b",
+      "sha256": "c03de6974adcc0b33ef7f51eeae32a8236129e59f0ff923dfbe9a37b170fd65b"
+    },
+    {
+      "path": "vesper-release-windows-sse-native-case-observations.json",
+      "bytes": 1758,
+      "source_sha256": "8228efc3fa8c08944e7054da075c17692a207ea6ca02650a8b42c58a1af1b4f4",
+      "sha256": "8228efc3fa8c08944e7054da075c17692a207ea6ca02650a8b42c58a1af1b4f4"
+    },
+    {
+      "path": "vesper-release-windows-sse-native-corrected-admission.log",
+      "bytes": 445,
+      "source_sha256": "79b4f318ddb3fbbaa810833d2bd559ed392113ca5dfa0ac7e7984663485c1ba5",
+      "sha256": "79b4f318ddb3fbbaa810833d2bd559ed392113ca5dfa0ac7e7984663485c1ba5"
+    },
+    {
+      "path": "vesper-release-windows-sse-native-epoch-lineage.json",
+      "bytes": 3015,
+      "source_sha256": "8dc42c8fbb5a4e7551caab9b492a2e41cd5aed4a321f2748f147e9492495fe6d",
+      "sha256": "8dc42c8fbb5a4e7551caab9b492a2e41cd5aed4a321f2748f147e9492495fe6d"
+    },
+    {
+      "path": "vesper-release-windows-sse-native-final-admission.log",
+      "bytes": 345,
+      "source_sha256": "b870ebc967679ad14134e4374a0a302a8d4baa2f888d0ce9dfbed73375640197",
+      "sha256": "b870ebc967679ad14134e4374a0a302a8d4baa2f888d0ce9dfbed73375640197"
+    },
+    {
+      "path": "vesper-release-windows-sse-native-linkage.json",
+      "bytes": 3934,
+      "source_sha256": "8d38e01320749a5b6548358201d749f41faab2a3768534b2187220a25c5452c9",
+      "sha256": "8d38e01320749a5b6548358201d749f41faab2a3768534b2187220a25c5452c9"
+    },
+    {
+      "path": "vesper-release-windows-sse-package-green.log",
+      "bytes": 5177,
+      "source_sha256": "6ae565e093884864e9503f4e64af8cb476e0ef9f14699d3f1daf22b92f94409b",
+      "sha256": "6ae565e093884864e9503f4e64af8cb476e0ef9f14699d3f1daf22b92f94409b"
+    },
+    {
+      "path": "vesper-release-windows-sse-post-msrv-incremental-reclamation.json",
+      "bytes": 1397,
+      "source_sha256": "c0acc25eadc464c746f2b508789ced0005dcdcdf9360bb48834c837cd0979ac9",
+      "sha256": "c0acc25eadc464c746f2b508789ced0005dcdcdf9360bb48834c837cd0979ac9"
+    },
+    {
+      "path": "vesper-release-windows-sse-post-verification-incremental-reclamation.json",
+      "bytes": 1418,
+      "source_sha256": "bcddb6f06a2a510d88c541f3d7e6a7fa64773f29df63360d1f91602f50cbaaf0",
+      "sha256": "bcddb6f06a2a510d88c541f3d7e6a7fa64773f29df63360d1f91602f50cbaaf0"
+    },
+    {
+      "path": "vesper-release-windows-sse-production-five-target-foundation-job-112109854831.log",
+      "bytes": 604872,
+      "source_sha256": "391c2efd29a7ebc44cad01278b728f90eef0be6f9ba4b35fd5cef58b7d24e930",
+      "sha256": "f654cc891b49c09fc36a719999b62809a443b2df55b1f91f1ded9468878f55af"
+    },
+    {
+      "path": "vesper-release-windows-sse-production-five-target-foundation-job-112109855039.log",
+      "bytes": 603992,
+      "source_sha256": "5358da18d110e9f88c6dedd733743b9e39bace035126377a0d87bd4a689bca6d",
+      "sha256": "7f5c61352709866ed00d7608e45d6215a91343870aa0ae73dec10c19392d885f"
+    },
+    {
+      "path": "vesper-release-windows-sse-production-five-target-foundation-job-112109855045.log",
+      "bytes": 604509,
+      "source_sha256": "98c2b734f630d2480f8abd597bce6d9b777f2a5737a720535adc6994bbb1d52b",
+      "sha256": "72a22b63cd4e1e4f97c461bae35cac7a086e9a3e669d633cd39720c6dee63b5b"
+    },
+    {
+      "path": "vesper-release-windows-sse-production-five-target-foundation-job-112109855053.log",
+      "bytes": 591099,
+      "source_sha256": "1c91edcd4ecac2a89bb6103a222c7cc2de9108c17400457082cbc3ad73d6ff95",
+      "sha256": "74ee683cd12e9291db3bf496f1ad533e53d81af082eb20040fc11d9bd84b98fb"
+    },
+    {
+      "path": "vesper-release-windows-sse-production-five-target-foundation-job-112109855232.log",
+      "bytes": 597543,
+      "source_sha256": "9b6693b2ccbba14533e4e36ec8537950075ee50e6d1e1a4112c682a34b69413d",
+      "sha256": "3dbf52bfb69f1bab53c633e9164a98361c5eceb51c85b11810e94a7a15a5d36e"
+    },
+    {
+      "path": "vesper-release-windows-sse-production-five-target-foundation-jobs.json",
+      "bytes": 27803,
+      "source_sha256": "d5711c48b7c27d45477310a356850a14532f45974633d43efdad42a982f35afd",
+      "sha256": "d5711c48b7c27d45477310a356850a14532f45974633d43efdad42a982f35afd"
+    },
+    {
+      "path": "vesper-release-windows-sse-production-five-target-foundation-run.json",
+      "bytes": 14773,
+      "source_sha256": "7cfd1dedb5eebd7849cd07e61a96a75cb4a06f0e39ff89bbc114a3c02beb7b53",
+      "sha256": "7cfd1dedb5eebd7849cd07e61a96a75cb4a06f0e39ff89bbc114a3c02beb7b53"
+    },
+    {
+      "path": "vesper-release-windows-sse-production-matrix.json",
+      "bytes": 4203,
+      "source_sha256": "5e3c9f523ccd4e77d0df88a44cacfbf820e6bbb3862fc92c89d6f76b0855aeb9",
+      "sha256": "5e3c9f523ccd4e77d0df88a44cacfbf820e6bbb3862fc92c89d6f76b0855aeb9"
+    },
+    {
+      "path": "vesper-release-windows-sse-production-msrv-job-112109854571.log",
+      "bytes": 548914,
+      "source_sha256": "172f739c09e417b43f27f9b2dc4e3785f57a47009dcb0cb51c019a673a1fb98b",
+      "sha256": "3b1e8fddd282d11a82e1763b2172c98ec9e9bfe5ee94e71e818e2de9e452fd87"
+    },
+    {
+      "path": "vesper-release-windows-sse-production-msrv-jobs.json",
+      "bytes": 4250,
+      "source_sha256": "6a5fd7296843ad968b4008de47609e344c171f6da5cbe90bbd58e093507f0ae4",
+      "sha256": "6a5fd7296843ad968b4008de47609e344c171f6da5cbe90bbd58e093507f0ae4"
+    },
+    {
+      "path": "vesper-release-windows-sse-production-msrv-run.json",
+      "bytes": 14740,
+      "source_sha256": "3c60fa1ba1a472f829ed390e861cbc07fee8002503848fc957622ab6b2d448cc",
+      "sha256": "3c60fa1ba1a472f829ed390e861cbc07fee8002503848fc957622ab6b2d448cc"
+    },
+    {
+      "path": "vesper-release-windows-sse-production-pull-request-validation-job-112109854757.log",
+      "bytes": 289390,
+      "source_sha256": "8d4e9dfeb1fdd5cd7eaa7463934ecf6ea6dd096187eb24ad2c879ad7794f7ada",
+      "sha256": "55f49e4f4ffd01058d6b320f3f18ec5ca7836dc2c7eb35220c6323459e9299a2"
+    },
+    {
+      "path": "vesper-release-windows-sse-production-pull-request-validation-job-112109855088.log",
+      "bytes": 620305,
+      "source_sha256": "d13c77768160dded758d0206078e3962e9fa6f9c0898a0d380cf8ed2bdbaba14",
+      "sha256": "6a33bf8f6f21a656d503b82b0cc5b2afd1d3b9ec880939cc209c0f7e62eb82b4"
+    },
+    {
+      "path": "vesper-release-windows-sse-production-pull-request-validation-jobs.json",
+      "bytes": 8001,
+      "source_sha256": "fee4552f884ffef8ae95bcc51df377b49ba31bbd822f0972f3b00b69a3c21de4",
+      "sha256": "fee4552f884ffef8ae95bcc51df377b49ba31bbd822f0972f3b00b69a3c21de4"
+    },
+    {
+      "path": "vesper-release-windows-sse-production-pull-request-validation-run.json",
+      "bytes": 14757,
+      "source_sha256": "42d354dae33f966bcfc6b84c6c07162c4f7bc8854ca08431d5f7f4d5bc2cbd87",
+      "sha256": "42d354dae33f966bcfc6b84c6c07162c4f7bc8854ca08431d5f7f4d5bc2cbd87"
+    },
+    {
+      "path": "vesper-release-windows-sse-production-web-driver-job-112109854659.log",
+      "bytes": 47554,
+      "source_sha256": "d176e105bbc3a856e4494199b89570eeffe968c10837fefd13e9024140b3ae48",
+      "sha256": "126bd3b913575ae805f76a0ef95dcf9afc84950ea8ea73b414972d04806ad93d"
+    },
+    {
+      "path": "vesper-release-windows-sse-production-web-driver-job-112109854877.log",
+      "bytes": 283052,
+      "source_sha256": "5bc16a3bbeb829e40490f6bb2bda9c708677d9d2fc19d3ea03d1e41b6fc6bf0f",
+      "sha256": "1c3bd46fdf2cda9538f34a8bf78c07338a6d1bf4c117ded567d57fb7a8beee37"
+    },
+    {
+      "path": "vesper-release-windows-sse-production-web-driver-job-112109854918.log",
+      "bytes": 279767,
+      "source_sha256": "2b2b3866583f3ef1c0c2a31400299afb86ab40bca8e96d915ad2c1988ca1e972",
+      "sha256": "1116287233fa551e276a308539d8fc2f19048f0a6d3ecaf550195122159abf7a"
+    },
+    {
+      "path": "vesper-release-windows-sse-production-web-driver-jobs.json",
+      "bytes": 11774,
+      "source_sha256": "56151c730736e6f09ecc553f42953c0066b1a8cbf4a770dec6096138dbe355d9",
+      "sha256": "56151c730736e6f09ecc553f42953c0066b1a8cbf4a770dec6096138dbe355d9"
+    },
+    {
+      "path": "vesper-release-windows-sse-production-web-driver-run.json",
+      "bytes": 14752,
+      "source_sha256": "6c9af302f5e3ff88c15f6e756df7e639ace00b67b329da8140327dedfa411f5c",
+      "sha256": "6c9af302f5e3ff88c15f6e756df7e639ace00b67b329da8140327dedfa411f5c"
+    },
+    {
+      "path": "vesper-release-windows-sse-registered-producer.log",
+      "bytes": 347893,
+      "source_sha256": "2d71b8ffdaf83742de7c518b8228c106861b32bd9fdf360b6dee6ed4985a2ddb",
+      "sha256": "2d71b8ffdaf83742de7c518b8228c106861b32bd9fdf360b6dee6ed4985a2ddb"
+    },
+    {
+      "path": "vesper-release-windows-sse-source.json",
+      "bytes": 228071,
+      "source_sha256": "78d295d3ad55d504eedfe08ab85f2988ec505fd91fb62c0c242a6ae680d6e77d",
+      "sha256": "78d295d3ad55d504eedfe08ab85f2988ec505fd91fb62c0c242a6ae680d6e77d"
+    }
+  ],
+  "scope": "Original SHA256 and sanitized archived SHA256 are recorded separately. Current named-case observations are verified in archived logs. Frozen earlier companions retain historical failure and correction scope."
+}

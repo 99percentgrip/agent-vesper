@@ -4,14 +4,8 @@
 
 Publish the requested patch release with the RRC parity and native OpenAI sign-in
 repairs while preserving the newer changes already committed to production.
-**In progress: native-pushed `bd49a5b3` passed all eight local steps and ten of
-eleven settled hosted jobs. Windows exposed the previously documented xAI
-oversized-SSE fixture timeout. The corrected fifteen-case HTTP suite passed
-locally; native Windows focused proof and successor publication gates remain pending.
-No release tag, publication or installation performed.**
-The latest public release is `v0.24.4`; production already contains the unpublished
-`0.24.5` version graph. The intended release target is `0.24.5`, subject to native
-version validation and complete exact-source gates.
+**Complete at the mandatory RRC PRD scope: production `v0.24.5` is published from `7e837db36f4090e566ac1a7461b5b103b8649368`. All eight native local gates, eleven exact-source prerequisite jobs and seven producing jobs passed. Native closeout reached `Complete`; Registry PR #539 was updated in place. Scope limits below remain explicit.**
+The current public release is `v0.24.5`. At admission, `v0.24.4` was the latest release and production already contained the unpublished `0.24.5` version graph. The preparation checkpoints below preserve their original pending/failure scope; this status and the final delivery evidence are authoritative.
 
 Owning PRD: [Release Recovery Controller](../Agent_Vesper_Release_Recovery_Controller_PRD.md).
 
@@ -140,7 +134,7 @@ binds these actual local, failed external, focused and native adapter receipts.
 The public controlled source was pushed only to its separate test branch; production
 main, tag, release assets and Alex's installation remain unchanged at this checkpoint.
 
-## Deviations and unresolved work
+## Initial checkpoint deviations and unresolved work
 
 Production advanced beyond the original parity candidate, so a reconciliation and
 fresh verification are required before release. No acceptance scope is reduced.
@@ -148,7 +142,7 @@ Corrective-source local verification, fresh full hosted prerequisites, actual
 publication/checksums/native closeout and the existing Registry PR update are outstanding. Live OpenAI account
 completion and replacement of Alex's local installation are unexecuted.
 
-## Readiness effect and DOX
+## Initial checkpoint readiness and DOX
 
 No current production release-readiness claim yet. Nearest operational contracts are
 reconciled for the combined behavior; parent indexes retain their existing boundaries.
@@ -372,7 +366,7 @@ private signed-out vaults, isolated roots and the selected-provider loopback rou
 Root/application parents retain their existing authentication and public-release
 contracts; their ownership/index did not change.
 
-## Recurrent Windows oversized-SSE fixture (correction prepared)
+## Recurrent Windows oversized-SSE fixture (pre-verification checkpoint)
 
 The complete `bd49a5b3e481a831f8d5877a8854fc7060ef70fd` prerequisite matrix
 settled before diagnosis: canonical `37406416154`, MSRV `37406416250`, web-driver
@@ -444,3 +438,40 @@ preparation ancestor while restoring both diagnostic workflow/DOX files to the
 production tree. The resulting strict descendant contains the original production
 workflow and the corrected xAI fixture; the temporary diagnostic workflow is not
 promoted. Native admission must still validate and archive the old preparation epoch.
+
+## Final production delivery evidence
+
+- Exact release source: `7e837db36f4090e566ac1a7461b5b103b8649368`; immutable annotated tag `v0.24.5`.
+- Production release: [v0.24.5](https://github.com/99percentgrip/agent-vesper/releases/tag/v0.24.5). All 16 actual downloaded assets match their server SHA-256 digests; seven archive/checksum pairs and all five bundled browser-driver byte/checksum/image identities passed.
+- Native local gates: eight passed, including complete workspace verification, two executed 100-case acceptance passes, architecture, Rust 1.88, supply-chain, advisories and optimized production builds.
+- web-driver: [run 37414452090](https://github.com/99percentgrip/agent-vesper/actions/runs/37414452090), 3 successful terminal jobs, exact release SHA.
+- msrv: [run 37414452099](https://github.com/99percentgrip/agent-vesper/actions/runs/37414452099), 1 successful terminal job, exact release SHA.
+- pull-request-validation: [run 37414452144](https://github.com/99percentgrip/agent-vesper/actions/runs/37414452144), 2 successful terminal jobs, exact release SHA.
+- five-target-foundation: [run 37414452103](https://github.com/99percentgrip/agent-vesper/actions/runs/37414452103), 5 successful terminal jobs, exact release SHA.
+- Producing workflow: [run 37417944543](https://github.com/99percentgrip/agent-vesper/actions/runs/37417944543), all seven jobs passed after prerequisite admission.
+- Native Windows focused proof: [run 37410239490](https://github.com/99percentgrip/agent-vesper-rrc-public-acceptance/actions/runs/37410239490). Both Windows and Linux executed fifteen HTTP cases plus ten independent oversized-SSE and ten UTF-8-fragmentation repetitions. Windows oversize repetitions completed in 0.04–0.06 seconds without changing the five-second bound. The diagnostic checked out `e425b5b5`; Git verifies its production/test/workflow tree equals the final release source.
+- Fresh controlled public runs: 37410372374, 37410463763, 37410553157. Actual partial waiting, causal capture/redaction, unchanged-fingerprint refusal and green progression passed; synthetic Ubuntu labels do not certify native platforms.
+- Every one of the 36 binding sections and 23 acceptance criteria has current evidence: 85 mapped named cases were directly observed in each of the five exact-source native logs. [Requirement trace](2026-10-06-rrc-parity-production-release-final-requirements.json), [source manifest](2026-10-06-rrc-parity-production-release-final-source.json), [evidence manifest](2026-10-06-rrc-parity-production-release-final-evidence.json) and [sanitized receipts](2026-10-06-rrc-parity-production-release-final-receipts.tar.gz) bind current and historical proof. Original and sanitized log digests are recorded separately.
+- Registry delivery: [existing PR #539](https://github.com/agentclientprotocol/registry/pull/539), same `agent-vesper/v0.20.51` branch, head `91af724a1ac8b701c0d5aef7ec925eefd13022af`. Version, five published URLs, downloaded archive SHA-256 pins, schema and retained icon passed the upstream entry validators. Upstream merging remains maintainer-owned.
+- Actual published Linux ACP and TUI `--version` returned `0.24.5` under a cleared environment and temporary HOME/workspace. No installer ran and the local installation was preserved. Alex’s primary HEAD and 142 dirty entries were retained.
+
+### Final documentation verification
+
+[Document verification](2026-10-06-rrc-parity-production-release-final-document-verification.json) records parsed JSON, all 111 sanitized receipt hashes, all 1,431 exact-source path hashes, current named-case observations, changed local links, frozen archive digests and the unchanged binding PRD prefix. `git diff --check` passed. This documentation closeout ran no additional program suite or version/release pipeline.
+
+### Final deviations and limits
+
+The first published-version probe incorrectly required stdout: ACP correctly printed its version on stderr with exit zero. The helper now checks the exact version across both streams and records them separately; the failed helper receipt is retained. An initial report-generation attempt preceded the archive output and produced no document changes; generation succeeded after archive completion.
+
+Earlier failed matrices, helper permission/refusal errors, diagnostic YAML/provenance preparation and native sibling-source refusal remain recorded; no failed or unexecuted receipt is relabeled as passed. Native archives preserve the stopped production and mistaken diagnostic preparation epochs. No retry-budget reset, reserve reduction, forced tag or replaced release asset was used.
+
+Guarded cache cleanup reclaimed inactive incremental data and, after MSRV, idle generated debug example binaries only. Every cleanup held governor/Cargo locks and checked process references; sources, production binaries, historical worktrees, ledgers, receipts and the installed application were retained. Physical free-space gains are the measured receipt values, not logical directory totals.
+
+- Linux host-resource discovery; non-Linux production governor refuses unavailable observations rather than fabricating health.
+- Sandbox repair command port lacks managed cache/environment composition and refuses governed Cargo repair before host dispatch.
+- Real OpenAI browser/account completion remains unexecuted.
+- Actual live-model repair effectiveness remains unexecuted; public controls and deterministic two-provider real-tool repair fixtures are scoped evidence.
+- Public controlled five-job Ubuntu labels are not native platform certification; the actual production five-platform logs above provide that evidence.
+- No installer or local installation replacement.
+
+DOX closeout: the xAI adapter and TUI test contracts reflect the corrected fixture rules; foundation ownership and the evidence index cover all new companions. Root, crate/application/documentation parents and Registry guidance remain unchanged because their ownership, authority and release workflow contracts are unchanged. No new child boundary or child-index change is required. The binding PRD prefix remains byte-identical. Documentation closeout is a later source commit and never moves the published tag.

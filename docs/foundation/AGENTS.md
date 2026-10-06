@@ -24,6 +24,9 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
   isolated signed-out/loopback real-PTY startup correction.
   Its Windows-SSE companions bind the complete `bd49a5b3` matrix, native
   fingerprint, earlier documented failure and bounded-write fixture correction.
+  Its final companions bind all 36 sections/23 criteria to exact production native
+  logs, eight local gates, producing/tag/assets, native Complete and Registry delivery;
+  source and sanitized receipt digests stay distinct.
 
 - `release-recovery-controller-parity-continuation.md` owns continued binding
   acceptance: publishing prerequisites, last-green lane evidence, measured

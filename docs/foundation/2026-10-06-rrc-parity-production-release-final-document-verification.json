@@ -1,0 +1,32 @@
+{
+  "passed": true,
+  "release_source": "7e837db36f4090e566ac1a7461b5b103b8649368",
+  "source_paths_verified": 1431,
+  "sanitized_receipts_verified": 111,
+  "native_observations": "85 cases on each of five actual platforms",
+  "binding_sections": 36,
+  "acceptance_criteria": 23,
+  "checked_local_links": [
+    "docs/Agent_Vesper_Release_Recovery_Controller_PRD.md",
+    "docs/foundation/2026-09-25-v0.24.0-release-execution.md",
+    "docs/foundation/2026-10-06-rrc-parity-production-release-corrective-evidence.json",
+    "docs/foundation/2026-10-06-rrc-parity-production-release-corrective-receipts.tar.gz",
+    "docs/foundation/2026-10-06-rrc-parity-production-release-final-document-verification.json",
+    "docs/foundation/2026-10-06-rrc-parity-production-release-final-evidence.json",
+    "docs/foundation/2026-10-06-rrc-parity-production-release-final-receipts.tar.gz",
+    "docs/foundation/2026-10-06-rrc-parity-production-release-final-requirements.json",
+    "docs/foundation/2026-10-06-rrc-parity-production-release-final-source.json",
+    "docs/foundation/2026-10-06-rrc-parity-production-release-host-fixture-evidence.json",
+    "docs/foundation/2026-10-06-rrc-parity-production-release-host-fixture-receipts.tar.gz",
+    "docs/foundation/2026-10-06-rrc-parity-production-release-integration-evidence.json",
+    "docs/foundation/2026-10-06-rrc-parity-production-release-openai-fixture-evidence.json",
+    "docs/foundation/2026-10-06-rrc-parity-production-release-openai-fixture-receipts.tar.gz",
+    "docs/foundation/2026-10-06-rrc-parity-production-release-preparation-evidence.json",
+    "docs/foundation/2026-10-06-rrc-parity-production-release-windows-sse-evidence.json",
+    "docs/foundation/2026-10-06-rrc-parity-production-release-windows-sse-receipts.tar.gz",
+    "docs/foundation/2026-10-06-rrc-parity-production-release.md",
+    "docs/foundation/release-recovery-controller-parity-continuation.md"
+  ],
+  "binding_prd_prefix_unchanged": true,
+  "scope": "Changed report/PRD links, evidence-index links, current/frozen archive digests, JSON, exact-source paths and whitespace. No program suites or release pipeline run for this documentation closure."
+}

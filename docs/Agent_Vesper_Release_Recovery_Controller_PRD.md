@@ -1094,10 +1094,7 @@ reset, stashed or mutated by this process.
 
 ## 37. Current Implementation Status
 
-**Release integration in progress; native-pushed `bd49a5b3` passed eight local
-steps and ten of eleven settled hosted jobs. Windows reproduced the historically
-documented xAI oversized-SSE fixture timeout. The corrected fifteen-case HTTP
-suite passed locally; native Windows proof and successor publication remain pending.**
+**Complete at the mandatory RRC PRD scope: production `v0.24.5` is published from `7e837db36f4090e566ac1a7461b5b103b8649368`. All eight native local gates, eleven exact-source prerequisite jobs and seven producing jobs passed. Native closeout reached `Complete`; Registry PR #539 was updated in place. Scope limits below remain explicit.**
 
 [The production release report](foundation/2026-10-06-rrc-parity-production-release.md)
 owns reconciliation with the newer production source, exact-source local verification,
@@ -1116,5 +1113,7 @@ unexecuted items.
 The release preserves the OpenAI device-sign-in URL/browser-launch repair together
 with the later background startup discovery fix. Actual browser/account completion
 is unexecuted; it is separate from deterministic release recovery acceptance.
-Production publication will use standard public GitHub Actions. Alex's installed
+Production publication used standard public GitHub Actions. Alex's installed
 application is outside this release authorization.
+
+[Current requirement trace](foundation/2026-10-06-rrc-parity-production-release-final-requirements.json) binds all 36 sections and 23 acceptance criteria to direct current native observations and actual production publication/closeout receipts.
